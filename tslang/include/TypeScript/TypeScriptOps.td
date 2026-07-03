@@ -1668,7 +1668,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
 
   let builders = [
     OpBuilder<(ins),
-    [{ build($_builder, $_state, std::nullopt); }]>];
+    [{ build($_builder, $_state, {}); }]>];
 
   
 }

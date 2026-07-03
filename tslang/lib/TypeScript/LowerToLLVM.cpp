@@ -3129,7 +3129,8 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                     isInvariant = invariantAttr.getValue();
                 }    
 
-                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
+                const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
+                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariant, isInvariantGroup, ordering, syncscope);
             }
             else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(elementRefType))
             {
@@ -3298,7 +3299,8 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         //     isInvariant = invariantAttr.getValue();
         // }           
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, ordering, syncscope);
+        const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariantGroup, ordering, syncscope);
 #ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
