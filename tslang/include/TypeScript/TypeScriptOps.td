@@ -635,7 +635,9 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -662,7 +664,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -678,14 +680,6 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
-
-    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
-    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(::mlir::ArrayAttr) {}
-    void setResAttrsAttr(::mlir::ArrayAttr) {}
-    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -704,7 +698,9 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     types of the call must match the specified function type.
   }];
 
-  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -723,6 +719,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       {
           llvm_unreachable("not implemented");
       }
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "Value":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
     }]>];
 
   let extraClassDeclaration = [{
@@ -744,19 +744,11 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }
-
-    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
-    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(::mlir::ArrayAttr) {}
-    void setResAttrsAttr(::mlir::ArrayAttr) {}
-    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let hasCanonicalizer = 1;
 
-  
+
 }
 
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
@@ -808,7 +800,9 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
   let description = [{
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -827,11 +821,15 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
       CArg<"ValueRange", "{}">:$callOperands), [{
       build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), results,
             callOperands);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "FlatSymbolRefAttr":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
     }]>];
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -847,14 +845,6 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
-
-    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
-    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(::mlir::ArrayAttr) {}
-    void setResAttrsAttr(::mlir::ArrayAttr) {}
-    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -864,9 +854,11 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   let description = [{
   }];
 
-  let arguments = (ins Variadic<AnyType>:$callOperands);
+  let arguments = (ins Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
-  
+
   let builders = [
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
@@ -876,7 +868,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -884,7 +876,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     MutableOperandRange getArgOperandsMutable() {
       return getCallOperandsMutable();
     }
-    
+
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
 
@@ -894,14 +886,6 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }
-
-    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
-    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(::mlir::ArrayAttr) {}
-    void setResAttrsAttr(::mlir::ArrayAttr) {}
-    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -919,12 +903,20 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$results, "Value":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
+    }]>];
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -942,14 +934,6 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }
-
-    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
-    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(::mlir::ArrayAttr) {}
-    void setResAttrsAttr(::mlir::ArrayAttr) {}
-    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
