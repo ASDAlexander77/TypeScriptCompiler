@@ -6399,6 +6399,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
     index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+    cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
     populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
