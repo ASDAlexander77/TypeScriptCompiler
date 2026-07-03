@@ -618,7 +618,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
         auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, cmpResult, const0I32);
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), ptrCmpResult,
+            loc, th.getLLVMBoolType(), ptrCmpResult,
             [&](OpBuilder &builder, Location loc) {
                 // both not null
                 auto const0 = clh.createI32ConstantOf(0);
@@ -746,7 +746,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto dataPtr2 = al.getDataPtrOfAny(transformed.getOp2());
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), ptrCmpResult,
+            loc, th.getLLVMBoolType(), ptrCmpResult,
             [&](OpBuilder &builder, Location loc) {
                 auto const0 = clh.createI32ConstantOf(0);
                 // sizeAny1 equals sizeAny2
