@@ -72,7 +72,6 @@ CompileOptions prepareOptions()
         || TheTriple.getArch() == llvm::Triple::riscv64        // RISC-V (64-bit): riscv64
         || TheTriple.getArch() == llvm::Triple::x86_64         // X86-64: amd64, x86_64
         || TheTriple.getArch() == llvm::Triple::nvptx64        // NVPTX: 64-bit
-        || TheTriple.getArch() == llvm::Triple::le64           // le64: generic little-endian 64-bit CPU (PNaCl)
         || TheTriple.getArch() == llvm::Triple::amdil64        // AMDIL with 64-bit pointers
         || TheTriple.getArch() == llvm::Triple::hsail64        // AMD HSAIL with 64-bit pointers
         || TheTriple.getArch() == llvm::Triple::spir64         // SPIR: standard portable IR for OpenCL 64-bit version

@@ -249,14 +249,14 @@ struct Win32ExceptionPassCode
                     // catch (...) as catch value is null
                     auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(Ctx, 0));
                     auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
-                    catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI->getIterator());
                 }
                 else
                 {
                     auto varRef = catchRegion.saveCatch->getOperand(1)->stripPointerCasts();
                     assert(varRef);
                     auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getType()));
-                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI->getIterator());
                     catchRegion.saveCatch->eraseFromParent();
                 }
             }
@@ -264,7 +264,7 @@ struct Win32ExceptionPassCode
             {
                 assert(catchRegion.isCleanup());
 
-                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), {}, "cleanuppad", LPI);
+                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), {}, "cleanuppad", LPI->getIterator());
             }
 
             auto opBundle = getCallBundleFromCatchRegion(catchRegion);
@@ -304,7 +304,7 @@ struct Win32ExceptionPassCode
                 // default case
                 if (!newCallBase)
                 {
-                    newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                    newCallBase = CallBase::Create(callBase, opBundle, callBase->getIterator());
                 }
 
                 callBase->replaceAllUsesWith(newCallBase);
