@@ -129,9 +129,8 @@ class MLIRDebugInfoHelper
             unsigned sourceLanguage = llvm::dwarf::DW_LANG_Assembly; 
             auto producer = builder.getStringAttr(producerName);
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
-            auto namedTable = mlir::LLVM::DINameTableKind::Default;
             auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(
-                builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), sourceLanguage, file, producer, isOptimized, emissionKind, namedTable);        
+                DistinctAttr::create(builder.getUnitAttr()), sourceLanguage, file, producer, isOptimized, emissionKind);        
         
             debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
             debugScope.insert(DEBUG_SCOPE, compileUnit);
@@ -190,10 +189,12 @@ class MLIRDebugInfoHelper
 
                 auto funcNameAttr = builder.getStringAttr(functionName);
                 auto linkageNameAttr = builder.getStringAttr(linkageName);
+                SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+                SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                     builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, isAcceptableSubProgramScope(scopeAttr) ? scopeAttr : compileUnitAttr, 
                     funcNameAttr, linkageNameAttr, 
-                    file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type);   
+                    file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type, retainedNodes, annotations);   
 
                 debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
                 debugScope.insert(DEBUG_SCOPE, subprogramAttr);
