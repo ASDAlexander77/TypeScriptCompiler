@@ -247,16 +247,16 @@ struct Win32ExceptionPassCode
                 if (isNullInst || !catchRegion.saveCatch)
                 {
                     // catch (...) as catch value is null
-                    auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
+                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(Ctx, 0));
                     auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
-                    catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI->getIterator());
                 }
                 else
                 {
                     auto varRef = catchRegion.saveCatch->getOperand(1)->stripPointerCasts();
                     assert(varRef);
                     auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getType()));
-                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI->getIterator());
                     catchRegion.saveCatch->eraseFromParent();
                 }
             }
@@ -264,7 +264,7 @@ struct Win32ExceptionPassCode
             {
                 assert(catchRegion.isCleanup());
 
-                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), std::nullopt, "cleanuppad", LPI);
+                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), {}, "cleanuppad", LPI->getIterator());
             }
 
             auto opBundle = getCallBundleFromCatchRegion(catchRegion);
@@ -304,7 +304,7 @@ struct Win32ExceptionPassCode
                 // default case
                 if (!newCallBase)
                 {
-                    newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                    newCallBase = CallBase::Create(callBase, opBundle, callBase->getIterator());
                 }
 
                 callBase->replaceAllUsesWith(newCallBase);
@@ -452,7 +452,7 @@ struct Win32ExceptionPassCode
                 CSI->addHandler(ContinuationBB);
 
                 // catch (...) as catch value is null
-                auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
+                auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(Ctx, 0));
                 auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
                 auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", ContinuationBB);
 
@@ -607,9 +607,9 @@ struct Win32ExceptionPassCode
 
         llvm::Type *FieldTypes[] = {
             IntegerType::get(Ctx, 32),                // Flags
-            IntegerType::get(Ctx, 8)->getPointerTo(), // CleanupFn
-            IntegerType::get(Ctx, 8)->getPointerTo(), // ForwardCompat
-            IntegerType::get(Ctx, 8)->getPointerTo()  // CatchableTypeArray
+            PointerType::get(Ctx, 0), // CleanupFn
+            PointerType::get(Ctx, 0), // ForwardCompat
+            PointerType::get(Ctx, 0)  // CatchableTypeArray
         };
         ThrowInfoType = llvm::StructType::create(Ctx, FieldTypes, "eh.ThrowInfo");
         return ThrowInfoType;
@@ -625,7 +625,7 @@ struct Win32ExceptionPassCode
 
         // _CxxThrowException is passed an exception object and a ThrowInfo object
         // which describes the exception.
-        llvm::Type *Args[] = {IntegerType::get(Ctx, 8)->getPointerTo(), getThrowInfoType(Ctx)->getPointerTo()};
+        llvm::Type *Args[] = {PointerType::get(Ctx, 0), PointerType::get(Ctx, 0)};
         auto *FTy = llvm::FunctionType::get(Type::getVoidTy(Ctx), Args, /*isVarArg=*/false);
         auto Throw = Function::Create(FTy, llvm::GlobalValue::LinkageTypes::InternalLinkage, "_CxxThrowException");
         /*

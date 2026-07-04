@@ -4,6 +4,7 @@
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Driver/Compilation.h"
+#include "clang/Options/Options.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Option/ArgList.h"
@@ -59,9 +60,9 @@ createAndPopulateDiagOpts(llvm::ArrayRef<const char *> argv)
     // Any errors that would be diagnosed here will also be diagnosed later,
     // when the DiagnosticsEngine actually exists.
     unsigned missingArgIndex, missingArgCount;
-    llvm::opt::InputArgList args = clang::driver::getDriverOptTable().ParseArgs(
+    llvm::opt::InputArgList args = clang::getDriverOptTable().ParseArgs(
         argv.slice(1), missingArgIndex, missingArgCount,
-        /*FlagsToInclude=*/clang::driver::options::FlangOption);
+        /*FlagsToInclude=*/clang::options::FlangOption);
 
     // parse args
 
@@ -541,7 +542,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     diagClient->setPrefix(
         std::string(llvm::sys::path::stem(driverPath)));
 
-    clang::DiagnosticsEngine diags(diagID, &*diagOpts, diagClient);
+    clang::DiagnosticsEngine diags(diagID, *diagOpts, diagClient);
 
     // Prepare the driver
     clang::driver::Driver theDriver(driverPath,

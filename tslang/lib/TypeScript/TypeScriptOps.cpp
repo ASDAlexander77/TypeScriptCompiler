@@ -899,8 +899,10 @@ mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, Funct
 void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name, FunctionType type, ArrayRef<NamedAttribute> attrs,
                             ArrayRef<DictionaryAttr> argAttrs)
 {
-    state.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
+    state.addAttribute(SymbolTable::getSymbolAttrName(),
+                        builder.getStringAttr(name));
     state.addAttribute(getFunctionTypeAttrName(state.name), TypeAttr::get(type));
+
     state.attributes.append(attrs.begin(), attrs.end());
     state.addRegion();
 
@@ -910,9 +912,9 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
     }
 
     assert(type.getNumInputs() == argAttrs.size());
-    function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/std::nullopt,
-        getArgAttrsAttrName(state.name), getResAttrsAttrName(state.name)
-    );
+    call_interface_impl::addArgAndResultAttrs(
+        builder, state, argAttrs, /*resultAttrs=*/{},
+        getArgAttrsAttrName(state.name), getResAttrsAttrName(state.name));
 }
 
 /// Clone the internal blocks from this function into dest and all attributes
@@ -1348,7 +1350,7 @@ LogicalResult mlir_ts::CallHybridInternalOp::verifySymbolUses(SymbolTableCollect
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond, bool withElseRegion)
 {
-    build(builder, result, /*resultTypes=*/std::nullopt, cond, withElseRegion);
+    build(builder, result, /*resultTypes=*/TypeRange(), cond, withElseRegion);
 }
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond, bool withElseRegion)
@@ -1410,15 +1412,15 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
 /// not a constant.
 void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl<RegionSuccessor> &regions)
 {
-    // If the predecessor is an AffineIfOp, then branching into both `then` and
+    // If the predecessor is an IfOp, then branching into both `then` and
     // `else` region is valid.
     if (point.isParent()) {
         regions.reserve(2);
         regions.push_back(
             RegionSuccessor(&getThenRegion(), getThenRegion().getArguments()));
-        // If the "else" region is empty, branch bach into parent.
+        // If the "else" region is empty, branch back into parent.
         if (getElseRegion().empty()) {
-            regions.push_back(getResults());
+            regions.push_back(RegionSuccessor(getOperation(), getResults()));
         } else {
             regions.push_back(
                 RegionSuccessor(&getElseRegion(), getElseRegion().getArguments()));
@@ -1428,14 +1430,14 @@ void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl
 
     // If the predecessor is the `else`/`then` region, then branching into parent
     // op is valid.
-    regions.push_back(RegionSuccessor(getResults()));
+    regions.push_back(RegionSuccessor(getOperation(), getResults()));
 }
 
 //===----------------------------------------------------------------------===//
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1448,15 +1450,13 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
         return;
     }
 
-    assert(llvm::is_contained({&getBody(), &getCond()}, point) &&
-            "there are only two regions in a WhileOp");
     // The body region always branches back to the condition region.
-    if (point == getBody()) {
+    if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getBody()) {
         regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
 
-    regions.emplace_back(getResults());
+    regions.emplace_back(getOperation(), getResults());
     regions.emplace_back(&getBody(), getBody().getArguments());
 }
 
@@ -1464,7 +1464,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1477,15 +1477,13 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
         return;
     }
 
-    assert(llvm::is_contained({&getCond(), &getBody()}, point) &&
-            "there are only two regions in a DoWhileOp");
     // The body region always branches back to the condition region.
-    if (point == getCond()) {
+    if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getCond()) {
         regions.emplace_back(&getBody(), getBody().getArguments());
         return;
     }
 
-    regions.emplace_back(getResults());
+    regions.emplace_back(getOperation(), getResults());
     regions.emplace_back(&getCond(), getCond().getArguments());
 }
 
@@ -1493,7 +1491,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
 // ForOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::ForOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::ForOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1504,7 +1502,7 @@ void mlir_ts::ForOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImp
     // back into the operation itself. It is possible for loop not to enter the
     // body.
     regions.push_back(RegionSuccessor(&getRegion(0), getRegionIterArgs()));
-    regions.push_back(RegionSuccessor(getResults()));
+    regions.push_back(RegionSuccessor(getOperation(), getResults()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1776,7 +1774,7 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &odsState, Type
 // TryOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::TryOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::TryOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getOperation()->getOperands();
 }
@@ -1819,7 +1817,7 @@ void mlir_ts::LabelOp::addMergeBlock()
 // BodyInternalOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::BodyInternalOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::BodyInternalOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getODSOperands(0);
 }

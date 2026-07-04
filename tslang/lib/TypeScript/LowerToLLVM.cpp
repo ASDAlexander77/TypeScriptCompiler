@@ -618,7 +618,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
         auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, cmpResult, const0I32);
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), ptrCmpResult,
+            loc, th.getLLVMBoolType(), ptrCmpResult,
             [&](OpBuilder &builder, Location loc) {
                 // both not null
                 auto const0 = clh.createI32ConstantOf(0);
@@ -746,7 +746,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto dataPtr2 = al.getDataPtrOfAny(transformed.getOp2());
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), ptrCmpResult,
+            loc, th.getLLVMBoolType(), ptrCmpResult,
             [&](OpBuilder &builder, Location loc) {
                 auto const0 = clh.createI32ConstantOf(0);
                 // sizeAny1 equals sizeAny2
@@ -1283,6 +1283,11 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         }
 
         auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, transformed.getOperands());
+        // indirect call: callee pointer is operand #0, the rest are call arguments;
+        // AttrSizedOperandSegments requires this split to be set explicitly, the
+        // generic (TypeRange, ValueRange) builder above does not set it.
+        callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(transformed.getOperands().size()), 0});
+        callRes.setOpBundleSizes({});
 
         auto returns = callRes.getResults();
         if (returns.size() > 0)
@@ -1292,7 +1297,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         else
         {
             rewriter.eraseOp(op);
-        }      
+        }
 
         return success();
     }
@@ -1343,7 +1348,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     continue;
                 }
 
-                results.push_back(resultType);
+                results.push_back(tch.convertType(resultType));
             }
 
             // no value yet.
@@ -1367,6 +1372,8 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     ops.push_back(thisValAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+                    callRes.setOpBundleSizes({});
                     return callRes.getResults();
                 },
                 [&](OpBuilder &builder, Location loc) {
@@ -1381,6 +1388,8 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     ops.push_back(methodPtrAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+                    callRes.setOpBundleSizes({});
                     return callRes.getResults();
                 });
         }
@@ -1484,7 +1493,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                     continue;
                 }
 
-                results.push_back(resultType);
+                results.push_back(tch.convertType(resultType));
             }
 
             // no value yet.
@@ -3129,7 +3138,8 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                     isInvariant = invariantAttr.getValue();
                 }    
 
-                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
+                const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
+                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariant, isInvariantGroup, ordering, syncscope);
             }
             else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(elementRefType))
             {
@@ -3298,7 +3308,8 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         //     isInvariant = invariantAttr.getValue();
         // }           
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, ordering, syncscope);
+        const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariantGroup, ordering, syncscope);
 #ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
@@ -3526,7 +3537,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 {
                     auto varInfo = globalVarAttrFusedLoc.getMetadata();
                     LLVM::DIExpressionAttr exprAttr;
-                    llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
+                    llvmGlobalOp.setDbgExprsAttr(ArrayAttr::get(rewriter.getContext(), {LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr)}));
                 }
             }
         }
@@ -4624,7 +4635,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, thisVal);
                 auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, methodOrFieldPtr);
                 auto padded = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, p1, p2);
-                auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded);
+                auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded.getResult());
 
                 // no need to BoundRef
                 // auto boundRefVal = rewriter.create<mlir_ts::CreateBoundRefOp>(loc, thisVal, typedPtr);
@@ -4809,7 +4820,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
             isVolatile = volatileAttr.getValue();
         }
 
-        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal, alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
+        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal, alignment, isVolatile, isNonTemporal, isInvariant, /*isInvariantGroup*/ false, ordering, syncscope);
 
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(boundRefType.getElementType()))
         {
@@ -4886,7 +4897,7 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
             isVolatile = volatileAttr.getValue();
         } 
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal, alignment, isVolatile, isNonTemporal, ordering, syncscope);
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal, alignment, isVolatile, isNonTemporal, /*isInvariantGroup*/ false, ordering, syncscope);
         return success();
     }
 };
@@ -5366,9 +5377,10 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         else
         {
             rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
-                globalConstructorOp, 
-                rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
-                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }));
+                globalConstructorOp,
+                rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }),
+                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }),
+                rewriter.getArrayAttr({ LLVM::ZeroAttr::get(rewriter.getContext()) }));
         }
 
         return success();
@@ -5623,10 +5635,11 @@ struct InlineAsmOpLowering : public TsLlvmPattern<mlir_ts::InlineAsmOp>
             transformed.getOperands(),
             transformed.getAsmString(), 
             transformed.getConstraints(), 
-            transformed.getHasSideEffects(), 
+            transformed.getHasSideEffects(),
             transformed.getIsAlignStack(),
-            LLVM::AsmDialectAttr::get(rewriter.getContext(), transformed.getAsmDialect().value_or(0) == 0 
-                ? LLVM::AsmDialect::AD_ATT : LLVM::AsmDialect::AD_Intel), 
+            LLVM::tailcallkind::TailCallKind::None,
+            LLVM::AsmDialectAttr::get(rewriter.getContext(), transformed.getAsmDialect().value_or(0) == 0
+                ? LLVM::AsmDialect::AD_ATT : LLVM::AsmDialect::AD_Intel),
             transformed.getOperandAttrsAttr());
 
         return success();
@@ -5647,11 +5660,15 @@ struct CallIntrinsicOpLowering : public TsLlvmPattern<mlir_ts::CallIntrinsicOp>
         }
 
         rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-            op, 
-            TypeRange(convertedTypes), 
-            transformed.getIntrin(), 
+            op,
+            TypeRange(convertedTypes),
+            transformed.getIntrin(),
             transformed.getOperands(),
-            (LLVM::FastmathFlags)transformed.getFastmathFlags());
+            (LLVM::FastmathFlags)transformed.getFastmathFlags(),
+            ArrayRef<ValueRange>{},
+            /*op_bundle_tags*/ nullptr,
+            /*arg_attrs*/ nullptr,
+            /*res_attrs*/ nullptr);
 
         return success();
     }
@@ -6227,7 +6244,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 else
                 {
                     auto varInfo = LLVM::DILocalVariableAttr::get(
-                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType, LLVM::DIFlags::Zero);
                     op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
                 }
             }
@@ -6358,7 +6375,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LowerToLLVMOptions options(&getContext(), dl);
     if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits == 32)
     {
-        options.dataLayout.reset("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
+        options.dataLayout = llvm::DataLayout("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
 
         m->setAttr(
             mlir::LLVM::LLVMDialect::getDataLayoutAttrName(), 
@@ -6382,6 +6399,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
     index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+    cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
     populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 

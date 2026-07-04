@@ -12,6 +12,8 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
 
+#include "llvm/IR/LLVMContext.h"
+
 #define DEBUG_TYPE "llvm"
 
 using namespace mlir;

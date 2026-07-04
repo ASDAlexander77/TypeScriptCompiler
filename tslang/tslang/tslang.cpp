@@ -11,6 +11,17 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Debug/Counter.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#ifdef ENABLE_ASYNC
+#include "mlir/Dialect/Async/IR/Async.h"
+#endif
+
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
@@ -269,11 +280,9 @@ int main(int argc, char **argv)
     llvm::initializeVectorization(*Registry);
     llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
     llvm::initializeExpandReductionsPass(*Registry);
-    llvm::initializeExpandVectorPredicationPass(*Registry);
     llvm::initializeHardwareLoopsLegacyPass(*Registry);
     llvm::initializeTransformUtils(*Registry);
     llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
-    llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);
 
     // Initialize debugging passes.
     llvm::initializeScavengerTestPass(*Registry);
@@ -281,7 +290,7 @@ int main(int argc, char **argv)
     // End - Register for Obj/ASM
 
     cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &TypeScriptCompilerBuildCategory, &ObjOrAssemblyCategory});
-    HideUnrelatedOptionsButVisibleForHidden(SubCommand::getTopLevel());
+    HideUnrelatedOptionsButVisibleForHidden(cl::SubCommand::getTopLevel());
 
     // Register the Target and CPU printer for --version.
     cl::AddExtraVersionPrinter(llvm::sys::printDefaultTargetAndDetectedCPU);

@@ -182,7 +182,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     const llvm::Target *TheTarget = nullptr;
     
     // If we are supposed to override the target triple, do so now.
-    std::string llvmModuleTargetTriple = llvmModule->getTargetTriple();
+    std::string llvmModuleTargetTriple = llvmModule->getTargetTriple().str();
     if (!TargetTriple.empty())
     {
         llvmModuleTargetTriple = llvm::Triple::normalize(TargetTriple);
@@ -234,7 +234,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
 
     InitializeOptions(TheTriple);
     Target = std::unique_ptr<llvm::TargetMachine>(TheTarget->createTargetMachine(
-          TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM, CM, OLvl));
+          TheTriple, CPUStr, FeaturesStr, Options, RM, CM, OLvl));
     assert(Target && "Could not allocate target machine!");
 
     assert(llvmModule && "Should have exited if we didn't have a module!");
@@ -246,7 +246,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
 
     // setting values to module
     llvmModule->setDataLayout(Target->createDataLayout());
-    llvmModule->setTargetTriple(TheTriple.getTriple());
+    llvmModule->setTargetTriple(TheTriple);
 
     // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
     llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule);
@@ -351,17 +351,16 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
             OS = BOS.get();
         }
 
-        auto &LLVMTM = static_cast<llvm::LLVMTargetMachine &>(*Target);
-        auto *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
+        auto *MMIWP = new llvm::MachineModuleInfoWrapperPass(Target.get());
 
         if (Target->addPassesToEmitFile(
                         PM, *OS, DwoOut ? &DwoOut->os() : nullptr,
-                        fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP)) 
+                        fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "target does not support generation of this file type\n";
         }
 
-        const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *Target);
+        const_cast<llvm::TargetLoweringObjectFile *>(Target->getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *Target);
 
         // Before executing passes, print the final values of the LLVM options.
         //llvm::cl::PrintOptionValues();

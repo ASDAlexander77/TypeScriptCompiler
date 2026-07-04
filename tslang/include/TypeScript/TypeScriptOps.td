@@ -14,7 +14,6 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
@@ -636,7 +635,9 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -663,7 +664,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -697,7 +698,9 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     types of the call must match the specified function type.
   }];
 
-  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -716,6 +719,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       {
           llvm_unreachable("not implemented");
       }
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "Value":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
     }]>];
 
   let extraClassDeclaration = [{
@@ -741,7 +748,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
 
   let hasCanonicalizer = 1;
 
-  
+
 }
 
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
@@ -793,7 +800,9 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
   let description = [{
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
@@ -812,11 +821,15 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
       CArg<"ValueRange", "{}">:$callOperands), [{
       build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), results,
             callOperands);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "FlatSymbolRefAttr":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
     }]>];
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -841,9 +854,11 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   let description = [{
   }];
 
-  let arguments = (ins Variadic<AnyType>:$callOperands);
+  let arguments = (ins Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
-  
+
   let builders = [
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
@@ -853,7 +868,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -861,7 +876,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     MutableOperandRange getArgOperandsMutable() {
       return getCallOperandsMutable();
     }
-    
+
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
 
@@ -870,7 +885,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
-    }    
+    }
   }];
 }
 
@@ -888,12 +903,20 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands);
+  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands,
+                   OptionalAttr<DictArrayAttr>:$arg_attrs,
+                   OptionalAttr<DictArrayAttr>:$res_attrs);
   let results = (outs Variadic<AnyType>:$results);
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$results, "Value":$callee,
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, results, callee, callOperands, /*arg_attrs=*/nullptr, /*res_attrs=*/nullptr);
+    }]>];
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
-    operand_range getArgOperands() 
+    operand_range getArgOperands()
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
@@ -910,7 +933,7 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
 
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
-    }    
+    }
   }];
 }
 
@@ -1669,7 +1692,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
 
   let builders = [
     OpBuilder<(ins),
-    [{ build($_builder, $_state, std::nullopt); }]>];
+    [{ build($_builder, $_state, {}); }]>];
 
   
 }
@@ -2252,7 +2275,7 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
 
@@ -2262,7 +2285,7 @@ def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypes
   }];
 }
 
-def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
 
@@ -2272,7 +2295,7 @@ def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllT
   }];
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 
@@ -2282,7 +2305,7 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllT
   }];
 }
 
-def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 

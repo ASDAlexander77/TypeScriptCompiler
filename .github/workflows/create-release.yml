@@ -9,11 +9,10 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v9
-  LLVM_VERSION: 19
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/map5fet7x19bm8ztsr4ma/llvm_19_1_3_release_vs2026.zip?rlkey=iwae4mz45lf7nycawa7d61g3r&st=4ee1dfug&dl=1"
-  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/l9xrfupdbwqbnckr5g36p/llvm_19_1_3_release.tgz?rlkey=xubw01vl6ey3xszbph32xqfip&st=okz2ghqx&dl=1"
-  LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/jfs77u2moymjo57ca4r0s/llvm_19_1_3_release_UB20.tgz?rlkey=tia0bdfa07gaeidepumb1e1fy&st=np5mcrox&dl=1"
+  CACHE_VERSION: v10
+  LLVM_VERSION: 22
+  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/q6o011dlgw7n2ebzo176q/llvm_22_1_8_release_vs2026.zip?rlkey=s2h7c64nrmyz9bire0zr3ctzh&st=3nqb99qb&dl=1"
+  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/ym6xvv8ib6yyewgf47ene/llvm_22_1_8_release.tgz?rlkey=jwkrrp82lql46qd1oysg9p736&st=p828hd39&dl=1"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
 

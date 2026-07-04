@@ -66,12 +66,12 @@ class TypeHelper
 
     mlir::Type getF32Type()
     {
-        return FloatType::getF32(context);
+        return Float32Type::get(context);
     }
 
     mlir::Type getF64Type()
     {
-        return FloatType::getF64(context);
+        return Float64Type::get(context);
     }
 
     mlir::Type getIndexType()

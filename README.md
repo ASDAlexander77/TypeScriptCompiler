@@ -29,6 +29,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 
 ## What's new
 
+- Migrared to **LLVM 22.1.8**
 - Migrated to **Visual Studio 2026** (Windows build chain)
 - JavaScript Built-in objects library [[Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/)]
 
@@ -115,7 +116,7 @@ tslang --di --opt_level=0 --emit=exe example.ts
 
 ## Roadmap
 
-- [x] Migrating to LLVM 19.1.3
+- [x] Migrating to LLVM 22.1.8
 - [x] Shared libraries
 - [x] JavaScript Built-in classes library
 

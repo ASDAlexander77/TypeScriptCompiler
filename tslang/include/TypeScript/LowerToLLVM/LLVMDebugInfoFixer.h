@@ -80,6 +80,9 @@ public:
             }
 
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
+
+            SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+            SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it            
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 context, 
                 DistinctAttr::create(mlir::UnitAttr::get(context)),
@@ -91,7 +94,9 @@ public:
                 line, 
                 line, 
                 LLVM::DISubprogramFlags::Pure, 
-                subroutineTypeAttr);
+                subroutineTypeAttr,
+                retainedNodes, 
+                annotations);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");        
 
@@ -155,6 +160,8 @@ public:
             }
 
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
+            SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+            SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it                 
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 context, 
                 DistinctAttr::create(mlir::UnitAttr::get(context)),
@@ -166,7 +173,9 @@ public:
                 oldMetadata.getLine(), 
                 oldMetadata.getScopeLine(), 
                 oldMetadata.getSubprogramFlags(), 
-                subroutineTypeAttr);
+                subroutineTypeAttr,
+                retainedNodes, 
+                annotations);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
@@ -272,7 +281,8 @@ private:
                 localVarScope.getLine(), 
                 localVarScope.getArg(), 
                 localVarScope.getAlignInBits(), 
-                localVarScope.getType());
+                localVarScope.getType(),
+                localVarScope.getFlags());
             return newLocalVar;
         }
 
@@ -281,6 +291,8 @@ private:
 
     mlir::LLVM::DISubprogramAttr recreateSubprogramForNewScope(mlir::LLVM::DISubprogramAttr subprogScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
         if (subprogScope.getScope() == oldScope) {
+            SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+            SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it               
             auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 subprogScope.getContext(), 
                 DistinctAttr::create(mlir::UnitAttr::get(subprogScope.getContext())),
@@ -292,7 +304,9 @@ private:
                 subprogScope.getLine(), 
                 subprogScope.getScopeLine(), 
                 subprogScope.getSubprogramFlags(), 
-                subprogScope.getType());
+                subprogScope.getType(),
+                retainedNodes, 
+                annotations);
 
             // we need to fix nested scope again
             fixNestedOpScope(newSubprogramAttr, subprogScope);
