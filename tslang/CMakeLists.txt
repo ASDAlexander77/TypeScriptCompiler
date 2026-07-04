@@ -151,7 +151,14 @@ include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
-add_definitions(${LLVM_DEFINITIONS})
+# LLVM_DEFINITIONS is a single space-separated string (e.g.
+# "-D_GNU_SOURCE -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS ...").
+# Passing it to add_definitions() unsplit makes a single bogus definition where
+# _GLIBCXX_USE_CXX11_ABI gets the value "1 -D__STDC_...", which then conflicts
+# with the clean _GLIBCXX_USE_CXX11_ABI=1 emitted by HandleLLVMOptions and
+# triggers a "redefined" error. Tokenize it into a proper list first.
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+add_definitions(${LLVM_DEFINITIONS_LIST})
 add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 
 # enabling testing
