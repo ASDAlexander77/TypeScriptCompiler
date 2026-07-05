@@ -349,18 +349,18 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // bound to (ucrtbase buffers its streams separately from our static CRT).
     fflush(stdout);
     fflush(stderr);
-#ifdef _WIN32
-    for (auto crtName : {"ucrtbase.dll", "ucrtbased.dll"})
-    {
-        if (HMODULE crt = GetModuleHandleA(crtName))
-        {
-            if (auto crtFflush = (int(__cdecl *)(FILE *))GetProcAddress(crt, "fflush"))
-            {
-                crtFflush(nullptr); // fflush(NULL) flushes all of that CRT's output streams
-            }
-        }
-    }
-    TerminateProcess(GetCurrentProcess(), 0);
-#endif
+// #ifdef _WIN32
+//     for (auto crtName : {"ucrtbase.dll", "ucrtbased.dll"})
+//     {
+//         if (HMODULE crt = GetModuleHandleA(crtName))
+//         {
+//             if (auto crtFflush = (int(__cdecl *)(FILE *))GetProcAddress(crt, "fflush"))
+//             {
+//                 crtFflush(nullptr); // fflush(NULL) flushes all of that CRT's output streams
+//             }
+//         }
+//     }
+//     TerminateProcess(GetCurrentProcess(), 0);
+// #endif
     return 0;
 }
