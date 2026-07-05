@@ -89,17 +89,17 @@ auto sharedLibCompileTime = false;
 auto gctorsAsMethod = false;
 #ifndef COMPILE_DEBUG
 auto opt = true;
-auto tslang_opt = "--opt --opt_level=3";
+auto tslang_opt = "--opt --opt_level=3 --no-default-lib";
 #define JIT_NAME "jit"
 #define COMPILE_NAME "compile"
 #else
 auto opt = false;
-auto tslang_opt = "--di --opt_level=0";
+auto tslang_opt = "--di --opt_level=0 --no-default-lib";
 #define JIT_NAME "jitd"
 #define COMPILE_NAME "compiled"
 #endif
 
-auto tslang_opt_ext = "";
+auto tslang_opt_ext = std::string("");
 
 void createJitBatchFile()
 {
@@ -334,7 +334,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 {
     if (gctorsAsMethod)
     {
-        tslang_opt_ext = "--gctors-as-method";
+        tslang_opt_ext += " --gctors-as-method";
     }
 
 #ifdef WIN32
@@ -409,7 +409,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 {
     if (gctorsAsMethod)
     {
-        tslang_opt_ext = "--gctors-as-method";
+        tslang_opt_ext += "--gctors-as-method";
     }
 
     auto linker_opt = SHARED_LIB_OPT;
