@@ -2,9 +2,17 @@
 
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Target/LLVMIR/Export.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
+#include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
+#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Path.h"
@@ -96,62 +104,168 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
     return 0;
 }
 
-// JIT'd globals live in RTDyld-allocated RW data sections (plain VirtualAlloc/mmap
-// memory), which the Boehm GC does not scan: for AOT binaries the loader-mapped
-// data segment is registered as a root set automatically, but in the JIT an object
-// reachable only from a global (e.g. a static class member) is collected on the
-// first GC cycle and its memory recycled, corrupting later accesses. Register every
-// RW data section with the GC as a root range. GC_add_roots/GC_remove_roots are
-// resolved dynamically from the already-loaded TypeScriptRuntime library, so this
-// stays inert when the GC is disabled or not present.
-class GCRootsSectionMemoryMapper : public llvm::SectionMemoryManager::MemoryMapper
+#ifdef _WIN64
+// Image base of the JIT'd module (tslang JITs a single module per run), needed by
+// the _CxxThrowException shim below. Filled in by JitSectionMemoryManager.
+static uint64_t jitImageBase = 0;
+#endif
+
+// A SectionMemoryManager that makes JIT'd code behave like AOT'd code:
+//
+// 1. GC roots. JIT'd globals live in RTDyld-allocated data sections (plain
+//    VirtualAlloc/mmap memory), which the Boehm GC does not scan: for AOT binaries
+//    the loader-mapped data segment is registered as a root set automatically, but
+//    in the JIT an object reachable only from a global (e.g. a static class member)
+//    is collected on the first GC cycle and its memory recycled. Register every RW
+//    data section via GC_add_roots, resolved dynamically from the already-loaded
+//    TypeScriptRuntime library so this stays inert under --nogc.
+//
+// 2. Win64 unwind info. LLVM's RTDyld never registers .pdata with the OS
+//    (RTDyldMemoryManager::registerEHFramesInProcess only speaks the Itanium
+//    __register_frame protocol), so a C++ exception thrown from JIT'd code aborts:
+//    RtlUnwindEx finds no RUNTIME_FUNCTION for JIT PCs and never reaches the catch
+//    funclet. Register every .pdata section RTDyld hands us with
+//    RtlAddFunctionTable, using the same "image base" RTDyld resolves
+//    IMAGE_REL_AMD64_ADDR32NB relocations against: the lowest section load address
+//    (see RuntimeDyldCOFFX86_64::getImageBase).
+//
+// 3. Executable read-only data (Win64). For external ADDR32NB targets — e.g. the
+//    __CxxFrameHandler3 personality referenced from .xdata — RTDyld materializes a
+//    jump thunk in the *referencing* section's stub area, and the OS exception
+//    dispatcher calls through it. Read-only sections therefore must be mapped
+//    executable; route them through the code allocator.
+class JitSectionMemoryManager : public llvm::SectionMemoryManager
 {
-    // AllocationPurpose lives in the enclosing SectionMemoryManager, not in the
-    // MemoryMapper base class, so it is not found by unqualified lookup here
-    using AllocationPurpose = llvm::SectionMemoryManager::AllocationPurpose;
     using GCRootsFn = void (*)(void *, void *);
 
   public:
-    llvm::sys::MemoryBlock allocateMappedMemory(AllocationPurpose purpose, size_t numBytes,
-                                                const llvm::sys::MemoryBlock *const nearBlock, unsigned flags,
-                                                std::error_code &errCode) override
+    uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment, unsigned sectionID,
+                                 llvm::StringRef sectionName) override
     {
-        auto block = llvm::sys::Memory::allocateMappedMemory(numBytes, nearBlock, flags, errCode);
-        if (purpose == AllocationPurpose::RWData && block.base() != nullptr)
+        auto *addr = llvm::SectionMemoryManager::allocateCodeSection(size, alignment, sectionID, sectionName);
+        noteSectionAddress(addr);
+        return addr;
+    }
+
+    uint8_t *allocateDataSection(uintptr_t size, unsigned alignment, unsigned sectionID,
+                                 llvm::StringRef sectionName, bool isReadOnly) override
+    {
+#ifdef _WIN64
+        if (isReadOnly)
+        {
+            // see (3): unwind personality thunks live in read-only sections
+            return allocateCodeSection(size, alignment, sectionID, sectionName);
+        }
+#endif
+
+        auto *addr = llvm::SectionMemoryManager::allocateDataSection(size, alignment, sectionID, sectionName, isReadOnly);
+        noteSectionAddress(addr);
+        if (!isReadOnly && addr != nullptr)
         {
             if (auto addRoots = reinterpret_cast<GCRootsFn>(
                     llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_add_roots")))
             {
-                addRoots(block.base(), static_cast<char *>(block.base()) + block.allocatedSize());
-                gcRootBlocks.push_back(block.base());
+                addRoots(addr, addr + size);
+                gcRootSections.push_back({addr, size});
             }
         }
 
-        return block;
+        return addr;
     }
 
-    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock &block, unsigned flags) override
+#ifdef _WIN64
+    void registerEHFrames(uint8_t *addr, uint64_t loadAddr, size_t size) override
     {
-        return llvm::sys::Memory::protectMappedMemory(block, flags);
-    }
-
-    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block) override
-    {
-        if (llvm::is_contained(gcRootBlocks, block.base()))
+        auto entryCount = size / sizeof(RUNTIME_FUNCTION);
+        if (entryCount == 0 || imageBase == 0)
         {
-            if (auto removeRoots = reinterpret_cast<GCRootsFn>(
-                    llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_remove_roots")))
-            {
-                removeRoots(block.base(), static_cast<char *>(block.base()) + block.allocatedSize());
-            }
+            return;
         }
 
-        return llvm::sys::Memory::releaseMappedMemory(block);
+        if (RtlAddFunctionTable(reinterpret_cast<PRUNTIME_FUNCTION>(addr), static_cast<DWORD>(entryCount), imageBase))
+        {
+            functionTables.push_back(reinterpret_cast<PRUNTIME_FUNCTION>(addr));
+        }
+    }
+
+    void deregisterEHFrames() override
+    {
+        for (auto *table : functionTables)
+        {
+            RtlDeleteFunctionTable(table);
+        }
+
+        functionTables.clear();
+    }
+#endif
+
+    ~JitSectionMemoryManager() override
+    {
+        if (auto removeRoots = reinterpret_cast<GCRootsFn>(
+                llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_remove_roots")))
+        {
+            for (auto &section : gcRootSections)
+            {
+                removeRoots(section.first, section.first + section.second);
+            }
+        }
     }
 
   private:
-    mlir::SmallVector<void *> gcRootBlocks;
+    void noteSectionAddress(uint8_t *addr)
+    {
+        if (addr == nullptr)
+        {
+            return;
+        }
+
+        if (imageBase == 0 || reinterpret_cast<uint64_t>(addr) < imageBase)
+        {
+            imageBase = reinterpret_cast<uint64_t>(addr);
+#ifdef _WIN64
+            jitImageBase = imageBase;
+#endif
+        }
+    }
+
+    uint64_t imageBase = 0;
+    mlir::SmallVector<std::pair<uint8_t *, uintptr_t>> gcRootSections;
+#ifdef _WIN64
+    mlir::SmallVector<PRUNTIME_FUNCTION> functionTables;
+#endif
 };
+
+#ifdef _WIN64
+// MSVC x64 C++ EH encodes throw-site type information as image-relative offsets.
+// vcruntime's _CxxThrowException recovers the base with RtlPcToFileHeader on the
+// ThrowInfo pointer, which fails for JIT'd memory (it is not a loader-mapped
+// image), so __CxxFrameHandler3 would resolve the throw-side RVAs against a null
+// base and never match a catch clause. Raise the exception ourselves, substituting
+// the image base RTDyld resolved those RVAs against.
+static void jitCxxThrowException(void *exceptionObject, void *throwInfo)
+{
+    constexpr DWORD cxxExceptionCode = 0xE06D7363;   // 'msc' | 0xE0000000
+    constexpr ULONG_PTR cxxMagicNumber = 0x19930520; // EH_MAGIC_NUMBER1
+
+    // ThrowInfo from an AOT module (e.g. a runtime DLL) still resolves normally
+    void *moduleBase = nullptr;
+    if (throwInfo != nullptr)
+    {
+        RtlPcToFileHeader(throwInfo, &moduleBase);
+    }
+
+    ULONG_PTR args[] = {cxxMagicNumber, reinterpret_cast<ULONG_PTR>(exceptionObject),
+                        reinterpret_cast<ULONG_PTR>(throwInfo),
+                        moduleBase != nullptr ? reinterpret_cast<ULONG_PTR>(moduleBase)
+                                              : static_cast<ULONG_PTR>(jitImageBase)};
+    RaiseException(cxxExceptionCode, EXCEPTION_NONCONTINUABLE, 4, args);
+}
+
+// from the statically linked vcruntime; bound into the JIT'd module as its
+// exception personality so throw and catch sides use the same CRT
+extern "C" EXCEPTION_DISPOSITION __CxxFrameHandler3(struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *,
+                                                    struct _DISPATCHER_CONTEXT *);
+#endif
 
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
@@ -240,25 +354,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         }
     }
 
-    // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
-    // the module.
-    mlir::SmallVector<mlir::StringRef> sharedLibPaths;
-    sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
-
-    // must outlive the engine: sections are released from the engine's destructor
-    GCRootsSectionMemoryMapper gcRootsMemoryMapper;
-
-    mlir::ExecutionEngineOptions engineOptions;
-    engineOptions.sectionMemoryMapper = &gcRootsMemoryMapper;
-    engineOptions.transformer = optPipeline;
-    engineOptions.enableObjectDump = dumpObjectFile;
-    engineOptions.enableGDBNotificationListener = !enableOpt;
-    engineOptions.sharedLibPaths = sharedLibPaths;
-    if (enableOpt.getValue())
-    {
-        engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
-    }
-
 #ifdef _WIN32
     // tslang.exe links the CRT statically (/MT[d]), so its libc symbols are not in
     // any DLL export table. The JIT's process-symbol resolver would otherwise bind
@@ -284,19 +379,40 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addSym("calloc", (void*)&calloc);
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
+#ifdef _WIN64
+        // C++ EH: bind the JIT'd module's personality to our static CRT and route
+        // throws through the shim that fixes up the throw-site image base (see
+        // jitCxxThrowException above).
+        addSym("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
+        addSym("_CxxThrowException", (void *)&jitCxxThrowException);
+#endif
     }
 #endif
 
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    if (!maybeEngine)
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
-        return -1;
-    }
-    auto &engine = maybeEngine.get();
-
     if (dumpObjectFile)
     {
+        // Compile-and-dump only, no execution: the stock MLIR engine is enough.
+        mlir::SmallVector<mlir::StringRef> sharedLibPaths;
+        sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
+
+        mlir::ExecutionEngineOptions engineOptions;
+        engineOptions.transformer = optPipeline;
+        engineOptions.enableObjectDump = true;
+        engineOptions.enableGDBNotificationListener = !enableOpt;
+        engineOptions.sharedLibPaths = sharedLibPaths;
+        if (enableOpt.getValue())
+        {
+            engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
+        }
+
+        auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+        if (!maybeEngine)
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+            return -1;
+        }
+        auto &engine = maybeEngine.get();
+
         auto expectedFPtr = engine->lookup(mainFuncName);
         if (!expectedFPtr)
         {
@@ -310,30 +426,184 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         {
             targetTriple = llvm::Triple::normalize(TargetTriple);
         }
-        
+
         TheTriple = llvm::Triple(targetTriple);
 
         engine->dumpToObjectFile(
-            objectFilename.empty() 
-                ? inputFilename + ((TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o") 
+            objectFilename.empty()
+                ? inputFilename + ((TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o")
                 : objectFilename);
 
         return 0;
     }
 
-    if (module.lookupSymbol(MLIR_GCTORS))
+    // Run path: build our own LLJIT instead of mlir::ExecutionEngine — the stock
+    // engine hard-codes a plain SectionMemoryManager, which neither registers GC
+    // roots for JIT'd globals nor Win64 unwind info (see JitSectionMemoryManager).
+
+    // Load the shared libraries into the process; the JIT resolves external
+    // symbols from their export tables via the current-process generator below.
+    for (auto &libPathStr : clSharedLibs)
     {
-        if (auto gctorsResult = engine->invokePacked(MLIR_GCTORS))
+        std::string errMsg;
+        llvm::sys::DynamicLibrary::getPermanentLibrary(libPathStr.c_str(), &errMsg);
+        if (!errMsg.empty())
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "Loading error lib: " << libPathStr << " error: " << errMsg << "\n";
             return -1;
         }
     }
 
-    // Invoke the JIT-compiled function.
-    if (auto invocationResult = engine->invokePacked(mainFuncName))
+    auto llvmContext = std::make_unique<llvm::LLVMContext>();
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
+    if (!llvmModule)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << invocationResult << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
+        return -1;
+    }
+
+    auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
+    if (!tmBuilderOrError)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << tmBuilderOrError.takeError() << "\n";
+        return -1;
+    }
+
+    if (enableOpt.getValue())
+    {
+        tmBuilderOrError->setCodeGenOptLevel((llvm::CodeGenOptLevel) optLevel.getValue());
+    }
+
+    auto tmOrError = tmBuilderOrError->createTargetMachine();
+    if (!tmOrError)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << tmOrError.takeError() << "\n";
+        return -1;
+    }
+
+    llvmModule->setDataLayout((*tmOrError)->createDataLayout());
+    llvmModule->setTargetTriple((*tmOrError)->getTargetTriple());
+
+    if (auto err = optPipeline(llvmModule.get()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << std::move(err) << "\n";
+        return -1;
+    }
+
+    auto maybeJit =
+        llvm::orc::LLJITBuilder()
+            .setJITTargetMachineBuilder(std::move(*tmBuilderOrError))
+            .setDataLayout(llvmModule->getDataLayout())
+            .setObjectLinkingLayerCreator(
+                [targetTriple = llvmModule->getTargetTriple()](llvm::orc::ExecutionSession &session)
+                    -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+                    auto objectLayer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
+                        session, [](const llvm::MemoryBuffer &) { return std::make_unique<JitSectionMemoryManager>(); });
+
+                    if (!enableOpt.getValue())
+                    {
+                        if (auto *gdbListener = llvm::JITEventListener::createGDBRegistrationListener())
+                        {
+                            objectLayer->registerJITEventListener(*gdbListener);
+                        }
+                    }
+
+                    // COFF format binaries (Windows) need special handling to deal
+                    // with exported symbol visibility (cf mlir::ExecutionEngine)
+                    if (targetTriple.isOSBinFormatCOFF())
+                    {
+                        objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+                        objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+                    }
+
+                    return objectLayer;
+                })
+            .create();
+    if (!maybeJit)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << maybeJit.takeError() << "\n";
+        return -1;
+    }
+
+    auto &jit = maybeJit.get();
+
+    // Resolve symbols from the current process, including the loaded shared
+    // libraries and the AddSymbol overrides above.
+    auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(jit->getDataLayout().getGlobalPrefix());
+    if (!generator)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << generator.takeError() << "\n";
+        return -1;
+    }
+
+    jit->getMainJITDylib().addGenerator(std::move(*generator));
+
+#ifdef _WIN32
+    // Bind CRT entry points to tslang.exe's static CRT (/MT[d]) explicitly: the
+    // process generator above resolves from DLL export tables only, so without
+    // these definitions the JIT'd code would bind to ucrtbase.dll — a different
+    // CRT instance with its own stdout buffers and heap. JITDylib definitions
+    // take precedence over generators, making the binding deterministic.
+    {
+        llvm::orc::MangleAndInterner interner(jit->getExecutionSession(), jit->getDataLayout());
+        llvm::orc::SymbolMap crtOverrides;
+        auto addOverride = [&](const char *name, void *addr) {
+            crtOverrides[interner(name)] = {llvm::orc::ExecutorAddr::fromPtr(addr), llvm::JITSymbolFlags::Exported};
+        };
+        addOverride("puts", (void *)&puts);
+        addOverride("printf", (void *)&printf);
+        addOverride("malloc", (void *)&malloc);
+        addOverride("free", (void *)&free);
+        addOverride("realloc", (void *)&realloc);
+        addOverride("calloc", (void *)&calloc);
+        addOverride("memset", (void *)&memset);
+        addOverride("memcpy", (void *)&memcpy);
+#ifdef _WIN64
+        // C++ EH: same-CRT personality, and throws routed through the shim that
+        // fixes up the throw-site image base (see jitCxxThrowException above)
+        addOverride("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
+        addOverride("_CxxThrowException", (void *)&jitCxxThrowException);
+#endif
+        if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(crtOverrides))))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << std::move(err) << "\n";
+            return -1;
+        }
+    }
+#endif
+
+    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(llvmContext))))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << std::move(err) << "\n";
+        return -1;
+    }
+
+    // run platform initializers (llvm.global_ctors etc.)
+    if (auto err = jit->initialize(jit->getMainJITDylib()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << std::move(err) << "\n";
+        return -1;
+    }
+
+    auto invoke = [&](llvm::StringRef name) {
+        auto sym = jit->lookup(name);
+        if (!sym)
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << sym.takeError() << "\n";
+            return -1;
+        }
+
+        sym->toPtr<void (*)()>()();
+        return 0;
+    };
+
+    if (module.lookupSymbol(MLIR_GCTORS) && invoke(MLIR_GCTORS) != 0)
+    {
+        return -1;
+    }
+
+    if (invoke(mainFuncName.getValue()) != 0)
+    {
         return -1;
     }
 

@@ -628,7 +628,6 @@ add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_D
 # TODO: async generator / for-await-of hangs at runtime under JIT
 # error: EXEC : LLVM error : Coroutines cannot handle non static allocas yet
 add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
-if (NOT(WIN32))
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-jit-00-try-catch-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
@@ -638,7 +637,6 @@ add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT
 add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 add_test(NAME test-jit-00-try-catch-return-dispose COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return_dispose.ts")
 add_test(NAME test-jit-01-try-catch-return-dispose COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
-endif()
 add_test(NAME test-jit-00-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 add_test(NAME test-jit-00-property-access-conditional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00property_access_cond.ts")
 add_test(NAME test-jit-00-method-access-conditional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00method_access_cond.ts")
@@ -727,9 +725,7 @@ add_test(NAME test-jit-43-nestednamespace COMMAND test-runner -jit "${PROJECT_SO
 add_test(NAME test-jit-44-toplevelcode COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-jit-45-enumtostring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
 add_test(NAME test-jit-48-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
-if (NOT(WIN32))
 add_test(NAME test-jit-51-exceptions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/51exceptions.ts")
-endif()
 add_test(NAME test-jit-241-arrayforeach COMMAND test-runner  -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/241arrayforeach.ts")
 add_test(NAME test-jit-243-arrayevery COMMAND test-runner  -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/243arrayevery.ts")
 add_test(NAME test-jit-244-arraysome COMMAND test-runner  -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/244arraysome.ts")
