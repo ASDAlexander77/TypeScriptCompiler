@@ -361,6 +361,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             }
         }
     }
+    
     TerminateProcess(GetCurrentProcess(), 0);
     #endif    
 #endif
