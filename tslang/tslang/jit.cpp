@@ -138,36 +138,35 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
     if (!disableGC.getValue())
     {
-        auto absPath = makeAbsolutePath(pathTypeScriptLib);
-        if (absPath.empty())
-        {            
-            pathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
-            auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
-            if (absPath2.empty())
-            {
-                // default lib path
-                auto absPath3 = mergeWithDefaultLibPath(getTslangLibPath(), pathTypeScriptLib);
-                if (absPath3.empty())
+        auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
+        if (absPath3.empty())
+        {
+            auto absPath = makeAbsolutePath(pathTypeScriptLib);
+            if (absPath.empty())
+            {            
+                pathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
+                auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
+                if (absPath2.empty())
                 {
                     /*
                     llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
                                     "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
                     return -1;            
                     */
-                }     
+                }        
                 else
                 {
-                    clSharedLibs.push_back(absPath3);
+                    clSharedLibs.push_back(absPath2);
                 }
-            }        
+            }
             else
             {
-                clSharedLibs.push_back(absPath2);
+                clSharedLibs.push_back(absPath);
             }
-        }
+        }     
         else
         {
-            clSharedLibs.push_back(absPath);
+            clSharedLibs.push_back(absPath3);
         }
     }
 
