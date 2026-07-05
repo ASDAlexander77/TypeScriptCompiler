@@ -623,14 +623,11 @@ add_test(NAME test-jit-00-safe-cast-field-access COMMAND test-runner -jit "${PRO
 add_test(NAME test-jit-00-safe-cast-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_bug.ts")
 add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
-if (NOT(WIN32))
-# TODO: crash
-#add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
-# TODO: crash
-#add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
-# TODO: in opt mode, error
-#add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
-endif()
+add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
+add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
+# TODO: async generator / for-await-of hangs at runtime under JIT
+# error: EXEC : LLVM error : Coroutines cannot handle non static allocas yet
+add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 if (NOT(WIN32))
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
@@ -739,7 +736,7 @@ add_test(NAME test-jit-244-arraysome COMMAND test-runner  -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 add_test(NAME test-jit-StackTest COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00stack_test.ts")
 # TODO: find out why it is crashing
-#add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
+add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
 add_test(NAME test-jit-Path COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-jit-Print-Bug-01 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
 add_test(NAME test-jit-arrayLiterals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayLiterals.ts")

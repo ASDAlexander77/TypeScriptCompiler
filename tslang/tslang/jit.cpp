@@ -3,7 +3,11 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/Memory.h"
+#include "llvm/Support/Path.h"
 
 #include <cstdio>
 #ifdef _WIN32
@@ -92,6 +96,63 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
     return 0;
 }
 
+// JIT'd globals live in RTDyld-allocated RW data sections (plain VirtualAlloc/mmap
+// memory), which the Boehm GC does not scan: for AOT binaries the loader-mapped
+// data segment is registered as a root set automatically, but in the JIT an object
+// reachable only from a global (e.g. a static class member) is collected on the
+// first GC cycle and its memory recycled, corrupting later accesses. Register every
+// RW data section with the GC as a root range. GC_add_roots/GC_remove_roots are
+// resolved dynamically from the already-loaded TypeScriptRuntime library, so this
+// stays inert when the GC is disabled or not present.
+class GCRootsSectionMemoryMapper : public llvm::SectionMemoryManager::MemoryMapper
+{
+    // AllocationPurpose lives in the enclosing SectionMemoryManager, not in the
+    // MemoryMapper base class, so it is not found by unqualified lookup here
+    using AllocationPurpose = llvm::SectionMemoryManager::AllocationPurpose;
+    using GCRootsFn = void (*)(void *, void *);
+
+  public:
+    llvm::sys::MemoryBlock allocateMappedMemory(AllocationPurpose purpose, size_t numBytes,
+                                                const llvm::sys::MemoryBlock *const nearBlock, unsigned flags,
+                                                std::error_code &errCode) override
+    {
+        auto block = llvm::sys::Memory::allocateMappedMemory(numBytes, nearBlock, flags, errCode);
+        if (purpose == AllocationPurpose::RWData && block.base() != nullptr)
+        {
+            if (auto addRoots = reinterpret_cast<GCRootsFn>(
+                    llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_add_roots")))
+            {
+                addRoots(block.base(), static_cast<char *>(block.base()) + block.allocatedSize());
+                gcRootBlocks.push_back(block.base());
+            }
+        }
+
+        return block;
+    }
+
+    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock &block, unsigned flags) override
+    {
+        return llvm::sys::Memory::protectMappedMemory(block, flags);
+    }
+
+    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block) override
+    {
+        if (llvm::is_contained(gcRootBlocks, block.base()))
+        {
+            if (auto removeRoots = reinterpret_cast<GCRootsFn>(
+                    llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_remove_roots")))
+            {
+                removeRoots(block.base(), static_cast<char *>(block.base()) + block.allocatedSize());
+            }
+        }
+
+        return llvm::sys::Memory::releaseMappedMemory(block);
+    }
+
+  private:
+    mlir::SmallVector<void *> gcRootBlocks;
+};
+
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     // to avoid false positive memory leak reports in release builds
@@ -135,8 +196,17 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
+    // Only locate a GC runtime when the user has not already supplied one via
+    // --shared-libs: loading a second TypeScriptRuntime copy from a different path
+    // (e.g. TSLANG_LIB_PATH) creates two independent GC instances, so roots
+    // registered in one are invisible to collections running in the other and
+    // GC-heap pointers cross between the two heaps.
+    auto hasTypeScriptRuntime = llvm::any_of(clSharedLibs, [](const std::string &libPath) {
+        return llvm::sys::path::stem(libPath).contains_insensitive("TypeScriptRuntime");
+    });
+
     std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
-    if (!disableGC.getValue())
+    if (!disableGC.getValue() && !hasTypeScriptRuntime)
     {
         auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
         if (absPath3.empty())
@@ -175,7 +245,11 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     mlir::SmallVector<mlir::StringRef> sharedLibPaths;
     sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
 
+    // must outlive the engine: sections are released from the engine's destructor
+    GCRootsSectionMemoryMapper gcRootsMemoryMapper;
+
     mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.sectionMemoryMapper = &gcRootsMemoryMapper;
     engineOptions.transformer = optPipeline;
     engineOptions.enableObjectDump = dumpObjectFile;
     engineOptions.enableGDBNotificationListener = !enableOpt;
@@ -264,13 +338,29 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
-    // registers process-level atexit glue that faults during teardown, so the
-    // normal CRT exit path crashes after a successful run. Flush stdio and exit
-    // the process directly, bypassing the CRT atexit handlers.
+    // registers process-level atexit glue that faults during teardown (exception
+    // 0x80000003), so the normal CRT exit path crashes after a successful run.
+    // ExitProcess is not safe either: it runs DLL_PROCESS_DETACH, and
+    // TypeScriptRuntime.dll's static AsyncRuntime destructor then waits on its
+    // thread pool whose worker threads ExitProcess has already terminated,
+    // deadlocking forever when async work is still pending. TerminateProcess
+    // skips all teardown, so nothing can crash or deadlock — but it also skips
+    // the detach-time stdio flush, so flush every CRT the JIT'd code may have
+    // bound to (ucrtbase buffers its streams separately from our static CRT).
     fflush(stdout);
     fflush(stderr);
 #ifdef _WIN32
-    ExitProcess(0);
+    for (auto crtName : {"ucrtbase.dll", "ucrtbased.dll"})
+    {
+        if (HMODULE crt = GetModuleHandleA(crtName))
+        {
+            if (auto crtFflush = (int(__cdecl *)(FILE *))GetProcAddress(crt, "fflush"))
+            {
+                crtFflush(nullptr); // fflush(NULL) flushes all of that CRT's output streams
+            }
+        }
+    }
+    TerminateProcess(GetCurrentProcess(), 0);
 #endif
     return 0;
 }

@@ -15,6 +15,8 @@ EXPORTS
     GC_realloc=_mlir__GC_realloc
     GC_free=_mlir__GC_free
     GC_get_heap_size=_mlir__GC_get_heap_size
+    GC_add_roots=_mlir__GC_add_roots
+    GC_remove_roots=_mlir__GC_remove_roots
     GC_malloc_explicitly_typed=_mlir__GC_malloc_explicitly_typed
     GC_make_descriptor=_mlir__GC_make_descriptor
 

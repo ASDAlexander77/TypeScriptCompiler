@@ -158,8 +158,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         auto i8PtrType = th.getPtrType();
         auto ptrType = th.getPtrType();
 
-        // Get a symbol reference to the printf function, inserting it if necessary.
-        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), ptrType, false));
+        // Get a symbol reference to the puts function, inserting it if necessary.
+        // Note: declared as returning void (not the libc i32) to match the signature MLIR's
+        // cf.assert-to-LLVM lowering expects when it reserves/looks up "puts" for its own use.
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(th.getVoidType(), ptrType, false));
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
@@ -518,6 +520,32 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
     }
 };
 
+// LLVM's CoroSplit cannot spill variable-size allocas into the coroutine frame
+// ("Coroutines cannot handle non static allocas yet"), so buffers inside a
+// not-yet-split coroutine (async_execute_fn marked by the MLIR async lowering)
+// must be heap-allocated instead.
+static bool isInsidePresplitCoroutine(mlir::Operation *op)
+{
+    for (auto *parent = op->getParentOp(); parent; parent = parent->getParentOp())
+    {
+        if (auto passthrough = parent->getAttrOfType<mlir::ArrayAttr>("passthrough"))
+        {
+            for (auto attr : passthrough)
+            {
+                if (auto strAttr = dyn_cast<mlir::StringAttr>(attr))
+                {
+                    if (strAttr.getValue() == "presplitcoroutine")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 {
   public:
@@ -552,7 +580,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
             size = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{size, size1.getResult()});
         }
 
-        auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value();
+        auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value()
+                            && !isInsidePresplitCoroutine(op);
 
         mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, size, true)
                                                   : ch.MemoryAlloc(size);
