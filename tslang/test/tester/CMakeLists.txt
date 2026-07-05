@@ -625,7 +625,8 @@ add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DI
 add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
-# TODO: async generator / for-await-of hangs at runtime under JIT (unrelated to the puts/cf.assert crash fixed above)
+# TODO: async generator / for-await-of hangs at runtime under JIT
+# error: EXEC : LLVM error : Coroutines cannot handle non static allocas yet
 add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 if (NOT(WIN32))
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
