@@ -264,13 +264,29 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
-    // registers process-level atexit glue that faults during teardown, so the
-    // normal CRT exit path crashes after a successful run. Flush stdio and exit
-    // the process directly, bypassing the CRT atexit handlers.
+    // registers process-level atexit glue that faults during teardown (exception
+    // 0x80000003), so the normal CRT exit path crashes after a successful run.
+    // ExitProcess is not safe either: it runs DLL_PROCESS_DETACH, and
+    // TypeScriptRuntime.dll's static AsyncRuntime destructor then waits on its
+    // thread pool whose worker threads ExitProcess has already terminated,
+    // deadlocking forever when async work is still pending. TerminateProcess
+    // skips all teardown, so nothing can crash or deadlock — but it also skips
+    // the detach-time stdio flush, so flush every CRT the JIT'd code may have
+    // bound to (ucrtbase buffers its streams separately from our static CRT).
     fflush(stdout);
     fflush(stderr);
 #ifdef _WIN32
-    ExitProcess(0);
+    for (auto crtName : {"ucrtbase.dll", "ucrtbased.dll"})
+    {
+        if (HMODULE crt = GetModuleHandleA(crtName))
+        {
+            if (auto crtFflush = (int(__cdecl *)(FILE *))GetProcAddress(crt, "fflush"))
+            {
+                crtFflush(nullptr); // fflush(NULL) flushes all of that CRT's output streams
+            }
+        }
+    }
+    TerminateProcess(GetCurrentProcess(), 0);
 #endif
     return 0;
 }
