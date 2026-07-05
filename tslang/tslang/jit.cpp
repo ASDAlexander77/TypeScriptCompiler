@@ -38,6 +38,7 @@ extern cl::opt<std::string> inputFilename;
 extern cl::opt<std::string> TargetTriple;
 
 std::string getDefaultLibPath();
+std::string getTslangLibPath();
 std::string mergeWithDefaultLibPath(std::string, std::string);
 std::string makeAbsolutePath(std::string);
 
@@ -144,11 +145,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
             if (absPath2.empty())
             {
-                /*
-                llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                                "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
-                return -1;            
-                */
+                // default lib path
+                auto absPath3 = mergeWithDefaultLibPath(getTslangLibPath(), pathTypeScriptLib);
+                if (absPath3.empty())
+                {
+                    /*
+                    llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                    return -1;            
+                    */
+                }     
+                else
+                {
+                    clSharedLibs.push_back(absPath3);
+                }
             }        
             else
             {
