@@ -158,8 +158,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         auto i8PtrType = th.getPtrType();
         auto ptrType = th.getPtrType();
 
-        // Get a symbol reference to the printf function, inserting it if necessary.
-        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), ptrType, false));
+        // Get a symbol reference to the puts function, inserting it if necessary.
+        // Note: declared as returning void (not the libc i32) to match the signature MLIR's
+        // cf.assert-to-LLVM lowering expects when it reserves/looks up "puts" for its own use.
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(th.getVoidType(), ptrType, false));
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
