@@ -736,7 +736,7 @@ add_test(NAME test-jit-244-arraysome COMMAND test-runner  -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 add_test(NAME test-jit-StackTest COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00stack_test.ts")
 # TODO: find out why it is crashing
-#add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
+add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
 add_test(NAME test-jit-Path COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-jit-Print-Bug-01 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
 add_test(NAME test-jit-arrayLiterals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayLiterals.ts")

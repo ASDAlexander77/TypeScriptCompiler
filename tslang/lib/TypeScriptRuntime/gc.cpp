@@ -58,6 +58,16 @@ size_t _mlir__GC_get_heap_size()
     return GC_get_heap_size();
 }
 
+void _mlir__GC_add_roots(void *low, void *highPlus1)
+{
+    GC_add_roots(low, highPlus1);
+}
+
+void _mlir__GC_remove_roots(void *low, void *highPlus1)
+{
+    GC_remove_roots(low, highPlus1);
+}
+
 void _mlir__GC_win32_free_heap()
 {
 #ifdef WIN32

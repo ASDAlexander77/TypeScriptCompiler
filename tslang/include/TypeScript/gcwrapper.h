@@ -19,6 +19,10 @@ void _mlir__GC_free(void *ptr);
 
 size_t _mlir__GC_get_heap_size();
 
+void _mlir__GC_add_roots(void *low, void *highPlus1);
+
+void _mlir__GC_remove_roots(void *low, void *highPlus1);
+
 void _mlir__GC_win32_free_heap();
 
 void *_mlir__GC_malloc_explicitly_typed(size_t size, int64_t descr);
