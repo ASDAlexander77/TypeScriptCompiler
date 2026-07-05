@@ -631,9 +631,12 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             }
         }
     }
-    
+    #endif
+
+    // Must stay unconditional: without it release builds crash (0xC0000005) or
+    // deadlock in teardown after async tests — the AsyncRuntime static destructor
+    // waits on thread-pool workers during DLL_PROCESS_DETACH (see above).
     TerminateProcess(GetCurrentProcess(), 0);
-    #endif    
 #endif
     return 0;
 }
