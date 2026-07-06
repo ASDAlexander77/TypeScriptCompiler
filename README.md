@@ -203,18 +203,18 @@ The Accounting Department meets each Monday at 10am.
 
 ## Run as JIT
 
-- with Garbage collection
-
-```bat
-tslang hello.ts
-```
-
 File ``hello.ts``
 
 ```typescript
 function main() {
     print("Hello World!");
 }
+```
+
+Build
+
+```bat
+tslang hello.ts
 ```
 
 Result
