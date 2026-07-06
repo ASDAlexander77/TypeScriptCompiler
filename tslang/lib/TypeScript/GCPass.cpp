@@ -153,6 +153,29 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         }
 
         funcOp->setAttr(SymbolTable::getSymbolAttrName(), mlir::StringAttr::get(funcOp->getContext(), newName));
+
+        markAsAllocatorIfNeeded(newName, funcOp);
+    }
+
+    // GC_malloc/GC_malloc_atomic/GC_memalign are fresh-pointer-per-call allocators, just like
+    // plain malloc. Unlike malloc, they aren't libc names LLVM's TargetLibraryInfo recognizes,
+    // so without an explicit memory_effects marking, GVN/EarlyCSE at -O3 see two calls with
+    // identical arguments (e.g. GC_malloc(0) for two different empty array fields) and no
+    // intervening memory clobber, and fold them into one shared allocation - aliasing fields
+    // that must stay distinct. Marking the call as writing "other" (unmodeled) memory means
+    // every call is a distinct side effect, so GVN can no longer treat repeats as redundant.
+    void markAsAllocatorIfNeeded(StringRef newName, LLVM::LLVMFuncOp funcOp)
+    {
+        if (newName != "GC_malloc" && newName != "GC_malloc_atomic" && newName != "GC_memalign")
+        {
+            return;
+        }
+
+        auto *context = funcOp->getContext();
+        auto memoryEffects = LLVM::MemoryEffectsAttr::get(context, LLVM::ModRefInfo::Mod, LLVM::ModRefInfo::NoModRef,
+                                                            LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
+                                                            LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
+        funcOp.setMemoryEffectsAttr(memoryEffects);
     }
 
     void renameCall(StringRef name, LLVM::CallOp callOp)
@@ -186,6 +209,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getPtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+        markAsAllocatorIfNeeded("GC_malloc_atomic", gcInitFuncOp);
     }
 
     void injectInit(LLVM::LLVMFuncOp funcOp)

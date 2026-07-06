@@ -5550,6 +5550,12 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         auto i8PtrTy = th.getPtrType();
 
         auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+        // Without this, two `new` sites with identical (size, typeDescr) args - e.g. two
+        // instances of the same class - look like redundant calls to GVN/EarlyCSE at -O3
+        // and get merged into one shared allocation. See GCPass.cpp markAsAllocatorIfNeeded.
+        gcMallocExplicitlyTypedFunc.setMemoryEffectsAttr(LLVM::MemoryEffectsAttr::get(
+            rewriter.getContext(), LLVM::ModRefInfo::Mod, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
+            LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef));
         auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.getTypeDescr()});
 
         rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult());
