@@ -17,7 +17,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - MLIR",
@@ -34,7 +46,19 @@
             "cwd": "C:/temp/",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) ./tslang - MLIR",
@@ -53,7 +77,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"             
         },
         {
             "name": "(Windows) tslang.exe - MLIR-AFFINE",
@@ -71,7 +95,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) ./tslang - MLIR-AFFINE",
@@ -88,8 +124,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"          
         },
         {
             "name": "(Windows) tslang.exe - MLIR-LLVM",
@@ -106,7 +141,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) ./tslang - MLIR-LLVM",
@@ -120,8 +167,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"          
         },
         {
             "name": "(Windows) tslang.exe - LLVM",
@@ -142,7 +188,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) ./tslang - LLVM",
@@ -156,8 +214,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"           
         },
         {
             "name": "(Windows) tslang.exe - BC",
@@ -174,7 +231,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - OBJ",
@@ -192,7 +261,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - ASM",
@@ -211,7 +292,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - EXE",
@@ -247,7 +340,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) (ClangCL) tslang.exe - EXE",
@@ -283,10 +388,21 @@
                     "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis",
             "MIMode": "gdb",
             "MIDebuggerPath": "lldb.exe",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - EXE(DI) - NO DEFAULT",
@@ -321,7 +437,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - EXE(OPT) - NO DEFAULT",
@@ -356,7 +484,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - EXE(OPT) (Release EXE) - NO DEFAULT",
@@ -390,7 +530,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - LLVM - NO DEFAULT",
@@ -424,7 +576,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - DLL",
@@ -457,7 +621,19 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - WASM",
@@ -476,7 +652,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - WASM - emscripten",
@@ -497,7 +685,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - JIT",
@@ -517,7 +717,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - JIT (no default)",
@@ -527,7 +739,7 @@
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
-                "-debug-only=mlir,llvm,pass",
+                //"-debug-only=mlir,llvm,pass",
                 "-mlir-disable-threading",
                 "-di",
                 "--no-default-lib",
@@ -537,7 +749,19 @@
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }            
         },
         {
             "name": "(Windows) tslang.exe - JIT-OBJ",
@@ -555,7 +779,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) tslang - JIT",
@@ -572,7 +808,6 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -603,7 +838,6 @@
                     "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -637,7 +871,6 @@
                     "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/release"
                 },
             ],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -668,7 +901,6 @@
                     "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -698,7 +930,6 @@
                     "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -718,7 +949,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - DefaultLib Compile (MLIR)",
@@ -737,7 +980,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - DefaultLib Compile (DI) (OBJ)",
@@ -757,7 +1012,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - DefaultLib Compile (opt) (OBJ)",
@@ -780,7 +1047,19 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) tslang - DefaultLib Compile (OBJ)",
@@ -800,7 +1079,6 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
@@ -816,6 +1094,18 @@
                 "moduleLoad": true,
                 "trace": true
             },
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }                          
         },
         {
             "name": "(Windows) tslang.exe - new VSCode project",
@@ -830,7 +1120,19 @@
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Windows) tslang.exe - Install Default lib",
@@ -844,7 +1146,19 @@
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
         },
         {
             "name": "(Linux) tslang - Install Default lib",
@@ -857,7 +1171,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"           
         }
     ]
 }
