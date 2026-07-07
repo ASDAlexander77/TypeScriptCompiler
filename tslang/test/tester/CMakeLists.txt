@@ -442,6 +442,7 @@ add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_
 add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
 add_test(NAME test-compile-uint-compare-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
+add_test(NAME test-compile-gc-malloc-cse-o3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -772,6 +773,7 @@ add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT
 add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
 add_test(NAME test-jit-uint-compare-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
+add_test(NAME test-jit-gc-malloc-cse-o3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
 
 # tesing include
 add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/include_global_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/define_global_var.ts")

@@ -159,11 +159,14 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
     // GC_malloc/GC_malloc_atomic/GC_memalign are fresh-pointer-per-call allocators, just like
     // plain malloc. Unlike malloc, they aren't libc names LLVM's TargetLibraryInfo recognizes,
-    // so without an explicit memory_effects marking, GVN/EarlyCSE at -O3 see two calls with
-    // identical arguments (e.g. GC_malloc(0) for two different empty array fields) and no
-    // intervening memory clobber, and fold them into one shared allocation - aliasing fields
-    // that must stay distinct. Marking the call as writing "other" (unmodeled) memory means
-    // every call is a distinct side effect, so GVN can no longer treat repeats as redundant.
+    // so without explicit markings, GVN/EarlyCSE at -O3 see two calls with identical arguments
+    // (e.g. GC_malloc(0) for two different empty array fields) and no intervening memory
+    // clobber, and fold them into one shared allocation - aliasing fields that must stay
+    // distinct. memory_effects alone (writing unmodeled "other" memory) is not enough to stop
+    // GVN's call-CSE, which special-cases allocator-shaped functions via the `allockind` LLVM
+    // attribute (the same mechanism TargetLibraryInfo uses internally for malloc/calloc). Since
+    // GC_malloc isn't a recognized libc name, we must attach `allockind("alloc")` explicitly so
+    // each call is treated as returning a distinct, non-aliasing pointer.
     void markAsAllocatorIfNeeded(StringRef newName, LLVM::LLVMFuncOp funcOp)
     {
         if (newName != "GC_malloc" && newName != "GC_malloc_atomic" && newName != "GC_memalign")
@@ -176,6 +179,21 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                                                             LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
                                                             LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
         funcOp.setMemoryEffectsAttr(memoryEffects);
+
+        // AllocFnKind::Alloc = 1<<0, Zeroed = 1<<4. GC_malloc/GC_malloc_atomic zero-fill;
+        // GC_memalign (GC_memalign) does not guarantee zeroing, so only mark Alloc for it.
+        uint64_t allocKind = newName == "GC_memalign" ? /*Alloc*/ 1 : /*Alloc|Zeroed*/ 1 | (1 << 4);
+        auto kindEntry = mlir::ArrayAttr::get(
+            context, {mlir::StringAttr::get(context, "allockind"),
+                      mlir::StringAttr::get(context, std::to_string(allocKind))});
+
+        llvm::SmallVector<mlir::Attribute> passthrough;
+        if (auto existing = funcOp.getPassthroughAttr())
+        {
+            passthrough.append(existing.begin(), existing.end());
+        }
+        passthrough.push_back(kindEntry);
+        funcOp.setPassthroughAttr(mlir::ArrayAttr::get(context, passthrough));
     }
 
     void renameCall(StringRef name, LLVM::CallOp callOp)
