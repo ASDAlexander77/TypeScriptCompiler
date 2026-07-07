@@ -1414,101 +1414,78 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   
 }
 
-def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary", [Pure]> {
+// Shared shape for the opCode+operand1->AnyType family of unary operators. Purity differs
+// per op (prefix/postfix carry increment/decrement side effects), so traits stay per-def.
+class TypeScript_UnaryOpBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, traits> {
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+}
+
+def TypeScript_ArithmeticUnaryOp : TypeScript_UnaryOpBase<"ArithmeticUnary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_PrefixUnaryOp : TypeScript_Op<"PrefixUnary"> {
+def TypeScript_PrefixUnaryOp : TypeScript_UnaryOpBase<"PrefixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.prefix_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
+def TypeScript_PostfixUnaryOp : TypeScript_UnaryOpBase<"PostfixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.postfix_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary", [Pure]> {
+// Shared opCode+operand1+operand2 arguments for the binary operator family. Result types
+// differ (AnyType vs TypeScript_Boolean), so only the argument list is factored.
+class TypeScript_BinaryOpArgsBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, traits> {
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1,
+    AnyType:$operand2
+  );
+}
+
+def TypeScript_ArithmeticBinaryOp : TypeScript_BinaryOpArgsBase<"ArithmeticBinary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_binary 1, %0, %1 : f32
     ```
   }];
 
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1, 
-    AnyType:$operand2
-  );
-
   let results = (outs
     AnyType:$result
   );
-
-  
 }
 
-def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
+def TypeScript_LogicalBinaryOp : TypeScript_BinaryOpArgsBase<"LogicalBinary"> {
   let description = [{
     ```mlir
     %2 = ts.logical_binary 1, %0, %1 : ts.boolean
     ```
   }];
 
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1, 
-    AnyType:$operand2
-  );
-
   let results = (outs
     TypeScript_Boolean:$result
   );
 
-  
   let hasCanonicalizer = 1;
 }
 
