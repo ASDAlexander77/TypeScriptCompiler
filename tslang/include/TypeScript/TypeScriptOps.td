@@ -1756,12 +1756,17 @@ def TypeScript_IfOp : TypeScript_Op<"If",
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]>]> {
-  let summary = "loop yield and termination operation";
-
+// Shared shape for region-yield terminators: a Variadic<AnyType> operand list plus the
+// argument-less builder used when a region has no yielded values.
+class TypeScript_YieldOpBase<string mnemonic, list<string> parents> :
+    TypeScript_Op<mnemonic, [Pure, ReturnLike, Terminator, ParentOneOf<parents>]> {
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+}
+
+def TypeScript_ResultOp : TypeScript_YieldOpBase<"Result",
+    ["IfOp", "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]> {
+  let summary = "loop yield and termination operation";
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
@@ -2148,12 +2153,8 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   }];
 }
 
-def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["GlobalOp"]>]> {
+def TypeScript_GlobalResultOp : TypeScript_YieldOpBase<"GlobalResult", ["GlobalOp"]> {
   let summary = "global init yield and termination operation";
-
-  let arguments = (ins Variadic<AnyType>:$results);
-  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
 def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
@@ -2202,12 +2203,8 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
   }];      
 }
 
-def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["typescript::BodyInternalOp"]>]> {
+def TypeScript_BodyResultInternalOp : TypeScript_YieldOpBase<"BodyResultInternal", ["typescript::BodyInternalOp"]> {
   let summary = "termination operation";
-
-  let arguments = (ins Variadic<AnyType>:$results);
-  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
 def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
@@ -2292,44 +2289,33 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
-  let results = (outs );
-
+// Shared getSource()/getTarget() accessors for ops with a MemWrite $dst and MemRead $src.
+class TypeScript_MemCopyLikeOpBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, !listconcat([AllTypesMatch<["dst", "src"]>], traits)> {
   let extraClassDeclaration = [{
     Value getSource() { return getSrc(); }
     Value getTarget() { return getDst(); }
   }];
 }
 
-def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_LoadSaveOp : TypeScript_MemCopyLikeOpBase<"LoadSave"> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_CopyStructOp : TypeScript_MemCopyLikeOpBase<"CopyStruct"> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+  let results = (outs );
+}
+
+def TypeScript_MemoryCopyOp : TypeScript_MemCopyLikeOpBase<"MemoryCopy"> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
-def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryMoveOp : TypeScript_MemCopyLikeOpBase<"MemoryMove"> {
   let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
 def TypeScript_DebuggerOp : TypeScript_Op<"Debugger"> {
