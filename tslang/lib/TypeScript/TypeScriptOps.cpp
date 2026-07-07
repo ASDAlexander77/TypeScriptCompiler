@@ -14,6 +14,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/MapVector.h"
@@ -819,6 +820,24 @@ bool mlir_ts::CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
 
     // for now all are true
     return true;
+}
+
+// Casting a ConstArrayType (e.g. the `[]` empty-array literal sentinel) to a heap-backed
+// ArrayType materializes a fresh GC allocation during lowering (see
+// CastLogicHelper::castToArrayType's `byValue` branch, which calls MemoryAlloc). Reporting no
+// effects here (as the previous blanket `Pure` trait did) let generic CSE - which runs on the
+// `ts` dialect before this op is ever lowered to the actual allocation call - treat two such
+// casts with the same (identical, CSE'd) constant operand as redundant and merge them into one,
+// silently aliasing what should be two distinct backing arrays. All other CastOp shapes are true
+// value-preserving casts with no allocation, so they keep reporting no effects.
+void mlir_ts::CastOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>> &effects)
+{
+    if (isa<mlir_ts::ConstArrayType>(getIn().getType()) && isa<mlir_ts::ArrayType>(getRes().getType()))
+    {
+        auto result = cast<OpResult>(getRes());
+        effects.emplace_back(MemoryEffects::Allocate::get(), result);
+        effects.emplace_back(MemoryEffects::Write::get(), result);
+    }
 }
 
 //===----------------------------------------------------------------------===//

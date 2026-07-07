@@ -1503,14 +1503,17 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
+def TypeScript_CastOp : TypeScript_Op<"Cast", [
+    DeclareOpInterfaceMethods<CastOpInterface>,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+]> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
-  
+
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
