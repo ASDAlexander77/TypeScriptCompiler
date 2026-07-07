@@ -17,6 +17,11 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
+// info:
+// Commutative -  it actually represents. MLIR's Commutative trait tells canonicalizers/CSE "operand order doesn't matter, 
+//  feel free to reorder to canonicalize/match commuted forms" — that's true for +, *, &, |, ^, but definitely false 
+//  for -, /, %, **, and the shifts.
+
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
 //===----------------------------------------------------------------------===//

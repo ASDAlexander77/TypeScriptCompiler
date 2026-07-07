@@ -321,7 +321,6 @@ int main(int argc, char **argv)
 
     // If we aren't dumping the AST, then we are compiling with/to MLIR.
     mlir::DialectRegistry registry;
-    //mlir::func::registerAllExtensions(registry);
     registerAllExtensions(registry);
 
     mlir::MLIRContext mlirContext(registry);
