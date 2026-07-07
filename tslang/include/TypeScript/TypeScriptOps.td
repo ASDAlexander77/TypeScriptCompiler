@@ -1554,6 +1554,11 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
   
 }
 
+// Safe as Pure only because CreateUnionInstanceOpLowering calls CastLogicHelper::castLLVMTypes
+// (bitcast/struct-GEP only) directly, never CastLogicHelper::cast() - the dispatcher whose
+// castToArrayType branch is what made CastOp/BoxOp unsafely Pure (each called ch.MemoryAlloc
+// under the hood). If this op's lowering is ever changed to route through cast() instead,
+// re-audit whether it can still be Pure.
 def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [Pure]> {
   let description = [{
     Example:
