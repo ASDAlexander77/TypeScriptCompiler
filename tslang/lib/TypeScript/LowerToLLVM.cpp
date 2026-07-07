@@ -5515,6 +5515,29 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
     }
 };
 
+// GC_malloc_explicitly_typed is a fresh-pointer-per-call allocator, just like GC_malloc
+// (see GCPass.cpp markAsAllocatorIfNeeded for the full rationale). memory_effects alone
+// doesn't stop GVN/EarlyCSE at -O3 from merging two `new` sites with identical (size,
+// typeDescr) args - e.g. two instances of the same class - into one shared allocation;
+// the `allockind` LLVM attribute is what actually blocks that call-CSE.
+static void markGCMallocExplicitlyTypedAsAllocator(LLVM::LLVMFuncOp funcOp)
+{
+    auto *context = funcOp->getContext();
+
+    // AllocFnKind::Alloc = 1<<0; not marking Zeroed since GC_malloc_explicitly_typed's
+    // contents are then explicitly initialized by the caller.
+    auto kindEntry = mlir::ArrayAttr::get(
+        context, {mlir::StringAttr::get(context, "allockind"), mlir::StringAttr::get(context, "1")});
+
+    llvm::SmallVector<mlir::Attribute> passthrough;
+    if (auto existing = funcOp.getPassthroughAttr())
+    {
+        passthrough.append(existing.begin(), existing.end());
+    }
+    passthrough.push_back(kindEntry);
+    funcOp.setPassthroughAttr(mlir::ArrayAttr::get(context, passthrough));
+}
+
 class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>
 {
   public:
@@ -5550,6 +5573,13 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         auto i8PtrTy = th.getPtrType();
 
         auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+        // Without this, two `new` sites with identical (size, typeDescr) args - e.g. two
+        // instances of the same class - look like redundant calls to GVN/EarlyCSE at -O3
+        // and get merged into one shared allocation. See GCPass.cpp markAsAllocatorIfNeeded.
+        gcMallocExplicitlyTypedFunc.setMemoryEffectsAttr(LLVM::MemoryEffectsAttr::get(
+            rewriter.getContext(), LLVM::ModRefInfo::Mod, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
+            LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef));
+        markGCMallocExplicitlyTypedAsAllocator(gcMallocExplicitlyTypedFunc);
         auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.getTypeDescr()});
 
         rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult());

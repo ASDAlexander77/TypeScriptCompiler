@@ -1503,14 +1503,17 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
+def TypeScript_CastOp : TypeScript_Op<"Cast", [
+    DeclareOpInterfaceMethods<CastOpInterface>,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+]> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
-  
+
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1530,7 +1533,7 @@ def TypeScript_SafeCastOp : TypeScript_Op<"SafeCast", [
   let hasFolder = 1;
 }
 
-def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
+def TypeScript_BoxOp : TypeScript_Op<"Box", [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let description = [{
     Example:
       %ti = ts.typeof %1
@@ -1538,7 +1541,7 @@ def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
   }];
   let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
   let results = (outs TypeScript_Any:$res);
-  
+
 }
 
 def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
@@ -1551,6 +1554,11 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
   
 }
 
+// Safe as Pure only because CreateUnionInstanceOpLowering calls CastLogicHelper::castLLVMTypes
+// (bitcast/struct-GEP only) directly, never CastLogicHelper::cast() - the dispatcher whose
+// castToArrayType branch is what made CastOp/BoxOp unsafely Pure (each called ch.MemoryAlloc
+// under the hood). If this op's lowering is ever changed to route through cast() instead,
+// re-audit whether it can still be Pure.
 def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [Pure]> {
   let description = [{
     Example:
