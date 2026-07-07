@@ -841,6 +841,22 @@ void mlir_ts::CastOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<Mem
 }
 
 //===----------------------------------------------------------------------===//
+// BoxOp
+//===----------------------------------------------------------------------===//
+
+// BoxOp's lowering (AnyLogic::castToAny) unconditionally allocates a fresh "any" container via
+// MemoryAlloc on every execution - it is not a value-preserving reinterpretation like a real
+// cast. Reporting it as Pure (as before) would let CSE merge two structurally-identical Box ops
+// into one, aliasing what must be two distinct boxed values - the same bug fixed for CastOp
+// above. Always report the effect: unlike CastOp, every BoxOp shape allocates.
+void mlir_ts::BoxOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>> &effects)
+{
+    auto result = cast<OpResult>(getRes());
+    effects.emplace_back(MemoryEffects::Allocate::get(), result);
+    effects.emplace_back(MemoryEffects::Write::get(), result);
+}
+
+//===----------------------------------------------------------------------===//
 // DialectCastOp
 //===----------------------------------------------------------------------===//
 

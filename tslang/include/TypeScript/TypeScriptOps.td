@@ -1533,7 +1533,7 @@ def TypeScript_SafeCastOp : TypeScript_Op<"SafeCast", [
   let hasFolder = 1;
 }
 
-def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
+def TypeScript_BoxOp : TypeScript_Op<"Box", [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let description = [{
     Example:
       %ti = ts.typeof %1
@@ -1541,7 +1541,7 @@ def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
   }];
   let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
   let results = (outs TypeScript_Any:$res);
-  
+
 }
 
 def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
