@@ -474,7 +474,7 @@ def TypeScript_IsNaNOp : TypeScript_Op<"isNaN"> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
-def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {
+def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf", [Pure]> {
   let summary = "name of type";
   let description = [{
     name of type
@@ -484,7 +484,7 @@ def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
-def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny"> {
+def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny", [Pure]> {
   let summary = "name of type from any";
   let description = [{
     name of type from any
@@ -494,7 +494,7 @@ def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny"> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
-def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf"> {
+def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{
     size of type
@@ -1003,7 +1003,10 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, Return
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>]; 
 }
 
-def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
+// Not Pure: lowering (ValueOptionalOpLowering/OptionalOpLowering) routes through
+// CastLogicHelper::cast(), the generic dispatcher that can call ch.MemoryAlloc via
+// castToAny/castToArrayType depending on the boxed type - see TypeScript_CreateUnionInstanceOp.
+def TypeScript_OptionalOp : TypeScript_Op<"Optional",
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "cast<OptionalType>($_self).getElementType()">]> {
@@ -1072,7 +1075,10 @@ def TypeScript_DefaultOp : TypeScript_Op<"Default"> {
   let results = (outs AnyType:$res);
 }
 
-def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
+// Not Pure: lowering (ValueOptionalOpLowering) routes through CastLogicHelper::cast(), the
+// generic dispatcher that can call ch.MemoryAlloc via castToAny/castToArrayType depending on
+// the boxed type - see TypeScript_CreateUnionInstanceOp.
+def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue",
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "cast<OptionalType>($_self).getElementType()">]> {
@@ -1084,7 +1090,7 @@ def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue",
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef"> {
+def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef", [Pure]> {
   let description = [{
     Example:
       ts.optional_undef : ts.optional<i32>
@@ -1093,7 +1099,7 @@ def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef"> {
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
+def TypeScript_HasValueOp : TypeScript_Op<"HasValue", [Pure]> {
   let description = [{
     Example:
       ts.has_value %v : ts.optional<i32> to bool
@@ -1102,8 +1108,8 @@ def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
-def TypeScript_ValueOp : TypeScript_Op<"Value", 
-    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+def TypeScript_ValueOp : TypeScript_Op<"Value",
+    [Pure, TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
                      "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
@@ -1113,11 +1119,11 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
   let arguments = (ins TypeScript_AnyOptional:$in);
   let results = (outs AnyType:$res);
 
-  let hasCanonicalizer = 1;  
+  let hasCanonicalizer = 1;
 }
 
-def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault", 
-    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault",
+    [Pure, TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
                      "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
@@ -1369,7 +1375,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   
 }
 
-def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
+def TypeScript_GetThisOp : TypeScript_Op<"GetThis", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.get_this %1 : !ts.ref<any>
@@ -1384,9 +1390,12 @@ def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
     TypeScript_AnyRefLike:$result
   );
 
-  
+
 }
 
+// Not Pure: lowering (GetMethodOpLowering) calls CastLogicHelper::cast(), the generic
+// dispatcher that can call ch.MemoryAlloc via castToAny/castToArrayType depending on the
+// operand's runtime type - see TypeScript_CreateUnionInstanceOp.
 def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   let description = [{
     ```mlir
@@ -1405,7 +1414,7 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   
 }
 
-def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
+def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_unary 1, %1 : f32
@@ -1462,7 +1471,7 @@ def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
   
 }
 
-def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
+def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_binary 1, %0, %1 : f32
