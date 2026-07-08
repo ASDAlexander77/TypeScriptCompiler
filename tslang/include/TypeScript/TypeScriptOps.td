@@ -17,6 +17,11 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
+// info:
+// Commutative -  it actually represents. MLIR's Commutative trait tells canonicalizers/CSE "operand order doesn't matter, 
+//  feel free to reorder to canonicalize/match commuted forms" — that's true for +, *, &, |, ^, but definitely false 
+//  for -, /, %, **, and the shifts.
+
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
 //===----------------------------------------------------------------------===//
@@ -474,7 +479,7 @@ def TypeScript_IsNaNOp : TypeScript_Op<"isNaN"> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
-def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {
+def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf", [Pure]> {
   let summary = "name of type";
   let description = [{
     name of type
@@ -484,7 +489,7 @@ def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
-def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny"> {
+def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny", [Pure]> {
   let summary = "name of type from any";
   let description = [{
     name of type from any
@@ -494,7 +499,7 @@ def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny"> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
-def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf"> {
+def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{
     size of type
@@ -1003,7 +1008,10 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, Return
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>]; 
 }
 
-def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
+// Not Pure: lowering (ValueOptionalOpLowering/OptionalOpLowering) routes through
+// CastLogicHelper::cast(), the generic dispatcher that can call ch.MemoryAlloc via
+// castToAny/castToArrayType depending on the boxed type - see TypeScript_CreateUnionInstanceOp.
+def TypeScript_OptionalOp : TypeScript_Op<"Optional",
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "cast<OptionalType>($_self).getElementType()">]> {
@@ -1072,7 +1080,10 @@ def TypeScript_DefaultOp : TypeScript_Op<"Default"> {
   let results = (outs AnyType:$res);
 }
 
-def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
+// Not Pure: lowering (ValueOptionalOpLowering) routes through CastLogicHelper::cast(), the
+// generic dispatcher that can call ch.MemoryAlloc via castToAny/castToArrayType depending on
+// the boxed type - see TypeScript_CreateUnionInstanceOp.
+def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue",
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "cast<OptionalType>($_self).getElementType()">]> {
@@ -1084,7 +1095,7 @@ def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue",
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef"> {
+def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef", [Pure]> {
   let description = [{
     Example:
       ts.optional_undef : ts.optional<i32>
@@ -1093,7 +1104,7 @@ def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef"> {
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
+def TypeScript_HasValueOp : TypeScript_Op<"HasValue", [Pure]> {
   let description = [{
     Example:
       ts.has_value %v : ts.optional<i32> to bool
@@ -1102,8 +1113,8 @@ def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
-def TypeScript_ValueOp : TypeScript_Op<"Value", 
-    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+def TypeScript_ValueOp : TypeScript_Op<"Value",
+    [Pure, TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
                      "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
@@ -1113,11 +1124,11 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
   let arguments = (ins TypeScript_AnyOptional:$in);
   let results = (outs AnyType:$res);
 
-  let hasCanonicalizer = 1;  
+  let hasCanonicalizer = 1;
 }
 
-def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault", 
-    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault",
+    [Pure, TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
                      "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
@@ -1369,7 +1380,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   
 }
 
-def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
+def TypeScript_GetThisOp : TypeScript_Op<"GetThis", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.get_this %1 : !ts.ref<any>
@@ -1384,9 +1395,12 @@ def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
     TypeScript_AnyRefLike:$result
   );
 
-  
+
 }
 
+// Not Pure: lowering (GetMethodOpLowering) calls CastLogicHelper::cast(), the generic
+// dispatcher that can call ch.MemoryAlloc via castToAny/castToArrayType depending on the
+// operand's runtime type - see TypeScript_CreateUnionInstanceOp.
 def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   let description = [{
     ```mlir
@@ -1405,101 +1419,78 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   
 }
 
-def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
+// Shared shape for the opCode+operand1->AnyType family of unary operators. Purity differs
+// per op (prefix/postfix carry increment/decrement side effects), so traits stay per-def.
+class TypeScript_UnaryOpBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, traits> {
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+}
+
+def TypeScript_ArithmeticUnaryOp : TypeScript_UnaryOpBase<"ArithmeticUnary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_PrefixUnaryOp : TypeScript_Op<"PrefixUnary"> {
+def TypeScript_PrefixUnaryOp : TypeScript_UnaryOpBase<"PrefixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.prefix_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
+def TypeScript_PostfixUnaryOp : TypeScript_UnaryOpBase<"PostfixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.postfix_unary 1, %1 : f32
     ```
   }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  
 }
 
-def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
+// Shared opCode+operand1+operand2 arguments for the binary operator family. Result types
+// differ (AnyType vs TypeScript_Boolean), so only the argument list is factored.
+class TypeScript_BinaryOpArgsBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, traits> {
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1,
+    AnyType:$operand2
+  );
+}
+
+def TypeScript_ArithmeticBinaryOp : TypeScript_BinaryOpArgsBase<"ArithmeticBinary", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_binary 1, %0, %1 : f32
     ```
   }];
 
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1, 
-    AnyType:$operand2
-  );
-
   let results = (outs
     AnyType:$result
   );
-
-  
 }
 
-def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
+def TypeScript_LogicalBinaryOp : TypeScript_BinaryOpArgsBase<"LogicalBinary"> {
   let description = [{
     ```mlir
     %2 = ts.logical_binary 1, %0, %1 : ts.boolean
     ```
   }];
 
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1, 
-    AnyType:$operand2
-  );
-
   let results = (outs
     TypeScript_Boolean:$result
   );
 
-  
   let hasCanonicalizer = 1;
 }
 
@@ -1747,12 +1738,17 @@ def TypeScript_IfOp : TypeScript_Op<"If",
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]>]> {
-  let summary = "loop yield and termination operation";
-
+// Shared shape for region-yield terminators: a Variadic<AnyType> operand list plus the
+// argument-less builder used when a region has no yielded values.
+class TypeScript_YieldOpBase<string mnemonic, list<string> parents> :
+    TypeScript_Op<mnemonic, [Pure, ReturnLike, Terminator, ParentOneOf<parents>]> {
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+}
+
+def TypeScript_ResultOp : TypeScript_YieldOpBase<"Result",
+    ["IfOp", "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]> {
+  let summary = "loop yield and termination operation";
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
@@ -2139,12 +2135,8 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   }];
 }
 
-def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["GlobalOp"]>]> {
+def TypeScript_GlobalResultOp : TypeScript_YieldOpBase<"GlobalResult", ["GlobalOp"]> {
   let summary = "global init yield and termination operation";
-
-  let arguments = (ins Variadic<AnyType>:$results);
-  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
 def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
@@ -2193,12 +2185,8 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
   }];      
 }
 
-def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure, ReturnLike, Terminator,
-                               ParentOneOf<["typescript::BodyInternalOp"]>]> {
+def TypeScript_BodyResultInternalOp : TypeScript_YieldOpBase<"BodyResultInternal", ["typescript::BodyInternalOp"]> {
   let summary = "termination operation";
-
-  let arguments = (ins Variadic<AnyType>:$results);
-  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
 def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
@@ -2283,44 +2271,33 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
-  let results = (outs );
-
+// Shared getSource()/getTarget() accessors for ops with a MemWrite $dst and MemRead $src.
+class TypeScript_MemCopyLikeOpBase<string mnemonic, list<Trait> traits = []> :
+    TypeScript_Op<mnemonic, !listconcat([AllTypesMatch<["dst", "src"]>], traits)> {
   let extraClassDeclaration = [{
     Value getSource() { return getSrc(); }
     Value getTarget() { return getDst(); }
   }];
 }
 
-def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_LoadSaveOp : TypeScript_MemCopyLikeOpBase<"LoadSave"> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_CopyStructOp : TypeScript_MemCopyLikeOpBase<"CopyStruct"> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+  let results = (outs );
+}
+
+def TypeScript_MemoryCopyOp : TypeScript_MemCopyLikeOpBase<"MemoryCopy"> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
-def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryMoveOp : TypeScript_MemCopyLikeOpBase<"MemoryMove"> {
   let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
 }
 
 def TypeScript_DebuggerOp : TypeScript_Op<"Debugger"> {
