@@ -182,6 +182,7 @@
         "npm.autoDetect": "off",
         "[html]": {
             "editor.defaultFormatter": "vscode.html-language-features"
-        }
+        },
+        "powershell.cwd": "TypeScript Compiler Source (Lib)"
     }
 }

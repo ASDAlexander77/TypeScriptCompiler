@@ -162,6 +162,19 @@ jobs:
           .\build.bat release
         shell: pwsh
 
+      - name: Test Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/bin
+          GC_LIB_PATH: ${{github.workspace}}/__build/gc/msbuild/x64/release/${{ env.BUILD_TYPE }}
+          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
+          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
+        run: |
+          .\tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
         run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\release\* | Compress-Archive -DestinationPath ..\tslang.zip
@@ -331,6 +344,17 @@ jobs:
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
         run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh release
+
+      - name: Test Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        shell: sh
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/ninja/release/bin
+          GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
+          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
+          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
+        run: chmod +x ./tests.sh; ./tests.sh
 
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
