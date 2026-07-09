@@ -19,6 +19,9 @@ EXPORTS
     GC_remove_roots=_mlir__GC_remove_roots
     GC_malloc_explicitly_typed=_mlir__GC_malloc_explicitly_typed
     GC_make_descriptor=_mlir__GC_make_descriptor
+    GC_general_register_disappearing_link=_mlir__GC_general_register_disappearing_link
+    GC_unregister_disappearing_link=_mlir__GC_unregister_disappearing_link
+    GC_gcollect=_mlir__GC_gcollect
 
     ; --- memory runtime (MemRuntime.cpp, extern "C") ---
     _mlir_alloc=Alloc
