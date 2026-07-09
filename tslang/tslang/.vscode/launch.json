@@ -452,6 +452,49 @@
             }              
         },
         {
+            "name": "(Windows) tslang.exe - EXE(DI)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
+            "args": [
+                "-emit=exe",
+                "--di",
+                "-mtriple=x86_64-pc-windows-msvc",
+                "--nowarn",
+                "I:/TypeScriptCompilerDefaultLib/tests/array_copyWithin.ts",
+            ],
+            "stopAtEntry": false,
+            "cwd": "I:/Playground",
+            "environment": [
+                {
+                    "name": "GC_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug"
+                },
+                {
+                    "name": "LLVM_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
+                },
+                {
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
+                },
+            ],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:/symbols",
+                    "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin"
+                ],
+                "searchMicrosoftSymbolServer": true,
+                "cachePath": "C:/symbols",
+                "moduleFilter": {
+                    "mode": "loadAllButExcluded",
+                    "excludedModules": [ "DoNotLookForThisOne*.dll" ]
+                }
+            }              
+        },        
+        {
             "name": "(Windows) tslang.exe - EXE(OPT) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
