@@ -159,7 +159,7 @@ jobs:
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
         run: |
           $env:VSWHERE_PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          .\build.bat release
+          .\build.bat
         shell: pwsh
 
       - name: Test Default Library
@@ -177,7 +177,11 @@ jobs:
 
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\release\* | Compress-Archive -DestinationPath ..\tslang.zip
+        # Flatten the compiler/runtime binaries into the archive root, and add the
+        # default library as a whole tree so its per-build subfolders are preserved:
+        #   defaultlib/dll/{debug,release}, defaultlib/lib/{debug,release},
+        #   defaultlib/*.d.ts, defaultlib/generics/
+        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\defaultlib | Compress-Archive -DestinationPath ..\tslang.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -343,7 +347,7 @@ jobs:
           GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
-        run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh release
+        run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh
 
       - name: Test Default Library
         continue-on-error: false
@@ -371,7 +375,10 @@ jobs:
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMSupport.a ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMDemangle.a ./__stage/
-          cp -r ../TypeScriptCompilerDefaultLib/__build/release/. ./__stage/
+          # Add the default library as a whole tree so its per-build subfolders are
+          # preserved: defaultlib/dll/{debug,release}, defaultlib/lib/{debug,release},
+          # defaultlib/*.d.ts, defaultlib/generics/
+          cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
           tar -czvhf ../tslang.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset

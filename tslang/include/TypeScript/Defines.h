@@ -96,6 +96,13 @@
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 
+// The compiled default-lib binaries (dll/ and lib/) are stored in per-build
+// subfolders so debug and release artifacts can ship side by side. The
+// declaration files (*.d.ts, generics/) are build-mode independent and stay at
+// the defaultlib root.
+#define DEFAULT_LIB_BUILD_DIR_RELEASE "release"
+#define DEFAULT_LIB_BUILD_DIR_DEBUG "debug"
+
 #define DEBUG_SCOPE "current"
 #define CU_DEBUG_SCOPE "compileUnit"
 #define FILE_DEBUG_SCOPE "file"
