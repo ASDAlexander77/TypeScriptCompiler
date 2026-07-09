@@ -293,12 +293,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // engine. Otherwise we'll pass library directly to the execution engine.
     if (!compileOptions.noDefaultLib)
     {
-        clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(), 
-#ifdef WIN32        
-            DEFAULT_LIB_DIR "/dll/" DEFAULT_LIB_NAME ".dll"
+        // per-build subfolder (debug/release) must match the JIT compilation mode.
+        // Keyed on --di (generate debug info): with debug info use the debug lib.
+        auto defaultLibBuildDir = compileOptions.generateDebugInfo ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE;
+        clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(),
+#ifdef WIN32
+            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/" DEFAULT_LIB_NAME ".dll"
 #else
-            DEFAULT_LIB_DIR "/dll/lib" DEFAULT_LIB_NAME ".so"
-#endif        
+            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/lib" DEFAULT_LIB_NAME ".so"
+#endif
         ));
     }      
 

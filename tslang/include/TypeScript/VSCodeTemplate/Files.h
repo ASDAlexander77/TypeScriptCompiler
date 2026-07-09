@@ -316,8 +316,16 @@ enable_language(TSLANG)
 # Include folders
 include_directories(${CMAKE_TSLANG_DIR}/defaultlib)
 
+# The compiled default lib is split into per-build subfolders (debug/release);
+# pick the one matching this build so the CRT and default-lib binaries agree.
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+	set(TSLANG_DEFAULTLIB_BUILD "release")
+else()
+	set(TSLANG_DEFAULTLIB_BUILD "debug")
+endif()
+
 # Lib folders
-link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib)
+link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD})
 
 # set options
 if (CMAKE_BUILD_TYPE STREQUAL "Release")

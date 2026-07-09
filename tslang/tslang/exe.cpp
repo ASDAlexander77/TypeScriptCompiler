@@ -394,8 +394,12 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // default lib file
         args.push_back("-l" DEFAULT_LIB_NAME);    
 
-        // default lib path
-        defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll" : DEFAULT_LIB_DIR "/lib"));
+        // default lib path (per-build subfolder: debug/release must match how
+        // this program is being compiled so the CRT and default-lib binaries agree).
+        // Keyed on --di (generate debug info): with debug info use the debug lib.
+        auto defaultLibBuildDir = compileOptions.generateDebugInfo ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE;
+        auto defaultLibSubDir = std::string(shared ? DEFAULT_LIB_DIR "/dll/" : DEFAULT_LIB_DIR "/lib/") + defaultLibBuildDir;
+        defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir));
         if (!defaultLibPathOpt.empty())
         {
             args.push_back(defaultLibPathOpt.c_str());    

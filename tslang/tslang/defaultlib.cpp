@@ -16,6 +16,7 @@
 #include "llvm/Support/FormatVariadic.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/Defines.h"
 #include "TypeScript/VSCodeTemplate/Files.h"
 
 #include <cstdlib>
@@ -52,17 +53,17 @@ std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
 
-bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string sub1, std::string sub2, std::string fileName)
+bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string sub1, std::string sub2, std::string sub3, std::string fileName)
 {
     llvm::SmallVector<char> destPath(0);
     destPath.reserve(256);
     destPath.append(path);
 
-    llvm::sys::path::append(destPath, sub1, sub2, fileName);
+    llvm::sys::path::append(destPath, sub1, sub2, sub3, fileName);
     if (!llvm::sys::fs::exists(destPath))
     {
         return false;
-    }    
+    }
 
     return true;
 }
@@ -136,15 +137,18 @@ int installDefaultLib(int argc, char **argv)
         return -1;
     }
 
+    // The release build is always produced; verify its static lib landed in the
+    // per-build subfolder (defaultlib/lib/release/...).
     auto result = checkFileExistsAtPath(
-        builtPath, 
-        "defaultlib", 
-        "lib", 
-#ifdef WIN32        
-        "TypeScriptDefaultLib.lib"
+        builtPath,
+        DEFAULT_LIB_DIR,
+        "lib",
+        DEFAULT_LIB_BUILD_DIR_RELEASE,
+#ifdef WIN32
+        DEFAULT_LIB_NAME ".lib"
 #else
-        "libTypeScriptDefaultLib.a"
-#endif        
+        "lib" DEFAULT_LIB_NAME ".a"
+#endif
     );
 
     if (!result)
@@ -256,7 +260,9 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
         return -1;        
     }
 
-    path::append(builtPath, "__build", "release");
+    // Staging root holding the shared defaultlib tree (defaultlib/dll/<mode>,
+    // defaultlib/lib/<mode>, plus mode-independent *.d.ts and generics/).
+    path::append(builtPath, "__build");
 
     return 0;
 }
@@ -306,7 +312,9 @@ int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
         return -1;        
     }
 
-    path::append(builtPath, "__build", "release");
+    // Staging root holding the shared defaultlib tree (defaultlib/dll/<mode>,
+    // defaultlib/lib/<mode>, plus mode-independent *.d.ts and generics/).
+    path::append(builtPath, "__build");
 
     return 0;    
 }
