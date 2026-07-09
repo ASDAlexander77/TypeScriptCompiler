@@ -452,20 +452,25 @@
             }              
         },
         {
-            "name": "(Windows) tslang.exe - EXE(DI)",
+            "name": "(Windows) tslang.exe - JIT(DI)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
-                "-emit=exe",
+                "-emit=jit",
                 "--di",
-                "-mtriple=x86_64-pc-windows-msvc",
+                "--opt_level=0",
                 "--nowarn",
-                "I:/TypeScriptCompilerDefaultLib/tests/array_copyWithin.ts",
+                "--shared-libs=${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll",
+                "I:/TypeScriptCompilerDefaultLib/tests/sleep.ts",
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",
             "environment": [
+                {
+                    "name": "DEFAULT_LIB_PATH",
+                    "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/debug"
+                },
                 {
                     "name": "GC_LIB_PATH",
                     "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug"
