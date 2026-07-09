@@ -356,11 +356,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         args.push_back(additionalObjFileName.c_str());
     }    
 
-    if (win && shared)
-    {
-        //args.push_back("-Wl,-nodefaultlib:libcmt");
-    }
-
     if (outputFilename.empty())
     {
         outputFilename = getDefaultOutputFileName(emitAction);
@@ -450,12 +445,14 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             args.push_back("-llibucrt");
             args.push_back("-llibcmt");
             args.push_back("-llibvcruntime");
+            args.push_back("-Wl,-nodefaultlib:libcmtd");
         }
         else
         {
             args.push_back("-llibucrtd");
             args.push_back("-llibcmtd");
             args.push_back("-llibvcruntimed");
+            args.push_back("-Wl,-nodefaultlib:libcmt");
         }
 
         args.push_back("-lntdll");
@@ -551,12 +548,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 
     theDriver.setTargetAndMode(targetAndMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
-
-    if (win && (shared || !disableGC))
-    {
-        args.push_back("-Wl,-nodefaultlib:libcmt");
-        removeCommandArgs(c.get(), {"defaultlib:libcmt"});
-    }
 
     if (wasm)
     {

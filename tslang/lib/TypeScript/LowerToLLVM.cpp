@@ -2912,10 +2912,27 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
 {
     using TsLlvmPattern<mlir_ts::ArithmeticBinaryOp>::TsLlvmPattern;
 
+    // JS shift operators (<<, >>, >>>) use only the low 5 bits of the shift amount
+    // (i.e. count & 31 for 32-bit operands). LLVM's shl/ashr/lshr are undefined
+    // behavior when the shift amount >= the operand's bit width, so without this
+    // mask, optimized (-O) builds can produce garbage for e.g. `10 << 100`.
+    static mlir::Value maskShiftAmount(mlir::Location loc, mlir::Value shiftAmount, ConversionPatternRewriter &rewriter)
+    {
+        auto intType = dyn_cast<mlir::IntegerType>(shiftAmount.getType());
+        if (!intType)
+        {
+            return shiftAmount;
+        }
+
+        auto mask = rewriter.create<arith::ConstantOp>(
+            loc, intType, rewriter.getIntegerAttr(intType, intType.getWidth() - 1));
+        return rewriter.create<arith::AndIOp>(loc, shiftAmount, mask);
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
+
 
         auto opCode = (SyntaxKind)arithmeticBinaryOp.getOpCode();
         switch (opCode)
@@ -2946,15 +2963,15 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
 
         case SyntaxKind::GreaterThanGreaterThanToken:
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRSIOp, arith::ShRSIOp, arith::ShRUIOp>(
-                arithmeticBinaryOp, transformed.getOperand1(), transformed.getOperand2(), rewriter);
+                arithmeticBinaryOp, transformed.getOperand1(), maskShiftAmount(arithmeticBinaryOp->getLoc(), transformed.getOperand2(), rewriter), rewriter);
 
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRUIOp, arith::ShRUIOp>(
-                arithmeticBinaryOp, transformed.getOperand1(), transformed.getOperand2(), rewriter);
+                arithmeticBinaryOp, transformed.getOperand1(), maskShiftAmount(arithmeticBinaryOp->getLoc(), transformed.getOperand2(), rewriter), rewriter);
 
         case SyntaxKind::LessThanLessThanToken:
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShLIOp, arith::ShLIOp>(arithmeticBinaryOp, transformed.getOperand1(),
-                                                                         transformed.getOperand2(), rewriter);
+                                                                         maskShiftAmount(arithmeticBinaryOp->getLoc(), transformed.getOperand2(), rewriter), rewriter);
 
         case SyntaxKind::AmpersandToken:
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndIOp, arith::AndIOp>(arithmeticBinaryOp, transformed.getOperand1(),

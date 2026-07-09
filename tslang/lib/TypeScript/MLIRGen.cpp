@@ -9749,13 +9749,13 @@ class MLIRGenImpl
                 result = leftInt * rightInt;
                 break;
             case SyntaxKind::LessThanLessThanToken:
-                result = leftInt << rightInt;
+                result = leftInt << rightInt.urem(leftInt.getBitWidth());
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = leftInt.ashr(rightInt);
+                result = leftInt.ashr(rightInt.urem(leftInt.getBitWidth()));
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result = leftInt.lshr(rightInt);
+                result = leftInt.lshr(rightInt.urem(leftInt.getBitWidth()));
                 break;
             case SyntaxKind::AmpersandToken:
                 result = leftInt & rightInt;
@@ -9813,14 +9813,17 @@ class MLIRGenImpl
             case SyntaxKind::AsteriskToken:
                 result = leftFloat * rightFloat;
                 break;
+            // JS bitwise/shift operators coerce both operands to Int32, so the shift
+            // amount is masked mod 32 here regardless of the 64-bit APSInt width used
+            // above to stage the float->int conversion.
             case SyntaxKind::LessThanLessThanToken:
-                resultAPInt = leftAPInt.shl(rightAPInt);
+                resultAPInt = leftAPInt.shl(rightAPInt.urem(32));
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                resultAPInt = leftAPInt.ashr(rightAPInt);
+                resultAPInt = leftAPInt.ashr(rightAPInt.urem(32));
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                resultAPInt = leftAPInt.lshr(rightAPInt);
+                resultAPInt = leftAPInt.lshr(rightAPInt.urem(32));
                 break;
             case SyntaxKind::AmpersandToken:
                 resultAPInt = leftAPInt & rightAPInt;
