@@ -84,3 +84,18 @@ int64_t _mlir__GC_make_descriptor(const int64_t *descr, size_t size)
 {
     return GC_make_descriptor(reinterpret_cast<const GC_word *>(descr), size);
 }
+
+int _mlir__GC_general_register_disappearing_link(void **link, const void *obj)
+{
+    return GC_general_register_disappearing_link(link, obj);
+}
+
+int _mlir__GC_unregister_disappearing_link(void **link)
+{
+    return GC_unregister_disappearing_link(link);
+}
+
+void _mlir__GC_gcollect()
+{
+    GC_gcollect();
+}

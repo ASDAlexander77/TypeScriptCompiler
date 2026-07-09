@@ -29,6 +29,12 @@ void *_mlir__GC_malloc_explicitly_typed(size_t size, int64_t descr);
 
 int64_t _mlir__GC_make_descriptor(const int64_t *descr, size_t size);
 
+int _mlir__GC_general_register_disappearing_link(void **link, const void *obj);
+
+int _mlir__GC_unregister_disappearing_link(void **link);
+
+void _mlir__GC_gcollect();
+
 #ifdef __cplusplus
 }
 #endif
