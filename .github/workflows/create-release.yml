@@ -281,7 +281,7 @@ jobs:
       - name: Install Ninja
         continue-on-error: false
         shell: sh
-        run: sudo apt install ninja-build
+        run: sudo apt install ninja-build libcurl4-openssl-dev
 
   #    - name: Install Clang 12
   #      continue-on-error: false
