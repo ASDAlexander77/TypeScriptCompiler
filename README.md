@@ -22,6 +22,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 - [Example](#example)
 - [Running your code](#run-as-jit)
   - [As JIT](#run-as-jit)
+  - [Debugging JIT code with GDB (Linux)](#debugging-jit-code-with-gdb-linux)
   - [As a native executable](#compile-as-binary-executable)
   - [As WebAssembly](#compiling-as-wasm)
 - [Building from source](#build)
@@ -222,6 +223,44 @@ Result
 ```text
 Hello World!
 ```
+
+## Debugging JIT code with GDB (Linux)
+
+JIT-compiled TypeScript can be debugged at source level with GDB — breakpoints on `.ts` lines,
+stepping, and backtraces all work. The JIT registers every compiled object with the debugger via
+the standard [GDB JIT interface](https://sourceware.org/gdb/current/onlinedocs/gdb.html/JIT-Interface.html),
+so an attached GDB picks up the DWARF debug info at runtime.
+
+Two things are required:
+
+- pass `--di` so the compiler emits debug information;
+- run **without** `--opt` (JIT debug registration is only enabled when optimizations are off).
+
+```bash
+gdb --args tslang --di hello.ts
+(gdb) break hello.ts:2
+Make breakpoint pending on future shared library load? (y or [n]) y
+(gdb) run
+```
+
+The breakpoint stays *pending* until the JIT compiles and registers your code, then binds and stops
+with full source context:
+
+```text
+Thread 1 "tslang" hit Breakpoint 1, main () at hello.ts:2
+2           print("Hello World!");
+```
+
+From there the usual GDB commands work on the JIT'd frames: `next`, `step`, `info locals`, `bt`.
+
+Notes:
+
+- The `(No debugging symbols found in tslang)` warning at startup refers to the compiler binary
+  itself and is harmless — the debug info for *your* code arrives when the JIT registers it.
+- The `debugger;` TypeScript statement is also supported: it compiles to a debug trap instruction,
+  so execution stops exactly there when a debugger is attached. Without a debugger attached it
+  terminates the process with `SIGTRAP`, so remove it when you are done.
+- For LLDB, enable its JIT loader first: `settings set plugin.jit-loader.gdb enable`.
 
 ## Compile as Binary Executable
 
