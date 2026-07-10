@@ -754,11 +754,11 @@
             "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=jit",
-                "I:/Playground/1.ts",
-                "-debug-only=mlir,llvm",
+                "I:/TypeScriptCompilerDefaultLib/tests/sleep.ts",
+                //"-debug-only=mlir,llvm",
                 "-mlir-disable-threading",
                 "-di",
-                "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
+                "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build",
                 "--shared-libs=${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,

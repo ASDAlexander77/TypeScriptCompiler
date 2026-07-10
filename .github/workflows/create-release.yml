@@ -181,7 +181,7 @@ jobs:
         # default library as a whole tree so its per-build subfolders are preserved:
         #   defaultlib/dll/{debug,release}, defaultlib/lib/{debug,release},
         #   defaultlib/*.d.ts, defaultlib/generics/
-        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\defaultlib | Compress-Archive -DestinationPath ..\tslang.zip
+        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build | Compress-Archive -DestinationPath ..\tslang.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
