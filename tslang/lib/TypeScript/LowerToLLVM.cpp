@@ -1132,6 +1132,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         SmallVector<mlir::Attribute> funcAttrs;
 
+        // mustprogress licenses standard -O2/-O3 loop transforms (LICM, unrolling,
+        // vectorization of provably-finite loops) that otherwise stay conservative
+        // without proof the loop can't spin forever with no observable effect. Every
+        // ts loop with a call/store in its body already satisfies the (weaker)
+        // mustprogress contract; a body-less `while(true){}` is the only case this
+        // attribute changes the meaning of, same as in C/C++/Rust.
+        funcAttrs.push_back(ATTR("mustprogress"));
+
         if (funcOp.getPersonality().has_value() && funcOp.getPersonality().value())
         {
             LLVMRTTIHelperVC rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
