@@ -515,6 +515,43 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         args.push_back("-ltinfo");
         args.push_back("-ldl");
         args.push_back("-lrt");
+
+        // The default library's HTTP wrapper (http_linux.cpp) is implemented on
+        // top of libcurl (the Linux counterpart of WinHTTP on Windows, which is
+        // linked via a #pragma in http.cpp). Only needed when the default library
+        // is actually linked, so this is skipped under --no-default-lib. Warn
+        // early with the exact install command if the development library is not
+        // present, then still pass -lcurl so the linker error is emitted too if
+        // it really is missing.
+        if (!compileOptions.noDefaultLib)
+        {
+            static const char *curlSharedLibs[] = {
+                "/usr/lib/x86_64-linux-gnu/libcurl.so",
+                "/usr/lib/aarch64-linux-gnu/libcurl.so",
+                "/usr/lib/libcurl.so",
+                "/usr/local/lib/libcurl.so",
+                "/usr/lib64/libcurl.so",
+            };
+
+            bool curlFound = false;
+            for (auto *curlLib : curlSharedLibs)
+            {
+                if (llvm::sys::fs::exists(curlLib))
+                {
+                    curlFound = true;
+                    break;
+                }
+            }
+
+            if (!curlFound)
+            {
+                llvm::WithColor::warning(llvm::errs(), "tslang")
+                    << "the curl development library was not found; the HTTP support in the default "
+                       "library needs it. Install it with: sudo apt install libcurl4-openssl-dev\n";
+            }
+
+            args.push_back("-lcurl");
+        }
         //args.push_back("-rdynamic"); // do we need it?
     }
 

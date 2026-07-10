@@ -981,6 +981,33 @@
             "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
+            "name": "(Linux) tslang - JIT (Default Lib - linux file)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
+            "args": [
+                "-emit=jit",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/tests/sleep.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GC_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/gc/ninja/debug"
+                },
+                {
+                    "name": "LLVM_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib"
+                },
+                {
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
+                }
+            ],
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
+        },        
+        {
             "name": "(Windows) tslang.exe - DefaultLib Compile (DLL)",
             "type": "cppvsdbg",
             "request": "launch",
