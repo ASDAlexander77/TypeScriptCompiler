@@ -137,7 +137,10 @@ cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default l
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method (" MLIR_GCTORS ") to initialize Static Objects instead of Global Constructors (gctors)"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
-cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory)); 
+cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
+
+cl::opt<bool> enableFastMath("fast-math", cl::desc("Allow aggressive floating-point optimizations (reassociation, reciprocal, FMA contraction, approximate math functions). "
+                                                   "May change results of floating-point computations; NaN and Infinity semantics are preserved."), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> newCMakeFolder("cmake", cl::desc("New CMake Project"), cl::cat(TypeScriptCompilerCategory));
