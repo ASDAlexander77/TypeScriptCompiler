@@ -26,6 +26,7 @@ struct CompileOptions
     std::string outputFolder;
     bool appendGCtorsToMethod;
     bool strictNullChecks;
+    bool enableFastMath;
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_

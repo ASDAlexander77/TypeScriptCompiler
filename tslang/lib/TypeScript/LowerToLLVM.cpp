@@ -337,8 +337,9 @@ class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
 
         TypeHelper th(rewriter.getContext());
 
-        // icmp
-        auto cmpValue = rewriter.create<LLVM::FCmpOp>(loc, th.getLLVMBoolType(), LLVM::FCmpPredicate::one,
+        // uno (unordered) self-compare is true iff the value is NaN; `one` here would
+        // be constant false (ordered && x != x can never hold for a self-compare).
+        auto cmpValue = rewriter.create<LLVM::FCmpOp>(loc, th.getLLVMBoolType(), LLVM::FCmpPredicate::uno,
                                                       transformed.getArg(), transformed.getArg());
         rewriter.replaceOp(op, ValueRange{cmpValue});
         return success();
@@ -3043,7 +3044,10 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
             break;
         case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
-            value = logicOp<arith::CmpIPredicate::ne, arith::CmpFPredicate::ONE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            // UNE, not ONE: JS `!=`/`!==` is the negation of `==`, so NaN != x must be
+            // true. ONE (ordered) yields false when either side is NaN, and `x != x`
+            // (the idiomatic NaN test) folds to constant false.
+            value = logicOp<arith::CmpIPredicate::ne, arith::CmpFPredicate::UNE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                    rewriter);
             break;
         case SyntaxKind::GreaterThanToken:

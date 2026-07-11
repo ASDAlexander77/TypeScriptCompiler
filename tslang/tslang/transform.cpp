@@ -40,6 +40,11 @@
 
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Operator.h"
+#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CommandLine.h"
@@ -217,6 +222,44 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
     return std::nullopt;
 }
 
+// --fast-math: relax IEEE-754 strictness the same way clang's
+// -funsafe-math-optimizations does, but deliberately WITHOUT nnan/ninf
+// (finite-math-only). In TypeScript NaN and Infinity are first-class values
+// produced in ordinary control flow (Number('abc'), parseFloat failures,
+// overflow), and the default lib's isNaN/isFinite are `x !== x`-style checks
+// that nnan would constant-fold away. reassoc+nsz is what actually licenses
+// FP-reduction vectorization; arcp/contract/afn add reciprocal, FMA
+// contraction, and approximate libm calls.
+static void applyFastMathFlags(llvm::Module &m)
+{
+    for (auto &func : m)
+    {
+        if (func.isDeclaration())
+        {
+            continue;
+        }
+
+        // backend (SelectionDAG/GlobalISel) counterparts of the IR flags
+        func.addFnAttr("unsafe-fp-math", "true");
+        func.addFnAttr("no-signed-zeros-fp-math", "true");
+        func.addFnAttr("approx-func-fp-math", "true");
+
+        for (auto &inst : llvm::instructions(func))
+        {
+            if (llvm::isa<llvm::FPMathOperator>(&inst))
+            {
+                auto fmf = inst.getFastMathFlags();
+                fmf.setAllowReassoc();
+                fmf.setNoSignedZeros();
+                fmf.setAllowReciprocal();
+                fmf.setAllowContract();
+                fmf.setApproxFunc();
+                inst.setFastMathFlags(fmf);
+            }
+        }
+    }
+}
+
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
     std::optional<unsigned> mbOptLevel, std::optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
 {
@@ -230,12 +273,36 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
                 llvm::inconvertibleErrorCode());
         }
 
+        if (compileOptions.enableFastMath)
+        {
+            applyFastMathFlags(*m);
+        }
+
+        // Every caller hands in a null TargetMachine, which leaves the -O2/-O3
+        // cost model without target information: no vector registers are known,
+        // so LoopVectorize/SLP never consider vectorization profitable. Build a
+        // TargetMachine from the module triple (honoring -mcpu/-mattr) so the
+        // optimization pipeline sees the real target.
+        std::unique_ptr<llvm::TargetMachine> ownedTargetMachine;
+        auto *effectiveTargetMachine = targetMachine;
+        if (!effectiveTargetMachine)
+        {
+            std::string lookupError;
+            if (auto *target = llvm::TargetRegistry::lookupTarget(m->getTargetTriple(), lookupError))
+            {
+                ownedTargetMachine.reset(target->createTargetMachine(
+                    m->getTargetTriple(), llvm::codegen::getCPUStr(), llvm::codegen::getFeaturesStr(),
+                    llvm::TargetOptions(), std::nullopt));
+                effectiveTargetMachine = ownedTargetMachine.get();
+            }
+        }
+
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
         llvm::CGSCCAnalysisManager cgam;
         llvm::ModuleAnalysisManager mam;
 
-        llvm::PassBuilder pb(targetMachine);
+        llvm::PassBuilder pb(effectiveTargetMachine);
 
         pb.registerModuleAnalyses(mam);
         pb.registerCGSCCAnalyses(cgam);

@@ -99,17 +99,32 @@ auto tslang_opt = "--di --opt_level=0 --no-default-lib";
 #define COMPILE_NAME "compiled"
 #endif
 
+auto fastMath = false;
 auto tslang_opt_ext = std::string("");
+
+// -fast-math tests get their own cached script (jitfm/compilefm) because the
+// plain jit/compile scripts are shared across all parallel single-file tests
+// and embed tslang_opt_ext at creation time - reusing the same file name would
+// let whichever runner created it first decide the flags for everyone.
+std::string jitBatName()
+{
+    return std::string(JIT_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+}
+
+std::string compileBatName()
+{
+    return std::string(COMPILE_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+}
 
 void createJitBatchFile()
 {
-#ifdef WIN32    
-    if (exists(JIT_NAME BAT_NAME))
+#ifdef WIN32
+    if (exists(jitBatName()))
     {
         return;
     }
 
-    std::ofstream batFile(JIT_NAME BAT_NAME);
+    std::ofstream batFile(jitBatName());
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
@@ -119,12 +134,12 @@ void createJitBatchFile()
             << std::endl;
     batFile.close();
 #else
-    if (exists(JIT_NAME BAT_NAME))
+    if (exists(jitBatName()))
     {
         return;
     }
 
-    std::ofstream batFile(JIT_NAME BAT_NAME);
+    std::ofstream batFile(jitBatName());
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
@@ -136,13 +151,13 @@ void createJitBatchFile()
 
 void createCompileBatchFile()
 {
-#ifdef WIN32     
-    if (exists(COMPILE_NAME BAT_NAME))
+#ifdef WIN32
+    if (exists(compileBatName()))
     {
         return;
     }
 
-    std::ofstream batFile(COMPILE_NAME BAT_NAME);
+    std::ofstream batFile(compileBatName());
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
@@ -169,12 +184,12 @@ void createCompileBatchFile()
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
-    if (exists(COMPILE_NAME BAT_NAME))
+    if (exists(compileBatName()))
     {
         return;
     }
 
-    std::ofstream batFile(COMPILE_NAME BAT_NAME);
+    std::ofstream batFile(compileBatName());
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "LINKER_OPTS=$3" << std::endl;
@@ -207,12 +222,12 @@ void createBatchFile()
 
 void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << JIT_NAME BAT_NAME << " " << fileNameNoExt << " " << file;
+    ss << RUN_CMD << jitBatName() << " " << fileNameNoExt << " " << file;
 }
 
 void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << COMPILE_NAME BAT_NAME << " " << fileNameNoExt << " " << file;
+    ss << RUN_CMD << compileBatName() << " " << fileNameNoExt << " " << file;
     if (sharedLib)
     {
         ss << SHARED_LIB_OPT;
@@ -663,6 +678,11 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         else if (std::string(argv[index]) == "-noopt")
         {
             opt = false;
+        }
+        else if (std::string(argv[index]) == "-fast-math")
+        {
+            fastMath = true;
+            tslang_opt_ext += " --fast-math";
         }
         else if (exists(argv[index]))
         {

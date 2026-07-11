@@ -202,8 +202,12 @@ function testComma() {
     assert(y.length == 4, "y");
 }
 
+// NaN is the only value not strictly equal to itself: `NaN !== NaN` is true and
+// `NaN === NaN` is false per ECMAScript. The previous form
+// `(x !== x) === (x === x)` is always false in conforming JS and only passed
+// while `!==` was mis-lowered to an ordered (ONE) float compare.
 function isnan(x: number) {
-    return (x !== x) === (x === x);
+    return x !== x;
 }
 
 function mydiv(x: number, y: number) {

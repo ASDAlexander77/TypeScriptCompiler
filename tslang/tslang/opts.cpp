@@ -25,8 +25,9 @@ extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> appendGCtorsToMethod;
-extern cl::opt<bool> strictNullChecks; 
+extern cl::opt<bool> strictNullChecks;
 extern cl::opt<bool> embedExportDeclarationsAction;
+extern cl::opt<bool> enableFastMath;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -57,6 +58,7 @@ CompileOptions prepareOptions()
     compileOptions.isDLL = emitAction == Action::BuildDll;
     compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     compileOptions.strictNullChecks = strictNullChecks.getValue();
+    compileOptions.enableFastMath = enableFastMath.getValue();
     if (
         TheTriple.getArch() == llvm::Triple::UnknownArch
         || TheTriple.getArch() == llvm::Triple::aarch64        // AArch64 (little endian): aarch64

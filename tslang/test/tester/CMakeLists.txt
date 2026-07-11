@@ -105,7 +105,11 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compile.bat"  "${CMAKE_CURRENT_BINARY_DIR}/jit.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compiled.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitd.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compile.sh"   "${CMAKE_CURRENT_BINARY_DIR}/jit.sh"
-    "${CMAKE_CURRENT_BINARY_DIR}/compiled.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitd.sh")
+    "${CMAKE_CURRENT_BINARY_DIR}/compiled.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitd.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilefm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitfm.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilefm.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitfm.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.sh")
 
 ######## enable testing ############
 # open __build\tslang   
@@ -443,6 +447,7 @@ add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOU
 add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
 add_test(NAME test-compile-uint-compare-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
 add_test(NAME test-compile-gc-malloc-cse-o3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
+add_test(NAME test-compile-fast-math COMMAND test-runner -fast-math "${PROJECT_SOURCE_DIR}/test/tester/tests/fast_math.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -774,6 +779,7 @@ add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SO
 add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
 add_test(NAME test-jit-uint-compare-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
 add_test(NAME test-jit-gc-malloc-cse-o3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
+add_test(NAME test-jit-fast-math COMMAND test-runner -jit -fast-math "${PROJECT_SOURCE_DIR}/test/tester/tests/fast_math.ts")
 
 # tesing include
 add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/include_global_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/define_global_var.ts")
