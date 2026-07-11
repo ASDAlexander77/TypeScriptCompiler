@@ -192,6 +192,28 @@ class MLIRGenImpl
         const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs(includeDirs);
     }
 
+    // RAII scope switching the current source file and file name (used for locations and debug info).
+    class SourceFileScope
+    {
+      public:
+        SourceFileScope(MLIRGenImpl &mlirGenImpl, ts::SourceFile newSourceFile, llvm::StringRef newFileName)
+            : sourceFileGuard(mlirGenImpl.sourceFile, newSourceFile),
+              fileNameGuard(mlirGenImpl.mainSourceFileName, newFileName)
+        {
+        }
+
+        // interns the file name from the source file's wide file name
+        SourceFileScope(MLIRGenImpl &mlirGenImpl, ts::SourceFile newSourceFile)
+            : SourceFileScope(mlirGenImpl, newSourceFile,
+                              llvm::StringRef(convertWideToUTF8(newSourceFile->fileName)).copy(mlirGenImpl.stringAllocator))
+        {
+        }
+
+      private:
+        MLIRValueGuard<ts::SourceFile> sourceFileGuard;
+        MLIRValueGuard<llvm::StringRef> fileNameGuard;
+    };
+
     mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
     {
         // output diag info
@@ -748,12 +770,7 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);
-
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = includeFile;
+            SourceFileScope sourceFileScope(*this, includeFile);
 
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
@@ -830,12 +847,7 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);;
-
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = includeFile;
+            SourceFileScope sourceFileScope(*this, includeFile);
 
             if (failed(mlirGen(includeFile->statements, genContext)))
             {
@@ -983,12 +995,7 @@ class MLIRGenImpl
         }          
 
         // we need to override filename to track it in DBG info
-        MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-        auto fileNameUtf8 = convertWideToUTF8(importSource->fileName);
-        mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);
-
-        MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-        sourceFile = importSource;
+        SourceFileScope sourceFileScope(*this, importSource);
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
@@ -2219,11 +2226,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard nsGuard(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = functionGenericTypeInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = functionGenericTypeInfo->fileName;
+            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
 
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
                                                             recieverType, discoverReturnType, genContext);
@@ -2315,11 +2318,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard nsGuard(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
             
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = functionGenericTypeInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = functionGenericTypeInfo->fileName;
+            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
 
             auto [result, specFuncOp, specFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, funcGenContext);
@@ -2669,11 +2668,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = functionGenericTypeInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = functionGenericTypeInfo->fileName;
+            SourceFileScope sourceFileScope(*this, functionGenericTypeInfo->sourceFile, functionGenericTypeInfo->fileName);
 
             auto anyNamedGenericType = IsGeneric::False;
 
@@ -2900,11 +2895,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericClassInfo->elementNamespace;
 
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = genericClassInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = genericClassInfo->fileName;
+            SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -2970,11 +2961,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericClassInfo->elementNamespace;
 
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = genericClassInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = genericClassInfo->fileName;
+            SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -3044,11 +3031,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericInterfaceInfo->elementNamespace;
 
-            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
-            sourceFile = genericInterfaceInfo->sourceFile;
-
-            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
-            mainSourceFileName = genericInterfaceInfo->fileName;
+            SourceFileScope sourceFileScope(*this, genericInterfaceInfo->sourceFile, genericInterfaceInfo->fileName);
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
