@@ -764,9 +764,6 @@ class MLIRGenImpl
         genContextPartial.dummyRun = true;
         genContextPartial.rootContext = &genContextPartial;
         genContextPartial.postponedMessages = &postponedMessages;
-        // TODO: no need to clean up here as whole module will be removed
-        //genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        //genContextPartial.cleanUpOps = new mlir::SmallVector<mlir::Operation *>();
 
         for (auto includeFile : includeFiles)
         {
@@ -780,8 +777,6 @@ class MLIRGenImpl
         }
 
         auto notResolved = processStatements(module->statements, genContextPartial);
-
-        genContextPartial.clean();
 
         // clean up: erase only the ops this discovery pass added, preserving any content that
         // was already generated before a nested discovery (see preExistingOps above).
@@ -5557,16 +5552,22 @@ class MLIRGenImpl
             llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> 
                 fullNameGlobalsMapScope(fullNameGlobalsMap);
 
+            // owned here; GenContext borrows pointers to them (see GenContext::clean)
+            SmallVector<mlir::Block *> cleanUpsList;
+            SmallVector<mlir::Operation *> cleanUpOpsList;
+            PassResult passResultData;
+            int discoverState = 1;
+
             GenContext genContextWithPassResult{};
             genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.thisClassType = genContext.thisClassType;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
-            genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
-            genContextWithPassResult.cleanUpOps = new SmallVector<mlir::Operation *>();
-            genContextWithPassResult.passResult = new PassResult();
-            genContextWithPassResult.state = new int(1);
+            genContextWithPassResult.cleanUps = &cleanUpsList;
+            genContextWithPassResult.cleanUpOps = &cleanUpOpsList;
+            genContextWithPassResult.passResult = &passResultData;
+            genContextWithPassResult.state = &discoverState;
             genContextWithPassResult.allocateVarsInContextThis =
                 (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
                 InternalFlags::VarsInObjectContext;
@@ -6091,7 +6092,8 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(funcDeclGenContext);
         funcGenContext.clearScopeVars();
         funcGenContext.funcOp = funcOp;
-        funcGenContext.state = new int(1);
+        int funcState = 1;
+        funcGenContext.state = &funcState;
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully
         // defined object with local variables as fields
         funcGenContext.allocateVarsInContextThis =
@@ -6123,8 +6125,6 @@ class MLIRGenImpl
             resultFromBody = mlirGenFunctionBody(
                 functionLikeDeclarationBaseAST, funcProto->getNameWithoutNamespace(), funcOp, funcProto, funcGenContext);
         }
-
-        funcGenContext.cleanState();
 
         if (mlir::failed(resultFromBody))
         {

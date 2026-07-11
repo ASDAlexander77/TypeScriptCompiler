@@ -75,11 +75,12 @@ struct GenContext
         receiverFuncType = mlir::Type();
     }
 
-    // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
+    // erases the IR collected during a dummy run (cleanup lists, dummy funcOp) and detaches from it;
+    // the lists, passResult and state are owned by the stack frame that set them, not by GenContext
     void clean()
     {
         if (cleanUps)
-        {    
+        {
             for (auto op : *cleanUps)
             {
                 op->dropAllDefinedValueUses();
@@ -88,7 +89,7 @@ struct GenContext
                 op->erase();
             }
 
-            delete cleanUps;
+            cleanUps->clear();
             cleanUps = nullptr;
         }
 
@@ -102,28 +103,14 @@ struct GenContext
                 op->erase();
             }
 
-            delete cleanUpOps;
-            cleanUpOps = nullptr;               
+            cleanUpOps->clear();
+            cleanUpOps = nullptr;
         }
 
-        if (passResult)
-        {
-            delete passResult;
-            passResult = nullptr;
-        }
-
-        cleanState();
+        passResult = nullptr;
+        state = nullptr;
 
         cleanFuncOp();
-    }
-
-    void cleanState()
-    {
-        if (state)
-        {
-            delete state;
-            state = nullptr;
-        }
     }
 
     void cleanFuncOp()
