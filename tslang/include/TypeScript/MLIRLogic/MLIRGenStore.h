@@ -4,6 +4,7 @@
 #include "TypeScript/DOM.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "mlir"
@@ -737,48 +738,37 @@ struct ClassInfo
 
     void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable)
     {
+        // name -> slot indices built alongside the vtable: override resolution is O(1)
+        // per method instead of a linear scan of the accumulated table, and keeping
+        // method and interface slots in separate maps prevents a method whose name
+        // matches an interface full name from clobbering the interface slot (the old
+        // find_if searched both kinds through methodInfo.name).
+        llvm::StringMap<size_t> methodSlots;
+        llvm::StringMap<size_t> interfaceSlots;
+        getVirtualTable(vtable, methodSlots, interfaceSlots);
+    }
+
+    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable,
+                         llvm::StringMap<size_t> &methodSlots, llvm::StringMap<size_t> &interfaceSlots)
+    {
         // in static class I don't want to have virtual table
         if (isStatic)
         {
             return;
         }
 
-        auto processMethod = [] (auto &method, auto &vtable) {
-            auto index =
-                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
-                                  return method.name == vTableMethod.methodInfo.name;
-                              }));
-            if ((size_t)index < vtable.size())
-            {
-                // found method
-                vtable[index].methodInfo.funcOp = method.funcOp;
-                method.virtualIndex = index;
-                method.isVirtual = true;
-                vtable[index].methodInfo.isAbstract = method.isAbstract;
-            }
-            else if (method.isVirtual)
-            {
-                method.virtualIndex = vtable.size();
-                vtable.push_back({method, false});
-            }
-        };
-
         for (auto &base : baseClasses)
         {
-            base->getVirtualTable(vtable);
+            base->getVirtualTable(vtable, methodSlots, interfaceSlots);
         }
-        
+
         // TODO: we need to process .Rtti first
         // TODO: then we need to process .instanceOf next
 
         // do vtable for current class
         for (auto &implement : implements)
         {
-            auto index =
-                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
-                                  return implement.interface->fullName == vTableRecord.methodInfo.name;
-                              }));
-            if ((size_t)index < vtable.size())
+            if (interfaceSlots.contains(implement.interface->fullName))
             {
                 // found interface
                 continue;
@@ -787,24 +777,43 @@ struct ClassInfo
             MethodInfo methodInfo;
             methodInfo.name = implement.interface->fullName.str();
             implement.virtualIndex = vtable.size();
+            interfaceSlots[implement.interface->fullName] = vtable.size();
             vtable.push_back({methodInfo, true});
         }
 
         // methods
-        std::sort(methods.begin(), methods.end(), [&] (auto &method1, auto &method2) {
+        // stable_sort: slot order is ABI for separately compiled modules, so members
+        // with equal orderWeight (e.g. compiler-generated ones) must keep their
+        // declaration order instead of getting an implementation-defined one
+        std::stable_sort(methods.begin(), methods.end(), [] (auto &method1, auto &method2) {
             return method1.orderWeight < method2.orderWeight;
         });
 
         for (auto &method : methods)
         {
-#ifndef ADD_STATIC_MEMBERS_TO_VTABLE            
+#ifndef ADD_STATIC_MEMBERS_TO_VTABLE
             if (method.isStatic)
             {
                 continue;
             }
-#endif            
+#endif
 
-            processMethod(method, vtable);
+            auto it = methodSlots.find(method.name);
+            if (it != methodSlots.end())
+            {
+                // found method - override the inherited slot
+                auto index = it->second;
+                vtable[index].methodInfo.funcOp = method.funcOp;
+                method.virtualIndex = index;
+                method.isVirtual = true;
+                vtable[index].methodInfo.isAbstract = method.isAbstract;
+            }
+            else if (method.isVirtual)
+            {
+                method.virtualIndex = vtable.size();
+                methodSlots[method.name] = vtable.size();
+                vtable.push_back({method, false});
+            }
         }
 
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
@@ -813,8 +822,8 @@ struct ClassInfo
         {
             staticField.virtualIndex = vtable.size();
             vtable.push_back({staticField, false});
-        }        
-#endif        
+        }
+#endif
     }
 
     auto getBasesWithRoot(SmallVector<StringRef> &classNames) -> bool
