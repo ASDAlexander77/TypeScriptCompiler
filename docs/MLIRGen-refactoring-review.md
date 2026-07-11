@@ -126,3 +126,49 @@ Suggested policy: new TODOs must reference an issue number; do a one-time sweep 
 6. **§6–§8** — opportunistic, alongside other work.
 
 Each step is independently shippable and verifiable with the existing `test/tester` suite plus `unittests/MLIRGenTests`.
+
+---
+
+## Addendum — 2026-07-11 scan
+
+*File is now 26,618 lines. PR [#201](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/201) delivered a first slice of §3: `addGlobalConstructor()` replaced five copy-pasted `GlobalConstructorOp` blocks, `TempModuleScope` (RAII) replaced four manual `theModule` save/restores around temp-module evaluation, `MLIRValueGuard` gained a save-and-set constructor, and the dead non-`MODULE_AS_NAMESPACE` branch in `mlirGen(ModuleDeclaration)` was removed.*
+
+### A1. `GenContext` initialization and ownership (extends §3)
+
+`MLIRGenContext.h` — two hazards beyond the traversal-state issue already described:
+
+- **Uninitialized members.** `GenContext() = default;` leaves ~15 `bool`s and raw pointers indeterminate. Every current instance is value-initialized (`GenContext ctx{};`) or copied, so the bug is latent — but a plain `GenContext ctx;` compiles and produces garbage codegen flags. Fix: default member initializers on every field; then the manual `clearScopeVars()`-style zeroing can shrink.
+- **Raw owning pointers with manual delete.** `cleanUps`, `cleanUpOps`, `passResult`, `state` are freed by hand in `clean()`/`cleanState()`, while the struct is copied **48 times** in MLIRGen.cpp; copies share the pointers, so correctness depends on exactly one caller invoking `clean()`. Fix: ownership at the root context only, expressed with `unique_ptr` (copies hold a non-owning pointer), or a small refcounted holder.
+
+Related measurement: 31 of the 38 `const_cast`s are `const_cast<GenContext &>` mutating a parameter declared `const` (§3's diagnosis stands; this is the count).
+
+### A2. Repeated source-file-switch pattern (new; same family as `TempModuleScope`)
+
+The trio `MLIRValueGuard vgSourceFile / vgFileName` + assignments appears **9×**: three include/import-loading sites (~751, ~833, ~986) and six generic-instantiation sites (e.g. ~2219) where it is additionally paired with `MLIRNamespaceGuard`. Extract:
+
+- `SourceFileScope(sourceFile, mainSourceFileName, newFile)` — RAII, one line per site;
+- `GenericContextScope` — namespace + source file + file name, for the six instantiation sites.
+
+### A3. Inference loop guard hides a non-convergence bug (new)
+
+`resolveGenericParamsFromFunctionCall` (~2622): `if (totalProcessed > params.size() + 100) emitError("loop detected")` is an arbitrary bail-out admitting the parameter-inference fixpoint can cycle (`// TODO: find out the issue`). Deserves a root-cause pass with a reduced test; the guard should become an assertion once understood.
+
+### A4. Allocation hot spots (new)
+
+- **Arena interning on lookup paths.** `getFullNamespaceName(StringRef)` (~25926) heap-builds a `std::string` then permanently interns it via `.copy(stringAllocator)` (BumpPtrAllocator, never freed) — on *every* call, including failed lookups. 27 `.copy(stringAllocator)` sites total. Fix: compose lookup keys in a stack `SmallString<128>`; intern only on symbol registration.
+- **`GenContext` copy churn.** Each of the 48 copies clones two `llvm::StringMap`s, a `std::string`, and a `NodeArray`. Split rarely-changing parts into a shared immutable block, or reserve copies for sites that actually mutate the maps.
+- **`std::function` construction per call.** `StringSwitch<std::function<...>>` tables for built-in utility types (`Readonly`/`Partial`/... at ~23255 and duplicated at ~23399) allocate closures on every `getType`; a plain switch is allocation-free. Same theme: the 18 `std::bind` sites — the 5-placeholder `std::bind(&MLIRGenImpl::cast, ...)` is repeated verbatim 4×, and the `anyOrUndefined`/`optionalValueOrUndefined` ternary 2×; lambdas or a small interface passed to `MLIRTypeHelper` (constructor currently takes four `std::function`s) remove both the duplication and the type-erasure overhead.
+
+### A5. Non-findings
+
+The full-module scans in `mlirDiscoverAllDependencies` (~734/~774) look expensive but are the deliberate, commented snapshot mechanism for nested discovery — superseded only if §4a (throwaway discovery module) lands.
+
+### Updated quick wins
+
+| Item | Effort | Value |
+|---|---|---|
+| A1 field initializers | ~30 min | removes a landmine class |
+| A2 `SourceFileScope` | small, mechanical | −~60 lines, same spirit as PR #201 |
+| A4 arena-interning fix | ~30 lines | stops unbounded arena growth on lookups |
+| A4 `std::bind`→lambda | mechanical | readability + perf |
+| A1 ownership / §3 | dedicated effort | biggest correctness payoff |
