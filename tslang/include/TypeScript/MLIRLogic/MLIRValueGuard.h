@@ -16,6 +16,12 @@ class MLIRValueGuard
         savedValue = value;
     }
 
+    MLIRValueGuard(T &value, T newValue) : value(value)
+    {
+        savedValue = value;
+        value = newValue;
+    }
+
     ~MLIRValueGuard()
     {
         value = savedValue;

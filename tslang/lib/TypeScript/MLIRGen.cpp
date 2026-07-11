@@ -615,6 +615,20 @@ class MLIRGenImpl
         return anyCode;        
     }
 
+    // appends GlobalConstructorOp after the last one in the module; LAST priority so it runs after CRT init
+    void addGlobalConstructor(mlir::Location location, StringRef funcName)
+    {
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+
+        builder.setInsertionPointToStart(theModule.getBody());
+        mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(theModule.getBody());
+
+        builder.create<mlir_ts::GlobalConstructorOp>(
+            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName),
+            builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
+    }
+
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
                           const GenContext &genContext)
     {
@@ -675,18 +689,7 @@ class MLIRGenImpl
 
         if (useGlobalCtor)
         {
-            auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-
-            builder.setInsertionPointToStart(parentModule.getBody());
-            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
-
-            // priority is lowest to load as first dependencies
-            builder.create<mlir_ts::GlobalConstructorOp>(
-                location, 
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), 
-                fullGlobalFuncName), 
-                builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+            addGlobalConstructor(location, fullGlobalFuncName);
         }
         
         return mlir::success();
@@ -960,40 +963,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
-#ifdef MODULE_AS_NAMESPACE
         return mlirGenNamespace(moduleDeclarationAST, genContext);
-#else
-        auto isNamespace = (moduleDeclarationAST->flags & NodeFlags::Namespace) == NodeFlags::Namespace;
-        auto isNestedNamespace =
-            (moduleDeclarationAST->flags & NodeFlags::NestedNamespace) == NodeFlags::NestedNamespace;
-        if (isNamespace || isNestedNamespace)
-        {
-            return mlirGenNamespace(moduleDeclarationAST, genContext);
-        }
-
-        auto location = loc(moduleDeclarationAST);
-
-        auto moduleName = MLIRHelper::getName(moduleDeclarationAST->name);
-
-        auto moduleOp = builder.create<mlir::ModuleOp>(location, StringRef(moduleName));
-
-        builder.setInsertionPointToStart(&moduleOp.getBody().front());
-
-        // save module theModule
-        auto parentModule = theModule;
-        theModule = moduleOp;
-
-        GenContext moduleGenContext{};
-        auto result = mlirGenBody(moduleDeclarationAST->body, moduleGenContext);
-        auto result = V(result);
-
-        // restore
-        theModule = parentModule;
-
-        builder.setInsertionPointAfter(moduleOp);
-
-        return result;
-#endif
     }
 
     mlir::LogicalResult mlirGenInclude(mlir::Location location, StringRef filePath, const GenContext &genContext)
@@ -1101,12 +1071,6 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-
-            builder.setInsertionPointToStart(parentModule.getBody());
-            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
-
             // The shared-lib load + symbol resolution call into LLVM's
             // sys::DynamicLibrary, which uses std::vector. In debug builds STL
             // iterators take a global lock that the CRT only initializes via its
@@ -1116,8 +1080,7 @@ class MLIRGenImpl
             // Use the same band as the per-symbol __cctors (LAST) so it runs after
             // 'initlocks'; it is emitted before them, so it still loads the library
             // before any LLVMSearchForAddressOfSymbol runs.
-            builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
+            addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 
         for (auto declSymbol : symbols)
@@ -4773,14 +4736,7 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
 
-                auto parentModule = theModule;
-                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-
-                builder.setInsertionPointToStart(parentModule.getBody());
-                mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());                    
-
-                builder.create<mlir_ts::GlobalConstructorOp>(
-                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
+                addGlobalConstructor(location, fullInitGlobalFuncName);
             }
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
@@ -19613,15 +19569,7 @@ genContext);
                 return mlir::failure();
             }
 
-            auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-
-            builder.setInsertionPointToStart(parentModule.getBody());
-            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
-
-            // priority is lowest to load as first dependencies
-            builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+            addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 
         return mlir::success();
@@ -19714,21 +19662,9 @@ genContext);
     mlir::LogicalResult createGlobalConstructor(ClassElement classMember, const GenContext &genContext)
     {
         auto location = loc(classMember);
-
-        auto parentModule = theModule;
-        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-
         auto funcName = getNameOfFunction(classMember, genContext);
 
-        {
-            mlir::OpBuilder::InsertionGuard insertGuard(builder);
-
-            builder.setInsertionPointToStart(parentModule.getBody());
-            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
-
-            builder.create<mlir_ts::GlobalConstructorOp>(location, 
-                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
-        }
+        addGlobalConstructor(location, std::get<0>(funcName));
 
         return mlir::success();
     }
@@ -20504,6 +20440,22 @@ genContext);
         return mlir::success();
     }
 
+    // RAII scope that redirects theModule and the builder into the temp module
+    // for speculative evaluation and restores both when it goes out of scope.
+    class TempModuleScope
+    {
+      public:
+        TempModuleScope(MLIRGenImpl &mlirGenImpl)
+            : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder)
+        {
+            mlirGenImpl.builder.setInsertionPointToStart(mlirGenImpl.prepareTempModule());
+        }
+
+      private:
+        MLIRValueGuard<mlir::ModuleOp> moduleGuard;
+        mlir::OpBuilder::InsertionGuard insertGuard;
+    };
+
     mlir::Block* prepareTempModule()
     {
         if (tempEntryBlock)
@@ -20567,30 +20519,18 @@ genContext);
         //mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
         //});
 
-        auto location = loc(expr);
+        TempModuleScope tempModuleScope(*this);
+        SymbolTableScopeT varScope(symbolTable);
 
-        // module
-        auto savedModule = theModule;
-
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        evalGenContext.funcOp = tempFuncOp;
+        auto result = mlirGen(expr, evalGenContext);
+        auto initValue = V(result);
+        if (initValue)
         {
-            mlir::OpBuilder::InsertionGuard insertGuard(builder);
-
-            SymbolTableScopeT varScope(symbolTable);
-
-            builder.setInsertionPointToStart(prepareTempModule());
-
-            GenContext evalGenContext(genContext);
-            evalGenContext.allowPartialResolve = true;
-            evalGenContext.funcOp = tempFuncOp;
-            auto result = mlirGen(expr, evalGenContext);
-            auto initValue = V(result);
-            if (initValue)
-            {
-                func(initValue);
-            }
+            func(initValue);
         }
-
-        theModule = savedModule;
     }
 
     mlir::Value evaluatePropertyValue(mlir::Location location, mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
@@ -20599,26 +20539,14 @@ genContext);
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
         });
 
-        mlir::Value initValue;
+        TempModuleScope tempModuleScope(*this);
 
-        // module
-        auto savedModule = theModule;
-
-        {
-            mlir::OpBuilder::InsertionGuard insertGuard(builder);
-            builder.setInsertionPointToStart(prepareTempModule());
-
-            GenContext evalGenContext(genContext);
-            evalGenContext.allowPartialResolve = true;
-            evalGenContext.funcOp = tempFuncOp;
-            auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
-            initValue = V(result);
-        }
-
-        theModule = savedModule;
-
-        return initValue;
-    }    
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        evalGenContext.funcOp = tempFuncOp;
+        auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
+        return V(result);
+    }
 
     // TODO: rewrite code to get rid of the following method, write method to calculate type of field, we have method mth.getFieldTypeByFieldName
     mlir::Type evaluateProperty(mlir::Location location, mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
@@ -20649,31 +20577,16 @@ genContext);
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
         });
 
-        mlir::Type resultType;
+        TempModuleScope tempModuleScope(*this);
 
-        // module
-        auto savedModule = theModule;
-
-        {
-            mlir::OpBuilder::InsertionGuard insertGuard(builder);
-            builder.setInsertionPointToStart(prepareTempModule());
-
-            GenContext evalGenContext(genContext);
-            evalGenContext.allowPartialResolve = true;
-            auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
-                                    mth.getStructIndexAttrValue(0));
-            auto result = mlirGenElementAccess(location, expression, indexVal, isConditionalAccess, evalGenContext);
-            auto initValue = V(result);
-            if (initValue)
-            {
-                resultType = initValue.getType();
-            }
-        }
-
-        theModule = savedModule;
-
-        return resultType;
-    }    
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
+                                mth.getStructIndexAttrValue(0));
+        auto result = mlirGenElementAccess(location, expression, indexVal, isConditionalAccess, evalGenContext);
+        auto initValue = V(result);
+        return initValue ? initValue.getType() : mlir::Type();
+    }
 
     ValueOrLogicalResult selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,  
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
