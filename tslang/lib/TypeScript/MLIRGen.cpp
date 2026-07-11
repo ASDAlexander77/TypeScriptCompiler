@@ -21082,6 +21082,94 @@ genContext);
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        if (mlir::failed(verifyCastPreconditions(location, type, valueType, disableStrictNullCheck)))
+        {
+            return mlir::failure();
+        }
+
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(valueType))
+        {
+            value = builder.create<mlir_ts::CastOp>(location, enumType.getElementType(), value);
+            valueType = value.getType();
+        }        
+
+        if (auto result = castViaToPrimitive(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (auto result = castToStringSpecialCases(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (auto result = castToInterfaceSpecialCases(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (auto result = castTupleLikeVariants(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (auto result = castToOptionalType(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (auto result = castToTaggedUnionType(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        // const dest: cast via the unwrapped source type instead
+        if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
+        {
+            // TODO: we can't convert array to const array
+
+            auto currType = valueType;
+            if (auto refType = dyn_cast<mlir_ts::RefType>(currType))
+            {
+                type = refType.getElementType();
+            }
+            else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(currType))
+            {
+                type = mth.convertTupleTypeToConstTupleType(tupleType);
+            }
+            else
+            {
+                return value;
+            }
+        }
+
+        if (auto result = castFromSourceSpecialCases(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
+        if (mlir::failed(verifyFunctionCastRules(location, type, value, valueType, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (auto result = castExtensionFunctionType(location, type, value, valueType))
+        {
+            return *result;
+        }
+
+        if (mlir::failed(verifyCastCompatibility(location, type, valueType)))
+        {
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::CastOp>(location, type, value));
+    }
+
+    // cast() stages; each returns a value/failure when the case is handled or std::nullopt to continue the cast pipeline
+
+    mlir::LogicalResult verifyCastPreconditions(mlir::Location location, mlir::Type type, mlir::Type valueType, bool disableStrictNullCheck)
+    {
         if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             if (auto valLitType = dyn_cast<mlir_ts::LiteralType>(valueType))
@@ -21089,7 +21177,7 @@ genContext);
                 if (litType.getValue() != valLitType.getValue())
                 {
                     emitError(location, "can't cast from literal type: '") << valLitType.getValue() << "' to '" << litType.getValue() << "'";
-                    return mlir::failure(); 
+                    return mlir::failure();
                 }
             }
         }
@@ -21118,25 +21206,23 @@ genContext);
                     if (!hasNullOrAny)
                     {
                         emitError(location, "can't cast from 'null' to '") << to_print(type) << "' in 'strict null mode'";
-                        return mlir::failure(); 
+                        return mlir::failure();
                     }
                 }
             }
         }
 
-        if (auto enumType = dyn_cast<mlir_ts::EnumType>(valueType))
-        {
-            value = builder.create<mlir_ts::CastOp>(location, enumType.getElementType(), value);
-            valueType = value.getType();
-        }        
+        return mlir::success();
+    }
 
-        // toPrimitive
-        if ((isa<mlir_ts::StringType>(type) 
-            || isa<mlir_ts::NumberType>(type) 
-            || isa<mlir_ts::BigIntType>(type) 
-            || isa<mlir_ts::BooleanType>(type) 
-            || isa<mlir_ts::UndefinedType>(type) 
-            || isa<mlir_ts::SymbolType>(type) 
+    std::optional<ValueOrLogicalResult> castViaToPrimitive(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
+        if ((isa<mlir_ts::StringType>(type)
+            || isa<mlir_ts::NumberType>(type)
+            || isa<mlir_ts::BigIntType>(type)
+            || isa<mlir_ts::BooleanType>(type)
+            || isa<mlir_ts::UndefinedType>(type)
+            || isa<mlir_ts::SymbolType>(type)
             || isa<mlir_ts::NullType>(type))
             && (isa<mlir_ts::ClassType>(valueType)
                 || isa<mlir_ts::ClassStorageType>(valueType)
@@ -21180,16 +21266,21 @@ genContext);
                 auto callResultValue = V(callResult);
                 if (isa<mlir_ts::UnionType>(callResultValue.getType()))
                 {
-                    return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, callResultValue));                    
+                    return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, callResultValue));
                 }
 
                 auto castValue = cast(location, type, callResultValue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(castValue);
                 return castValue;
-            } 
+            }
         }
 
-        // class or array or tuple to string
+        return std::nullopt;
+    }
+
+    // class or array or tuple to string
+    std::optional<ValueOrLogicalResult> castToStringSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         if (auto stringType = dyn_cast<mlir_ts::StringType>(type))
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
@@ -21199,7 +21290,7 @@ genContext);
                 {
                     return res;
                 }
-                
+
                 return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
             }
 
@@ -21225,7 +21316,7 @@ genContext);
                     return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
                 }
 
-                return castTupleToString(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), 
+                return castTupleToString(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType),
                     srcConstTupleType.getFields(), genContext);
             }
             else if (auto srcTupleType = dyn_cast<mlir_ts::TupleType>(valueType))
@@ -21239,7 +21330,12 @@ genContext);
             }
         }
 
-        // <???> to interface
+        return std::nullopt;
+    }
+
+    // class or tuple or object to interface
+    std::optional<ValueOrLogicalResult> castToInterfaceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
@@ -21302,6 +21398,12 @@ genContext);
             }
         }
 
+        return std::nullopt;
+    }
+
+    // casts between tuple-like types (tuple, const tuple, class storage, interface fields)
+    std::optional<ValueOrLogicalResult> castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         // const tuple to tuple
         if (auto srcConstTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
         {
@@ -21318,14 +21420,14 @@ genContext);
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
-                return castTupleToClass(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, classType, genContext);                
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
+                return castTupleToClass(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, classType, genContext);
             }
             else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
             {
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
-            }            
+            }
         }
 
         // tuple to tuple
@@ -21351,7 +21453,7 @@ genContext);
             {
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
-            }               
+            }
         }
 
         // class to tuple
@@ -21386,16 +21488,21 @@ genContext);
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
-                return castFieldsToClass(location, value, fields, classType, genContext);                
-            }            
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
+                return castFieldsToClass(location, value, fields, classType, genContext);
+            }
         }
 
-        // optional
-        // TODO: it is in CastLogic as well, review usage and remove from here
-        // but if optional points to interface then it will not work
-        // example: from path.ts
-        // %6 = ts.Cast %4 : !ts.const_tuple<{"key",!ts.string},{"prev",!ts.undefined},{"typename",!ts.undefined}> to !ts.optional<!ts.iface<@Path>>
+        return std::nullopt;
+    }
+
+    // optional
+    // TODO: it is in CastLogic as well, review usage and remove from here
+    // but if optional points to interface then it will not work
+    // example: from path.ts
+    // %6 = ts.Cast %4 : !ts.const_tuple<{"key",!ts.string},{"prev",!ts.undefined},{"typename",!ts.undefined}> to !ts.optional<!ts.iface<@Path>>
+    std::optional<ValueOrLogicalResult> castToOptionalType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
         {
             if (valueType == getUndefinedType())
@@ -21406,13 +21513,13 @@ genContext);
             {
                 auto condValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
                 return optionalValueOrUndefined(
-                    location, 
-                    condValue, 
-                    [&](auto genContext) 
-                    { 
+                    location,
+                    condValue,
+                    [&](auto genContext)
+                    {
                         auto valueFromOptional = builder.create<mlir_ts::ValueOp>(location, optValueType.getElementType(), value);
                         return cast(location, optType.getElementType(), valueFromOptional, genContext);
-                    }, 
+                    },
                     genContext);
             }
             else
@@ -21422,6 +21529,11 @@ genContext);
             }
         }
 
+        return std::nullopt;
+    }
+
+    std::optional<ValueOrLogicalResult> castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             mlir::Type baseType;
@@ -21436,36 +21548,23 @@ genContext);
                         if (mth.canCastFromTo(location, valueType, subType))
                         {
                             CAST(value, location, subType, value, genContext);
-                            return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
+                            return V(builder.create<mlir_ts::CastOp>(location, type, value));
                         }
                     }
                 }
                 else
                 {
-                    return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
+                    return V(builder.create<mlir_ts::CastOp>(location, type, value));
                 }
             }
         }
 
-        if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
-        {
-            // TODO: we can't convert array to const array
+        return std::nullopt;
+    }
 
-            auto currType = valueType;
-            if (auto refType = dyn_cast<mlir_ts::RefType>(currType))
-            {
-                type = refType.getElementType();        
-            }
-            else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(currType))
-            {
-                type = mth.convertTupleTypeToConstTupleType(tupleType);                
-            }
-            else
-            {
-                return value;
-            }
-        }
-
+    // union or optional or any or opaque source type
+    std::optional<ValueOrLogicalResult> castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         // union type to <basic type>
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(valueType))
         {
@@ -21486,42 +21585,42 @@ genContext);
             if (isa<mlir_ts::UnionType>(optType.getElementType()))
             {
                 auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
-                CAST_A(unwrappedValue, location, type, val, genContext);            
+                CAST_A(unwrappedValue, location, type, val, genContext);
                 return unwrappedValue;
             }
 
             // optional to value cast(when we change types)
             auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), value);
-            
+
             MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-            auto castedVal = mclh.conditionalValue(hasValue, 
-                [&]() { 
+            auto castedVal = mclh.conditionalValue(hasValue,
+                [&]() {
                     auto optValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
-                    return cast(location, type, optValue, genContext); 
-                }, 
+                    return cast(location, type, optValue, genContext);
+                },
                 [&](mlir::Type trueType) {
                     if (mlir::isa<mlir_ts::StringType>(type))
                     {
                         auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
-                        return V(cast(location, type, undefValue, genContext)); 
+                        return V(cast(location, type, undefValue, genContext));
                     }
 
                     if (auto destOptType = mlir::isa<mlir_ts::OptionalType>(type))
                     {
                         auto destOptValue = builder.create<mlir_ts::OptionalUndefOp>(location, type);
-                        return V(destOptValue);                         
-                    }                    
+                        return V(destOptValue);
+                    }
 
                     auto defValue = builder.create<mlir_ts::DefaultOp>(location, type);
-                    return V(defValue); 
+                    return V(defValue);
                 });
-            return castedVal;            
-        }        
+            return castedVal;
+        }
 
         // unboxing
         if (auto anyType = dyn_cast<mlir_ts::AnyType>(valueType))
         {
-            if (isa<mlir_ts::NumberType>(type) 
+            if (isa<mlir_ts::NumberType>(type)
                 || isa<mlir_ts::BooleanType>(type)
                 || isa<mlir_ts::StringType>(type)
                 || isa<mlir_ts::BigIntType>(type)
@@ -21539,18 +21638,23 @@ genContext);
             if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
             {
                 return V(builder.create<mlir_ts::CastOp>(location, type, value));
-            }            
+            }
 
             if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(type))
             {
                 auto funcValue = builder.create<mlir_ts::CastOp>(
-                    location, 
-                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg()), 
+                    location,
+                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg()),
                     value);
                 return V(builder.create<mlir_ts::CastOp>(location, type, funcValue));
             }
         }
 
+        return std::nullopt;
+    }
+
+    mlir::LogicalResult verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
         if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
 
             if (mth.isGenericType(valueType))
@@ -21564,7 +21668,7 @@ genContext);
             if (!mth.CanCastFunctionTypeToFunctionType(valueType, type))
             {
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
-                return mlir::failure();                
+                return mlir::failure();
             }
 
             if (!mth.isGenericType(type) && !mth.isGenericType(valueType))
@@ -21579,7 +21683,12 @@ genContext);
             }
         }
 
-        // cast ext method to bound method
+        return mlir::success();
+    }
+
+    // cast ext method to bound method
+    std::optional<ValueOrLogicalResult> castExtensionFunctionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType)
+    {
         if (auto extFuncType = dyn_cast<mlir_ts::ExtensionFunctionType>(valueType))
         {
             if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(type))
@@ -21592,21 +21701,26 @@ genContext);
             {
                 auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
                 return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
-            }            
+            }
         }
 
-        // wrong casts
-        // TODO: put it into Cast::Verify
-        if (mth.isAnyFunctionType(valueType) && 
-            !mth.isAnyFunctionType(type, true) 
-            && !isa<mlir_ts::OpaqueType>(type) 
+        return std::nullopt;
+    }
+
+    // wrong casts
+    // TODO: put it into Cast::Verify
+    mlir::LogicalResult verifyCastCompatibility(mlir::Location location, mlir::Type type, mlir::Type valueType)
+    {
+        if (mth.isAnyFunctionType(valueType) &&
+            !mth.isAnyFunctionType(type, true)
+            && !isa<mlir_ts::OpaqueType>(type)
             && !isa<mlir_ts::AnyType>(type)
             && !isa<mlir_ts::BooleanType>(type)) {
             emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
-        }        
+        }
 
-        if (isa<mlir_ts::ArrayType>(type) && isa<mlir_ts::TupleType>(valueType) 
+        if (isa<mlir_ts::ArrayType>(type) && isa<mlir_ts::TupleType>(valueType)
             || isa<mlir_ts::TupleType>(type) && isa<mlir_ts::ArrayType>(valueType))
         {
             emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
@@ -21621,8 +21735,8 @@ genContext);
                 auto extendsResult = mth.extendsType(location, valueArrayType.getElementType(), arrayType.getElementType(), typeParamsWithArgs);
                 if (extendsResult != ExtendsResult::True)
                 {
-                    emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type) 
-                        << " as element type " << to_print(arrayType.getElementType()) << " is not base of type " 
+                    emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type)
+                        << " as element type " << to_print(arrayType.getElementType()) << " is not base of type "
                         << to_print(valueArrayType.getElementType());
                     return mlir::failure();
                 }
@@ -21631,7 +21745,7 @@ genContext);
 
         if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::InterfaceType>(type))
         {
-            if (isa<mlir_ts::NumberType>(valueType) 
+            if (isa<mlir_ts::NumberType>(valueType)
                 || isa<mlir_ts::BooleanType>(valueType)
                 || isa<mlir_ts::StringType>(valueType)
                 || isa<mlir_ts::BigIntType>(valueType)
@@ -21641,11 +21755,11 @@ genContext);
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
             }
-        }        
+        }
 
         if (isa<mlir_ts::ClassType>(valueType) || isa<mlir_ts::InterfaceType>(valueType))
         {
-            if (isa<mlir_ts::NumberType>(type) 
+            if (isa<mlir_ts::NumberType>(type)
                 || isa<mlir_ts::BigIntType>(type)
                 || isa<mlir::IntegerType>(type)
                 || isa<mlir::FloatType>(type))
@@ -21653,9 +21767,9 @@ genContext);
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
             }
-        }             
+        }
 
-        return V(builder.create<mlir_ts::CastOp>(location, type, value));
+        return mlir::success();
     }
 
     ValueOrLogicalResult castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
