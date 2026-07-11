@@ -165,10 +165,10 @@ class MLIRGenImpl
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           mth(&const_cast<mlir::MLIRContext &>(context), 
             compileOptions,
-            std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
+            [this](StringRef name) { return getClassInfoByFullName(name); },
+            [this](StringRef name) { return getGenericClassInfoByFullName(name); },
+            [this](StringRef name) { return getInterfaceInfoByFullName(name); },
+            [this](StringRef name) { return getGenericInterfaceInfoByFullName(name); }),
           compileOptions(compileOptions), 
           mainSourceFileName(fileNameParam),
           path(pathParam),
@@ -3937,7 +3937,7 @@ class MLIRGenImpl
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false)
     {
         struct VariableDeclarationInfo variableDeclarationInfo(
-            compileOptions, func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
+            compileOptions, func, [this](StringRef name) { return getGlobalsFullNamespaceName(name); });
 
         variableDeclarationInfo.detectFlags(isFullName, varClass, forceLocalVar, genContext);
         variableDeclarationInfo.setName(name);
@@ -4141,8 +4141,8 @@ class MLIRGenImpl
                     {
                         auto valueFactory =
                         (isa<mlir_ts::AnyType>(arrayLikeElementType))
-                            ? std::bind(&MLIRGenImpl::anyOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)
-                            : std::bind(&MLIRGenImpl::optionalValueOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+                            ? &MLIRGenImpl::anyOrUndefined
+                            : &MLIRGenImpl::optionalValueOrUndefined;
             
                         auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
                                                             mth.getIndexAttrValue(index));
@@ -4153,9 +4153,9 @@ class MLIRGenImpl
                             arrayLikeLengthValue,
                             indexVal));
         
-                        auto spreadValue = valueFactory(location, inBoundsValue, 
-                            [&](auto genContext) { 
-                                auto result = mlirGenElementAccess(location, init, indexVal, false, genContext); 
+                        auto spreadValue = (this->*valueFactory)(location, inBoundsValue,
+                            [&](auto genContext) {
+                                auto result = mlirGenElementAccess(location, init, indexVal, false, genContext);
                                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                                 return result;
                             }, genContext);
@@ -4671,7 +4671,7 @@ class MLIRGenImpl
 
             if (varClass.isDynamicImport)
             {
-                auto nameStr = getFullNamespaceName(MLIRHelper::getName(item->name));
+                auto nameStr = concatFullNamespaceName(MLIRHelper::getName(item->name));
                 auto fieldType = std::get<0>(typeAndInit);
                 if (fieldType)
                 {
@@ -5218,7 +5218,7 @@ class MLIRGenImpl
             }
         }
 
-        auto fullName = getFullNamespaceName(name).str();
+        auto fullName = concatFullNamespaceName(name);
         return std::make_tuple(fullName, name);
     }
 
@@ -11167,7 +11167,7 @@ class MLIRGenImpl
                     if (auto value = cl.Array(
                             arrayType, 
                             compileOptions,
-                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
                             genContext))
                     {
                         return value;
@@ -11213,7 +11213,7 @@ class MLIRGenImpl
                     if (auto value = cl.Array(
                             arrayType, 
                             compileOptions,
-                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
                             genContext))
                     {
                         return value;
@@ -12825,7 +12825,7 @@ class MLIRGenImpl
             functionName, 
             typeArgs,
             operands, 
-            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
             genContext);
     }
 
@@ -13390,8 +13390,8 @@ class MLIRGenImpl
 
             auto valueFactory =
             (isa<mlir_ts::AnyType>(elementType))
-                ? std::bind(&MLIRGenImpl::anyOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)
-                : std::bind(&MLIRGenImpl::optionalValueOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+                ? &MLIRGenImpl::anyOrUndefined
+                : &MLIRGenImpl::optionalValueOrUndefined;
 
             for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
             {
@@ -13404,9 +13404,9 @@ class MLIRGenImpl
                     lengthValue,
                     indexVal));
 
-                auto spreadValue = valueFactory(location, inBoundsValue, 
-                    [&](auto genContext) { 
-                        auto result = mlirGenElementAccess(location, source, indexVal, false, genContext); 
+                auto spreadValue = (this->*valueFactory)(location, inBoundsValue,
+                    [&](auto genContext) {
+                        auto result = mlirGenElementAccess(location, source, indexVal, false, genContext);
                         EXIT_IF_FAILED_OR_NO_VALUE(result)
                         auto value = V(result);
 
@@ -15019,7 +15019,7 @@ class MLIRGenImpl
                     location, 
                     loadedVarArray, 
                     vals,
-                    std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                    [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
                     genContext);
             }
         }
@@ -15958,7 +15958,7 @@ class MLIRGenImpl
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
             return getEnumType(
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), concatFullNamespaceName(name)),
                 enumTypeInfo.first, 
                 enumTypeInfo.second);
         }
@@ -16051,7 +16051,7 @@ class MLIRGenImpl
             return builder.create<mlir_ts::ConstantOp>(
                 location, 
                 getEnumType(
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), concatFullNamespaceName(name)),
                     enumTypeInfo.first, 
                     enumTypeInfo.second), 
                 enumTypeInfo.second);
@@ -23215,182 +23215,137 @@ genContext);
     mlir::Type getEmbeddedTypeWithParamBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                         const GenContext &genContext)
     {
-        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
-            .Case("TypeOf", [&] (auto typeArguments, auto genContext) {
-                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!type)
-                {
-                    return mlir::Type();
-                }
+        enum class EmbeddedType
+        {
+            None, TypeOf, Reference, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
+            Parameters, ThisParameterType, OmitThisParameter, Uppercase, Lowercase, Capitalize, Uncapitalize
+        };
 
-                type = mth.wideStorageType(type);
+        auto kind = llvm::StringSwitch<EmbeddedType>(name)
+            .Case("TypeOf", EmbeddedType::TypeOf)
+            .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
+            .Case("NonNullable", EmbeddedType::NonNullable)
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS
+            .Case("Array", EmbeddedType::Array)
+#endif
+            .Case("ReadonlyArray", EmbeddedType::ReadonlyArray)
+            .Case("ReturnType", EmbeddedType::ReturnType)
+            .Cases("Parameters", "ConstructorParameters", EmbeddedType::Parameters)
+            .Case("ThisParameterType", EmbeddedType::ThisParameterType)
+            .Case("OmitThisParameter", EmbeddedType::OmitThisParameter)
+            .Case("Uppercase", EmbeddedType::Uppercase)
+            .Case("Lowercase", EmbeddedType::Lowercase)
+            .Case("Capitalize", EmbeddedType::Capitalize)
+            .Case("Uncapitalize", EmbeddedType::Uncapitalize)
+            .Default(EmbeddedType::None);
+
+        if (kind == EmbeddedType::None)
+        {
+            return mlir::Type();
+        }
+
+        auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+        if (!type)
+        {
+            return mlir::Type();
+        }
+
+        switch (kind)
+        {
+            case EmbeddedType::TypeOf:
+                return mth.wideStorageType(type);
+            case EmbeddedType::Reference:
+                return mlir_ts::RefType::get(type);
+            case EmbeddedType::FirstTypeArgument:
                 return type;
-            })
-            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
-                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!type)
-                {
-                    return mlir::Type();
-                }
-
-                return mlir::Type(mlir_ts::RefType::get(type));
-            })
-            .Case("Readonly", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("Partial", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("Required", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("NonNullable", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return NonNullableTypes(elementType);
-            })
-#ifdef ARRAY_TYPE_AS_ARRAY_CLASS            
-            .Case("Array", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
-            })
-#endif            
-            .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return getArrayType(elementType);
-            })
-            .Case("ReturnType", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
-                auto retType = mth.getReturnTypeFromFuncRef(elementType);
+            case EmbeddedType::NonNullable:
+                return NonNullableTypes(type);
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS
+            case EmbeddedType::Array:
+                return getArrayType(type);
+#endif
+            case EmbeddedType::ReadonlyArray:
+                return getArrayType(type);
+            case EmbeddedType::ReturnType:
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << type;);
+                auto retType = mth.getReturnTypeFromFuncRef(type);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
-            })
-            .Case("Parameters", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-                auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
+            }
+            case EmbeddedType::Parameters:
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << type;);
+                auto retType = mth.getParamsTupleTypeFromFuncRef(type);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
-            })
-            .Case("ConstructorParameters", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-                auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
+            }
+            case EmbeddedType::ThisParameterType:
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << type;);
+                auto retType = mth.getFirstParamFromFuncRef(type);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
-            })
-            .Case("ThisParameterType", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-                auto retType = mth.getFirstParamFromFuncRef(elementType);
+            }
+            case EmbeddedType::OmitThisParameter:
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << type;);
+                auto retType = mth.getOmitThisFunctionTypeFromFuncRef(type);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
-            })
-            .Case("OmitThisParameter", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-                auto retType = mth.getOmitThisFunctionTypeFromFuncRef(elementType);
-                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-                return retType;
-            })
-            .Case("Uppercase", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return UppercaseType(elementType);
-            })
-            .Case("Lowercase", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return LowercaseType(elementType);
-            })
-            .Case("Capitalize", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return CapitalizeType(elementType);
-            })
-            .Case("Uncapitalize", [&] (auto typeArguments, auto genContext) {
-                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (!elementType)
-                {
-                    return mlir::Type();
-                }
-
-                return UncapitalizeType(elementType);
-            })
-            .Default([] (auto, auto) {
+            }
+            case EmbeddedType::Uppercase:
+                return UppercaseType(type);
+            case EmbeddedType::Lowercase:
+                return LowercaseType(type);
+            case EmbeddedType::Capitalize:
+                return CapitalizeType(type);
+            case EmbeddedType::Uncapitalize:
+                return UncapitalizeType(type);
+            default:
                 return mlir::Type();
-            });
-
-        return translate(typeArguments, genContext);
+        }
     }
 
     mlir::Type getEmbeddedTypeWithParamNoBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                         const GenContext &genContext)
     {
-        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
-            .Case("TypeOf", [&] (auto typeArguments, auto genContext) {
-                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                type = mth.wideStorageType(type);
-                return type;
-            })
-            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
-                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return mlir_ts::RefType::get(type);
-            })
-            .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-#ifdef ARRAY_TYPE_AS_ARRAY_CLASS            
-            .Case("Array", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
-            })
-#endif            
-            .Default([] (auto, auto) {
-                return mlir::Type();
-            });
+        enum class EmbeddedType
+        {
+            None, TypeOf, Reference, ThisType, Array
+        };
 
-        return translate(typeArguments, genContext);
+        auto kind = llvm::StringSwitch<EmbeddedType>(name)
+            .Case("TypeOf", EmbeddedType::TypeOf)
+            .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Case("ThisType", EmbeddedType::ThisType)
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS
+            .Case("Array", EmbeddedType::Array)
+#endif
+            .Default(EmbeddedType::None);
+
+        if (kind == EmbeddedType::None)
+        {
+            return mlir::Type();
+        }
+
+        auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+        switch (kind)
+        {
+            case EmbeddedType::TypeOf:
+                return mth.wideStorageType(type);
+            case EmbeddedType::Reference:
+                return mlir_ts::RefType::get(type);
+            case EmbeddedType::ThisType:
+                return type;
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS
+            case EmbeddedType::Array:
+                return getArrayType(type);
+#endif
+            default:
+                return mlir::Type();
+        }
     }
 
     mlir::Type getEmbeddedTypeWithManyParams(mlir::Location location, mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
@@ -23404,37 +23359,42 @@ genContext);
     mlir::Type getEmbeddedTypeWithManyParamsBuiltins(mlir::Location location, mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                              const GenContext &genContext)
     {
-        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
-            .Case("Exclude", [&] (auto typeArguments, auto genContext) {
-                auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return ExcludeTypes(location, firstType, secondType);
-            })
-            .Case("Extract", [&] (auto typeArguments, auto genContext) {
-                auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return ExtractTypes(location, firstType, secondType);
-            })
-            .Case("Pick", [&] (auto typeArguments, auto genContext) {
-                auto sourceType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                auto keysType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return PickTypes(sourceType, keysType);
-            })
-            .Case("Omit", [&] (auto typeArguments, auto genContext) {
-                auto sourceType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                auto keysType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return OmitTypes(sourceType, keysType);
-            })
-            .Case("Record", [&] (auto typeArguments, auto genContext) {
-                auto keysType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                auto sourceType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return RecordType(keysType, sourceType);
-            })
-            .Default([] (auto, auto) {
-                return mlir::Type();
-            });
+        enum class EmbeddedType
+        {
+            None, Exclude, Extract, Pick, Omit, Record
+        };
 
-        return translate(typeArguments, genContext);
+        auto kind = llvm::StringSwitch<EmbeddedType>(name)
+            .Case("Exclude", EmbeddedType::Exclude)
+            .Case("Extract", EmbeddedType::Extract)
+            .Case("Pick", EmbeddedType::Pick)
+            .Case("Omit", EmbeddedType::Omit)
+            .Case("Record", EmbeddedType::Record)
+            .Default(EmbeddedType::None);
+
+        if (kind == EmbeddedType::None)
+        {
+            return mlir::Type();
+        }
+
+        auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+        auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
+
+        switch (kind)
+        {
+            case EmbeddedType::Exclude:
+                return ExcludeTypes(location, firstType, secondType);
+            case EmbeddedType::Extract:
+                return ExtractTypes(location, firstType, secondType);
+            case EmbeddedType::Pick:
+                return PickTypes(firstType, secondType);
+            case EmbeddedType::Omit:
+                return OmitTypes(firstType, secondType);
+            case EmbeddedType::Record:
+                return RecordType(firstType, secondType);
+            default:
+                return mlir::Type();
+        }
     }
 
     mlir::Type StringLiteralTypeFunc(mlir::Type type, std::function<std::string(StringRef)> f)
@@ -25906,20 +25866,25 @@ genContext);
         return currentNamespace->fullName;
     }
 
-    auto getFullNamespaceName(StringRef name) -> StringRef
+    // no interning - use for lookups and transient names; getFullNamespaceName interns for names that are stored
+    auto concatFullNamespaceName(StringRef name) -> std::string
     {
         if (currentNamespace->fullName.empty())
         {
-            return StringRef(name).copy(stringAllocator);
+            return name.str();
         }
 
         std::string res;
+        res.reserve(currentNamespace->fullName.size() + name.size() + 1);
         res += currentNamespace->fullName;
         res += ".";
         res += name;
+        return res;
+    }
 
-        auto namePtr = StringRef(res).copy(stringAllocator);
-        return namePtr;
+    auto getFullNamespaceName(StringRef name) -> StringRef
+    {
+        return StringRef(concatFullNamespaceName(name)).copy(stringAllocator);
     }
 
     auto getGlobalsFullNamespaceName(StringRef name) -> StringRef
