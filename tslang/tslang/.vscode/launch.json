@@ -469,7 +469,7 @@
             "environment": [
                 {
                     "name": "DEFAULT_LIB_PATH",
-                    "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/debug"
+                    "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build"
                 },
                 {
                     "name": "GC_LIB_PATH",
@@ -498,7 +498,7 @@
                     "excludedModules": [ "DoNotLookForThisOne*.dll" ]
                 }
             }              
-        },        
+        },                     
         {
             "name": "(Windows) tslang.exe - EXE(OPT) - NO DEFAULT",
             "type": "cppvsdbg",
