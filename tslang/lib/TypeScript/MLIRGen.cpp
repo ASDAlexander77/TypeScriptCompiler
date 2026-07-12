@@ -5227,8 +5227,8 @@ class MLIRGenImpl
         }
         else if (genContext.funcOp)
         {
-            auto funcName = const_cast<GenContext &>(genContext).funcOp.getSymName().str();
-            objectOwnerName = funcName;
+            mlir_ts::FuncOp funcOp = genContext.funcOp;
+            objectOwnerName = funcOp.getSymName().str();
         }
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
@@ -6320,7 +6320,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionExit(mlir::Location location, const GenContext &genContext)
     {
-        auto callableResult = const_cast<GenContext &>(genContext).funcOp.getCallableResults();
+        mlir_ts::FuncOp contextFuncOp = genContext.funcOp;
+        auto callableResult = contextFuncOp.getCallableResults();
         auto retType = callableResult.size() > 0 ? callableResult.front() : mlir::Type();
         auto hasReturn = retType && !isa<mlir_ts::VoidType>(retType);
         if (hasReturn)
@@ -7185,7 +7186,7 @@ class MLIRGenImpl
 
     mlir::Type getExplicitReturnTypeOfCurrentFunction(const GenContext &genContext)
     {
-        auto funcOp = const_cast<GenContext &>(genContext).funcOp;
+        mlir_ts::FuncOp funcOp = genContext.funcOp;
         if (funcOp)
         {
             auto countResults = funcOp.getCallableResults().size();
@@ -8829,7 +8830,10 @@ class MLIRGenImpl
         }
 
         if (genContext.funcOp)
-            const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        {
+            mlir_ts::FuncOp funcOp = genContext.funcOp;
+            funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        }
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
@@ -11214,7 +11218,7 @@ class MLIRGenImpl
 
                         if (mlir::failed(result) && !accessFailed)
                         {
-                            const_cast<GenContext &>(genContext).stop();
+                            genContext.stop();
                             return mlir::Value();
                         }
 
@@ -11257,7 +11261,7 @@ class MLIRGenImpl
 
                         if (mlir::failed(result) && !accessFailed)
                         {
-                            const_cast<GenContext &>(genContext).stop();
+                            genContext.stop();
                             return mlir::Value();
                         }
 
@@ -15781,8 +15785,8 @@ class MLIRGenImpl
             if (genContext.funcOp && genContext.funcOp != tempFuncOp && valueRegion &&
                 valueRegion->getParentOp() /* && valueRegion->getParentOp()->getParentOp()*/)
             {
-                // auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
-                auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
+                mlir_ts::FuncOp contextFuncOp = genContext.funcOp;
+                auto funcRegion = contextFuncOp.getCallableRegion();
 
                 isOuterVar = !funcRegion->isAncestor(valueRegion);
                 // TODO: HACK
@@ -15794,7 +15798,7 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(if (isOuterVar) dbgs() << "\n!! outer var: [" << value.second->getName()
                                   << "] \n\n\tvalue region: " << *valueRegion->getParentOp()
-                                  << " \n\n\tFuncOp: " << const_cast<GenContext &>(genContext).funcOp << "";);                
+                                  << " \n\n\tFuncOp: " << contextFuncOp << "";);
             }
 
             if (isOuterVar && genContext.passResult && !isGenericFunctionReference(value.first))
@@ -15807,7 +15811,6 @@ class MLIRGenImpl
                 assert(!isa<mlir_ts::RefType>(value.second->getType()));
 
                 // valueRegion->viewGraph();
-                // const_cast<GenContext &>(genContext).funcOpVarScope.getCallableRegion()->viewGraph();
 
                 // special case, to prevent capturing ".a" because of reference to outer VaribleOp, which is hack (review
                 // solution for it)
@@ -22509,7 +22512,7 @@ genContext);
             return mlir::Type();
         }
 
-        auto &typeParamsWithArgs = *(const_cast<GenContext &>(genContext).inferTypes);
+        auto &typeParamsWithArgs = *genContext.inferTypes;
         mth.appendInferTypeToContext(location, type, inferType, typeParamsWithArgs);
 
         return inferType;
@@ -24004,7 +24007,7 @@ genContext);
     mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
     {
         GenContext condTypeGenContext(genContext);
-        condTypeGenContext.inferTypes = &const_cast<GenContext &>(condTypeGenContext).typeParamsWithArgs;
+        condTypeGenContext.inferTypes = &condTypeGenContext.typeParamsWithArgs;
 
         auto checkType = getType(conditionalTypeNode->checkType, condTypeGenContext);
         auto extendsType = getType(conditionalTypeNode->extendsType, condTypeGenContext);

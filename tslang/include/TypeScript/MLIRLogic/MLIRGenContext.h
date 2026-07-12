@@ -124,11 +124,11 @@ struct GenContext
         }
     }
 
-    void stop()
+    void stop() const
     {
         if (stopProcess) return;
         stopProcess = true;
-        if (rootContext) const_cast<GenContext *>(rootContext)->stop();
+        if (rootContext) rootContext->stop();
     }
 
     bool isStopped() const
@@ -169,7 +169,8 @@ struct GenContext
     const GenContext* rootContext = nullptr;
     bool isLoop = false;
     std::string loopLabel;
-    bool stopProcess = false;
+    // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
+    mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;
     bool specialization = false;
     // TODO: special hack to detect initializing specialized class and see that generic methods are not initialized at the same time
