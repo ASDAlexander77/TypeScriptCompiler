@@ -2577,15 +2577,19 @@ class MLIRGenImpl
 
                     if (callOpsCount <= paramIndex)
                     {
-                        // there is no more ops
+                        // there is no more ops; mark processed so the param is counted once -
+                        // recounting it every round inflated totalProcessed past the termination
+                        // equality below and spun the loop into the "loop detected" guard
                         if (paramInfo->getIsOptional() || isa<mlir_ts::OptionalType>(paramType))
                         {
+                            paramInfo->processed = true;
                             processed++;
                             continue;
                         }
 
                         if (paramInfo->getIsMultiArgsParam())
                         {
+                            paramInfo->processed = true;
                             processed++;
                             continue;
                         }
@@ -2640,8 +2644,11 @@ class MLIRGenImpl
 
                 if (processed == 0)
                 {
-                    emitError(location) << "not all types could be inferred";
-                    return mlir::failure();
+                    // no progress in a full round: some params (e.g. a callback typed by a
+                    // type param that only gets its value from a default) can't be inferred
+                    // here; the default zipping and the completeness check below decide
+                    // whether that is an error
+                    break;
                 }
 
                 totalProcessed += processed;
@@ -2653,7 +2660,7 @@ class MLIRGenImpl
 
                 if (totalProcessed > funcOp->getParams().size() + 100)
                 {
-                    // TODO: find out the issue
+                    // defensive only: with params counted exactly once this is unreachable
                     emitError(location) << "loop detected.";
                     return mlir::failure();
                 }
