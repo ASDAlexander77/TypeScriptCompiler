@@ -18,6 +18,7 @@ add_mlir_dialect_library(MLIRTypeScript
     DiagnosticHelper.cpp
     MLIRGen.cpp
     MLIRGenCast.cpp
+    MLIRGenTypes.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
     RelocateConstantPass.cpp
