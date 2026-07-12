@@ -747,16 +747,11 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
             fullNameGlobalsMap);
 
-        // Snapshot the ops already present in the module. When this discovery pass is nested
-        // (an 'import' of a local source file triggers mlirGenInclude during SourceGeneration),
-        // it must not wipe the real module content that was already generated (e.g. default-lib
-        // function bodies such as 'console.log'). Clearing the whole body left dangling
-        // SymbolRefs and produced "op 'console.log' does not reference a valid function".
-        llvm::SmallPtrSet<mlir::Operation *, 32> preExistingOps;
-        for (auto &op : theModule.getBody()->getOperations())
-        {
-            preExistingOps.insert(&op);
-        }
+        // Discovery emits into a throwaway module, so its cleanup can never disturb real module
+        // content. When this discovery pass is nested (an 'import' of a local source file triggers
+        // mlirGenInclude during SourceGeneration), the real module already holds generated content
+        // (e.g. default-lib function bodies such as 'console.log') that must survive.
+        DiscoveryModuleScope discoveryModuleScope(*this);
 
         // Process of discovery here
         GenContext genContextPartial{};
@@ -778,30 +773,8 @@ class MLIRGenImpl
 
         auto notResolved = processStatements(module->statements, genContextPartial);
 
-        // clean up: erase only the ops this discovery pass added, preserving any content that
-        // was already generated before a nested discovery (see preExistingOps above).
+        // clean up; the ops this pass created go away with the discovery module on scope exit
         clearTempModule();
-        {
-            llvm::SmallVector<mlir::Operation *> addedOps;
-            for (auto &op : theModule.getBody()->getOperations())
-            {
-                if (!preExistingOps.contains(&op))
-                {
-                    addedOps.push_back(&op);
-                }
-            }
-
-            for (auto *op : addedOps)
-            {
-                op->dropAllReferences();
-            }
-
-            for (auto *op : llvm::reverse(addedOps))
-            {
-                op->dropAllUses();
-                op->erase();
-            }
-        }
 
         // clear state
         for (auto &statement : module->statements)
@@ -20550,6 +20523,34 @@ genContext);
 
         return mlir::success();
     }
+
+    // RAII scope that redirects theModule and the builder into a fresh throwaway
+    // module for the discovery pass. On scope exit the discovery module is erased
+    // with everything the pass created, and theModule/builder are restored, so
+    // discovery cleanup is structurally unable to touch real module content.
+    class DiscoveryModuleScope
+    {
+      public:
+        DiscoveryModuleScope(MLIRGenImpl &mlirGenImpl)
+            : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder)
+        {
+            discoveryModule =
+                mlir::ModuleOp::create(mlirGenImpl.theModule.getLoc(), mlir::StringRef("discovery_module"));
+            mlirGenImpl.theModule = discoveryModule;
+            mlirGenImpl.builder.setInsertionPointToStart(discoveryModule.getBody());
+        }
+
+        ~DiscoveryModuleScope()
+        {
+            // members restore theModule and the insertion point after the erase
+            discoveryModule.erase();
+        }
+
+      private:
+        MLIRValueGuard<mlir::ModuleOp> moduleGuard;
+        mlir::OpBuilder::InsertionGuard insertGuard;
+        mlir::ModuleOp discoveryModule;
+    };
 
     // RAII scope that redirects theModule and the builder into the temp module
     // for speculative evaluation and restores both when it goes out of scope.
