@@ -1862,310 +1862,373 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
+    // inferType helpers; return true when the template kind matched and inference was handled
+
+    bool tryInferNamedGeneric(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                              StringMap<mlir::Type> &results)
+    {
+        auto namedGenType = dyn_cast<mlir_ts::NamedGenericType>(templateType);
+        if (!namedGenType)
+        {
+            return false;
+        }
+
+        // merge if exists
+
+        auto currentType = concreteType;
+        auto name = namedGenType.getName().getValue();
+        auto existType = results.lookup(name);
+        if (existType)
+        {
+            auto merged = false;
+            currentType = mth.mergeType(location, existType, currentType, merged);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
+            results[name] = currentType;
+        }
+        else
+        {
+            // TODO: when u use literal type to validate extends u need to use original type
+            // currentType = mth.wideStorageType(currentType);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type: " << name << " = " << currentType << "\n";);
+            results.insert({name, currentType});
+        }
+
+        assert(results.lookup(name) == currentType);
+
+        return true;
+    }
+
+    bool tryInferClass(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                       StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempClass = dyn_cast<mlir_ts::ClassType>(templateType);
+        auto typeClass = dyn_cast<mlir_ts::ClassType>(concreteType);
+        if (!tempClass || !typeClass)
+        {
+            return false;
+        }
+
+        auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
+        if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
+        {
+            for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
+            {
+                auto name = templateParam.getValue().first->getName();
+                auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                if (found != typeClassInfo->typeParamsWithArgs.end())
+                {
+                    // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
+                    // add 2 type Parameters to it Constrain, Default
+                    inferType(location, templateParam.getValue().second, found->getValue().second, results, genContext);
+                }
+            }
+
+            return true;
+        }
+        else if (auto tempGenericClassInfo = getGenericClassInfoByFullName(tempClass.getName().getValue()))
+        {
+            for (auto &templateParam : tempGenericClassInfo->typeParams)
+            {
+                auto name = templateParam->getName();
+                auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                if (found != typeClassInfo->typeParamsWithArgs.end())
+                {
+                    inferType(location, getNamedGenericType(found->getValue().first->getName()),
+                              found->getValue().second, results, genContext);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    bool tryInferInterface(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                           StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempInterface = dyn_cast<mlir_ts::InterfaceType>(templateType);
+        auto typeInterface = dyn_cast<mlir_ts::InterfaceType>(concreteType);
+        if (!tempInterface || !typeInterface)
+        {
+            return false;
+        }
+
+        auto typeInterfaceInfo = getInterfaceInfoByFullName(typeInterface.getName().getValue());
+        if (auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue()))
+        {
+            for (auto &templateParam : tempInterfaceInfo->typeParamsWithArgs)
+            {
+                auto name = templateParam.getValue().first->getName();
+                auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
+                if (found != typeInterfaceInfo->typeParamsWithArgs.end())
+                {
+                    // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
+                    // add 2 type Parameters to it Constrain, Default
+                    inferType(location, templateParam.getValue().second, found->getValue().second, results, genContext);
+                }
+            }
+
+            return true;
+        }
+        else if (auto tempGenericInterfaceInfo = getGenericInterfaceInfoByFullName(tempInterface.getName().getValue()))
+        {
+            for (auto &templateParam : tempGenericInterfaceInfo->typeParams)
+            {
+                auto name = templateParam->getName();
+                auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
+                if (found != typeInterfaceInfo->typeParamsWithArgs.end())
+                {
+                    inferType(location, getNamedGenericType(found->getValue().first->getName()),
+                              found->getValue().second, results, genContext);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    bool tryInferArray(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                       StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempArray = dyn_cast<mlir_ts::ArrayType>(templateType);
+        if (!tempArray)
+        {
+            return false;
+        }
+
+        if (auto typeArray = dyn_cast<mlir_ts::ArrayType>(concreteType))
+        {
+            inferType(location, tempArray.getElementType(), typeArray.getElementType(), results, genContext);
+            return true;
+        }
+
+        if (auto typeArray = dyn_cast<mlir_ts::ConstArrayType>(concreteType))
+        {
+            inferType(location, tempArray.getElementType(), typeArray.getElementType(), results, genContext);
+            return true;
+        }
+
+        return false;
+    }
+
+    // TODO: finish it
+    template <typename T>
+    bool tryInferTupleFields(mlir::Location location, mlir_ts::TupleType tempTuple, T typeTuple,
+                             StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        for (auto tempFieldInfo : tempTuple.getFields())
+        {
+            auto index = typeTuple.getIndex(tempFieldInfo.id);
+            if (index >= 0)
+            {
+                inferType(location, tempFieldInfo.type, typeTuple.getFieldInfo(index).type, results, genContext);
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    bool tryInferTuple(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                       StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempTuple = dyn_cast<mlir_ts::TupleType>(templateType);
+        if (!tempTuple)
+        {
+            return false;
+        }
+
+        if (auto typeTuple = dyn_cast<mlir_ts::TupleType>(concreteType))
+        {
+            return tryInferTupleFields(location, tempTuple, typeTuple, results, genContext);
+        }
+
+        if (auto typeTuple = dyn_cast<mlir_ts::ConstTupleType>(concreteType))
+        {
+            return tryInferTupleFields(location, tempTuple, typeTuple, results, genContext);
+        }
+
+        return false;
+    }
+
+    bool tryInferOptional(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                          StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempOpt = dyn_cast<mlir_ts::OptionalType>(templateType);
+        if (!tempOpt)
+        {
+            return false;
+        }
+
+        if (auto typeOpt = dyn_cast<mlir_ts::OptionalType>(concreteType))
+        {
+            inferType(location, tempOpt.getElementType(), typeOpt.getElementType(), results, genContext);
+            return true;
+        }
+
+        // optional -> value
+        inferType(location, tempOpt.getElementType(), concreteType, results, genContext);
+        return true;
+    }
+
+    bool tryInferFunction(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                          StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        if (!mth.isAnyFunctionType(templateType) || !mth.isAnyFunctionType(concreteType))
+        {
+            return false;
+        }
+
+        auto tempfuncType = mth.getParamsFromFuncRef(templateType);
+        if (tempfuncType.size() > 0)
+        {
+            auto funcType = mth.getParamsFromFuncRef(concreteType);
+            if (funcType.size() > 0)
+            {
+                inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
+
+                // lambda(return) -> lambda(return)
+                auto tempfuncRetType = mth.getReturnsFromFuncRef(templateType);
+                if (tempfuncRetType.size() > 0)
+                {
+                    auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
+                    if (funcRetType.size() > 0)
+                    {
+                        inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool tryInferUnion(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                       StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempUnionType = dyn_cast<mlir_ts::UnionType>(templateType);
+        if (!tempUnionType)
+        {
+            return false;
+        }
+
+        if (auto typeUnionType = dyn_cast<mlir_ts::UnionType>(concreteType))
+        {
+            auto types = typeUnionType.getTypes();
+            if (types.size() != tempUnionType.getTypes().size())
+            {
+                return true;
+            }
+
+            for (auto [index, tempSubType] : enumerate(tempUnionType.getTypes()))
+            {
+                inferType(location, tempSubType, types[index], results, genContext);
+            }
+
+            return true;
+        }
+
+        // TODO: review how to call functions such as: "function* Map<T, R>(a: T[] | Iterable<T>, f: (i: T) => R) { ... }"
+        // special case when UnionType is used in generic method
+        for (auto tempSubType : tempUnionType.getTypes())
+        {
+            auto count = results.size();
+            inferType(location, tempSubType, concreteType, results, genContext);
+            if (count < results.size())
+            {
+                return true;
+            }
+        }
+
+        return true;
+    }
+
     void inferType(mlir::Location location, mlir::Type templateType, mlir::Type concreteType, StringMap<mlir::Type> &results, const GenContext &genContext)
     {
-        auto currentTemplateType = templateType;
-        auto currentType = concreteType;
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! inferring \n\ttemplate type: " << templateType << ", \n\ttype: " << concreteType
                                 << "\n";);
 
-        if (!currentTemplateType || !currentType)
-        {
-            // nothing todo here
-            return;
-        }                                
-
-        if (currentTemplateType == currentType)
+        if (!templateType || !concreteType)
         {
             // nothing todo here
             return;
         }
 
-        if (auto namedGenType = dyn_cast<mlir_ts::NamedGenericType>(currentTemplateType))
+        if (templateType == concreteType)
         {
-            // merge if exists
+            // nothing todo here
+            return;
+        }
 
-            auto name = namedGenType.getName().getValue();
-            auto existType = results.lookup(name);
-            if (existType)
-            {
-                auto merged = false;
-                currentType = mth.mergeType(location, existType, currentType, merged);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
-                results[name] = currentType;
-            }
-            else
-            {
-                // TODO: when u use literal type to validate extends u need to use original type
-                // currentType = mth.wideStorageType(currentType);
-                LLVM_DEBUG(llvm::dbgs() << "\n!! type: " << name << " = " << currentType << "\n";);
-                results.insert({name, currentType});
-            }
-
-            assert(results.lookup(name) == currentType);
-
+        if (tryInferNamedGeneric(location, templateType, concreteType, results))
+        {
             return;
         }
 
         // class -> class
-        if (auto tempClass = dyn_cast<mlir_ts::ClassType>(currentTemplateType))
+        if (tryInferClass(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeClass = dyn_cast<mlir_ts::ClassType>(concreteType))
-            {
-                auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
-                if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
-                {
-                    for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
-                    {
-                        auto name = templateParam.getValue().first->getName();
-                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
-                        if (found != typeClassInfo->typeParamsWithArgs.end())
-                        {
-                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
-                            // add 2 type Parameters to it Constrain, Default
-                            currentTemplateType = templateParam.getValue().second;
-                            currentType = found->getValue().second;
-
-                            inferType(location, currentTemplateType, currentType, results, genContext);
-                        }
-                    }
-
-                    return;
-                }
-                else if (auto tempGenericClassInfo = getGenericClassInfoByFullName(tempClass.getName().getValue()))
-                {
-                    for (auto &templateParam : tempGenericClassInfo->typeParams)
-                    {
-                        auto name = templateParam->getName();
-                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
-                        if (found != typeClassInfo->typeParamsWithArgs.end())
-                        {
-                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
-                            currentType = found->getValue().second;
-
-                            inferType(location, currentTemplateType, currentType, results, genContext);
-                        }
-                    }
-
-                    return;
-                }
-            }
+            return;
         }
 
         // interface -> interface
-        if (auto tempInterface = dyn_cast<mlir_ts::InterfaceType>(currentTemplateType))
+        if (tryInferInterface(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeInterface = dyn_cast<mlir_ts::InterfaceType>(concreteType))
-            {
-                auto typeInterfaceInfo = getInterfaceInfoByFullName(typeInterface.getName().getValue());
-                if (auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue()))
-                {
-                    for (auto &templateParam : tempInterfaceInfo->typeParamsWithArgs)
-                    {
-                        auto name = templateParam.getValue().first->getName();
-                        auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
-                        if (found != typeInterfaceInfo->typeParamsWithArgs.end())
-                        {
-                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
-                            // add 2 type Parameters to it Constrain, Default
-                            currentTemplateType = templateParam.getValue().second;
-                            currentType = found->getValue().second;
-
-                            inferType(location, currentTemplateType, currentType, results, genContext);
-                        }
-                    }
-
-                    return;
-                }
-                else if (auto tempGenericInterfaceInfo = getGenericInterfaceInfoByFullName(tempInterface.getName().getValue()))
-                {
-                    for (auto &templateParam : tempGenericInterfaceInfo->typeParams)
-                    {
-                        auto name = templateParam->getName();
-                        auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
-                        if (found != typeInterfaceInfo->typeParamsWithArgs.end())
-                        {
-                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
-                            currentType = found->getValue().second;
-
-                            inferType(location, currentTemplateType, currentType, results, genContext);
-                        }
-                    }
-
-                    return;
-                }
-            }
+            return;
         }
 
         // array -> array
-        if (auto tempArray = dyn_cast<mlir_ts::ArrayType>(currentTemplateType))
+        if (tryInferArray(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeArray = dyn_cast<mlir_ts::ArrayType>(concreteType))
-            {
-                currentTemplateType = tempArray.getElementType();
-                currentType = typeArray.getElementType();
-                inferType(location, currentTemplateType, currentType, results, genContext);
-                return;
-            }
-
-            if (auto typeArray = dyn_cast<mlir_ts::ConstArrayType>(concreteType))
-            {
-                currentTemplateType = tempArray.getElementType();
-                currentType = typeArray.getElementType();
-                inferType(location, currentTemplateType, currentType, results, genContext);
-                return;
-            }
+            return;
         }
 
-        // TODO: finish it
         // tuple -> tuple
-        if (auto tempTuple = dyn_cast<mlir_ts::TupleType>(currentTemplateType))
+        if (tryInferTuple(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeTuple = dyn_cast<mlir_ts::TupleType>(concreteType))
-            {
-                for (auto tempFieldInfo : tempTuple.getFields())
-                {
-                    currentTemplateType = tempFieldInfo.type;
-                    auto index = typeTuple.getIndex(tempFieldInfo.id);
-                    if (index >= 0)
-                    {
-                        currentType = typeTuple.getFieldInfo(index).type;
-                        inferType(location, currentTemplateType, currentType, results, genContext);
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
+            return;
+        }
 
-                return;
-            }
-
-            if (auto typeTuple = dyn_cast<mlir_ts::ConstTupleType>(concreteType))
-            {
-                for (auto tempFieldInfo : tempTuple.getFields())
-                {
-                    currentTemplateType = tempFieldInfo.type;
-                    auto index = typeTuple.getIndex(tempFieldInfo.id);
-                    if (index >= 0)
-                    {
-                        currentType = typeTuple.getFieldInfo(index).type;
-                        inferType(location, currentTemplateType, currentType, results, genContext);
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
-
-                return;
-            }
-        }        
-
-        // optional -> optional
-        if (auto tempOpt = dyn_cast<mlir_ts::OptionalType>(currentTemplateType))
+        // optional -> optional / optional -> value
+        if (tryInferOptional(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeOpt = dyn_cast<mlir_ts::OptionalType>(concreteType))
-            {
-                currentTemplateType = tempOpt.getElementType();
-                currentType = typeOpt.getElementType();
-                inferType(location, currentTemplateType, currentType, results, genContext);
-                return;
-            }
-
-            // optional -> value
-            currentTemplateType = tempOpt.getElementType();
-            currentType = concreteType;
-            inferType(location, currentTemplateType, currentType, results, genContext);
             return;
         }
 
         // lambda -> lambda
-        if (mth.isAnyFunctionType(currentTemplateType) && mth.isAnyFunctionType(concreteType))
+        if (tryInferFunction(location, templateType, concreteType, results, genContext))
         {
-            auto tempfuncType = mth.getParamsFromFuncRef(currentTemplateType);
-            if (tempfuncType.size() > 0)
-            {
-                auto funcType = mth.getParamsFromFuncRef(concreteType);
-                if (funcType.size() > 0)
-                {
-                    inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
-
-                    // lambda(return) -> lambda(return)
-                    auto tempfuncRetType = mth.getReturnsFromFuncRef(currentTemplateType);
-                    if (tempfuncRetType.size() > 0)
-                    {
-                        auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
-                        if (funcRetType.size() > 0)
-                        {
-                            inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
-                        }
-                    }
-
-                    return;
-                }
-            }
+            return;
         }
 
-        // union -> union
-        if (auto tempUnionType = dyn_cast<mlir_ts::UnionType>(currentTemplateType))
+        // union -> union / union -> value
+        if (tryInferUnion(location, templateType, concreteType, results, genContext))
         {
-            if (auto typeUnionType = dyn_cast<mlir_ts::UnionType>(concreteType))
-            {
-                auto types = typeUnionType.getTypes();
-                if (types.size() != tempUnionType.getTypes().size())
-                {
-                    return;
-                }
-
-                for (auto [index, tempSubType] : enumerate(tempUnionType.getTypes()))
-                {
-                    auto typeSubType = types[index];
-
-                    currentTemplateType = tempSubType;
-                    currentType = typeSubType;
-                    inferType(location, currentTemplateType, currentType, results, genContext);
-                }
-
-                return;
-            }
-            else 
-            {
-                // TODO: review how to call functions such as: "function* Map<T, R>(a: T[] | Iterable<T>, f: (i: T) => R) { ... }"
-                // special case when UnionType is used in generic method
-                for (auto tempSubType : tempUnionType.getTypes())
-                {
-                    currentTemplateType = tempSubType;
-                    currentType = concreteType;
-
-                    auto count = results.size();
-                    inferType(location, currentTemplateType, currentType, results, genContext);
-                    if (count < results.size())
-                    {
-                        return;
-                    }
-                }
-
-                return;
-            }
+            return;
         }
 
         // conditional type
+        auto currentTemplateType = templateType;
         if (auto templateCondType = dyn_cast<mlir_ts::ConditionalType>(currentTemplateType))
         {
-            currentTemplateType = templateCondType.getTrueType();
-            inferType(location, currentTemplateType, currentType, results, genContext);
+            inferType(location, templateCondType.getTrueType(), concreteType, results, genContext);
             currentTemplateType = templateCondType.getFalseType();
-            inferType(location, currentTemplateType, currentType, results, genContext);
+            inferType(location, currentTemplateType, concreteType, results, genContext);
         }
 
-        // typeref -> type
+        // typeref -> type; note: intentionally also tests the false branch of a conditional type from above
         if (auto tempTypeRefType = dyn_cast<mlir_ts::TypeReferenceType>(currentTemplateType))
         {
-            currentTemplateType = getTypeByTypeReference(location, tempTypeRefType, genContext);
-            inferType(location, currentTemplateType, currentType, results, genContext);
+            inferType(location, getTypeByTypeReference(location, tempTypeRefType, genContext), concreteType, results, genContext);
         }
     }
 
