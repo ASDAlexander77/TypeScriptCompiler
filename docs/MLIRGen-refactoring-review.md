@@ -172,3 +172,24 @@ The full-module scans in `mlirDiscoverAllDependencies` (~734/~774) look expensiv
 | A4 arena-interning fix | ~30 lines | stops unbounded arena growth on lookups |
 | A4 `std::bind`→lambda | mechanical | readability + perf |
 | A1 ownership / §3 | dedicated effort | biggest correctness payoff |
+
+## Addendum — 2026-07-12 status and §3 plan
+
+*Landed since the last addendum: #202 (A1 initializers + A2 `SourceFileScope`), #203 (A4 complete), #204 (A1 ownership complete), #205 (`cast()` → 11 pipeline stages), #206 (`mlirGen(ObjectLiteralExpression)` → `ObjectLiteralInfo` + 4 passes), #207 (`inferType` → 8 `tryInfer*` helpers).*
+
+### §5 status: complete
+
+The original §5 table was measured before this series and partially mislabeled multi-line signatures. Current survey (functions > 180 lines): `mlirGenPropertyAccessExpressionBaseLogic` (249 — already a structured per-type `TypeSwitch`; its duplicated cast-callback is now hoisted), `mlirGenSaveLogicOneItem` (231), `instantiateSpecializedFunction` (191), `checkSafeCastOne` (190). `mlirGenClassVirtualTableDefinition` was reduced by #200; `detectAccessLevel` was always ~30 lines. Nothing exceeds 250 lines; further splitting is diminishing returns — §5 is closed.
+
+### A6. Plan for removing the `const_cast<GenContext &>` mutations (§3)
+
+Census of the 31 casts by mutated field: `funcOp` ×9 (~5230, 6323, 7188, 8832, 11535, 11693, 15790–15816), `isLoop`+`loopLabel` ×3 sites (~8002, 8047, 8133), `typeParamsWithArgs` ×4 (~16593, 23953, 24013, 24502), `generatedStatements` ×3 (~8687, 19816, 19852), `thisType` ×2 (~2723, 5106), `stop()` ×2 (~11215, 11262), `inferTypes` ×1 (~22518), plus `allocateVarsOutsideOfOperation`/`currentOperation` in `MLIRCodeLogic.h` (~895).
+
+Proposed phases, each independently shippable:
+
+1. **Legalize the out-of-band signal.** `stopProcess` becomes `mutable`, `stop()` becomes `const` (it already const-casts `rootContext` internally). The two `stop()` casts disappear; no semantic change.
+2. **Copy-on-override.** Sites that set a field for a downstream call (all `funcOp`, `thisType`, `isLoop`/`loopLabel` sites) switch from mutate-in-place to `GenContext overridden(genContext); overridden.field = x;` passed downstream. Any site that currently mutates *without* restoring leaks state to the caller — each must be checked during conversion; those are the latent bugs §3 predicted. Cost: one context copy per site (two `StringMap`s); acceptable at function-declaration granularity, but do A4's copy-cost split first if profiling objects.
+3. **Honest mutability for inference.** The generic-inference family (`typeParamsWithArgs`, `inferTypes` casts) genuinely returns data to the caller. Change those entry points to take `GenContext &`, or better, pass the two maps as explicit out-parameters — they are the only fields mutated.
+4. **Parameterize `MLIRCodeLogic.h`.** The two casts there poke values into the context that could be plain function parameters.
+
+Order: 1 (trivial) → 3 (bounded signature ripple) → 2 (site-by-site, one PR per field group) → 4.
