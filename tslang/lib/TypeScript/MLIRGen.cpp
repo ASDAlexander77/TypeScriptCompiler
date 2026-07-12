@@ -1470,6 +1470,7 @@ class MLIRGenImpl
                       std::back_inserter(generatedStatements));
 
             // clean up
+            // NOTE: upward mailbox into caller context (process-once drain) - see docs/MLIRGen-refactoring-review.md A7
             const_cast<GenContext&>(genContext).generatedStatements.clear();
 
             // auto generated code
@@ -1554,6 +1555,7 @@ class MLIRGenImpl
             // remove when used
             if (disposeDepth == DisposeDepth::CurrentScope)
             {
+                // NOTE: upward mailbox into caller context (process-once) - see docs/MLIRGen-refactoring-review.md A7
                 const_cast<GenContext *>(genContext)->usingVars = nullptr;
             }
 
@@ -5106,6 +5108,7 @@ class MLIRGenImpl
             // special case, setup 'this' and type provided 
             if (namePtr == THIS_NAME && type) 
             {
+                // NOTE: upward mailbox: explicit this-parameter type must reach the prototype chain - see A7
                 const_cast<GenContext &>(genContext).thisType = type;
                 LLVM_DEBUG(dbgs() << "\n!! param " << THIS_NAME << " mapped to type " << type << "\n");
 
@@ -7624,6 +7627,7 @@ class MLIRGenImpl
                                 // enable safe cast found
                                 auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                 auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
+                                // NOTE: upward mailbox: alias must stay visible for following statements - see A7
                                 const_cast<GenContext &>(genContext)
                                     .typeAliasMap.insert({typeAliasNameUTF8, tupleType});
 
@@ -7646,6 +7650,7 @@ class MLIRGenImpl
                                     // enable safe cast found
                                     auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                     auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
+                                    // NOTE: upward mailbox: alias must stay visible for following statements - see A7
                                     const_cast<GenContext &>(genContext)
                                         .typeAliasMap.insert({typeAliasNameUTF8, interfaceType});
 
@@ -8691,6 +8696,7 @@ class MLIRGenImpl
                 }
 
                 // clean up
+                // NOTE: upward mailbox into caller context (process-once drain) - see A7
                 const_cast<GenContext &>(genContext).generatedStatements.clear();
             }
 
@@ -19817,6 +19823,7 @@ genContext);
                                                                   propertyDeclaration->initializer);
                 auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
+                // NOTE: upward mailbox: drained when the constructor body is generated - see A7
                 const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
             }
 
@@ -19853,6 +19860,7 @@ genContext);
                         nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken), _name);
                     auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
+                    // NOTE: upward mailbox: drained when the constructor body is generated - see A7
                     const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
                 }
             }

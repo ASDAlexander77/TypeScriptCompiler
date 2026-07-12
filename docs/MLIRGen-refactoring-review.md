@@ -195,3 +195,25 @@ Proposed phases, each independently shippable:
 Order: 1 (trivial) → 3 (bounded signature ripple) → 2 (site-by-site, one PR per field group) → 4.
 
 *Status update:* phase 1 is done, plus a discovered **phase 0**: nine of the 31 casts were gratuitous — non-const method calls on the copyable `funcOp` op handle (`getSymName`/`getCallableResults`/`getCallableRegion`/`setPersonalityAttr`), a deref of the `inferTypes` pointer member (pointee was never const), and a cast on a local non-const context in `getConditionalType`. Remaining casts are all genuine mutations for phases 2–4: `thisType` ×2, `typeAliasMap` ×2, loop flags ×3 sites, `generatedStatements` ×4, `typeParamsWithArgs` ×3 (`zipTypeParameterWithArgument` at ~16587, `processConditionalForType`, mapped-type erase), plus `MLIRCodeLogic.h`.
+
+*Second status update:* phase 3 landed (#210 — inference family takes `GenContext&`; `getMappedType` copy also fixed a key-leak latent bug), and phase 2a landed (#211 — loop flags and `instantiateSpecializedFunction`'s `thisType` override scoped to local contexts; both were real caller-context leaks).
+
+### A7. The remaining casts are upward mailboxes — channel redesign needed (proposal)
+
+The 10 casts left (8 active in MLIRGen.cpp + 2 in `MLIRCodeLogic.h`; each now carries a `NOTE: upward mailbox` comment) all *intentionally* write into the caller's context so that **later** code observes the value. Copy-on-override cannot work, and `GenContext&` signatures would ripple through the whole statement chain. Worse, their correctness depends on `GenContext`'s value-copy semantics — a write is visible exactly to code whose context is (a copy of a copy of…) the mutated object made *after* the write:
+
+- **`generatedStatements`** (push ×2 in class-member processing, drain+clear ×2): class field initializers are queued, then drained once when the constructor body is generated; the per-copy `clear()` is what makes it process-once per subtree.
+- **`typeAliasMap`** (insert ×2 in `checkSafeCastOne`): a synthesized safe-cast alias must resolve while compiling the *following* statements. Note the map legitimately serves a second, scoped role at ~15 other sites that set it on local copies.
+- **`mlirGenParameters` `thisType`**: an explicit `this: T` parameter must reach the prototype chain above.
+- **`usingVars = nullptr`** (~1557): process-once dispose marker.
+- **`MLIRCodeLogic.h` `mlirGenSwitchState`**: arms `allocateVarsOutsideOfOperation`/`currentOperation` for the statements *following* the `__switchstate` call (the §4 plan misjudged these as parameterizable — they are out-channels, not in-params).
+
+Proposed redesign (one PR per channel, needs review before implementation):
+
+1. **`generatedStatements` → explicit channel object.** A `PendingStatements` struct owned by the class-processing scope; `GenContext` holds a plain pointer. Copies share the pointer, so "drain once" becomes a real property of the channel (swap-out) instead of an accident of which copy got cleared. This also removes the current ambiguity where clearing a copy may or may not shield sibling scopes.
+2. **safe-cast aliases → per-function alias registry.** Split `typeAliasMap`'s two roles: keep the by-value map for scoped generic aliases; add a pointer to a function-scope `SmallVector`-backed registry for the synthesized safe-cast aliases (names are anonymous, collision-free). `getEmbeddedType`'s lookup checks both.
+3. **`mlirGenParameters`** should stop poking and instead *return* the discovered `this` type (it already returns a tuple; the `this` param is in the returned params) — the caller decides what context to thread it into. Requires auditing what `mlirGenFunctionPrototype` and below read `genContext.thisType` for.
+4. **`mlirGenSwitchState`** → return the armed state (`std::pair<bool, Operation*>` or a small struct) from `callMethod`'s special-case path and let the call-expression handler apply it to a context it owns. Requires `callMethod` to distinguish "value result" from "context effect" results.
+5. **`usingVars`** → same pointer-channel treatment as (1), or fold into the disposal walk's own state.
+
+Until a channel lands, its casts stay — documented and greppable via the `NOTE: upward mailbox` markers.
