@@ -5312,7 +5312,7 @@ class MLIRGenImpl
         auto funcIt = getFunctionMap().find(name);
         if (funcIt != getFunctionMap().end())
         {
-            auto cachedFuncType = funcIt->second.getFunctionType();
+            auto cachedFuncType = funcIt->second.funcType;
             if (cachedFuncType.getNumResults() > 0)
             {
                 auto returnType = cachedFuncType.getResult(0);
@@ -6032,7 +6032,8 @@ class MLIRGenImpl
         auto name = funcProto->getNameWithoutNamespace();
         if (!getFunctionMap().count(name))
         {
-            getFunctionMap().insert({name, funcOp});
+            getFunctionMap().insert(
+                {name, FunctionEntry{funcOp.getName().str(), mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType())}});
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
                                     << " num inputs:" << mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType()).getNumInputs()
@@ -6081,10 +6082,18 @@ class MLIRGenImpl
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
-            auto funcOp = lookupFunctionMap(functionName);
-            if (funcOp && theModule.lookupSymbol(functionName) 
+            auto funcEntry = lookupFunctionMap(functionName);
+            if (funcEntry && theModule.lookupSymbol(functionName)
                 || theModule.lookupSymbol(fullFunctionName))
             {
+                // resolve a live op from the module instead of returning a cached handle;
+                // the registered symbol is usually the full name
+                auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(functionName);
+                if (!funcOp)
+                {
+                    funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(fullFunctionName);
+                }
+
                 return {mlir::success(), funcOp, functionName, false};
             }
         }
@@ -15966,11 +15975,8 @@ class MLIRGenImpl
         auto fn = getFunctionMap().find(name);
         if (fn != getFunctionMap().end())
         {
-            auto funcOp = fn->getValue();
-            auto funcType = funcOp.getFunctionType();
-            auto funcName = funcOp.getName();
-
-            return resolveFunctionWithCapture(location, funcName, funcType, mlir::Value(), false, genContext);
+            auto &funcEntry = fn->getValue();
+            return resolveFunctionWithCapture(location, funcEntry.name, funcEntry.funcType, mlir::Value(), false, genContext);
         }
 
         return mlir::Value();
@@ -26273,12 +26279,12 @@ genContext);
         lookupLogic(functionTypeMap);
     }
 
-    auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
+    auto getFunctionMap() -> llvm::StringMap<FunctionEntry> &
     {
         return currentNamespace->functionMap;
     }
 
-    auto lookupFunctionMap(StringRef name) -> mlir_ts::FuncOp
+    auto lookupFunctionMap(StringRef name) -> FunctionEntry
     {
         lookupLogic(functionMap);
     }

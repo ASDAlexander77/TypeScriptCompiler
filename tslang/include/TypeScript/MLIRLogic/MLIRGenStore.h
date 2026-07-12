@@ -985,6 +985,20 @@ struct GenericClassInfo
     }
 };
 
+// what we know about a registered function; deliberately not the FuncOp itself -
+// discovery-pass ops are erased with the discovery module, so cached op handles dangle.
+// Resolve a live op through theModule.lookupSymbol when one is actually needed.
+struct FunctionEntry
+{
+    std::string name;
+    mlir_ts::FunctionType funcType;
+
+    explicit operator bool() const
+    {
+        return static_cast<bool>(funcType);
+    }
+};
+
 struct NamespaceInfo
 {
   public:
@@ -998,7 +1012,7 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir_ts::FunctionType> functionTypeMap;
 
-    llvm::StringMap<mlir_ts::FuncOp> functionMap;
+    llvm::StringMap<FunctionEntry> functionMap;
 
     llvm::StringMap<GenericFunctionInfo::TypePtr> genericFunctionMap;
 
