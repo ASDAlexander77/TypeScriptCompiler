@@ -11172,6 +11172,8 @@ class MLIRGenImpl
             return classAccessWithObject(classType, objectValue);
         };
 
+        auto castFn = [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); };
+
         mlir::Value value = 
             mlir::TypeSwitch<mlir::Type, mlir::Value>(actualType)
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
@@ -11227,16 +11229,12 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(
-                            arrayType, 
-                            compileOptions,
-                            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
-                            genContext))
+                    if (auto value = cl.Array(arrayType, compileOptions, castFn, genContext))
                     {
                         return value;
                     }
-                    
-                    return mlir::Value();   
+
+                    return mlir::Value();
                 })
                 .Case<mlir_ts::ArrayType>([&](auto arrayType) { 
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS                    
@@ -11273,16 +11271,12 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(
-                            arrayType, 
-                            compileOptions,
-                            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
-                            genContext))
+                    if (auto value = cl.Array(arrayType, compileOptions, castFn, genContext))
                     {
                         return value;
                     }
-                    
-                    return mlir::Value();                      
+
+                    return mlir::Value();
                 })
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
                 .Case<mlir_ts::ObjectType>([&](auto objectType) { 
