@@ -2713,14 +2713,17 @@ class MLIRGenImpl
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, 
         SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        // local copy so the 'this'-type override below stays scoped to this instantiation
+        GenContext instantiateGenContext(genContext);
+
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
         if (functionGenericTypeInfo)
         {
-            if (functionGenericTypeInfo->functionDeclaration == SyntaxKind::ArrowFunction 
+            if (functionGenericTypeInfo->functionDeclaration == SyntaxKind::ArrowFunction
                 || functionGenericTypeInfo->functionDeclaration == SyntaxKind::FunctionExpression)
             {
                 // we need to avoid wrong redeclaration of arrow functions (when thisType is provided it will add THIS parameter as first)
-                const_cast<GenContext &>(genContext).thisType = nullptr;
+                instantiateGenContext.thisType = nullptr;
             }
 
             MLIRNamespaceGuard ng(currentNamespace);
@@ -2731,7 +2734,7 @@ class MLIRGenImpl
             auto anyNamedGenericType = IsGeneric::False;
 
             // step 1, add type arguments first
-            GenContext genericTypeGenContext(genContext);
+            GenContext genericTypeGenContext(instantiateGenContext);
             genericTypeGenContext.specialization = true;
             genericTypeGenContext.instantiateSpecializedFunction = true;
             genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
@@ -2743,7 +2746,7 @@ class MLIRGenImpl
             {
                 // create typeParamsWithArgs from typeArguments
                 auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
-                    location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+                    location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, instantiateGenContext);
                 if (mlir::failed(result))
                 {
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -2783,7 +2786,7 @@ class MLIRGenImpl
 
                 if (typeParam.getValue().first->getConstraint())
                 {
-                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, genContext);
+                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, instantiateGenContext);
                     if (reason == Reason::Failure)
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
@@ -2847,7 +2850,7 @@ class MLIRGenImpl
                         return {mlir::success(), funcType, fullName};
                     }
 
-                    if (genContext.allowPartialResolve)
+                    if (instantiateGenContext.allowPartialResolve)
                     {
                         return {mlir::success(), mlir_ts::FunctionType(), fullName};
                     }
@@ -2871,8 +2874,8 @@ class MLIRGenImpl
                 auto opIndex = skipThisParam ? 0 : -1;
                 // TODO: this is hack, somehow we have difference between operands and call Operands due to CreateExtentionsFunction call
                 // review example raytrace.ts function addLight in getNaturalColor (due to captured params)
-                long operandsShift = static_cast<long>(operands.size()) - static_cast<long>(genContext.callOperands.size());
-                for (auto [callOpIndex, op] : enumerate(genContext.callOperands))
+                long operandsShift = static_cast<long>(operands.size()) - static_cast<long>(instantiateGenContext.callOperands.size());
+                for (auto [callOpIndex, op] : enumerate(instantiateGenContext.callOperands))
                 {
                     opIndex++;
                     if (isGenericFunctionReference(op))
@@ -2880,7 +2883,7 @@ class MLIRGenImpl
                         LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: "
                                                 << funcOp.getFunctionType() << "\n";);
                         auto result = instantiateSpecializedFunction(
-                            location, op, funcOp.getFunctionType().getInput(opIndex), genContext);
+                            location, op, funcOp.getFunctionType().getInput(opIndex), instantiateGenContext);
                         if (mlir::failed(result))
                         {
                             return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -8000,27 +8003,28 @@ class MLIRGenImpl
             label = "";
         }
 
-        const_cast<GenContext &>(genContext).isLoop = true;
-        const_cast<GenContext &>(genContext).loopLabel = label;
+        GenContext loopGenContext(genContext);
+        loopGenContext.isLoop = true;
+        loopGenContext.loopLabel = label;
 
         /*auto *cond =*/builder.createBlock(&doWhileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&doWhileOp.getBody(), {}, types);
 
         // body in condition
         builder.setInsertionPointToStart(&doWhileOp.getBody().front());
-        auto result2 = mlirGen(doStatementAST->statement, genContext);
+        auto result2 = mlirGen(doStatementAST->statement, loopGenContext);
         EXIT_IF_FAILED(result2)
         // just simple return, as body in cond
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointToStart(&doWhileOp.getCond().front());
-        auto result = mlirGen(doStatementAST->expression, genContext);
+        auto result = mlirGen(doStatementAST->expression, loopGenContext);
         EXIT_IF_FAILED(result)
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
         {
-            CAST(conditionValue, location, getBooleanType(), conditionValue, genContext);
+            CAST(conditionValue, location, getBooleanType(), conditionValue, loopGenContext);
         }
 
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
@@ -8045,21 +8049,22 @@ class MLIRGenImpl
             label = "";
         }
 
-        const_cast<GenContext &>(genContext).isLoop = true;
-        const_cast<GenContext &>(genContext).loopLabel = label;
+        GenContext loopGenContext(genContext);
+        loopGenContext.isLoop = true;
+        loopGenContext.loopLabel = label;
 
         /*auto *cond =*/builder.createBlock(&whileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&whileOp.getBody(), {}, types);
 
         // condition
         builder.setInsertionPointToStart(&whileOp.getCond().front());
-        auto result = mlirGen(whileStatementAST->expression, genContext);
+        auto result = mlirGen(whileStatementAST->expression, loopGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
         {
-            CAST(conditionValue, location, getBooleanType(), conditionValue, genContext);
+            CAST(conditionValue, location, getBooleanType(), conditionValue, loopGenContext);
         }
 
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
@@ -8070,9 +8075,9 @@ class MLIRGenImpl
         // check if we do safe-cast here
         SymbolTableScopeT varScopeBody(symbolTable);
         SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-        checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, genContext);
+        checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, loopGenContext);
 
-        auto result2 = mlirGen(whileStatementAST->statement, genContext);
+        auto result2 = mlirGen(whileStatementAST->statement, loopGenContext);
         EXIT_IF_FAILED(result2)
         builder.create<mlir_ts::ResultOp>(location);
 
@@ -8131,15 +8136,16 @@ class MLIRGenImpl
             label = "";
         }
 
-        const_cast<GenContext &>(genContext).isLoop = true;
-        const_cast<GenContext &>(genContext).loopLabel = label;
+        GenContext loopGenContext(genContext);
+        loopGenContext.isLoop = true;
+        loopGenContext.loopLabel = label;
 
         /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
         /*auto *incr =*/builder.createBlock(&forOp.getIncr(), {}, types);
 
         builder.setInsertionPointToStart(&forOp.getCond().front());
-        auto result = mlirGen(forStatementAST->condition, genContext);
+        auto result = mlirGen(forStatementAST->condition, loopGenContext);
         EXIT_IF_FAILED(result)
         auto conditionValue = V(result);
         if (conditionValue)
@@ -8158,7 +8164,7 @@ class MLIRGenImpl
             if (forStatementAST->statement == SyntaxKind::Block)
             {
                 auto firstStatement = forStatementAST->statement.as<ts::Block>()->statements.front();
-                auto result = mlirGen(firstStatement, genContext);
+                auto result = mlirGen(firstStatement, loopGenContext);
                 EXIT_IF_FAILED(result)
             }
 
@@ -8168,7 +8174,7 @@ class MLIRGenImpl
             auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
                 stripMetadata(location), mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
-                    GenContext execOpBodyGenContext(genContext);
+                    GenContext execOpBodyGenContext(loopGenContext);
                     DITableScopeT debugAsyncCodeScope(debugScope);
                     MLIRDebugInfoHelper mdi(builder, debugScope);
                     
@@ -8207,7 +8213,7 @@ class MLIRGenImpl
         else
         {
             // default
-            auto result = mlirGen(forStatementAST->statement, genContext);
+            auto result = mlirGen(forStatementAST->statement, loopGenContext);
             EXIT_IF_FAILED(result)
         }
 
@@ -8215,7 +8221,7 @@ class MLIRGenImpl
 
         // increment
         builder.setInsertionPointToStart(&forOp.getIncr().front());
-        mlirGen(forStatementAST->incrementor, genContext);
+        mlirGen(forStatementAST->incrementor, loopGenContext);
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(forOp);
