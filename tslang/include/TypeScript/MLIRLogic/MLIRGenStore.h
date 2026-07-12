@@ -112,13 +112,27 @@ struct StaticFieldInfo
     mlir_ts::AccessLevel accessLevel;
 };
 
-struct MethodInfo
+// what we know about a registered function; deliberately not the FuncOp itself -
+// discovery-pass ops are erased with the discovery module, so cached op handles dangle.
+// Resolve a live op through theModule.lookupSymbol when one is actually needed.
+struct FunctionEntry
 {
-    // TODO: convert to attribute as fields 
     std::string name;
     mlir_ts::FunctionType funcType;
-    // TODO: remove using it, we do not need it, we need actual name of function not function itself
-    mlir_ts::FuncOp funcOp;
+
+    explicit operator bool() const
+    {
+        return static_cast<bool>(funcType);
+    }
+};
+
+struct MethodInfo
+{
+    // TODO: convert to attribute as fields
+    std::string name;
+    mlir_ts::FunctionType funcType;
+    // symbol name of the function implementing the method (see FunctionEntry note)
+    std::string funcName;
     bool isStatic;
     bool isVirtual;
     bool isAbstract;
@@ -156,8 +170,8 @@ struct VirtualMethodOrInterfaceVTableInfo
 struct AccessorInfo
 {
     std::string name;
-    mlir_ts::FuncOp get;
-    mlir_ts::FuncOp set;
+    FunctionEntry get;
+    FunctionEntry set;
     bool isStatic;
     bool isVirtual;
     bool isAbstract;
@@ -168,8 +182,8 @@ struct AccessorInfo
 struct IndexInfo
 {
     mlir_ts::FunctionType indexSignature;
-    mlir_ts::FuncOp get;
-    mlir_ts::FuncOp set;
+    FunctionEntry get;
+    FunctionEntry set;
     mlir_ts::AccessLevel getAccessLevel;
     mlir_ts::AccessLevel setAccessLevel;
 };
@@ -801,9 +815,11 @@ struct ClassInfo
             auto it = methodSlots.find(method.name);
             if (it != methodSlots.end())
             {
-                // found method - override the inherited slot
+                // found method - override the inherited slot (name and type together:
+                // the overriding function's type must win over the inherited one)
                 auto index = it->second;
-                vtable[index].methodInfo.funcOp = method.funcOp;
+                vtable[index].methodInfo.funcName = method.funcName;
+                vtable[index].methodInfo.funcType = method.funcType;
                 method.virtualIndex = index;
                 method.isVirtual = true;
                 vtable[index].methodInfo.isAbstract = method.isAbstract;
@@ -982,20 +998,6 @@ struct GenericClassInfo
 
     GenericClassInfo()
     {
-    }
-};
-
-// what we know about a registered function; deliberately not the FuncOp itself -
-// discovery-pass ops are erased with the discovery module, so cached op handles dangle.
-// Resolve a live op through theModule.lookupSymbol when one is actually needed.
-struct FunctionEntry
-{
-    std::string name;
-    mlir_ts::FunctionType funcType;
-
-    explicit operator bool() const
-    {
-        return static_cast<bool>(funcType);
     }
 };
 

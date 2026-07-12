@@ -6027,13 +6027,17 @@ class MLIRGenImpl
         return {mlir::success(), name};
     }
 
+    static FunctionEntry makeFunctionEntry(mlir_ts::FuncOp funcOp)
+    {
+        return FunctionEntry{funcOp.getName().str(), mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType())};
+    }
+
     bool registerFunctionOp(FunctionPrototypeDOM::TypePtr funcProto, mlir_ts::FuncOp funcOp)
     {
         auto name = funcProto->getNameWithoutNamespace();
         if (!getFunctionMap().count(name))
         {
-            getFunctionMap().insert(
-                {name, FunctionEntry{funcOp.getName().str(), mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType())}});
+            getFunctionMap().insert({name, makeFunctionEntry(funcOp)});
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
                                     << " num inputs:" << mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType()).getNumInputs()
@@ -11603,8 +11607,8 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        auto funcOp = methodInfo.funcOp;
-        auto effectiveFuncType = funcOp.getFunctionType();
+        StringRef funcName = methodInfo.funcName;
+        auto effectiveFuncType = methodInfo.funcType;
 
         if (methodInfo.isStatic)
         {
@@ -11616,7 +11620,7 @@ class MLIRGenImpl
                 if (classInfo->isDynamicImport)
                 {
                     // need to resolve global variable
-                    auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                    auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
 
                     if (!isThisValueClassRef)
                     {
@@ -11634,14 +11638,14 @@ class MLIRGenImpl
                     {
                         auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                             location, getBoundFunctionType(effectiveFuncType), thisValue,
-                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));                            
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));                            
                         
                         return thisSymbOp;
                     }
 
                     auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                         location, effectiveFuncType,
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
                     return symbOp;
                 }
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
@@ -11665,7 +11669,7 @@ class MLIRGenImpl
 
             auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
                 location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             return virtualSymbOp;
 #endif
         }
@@ -11677,12 +11681,12 @@ class MLIRGenImpl
             auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
             if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
             {
-                LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "'\n";);
+                LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcName << "'\n";);
 
                 LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
                                     << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
 
-                // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
+                // auto inTheSameFunc = funcName == const_cast<GenContext &>(genContext).funcName;
 
                 auto vtableAccess =
                     mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
@@ -11699,14 +11703,14 @@ class MLIRGenImpl
                 auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
                     location, getBoundFunctionType(effectiveFuncType), effectiveThisValue, vtableAccess,
                     builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
                 return thisVirtualSymbOp;
             }
 
             if (classInfo->isDynamicImport)
             {
                 // need to resolve global variable
-                auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
                 CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
                 auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
                     location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
@@ -11717,7 +11721,7 @@ class MLIRGenImpl
                 // default call;
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
                 return thisSymbOp;
             }
         }
@@ -11762,22 +11766,21 @@ class MLIRGenImpl
 
         // TODO: finish access check for get/set methods
 
-        auto getFuncOp = accessorInfo.get;
-        auto setFuncOp = accessorInfo.set;
+        auto getFunc = accessorInfo.get;
+        auto setFunc = accessorInfo.set;
         mlir::Type accessorResultType;
-        if (getFuncOp)
+        if (getFunc)
         {
-            auto funcType = dyn_cast<mlir_ts::FunctionType>(getFuncOp.getFunctionType());
+            auto funcType = getFunc.funcType;
             if (funcType.getNumResults() > 0)
             {
                 accessorResultType = funcType.getResult(0);
             }
         }
 
-        if (!accessorResultType && setFuncOp)
+        if (!accessorResultType && setFunc)
         {
-            accessorResultType =
-                dyn_cast<mlir_ts::FunctionType>(setFuncOp.getFunctionType()).getInput(accessorInfo.isStatic ? 0 : 1);
+            accessorResultType = setFunc.funcType.getInput(accessorInfo.isStatic ? 0 : 1);
         }
 
         if (!accessorResultType)
@@ -11787,20 +11790,20 @@ class MLIRGenImpl
         }
 
         // remove funcs if access level is not high
-        if (getFuncOp && accessingFromLevel < accessorInfo.getAccessLevel) {
-            getFuncOp = {};
-        }        
-        if (setFuncOp && accessingFromLevel < accessorInfo.setAccessLevel) {
-            setFuncOp = {};
-        }        
+        if (getFunc && accessingFromLevel < accessorInfo.getAccessLevel) {
+            getFunc = {};
+        }
+        if (setFunc && accessingFromLevel < accessorInfo.setAccessLevel) {
+            setFunc = {};
+        }
 
         if (accessorInfo.isStatic)
         {
             auto accessorOp = builder.create<mlir_ts::AccessorOp>(
                 location, accessorResultType,
-                getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+                getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
                             : mlir::FlatSymbolRefAttr{},
-                setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+                setFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFunc.name)
                             : mlir::FlatSymbolRefAttr{},
                 mlir::Value());
             return accessorOp.getResult(0);
@@ -11809,9 +11812,9 @@ class MLIRGenImpl
         {
             auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
                 location, accessorResultType, thisValue,
-                getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+                getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
                             : mlir::FlatSymbolRefAttr{},
-                setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+                setFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFunc.name)
                             : mlir::FlatSymbolRefAttr{},
                 mlir::Value());
             return thisAccessorOp.getResult(0);
@@ -11830,8 +11833,8 @@ class MLIRGenImpl
         }
 
         auto indexInfo = classInfo->indexes.front();
-        auto getFuncOp = indexInfo.get;
-        auto setFuncOp = indexInfo.set;
+        auto getFunc = indexInfo.get;
+        auto setFunc = indexInfo.set;
 
         if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
         {
@@ -11840,12 +11843,12 @@ class MLIRGenImpl
         }
 
         // remove funcs if access level is not high
-        if (getFuncOp && accessingFromLevel < indexInfo.getAccessLevel) {
-            getFuncOp = {};
-        }        
-        if (setFuncOp && accessingFromLevel < indexInfo.setAccessLevel) {
-            setFuncOp = {};
-        }        
+        if (getFunc && accessingFromLevel < indexInfo.getAccessLevel) {
+            getFunc = {};
+        }
+        if (setFunc && accessingFromLevel < indexInfo.setAccessLevel) {
+            setFunc = {};
+        }
 
         auto indexResultType = indexInfo.indexSignature.getResult(0);
         auto argumentType = indexInfo.indexSignature.getInput(0);
@@ -11855,9 +11858,9 @@ class MLIRGenImpl
 
         auto thisIndexAccessorOp = builder.create<mlir_ts::ThisIndexAccessorOp>(
             location, indexResultType, thisValue, V(result),
-            getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+            getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
                         : mlir::FlatSymbolRefAttr{},
-            setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+            setFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFunc.name)
                         : mlir::FlatSymbolRefAttr{},
             mlir::Value());
         return thisIndexAccessorOp.getResult(0);
@@ -18054,12 +18057,11 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        mlir_ts::FuncOp dummyFuncOp;
         newClassPtr->methods.push_back(
         {
-            funcName, 
-            funcType, 
-            dummyFuncOp, 
+            funcName,
+            funcType,
+            std::string(), // forward declaration: no function symbol yet
             isStatic,
             isVirtual || isAbstract, 
             isAbstract, 
@@ -18883,7 +18885,7 @@ genContext);
                     }
                 }
 
-                auto foundMethodFunctionType = mlir::cast<mlir_ts::FunctionType>(foundMethodPtr->funcOp.getFunctionType());
+                auto foundMethodFunctionType = foundMethodPtr->funcType;
 
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
@@ -18949,9 +18951,9 @@ genContext);
                     else
                     {
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                            location, methodOrField.methodInfo.funcOp.getFunctionType(),
+                            location, methodOrField.methodInfo.funcType,
                             mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                         methodOrField.methodInfo.funcOp.getSymName()));
+                                                         methodOrField.methodInfo.funcName));
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, methodConstName, vtableValue,
@@ -19048,15 +19050,13 @@ genContext);
         // register method in info
         if (newClassPtr->getMethodIndex(fullClassStaticName) < 0)
         {
-            auto funcOp = mlir_ts::FuncOp::create(location, fullClassStaticName, funcType);
-
             auto &methodInfos = newClassPtr->methods;
             methodInfos.push_back(
             {
-                fullClassStaticName.str(), 
-                funcType, 
-                funcOp, 
-                true, 
+                fullClassStaticName.str(),
+                funcType,
+                fullClassStaticName.str(),
+                true,
                 false, 
                 false, 
                 -1, 
@@ -19152,9 +19152,7 @@ genContext);
                 fields.push_back(
                 {
                     MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
-                    vtableRecord.methodInfo.funcOp 
-                        ? vtableRecord.methodInfo.funcOp.getFunctionType() 
-                        : vtableRecord.methodInfo.funcType,
+                    vtableRecord.methodInfo.funcType,
                     false,
                     mlir_ts::AccessLevel::Public
                 });
@@ -19187,9 +19185,7 @@ genContext);
                     fields.push_back(
                     {
                         MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
-                        vtableRecord.methodInfo.funcOp 
-                            ? vtableRecord.methodInfo.funcOp.getFunctionType()
-                            : vtableRecord.methodInfo.funcType,
+                        vtableRecord.methodInfo.funcType,
                         false,
                         mlir_ts::AccessLevel::Public
                     });
@@ -19284,9 +19280,9 @@ genContext);
                             }
 
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
-                                location, vtRecord.methodInfo.funcOp.getFunctionType(),
+                                location, vtRecord.methodInfo.funcType,
                                 mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                             vtRecord.methodInfo.funcOp.getSymName()));
+                                                             vtRecord.methodInfo.funcName));
                         }
                         else
                         {
@@ -19379,10 +19375,10 @@ genContext);
             {
                 methodInfos.push_back(
                 {
-                    methodName, 
-                    getFuncType(), 
-                    funcOp, 
-                    isStatic, 
+                    methodName,
+                    getFuncType(),
+                    getFuncName().str(),
+                    isStatic,
                     isAbstract || isVirtual, 
                     isAbstract, 
                     -1, 
@@ -19419,7 +19415,7 @@ genContext);
                         return false;
                     }
 
-                    indexer.get = funcOp;
+                    indexer.get = makeFunctionEntry(funcOp);
                     indexer.getAccessLevel = accessLevel;
                 }
                 else if (methodName == INDEX_ACCESS_SET_FIELD_NAME)
@@ -19438,7 +19434,7 @@ genContext);
                         return false;
                     }
 
-                    indexer.set = funcOp;
+                    indexer.set = makeFunctionEntry(funcOp);
                     indexer.setAccessLevel = accessLevel;
                 }
             }
@@ -19461,12 +19457,12 @@ genContext);
 
             if (classMember == SyntaxKind::GetAccessor)
             {
-                newClassPtr->accessors[accessorIndex].get = funcOp;
+                newClassPtr->accessors[accessorIndex].get = makeFunctionEntry(funcOp);
                 newClassPtr->accessors[accessorIndex].getAccessLevel = accessLevel;
             }
             else if (classMember == SyntaxKind::SetAccessor)
             {
-                newClassPtr->accessors[accessorIndex].set = funcOp;
+                newClassPtr->accessors[accessorIndex].set = makeFunctionEntry(funcOp);
                 newClassPtr->accessors[accessorIndex].setAccessLevel = accessLevel;
             }
         }
@@ -25943,8 +25939,8 @@ genContext);
 
                 for (auto& accessor : classInfo->accessors)
                 {
-                    if (accessor.get) addDependancyTypesToExport(accessor.get.getFunctionType());
-                    if (accessor.set) addDependancyTypesToExport(accessor.set.getFunctionType());
+                    if (accessor.get) addDependancyTypesToExport(accessor.get.funcType);
+                    if (accessor.set) addDependancyTypesToExport(accessor.set.funcType);
                 }                
 
                 return true;
