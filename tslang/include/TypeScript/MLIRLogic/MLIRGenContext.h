@@ -39,7 +39,9 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
-namespace
+// These types are shared across the MLIRGen translation units (see MLIRGenImpl.h),
+// so they need external linkage — an anonymous namespace would give each TU its own type.
+namespace typescript
 {
 
 struct PassResult
@@ -213,6 +215,6 @@ struct ValueOrLogicalResult
     }    
 };
 
-} // namespace
+} // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGENCONTEXT_H_

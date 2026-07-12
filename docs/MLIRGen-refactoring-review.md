@@ -39,6 +39,8 @@ Benefits: parallel builds (this single TU dominates incremental build time), sma
 
 Mechanically safest path: keep `MLIRGenImpl` as-is, move method *bodies* out with no signature changes, verify with the existing test suite after each batch.
 
+*Status: in progress.* First slice landed: the class moved out of MLIRGen.cpp's anonymous namespace into `typescript::mlirgen` in a private header `lib/TypeScript/MLIRGenImpl.h` (bodies still inline; each subsequent slice replaces a family's inline bodies with declarations and moves the definitions to a new TU). `MLIRGenCast.cpp` is the first satellite: the contiguous cast family (`selectFieldsValues` … `createBoundMethodFromExtensionMethod`, 29 methods) defined out-of-line. Enabling fixes: `GenContext`/`PassResult`/`ValueOrLogicalResult` in `MLIRGenContext.h` were in an anonymous namespace **in a header** (each TU got distinct types — worked only because there was one TU); they now live in `namespace typescript`. `ts::print(Node)` in `dump.h` was a non-inline header definition — now `inline`. The TU-static `compileOptionsPtr` stays in MLIRGen.cpp behind a new `setCompileOptions()` so inline code never references a TU-local. Remaining units to peel off per the table above; header hygiene (§8) comes after the last one.
+
 ## 2. Kill the dangling-`FuncOp` hazard in the symbol maps
 
 `functionMap` (per-namespace `llvm::StringMap<mlir_ts::FuncOp>`) and `GenericFunctionInfo::funcOp` cache **raw op handles**. Discovery passes create ops and then erase them (`clearTempModule`, and until recently `theModule.getBody()->clear()`), so any cached handle from a discarded pass dangles. Today the code survives because consumers only read the *type* early — but this is exactly what made the nested-import bug subtle.
