@@ -16543,8 +16543,9 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // mutates genContext.typeParamsWithArgs with type params zipped from the receiver function type
     mlir::LogicalResult processTypeArgumentsFromFunctionParameters(SignatureDeclarationBase signatureDeclarationBase,
-                                              const GenContext &genContext)
+                                              GenContext &genContext)
     {
         auto isGenericTypes = false;
         auto formalParams = signatureDeclarationBase->parameters;
@@ -16587,7 +16588,7 @@ class MLIRGenImpl
                 auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
                 auto typeParam = std::make_shared<TypeParameterDOM>(typeParamNamePtr.str());
                 auto result = zipTypeParameterWithArgument(
-                    location, const_cast<GenContext &>(genContext).typeParamsWithArgs, typeParam, type, false, genContext);
+                    location, genContext.typeParamsWithArgs, typeParam, type, false, genContext);
                 EXIT_IF_FAILED(std::get<0>(result));
             }
 
@@ -23945,9 +23946,10 @@ genContext);
         return mlir_ts::TypePredicateType::get(parametereNameSymbol, type, !!typePredicateNode->assertsModifier, foundParamIndex - (hasThis ? 1 : 0));
     }
 
-    mlir::Type processConditionalForType(ConditionalTypeNode conditionalTypeNode, mlir::Type checkType, mlir::Type extendsType, mlir::Type inferType, const GenContext &genContext)
+    // mutates genContext.typeParamsWithArgs with types inferred while resolving the conditional type
+    mlir::Type processConditionalForType(ConditionalTypeNode conditionalTypeNode, mlir::Type checkType, mlir::Type extendsType, mlir::Type inferType, GenContext &genContext)
     {
-        auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
+        auto &typeParamsWithArgs = genContext.typeParamsWithArgs;
 
         auto location = loc(conditionalTypeNode);
 
@@ -24472,11 +24474,14 @@ genContext);
             return getMappedType(type, nameType, constrainType);
         }
 
+        // the key type param is visible only while resolving this mapped type; use a local
+        // context copy so the caller's typeParamsWithArgs (incl. a pre-existing entry with
+        // the same name) is never touched
+        GenContext mappedTypeGenContext(genContext);
         auto processKeyItem = [&] (mlir::SmallVector<mlir_ts::FieldInfo> &fields, mlir::Type typeParamItem) {
-            const_cast<GenContext &>(genContext)
-                .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
+            mappedTypeGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
 
-            auto type = getType(mappedTypeNode->type, genContext);
+            auto type = getType(mappedTypeNode->type, mappedTypeGenContext);
             if (!type)
             {
                 // TODO: do we need to return error?
@@ -24486,17 +24491,17 @@ genContext);
 
             if (isa<mlir_ts::NeverType>(type))
             {
-                return; 
+                return;
             }
 
             mlir::Type nameType = typeParamItem;
             if (hasNameType)
             {
-                nameType = getType(mappedTypeNode->nameType, genContext);
+                nameType = getType(mappedTypeNode->nameType, mappedTypeGenContext);
             }
 
             // remove type param
-            const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
+            mappedTypeGenContext.typeParamsWithArgs.erase(typeParam->getName());
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... \n\t type param: [" << typeParam->getName()
                                     << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
