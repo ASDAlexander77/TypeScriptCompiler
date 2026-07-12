@@ -15096,176 +15096,158 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
-    ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
+    // accumulated state for building an object literal (fields, methods, captures)
+    struct ObjectLiteralInfo
     {
-        auto location = loc(objectLiteral);
-
-        MLIRCodeLogic mcl(builder, compileOptions);
-
-        // first value
+        ts::ObjectLiteralExpression objectLiteral;
+        mlir_ts::ObjectType objThis;
+        mlir::Type receiverType;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
         SmallVector<size_t> methodInfos;
         SmallVector<std::pair<std::string, size_t>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
+    };
 
-        auto receiverType = genContext.receiverType;
-        if (receiverType)
+    mlir::LogicalResult addObjectFuncFieldInfo(ObjectLiteralInfo &oli, mlir::Attribute fieldId, const std::string &funcName,
+                                               mlir_ts::FunctionType funcType)
+    {
+        auto type = funcType;
+
+        oli.values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+        oli.fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+
+        if (getCaptureVarsMap().find(funcName) != getCaptureVarsMap().end())
         {
-            receiverType = mth.stripOptionalType(receiverType);
+            oli.methodInfosWithCaptures.push_back({funcName, oli.fieldInfos.size() - 1});
+        }
+        else
+        {
+            oli.methodInfos.push_back(oli.fieldInfos.size() - 1);
+        }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << receiverType << "\n";);
+        return mlir::success();
+    }
 
-            if ((isa<mlir_ts::TupleType>(receiverType) || isa<mlir_ts::ConstTupleType>(receiverType) || isa<mlir_ts::InterfaceType>(receiverType))
-                 && objectLiteral->properties.size() == 0)
+    mlir::LogicalResult addObjectFieldInfoToArrays(ObjectLiteralInfo &oli, mlir::Attribute fieldId, mlir::Type type)
+    {
+        oli.values.push_back(builder.getUnitAttr());
+        oli.fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult addObjectFieldInfo(mlir::Location location, ObjectLiteralInfo &oli, mlir::Attribute fieldId,
+                                           mlir::Value itemValue, mlir::Type receiverElementType, const GenContext &genContext)
+    {
+        mlir::Type type;
+        mlir::Attribute value;
+        auto isConstValue = true;
+        if (auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            value = constOp.getValueAttr();
+            type = constOp.getType();
+        }
+        else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            value = symRefOp.getIdentifierAttr();
+            type = symRefOp.getType();
+        }
+        else if (auto undefOp = itemValue.getDefiningOp<mlir_ts::UndefOp>())
+        {
+            value = builder.getUnitAttr();
+            type = undefOp.getType();
+        }
+        else
+        {
+            value = builder.getUnitAttr();
+            type = itemValue.getType();
+            isConstValue = false;
+        }
+
+        type = mth.wideStorageType(type);
+
+        if (receiverElementType)
+        {
+            if (type != receiverElementType)
             {
-                // return undef tuple
-                llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-                if (mlir::succeeded(mth.getFields(receiverType, destTupleFields)))
+                value = builder.getUnitAttr();
+                itemValue = cast(location, receiverElementType, itemValue, genContext);
+                isConstValue = false;
+            }
+
+            type = receiverElementType;
+        }
+
+        oli.values.push_back(value);
+        oli.fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+        if (!isConstValue)
+        {
+            oli.fieldsToSet.push_back({fieldId, itemValue});
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processObjectFunctionLikeProto(ObjectLiteralInfo &oli, mlir::Attribute fieldId,
+                                                       FunctionLikeDeclarationBase funcLikeDecl, const GenContext &genContext)
+    {
+        auto funcGenContext = GenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.clearReceiverTypes();
+        funcGenContext.thisType = oli.objThis;
+
+        funcLikeDecl->parent = oli.objectLiteral;
+
+        auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
+        if (mlir::failed(result) || !funcOp)
+        {
+            return mlir::failure();
+        }
+
+        // fix this parameter type (taking in account that first type can be captured type)
+        auto funcName = funcOp.getName().str();
+        auto funcType = funcOp.getFunctionType();
+
+        // process local vars in this context
+        if (funcProto->getHasExtraFields())
+        {
+            // note: this code needed to store local variables for generators
+            auto localVars = getLocalVarsInThisContextMap().find(funcName);
+            if (localVars != getLocalVarsInThisContextMap().end())
+            {
+                for (auto fieldInfo : localVars->getValue())
                 {
-                    auto tupleType = getTupleType(destTupleFields);
-                    return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                    addObjectFieldInfoToArrays(oli, fieldInfo.id, fieldInfo.type);
                 }
             }
         }
 
-        // Object This Type
-        auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj", getFullNamespaceName());
-        auto objectNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
-        auto objectStorageType = getObjectStorageType(objectNameSymbol);
-        auto objThis = getObjectType(objectStorageType);
-        
-        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, const std::string &funcName,
-                                    mlir_ts::FunctionType funcType) -> auto {
-            auto type = funcType;
+        return addObjectFuncFieldInfo(oli, fieldId, funcName, funcType);
+    }
 
-            values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+    mlir::LogicalResult processObjectFunctionLike(ObjectLiteralInfo &oli, FunctionLikeDeclarationBase funcLikeDecl,
+                                                  const GenContext &genContext)
+    {
+        auto funcGenContext = GenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.clearReceiverTypes();
+        funcGenContext.thisType = oli.objThis;
 
-            if (getCaptureVarsMap().find(funcName) != getCaptureVarsMap().end())
-            {
-                methodInfosWithCaptures.push_back({funcName, fieldInfos.size() - 1});
-            }
-            else
-            {
-                methodInfos.push_back(fieldInfos.size() - 1);
-            }
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << oli.objThis << "\n";);
 
-            return mlir::success();
-        };
+        funcLikeDecl->parent = oli.objectLiteral;
 
-        auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) -> auto {
-            values.push_back(builder.getUnitAttr());
-            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+        return result;
+    }
 
-            return mlir::success();
-        };
-
-        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue, mlir::Type receiverElementType) -> auto {
-            mlir::Type type;
-            mlir::Attribute value;
-            auto isConstValue = true;
-            if (auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
-            {
-                value = constOp.getValueAttr();
-                type = constOp.getType();
-            }
-            else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
-            {
-                value = symRefOp.getIdentifierAttr();
-                type = symRefOp.getType();
-            }
-            else if (auto undefOp = itemValue.getDefiningOp<mlir_ts::UndefOp>())
-            {
-                value = builder.getUnitAttr();
-                type = undefOp.getType();
-            }
-            else
-            {
-                value = builder.getUnitAttr();
-                type = itemValue.getType();
-                isConstValue = false;
-            }
-
-            type = mth.wideStorageType(type);
-
-            if (receiverElementType)
-            {
-                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
-
-                if (type != receiverElementType)
-                {
-                    value = builder.getUnitAttr();
-                    itemValue = cast(location, receiverElementType, itemValue, genContext);
-                    isConstValue = false;
-                }
-
-                type = receiverElementType;
-                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
-            }
-
-            values.push_back(value);
-            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
-            if (!isConstValue)
-            {
-                fieldsToSet.push_back({fieldId, itemValue});
-            }
-
-            return mlir::success();
-        };
-
-        auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) -> auto {
-            auto funcGenContext = GenContext(genContext);
-            funcGenContext.clearScopeVars();
-            funcGenContext.clearReceiverTypes();
-            funcGenContext.thisType = objThis;
-
-            funcLikeDecl->parent = objectLiteral;
-
-            auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
-            if (mlir::failed(result) || !funcOp)
-            {
-                return mlir::failure();
-            }
-
-            // fix this parameter type (taking in account that first type can be captured type)
-            auto funcName = funcOp.getName().str();
-            auto funcType = funcOp.getFunctionType();
-
-            // process local vars in this context
-            if (funcProto->getHasExtraFields())
-            {
-                // note: this code needed to store local variables for generators
-                auto localVars = getLocalVarsInThisContextMap().find(funcName);
-                if (localVars != getLocalVarsInThisContextMap().end())
-                {
-                    for (auto fieldInfo : localVars->getValue())
-                    {
-                        addFieldInfoToArrays(fieldInfo.id, fieldInfo.type);
-                    }
-                }
-            }
-
-            return addFuncFieldInfo(fieldId, funcName, funcType);
-        };
-
-        auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) -> auto {
-            auto funcGenContext = GenContext(genContext);
-            funcGenContext.clearScopeVars();
-            funcGenContext.clearReceiverTypes();
-            funcGenContext.thisType = objThis;
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << objThis << "\n";);
-
-            funcLikeDecl->parent = objectLiteral;
-
-            mlir::OpBuilder::InsertionGuard guard(builder);
-            auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
-            return result;
-        };
-
-        // add all fields
-        for (auto &item : objectLiteral->properties)
+    // pass 1: add all data fields; engaged result = early exit (failure or partial-resolve no-value)
+    std::optional<ValueOrLogicalResult> mlirGenObjectLiteralFields(mlir::Location location, ObjectLiteralInfo &oli,
+                                                                   const GenContext &genContext)
+    {
+        for (auto &item : oli.objectLiteral->properties)
         {
             mlir::Value itemValue;
             mlir::Attribute fieldId;
@@ -15281,9 +15263,9 @@ class MLIRGenImpl
 
                 fieldId = TupleFieldName(propertyAssignment->name, genContext);
 
-                if (receiverType)
+                if (oli.receiverType)
                 {
-                    receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
+                    receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, oli.receiverType);
                 }
 
                 // TODO: send context with receiver type
@@ -15299,11 +15281,11 @@ class MLIRGenImpl
                 itemValue = V(result);
 
                 // in case of Union type
-                if (receiverType && !receiverElementType)
+                if (oli.receiverType && !receiverElementType)
                 {
                     LLVM_DEBUG(llvm::dbgs() << "\n!! Detecting dest. union type with first field: " << fieldId << "\n";);
 
-                    if (auto unionType = dyn_cast<mlir_ts::UnionType>(receiverType))
+                    if (auto unionType = dyn_cast<mlir_ts::UnionType>(oli.receiverType))
                     {
                         for (auto subType : unionType.getTypes())
                         {
@@ -15313,7 +15295,7 @@ class MLIRGenImpl
                                 LLVM_DEBUG(llvm::dbgs() << "\n!! we picked type from union: " << subType << "\n";);
 
                                 receiverElementType = possibleType;
-                                receiverType = subType;
+                                oli.receiverType = subType;
                                 break;
                             }
                         }
@@ -15348,7 +15330,7 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
 
-                auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) -> auto {
+                auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) -> mlir::LogicalResult {
                     SmallVector<mlir::Type> types;
                     for (auto &field : fields)
                     {
@@ -15361,12 +15343,15 @@ class MLIRGenImpl
                     // read all fields
                     for (auto pair : llvm::zip(fields, res.getResults()))
                     {
-                        if (mlir::failed(addFieldInfo(
-                            std::get<0>(pair).id, 
-                            std::get<1>(pair), 
-                            receiverType 
-                                ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) 
-                                : mlir::Type()))) {
+                        if (mlir::failed(addObjectFieldInfo(
+                            location,
+                            oli,
+                            std::get<0>(pair).id,
+                            std::get<1>(pair),
+                            oli.receiverType
+                                ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, oli.receiverType)
+                                : mlir::Type(),
+                            genContext))) {
                             return mlir::failure();
                         }
                     }
@@ -15379,7 +15364,7 @@ class MLIRGenImpl
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { return tupleFields(constTupleType.getFields()); })
                     .template Case<mlir_ts::InterfaceType>(
-                        [&](auto interfaceType) { 
+                        [&](auto interfaceType) {
                             mlir::SmallVector<mlir_ts::FieldInfo> destFields;
                             if (mlir::succeeded(mth.getFields(interfaceType, destFields)))
                             {
@@ -15391,8 +15376,8 @@ class MLIRGenImpl
 
                                         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
-                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext); 
-                                        if (mlir::failed(addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType))) {
+                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext);
+                                        if (mlir::failed(addObjectFieldInfo(location, oli, fieldInfo.id, propertyAccess, receiverElementType, genContext))) {
                                             return mlir::failure();
                                         }
                                     }
@@ -15402,7 +15387,7 @@ class MLIRGenImpl
                             return mlir::success();
                         })
                     .template Case<mlir_ts::ClassType>(
-                        [&](auto classType) { 
+                        [&](auto classType) {
                             mlir::SmallVector<mlir_ts::FieldInfo> destFields;
                             if (mlir::succeeded(mth.getFields(classType, destFields)))
                             {
@@ -15410,13 +15395,13 @@ class MLIRGenImpl
                                 {
                                     for (auto fieldInfo : destFields)
                                     {
-                                        auto foundField = false;                                        
+                                        auto foundField = false;
                                         auto classFieldInfo = srcClassInfo->findField(fieldInfo.id, foundField);
 
                                         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
-                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext); 
-                                        if (mlir::failed(addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType))) {
+                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext);
+                                        if (mlir::failed(addObjectFieldInfo(location, oli, fieldInfo.id, propertyAccess, receiverElementType, genContext))) {
                                             return mlir::failure();
                                         }
                                     }
@@ -15424,15 +15409,15 @@ class MLIRGenImpl
                             }
 
                             return mlir::success();
-                        })                        
-                    .Default([&](auto type) { 
+                        })
+                    .Default([&](auto type) {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment not implemented for type: " << type << "\n";);
-                        llvm_unreachable("not implemented"); 
+                        llvm_unreachable("not implemented");
                         return mlir::failure();
                     });
 
                 if (mlir::failed(resultForTuple)) {
-                    return resultForTuple;
+                    return ValueOrLogicalResult(resultForTuple);
                 }
 
                 continue;
@@ -15444,16 +15429,18 @@ class MLIRGenImpl
 
             assert(genContext.allowPartialResolve || itemValue);
 
-            if (mlir::failed(addFieldInfo(fieldId, itemValue, receiverElementType))) {
-                return mlir::failure();
+            if (mlir::failed(addObjectFieldInfo(location, oli, fieldId, itemValue, receiverElementType, genContext))) {
+                return ValueOrLogicalResult(mlir::failure());
             }
         }
 
-        // update after processing all fields
-        objectStorageType.setFields(fieldInfos);
+        return std::nullopt;
+    }
 
-        // process all methods
-        for (auto &item : objectLiteral->properties)
+    // pass 2: register method prototypes as fields
+    mlir::LogicalResult mlirGenObjectLiteralMethodPrototypes(ObjectLiteralInfo &oli, const GenContext &genContext)
+    {
+        for (auto &item : oli.objectLiteral->properties)
         {
             mlir::Attribute fieldId;
             if (item == SyntaxKind::PropertyAssignment)
@@ -15467,7 +15454,7 @@ class MLIRGenImpl
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(propertyAssignment->name, genContext);
-                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLikeProto(oli, fieldId, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
@@ -15482,7 +15469,7 @@ class MLIRGenImpl
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
-                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLikeProto(oli, fieldId, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
@@ -15497,24 +15484,29 @@ class MLIRGenImpl
                     std::string newField;
                     raw_string_ostream rso(newField);
                     rso << (item == SyntaxKind::GetAccessor ? "get_" : "set_") << stringVal;
-                    
-                    fieldId = mlir::StringAttr::get(builder.getContext(), mlir::StringRef(newField).copy(stringAllocator));                    
+
+                    fieldId = mlir::StringAttr::get(builder.getContext(), mlir::StringRef(newField).copy(stringAllocator));
                 }
 
-                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLikeProto(oli, fieldId, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
-            }          
+            }
         }
 
-        // create accum. captures
+        return mlir::success();
+    }
+
+    // accumulate captured vars of all methods into one '.captured' field
+    mlir::LogicalResult mlirGenObjectLiteralCaptures(mlir::Location location, ObjectLiteralInfo &oli, const GenContext &genContext)
+    {
         llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> accumulatedCaptureVars;
 
-        for (auto &methodRefWithName : methodInfosWithCaptures)
+        for (auto &methodRefWithName : oli.methodInfosWithCaptures)
         {
             auto funcName = std::get<0>(methodRefWithName);
             auto methodRef = std::get<1>(methodRefWithName);
-            auto &methodInfo = fieldInfos[methodRef];
+            auto &methodInfo = oli.fieldInfos[methodRef];
 
             if (auto funcType = dyn_cast<mlir_ts::FunctionType>(methodInfo.type))
             {
@@ -15547,18 +15539,21 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
-            if (mlir::failed(addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type()))) {
+            if (mlir::failed(addObjectFieldInfo(location, oli, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type(), genContext))) {
                 return mlir::failure();
             }
         }
 
-        // final type, update
-        objectStorageType.setFields(fieldInfos);
+        return mlir::success();
+    }
 
-        // process all methods
-        for (auto &item : objectLiteral->properties)
+    // pass 3: generate method bodies
+    mlir::LogicalResult mlirGenObjectLiteralMethodBodies(ObjectLiteralInfo &oli, const GenContext &genContext)
+    {
+        for (auto &item : oli.objectLiteral->properties)
         {
             if (item == SyntaxKind::PropertyAssignment)
             {
@@ -15570,7 +15565,7 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
@@ -15584,38 +15579,96 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                if (mlir::failed(processObjectFunctionLike(oli, funcLikeDecl, genContext))) {
                     return mlir::failure();
                 }
             }
         }
 
-        auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
+        return mlir::success();
+    }
 
-        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
+    ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
+    {
+        auto location = loc(objectLiteral);
+
+        ObjectLiteralInfo oli{};
+        oli.objectLiteral = objectLiteral;
+
+        oli.receiverType = genContext.receiverType;
+        if (oli.receiverType)
+        {
+            oli.receiverType = mth.stripOptionalType(oli.receiverType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << oli.receiverType << "\n";);
+
+            if ((isa<mlir_ts::TupleType>(oli.receiverType) || isa<mlir_ts::ConstTupleType>(oli.receiverType) || isa<mlir_ts::InterfaceType>(oli.receiverType))
+                 && objectLiteral->properties.size() == 0)
+            {
+                // return undef tuple
+                llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+                if (mlir::succeeded(mth.getFields(oli.receiverType, destTupleFields)))
+                {
+                    auto tupleType = getTupleType(destTupleFields);
+                    return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                }
+            }
+        }
+
+        // Object This Type
+        auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj", getFullNamespaceName());
+        auto objectNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
+        auto objectStorageType = getObjectStorageType(objectNameSymbol);
+        oli.objThis = getObjectType(objectStorageType);
+
+        // add all fields
+        if (auto earlyResult = mlirGenObjectLiteralFields(location, oli, genContext))
+        {
+            return *earlyResult;
+        }
+
+        // update after processing all fields
+        objectStorageType.setFields(oli.fieldInfos);
+
+        if (mlir::failed(mlirGenObjectLiteralMethodPrototypes(oli, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (mlir::failed(mlirGenObjectLiteralCaptures(location, oli, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // final type, update
+        objectStorageType.setFields(oli.fieldInfos);
+
+        if (mlir::failed(mlirGenObjectLiteralMethodBodies(oli, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        auto constTupleTypeWithReplacedThis = getConstTupleType(oli.fieldInfos);
+
+        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), oli.values);
         auto constantVal =
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
-        if (fieldsToSet.empty())
+        if (oli.fieldsToSet.empty())
         {
-            //CAST_A(result, location, objectStorageType, constantVal, genContext);
-            //return result;
             return V(constantVal);
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
-        auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
-        //CAST_A(result, location, objectStorageType, tupleValue, genContext);
-        //return result;
+        auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, oli.fieldsToSet, genContext);
         return V(tupleValue);
     }
-
     ValueOrLogicalResult mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
                                             SmallVector<std::pair<mlir::Attribute, mlir::Value>> &fieldsToSet,
                                             const GenContext &genContext)
