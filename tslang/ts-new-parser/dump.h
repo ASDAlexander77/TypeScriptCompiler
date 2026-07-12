@@ -2199,7 +2199,7 @@ protected:
     }
 };
 
-void print(ts::Node node)
+inline void print(ts::Node node)
 {
     Printer<std::wostream> printer(std::wcout);
     printer.printNode(node);
