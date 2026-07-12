@@ -193,3 +193,5 @@ Proposed phases, each independently shippable:
 4. **Parameterize `MLIRCodeLogic.h`.** The two casts there poke values into the context that could be plain function parameters.
 
 Order: 1 (trivial) → 3 (bounded signature ripple) → 2 (site-by-site, one PR per field group) → 4.
+
+*Status update:* phase 1 is done, plus a discovered **phase 0**: nine of the 31 casts were gratuitous — non-const method calls on the copyable `funcOp` op handle (`getSymName`/`getCallableResults`/`getCallableRegion`/`setPersonalityAttr`), a deref of the `inferTypes` pointer member (pointee was never const), and a cast on a local non-const context in `getConditionalType`. Remaining casts are all genuine mutations for phases 2–4: `thisType` ×2, `typeAliasMap` ×2, loop flags ×3 sites, `generatedStatements` ×4, `typeParamsWithArgs` ×3 (`zipTypeParameterWithArgument` at ~16587, `processConditionalForType`, mapped-type erase), plus `MLIRCodeLogic.h`.
