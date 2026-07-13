@@ -1,5 +1,6 @@
 #include "MLIRGenImpl.h"
 
+
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all
 // the time
 static CompileOptions *compileOptionsPtr = nullptr;

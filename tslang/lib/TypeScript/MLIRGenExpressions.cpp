@@ -2,6 +2,11 @@
 
 #include "MLIRGenImpl.h"
 
+#include "mlir/Dialect/Async/IR/Async.h"
+
+#undef DEBUG_TYPE
+#define DEBUG_TYPE "mlir"
+
 namespace typescript
 {
 namespace mlirgen

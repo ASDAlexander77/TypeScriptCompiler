@@ -15,7 +15,6 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
-#include "TypeScript/ObjDumper.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -24,7 +23,6 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
-#include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
 #include "TypeScript/MLIRLogic/MLIRDeclarationPrinter.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
@@ -47,15 +45,11 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Types.h"
-#include "mlir/IR/Verifier.h"
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/DLTI/DLTI.h"
-#include "mlir/IR/Diagnostics.h"
 #ifdef ENABLE_ASYNC
-#include "mlir/Dialect/Async/IR/Async.h"
 #endif
 
 #include "llvm/ADT/STLExtras.h"
@@ -64,21 +58,14 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
-#include "mlir/Support/FileUtilities.h"
-#include "llvm/Support/ToolOutputFile.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/Support/WithColor.h"
 
 #include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
 
 #include <algorithm>
 #include <iterator>
-#include <numeric>
-#include <set>
 #include <type_traits>
 
 #define DEBUG_TYPE "mlir"
