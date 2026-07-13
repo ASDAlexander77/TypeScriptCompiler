@@ -19,6 +19,7 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGen.cpp
     MLIRGenCast.cpp
     MLIRGenExpressions.cpp
+    MLIRGenFunctions.cpp
     MLIRGenGenerics.cpp
     MLIRGenModule.cpp
     MLIRGenStatements.cpp
