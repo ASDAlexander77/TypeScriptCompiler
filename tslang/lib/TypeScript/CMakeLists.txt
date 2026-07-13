@@ -17,6 +17,7 @@ add_mlir_dialect_library(MLIRTypeScript
     AsyncDialectTranslation.cpp
     DiagnosticHelper.cpp
     MLIRGen.cpp
+    MLIRGenAccessCall.cpp
     MLIRGenCast.cpp
     MLIRGenClasses.cpp
     MLIRGenExpressions.cpp
