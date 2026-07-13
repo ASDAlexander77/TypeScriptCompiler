@@ -27,6 +27,7 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGenModule.cpp
     MLIRGenStatements.cpp
     MLIRGenTypes.cpp
+    MLIRGenVariables.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
     RelocateConstantPass.cpp
