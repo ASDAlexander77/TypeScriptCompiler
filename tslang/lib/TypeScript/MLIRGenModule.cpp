@@ -1,6 +1,20 @@
 // Module, discovery, include/import driver methods of MLIRGenImpl (see MLIRGenImpl.h).
 
+#include "TypeScript/ObjDumper.h"
+
 #include "MLIRGenImpl.h"
+
+
+
+#include "mlir/IR/Verifier.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
+#include "mlir/Support/FileUtilities.h"
+
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/ToolOutputFile.h"
+
+#include <set>
 
 namespace typescript
 {
