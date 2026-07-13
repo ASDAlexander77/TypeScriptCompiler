@@ -219,3 +219,29 @@ Proposed redesign (one PR per channel, needs review before implementation):
 5. **`usingVars`** → same pointer-channel treatment as (1), or fold into the disposal walk's own state.
 
 Until a channel lands, its casts stay — documented and greppable via the `NOTE: upward mailbox` markers.
+
+## Series retrospective — 2026-07-13, §1 complete
+
+Twenty-seven PRs later (#201–#227), every section of this review except A7 is done. The 26,702-line `MLIRGen.cpp` monolith is now:
+
+| File | Contents |
+|---|---|
+| `MLIRGen.cpp` | thin driver: options, diagnostics handler, AST dump entry |
+| `MLIRGenImpl.h` | private class definition, ~10.7k lines: small helpers, templates (`mlirGenClassType<T>`, `mlirGenElementAccessTuple<T>`, `mlirGenCallFunction<T>`, `tryInferTupleFields<T>`), RAII scopes (`SourceFileScope`, `TempModuleScope`, `DiscoveryModuleScope`), evaluate machinery, object/array-literal helpers, save/binary-op logic, exports, accessors |
+| `MLIRGenModule.cpp` | module/discovery/import driver |
+| `MLIRGenStatements.cpp` | statement dispatch + all statement generators |
+| `MLIRGenExpressions.cpp` | all expression `mlirGen` overloads incl. literals |
+| `MLIRGenFunctions.cpp` | prototypes, bodies, params, captures, generator |
+| `MLIRGenClasses.cpp` | class info/members/constructors/vtables/RTTI statics |
+| `MLIRGenInterfaces.cpp` | interface/enum declarations, object interface vtables |
+| `MLIRGenAccessCall.cpp` | property/element access, call machinery, `new` |
+| `MLIRGenVariables.cpp` | variable registration, binding patterns, identifier resolution |
+| `MLIRGenGenerics.cpp` | type inference, specialization/instantiation |
+| `MLIRGenTypes.cpp` | `getType` family, union/intersection/conditional/mapped |
+| `MLIRGenCast.cpp` | the `cast()` pipeline stages and conversions |
+
+Latent bugs found and fixed by the series (each was invisible in the monolith): the nested-discovery module clobbering (§4a, structural fix), the caller-context `isLoop`/`thisType` leaks (#211), the mapped-type key leak (#210), the inference-loop non-convergence with its load-bearing double-count (#216), dangling `FuncOp` handles after discovery erase (#214–#215), a leaked detached `FuncOp` (#215), and the `GenContext` uninitialized-field/raw-ownership hazards (#202/#204).
+
+Extraction recipe (for any future family move): select 4-indent signature start lines; consume signatures until a line ends `)` or `) {` (K&R); bodies end at the first `^    \}[ \t]*$` — **whitespace-tolerant, or the state machine overruns**; strip default args from definitions, keep them on declarations; templates stay in the header (check the line *above* the signature for `template`); qualify with `MLIRGenImpl::`; verify with a **multiset reconciliation** (old header vs new header + new TU — git-diff removed-lines gives false losses from hunk realignment); gate with the full ctest suite (~150 s, 683 tests; one known flaky test: `test-compile-00-for-await` under `-j8`).
+
+Open items: **A7 channel redesign** (the 10 documented upward-mailbox `const_cast`s) awaits review; the header's remaining inline tail is optional polish.
