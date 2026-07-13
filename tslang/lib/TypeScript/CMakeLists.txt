@@ -20,6 +20,7 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGenCast.cpp
     MLIRGenGenerics.cpp
     MLIRGenModule.cpp
+    MLIRGenStatements.cpp
     MLIRGenTypes.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
