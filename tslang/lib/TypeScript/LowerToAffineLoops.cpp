@@ -794,6 +794,11 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         auto jump = tsContext->jumps[breakOp];
         assert(jump);
 
+        if (auto unwind = tsContext->unwind[breakOp])
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
+
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(breakOp, jump);
         clh.CutBlock();
 
@@ -814,6 +819,11 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
 
         auto jump = tsContext->jumps[continueOp];
         assert(jump);
+
+        if (auto unwind = tsContext->unwind[continueOp])
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
 
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(continueOp, jump);
         clh.CutBlock();
@@ -1287,6 +1297,28 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         tryOp.getBody().walk(visitorReturnOps);
         tryOp.getCatches().walk(visitorReturnOps);
 
+        // break/continue ops in the body/catches that jump OUT of this try already have their
+        // tsContext->jumps entry resolved (the target loop/label encloses the try, so its
+        // lowering ran first); ones targeting a construct inside the try don't have one yet.
+        // Escaping jumps must run `finally` on the way out, the same way `return` does --
+        // collected here (before the regions are inlined/emptied), rerouted through their own
+        // finally copy below. Ops directly inside the finally region itself are deliberately
+        // not collected: a break/continue there aborts the rest of the finally and jumps
+        // straight out (and its wiring in the cloned copies is handled by the side-table
+        // propagation below).
+        mlir::SmallVector<Operation *> escapingJumpsBody;
+        mlir::SmallVector<Operation *> escapingJumpsCatches;
+        auto collectEscapingJumps = [&](mlir::Region &region, mlir::SmallVector<Operation *> &to) {
+            region.walk([&](Operation *op) {
+                if (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.count(op))
+                {
+                    to.push_back(op);
+                }
+            });
+        };
+        collectEscapingJumps(tryOp.getBody(), escapingJumpsBody);
+        collectEscapingJumps(tryOp.getCatches(), escapingJumpsCatches);
+
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
@@ -1418,6 +1450,49 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 for (auto retOp : returns)
                 {
                     tsContext->cleanup[retOp] = returnFinallyBlockLast;
+                }
+            }
+
+            // add clones for escaping break/continue, the same way as for 'return' above:
+            // one finally copy per distinct jump target, terminated by a branch to that
+            // target, and the escaping op is re-pointed at the copy -- so Break/Continue
+            // lowering just branches into the finally copy, which then continues to the
+            // real target. Nested try/finally chains compose naturally: this try lowers
+            // before any nested one, so a nested try later re-points the same op at its
+            // own finally copy, which branches here.
+            if (escapingJumpsBody.size() > 0 || escapingJumpsCatches.size() > 0)
+            {
+                mlir::DenseMap<mlir::Block *, mlir::Block *> finallyCopyPerTarget;
+                auto routeThroughFinally = [&](Operation *op) {
+                    auto target = tsContext->jumps[op];
+                    auto &finallyCopy = finallyCopyPerTarget[target];
+                    if (!finallyCopy)
+                    {
+                        mlir::IRMapping jumpFinallyMapping;
+                        rewriter.cloneRegionBefore(tryOp.getFinally(), *continuation->getParent(),
+                                                    continuation->getIterator(), jumpFinallyMapping);
+                        propagateTsContextEntries(jumpFinallyMapping);
+                        auto jumpFinallyBlockLast = continuation->getPrevNode();
+                        rewriter.setInsertionPoint(jumpFinallyBlockLast->getTerminator());
+                        auto resultOpOfJumpFinallyBlock = cast<mlir_ts::ResultOp>(jumpFinallyBlockLast->getTerminator());
+                        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpOfJumpFinallyBlock, target);
+                        finallyCopy = jumpFinallyMapping.lookup(&tryOp.getFinally().front());
+                    }
+
+                    tsContext->jumps[op] = finallyCopy;
+                };
+
+                for (auto op : escapingJumpsBody)
+                {
+                    routeThroughFinally(op);
+                }
+
+                for (auto op : escapingJumpsCatches)
+                {
+                    routeThroughFinally(op);
+                    // leaving a catch clause abruptly must end the active catch first,
+                    // mirroring the return-from-catch handling
+                    tsContext->unwind[op] = catchesBlock;
                 }
             }
 
