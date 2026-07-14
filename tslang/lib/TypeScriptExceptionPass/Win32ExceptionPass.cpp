@@ -48,7 +48,11 @@ struct CatchRegion
             return true;
         }
 
-        // BUG: HACK. using filter[] as cleanup landingpad
+        // a filter clause is the compiler's cleanup marker (see windows::LandingPadOpLowering
+        // in LowerToLLVM.cpp): normally LandingPadFixPass has already canonicalized such pads
+        // to clause-less cleanup landingpads before this pass runs, so this branch is a
+        // defensive fallback for pads that still carry the marker (e.g. if pass ordering ever
+        // changes or the inliner merges landing pads before canonicalization).
         if ((landingPad->getNumClauses() > 0 && !landingPad->isCatch(0)))
         {
             // this is filter[], treat it as cleanup

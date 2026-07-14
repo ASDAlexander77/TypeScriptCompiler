@@ -1554,7 +1554,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Value undefArrayValue;
         if (finallyHasOps || cleanupHasOps)
         {
-            // BUG: HACK, i need to add marker type to treat it as cleanup landing pad later
+            // cleanup marker: an array-typed landing-pad operand becomes a *filter* clause at
+            // the LLVM level, which (together with the cleanup flag) marks the pad as a cleanup
+            // pad for the later LLVM passes; LandingPadFixPass strips it into a canonical
+            // clause-less cleanup landingpad before any optimization runs. See
+            // windows::LandingPadOpLowering in LowerToLLVM.cpp.
             auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
             undefArrayValue = rewriter.create<mlir_ts::UndefOp>(loc, arrTy);
             auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
