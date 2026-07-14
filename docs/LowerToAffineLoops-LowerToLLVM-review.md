@@ -267,17 +267,48 @@ Fixed on branch `fix/lowering-passes-bugs-3`, verified via full ctest suite
     not rerouted — finally runs exactly once). All added to
     `00try_finally_break_continue.ts`.
 
-## Remaining known issues (not yet fixed, tracked here for follow-up)
+## Fifth pass (2026-07-15) — item 8 investigated: NOT A DEFECT, comments fixed
 
 8. **`LowerToLLVM.cpp:4159`** (`LandingPadOpLowering`, Windows path) —
-   cleanup-only branch reuses the typed-catch filter value instead of an
-   empty/undef cleanup clause; the code has its own `// BUG: in LLVM landing
-   pad is not fully implemented` comment. PLAUSIBLE, not yet fixed —
-   deliberately left alone in the second pass: this is deep Windows SEH
-   landing-pad construction with the original author's own admission it's
-   incomplete, and a wrong guess here risks a worse regression than the
-   status quo. Needs someone with direct SEH/landingpad-clause expertise, or
-   a way to single-step actual Windows exception dispatch through it.
+   RESOLVED as not-a-bug after tracing the full cross-pass flow. The
+   suspicious clause is not "the typed-catch filter value" (the original
+   review misread it): for cleanup pads, `transformed.getCatches().front()`
+   is always the undef-array marker value built in `TryOpLowering`
+   (`LowerToAffineLoops.cpp` ~1554), never an RTTI pointer. Being
+   array-typed, it becomes a *filter* clause on the LLVM landingpad — a
+   deliberate **cleanup marker** consumed by the custom LLVM passes
+   (`tslang/lib/TypeScriptExceptionPass/`):
+
+   - `LandingPadFixPass` (registered unconditionally FIRST in the LLVM
+     pipeline, `tslang/tslang/transform.cpp:323`, before any optimization)
+     rewrites every filter-bearing landingpad to a canonical clause-less
+     `landingpad { cleanup }`.
+   - `Win32ExceptionPass` (Windows, second, `transform.cpp:326`) converts
+     pads to SEH funclets (`catchswitch`/`catchpad`/`cleanuppad`) and erases
+     every landingpad; its own filter-detection branch in
+     `CatchRegion::isCleanup()` is a defensive fallback.
+   - The optimizer/inliner (`buildPerModuleDefaultPipeline`) runs only
+     after both — the filter never reaches EH-table emission on either
+     platform.
+
+   Verified empirically via `--emit=llvm` final-IR dumps of
+   `00try_finally.ts`: Windows triple → zero `landingpad`/`filter`
+   instructions (24 catchpad / 12 cleanuppad / 13 catchswitch); Linux
+   triple → zero `filter`, cleanup pads canonical (`landingpad { cleanup }`,
+   no clauses), catch pads carrying proper `catch ptr @_ZTI...` clauses.
+   The whole EH test corpus (try/catch/finally/disposable, JIT + AOT)
+   passes.
+
+   The misleading self-flagged `// BUG` comments at all three sites
+   (marker construction in `LowerToAffineLoops.cpp`, filter emission in
+   `windows::LandingPadOpLowering`, filter detection in
+   `Win32ExceptionPass::isCleanup()`) were rewritten into accurate
+   contract documentation cross-referencing each other. No functional
+   change.
+
+**All 10 findings from this review are now closed** (9 fixed, 1 resolved
+as not-a-bug), across PRs #230, #232, #233, #234, and the comment-contract
+PR for this pass.
 
 ## Other observations (not correctness bugs, lower priority)
 

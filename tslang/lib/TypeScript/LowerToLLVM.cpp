@@ -4173,13 +4173,18 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
         }
         else
         {
-            // BUG: in LLVM landing pad is not fully implemented
-            // so lets create filter with undef value to mark cleanup landing
-            auto catch1Fake = transformed.getCatches().front();
+            // cleanup marker contract: the operand here is the undef-array value built by
+            // TryOpLowering, and being array-typed it becomes a *filter* clause on the LLVM
+            // landingpad -- a deliberate marker (alongside the cleanup flag) identifying
+            // cleanup pads across the LLVM-level passes. LandingPadFixPass rewrites any
+            // filter-bearing landingpad to a canonical clause-less `landingpad { cleanup }`
+            // and Win32ExceptionPass then replaces pads with SEH funclets -- both run before
+            // any optimization, so the filter never reaches EH-table emission.
+            auto cleanupMarker = transformed.getCatches().front();
 
             mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
             rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, true,
-                                                            ValueRange{catch1Fake});
+                                                            ValueRange{cleanupMarker});
         }
 
         return success();
