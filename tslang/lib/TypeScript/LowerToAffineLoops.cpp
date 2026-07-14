@@ -21,6 +21,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/IRMapping.h"
 #include "llvm/Support/Debug.h"
 
 #include "scanner_enums.h"
@@ -1219,6 +1220,19 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
 
+    TryOpLowering(MLIRContext *context, TSContext *tsContext, TSFunctionContext *tsFuncContext,
+                  PatternBenefit benefit = 1)
+        : TsPattern<mlir_ts::TryOp>(context, tsContext, tsFuncContext, benefit)
+    {
+        // a `try` nested inside its own `finally` block gets cloned (not just moved) as part
+        // of lowering the outer TryOp, so the dialect-conversion driver legalizes the inner
+        // TryOp recursively while the outer TryOp's own pattern application is still on the
+        // stack. Without this, the conversion driver's single-pattern-instance recursion guard
+        // refuses to reapply this same pattern object and the whole outer TryOp fails to
+        // legalize. Recursion here is bounded: each application strictly consumes one TryOp.
+        setHasBoundedRewriteRecursion();
+    }
+
     // TODO: set 'loc' correctly to newly created ops
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
     {
@@ -1357,15 +1371,45 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *exitBlockLast = nullptr;
         if (finallyHasOps)
         {
+            // cloneRegionBefore makes brand-new Operation* instances, so any tsContext
+            // side-table entry (jumps[], parentTryOp[]) keyed on the original finally
+            // region's ops -- populated by visitorTryOps above, or by an enclosing loop's
+            // break/continue-scope walk that ran before this try was lowered -- would
+            // silently be missing for the clones. Re-propagate those entries onto each
+            // clone via the IRMapping so a nested try/break/continue inside `finally`
+            // keeps correct wiring in all copies, not just the final inlined one.
+            auto propagateTsContextEntries = [&](const mlir::IRMapping &mapping) {
+                for (auto &[oldOp, newOp] : mapping.getOperationMap())
+                {
+                    auto jumpIt = tsContext->jumps.find(oldOp);
+                    if (jumpIt != tsContext->jumps.end())
+                    {
+                        tsContext->jumps[newOp] = jumpIt->second;
+                    }
+
+                    auto parentIt = tsContext->parentTryOp.find(oldOp);
+                    if (parentIt != tsContext->parentTryOp.end())
+                    {
+                        tsContext->parentTryOp[newOp] = parentIt->second;
+                    }
+                }
+            };
+
             auto beforeFinallyBlock = continuation->getPrevNode();
-            rewriter.cloneRegionBefore(tryOp.getFinally(), continuation);
+            mlir::IRMapping finallyMapping;
+            rewriter.cloneRegionBefore(tryOp.getFinally(), *continuation->getParent(), continuation->getIterator(),
+                                        finallyMapping);
+            propagateTsContextEntries(finallyMapping);
             finallyBlock = beforeFinallyBlock->getNextNode();
             finallyBlockLast = continuation->getPrevNode();
 
             // add clone for 'return'
             if (returns.size() > 0)
             {
-                rewriter.cloneRegionBefore(tryOp.getFinally(), continuation);
+                mlir::IRMapping returnFinallyMapping;
+                rewriter.cloneRegionBefore(tryOp.getFinally(), *continuation->getParent(), continuation->getIterator(),
+                                            returnFinallyMapping);
+                propagateTsContextEntries(returnFinallyMapping);
                 auto returnFinallyBlockLast = continuation->getPrevNode();
                 rewriter.setInsertionPoint(returnFinallyBlockLast->getTerminator());
                 auto resultOpOfReturnFinallyBlock = cast<mlir_ts::ResultOp>(returnFinallyBlockLast->getTerminator());
@@ -1373,12 +1417,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 // if has returns we need to create return cleanup block
                 for (auto retOp : returns)
                 {
-                    tsContext->cleanup[retOp] = returnFinallyBlockLast;                
+                    tsContext->cleanup[retOp] = returnFinallyBlockLast;
                 }
             }
 
             rewriter.inlineRegionBefore(tryOp.getFinally(), continuation);
-            exitBlockLast = continuation->getPrevNode();            
+            exitBlockLast = continuation->getPrevNode();
         }
         else
         {
