@@ -181,15 +181,70 @@ the fix was written.
     (silent no-op in release builds, leaving a malformed CFG) replaced with
     `return rewriter.notifyMatchFailure(...)`.
 
-## Remaining known issues (not yet fixed, tracked here for follow-up)
+## Third pass (2026-07-14) — item 5 fixed, plus two bugs found while testing it
+
+Fixed on branch `fix/lowering-passes-bugs-3`, verified via full ctest suite
+(690/690 passed, JIT + AOT).
 
 5. **`LowerToAffineLoops.cpp:1351,1358,1370`** (`TryOpLowering`, `finally`
-   region cloning) — the `finally` region is cloned twice (normal-exit and
-   return-cleanup copies) *after* the `parentTryOp`/`jumps` side-tables were
-   populated by walking only the original region. A nested `try` or a
-   `break`/`continue` inside a `finally` block loses correct wiring in the
-   cloned copies. PLAUSIBLE, not yet fixed — needs a test case (`grep` of
-   `test/` found no try/finally-nesting coverage).
+   region cloning) — FIXED. Confirmed: `cloneRegionBefore` produces brand-new
+   `Operation*` instances (verified against MLIR's `Region::cloneInto`/
+   `IRMapping` machinery), so `tsContext->jumps`/`parentTryOp` entries
+   populated by walking the *original* `finally` region (line ~1260, and by
+   an enclosing loop's break/continue-scope walk that runs before this try
+   is lowered) were silently absent for both of the two cloned copies
+   (normal-exit and return-cleanup) — only the third, *inlined* copy (which
+   preserves original `Operation*` identity) kept valid wiring. Fixed by
+   passing an explicit `mlir::IRMapping` to both `cloneRegionBefore` calls
+   and re-propagating any `jumps`/`parentTryOp` entry found for an old op
+   onto its corresponding new op via the mapping's `getOperationMap()`,
+   immediately after each clone.
+
+   While building a regression test for this, found and fixed two more bugs
+   in the same area:
+
+   - **Pre-existing, unrelated to this fix**: a `try` nested directly inside
+     a `finally` block failed to compile at all (`error: failed to legalize
+     operation 'ts.Try' that was explicitly marked illegal`), regardless of
+     break/continue. Root cause: `cloneRegionBefore` correctly notifies the
+     conversion driver of the cloned nested `TryOp`, which then legalizes it
+     *recursively while the outer TryOp's own pattern application is still on
+     the stack* (`legalizePatternCreatedOperations`) — but MLIR's
+     `OperationLegalizer::canApplyPattern` refuses to reapply the same shared
+     `Pattern` instance recursively unless it opts in via
+     `setHasBoundedRewriteRecursion()`, which no `TsPattern` did. Fixed by
+     giving `TryOpLowering` its own constructor that calls
+     `setHasBoundedRewriteRecursion()` — safe here since each recursive
+     application strictly consumes one `TryOp`.
+   - **Pre-existing, separate, NOT fixed — tracked here for follow-up**:
+     `break`/`continue` inside a `try` *body* (as opposed to directly inside
+     `finally`) does not run the enclosing `finally` block before jumping —
+     `jumps[breakOp]`/`jumps[continueOp]` are set by the loop's own
+     break/continue-scope walk (`visitBreakContinueInScope`) to point
+     *directly* at the loop's continuation/increment block, with no
+     awareness that a `try/finally` sits in between. Reproduces a JIT crash
+     (`0x80000003`) on unmodified `main` (i.e. predates all three passes of
+     this review) with a minimal `for { try { if (...) continue; } finally
+     { ... } }`. Not fixed in this pass — would require threading
+     finally-block awareness into the jump-target logic for every loop
+     lowering, larger in scope than this pass's fixes. The new regression
+     test (`00try_finally_break_continue.ts`) deliberately only covers
+     break/continue placed directly *inside* `finally` (which does work
+     correctly) to avoid this separate gap.
+
+   Added `00try_finally_break_continue.ts` (break in finally, continue in
+   finally, nested try/catch in finally, each inside a loop, each run 3-5
+   times to catch wrong-copy-used-once-vs-every-iteration bugs), JIT +
+   AOT green.
+
+## Remaining known issues (not yet fixed, tracked here for follow-up)
+
+5b. **`LowerToAffineLoops.cpp`** (loop `jumps[]` target computation) —
+    `break`/`continue` inside a `try` body does not run an enclosing
+    `finally` block before jumping to the loop's continuation/increment.
+    See "Third pass" above for the repro and root cause. Needs the
+    break/continue lowering (or the `TryOp` lowering) to detect that the
+    jump target crosses a `finally` boundary and route through it first.
 
 8. **`LowerToLLVM.cpp:4159`** (`LandingPadOpLowering`, Windows path) —
    cleanup-only branch reuses the typed-catch filter value instead of an
