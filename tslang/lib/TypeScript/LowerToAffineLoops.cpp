@@ -469,6 +469,63 @@ struct ResultOpLowering : public TsPattern<mlir_ts::ResultOp>
     }
 };
 
+// Populates tsContext->jumps for break/continue ops that belong to this loop/label scope.
+// An unlabeled break/continue binds to the *nearest* enclosing loop/label (continue) or
+// loop/label/switch (break), so once the walk descends past such a boundary it must stop
+// treating unlabeled break/continue as claimable by this (outer) scope -- otherwise it can
+// steal a jump target that belongs to the nested scope, depending on which scope's pattern
+// happens to run last in the dialect-conversion worklist. A nested Switch is a boundary for
+// unlabeled break only (switch doesn't own continue -- that still passes through to the
+// enclosing loop). Labeled break/continue matching this scope's own label must still be found
+// no matter how many boundaries are crossed, since a label may target an outer loop from deep
+// inside nested loops/switches (e.g. `outer: while(...) { while(...) { break outer; } }`).
+static void visitBreakContinueInScope(mlir::Region &region, mlir::StringAttr scopeLabel,
+                                       bool eligibleForUnlabeledBreak, bool eligibleForUnlabeledContinue,
+                                       llvm::function_ref<void(Operation *, bool)> onMatch)
+{
+    for (auto &block : region)
+    {
+        for (auto &op : block)
+        {
+            if (auto breakOp = dyn_cast<mlir_ts::BreakOp>(&op))
+            {
+                auto opLabel = breakOp.getLabelAttr();
+                auto hasOwnLabel = opLabel && opLabel.getValue().size() > 0;
+                if ((eligibleForUnlabeledBreak && !hasOwnLabel) ||
+                    (hasOwnLabel && MLIRHelper::matchLabelOrNotSet(scopeLabel, opLabel)))
+                {
+                    onMatch(&op, /*isBreak*/ true);
+                }
+
+                continue;
+            }
+
+            if (auto continueOp = dyn_cast<mlir_ts::ContinueOp>(&op))
+            {
+                auto opLabel = continueOp.getLabelAttr();
+                auto hasOwnLabel = opLabel && opLabel.getValue().size() > 0;
+                if ((eligibleForUnlabeledContinue && !hasOwnLabel) ||
+                    (hasOwnLabel && MLIRHelper::matchLabelOrNotSet(scopeLabel, opLabel)))
+                {
+                    onMatch(&op, /*isBreak*/ false);
+                }
+
+                continue;
+            }
+
+            auto isLoopOrLabelBoundary = isa<mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp, mlir_ts::LabelOp>(op);
+            auto isSwitchBoundary = isa<mlir_ts::SwitchOp>(op);
+
+            for (auto &nested : op.getRegions())
+            {
+                visitBreakContinueInScope(nested, scopeLabel,
+                                           eligibleForUnlabeledBreak && !isLoopOrLabelBoundary && !isSwitchBoundary,
+                                           eligibleForUnlabeledContinue && !isLoopOrLabelBoundary, onMatch);
+            }
+        }
+    }
+}
+
 struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
 {
     using TsPattern<mlir_ts::WhileOp>::TsPattern;
@@ -491,22 +548,10 @@ struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
 
         // logic to support continue/break
 
-        auto visitorBreakContinue = [&](Operation *op) {
-            if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = continuation;
-            }
-            else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = cond;
-            }
-        };
-
-        whileOp.getBody().walk(visitorBreakContinue);
+        visitBreakContinueInScope(whileOp.getBody(), labelAttr, /*eligibleForUnlabeledBreak*/ true,
+                                   /*eligibleForUnlabeledContinue*/ true, [&](Operation *op, bool isBreak) {
+                                       tsContext->jumps[op] = isBreak ? continuation : cond;
+                                   });
 
         // end of logic for break/continue
 
@@ -564,22 +609,10 @@ struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
 
         // logic to support continue/break
 
-        auto visitorBreakContinue = [&](Operation *op) {
-            if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = continuation;
-            }
-            else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = cond;
-            }
-        };
-
-        doWhileOp.getBody().walk(visitorBreakContinue);
+        visitBreakContinueInScope(doWhileOp.getBody(), labelAttr, /*eligibleForUnlabeledBreak*/ true,
+                                   /*eligibleForUnlabeledContinue*/ true, [&](Operation *op, bool isBreak) {
+                                       tsContext->jumps[op] = isBreak ? continuation : cond;
+                                   });
 
         // end of logic for break/continue
 
@@ -632,22 +665,10 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
 
         // logic to support continue/break
 
-        auto visitorBreakContinue = [&](Operation *op) {
-            if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = continuation;
-            }
-            else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = incr;
-            }
-        };
-
-        forOp.getBody().walk(visitorBreakContinue);
+        visitBreakContinueInScope(forOp.getBody(), labelAttr, /*eligibleForUnlabeledBreak*/ true,
+                                   /*eligibleForUnlabeledContinue*/ true, [&](Operation *op, bool isBreak) {
+                                       tsContext->jumps[op] = isBreak ? continuation : incr;
+                                   });
 
         // end of logic for break/continue
 
@@ -715,22 +736,10 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
 
         // logic to support continue/break
 
-        auto visitorBreakContinue = [&](Operation *op) {
-            if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = continuation;
-            }
-            else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
-            {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
-                if (set)
-                    tsContext->jumps[op] = begin;
-            }
-        };
-
-        labelOp.getLabelRegion().walk(visitorBreakContinue);
+        visitBreakContinueInScope(labelOp.getLabelRegion(), labelAttr, /*eligibleForUnlabeledBreak*/ true,
+                                   /*eligibleForUnlabeledContinue*/ true, [&](Operation *op, bool isBreak) {
+                                       tsContext->jumps[op] = isBreak ? continuation : begin;
+                                   });
 
         // end of logic for break/continue
 
@@ -761,7 +770,7 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
         }
         else
         {
-            assert(false);
+            return rewriter.notifyMatchFailure(labelOp, "label region's last block does not terminate with MergeOp");
         }
 
         rewriter.replaceOp(labelOp, continuation->getArguments());
@@ -852,7 +861,7 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
         }
         else
         {
-            assert(false);
+            return rewriter.notifyMatchFailure(switchOp, "cases region's last block does not terminate with MergeOp");
         }
 
         rewriter.replaceOp(switchOp, continuation->getArguments());
@@ -1656,18 +1665,43 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         if (linuxHasCleanups)
         {
-            auto resultOp = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
-            rewriter.eraseOp(resultOp);
+            if (catchHasOps || finallyHasOps)
+            {
+                auto resultOp = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.eraseOp(resultOp);
 
-            if (catchHasOps)
-            {
-                rewriter.mergeBlocks(catchesBlock, cleanupBlockLast);
-            }        
-            else if (finallyHasOps)
-            {
-                rewriter.mergeBlocks(finallyBlock, cleanupBlockLast);
+                if (catchHasOps)
+                {
+                    rewriter.mergeBlocks(catchesBlock, cleanupBlockLast);
+                }
+                else
+                {
+                    rewriter.mergeBlocks(finallyBlock, cleanupBlockLast);
+                }
             }
-        }        
+            else
+            {
+                // cleanup-only try (e.g. lowered from a `using` declaration with no explicit
+                // catch/finally): the Windows path already sets up its own landing pad for this
+                // case unconditionally at cleanupHasOps&&isWindows above; mirror that here for
+                // Linux so cleanupBlockLast keeps a valid terminator instead of losing it.
+                rewriter.setInsertionPointToStart(cleanupBlock);
+
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                mlir::SmallVector<mlir::Block *> unwindDests;
+                if (parentTryOpLandingPad)
+                {
+                    unwindDests.push_back(parentTryOpLandingPad);
+                }
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
+            }
+        }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
