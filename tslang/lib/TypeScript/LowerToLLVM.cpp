@@ -1268,7 +1268,10 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
             llvmFuncType = tch.convertFunctionSignature(op.getContext(), tsFuncType.getResults(), tsFuncType.getInputs(), tsFuncType.isVarArg());
         }
 
-        assert(llvmFuncType);
+        if (!llvmFuncType)
+        {
+            return rewriter.notifyMatchFailure(op, "unable to resolve callee symbol to a function type");
+        }
 
         auto callRes = rewriter.create<LLVM::CallOp>(
             loc, llvmFuncType, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.getCallee()), transformed.getCallOperands());
@@ -2061,12 +2064,10 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
             storageType = valueRef.getElementType();
         }
 
-        auto resultType = tch.convertType(newOp.getType());
-
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = ch.Alloca(resultType, 1);
+            value = ch.Alloca(tch.convertType(storageType), 1);
         }
         else
         {

@@ -108,15 +108,80 @@ JIT host (see method note), so verified via `--emit=mlir-affine
   caught value correctly).
 - Full ctest suite (339 JIT + 342 AOT) green with this change in place.
 
-## Remaining known issues (not yet fixed, tracked here for follow-up)
+## Second pass (2026-07-14) — items 4, 6, 7, 9, 10 fixed
+
+Fixed on branch `fix/lowering-passes-bugs-2`, verified via full ctest suite
+(688/688 passed, JIT + AOT) plus two research-agent-verified deep dives (items
+4 and 7) that confirmed the failure mechanism with file:line evidence before
+the fix was written.
 
 4. **`LowerToAffineLoops.cpp:494,567,635,717`** (While/DoWhile/For/Label
-   lowering) — the `visitorBreakContinue` walk recurses into nested
-   loop/label regions, not just the immediate body. An unlabeled
-   `break`/`continue` inside a nested loop can have its `tsContext->jumps[op]`
-   entry set by either the inner or outer loop's walk, with the last one to
-   run winning — order-dependent, so a nested unlabeled `break` could jump out
-   of both loops instead of just the inner one. PLAUSIBLE, not yet fixed.
+   lowering) — FIXED. Confirmed via agent investigation: the old
+   `visitorBreakContinue`/`walk()` recursed into nested loop/label/switch
+   regions, and an unlabeled `break`/`continue` matched *any* enclosing
+   scope's walk (`MLIRHelper::matchLabelOrNotSet` returns `true` whenever the
+   op has no label of its own). Correctness depended entirely on undocumented
+   MLIR dialect-conversion worklist ordering (last write to
+   `tsContext->jumps[op]` wins, and the innermost loop's pattern happened to
+   run last) — not a real guarantee, and confirmed to have zero explicit
+   ordering protection in the code. Replaced with a shared
+   `visitBreakContinueInScope` helper (manual recursive region walk, added
+   just above `WhileOpLowering`) that threads independent
+   `eligibleForUnlabeledBreak`/`eligibleForUnlabeledContinue` flags through
+   the descent: both flags clear on crossing a nested While/DoWhile/For/Label
+   boundary, and the break-only flag additionally clears on crossing a nested
+   `SwitchOp` (switch owns unlabeled `break` but not `continue`, matching JS
+   scoping). Labeled break/continue matching the scope's own label is still
+   found no matter how many boundaries are crossed. Added
+   `test_triple_nested_unlabeled` to `00break_continue.ts` (3 levels of
+   nested `for`, innermost unlabeled `break`/`continue`), JIT-executed and
+   checked by value.
+
+6. **`LowerToLLVM.cpp:1271`** (`SymbolCallInternalOpLowering`) — FIXED.
+   Replaced the debug-only `assert(llvmFuncType)` with
+   `return rewriter.notifyMatchFailure(...)` when the callee symbol doesn't
+   resolve to a known function-like op, matching the idiomatic `return
+   failure()` pattern used elsewhere in this file.
+
+7. **`LowerToLLVM.cpp:2043`** (`NewOpLowering`, stack-allocation path) —
+   FIXED. Confirmed via agent investigation: `resultType = tch.convertType(newOp.getType())`
+   converts a class type to an opaque LLVM pointer
+   (`LowerToLLVM.cpp:5967-5969`, `ClassType → LLVM::LLVMPointerType`), so the
+   old `ch.Alloca(resultType, 1)` allocated 8 bytes (`sizeof(ptr)`) on the
+   stack regardless of the class's actual field layout — a stack
+   under-allocation/overflow for any stack-`new`'d class with fields. Fixed
+   by sizing off `tch.convertType(storageType)` (the actual converted
+   `ClassStorageType`/struct), mirroring both the sibling heap-allocation path
+   a few lines below and the `AllocaOpLowering` pattern earlier in the file.
+   The now-unused `resultType` local was removed. No test added: the one
+   test targeting this path (`00class_stack.ts`) has the stack-alloc call
+   form commented out with a pre-existing, unrelated `TODO: ERROR can't
+   create class with vtable on stack` blocker.
+
+9. **`LowerToAffineLoops.cpp:1666`** (`TryOpLowering`, `linuxHasCleanups`) —
+   FIXED. A cleanup-only try (no catch, no finally — e.g. the `TryOp`
+   synthesized for a `using` declaration) hit the `linuxHasCleanups` block
+   with neither `catchHasOps` nor `finallyHasOps`, so `cleanupBlockLast`'s
+   `ResultOp` terminator was erased with nothing replacing it — malformed IR.
+   Fixed by adding the missing branch: build a Linux cleanup landing pad
+   (`LandingPadOp` cleanup=true + `BeginCleanupOp`) at the start of
+   `cleanupBlock` and replace the terminator with `EndCleanupOp` (targeting
+   `parentTryOpLandingPad` if set), mirroring the existing Windows
+   unconditional cleanup-landing-pad setup and the Linux
+   `finallyHasOps`-with-no-catch precedent already in this function.
+   `EndCleanupOp` always lowers to `LLVM::ResumeOp` (confirmed by reading
+   `EndCleanupOpLowering`), so this only affects the exception-unwind path,
+   consistent with Itanium cleanup-landingpad semantics. Exercised indirectly
+   by the existing `00disposable.ts`/`01disposable.ts`/`02disposable.ts`
+   JIT+AOT tests (a bare `using` block with no explicit try/catch/finally is
+   exactly this code path), all passing.
+
+10. **`LowerToAffineLoops.cpp:763`** (`LabelOpLowering`) and the same pattern
+    in `SwitchOpLowering` (~854) — FIXED. Both `assert(false)` fallbacks
+    (silent no-op in release builds, leaving a malformed CFG) replaced with
+    `return rewriter.notifyMatchFailure(...)`.
+
+## Remaining known issues (not yet fixed, tracked here for follow-up)
 
 5. **`LowerToAffineLoops.cpp:1351,1358,1370`** (`TryOpLowering`, `finally`
    region cloning) — the `finally` region is cloned twice (normal-exit and
@@ -126,36 +191,15 @@ JIT host (see method note), so verified via `--emit=mlir-affine
    cloned copies. PLAUSIBLE, not yet fixed — needs a test case (`grep` of
    `test/` found no try/finally-nesting coverage).
 
-6. **`LowerToLLVM.cpp:1271`** (`SymbolCallInternalOpLowering`) — `llvmFuncType`
-   can remain null if `moduleOp.lookupSymbol` fails to resolve or the symbol is
-   an unexpected kind; only guarded by a debug-only `assert`, no `return
-   failure()` guard. PLAUSIBLE, not yet fixed.
-
-7. **`LowerToLLVM.cpp:2043`** (`NewOpLowering`, stack-allocation path) —
-   allocates using `resultType` (converted pointer type) instead of
-   `storageType` (actual class layout) used by the sibling heap-allocation
-   path; asymmetry could under-allocate the stack slot for `new` with
-   `getStackAlloc()` set. PLAUSIBLE, needs confirming what `resultType`
-   actually converts to for class types before treating as certain.
-
 8. **`LowerToLLVM.cpp:4159`** (`LandingPadOpLowering`, Windows path) —
    cleanup-only branch reuses the typed-catch filter value instead of an
    empty/undef cleanup clause; the code has its own `// BUG: in LLVM landing
-   pad is not fully implemented` comment. PLAUSIBLE, not yet fixed.
-
-9. **`LowerToAffineLoops.cpp:1660`** (`TryOpLowering`, `linuxHasCleanups`) —
-   merges `catchesBlock`/`finallyBlock` into `cleanupBlockLast` only when
-   `catchHasOps`/`finallyHasOps`, but `linuxHasCleanups` doesn't imply either;
-   a cleanup-only try with no catch/finally content could erase
-   `cleanupBlockLast`'s terminator with nothing replacing it. PLAUSIBLE, not
-   yet fixed.
-
-10. **`LowerToAffineLoops.cpp:763`** (`LabelOpLowering`) — falls back to
-    `assert(false)` if the label region's terminator block isn't a `MergeOp`;
-    in release builds (asserts stripped) this is a silent no-op leaving a
-    malformed CFG if the label region's live last block doesn't end in
-    `MergeOp` (e.g. dead code after a break-only path). PLAUSIBLE, not yet
-    fixed. Same pattern exists in `SwitchOpLowering` at line ~854.
+   pad is not fully implemented` comment. PLAUSIBLE, not yet fixed —
+   deliberately left alone in the second pass: this is deep Windows SEH
+   landing-pad construction with the original author's own admission it's
+   incomplete, and a wrong guess here risks a worse regression than the
+   status quo. Needs someone with direct SEH/landingpad-clause expertise, or
+   a way to single-step actual Windows exception dispatch through it.
 
 ## Other observations (not correctness bugs, lower priority)
 

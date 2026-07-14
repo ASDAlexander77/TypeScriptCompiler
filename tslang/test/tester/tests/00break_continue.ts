@@ -4,6 +4,7 @@ function main() {
     assert(test_for() == 4, "failed. 3");
     test_for_empty();
     test_while_labeled();
+    assert(test_triple_nested_unlabeled() == 394, "failed. 4");
 
     test_label();
 
@@ -108,6 +109,29 @@ function test_while_labeled() {
     print("breaked outer");
 
     print("done.");
+}
+
+function test_triple_nested_unlabeled() {
+    // an unlabeled break/continue at 3 levels of nesting must only affect its own
+    // (innermost) loop, regardless of the order the lowering passes visit the loops in.
+    let outerRuns = 0;
+    let middleRuns = 0;
+    let innerRuns = 0;
+    for (let i = 0; i < 3; i++) {
+        outerRuns++;
+        for (let j = 0; j < 3; j++) {
+            middleRuns++;
+            for (let k = 0; k < 10; k++) {
+                if (k == 2) continue;
+                if (k == 5) break;
+                innerRuns++;
+            }
+        }
+    }
+
+    // outer runs 3 times, middle runs 3*3=9 times, inner: each of the 9 middle
+    // iterations runs k=0,1,(skip 2),3,4 then breaks at k==5 -> 4 increments each = 36
+    return outerRuns * 100 + middleRuns * 10 + innerRuns / 9;
 }
 
 function test_label() {
