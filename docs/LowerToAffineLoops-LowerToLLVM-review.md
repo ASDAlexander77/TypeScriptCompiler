@@ -237,14 +237,37 @@ Fixed on branch `fix/lowering-passes-bugs-3`, verified via full ctest suite
    times to catch wrong-copy-used-once-vs-every-iteration bugs), JIT +
    AOT green.
 
-## Remaining known issues (not yet fixed, tracked here for follow-up)
+## Fourth pass (2026-07-14) — item 5b fixed
 
-5b. **`LowerToAffineLoops.cpp`** (loop `jumps[]` target computation) —
-    `break`/`continue` inside a `try` body does not run an enclosing
-    `finally` block before jumping to the loop's continuation/increment.
-    See "Third pass" above for the repro and root cause. Needs the
-    break/continue lowering (or the `TryOp` lowering) to detect that the
-    jump target crosses a `finally` boundary and route through it first.
+5b. **`LowerToAffineLoops.cpp`** (`TryOpLowering` / loop `jumps[]` targets) —
+    FIXED (branch `fix/break-continue-in-try-finally`), using the same
+    mechanism `return` in try/finally already used (suggested by the repo
+    owner). `TryOpLowering` now collects `BreakOp`/`ContinueOp` in the try
+    body and catches that already have a `tsContext->jumps` entry at
+    try-lowering time — a clean discriminator for "escapes this try": the
+    target loop/label encloses the try, so its lowering (which populates
+    `jumps`) ran first in the pre-order worklist, whereas jumps targeting a
+    loop *inside* the try aren't resolved yet. For each distinct escape
+    target it clones the `finally` region once (mirroring the return-cleanup
+    clone), terminates the clone with a `cf::BranchOp` to the original
+    target, and re-points `jumps[op]` at the clone — so Break/Continue
+    lowering needs no structural change and just branches into the finally
+    copy. Nested try/finally chains compose naturally: the outer try lowers
+    first and re-points the op at its finally copy; a nested try later
+    re-points the same op at *its* copy, which branches to the outer copy —
+    innermost-first execution. Escaping jumps in catch clauses additionally
+    get `tsContext->unwind[op] = catchesBlock`, and Break/Continue lowering
+    now emits `EndCatchOp` when that's set, mirroring return-from-catch.
+
+    Verified by JIT execution: break in try body, continue in try body,
+    two-level nested finally chain (both finallys run, innermost first),
+    break from a catch clause (catch + finally + EndCatch), one try with two
+    distinct escape targets (break + continue → two separate finally
+    copies), and the negative case (break of a loop fully inside the try is
+    not rerouted — finally runs exactly once). All added to
+    `00try_finally_break_continue.ts`.
+
+## Remaining known issues (not yet fixed, tracked here for follow-up)
 
 8. **`LowerToLLVM.cpp:4159`** (`LandingPadOpLowering`, Windows path) —
    cleanup-only branch reuses the typed-catch filter value instead of an
