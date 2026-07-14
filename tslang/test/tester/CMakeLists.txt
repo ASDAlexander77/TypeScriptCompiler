@@ -152,6 +152,7 @@ add_test(NAME test-compile-00-if_return COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-compile-00-dowhile COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00dowhile.ts")
 add_test(NAME test-compile-00-while COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00while.ts")
 add_test(NAME test-compile-00-for COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for.ts")
+add_test(NAME test-compile-00-for-infinite-result COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_infinite_result.ts")
 add_test(NAME test-compile-00-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue.ts")
 add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
@@ -162,6 +163,7 @@ add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 add_test(NAME test-compile-00-arrays3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
 add_test(NAME test-compile-00-arrays4-push-pop COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
+add_test(NAME test-compile-00-array-shift COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 add_test(NAME test-compile-00-arrays5-deconstruct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
 add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -308,6 +310,7 @@ add_test(NAME test-compile-00-try-finally COMMAND test-runner "${PROJECT_SOURCE_
 add_test(NAME test-compile-01-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
+add_test(NAME test-compile-00-try-catch-mismatch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_mismatch_rethrow.ts")
 add_test(NAME test-compile-00-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return_dispose.ts")
 add_test(NAME test-compile-01-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
 add_test(NAME test-compile-00-property-access-conditional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00property_access_cond.ts")
@@ -486,6 +489,7 @@ add_test(NAME test-jit-00-if_return COMMAND test-runner -jit "${PROJECT_SOURCE_D
 add_test(NAME test-jit-00-dowhile COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00dowhile.ts")
 add_test(NAME test-jit-00-while COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00while.ts")
 add_test(NAME test-jit-00-for COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for.ts")
+add_test(NAME test-jit-00-for-infinite-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_infinite_result.ts")
 add_test(NAME test-jit-00-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue.ts")
 add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
@@ -496,6 +500,7 @@ add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 add_test(NAME test-jit-00-arrays3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
 add_test(NAME test-jit-00-arrays4-push-pop COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
+add_test(NAME test-jit-00-array-shift COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 add_test(NAME test-jit-00-arrays5-deconstruct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
 add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -641,6 +646,13 @@ add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-01-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
 add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
+# pre-existing JIT limitation (reproduces on unmodified main too): the JIT's
+# Windows SEH landing pad/personality plumbing exits with code 3 and no
+# output on a typed-catch mismatch that must unwind past a function boundary,
+# unrelated to the LowerToAffineLoops.cpp rethrow fix this test targets (that
+# fix only affects the non-Windows/Itanium cmpValue path). AOT variant above
+# passes and exercises the fix correctly.
+#add_test(NAME test-jit-00-try-catch-mismatch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_mismatch_rethrow.ts")
 add_test(NAME test-jit-00-try-catch-return-dispose COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return_dispose.ts")
 add_test(NAME test-jit-01-try-catch-return-dispose COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
 add_test(NAME test-jit-00-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")

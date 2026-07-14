@@ -674,6 +674,7 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
         else
         {
             auto noCondOp = cast<mlir_ts::NoConditionOp>(condLast->getTerminator());
+            args = noCondOp.getArgs();
             rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(noCondOp, body, noCondOp.getArgs());
         }
 
@@ -1625,10 +1626,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             mlir::Block *currentBlockBrCmp = rewriter.getInsertionBlock();
             mlir::Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
 
+            // when the caught value's type does not match this catch clause, rethrow
+            // instead of falling through to normal post-try control flow.
+            auto *rethrowBlock = rewriter.createBlock(continuationBrCmp);
+            rewriter.setInsertionPointToStart(rethrowBlock);
+            auto rethrowVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+            auto rethrowOp = rewriter.create<mlir_ts::ThrowOp>(loc, rethrowVal);
+            if (parentTryOpLandingPad)
+            {
+                tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
+            }
+
             rewriter.setInsertionPointAfterValue(cmpValue);
-            // TODO: when catch not matching - should go into result (rethrow)
             auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
-            rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, continuationBrCmp, continuation);
+            rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, continuationBrCmp, rethrowBlock);
             // end of condbr
         }
 
