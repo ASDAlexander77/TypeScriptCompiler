@@ -2372,8 +2372,9 @@ class MLIRTypeHelper
                 return mlir_ts::AnyType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. an extension method name like "push"/"pop") is not a data field of the array
+            return mlir::Type();
+        }
 
         // TODO: read fields info from class Array
         if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(srcType))
