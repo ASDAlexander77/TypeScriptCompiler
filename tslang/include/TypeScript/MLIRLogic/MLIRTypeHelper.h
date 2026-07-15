@@ -2314,10 +2314,6 @@ class MLIRTypeHelper
                     {
                         return methodInfo->funcType;
                     }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
                 }
             }
 
@@ -2326,12 +2322,13 @@ class MLIRTypeHelper
 
         if (auto srcClassType = dyn_cast<mlir_ts::ClassType>(srcType))
         {
-            if (auto srcClassInfo = getInterfaceInfoByFullName(srcClassType.getName().getValue()))
+            if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
             {
-                auto fieldInfo = srcClassInfo->findField(fieldName);
-                if (fieldInfo)
+                auto foundField = false;
+                auto fieldInfo = srcClassInfo->findField(fieldName, foundField);
+                if (foundField)
                 {
-                    return fieldInfo->type;
+                    return fieldInfo.type;
                 }
 
                 if (auto strName = dyn_cast<mlir::StringAttr>(fieldName))
@@ -2340,10 +2337,6 @@ class MLIRTypeHelper
                     if (methodInfo)
                     {
                         return methodInfo->funcType;
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
                     }
                 }
             }
@@ -2372,8 +2365,9 @@ class MLIRTypeHelper
                 return mlir_ts::AnyType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. an extension method name like "push"/"pop") is not a data field of the array
+            return mlir::Type();
+        }
 
         // TODO: read fields info from class Array
         if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(srcType))
@@ -2389,8 +2383,9 @@ class MLIRTypeHelper
                 return mlir_ts::AnyType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. an extension method name like "push"/"pop") is not a data field of the array
+            return mlir::Type();
+        }
 
         // TODO: read data from String class
         if (auto stringType = dyn_cast<mlir_ts::StringType>(srcType))
@@ -2400,8 +2395,9 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. a method name like "fromCharCode"/"charAt") is not a data field of String
+            return mlir::Type();
+        }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(srcType))
         {
