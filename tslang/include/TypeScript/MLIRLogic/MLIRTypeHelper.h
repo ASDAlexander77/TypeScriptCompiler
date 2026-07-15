@@ -2314,10 +2314,6 @@ class MLIRTypeHelper
                     {
                         return methodInfo->funcType;
                     }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
                 }
             }
 
@@ -2340,10 +2336,6 @@ class MLIRTypeHelper
                     if (methodInfo)
                     {
                         return methodInfo->funcType;
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
                     }
                 }
             }
@@ -2390,8 +2382,9 @@ class MLIRTypeHelper
                 return mlir_ts::AnyType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. an extension method name like "push"/"pop") is not a data field of the array
+            return mlir::Type();
+        }
 
         // TODO: read data from String class
         if (auto stringType = dyn_cast<mlir_ts::StringType>(srcType))
@@ -2401,8 +2394,9 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            llvm_unreachable("not implemented");
-        }        
+            // any other field (e.g. a method name like "fromCharCode"/"charAt") is not a data field of String
+            return mlir::Type();
+        }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(srcType))
         {
