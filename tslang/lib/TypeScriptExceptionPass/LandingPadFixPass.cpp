@@ -51,9 +51,9 @@ struct LandingPadFixPassCode
                 newLandingPad->setCleanup(true);
                 LPI->replaceAllUsesWith(newLandingPad);
                 LPI->eraseFromParent();
-            }
 
-            MadeChange = true;
+                MadeChange = true;
+            }
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! LANDFIX Change: " << MadeChange;);

@@ -541,22 +541,18 @@ struct Win32ExceptionPassCode
         // remove
         for (auto CI : toRemoveWorkSet)
         {
-            // TODO: we need to fix issue wit PHI node after inline works
-            if (CI->getNumUses() > 0)
+            // Erase every PHI-node user first (there can be more than one, e.g. after
+            // inlining merges control flow through several PHIs referencing the same
+            // to-be-removed value); eraseFromParent() below requires no uses remain.
+            while (!CI->use_empty())
             {
-                for (auto &U : CI->uses())
+                auto UI = llvm::find_if(CI->users(), [](llvm::User *U) { return isa<PHINode>(U); });
+                if (UI == CI->user_end())
                 {
-                    if (U.getUser() && isa<PHINode>(U.getUser()))
-                    {
-                        // Instruction *UserI = cast<Instruction>(U.getUser());
-                        PHINode *UserPHI = cast<PHINode>(U.getUser());
-                        if (UserPHI)
-                        {
-                            UserPHI->eraseFromParent();
-                            break;
-                        }
-                    }
+                    break;
                 }
+
+                cast<PHINode>(*UI)->eraseFromParent();
             }
 
             CI->eraseFromParent();
@@ -631,7 +627,7 @@ struct Win32ExceptionPassCode
         // which describes the exception.
         llvm::Type *Args[] = {PointerType::get(Ctx, 0), PointerType::get(Ctx, 0)};
         auto *FTy = llvm::FunctionType::get(Type::getVoidTy(Ctx), Args, /*isVarArg=*/false);
-        auto Throw = Function::Create(FTy, llvm::GlobalValue::LinkageTypes::InternalLinkage, "_CxxThrowException");
+        auto Throw = Function::Create(FTy, llvm::GlobalValue::LinkageTypes::ExternalLinkage, "_CxxThrowException", module);
         /*
         // _CxxThrowException is stdcall on 32-bit x86 platforms.
         if (CGM.getTarget().getTriple().getArch() == llvm::Triple::x86)
