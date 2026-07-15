@@ -2002,13 +2002,17 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
 
         SmallVector<mlir::Block *> caseDestinations;
 
-        SmallPtrSet<Operation *, 16> stateLabels;
+        // Collect state labels in program (walk) order: dispatch below is positional
+        // (case N -> caseDestinations[N-1]), so an order-scrambling container here
+        // (e.g. SmallPtrSet, which only preserves insertion order below its inline
+        // capacity) would silently corrupt generator resume dispatch.
+        SmallVector<Operation *> stateLabels;
 
         // select all states
         auto visitorAllStateLabels = [&](Operation *op) {
             if (auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op))
             {
-                stateLabels.insert(op);
+                stateLabels.push_back(op);
             }
         };
 

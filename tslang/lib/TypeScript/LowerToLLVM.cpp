@@ -584,7 +584,7 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value()
                             && !isInsidePresplitCoroutine(op);
 
-        mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, size, true)
+        mlir::Value newStringValue = allocInStack ? ch.Alloca(th.getI8Type(), size, true)
                                                   : ch.MemoryAlloc(size);
 
         // copy
@@ -2682,27 +2682,33 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         auto incSizeAsLLVMType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
 
-        mlir::Value newCountAsIndexType = rewriter.create<mlir::index::SubOp>(loc, indexType, ValueRange{countAsIndexType, decSizeAsIndexType});
-        newCountAsIndexType = rewriter.create<mlir::index::AddOp>(loc, indexType, ValueRange{newCountAsIndexType, incSizeAsLLVMType});
+        // Keep all arithmetic in the already-LLVM-converted domain (llvmIndexType), matching
+        // every sibling array-mutation lowering (ArrayPushOp/ArrayUnshiftOp/ArrayShiftOp) --
+        // mlir::index::*Op ops require genuinely `index`-typed operands, but countAsIndexType
+        // (despite its name) is loaded as llvmIndexType, and incSizeAsLLVMType is already
+        // LLVM-typed, so mixing them into index:: ops here was a dialect-operand mismatch.
+        mlir::Value newCountAsLLVMType = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, decSizeAsLLVMType});
+        newCountAsLLVMType = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{newCountAsLLVMType, incSizeAsLLVMType});
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, elementType);
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
         auto multSizeOfTypeValue =
-            rewriter.create<mlir::index::MulOp>(loc, indexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsLLVMType});
 
         auto increaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
             auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
-            auto moveCountAsIndexType =
-                rewriter.create<mlir::index::SubOp>(loc, indexType, ValueRange{countAsIndexType, startIndexAsIndexType});
-            moveCountAsIndexType =
-                rewriter.create<mlir::index::SubOp>(loc, indexType, ValueRange{moveCountAsIndexType, decSizeAsIndexType});
+            auto moveCountAsLLVMType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
+            moveCountAsLLVMType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsLLVMType, decSizeAsLLVMType});
 
             // realloc
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, allocated, ValueRange{startIndexAsLLVMType});
             auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{incSizeAsLLVMType});
-            auto moveCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, moveCountAsIndexType);
+            auto moveCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, moveCountAsLLVMType);
             rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexTypeAdapt);
 
             return allocated;
@@ -2710,26 +2716,27 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         auto decreaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
 
-            auto moveCountAsIndexType =
-                rewriter.create<mlir::index::SubOp>(loc, indexType, ValueRange{countAsIndexType, startIndexAsIndexType});
-            moveCountAsIndexType =
-                rewriter.create<mlir::index::SubOp>(loc, indexType, ValueRange{moveCountAsIndexType, decSizeAsIndexType});
+            auto moveCountAsLLVMType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
+            moveCountAsLLVMType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsLLVMType, decSizeAsLLVMType});
 
             // realloc
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, currentPtr, ValueRange{startIndexAsLLVMType});
             auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{incSizeAsLLVMType});
 
-            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+            auto moveCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, moveCountAsLLVMType);
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexTypeAdapt);
 
             auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
             return allocated;
         };
 
-        auto cond = rewriter.create<arith::CmpIOp>(loc, th.getLLVMBoolType(), arith::CmpIPredicateAttr::get(rewriter.getContext(), arith::CmpIPredicate::ugt), incSizeAsLLVMType, decSizeAsIndexType);
+        auto cond = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, incSizeAsLLVMType, decSizeAsLLVMType);
         auto allocated = clh.conditionalExpressionLowering(loc, ptrType, cond, increaseArrayFunc, decreaseArrayFunc);
 
-        mlir::Value index = startIndexAsIndexType;
+        mlir::Value indexAsLLVMType = startIndexAsLLVMType;
         auto next = false;
         mlir::Value value1;
         for (auto itemPair : llvm::zip(transformed.getItems(), spliceOp.getItems()))
@@ -2744,11 +2751,10 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
                     value1 = clh.createIndexConstantOf(llvmIndexType, 1);
                 }
 
-                index = rewriter.create<mlir::index::AddOp>(loc, indexType, ValueRange{index, value1});
+                indexAsLLVMType = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{indexAsLLVMType, value1});
             }
 
             // save new element
-            auto indexAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, index);
             auto offset = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, allocated, ValueRange{indexAsLLVMType});
 
             auto effectiveItem = item;
@@ -2766,7 +2772,6 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         }
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-        auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
 
         rewriter.replaceOp(spliceOp, ValueRange{newCountAsLLVMType});
@@ -3495,8 +3500,12 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
                 isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op) || isa<mlir_ts::AllocaOp>(op) ||
                 isa<mlir_ts::CreateArrayOp>(op) || isa<mlir_ts::NewEmptyArrayOp>(op) || isa<mlir_ts::CreateTupleOp>(op) ||
-                isa<mlir_ts::LoadOp>(op) || isa<mlir_ts::StoreOp>(op) || 
-                isa<mlir_ts::LoadLibraryPermanentlyOp>(op) || isa<mlir_ts::SearchForAddressOfSymbolOp>(op))
+                isa<mlir_ts::LoadOp>(op) || isa<mlir_ts::StoreOp>(op) ||
+                isa<mlir_ts::LoadLibraryPermanentlyOp>(op) || isa<mlir_ts::SearchForAddressOfSymbolOp>(op) ||
+                isa<mlir_ts::ArrayPushOp>(op) || isa<mlir_ts::ArrayUnshiftOp>(op) || isa<mlir_ts::ArraySpliceOp>(op) ||
+                isa<mlir_ts::ArrayPopOp>(op) || isa<mlir_ts::ArrayShiftOp>(op) || isa<mlir_ts::DeleteOp>(op) ||
+                isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::SetStringLengthOp>(op) ||
+                isa<mlir_ts::StringConcatOp>(op) || isa<mlir_ts::CharToStringOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
