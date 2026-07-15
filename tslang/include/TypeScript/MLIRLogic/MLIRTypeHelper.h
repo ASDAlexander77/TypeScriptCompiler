@@ -2322,12 +2322,13 @@ class MLIRTypeHelper
 
         if (auto srcClassType = dyn_cast<mlir_ts::ClassType>(srcType))
         {
-            if (auto srcClassInfo = getInterfaceInfoByFullName(srcClassType.getName().getValue()))
+            if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
             {
-                auto fieldInfo = srcClassInfo->findField(fieldName);
-                if (fieldInfo)
+                auto foundField = false;
+                auto fieldInfo = srcClassInfo->findField(fieldName, foundField);
+                if (foundField)
                 {
-                    return fieldInfo->type;
+                    return fieldInfo.type;
                 }
 
                 if (auto strName = dyn_cast<mlir::StringAttr>(fieldName))
