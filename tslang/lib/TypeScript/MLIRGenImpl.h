@@ -9842,7 +9842,11 @@ class MLIRGenImpl
         auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-                assert(interfaceInfo);
+                if (!interfaceInfo)
+                {
+                    // not registered (e.g. forward/ambient reference), nothing to export
+                    return true;
+                }
 
                 for (auto& method : interfaceInfo->methods)
                 {
@@ -9858,7 +9862,11 @@ class MLIRGenImpl
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                assert(classInfo);
+                if (!classInfo)
+                {
+                    // not registered (e.g. forward/ambient reference), nothing to export
+                    return true;
+                }
 
                 for (auto& method : classInfo->methods)
                 {
@@ -9903,20 +9911,33 @@ class MLIRGenImpl
         auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-                assert(interfaceInfo);
+                if (!interfaceInfo)
+                {
+                    // not registered (e.g. forward/ambient reference), nothing to export
+                    return true;
+                }
+
                 addInterfaceDeclarationToExport(interfaceInfo);
                 return true;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                assert(classInfo);
+                if (!classInfo)
+                {
+                    // not registered (e.g. forward/ambient reference), nothing to export
+                    return true;
+                }
+
                 addClassDeclarationToExport(classInfo);
                 return true;
             })
             .Case<mlir_ts::EnumType>([&](auto enumType) {
                 auto enumInfo = getEnumInfoByFullName(enumType.getName().getValue());
-                assert(enumInfo);
-                assert(enumInfo->enumType == enumType);
+                if (!enumInfo || enumInfo->enumType != enumType)
+                {
+                    // not registered (e.g. forward/ambient reference), nothing to export
+                    return true;
+                }
 
                 addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType);
                 return true;
@@ -9926,7 +9947,7 @@ class MLIRGenImpl
             });
 
         return cont;
-    }    
+    }
 
     void addTypeDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)    
     {
