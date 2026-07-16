@@ -113,10 +113,16 @@ function(setup_tslang_link_paths)
         message(FATAL_ERROR "setup_tslang_link_paths: TSLANG_PREFIX is not set")
     endif()
 
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(_defaultlib_config "release")
+    else()
+        set(_defaultlib_config "debug")
+    endif()
+
     set(_link_dirs
         "${TSLANG_BIN_DIR}"
         "${TSLANG_PREFIX}/lib"
-        "${TSLANG_BIN_DIR}/defaultlib/lib")
+        "${TSLANG_BIN_DIR}/defaultlib/lib/${_defaultlib_config}")
 
     if(TSLANG_ROOT)
         if(EXISTS "${TSLANG_ROOT}/gc/release")
