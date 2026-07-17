@@ -32,6 +32,10 @@ namespace mlirgen
     {
         assert(objectValue);
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, name);
+        if (!genContext.dummyRun && !genContext.allowPartialResolve)
+        {
+            cl.setBoundRefMaterializedCache(&boundRefMaterializedCache);
+        }
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
@@ -41,6 +45,10 @@ namespace mlirgen
     {
         assert(objectValue);
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, name);
+        if (!genContext.dummyRun && !genContext.allowPartialResolve)
+        {
+            cl.setBoundRefMaterializedCache(&boundRefMaterializedCache);
+        }
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
@@ -48,6 +56,10 @@ namespace mlirgen
                                                          mlir::Attribute id, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id);
+        if (!genContext.dummyRun && !genContext.allowPartialResolve)
+        {
+            cl.setBoundRefMaterializedCache(&boundRefMaterializedCache);
+        }
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
@@ -56,6 +68,10 @@ namespace mlirgen
                                                          const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id);
+        if (!genContext.dummyRun && !genContext.allowPartialResolve)
+        {
+            cl.setBoundRefMaterializedCache(&boundRefMaterializedCache);
+        }
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
@@ -65,8 +81,12 @@ namespace mlirgen
                                                          const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id, argument);
+        if (!genContext.dummyRun && !genContext.allowPartialResolve)
+        {
+            cl.setBoundRefMaterializedCache(&boundRefMaterializedCache);
+        }
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
-    }    
+    }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue,
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,

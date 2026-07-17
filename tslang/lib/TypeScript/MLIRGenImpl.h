@@ -10744,6 +10744,20 @@ class MLIRGenImpl
 
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
+    // Caches the stack-allocated ref materialized for a storage-less value (e.g. a
+    // `const` binding with no backing storage) the first time a bound-method property
+    // access needs an address for it (see MLIRPropertyAccessCodeLogic::TupleNoError).
+    // Without this, each access re-materializes a fresh copy seeded from the pristine,
+    // never-mutated SSA value, so repeated calls like `g.next()` on a `const`-bound
+    // generator never observe state changes made by earlier calls. Keyed by mlir::Value
+    // identity, which is stable and unique within a function. Scoped (not just cleared)
+    // at each mlirGenFunctionBody entry via BoundRefCacheScopeT, mirroring symbolTable's
+    // own scoping -- codegen for a nested closure recurses into mlirGenFunctionBody
+    // while the enclosing function's generation is still on the call stack, so a plain
+    // clear-on-entry would permanently drop the outer function's cache entries instead
+    // of restoring them when the nested closure's generation finishes.
+    llvm::ScopedHashTable<mlir::Value, mlir::Value> boundRefMaterializedCache;
+
     NamespaceInfo::TypePtr rootNamespace;
 
     NamespaceInfo::TypePtr currentNamespace;

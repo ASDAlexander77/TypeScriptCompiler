@@ -8,9 +8,6 @@
 // original -- on every single call site. So every manual `.next()` call restarted the
 // generator instead of resuming it. `for...of` happened to work because its lowering
 // materializes the generator object into one persistent local up front and reuses it.
-//
-// fix: a const whose value is a tuple with a bound-method field (e.g. a generator or
-// closure object) now gets real stack storage, matching what for...of already relied on.
 
 function* gen() {
     for (let i = 0; i < 5; i++) {

@@ -1150,8 +1150,18 @@ class MLIRPropertyAccessCodeLogic
     mlir::Attribute fieldId;
     mlir::Value argument;
     CompileOptions& compileOptions;
+    llvm::ScopedHashTable<mlir::Value, mlir::Value> *boundRefMaterializedCache = nullptr;
 
   public:
+    // optional: lets a bound-method property access (e.g. `g.next` on a storage-less
+    // `const` binding) reuse the ref it materialized on a previous access instead of
+    // minting a fresh one seeded from the pristine, never-mutated value each time. See
+    // TupleNoError() and MLIRGenImpl::boundRefMaterializedCache.
+    void setBoundRefMaterializedCache(llvm::ScopedHashTable<mlir::Value, mlir::Value> *cache)
+    {
+        boundRefMaterializedCache = cache;
+    }
+
     MLIRPropertyAccessCodeLogic(CompileOptions& compileOptions, mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 StringRef name)
         : builder(builder), location(location), expression(expression), name(name), compileOptions(compileOptions)
@@ -1239,11 +1249,31 @@ class MLIRPropertyAccessCodeLogic
         auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 
         auto refValue = getExprLoadRefValue(location);
+        if (isBoundRef && !refValue && boundRefMaterializedCache)
+        {
+            // only reuse a ref materialized in the SAME block as this access: a ref
+            // minted inside a nested block (e.g. a `{ }` scope) does not dominate uses
+            // outside that block, and checking real dominance would need MLIR's
+            // DominanceInfo, which isn't otherwise used in this codebase. Same-block is
+            // a conservative, cheap approximation -- it misses some reuse opportunities
+            // across block boundaries but never returns a ref that fails to dominate.
+            auto cached = boundRefMaterializedCache->lookup(expression);
+            if (cached && cached.getParentBlock() == builder.getInsertionBlock())
+            {
+                refValue = cached;
+            }
+        }
+
         if (isBoundRef && !refValue)
         {
             // allocate in stack
             refValue =
                 builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(expression.getType()), expression);
+
+            if (boundRefMaterializedCache)
+            {
+                boundRefMaterializedCache->insert(expression, refValue);
+            }
         }
 
         if (refValue)
@@ -1260,7 +1290,7 @@ class MLIRPropertyAccessCodeLogic
             location, elementTypeForRef, expression, MLIRHelper::getStructIndex(builder, fieldIndex));
     }
 
-    template <typename T> ValueOrLogicalResult TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
+    template <typename T> ValueOrLogicalResult TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
@@ -1380,11 +1410,31 @@ class MLIRPropertyAccessCodeLogic
         auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 
         auto refValue = getExprLoadRefValue(location);
+        if (isBoundRef && !refValue && boundRefMaterializedCache)
+        {
+            // only reuse a ref materialized in the SAME block as this access: a ref
+            // minted inside a nested block (e.g. a `{ }` scope) does not dominate uses
+            // outside that block, and checking real dominance would need MLIR's
+            // DominanceInfo, which isn't otherwise used in this codebase. Same-block is
+            // a conservative, cheap approximation -- it misses some reuse opportunities
+            // across block boundaries but never returns a ref that fails to dominate.
+            auto cached = boundRefMaterializedCache->lookup(expression);
+            if (cached && cached.getParentBlock() == builder.getInsertionBlock())
+            {
+                refValue = cached;
+            }
+        }
+
         if (isBoundRef && !refValue)
         {
             // allocate in stack
             refValue =
                 builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(expression.getType()), expression);
+
+            if (boundRefMaterializedCache)
+            {
+                boundRefMaterializedCache->insert(expression, refValue);
+            }
         }
 
         if (refValue)
