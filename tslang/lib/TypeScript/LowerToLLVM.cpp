@@ -742,49 +742,6 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
   public:
     using TsLlvmPattern<mlir_ts::AnyCompareOp>::TsLlvmPattern;
 
-    // CodeLogicHelper::conditionalExpressionLowering assumes its then/else builders
-    // leave the insertion point untouched (it branches from the *original* then/else
-    // block handles into the result block). That assumption breaks the moment a
-    // builder itself calls the helper again -- the nested call moves the insertion
-    // point to its own continuation block, so the outer helper's branch lands in the
-    // wrong (already-terminated) block. This variant re-reads the insertion block
-    // after each builder runs, so it composes safely when nested.
-    mlir::Value nestableConditional(mlir::Location loc, mlir::Type type, ConversionPatternRewriter &rewriter,
-                                    mlir::Value condition, mlir::function_ref<mlir::Value(ConversionPatternRewriter &, Location)> thenBuilder,
-                                    mlir::function_ref<mlir::Value(ConversionPatternRewriter &, Location)> elseBuilder) const
-    {
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-        auto *thenBlock = rewriter.createBlock(continuationBlock);
-        rewriter.setInsertionPointToStart(thenBlock);
-        auto thenValue = thenBuilder(rewriter, loc);
-        auto *thenEndBlock = rewriter.getInsertionBlock();
-
-        auto *elseBlock = rewriter.createBlock(continuationBlock);
-        rewriter.setInsertionPointToStart(elseBlock);
-        auto elseValue = elseBuilder(rewriter, loc);
-        auto *elseEndBlock = rewriter.getInsertionBlock();
-
-        auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type}, {loc});
-        rewriter.setInsertionPointToEnd(resultBlock);
-        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
-
-        rewriter.setInsertionPointToEnd(thenEndBlock);
-        rewriter.create<LLVM::BrOp>(loc, ValueRange{thenValue}, resultBlock);
-
-        rewriter.setInsertionPointToEnd(elseEndBlock);
-        rewriter.create<LLVM::BrOp>(loc, ValueRange{elseValue}, resultBlock);
-
-        rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
-
-        return resultBlock->getArguments().front();
-    }
-
     // same-representation compare: valid when both operands are known to hold the
     // same underlying kind (used both when the loose == / != tags actually match, and
     // for ===/!==/relational ops, which never coerce across kinds).
@@ -806,9 +763,9 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto dataPtr1 = al.getDataPtrOfAny(op1);
         auto dataPtr2 = al.getDataPtrOfAny(op2);
 
-        return nestableConditional(
-            loc, th.getLLVMBoolType(), rewriter, sizesEqual,
-            [&](ConversionPatternRewriter &rewriter, Location loc) {
+        return clh.conditionalExpressionLowering(
+            loc, th.getLLVMBoolType(), sizesEqual,
+            [&](OpBuilder &builder, Location loc) {
                 auto const0 = clh.createI32ConstantOf(0);
                 // sizeAny1 equals sizeAny2
                 auto compareResult =
@@ -851,7 +808,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
 
                 return bodyCmpResult;
             },
-            [&](ConversionPatternRewriter &rewriter, Location loc) {
+            [&](OpBuilder &builder, Location loc) {
                 // sizes (and therefore kinds) differ: == is false, != is true; ordering
                 // ops and === / !== fall back to their pre-existing "false" behavior.
                 if (code == SyntaxKind::ExclamationEqualsToken)
@@ -909,14 +866,14 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                 return storedTy == numberTy ? raw : castLogic.cast(raw, storedTy, numberTy);
             };
 
-            return nestableConditional(
-                loc, th.getF64Type(), rewriter, isTag(numberTag, "number"),
-                [&](ConversionPatternRewriter &, Location) { return asF64(numberTy); },
-                [&](ConversionPatternRewriter &rewriter, Location) {
-                    return nestableConditional(
-                        loc, th.getF64Type(), rewriter, isTag(numberTag, "s64"),
-                        [&](ConversionPatternRewriter &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 64, mlir::IntegerType::Signed)); },
-                        [&](ConversionPatternRewriter &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 32, mlir::IntegerType::Signed)); });
+            return clh.conditionalExpressionLowering(
+                loc, th.getF64Type(), isTag(numberTag, "number"),
+                [&](OpBuilder &, Location) { return asF64(numberTy); },
+                [&](OpBuilder &, Location) {
+                    return clh.conditionalExpressionLowering(
+                        loc, th.getF64Type(), isTag(numberTag, "s64"),
+                        [&](OpBuilder &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 64, mlir::IntegerType::Signed)); },
+                        [&](OpBuilder &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 32, mlir::IntegerType::Signed)); });
                 });
         };
 
@@ -971,30 +928,30 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto op1IsBooleanOp2IsString = rewriter.create<LLVM::AndOp>(loc, tag1IsBoolean, tag2IsString);
         auto op1IsStringOp2IsBoolean = rewriter.create<LLVM::AndOp>(loc, tag1IsString, tag2IsBoolean);
 
-        return nestableConditional(
-            loc, th.getLLVMBoolType(), rewriter, op1IsNumberOp2IsString,
-            [&](ConversionPatternRewriter &, Location loc) { return numberStringCase(op1, tag1, op2); },
-            [&](ConversionPatternRewriter &rewriter, Location loc) {
-                return nestableConditional(
-                    loc, th.getLLVMBoolType(), rewriter, op1IsStringOp2IsNumber,
-                    [&](ConversionPatternRewriter &, Location loc) { return numberStringCase(op2, tag2, op1); },
-                    [&](ConversionPatternRewriter &rewriter, Location loc) {
-                        return nestableConditional(
-                            loc, th.getLLVMBoolType(), rewriter, op1IsBooleanOp2IsNumber,
-                            [&](ConversionPatternRewriter &, Location loc) { return booleanNumberCase(op1, op2, tag2); },
-                            [&](ConversionPatternRewriter &rewriter, Location loc) {
-                                return nestableConditional(
-                                    loc, th.getLLVMBoolType(), rewriter, op1IsNumberOp2IsBoolean,
-                                    [&](ConversionPatternRewriter &, Location loc) { return booleanNumberCase(op2, op1, tag1); },
-                                    [&](ConversionPatternRewriter &rewriter, Location loc) {
-                                        return nestableConditional(
-                                            loc, th.getLLVMBoolType(), rewriter, op1IsBooleanOp2IsString,
-                                            [&](ConversionPatternRewriter &, Location loc) { return booleanStringCase(op1, op2); },
-                                            [&](ConversionPatternRewriter &rewriter, Location loc) {
-                                                return nestableConditional(
-                                                    loc, th.getLLVMBoolType(), rewriter, op1IsStringOp2IsBoolean,
-                                                    [&](ConversionPatternRewriter &, Location loc) { return booleanStringCase(op2, op1); },
-                                                    [&](ConversionPatternRewriter &rewriter, Location loc) {
+        return clh.conditionalExpressionLowering(
+            loc, th.getLLVMBoolType(), op1IsNumberOp2IsString,
+            [&](OpBuilder &, Location loc) { return numberStringCase(op1, tag1, op2); },
+            [&](OpBuilder &builder, Location loc) {
+                return clh.conditionalExpressionLowering(
+                    loc, th.getLLVMBoolType(), op1IsStringOp2IsNumber,
+                    [&](OpBuilder &, Location loc) { return numberStringCase(op2, tag2, op1); },
+                    [&](OpBuilder &builder, Location loc) {
+                        return clh.conditionalExpressionLowering(
+                            loc, th.getLLVMBoolType(), op1IsBooleanOp2IsNumber,
+                            [&](OpBuilder &, Location loc) { return booleanNumberCase(op1, op2, tag2); },
+                            [&](OpBuilder &builder, Location loc) {
+                                return clh.conditionalExpressionLowering(
+                                    loc, th.getLLVMBoolType(), op1IsNumberOp2IsBoolean,
+                                    [&](OpBuilder &, Location loc) { return booleanNumberCase(op2, op1, tag1); },
+                                    [&](OpBuilder &builder, Location loc) {
+                                        return clh.conditionalExpressionLowering(
+                                            loc, th.getLLVMBoolType(), op1IsBooleanOp2IsString,
+                                            [&](OpBuilder &, Location loc) { return booleanStringCase(op1, op2); },
+                                            [&](OpBuilder &builder, Location loc) {
+                                                return clh.conditionalExpressionLowering(
+                                                    loc, th.getLLVMBoolType(), op1IsStringOp2IsBoolean,
+                                                    [&](OpBuilder &, Location loc) { return booleanStringCase(op2, op1); },
+                                                    [&](OpBuilder &builder, Location loc) {
                                                         // no known coercion: kinds differ and are unequal
                                                         return (mlir::Value)clh.createI1ConstantOf(!isEquals);
                                                     });
@@ -1040,10 +997,10 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto const0 = clh.createI32ConstantOf(0);
         auto tagsEqual = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, tagCmp.getResult(), const0);
 
-        auto result = nestableConditional(
-            loc, th.getLLVMBoolType(), rewriter, tagsEqual,
-            [&](ConversionPatternRewriter &rewriter, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
-            [&](ConversionPatternRewriter &rewriter, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
+        auto result = clh.conditionalExpressionLowering(
+            loc, th.getLLVMBoolType(), tagsEqual,
+            [&](OpBuilder &builder, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
+            [&](OpBuilder &builder, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
 
         rewriter.replaceOp(op, result);
 

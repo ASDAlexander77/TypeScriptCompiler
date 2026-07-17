@@ -114,19 +114,25 @@ class CodeLogicHelper
         // then block
         auto *thenBlock = rewriter.createBlock(continuationBlock);
         auto thenValue = thenBuilder(rewriter, loc);
+        // thenBuilder may itself branch into further blocks (e.g. a nested
+        // conditionalExpressionLowering call) -- always branch to the result block
+        // from wherever the insertion point actually ended up, not from the
+        // (possibly stale) block handle captured before the builder ran.
+        auto *thenEndBlock = rewriter.getInsertionBlock();
 
         // else block
         auto *elseBlock = rewriter.createBlock(continuationBlock);
         auto elseValue = elseBuilder(rewriter, loc);
+        auto *elseEndBlock = rewriter.getInsertionBlock();
 
         // result block
         auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type}, {loc});
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
-        rewriter.setInsertionPointToEnd(thenBlock);
+        rewriter.setInsertionPointToEnd(thenEndBlock);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{thenValue}, resultBlock);
 
-        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.setInsertionPointToEnd(elseEndBlock);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{elseValue}, resultBlock);
 
         // Generate assertion test.

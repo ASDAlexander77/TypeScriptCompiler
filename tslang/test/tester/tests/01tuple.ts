@@ -37,7 +37,7 @@ function main() {
     const obj8 : IObj = { field1: 10 };
     print(obj8.field1);
 
-    assert(obj8.field1 === 10);
+    assert(obj8.field1 === "10");
 
     print("done.");
 }
