@@ -3039,6 +3039,16 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
         auto opType1 = logicalBinaryOp.getOperand1().getType();
         auto opType2 = logicalBinaryOp.getOperand2().getType();
 
+        // mlir_ts::BooleanType lowers to a signless i1, so isUnsignedInteger() (which
+        // only recognizes mlir::IntegerType's unsigned flavor) is false for it, and
+        // ordering comparisons fell to the signed predicate -- where i1 `true` (bit
+        // pattern 1) reads as -1, making `true > false` compare as `-1 > 0` (false).
+        // Booleans compare as unsigned 0/1, so treat them as such here explicitly.
+        auto isUnsignedOrBoolean = [](mlir::Type type) {
+            return type.isUnsignedInteger() || isa<mlir_ts::BooleanType>(type);
+        };
+        auto useUnsignedCompare = isUnsignedOrBoolean(opType1) && isUnsignedOrBoolean(opType2);
+
         // int and float
         mlir::Value value;
         switch (op)
@@ -3058,7 +3068,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
             break;
         case SyntaxKind::GreaterThanToken:
 
-            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            if (useUnsignedCompare)
             {
                 value = logicOp<arith::CmpIPredicate::ugt, arith::CmpFPredicate::OGT>(
                     logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
@@ -3070,7 +3080,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
             }
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            if (useUnsignedCompare)
             {
                 value = logicOp<arith::CmpIPredicate::uge, arith::CmpFPredicate::OGE>(
                     logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
@@ -3083,7 +3093,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 
             break;
         case SyntaxKind::LessThanToken:
-            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            if (useUnsignedCompare)
             {
                 value = logicOp<arith::CmpIPredicate::ult, arith::CmpFPredicate::OLT>(
                     logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
@@ -3096,7 +3106,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 
             break;
         case SyntaxKind::LessThanEqualsToken:
-            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            if (useUnsignedCompare)
             {
                 value = logicOp<arith::CmpIPredicate::ule, arith::CmpFPredicate::OLE>(
                     logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);

@@ -4679,8 +4679,64 @@ class MLIRGenImpl
             }
 
             break;
-        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::PlusToken:
+        {
+            // this is exactly the untyped default: case below (left/right type sync,
+            // string-preferring) -- PlusToken used to fall through to it unconditionally.
+            // Preserved as-is so string concat (`"fo" + 1`) and ordinary numeric-literal
+            // widening (`numberParam + 1`) keep working exactly like before.
+            auto leftType = leftExpressionValue.getType();
+            if (isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+            {
+                leftType = rightExpressionValue.getType();
+                if (leftType != leftExpressionValue.getType())
+                {
+                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
+                }
+            }
+
+            auto rightType = rightExpressionValue.getType();
+            if (leftType != rightType)
+            {
+                CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
+            }
+
+            // additionally: when neither side is a string (so this isn't concat) and
+            // both sides already had the SAME boolean type, the sync above was a no-op
+            // (leftType == rightType already), so booleans reached
+            // ArithmeticBinaryOpLowering as raw i1 and wrapped (`true + true` -> false
+            // instead of 2). Widen them to number in that case.
+            if (!isa<mlir_ts::StringType>(leftExpressionValue.getType()) && !isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+            {
+                if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                }
+
+                if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                }
+            }
+
+            break;
+        }
         case SyntaxKind::MinusToken:
+            // unlike PlusToken, MinusToken never does string concat, so it's safe to
+            // widen booleans here and then fall through to the same cross-type sync
+            // used by the other arithmetic/comparison operators below (e.g. `any - number`).
+            if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+            {
+                CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+            }
+
+            if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+            {
+                CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+            }
+
+            [[fallthrough]];
+        case SyntaxKind::AsteriskToken:
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
         case SyntaxKind::ExclamationEqualsToken:
