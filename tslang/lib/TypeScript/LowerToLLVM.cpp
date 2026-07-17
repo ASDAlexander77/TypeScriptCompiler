@@ -742,42 +742,73 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
   public:
     using TsLlvmPattern<mlir_ts::AnyCompareOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AnyCompareOp op, Adaptor transformed,
-                                  ConversionPatternRewriter &rewriter) const final
+    // CodeLogicHelper::conditionalExpressionLowering assumes its then/else builders
+    // leave the insertion point untouched (it branches from the *original* then/else
+    // block handles into the result block). That assumption breaks the moment a
+    // builder itself calls the helper again -- the nested call moves the insertion
+    // point to its own continuation block, so the outer helper's branch lands in the
+    // wrong (already-terminated) block. This variant re-reads the insertion block
+    // after each builder runs, so it composes safely when nested.
+    mlir::Value nestableConditional(mlir::Location loc, mlir::Type type, ConversionPatternRewriter &rewriter,
+                                    mlir::Value condition, mlir::function_ref<mlir::Value(ConversionPatternRewriter &, Location)> thenBuilder,
+                                    mlir::function_ref<mlir::Value(ConversionPatternRewriter &, Location)> elseBuilder) const
     {
-        
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-        TypeHelper th(rewriter);
-        CodeLogicHelper clh(op, rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        TypeConverterHelper tch(getTypeConverter());
-        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        rewriter.setInsertionPointToStart(thenBlock);
+        auto thenValue = thenBuilder(rewriter, loc);
+        auto *thenEndBlock = rewriter.getInsertionBlock();
 
-        auto loc = op->getLoc();
+        auto *elseBlock = rewriter.createBlock(continuationBlock);
+        rewriter.setInsertionPointToStart(elseBlock);
+        auto elseValue = elseBuilder(rewriter, loc);
+        auto *elseEndBlock = rewriter.getInsertionBlock();
 
-        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
-        //auto result = al.castToAny(in, transformed.getTypeInfo(), in.getType());
+        auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type}, {loc});
+        rewriter.setInsertionPointToEnd(resultBlock);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
+        rewriter.setInsertionPointToEnd(thenEndBlock);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{thenValue}, resultBlock);
+
+        rewriter.setInsertionPointToEnd(elseEndBlock);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{elseValue}, resultBlock);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        return resultBlock->getArguments().front();
+    }
+
+    // same-representation compare: valid when both operands are known to hold the
+    // same underlying kind (used both when the loose == / != tags actually match, and
+    // for ===/!==/relational ops, which never coerce across kinds).
+    mlir::Value sameKindCompare(mlir_ts::AnyCompareOp op, mlir::Value op1, mlir::Value op2, SyntaxKind code,
+                                mlir::Location loc, AnyLogic &al, CodeLogicHelper &clh, TypeHelper &th,
+                                LLVMCodeHelper &ch, LLVMTypeConverterHelper &llvmtch,
+                                ConversionPatternRewriter &rewriter) const
+    {
         auto i8PtrTy = th.getPtrType();
         auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
 
-        // compare bodies
         auto memcmpFuncOp = ch.getOrInsertFunction("memcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType}));
 
-        // compare sizes of Any first
-        // TODO: finish it
+        auto sizeAny1 = al.getDataSizeOfAny(op1);
+        auto sizeAny2 = al.getDataSizeOfAny(op2);
 
-        auto sizeAny1 = al.getDataSizeOfAny(transformed.getOp1());
-        auto sizeAny2 = al.getDataSizeOfAny(transformed.getOp2());
+        auto sizesEqual = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, sizeAny1, sizeAny2);
 
-        auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, sizeAny1, sizeAny2);
+        auto dataPtr1 = al.getDataPtrOfAny(op1);
+        auto dataPtr2 = al.getDataPtrOfAny(op2);
 
-        auto dataPtr1 = al.getDataPtrOfAny(transformed.getOp1());
-        auto dataPtr2 = al.getDataPtrOfAny(transformed.getOp2());
-
-        auto result = clh.conditionalExpressionLowering(
-            loc, th.getLLVMBoolType(), ptrCmpResult,
-            [&](OpBuilder &builder, Location loc) {
+        return nestableConditional(
+            loc, th.getLLVMBoolType(), rewriter, sizesEqual,
+            [&](ConversionPatternRewriter &rewriter, Location loc) {
                 auto const0 = clh.createI32ConstantOf(0);
                 // sizeAny1 equals sizeAny2
                 auto compareResult =
@@ -785,7 +816,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
 
                 // else compare body
                 mlir::Value bodyCmpResult;
-                switch ((SyntaxKind)op.getCode())
+                switch (code)
                 {
                 case SyntaxKind::EqualsEqualsToken:
                 case SyntaxKind::EqualsEqualsEqualsToken:
@@ -820,9 +851,199 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
 
                 return bodyCmpResult;
             },
-            [&](OpBuilder &builder, Location loc) {
-                return ptrCmpResult;
+            [&](ConversionPatternRewriter &rewriter, Location loc) {
+                // sizes (and therefore kinds) differ: == is false, != is true; ordering
+                // ops and === / !== fall back to their pre-existing "false" behavior.
+                if (code == SyntaxKind::ExclamationEqualsToken)
+                {
+                    return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, sizeAny1, sizeAny2);
+                }
+
+                return (mlir::Value)sizesEqual;
             });
+    }
+
+    // JS loose equality across differing `any` payload kinds: number<->string,
+    // number<->boolean, string<->boolean each coerce (number.toString()/parseFloat(),
+    // boolean->0|1, boolean->"true"|"false") rather than comparing raw bytes. Only
+    // reached for ==/!= once the runtime type tags are known to differ.
+    mlir::Value coerceAndCompareMixedKinds(mlir::Value op1, mlir::Value op2, mlir::Value tag1, mlir::Value tag2,
+                                           SyntaxKind code, mlir::Location loc, AnyLogic &al, CastLogicHelper &castLogic,
+                                           CodeLogicHelper &clh, TypeHelper &th, LLVMCodeHelper &ch, TypeConverterHelper &tch,
+                                           ConversionPatternRewriter &rewriter) const
+    {
+        auto isEquals = code == SyntaxKind::EqualsEqualsToken;
+
+        auto numberTy = mlir_ts::NumberType::get(rewriter.getContext());
+        auto stringTy = mlir_ts::StringType::get(rewriter.getContext());
+        auto booleanTy = mlir_ts::BooleanType::get(rewriter.getContext());
+
+        auto isTag = [&](mlir::Value tag, const char *name) {
+            auto tagLiteral = ch.getOrCreateGlobalString(name, std::string(name));
+            auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
+            auto cmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag, tagLiteral});
+            auto const0 = clh.createI32ConstantOf(0);
+            return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, cmp.getResult(), const0);
+        };
+
+        // typeOfAsString reports concrete-width tags ("s32"/"s64"/...) for integer
+        // literals and only uses "number" for float-typed values (see
+        // TypeOfOpHelper::typeOfAsString) -- so "is this any numeric" must check the
+        // realistic set of concrete tags a `number`-inferred literal can carry, not
+        // just the literal string "number".
+        auto isNumericTag = [&](mlir::Value tag) {
+            mlir::Value result = isTag(tag, "number");
+            for (auto name : {"s32", "s64", "u32", "u64", "i32", "i64", "f32", "f64"})
+            {
+                result = rewriter.create<LLVM::OrOp>(loc, result, isTag(tag, name));
+            }
+            return result;
+        };
+
+        // unbox a numeric `any` (whatever its concrete boxed width/signedness) into
+        // a normalized f64 for comparison, dispatching on the exact tag reported at
+        // box time so we read back the same width that was stored.
+        auto unboxNumericAsF64 = [&](mlir::Value numberSideAny, mlir::Value numberTag) {
+            auto asF64 = [&](mlir::Type storedTy) {
+                auto raw = al.UnboxAny(numberSideAny, tch.convertType(storedTy));
+                return storedTy == numberTy ? raw : castLogic.cast(raw, storedTy, numberTy);
+            };
+
+            return nestableConditional(
+                loc, th.getF64Type(), rewriter, isTag(numberTag, "number"),
+                [&](ConversionPatternRewriter &, Location) { return asF64(numberTy); },
+                [&](ConversionPatternRewriter &rewriter, Location) {
+                    return nestableConditional(
+                        loc, th.getF64Type(), rewriter, isTag(numberTag, "s64"),
+                        [&](ConversionPatternRewriter &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 64, mlir::IntegerType::Signed)); },
+                        [&](ConversionPatternRewriter &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 32, mlir::IntegerType::Signed)); });
+                });
+        };
+
+        auto compareAsNumber = [&](mlir::Value numVal1, mlir::Value numVal2) {
+            return (mlir::Value)rewriter.create<LLVM::FCmpOp>(
+                loc, isEquals ? LLVM::FCmpPredicate::oeq : LLVM::FCmpPredicate::une, numVal1, numVal2);
+        };
+
+        auto compareAsString = [&](mlir::Value strVal1, mlir::Value strVal2) {
+            auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
+            auto cmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{strVal1, strVal2});
+            auto const0 = clh.createI32ConstantOf(0);
+            return (mlir::Value)rewriter.create<LLVM::ICmpOp>(
+                loc, isEquals ? LLVM::ICmpPredicate::eq : LLVM::ICmpPredicate::ne, cmp.getResult(), const0);
+        };
+
+        // number <-> string: coerce the string side with parseFloat
+        auto numberStringCase = [&](mlir::Value numberSideAny, mlir::Value numberTag, mlir::Value stringSideAny) {
+            auto numVal = unboxNumericAsF64(numberSideAny, numberTag);
+            auto strVal = al.UnboxAny(stringSideAny, th.getPtrType());
+            auto coercedNum = castLogic.cast(strVal, stringTy, numberTy);
+            return compareAsNumber(numVal, coercedNum);
+        };
+
+        // boolean <-> number: coerce the boolean side to 0.0/1.0
+        auto booleanNumberCase = [&](mlir::Value booleanSideAny, mlir::Value numberSideAny, mlir::Value numberTag) {
+            auto boolVal = al.UnboxAny(booleanSideAny, th.getLLVMBoolType());
+            auto numVal = unboxNumericAsF64(numberSideAny, numberTag);
+            auto coercedNum = castLogic.cast(boolVal, booleanTy, numberTy);
+            return compareAsNumber(coercedNum, numVal);
+        };
+
+        // boolean <-> string: coerce the boolean side to "true"/"false"
+        auto booleanStringCase = [&](mlir::Value booleanSideAny, mlir::Value stringSideAny) {
+            auto boolVal = al.UnboxAny(booleanSideAny, th.getLLVMBoolType());
+            auto strVal = al.UnboxAny(stringSideAny, th.getPtrType());
+            auto coercedStr = castLogic.cast(boolVal, booleanTy, stringTy);
+            return compareAsString(coercedStr, strVal);
+        };
+
+        auto tag1IsNumber = isNumericTag(tag1);
+        auto tag1IsString = isTag(tag1, "string");
+        auto tag1IsBoolean = isTag(tag1, "boolean");
+        auto tag2IsNumber = isNumericTag(tag2);
+        auto tag2IsString = isTag(tag2, "string");
+        auto tag2IsBoolean = isTag(tag2, "boolean");
+
+        auto op1IsNumberOp2IsString = rewriter.create<LLVM::AndOp>(loc, tag1IsNumber, tag2IsString);
+        auto op1IsStringOp2IsNumber = rewriter.create<LLVM::AndOp>(loc, tag1IsString, tag2IsNumber);
+        auto op1IsBooleanOp2IsNumber = rewriter.create<LLVM::AndOp>(loc, tag1IsBoolean, tag2IsNumber);
+        auto op1IsNumberOp2IsBoolean = rewriter.create<LLVM::AndOp>(loc, tag1IsNumber, tag2IsBoolean);
+        auto op1IsBooleanOp2IsString = rewriter.create<LLVM::AndOp>(loc, tag1IsBoolean, tag2IsString);
+        auto op1IsStringOp2IsBoolean = rewriter.create<LLVM::AndOp>(loc, tag1IsString, tag2IsBoolean);
+
+        return nestableConditional(
+            loc, th.getLLVMBoolType(), rewriter, op1IsNumberOp2IsString,
+            [&](ConversionPatternRewriter &, Location loc) { return numberStringCase(op1, tag1, op2); },
+            [&](ConversionPatternRewriter &rewriter, Location loc) {
+                return nestableConditional(
+                    loc, th.getLLVMBoolType(), rewriter, op1IsStringOp2IsNumber,
+                    [&](ConversionPatternRewriter &, Location loc) { return numberStringCase(op2, tag2, op1); },
+                    [&](ConversionPatternRewriter &rewriter, Location loc) {
+                        return nestableConditional(
+                            loc, th.getLLVMBoolType(), rewriter, op1IsBooleanOp2IsNumber,
+                            [&](ConversionPatternRewriter &, Location loc) { return booleanNumberCase(op1, op2, tag2); },
+                            [&](ConversionPatternRewriter &rewriter, Location loc) {
+                                return nestableConditional(
+                                    loc, th.getLLVMBoolType(), rewriter, op1IsNumberOp2IsBoolean,
+                                    [&](ConversionPatternRewriter &, Location loc) { return booleanNumberCase(op2, op1, tag1); },
+                                    [&](ConversionPatternRewriter &rewriter, Location loc) {
+                                        return nestableConditional(
+                                            loc, th.getLLVMBoolType(), rewriter, op1IsBooleanOp2IsString,
+                                            [&](ConversionPatternRewriter &, Location loc) { return booleanStringCase(op1, op2); },
+                                            [&](ConversionPatternRewriter &rewriter, Location loc) {
+                                                return nestableConditional(
+                                                    loc, th.getLLVMBoolType(), rewriter, op1IsStringOp2IsBoolean,
+                                                    [&](ConversionPatternRewriter &, Location loc) { return booleanStringCase(op2, op1); },
+                                                    [&](ConversionPatternRewriter &rewriter, Location loc) {
+                                                        // no known coercion: kinds differ and are unequal
+                                                        return (mlir::Value)clh.createI1ConstantOf(!isEquals);
+                                                    });
+                                            });
+                                    });
+                            });
+                    });
+            });
+    }
+
+    LogicalResult matchAndRewrite(mlir_ts::AnyCompareOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+        CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
+
+        auto loc = op->getLoc();
+        auto code = (SyntaxKind)op.getCode();
+
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+
+        auto op1 = transformed.getOp1();
+        auto op2 = transformed.getOp2();
+
+        // only loose equality (==/!=) coerces across differing payload kinds; strict
+        // equality and ordering compare the underlying bytes as before.
+        if (code != SyntaxKind::EqualsEqualsToken && code != SyntaxKind::ExclamationEqualsToken)
+        {
+            auto result = sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter);
+            rewriter.replaceOp(op, result);
+            return success();
+        }
+
+        auto tag1 = al.getTypeOfAny(op1);
+        auto tag2 = al.getTypeOfAny(op2);
+
+        auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
+        auto tagCmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag1, tag2});
+        auto const0 = clh.createI32ConstantOf(0);
+        auto tagsEqual = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, tagCmp.getResult(), const0);
+
+        auto result = nestableConditional(
+            loc, th.getLLVMBoolType(), rewriter, tagsEqual,
+            [&](ConversionPatternRewriter &rewriter, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
+            [&](ConversionPatternRewriter &rewriter, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
 
         rewriter.replaceOp(op, result);
 
