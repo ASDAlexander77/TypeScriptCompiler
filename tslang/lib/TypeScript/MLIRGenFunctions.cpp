@@ -528,11 +528,9 @@ namespace mlirgen
         return std::get<0>(res);
     }
 
-    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> MLIRGenImpl::mlirGenFunctionGenerator(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    FunctionLikeDeclarationBase MLIRGenImpl::buildGeneratorWrapperDeclaration(
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location)
     {
-        auto location = loc(functionLikeDeclarationBaseAST);
-
         auto fixThisReference = functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration;
         if (functionLikeDeclarationBaseAST->parameters.size() > 0)
         {
@@ -653,15 +651,14 @@ namespace mlirgen
 
             // copy location info, to fix issue with names of anonymous functions
             methodOp->pos = functionLikeDeclarationBaseAST->pos;
-            methodOp->_end = functionLikeDeclarationBaseAST->_end;        
+            methodOp->_end = functionLikeDeclarationBaseAST->_end;
 
             // to ensure correct full name
             methodOp->parent = functionLikeDeclarationBaseAST->parent;
 
             LLVM_DEBUG(printDebug(methodOp););
 
-            auto genMethodOp = mlirGenFunctionLikeDeclaration(methodOp, genContext);
-            return genMethodOp;            
+            return methodOp;
         }
         else
         {
@@ -672,13 +669,20 @@ namespace mlirgen
 
             // copy location info, to fix issue with names of anonymous functions
             funcOp->pos = functionLikeDeclarationBaseAST->pos;
-            funcOp->_end = functionLikeDeclarationBaseAST->_end;        
+            funcOp->_end = functionLikeDeclarationBaseAST->_end;
 
             LLVM_DEBUG(printDebug(funcOp););
 
-            auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
-            return genFuncOp;
+            return funcOp;
         }
+    }
+
+    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> MLIRGenImpl::mlirGenFunctionGenerator(
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    {
+        auto location = loc(functionLikeDeclarationBaseAST);
+        auto wrapperDecl = buildGeneratorWrapperDeclaration(functionLikeDeclarationBaseAST, location);
+        return mlirGenFunctionLikeDeclaration(wrapperDecl, genContext);
     }
 
     bool MLIRGenImpl::registerFunctionOp(FunctionPrototypeDOM::TypePtr funcProto, mlir_ts::FuncOp funcOp)
