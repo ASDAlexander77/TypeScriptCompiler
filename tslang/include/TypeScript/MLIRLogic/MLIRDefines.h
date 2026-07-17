@@ -46,6 +46,9 @@
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
+// see MLIRGenImpl::boundRefMaterializedCache
+using BoundRefCacheScopeT = llvm::ScopedHashTableScope<mlir::Value, mlir::Value>;
+
 typedef std::pair<mlir::Type, StringRef> SafeTypeKeyType;
 using SafeTypesMapScopeT = llvm::ScopedHashTableScope<SafeTypeKeyType, mlir::Value>;
 

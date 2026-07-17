@@ -1172,6 +1172,7 @@ namespace mlirgen
         }
 
         SymbolTableScopeT varScope(symbolTable);
+        BoundRefCacheScopeT boundRefCacheScope(boundRefMaterializedCache);
 
         auto location = loc(functionLikeDeclarationBaseAST);
 
@@ -1282,6 +1283,7 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         SymbolTableScopeT varScope(symbolTable);
+        BoundRefCacheScopeT boundRefCacheScope(boundRefMaterializedCache);
 
         SmallVector<mlir::NamedAttribute> attrs;
         processFunctionAttributes(attrs, genContext);
