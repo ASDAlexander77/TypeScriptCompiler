@@ -1806,6 +1806,13 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext);
 
+    // Builds the synthetic non-generator declaration (method/function whose body just returns the
+    // generator wrapper object literal with its `next` method) that mlirGenFunctionGenerator generates
+    // from. Factored out so callers that only need the correctly-typed prototype (e.g. object-literal
+    // method prototype registration) can reuse it without running full body codegen twice.
+    FunctionLikeDeclarationBase buildGeneratorWrapperDeclaration(
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Location location);
+
     std::pair<mlir::LogicalResult, std::string> registerGenericFunctionLike(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, bool ignoreFunctionArgsDetection,
         const GenContext &genContext)
@@ -7458,7 +7465,16 @@ class MLIRGenImpl
 
         funcLikeDecl->parent = oli.objectLiteral;
 
-        auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
+        // generator methods/properties must resolve to the generator wrapper type (the object with
+        // `.next()`, not the bare yielded-value tuple), same as mlirGenFunctionLikeDeclaration does for
+        // top-level function* and class generator methods; otherwise the field type registered here
+        // (used for the object literal's own type) is wrong and later access like `obj.gen().next()`
+        // fails to resolve.
+        auto protoDecl = funcLikeDecl->asteriskToken
+            ? buildGeneratorWrapperDeclaration(funcLikeDecl, loc(funcLikeDecl))
+            : funcLikeDecl;
+
+        auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(protoDecl, funcGenContext);
         if (mlir::failed(result) || !funcOp)
         {
             return mlir::failure();
