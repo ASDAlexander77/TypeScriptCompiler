@@ -3647,7 +3647,15 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        if (auto hasLength = evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
+        // the length-based numeric-index rewrite below only makes sense when the left
+        // side is actually a number (e.g. `i in arr`); a string-literal left side (e.g.
+        // `"length" in arr` or `"push" in arr`) must fall through to the general
+        // field-lookup path further down instead, otherwise we'd cast a string to an
+        // index/int type and generate invalid IR.
+        auto leftIsStringLiteral = binaryExpressionAST->left == SyntaxKind::StringLiteral
+            || binaryExpressionAST->left == SyntaxKind::NoSubstitutionTemplateLiteral;
+
+        if (!leftIsStringLiteral && evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
         {
             auto cond1 = nf.createBinaryExpression(
                 binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
@@ -4600,12 +4608,52 @@ class MLIRGenImpl
         return mlir::IntegerType::get(builder.getContext(), width, mlir::IntegerType::Signed);
     }
 
+    // JS/TS `===`/`!==` never coerce: operands of clearly different primitive kinds
+    // (boolean vs number, boolean vs string, string vs number) are simply unequal,
+    // full stop. Everything downstream of this function (adjustTypesForBinaryOp's
+    // numeric-sync loop, LogicalBinaryOpLowering) is shared with `==`/`!=`, which DO
+    // coerce, so without this check `1 === true` was being widened to a common
+    // numeric type just like `1 == true` and wrongly evaluated to `true`.
+    bool isDefinitelyMismatchedForStrictEquals(mlir::Type leftType, mlir::Type rightType)
+    {
+        auto isBoolean = [](mlir::Type type) { return isa<mlir_ts::BooleanType>(type); };
+        auto isString = [](mlir::Type type) { return isa<mlir_ts::StringType>(type); };
+        auto isNumeric = [](mlir::Type type) { return type.isIntOrIndexOrFloat() && !isa<mlir_ts::BooleanType>(type); };
+
+        auto leftIsBoolean = isBoolean(leftType);
+        auto rightIsBoolean = isBoolean(rightType);
+        auto leftIsString = isString(leftType);
+        auto rightIsString = isString(rightType);
+        auto leftIsNumeric = isNumeric(leftType);
+        auto rightIsNumeric = isNumeric(rightType);
+
+        // only fire when BOTH sides are known, unambiguous primitives (not any/union/
+        // object/etc., which may still need the general coercion/toPrimitive machinery)
+        auto leftIsKnownPrimitive = leftIsBoolean || leftIsString || leftIsNumeric;
+        auto rightIsKnownPrimitive = rightIsBoolean || rightIsString || rightIsNumeric;
+        if (!leftIsKnownPrimitive || !rightIsKnownPrimitive)
+        {
+            return false;
+        }
+
+        return (leftIsBoolean != rightIsBoolean) || (leftIsString != rightIsString) || (leftIsNumeric != rightIsNumeric);
+    }
+
     // TODO: review it, seems like big hack
     mlir::LogicalResult adjustTypesForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         if (opCode == SyntaxKind::CommaToken)
         {
+            return mlir::success();
+        }
+
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken)
+            && isDefinitelyMismatchedForStrictEquals(leftExpressionValue.getType(), rightExpressionValue.getType()))
+        {
+            auto result = opCode == SyntaxKind::ExclamationEqualsEqualsToken;
+            leftExpressionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(result));
+            rightExpressionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
             return mlir::success();
         }
 
@@ -4671,8 +4719,64 @@ class MLIRGenImpl
             }
 
             break;
-        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::PlusToken:
+        {
+            // this is exactly the untyped default: case below (left/right type sync,
+            // string-preferring) -- PlusToken used to fall through to it unconditionally.
+            // Preserved as-is so string concat (`"fo" + 1`) and ordinary numeric-literal
+            // widening (`numberParam + 1`) keep working exactly like before.
+            auto leftType = leftExpressionValue.getType();
+            if (isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+            {
+                leftType = rightExpressionValue.getType();
+                if (leftType != leftExpressionValue.getType())
+                {
+                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
+                }
+            }
+
+            auto rightType = rightExpressionValue.getType();
+            if (leftType != rightType)
+            {
+                CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
+            }
+
+            // additionally: when neither side is a string (so this isn't concat) and
+            // both sides already had the SAME boolean type, the sync above was a no-op
+            // (leftType == rightType already), so booleans reached
+            // ArithmeticBinaryOpLowering as raw i1 and wrapped (`true + true` -> false
+            // instead of 2). Widen them to number in that case.
+            if (!isa<mlir_ts::StringType>(leftExpressionValue.getType()) && !isa<mlir_ts::StringType>(rightExpressionValue.getType()))
+            {
+                if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                }
+
+                if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                }
+            }
+
+            break;
+        }
         case SyntaxKind::MinusToken:
+            // unlike PlusToken, MinusToken never does string concat, so it's safe to
+            // widen booleans here and then fall through to the same cross-type sync
+            // used by the other arithmetic/comparison operators below (e.g. `any - number`).
+            if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+            {
+                CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+            }
+
+            if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+            {
+                CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+            }
+
+            [[fallthrough]];
+        case SyntaxKind::AsteriskToken:
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
         case SyntaxKind::ExclamationEqualsToken:
