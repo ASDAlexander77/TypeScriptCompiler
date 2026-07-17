@@ -2275,6 +2275,8 @@ class MLIRTypeHelper
     {
         LLVM_DEBUG(llvm::dbgs() << "!! get type of field '" << fieldName << "' of '" << srcType << "'\n";);
 
+        srcType = stripLiteralType(srcType);
+
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
             auto index = constTupleType.getIndex(fieldName);

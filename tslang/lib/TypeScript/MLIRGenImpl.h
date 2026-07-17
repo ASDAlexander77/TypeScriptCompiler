@@ -3647,7 +3647,15 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        if (auto hasLength = evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
+        // the length-based numeric-index rewrite below only makes sense when the left
+        // side is actually a number (e.g. `i in arr`); a string-literal left side (e.g.
+        // `"length" in arr` or `"push" in arr`) must fall through to the general
+        // field-lookup path further down instead, otherwise we'd cast a string to an
+        // index/int type and generate invalid IR.
+        auto leftIsStringLiteral = binaryExpressionAST->left == SyntaxKind::StringLiteral
+            || binaryExpressionAST->left == SyntaxKind::NoSubstitutionTemplateLiteral;
+
+        if (!leftIsStringLiteral && evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
         {
             auto cond1 = nf.createBinaryExpression(
                 binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
