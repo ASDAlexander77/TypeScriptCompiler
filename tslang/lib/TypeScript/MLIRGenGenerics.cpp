@@ -167,6 +167,15 @@ namespace mlirgen
             return false;
         }
 
+        // boxed object literal (docs/object-literal-boxing-design.md): a generic argument
+        // like `{ methods: { m() {...} } }` now passes ObjectType for the method-bearing
+        // property, not a tuple directly -- look through its storage type so inference
+        // still matches, same as MLIRTypeHelper::getFields does for property access.
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(concreteType))
+        {
+            concreteType = objectType.getStorageType();
+        }
+
         if (auto typeTuple = dyn_cast<mlir_ts::TupleType>(concreteType))
         {
             return tryInferTupleFields(location, tempTuple, typeTuple, results, genContext);

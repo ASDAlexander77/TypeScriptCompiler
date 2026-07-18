@@ -879,6 +879,24 @@ namespace mlirgen
         {
             return mlirGenElementAccessTuple(location, expression, argumentExpression, constTupleType);
         }
+        else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(arrayType))
+        {
+            // boxed object literal (docs/object-literal-boxing-design.md): field access on
+            // the pointer already works via mlirGenPropertyAccessExpression's ObjectType
+            // case (cl.Object -> RefLogic), same recipe as the ClassType/InterfaceType
+            // cases below -- only computed string-key access (`obj[Symbol.x]`,
+            // `obj["field"]`) is supported, matching those cases.
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                if (isa<mlir::StringAttr>(attr))
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+            }
+
+            llvm_unreachable("not implemented (ElementAccessExpression)");
+        }
         else if (auto classType = dyn_cast<mlir_ts::ClassType>(arrayType))
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())

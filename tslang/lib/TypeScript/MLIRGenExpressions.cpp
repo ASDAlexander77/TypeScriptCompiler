@@ -1333,8 +1333,16 @@ namespace mlirgen
         auto constantVal =
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
 
+        // box any literal with a method/accessor as a reference-typed ObjectType, not just
+        // synthetic wrappers carrying the explicit flag (see docs/object-literal-boxing-design.md
+        // §3 gap 4): a method can only mutate its object through `this`, and predicting which
+        // methods actually do so is interprocedural/undecidable, so the sound structural
+        // approximation -- "has any bound-method field" -- is used instead. Keep the flag check
+        // too: it still documents intent for synthetic wrappers (e.g. the generator wrapper) and
+        // is redundant-but-harmless once such wrappers also have methods.
         auto boxAsObject =
-            (objectLiteral->internalFlags & InternalFlags::BoxAsObject) == InternalFlags::BoxAsObject;
+            (objectLiteral->internalFlags & InternalFlags::BoxAsObject) == InternalFlags::BoxAsObject ||
+            !oli.methodInfos.empty() || !oli.methodInfosWithCaptures.empty();
 
         if (oli.fieldsToSet.empty() && !boxAsObject)
         {
@@ -1343,16 +1351,15 @@ namespace mlirgen
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
 
-        mlir::Value tupleValue;
-        if (!oli.fieldsToSet.empty())
-        {
-            tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, oli.fieldsToSet, genContext);
-        }
-        else
-        {
-            CAST_A(castedValue, location, tupleType, constantVal, genContext);
-            tupleValue = castedValue;
-        }
+        // this branch is only reached when boxAsObject is true (see the early return above),
+        // so route it through mlirGenCreateTuple even with an empty fieldsToSet: it allocates
+        // storage and initializes it directly from constantVal, unlike the generic cast()
+        // pipeline (CAST_A) which re-reads every field individually -- for a method field that
+        // means reading a this-bound BoundFunctionType off the source const-tuple then casting
+        // it down to plain FunctionType, losing the binding ("losing this reference" warning)
+        // for a value that gets discarded anyway once boxed (the real `this` at call time comes
+        // from the boxed ObjectType pointer, not from this seed value).
+        mlir::Value tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, oli.fieldsToSet, genContext);
 
         if (!boxAsObject)
         {
