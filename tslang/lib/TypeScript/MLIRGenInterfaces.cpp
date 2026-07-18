@@ -213,11 +213,18 @@ namespace mlirgen
                 }
 
                 // match VTable
-                // 1) clone vtable
+                // 1) clone vtable onto the GC heap (NOT a stack VariableOp): this per-object
+                // patched vtable is pointed at by the resulting interface value, and that
+                // interface can be stored into a global whose initializer lowers to a
+                // __cctor function -- a stack alloca would dangle once the __cctor returns,
+                // crashing on the first field/method access through the interface. Heap
+                // allocation puts the vtable on the same footing as the object itself
+                // (already `NewOp`-allocated). See docs/object-literal-boxing-design.md.
                 auto vtableType = mlir::cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(globalVTableRefValue.getType()).getElementType());
                 auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, globalVTableRefValue);
-                auto varVTable = builder.create<mlir_ts::VariableOp>(location, globalVTableRefValue.getType(), valueVTable, 
-                    builder.getBoolAttr(false), builder.getIndexAttr(0));
+                auto heapVTable = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(vtableType), builder.getBoolAttr(false));
+                builder.create<mlir_ts::StoreOp>(location, valueVTable, heapVTable);
+                auto varVTable = builder.create<mlir_ts::CastOp>(location, globalVTableRefValue.getType(), heapVTable);
 
                 for (auto& method : newInterfacePtr->methods)
                 {

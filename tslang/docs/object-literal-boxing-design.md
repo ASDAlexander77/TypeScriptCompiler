@@ -226,6 +226,28 @@ Things that consume the literal's *value type* and must tolerate
 
 ## 6. Risks / open items
 
+- **FIXED (2026-07-19): global interface from a method-bearing literal**. A
+  top-level binding whose declared type is an interface, initialized from an
+  object literal with a method (`const c: Counter = { count: 0, inc(){...} }`),
+  crashed the JIT (0xC0000005) on first access. Casting the literal to the
+  interface (`mlirGenCreateInterfaceVTableForObject`) builds a *per-object*
+  vtable patched with the method's function pointer; that vtable was a stack
+  `VariableOp` (alloca). A local binding's alloca outlives its uses, but a
+  global binding's initializer lowers to a `__cctor` function, so the alloca
+  dangled once `__cctor` returned and the interface's vtable pointer
+  referenced freed stack memory. Fix: heap-allocate the patched vtable
+  (`NewOp` + `StoreOp` + `CastOp`), same footing as the object it describes.
+  Regression test `00interface_global_method.ts`. Note the method-*less*
+  interface case (`Point`) was always fine — it points `NewInterface`
+  directly at the shared global vtable, no per-object patched copy.
+- **STILL OPEN: cross-module (`-shared`) method-bearing interface**. Exporting
+  such a global and reading it from an importing module still crashes the JIT
+  (null function-pointer call in the importer's `__mlir_gctors`); the
+  `-shared` AOT path has its own separate issues too. This is a distinct
+  problem in the shared-lib DLL-load / `gctors-as-method` symbol-resolution
+  subsystem, not the vtable-lifetime bug fixed above (which was
+  single-module). Reproduces via the `export/import_object_literal_with_interface.ts`
+  pair with an added method-bearing `export var`. Not yet root-caused.
 - **Annotated tuple types re-open a small value-semantics window**: after
   gap 3, `const x: { m(): void } = { m() {} }` copies the object into a
   tuple at the annotation boundary, losing aliasing for that binding. The
