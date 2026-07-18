@@ -171,7 +171,16 @@ Things that consume the literal's *value type* and must tolerate
 - **Cross-module export/import** of a literal with methods
   (`export_object_literal_with_interface.ts` + the import twins): the
   declaration/type must round-trip as `ObjectType`. This is the least-proven
-  area — treat these four tests as first-class targets.
+  area — treat these four tests as first-class targets. **CONFIRMED BROKEN**
+  (2026-07-18, not yet fixed): exporting `export var counter: Counter =
+  { count: 0, inc() {...} }` and reading `A.counter.count` from the
+  importing module crashes the JIT (0xC0000005) — plain field access is
+  enough, no method call needed. AOT (`-shared`, two-DLL lld link) doesn't
+  crash but doesn't complete either. Root-cause hypothesis: the interface's
+  vtable global has `private` linkage, which may not survive the
+  `--shared-libs=...dll` boundary the importing JIT session loads against.
+  See `cross-module-boxed-object-crash` memory for the full repro and
+  narrowing already done. Not committed as a test since it crashes CI.
 - `main()`-return / top-level: `00object_global.ts`,
   `00global_const_object_method.ts` (the #246 repro — must now take the
   NewOp-triggered constructor path instead of the bound-method special case).
