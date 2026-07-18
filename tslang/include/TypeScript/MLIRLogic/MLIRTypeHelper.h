@@ -2214,9 +2214,15 @@ class MLIRTypeHelper
             for (auto &fieldInfo : srcClassStorageType.getFields())
             {
                 destTupleFields.push_back(fieldInfo);
-            }       
-            
-            return mlir::success();            
+            }
+
+            return mlir::success();
+        }
+        else if (auto srcObjectType = dyn_cast<mlir_ts::ObjectType>(srcType))
+        {
+            // boxed object literal (see docs/object-literal-boxing-design.md): storage type
+            // is the tuple/const-tuple it wraps, so look through and reuse that logic.
+            return getFields(srcObjectType.getStorageType(), destTupleFields, noError);
         }
         else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(srcType))
         {

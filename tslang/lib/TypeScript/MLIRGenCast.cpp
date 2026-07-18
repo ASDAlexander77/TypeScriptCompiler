@@ -919,6 +919,39 @@ namespace mlirgen
             }
         }
 
+        // boxed object (see docs/object-literal-boxing-design.md) to tuple: unbox the pointer
+        // (reverse of the NewOp+StoreOp+CastOp boxing recipe) then reuse tuple-to-tuple casting.
+        // This is a copy -- the destination tuple/const-tuple no longer aliases the boxed object.
+        if (auto srcObjectType = dyn_cast<mlir_ts::ObjectType>(valueType))
+        {
+            if (isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type))
+            {
+                // storage type is whatever was boxed (tuple/const-tuple); normalize to a
+                // mutable TupleType, both for the load and for castTupleToTuple's src param.
+                auto srcTupleType = mlir::cast<mlir_ts::TupleType>(
+                    mth.convertConstTupleTypeToTupleType(srcObjectType.getStorageType()));
+
+                // RefType (not ValueRefType -- PropertyRefOp's operand is restricted to
+                // AnyStructRefLike, which ValueRefType is not part of); mapTupleToFields
+                // recovers this ref straight back from the LoadOp below for by-field access.
+                auto refType = mlir_ts::RefType::get(srcTupleType);
+                auto valueAddr = builder.create<mlir_ts::CastOp>(location, refType, value);
+                auto unboxedTuple = builder.create<mlir_ts::LoadOp>(location, srcTupleType, valueAddr);
+
+                ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+                if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+                {
+                    fields = tupleType.getFields();
+                }
+                else
+                {
+                    fields = mlir::cast<mlir_ts::ConstTupleType>(type).getFields();
+                }
+
+                return castTupleToTuple(location, unboxedTuple, srcTupleType, fields, genContext);
+            }
+        }
+
         return std::nullopt;
     }
 
