@@ -1,11 +1,72 @@
 # Object literals with methods as reference types (`ObjectType`): design
 
-Status: **proposed** — generalizes the generator-wrapper boxing of PR #245
-(`docs/generator-object-wrapper-design.md`) from "literals carrying the
-`BoxAsObject` flag" to **every object literal that has at least one method or
-accessor**. Pure-data literals (`{ x: 1, y: 2 }`) deliberately stay value
-tuples. Follows the same investigate-first format; all anchors below verified
-by code inspection on main@172e013b.
+Status: **PR A merged (#248, main@9a7bd71e); PR B implemented, full suite
+green (353/353 JIT + 357/357 AOT)** — generalizes the generator-wrapper
+boxing of PR #245 (`docs/generator-object-wrapper-design.md`) from "literals
+carrying the `BoxAsObject` flag" to **every object literal that has at least
+one method or accessor**. Pure-data literals (`{ x: 1, y: 2 }`) deliberately
+stay value tuples. Follows the same investigate-first format; all anchors
+below verified by code inspection on main@172e013b.
+
+## PR B implementation notes (the flip + fallout)
+
+The flip itself (§3 gap 4) was a 2-line change
+(`MLIRGenExpressions.cpp:1343-1345`), but it exercises `ObjectType` through
+every code path that previously only ever saw tuples for a literal with
+methods — each missing `ObjectType` case in those paths surfaced as a crash,
+a wrong-answer, or a `never`-typed variable. Five fixes were needed beyond
+the flip itself, all following the same shape as PR A's gaps (an existing
+tuple-shaped dispatch missing an `ObjectType` case that looks through to
+`getStorageType()`):
+
+1. **Boxing seed value**: routing the `boxAsObject` branch's initial
+   const-tuple-to-mutable-tuple step through `mlirGenCreateTuple` (which
+   allocates + stores directly) instead of the generic `CAST_A` pipeline
+   (which re-reads every field, including method fields, individually) —
+   the latter triggered a spurious-but-harmless "losing this reference"
+   warning on every boxed literal, since it read a `this`-bound method value
+   off the source const-tuple only to immediately discard it.
+   (`MLIRGenExpressions.cpp:1352-1360`.)
+2. **Accessor get/set on a pointer operand**: `TupleGetSetAccessor`
+   (`MLIRCodeLogic.h`, shared by `Tuple()` for value tuples and `RefLogic()`
+   for pointers/objects) unconditionally used `ExtractPropertyOp`, whose
+   operand is restricted to value-typed `AnyStructLike` — not
+   `ObjectType`/`RefType`. Needed a `PropertyRefOp`+`LoadOp` branch for
+   ref-like operands, mirroring `RefLogic`'s own direct-field-access code
+   right below it. Root-caused via MLIR dump comparison, not guesswork: the
+   verifier error named the exact operand-type constraint.
+3. **`castObjectToInterface` missing the field-coercion fallback**:
+   `castTupleToInterface` has a "clone with interface's field types then box"
+   fallback for e.g. an inferred `si32` field vs. an interface declaring
+   `number` — necessary because that fallback only fires from
+   `castTupleToInterface`, which a literal already boxed to `ObjectType`
+   never reaches (PR A's dispatcher routes `ObjectType` straight to
+   `castObjectToInterface`). Duplicated the same clone-and-coerce logic
+   there, operating on the object's storage type. (`MLIRGenCast.cpp`.)
+4. **Element access** (`obj[Symbol.x]`, `obj["field"]`) had no `ObjectType`
+   case in `mlirGenElementAccess`'s dispatcher at all (`llvm_unreachable`
+   fallback) — added one that delegates to `mlirGenPropertyAccessExpression`
+   for a constant string/symbol key, same as the `ClassType`/`InterfaceType`
+   cases already there. (`MLIRGenAccessCall.cpp`.)
+5. **Generic intersection-type return values** (`D & M` where `M` infers to
+   a method-bearing literal's `ObjectType`): the tuple-merge loop inside
+   `getIntersectionType(IntersectionTypeNode, ...)` had no `ObjectType` case
+   and silently returned `NeverType` for one, breaking any generic function
+   returning an intersection that includes a boxed argument type. Also
+   generalized `tryInferTuple` (generic parameter inference) the same way,
+   though that one turned out not to be on the failing path for the actual
+   regression test — kept anyway since it's the same latent gap.
+   (`MLIRGenTypes.cpp`, `MLIRGenGenerics.cpp`.)
+
+None of these were guessed — each was root-caused via a crash/error message
+or an MLIR/LLVM IR dump diff against the pre-flip baseline (`git stash`).
+One red herring debugged and ruled out: an accessor (`get`/`set`) whose
+backing field infers `si32` but whose declared parameter type is `number`
+corrupts the write — reproduces identically on unmodified pre-PR-B `main`,
+so it's a pre-existing, unrelated bug, not something this change caused.
+Documented as a known limitation in `00object_ref_semantics.ts` (worked
+around there by using a float literal) rather than fixed, since it's out of
+scope for the boxing flip.
 
 ## 1. Goal and rationale
 
@@ -116,18 +177,20 @@ Things that consume the literal's *value type* and must tolerate
 
 ## 5. Staged PR plan (small, squash-merged, per the established workflow)
 
-1. **PR A — infrastructure, no behavior change**: gaps 1–3. Test via
-   generator objects, which are already boxed: spread a generator object,
-   `getFields`-driven paths on it, annotated-tuple assignment from one.
-   Full suite must stay 350/354 green.
-2. **PR B — the flip**: gap 4 + regression tests. New test
-   `00object_ref_semantics.ts`: alias-mutation via second binding
-   (`const b = a; b.inc(); a.get()`), parameter passing, closure capture,
-   array element, object nested in object, accessor mutating `this`,
-   global `const` literal with mutating method (generalizes the #246 repro),
-   conditional-expression merge of two same-shape literals. Then the known
-   fragile set (`00disposable*`, `00spread`, `01symbol`, generator suite) and
-   full ctest.
+1. **PR A — infrastructure, no behavior change** (#248, merged): gaps 1–3.
+   Test via generator objects, which are already boxed: spread a generator
+   object, `getFields`-driven paths on it, annotated-tuple assignment from
+   one. 352/352 JIT + 356/356 AOT green.
+2. **PR B — the flip** (implemented): gap 4 + regression tests, plus five
+   more `ObjectType`-look-through gaps discovered by actually running the
+   flip (see "PR B implementation notes" above — accessor get/set, interface
+   cast field coercion, element access, generic intersection-type merge,
+   generic parameter inference). New test `00object_ref_semantics.ts`:
+   alias-mutation via second binding (`const b = a; b.inc(); a.get()`),
+   parameter passing, closure capture, array element, object nested in
+   object, accessor mutating `this`, global `const` literal with mutating
+   method (generalizes the #246 repro), conditional-expression merge of two
+   same-shape literals. Full suite green: 353/353 JIT + 357/357 AOT.
 3. **PR C — cleanup** (only after B is green on main): remove
    `needsIdentityStorage` (`MLIRGenImpl.h:788-794`,
    `MLIRGenVariables.cpp:102-113`), `boundRefMaterializedCache`

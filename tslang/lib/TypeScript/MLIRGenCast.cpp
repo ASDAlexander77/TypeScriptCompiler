@@ -1624,16 +1624,61 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
     {
-        auto result = mlirGenCreateInterfaceVTableForObject(location, in, objType, interfaceInfo, genContext);
+        auto inEffective = in;
+        auto effectiveObjType = objType;
+
+        // same field-type-coercion fallback as castTupleToInterface (e.g. a literal
+        // integer field inferred as si32 vs an interface declaring `number`): an
+        // object literal with methods is boxed as ObjectType before ever reaching
+        // castTupleToInterface (see docs/object-literal-boxing-design.md), so that
+        // cast's clone-and-coerce step must be duplicated here rather than relying
+        // on falling through to it.
+        if (auto storageTuple = dyn_cast<mlir_ts::TupleType>(objType.getStorageType()))
+        {
+            if (mlir::failed(mth.canCastTupleToInterface(location, storageTuple, interfaceInfo, true)))
+            {
+                SmallVector<mlir_ts::FieldInfo> fields;
+                if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+                {
+                    return mlir::failure();
+                }
+
+                // append all fields from original tuple
+                for (auto origField : storageTuple.getFields()) {
+                    if (std::find_if(
+                        fields.begin(),
+                        fields.end(),
+                        [&] (auto& item) {
+                            return item.id == origField.id;
+                        }) == fields.end())
+                    {
+                        fields.push_back(origField);
+                    }
+                }
+
+                auto newInterfaceTupleType = getTupleType(fields);
+
+                CAST_A(unboxed, location, newInterfaceTupleType, in, genContext);
+
+                auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(newInterfaceTupleType), builder.getBoolAttr(false));
+                builder.create<mlir_ts::StoreOp>(location, unboxed, valueAddr);
+                effectiveObjType = mlir_ts::ObjectType::get(newInterfaceTupleType);
+                inEffective = builder.create<mlir_ts::CastOp>(location, effectiveObjType, valueAddr);
+
+                emitWarning(location, "") << "Cloned object is used. Ensure all types are matching to interface: " << interfaceInfo->fullName;
+            }
+        }
+
+        auto result = mlirGenCreateInterfaceVTableForObject(location, inEffective, effectiveObjType, interfaceInfo, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto createdInterfaceVTableForObject = V(result);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                 << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
 
-        return V(builder.create<mlir_ts::NewInterfaceOp>(location, 
-            mlir::TypeRange{interfaceInfo->interfaceType}, in, createdInterfaceVTableForObject));
-    }    
+        return V(builder.create<mlir_ts::NewInterfaceOp>(location,
+            mlir::TypeRange{interfaceInfo->interfaceType}, inEffective, createdInterfaceVTableForObject));
+    }
 
     mlir_ts::CreateBoundFunctionOp MLIRGenImpl::createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction)
     {

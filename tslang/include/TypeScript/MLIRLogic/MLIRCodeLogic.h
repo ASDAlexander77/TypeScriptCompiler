@@ -1334,47 +1334,88 @@ class MLIRPropertyAccessCodeLogic
                 return mlir::failure();
             }
 
+            // `expression` is pointer-like (ObjectType, or a Ref/BoundRef reached via
+            // RefLogic) when this accessor lookup came from a boxed object literal
+            // (docs/object-literal-boxing-design.md) rather than a value-typed tuple:
+            // ExtractPropertyOp's operand is restricted to AnyStructLike (value tuples/
+            // storage types), which ObjectType/RefType are not part of, so such operands
+            // need PropertyRefOp + LoadOp instead (same recipe as RefLogic's own direct
+            // field access just above/below this helper).
+            auto expressionIsRefLike = isa<mlir_ts::ObjectType>(expression.getType())
+                || isa<mlir_ts::RefType>(expression.getType())
+                || isa<mlir_ts::BoundRefType>(expression.getType());
+
             mlir::Value getterValue;
             mlir::Value setterValue;
 
             if (getterIndex >= 0)
             {
-                getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterFuncType, expression, 
-                    MLIRHelper::getStructIndex(builder, getterIndex));
+                if (expressionIsRefLike)
+                {
+                    auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(getterFuncType),
+                        expression, builder.getI32IntegerAttr(getterIndex));
+                    getterValue = builder.create<mlir_ts::LoadOp>(location, getterFuncType, propRef);
+                }
+                else
+                {
+                    getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterFuncType, expression,
+                        MLIRHelper::getStructIndex(builder, getterIndex));
+                }
             }
             else
             {
-                getterValue = builder.create<mlir_ts::UndefOp>(location, 
+                getterValue = builder.create<mlir_ts::UndefOp>(location,
                     mlir_ts::FunctionType::get(
-                        builder.getContext(), 
-                        {mlir_ts::OpaqueType::get(builder.getContext())}, 
-                        {accessorResultType}, 
+                        builder.getContext(),
+                        {mlir_ts::OpaqueType::get(builder.getContext())},
+                        {accessorResultType},
                         false));
             }
 
             if (setterIndex >= 0)
             {
-                setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterFuncType, expression, 
-                    MLIRHelper::getStructIndex(builder, setterIndex));
+                if (expressionIsRefLike)
+                {
+                    auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(setterFuncType),
+                        expression, builder.getI32IntegerAttr(setterIndex));
+                    setterValue = builder.create<mlir_ts::LoadOp>(location, setterFuncType, propRef);
+                }
+                else
+                {
+                    setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterFuncType, expression,
+                        MLIRHelper::getStructIndex(builder, setterIndex));
+                }
             }
             else
             {
-                setterValue = builder.create<mlir_ts::UndefOp>(location, 
+                setterValue = builder.create<mlir_ts::UndefOp>(location,
                     mlir_ts::FunctionType::get(
-                        builder.getContext(), 
-                        {mlir_ts::OpaqueType::get(builder.getContext()), 
-                        accessorResultType}, 
-                        {}, 
+                        builder.getContext(),
+                        {mlir_ts::OpaqueType::get(builder.getContext()),
+                        accessorResultType},
+                        {},
                         false));
             }
 
-            auto refValue = getExprLoadRefValue(location);
-            if (!refValue)
+            mlir::Value refValue;
+            if (expressionIsRefLike)
             {
-                // allocate in stack
-                refValue = builder.create<mlir_ts::VariableOp>(
-                    location, mlir_ts::RefType::get(expression.getType()), expression);
-            }                    
+                // already a pointer (e.g. a boxed object literal's ObjectType) -- use it
+                // directly as `this`, same as RefLogic's own direct field access does;
+                // wrapping it in another VariableOp/RefType would add a spurious
+                // pointer-to-pointer indirection the accessor call doesn't expect.
+                refValue = expression;
+            }
+            else
+            {
+                refValue = getExprLoadRefValue(location);
+                if (!refValue)
+                {
+                    // allocate in stack
+                    refValue = builder.create<mlir_ts::VariableOp>(
+                        location, mlir_ts::RefType::get(expression.getType()), expression);
+                }
+            }
 
             auto thisValue = refValue;
 

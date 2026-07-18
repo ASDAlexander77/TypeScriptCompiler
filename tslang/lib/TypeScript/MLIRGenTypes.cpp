@@ -2946,7 +2946,15 @@ namespace mlirgen
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             mergeInterfaces(newInterfaceInfo, mlir::cast<mlir_ts::TupleType>(mth.removeConstType(constTupleType)), conditional);
-        }              
+        }
+        else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            // boxed object literal (docs/object-literal-boxing-design.md): a generic type
+            // parameter bound to a method-bearing literal (e.g. `M` in `D & M`) now resolves
+            // to ObjectType rather than a tuple directly -- look through its storage type,
+            // same as MLIRTypeHelper::getFields does for property access.
+            return processIntersectionType(newInterfaceInfo, objectType.getStorageType(), conditional);
+        }
         else if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto type : unionType.getTypes())
@@ -3071,6 +3079,22 @@ namespace mlirgen
                     for (auto field : constTupleType.getFields())
                     {
                         typesForNewTuple.push_back(field);
+                    }
+                }
+                else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
+                {
+                    // boxed object literal (docs/object-literal-boxing-design.md): a generic
+                    // type parameter bound to a method-bearing literal (e.g. M in D & M) now
+                    // resolves to ObjectType rather than a tuple directly -- look through its
+                    // storage type, same as MLIRTypeHelper::getFields does for property access.
+                    allTupleTypesConst = false;
+                    SmallVector<mlir_ts::FieldInfo> objectFields;
+                    if (mlir::succeeded(mth.getFields(objectType, objectFields)))
+                    {
+                        for (auto field : objectFields)
+                        {
+                            typesForNewTuple.push_back(field);
+                        }
                     }
                 }
                 else if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
