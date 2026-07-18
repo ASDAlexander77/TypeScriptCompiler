@@ -22,8 +22,7 @@ function makeRangeIterator1(start: int, end: int, step: int) {
 }
 
 function main1() {
-    // DO NOT PUT CONST, otherwise you can't edit
-    let it = makeRangeIterator1(1, 10, 2);
+    const it = makeRangeIterator1(1, 10, 2);
 
     let count = 0;
     let result = it.next();
@@ -60,8 +59,7 @@ function makeRangeIterator2(start: int, end: int, step: int) {
 }
 
 function main2() {
-    // DO NOT PUT CONST, otherwise you can't edit
-    let it = makeRangeIterator2(1, 10, 2);
+    const it = makeRangeIterator2(1, 10, 2);
 
     let count = 0;
     let result = it.next();
@@ -98,8 +96,7 @@ function makeRangeIterator3(start = 0, end = 10000, step = 1) {
 }
 
 function main3() {
-    // DO NOT PUT CONST, otherwise you can't edit
-    let it = makeRangeIterator3(1, 10, 2);
+    const it = makeRangeIterator3(1, 10, 2);
 
     let count = 0;
     let result = it.next();
