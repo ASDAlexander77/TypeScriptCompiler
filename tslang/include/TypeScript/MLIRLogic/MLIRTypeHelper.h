@@ -1604,6 +1604,36 @@ class MLIRTypeHelper
         return false;
     }
 
+    template <typename T> bool hasBoundMethodFieldLogic(T type)
+    {
+        return llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) {
+            bool isBound = false;
+            isBoundReference(fi.type, isBound);
+            return isBound;
+        });
+    }
+
+    // true if `type` is a value-typed aggregate (tuple/const-tuple) with at least
+    // one bound-method field (e.g. the generator wrapper's `next`). Such a value
+    // has mutable state (advanced by calling the bound method) but, unlike
+    // class/array/object types, is NOT already pointer-like at the LLVM level --
+    // so a binding of this type needs real storage (an address) to let mutation
+    // be visible across property accesses / call sites, even when declared `const`.
+    bool hasBoundMethodField(mlir::Type type)
+    {
+        if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            return hasBoundMethodFieldLogic(constTuple);
+        }
+
+        if (auto tuple = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return hasBoundMethodFieldLogic(tuple);
+        }
+
+        return false;
+    }
+
     mlir::Type mergeIntTypes(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
     {
         found = false;

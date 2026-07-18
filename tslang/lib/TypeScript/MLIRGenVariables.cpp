@@ -102,6 +102,13 @@ namespace mlirgen
             if (variableDeclarationInfo.isConst) {
                 if (mlir::failed(variableDeclarationInfo.processConstRef(location, builder, genContext)))
                     return mlir::Type();
+
+                // a const binding that turns out to need identity storage (see
+                // processConstRef / hasBoundMethodField) falls through to the same
+                // real-storage path as `let` instead of staying a bare SSA value.
+                if (variableDeclarationInfo.needsIdentityStorage
+                    && mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
+                    return mlir::Type();
             } else if (mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
                 return mlir::Type();
         }
