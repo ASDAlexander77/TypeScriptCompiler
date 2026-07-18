@@ -1,7 +1,8 @@
 # Object literals with methods as reference types (`ObjectType`): design
 
-Status: **PR A merged (#248, main@9a7bd71e); PR B implemented, full suite
-green (353/353 JIT + 357/357 AOT)** — generalizes the generator-wrapper
+Status: **PR A merged (#248, main@9a7bd71e); PR B merged (#249,
+main@9f0d1a6a); PR C implemented (narrower than planned — see §5), full
+suite green (353/353 JIT + 357/357 AOT)** — generalizes the generator-wrapper
 boxing of PR #245 (`docs/generator-object-wrapper-design.md`) from "literals
 carrying the `BoxAsObject` flag" to **every object literal that has at least
 one method or accessor**. Pure-data literals (`{ x: 1, y: 2 }`) deliberately
@@ -191,13 +192,37 @@ Things that consume the literal's *value type* and must tolerate
    object, accessor mutating `this`, global `const` literal with mutating
    method (generalizes the #246 repro), conditional-expression merge of two
    same-shape literals. Full suite green: 353/353 JIT + 357/357 AOT.
-3. **PR C — cleanup** (only after B is green on main): remove
-   `needsIdentityStorage` (`MLIRGenImpl.h:788-794`,
-   `MLIRGenVariables.cpp:102-113`), `boundRefMaterializedCache`
-   (`MLIRGenImpl.h:10797+`), the #246 `isBoundMethodTupleConstant` check in
-   `GlobalOpLowering` (`LowerToLLVM.cpp:3696-3731`), and stale comments —
-   each removal proven dead by the flip, verified by full suite. Keeping
-   them through B preserves bisectability.
+3. **PR C — cleanup, narrower than originally planned** (implemented): the
+   assumption that `needsIdentityStorage` and `boundRefMaterializedCache`
+   become fully dead after the flip was **wrong** — verified empirically
+   (not by reasoning) via temporary `report_fatal_error` probes at
+   `hasBoundMethodField` and both `isBoundRef` call sites
+   (`MLIRCodeLogic.h`'s `Tuple()`/`TupleNoError()`), full suite rerun: 8 of
+   10 originally-regressed-then-fixed tests plus 2 more (`00question_question`,
+   `00type_aliases_in_generics`) still hit them. Root cause: the **annotated
+   tuple-type boundary** noted below in §6 is not just a documented
+   value-semantics limitation — the code path that makes it *work correctly*
+   (rather than crash) is exactly `isBoundReference`/`boundRefMaterializedCache`
+   in `Tuple()`. Whenever a boxed `ObjectType` literal is unboxed back into a
+   plain tuple to match a declared/inferred type (an annotated `const`, a
+   function parameter, an interface-cast fallback, a generic
+   intersection/parameter-inference result — anywhere PR A's gap-3 unboxing
+   cast or an equivalent fires), the resulting tuple's method field is still
+   *shaped* like a bound method (first input `ObjectType`) even though the
+   tuple itself is now a plain value. `Tuple()`'s `isBoundRef` branch is what
+   correctly materializes `this` for a call through that field. **Kept as
+   permanent, still-necessary machinery, not scheduled for removal.**
+
+   The one piece confirmed genuinely dead: the #246
+   `isBoundMethodTupleConstant` check in `GlobalOpLowering`
+   (`LowerToLLVM.cpp`, formerly ~3696-3731) — removed. Every boxed literal's
+   initializer region unconditionally contains a `NewOp` (the boxing
+   recipe), which the walk's existing `isa<mlir_ts::NewOp>(op)` case already
+   forces onto the global-constructor path; the bound-method-field check
+   never changed the outcome. Verified by running every test file directly
+   through the JIT with a diagnostic (non-fatal) probe at that specific call
+   site — zero hits across the full ~369-file test corpus — before removing
+   it for real and reconfirming 353/353 JIT + 357/357 AOT green.
 
 ## 6. Risks / open items
 
@@ -206,7 +231,10 @@ Things that consume the literal's *value type* and must tolerate
   tuple at the annotation boundary, losing aliasing for that binding. The
   eventual fix is in *type resolution* (map method-bearing type literals to
   `ObjectType`), which is a bigger, separate change — out of scope; document
-  the limitation in the test.
+  the limitation in the test. **This is also why `needsIdentityStorage` /
+  `boundRefMaterializedCache` can't be removed (§5 PR C)**: the unboxed
+  tuple's method field still has a bound-method *shape*, and that machinery
+  is what makes calling through it work correctly rather than crash.
 - **Function-expression / arrow fields** (`{ f: () => ... }`,
   `{ f: function () {...} }`) are plain fields, not `methodInfos` entries —
   they do not trigger boxing. Matches the "methods only" rule; TS's

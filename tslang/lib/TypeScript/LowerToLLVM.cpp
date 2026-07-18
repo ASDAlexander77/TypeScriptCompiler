@@ -3681,23 +3681,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        // A ConstantOp whose *TupleType/ConstTupleType result* has a bound-method
-        // field (e.g. a plain `const obj = { ..., method() {} }` at global scope)
-        // lowers its method field via LLVM::AddressOfOp + LLVM::InsertValueOp (see
-        // LLVMCodeHelper::getTupleFromArrayAttr) -- not valid inside a static LLVM
-        // global initializer region, only inside real code (a function), so such a
-        // global must go through the constructor path below. Deliberately narrower
-        // than "any ConstantOp whose attribute contains a FlatSymbolRefAttr": that
-        // broader check also caught MSVC RTTI/EH type-descriptor globals (e.g.
-        // `??_R0PEAD@8`, which reference the `type_info` vtable symbol) that are
-        // NOT mlir_ts tuple types and were already lowering correctly as static
-        // data -- forcing those through the constructor path broke JIT symbol
-        // materialization for the whole module.
-        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
-        auto isBoundMethodTupleConstant = [&](mlir_ts::ConstantOp constantOp) {
-            return mth.hasBoundMethodField(constantOp.getType());
-        };
-
         auto createAsGlobalConstructor = false;
         // TODO: we need to write correct attributes to Ops and detect which ops should be in GlobalConstructor
         auto visitorAllOps = [&](Operation *op) {
@@ -3720,13 +3703,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 if (isa<mlir_ts::ArrayType>(castType) || isa<mlir_ts::TupleType>(castType))
                 {
                    createAsGlobalConstructor = true;
-                }
-            }
-            else if (auto constantOp = dyn_cast<mlir_ts::ConstantOp>(op))
-            {
-                if (isBoundMethodTupleConstant(constantOp))
-                {
-                    createAsGlobalConstructor = true;
                 }
             }
 
