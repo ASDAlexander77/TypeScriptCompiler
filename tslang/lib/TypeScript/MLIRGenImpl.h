@@ -693,7 +693,8 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo(CompileOptions& compileOptions) : compileOptions(compileOptions), variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false},
+            needsIdentityStorage{false}, typeAndInitResolved{false}
         {
         };
 
@@ -784,6 +785,18 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // a const binding whose type is a value-typed aggregate with a bound-method
+            // field (e.g. a generator wrapper's `next`) has mutable state but no
+            // pointer-like representation -- it still needs real storage so that
+            // mutation through the bound method is visible across property accesses.
+            // See docs/const-let-storage-design.md.
+            MLIRTypeHelper mth(builder.getContext(), compileOptions);
+            needsIdentityStorage = mth.hasBoundMethodField(type);
+            if (needsIdentityStorage)
+            {
+                return mlir::success();
+            }
+
             if (varClass == VariableType::ConstRef)
             {
                 MLIRCodeLogic mcl(builder, compileOptions);
@@ -803,6 +816,18 @@ class MLIRGenImpl
 
         mlir::LogicalResult getVariableTypeAndInit(mlir::Location location, const GenContext &genContext)
         {
+            // `func` re-runs mlirGen on the initializer expression, which emits real
+            // ops (e.g. re-invokes a call expression) -- must not run twice. A const
+            // binding that turns out to need identity storage calls this once via
+            // processConstRef() and then again via createLocalVariable(); guard so
+            // the second call just reuses what's already resolved.
+            if (typeAndInitResolved)
+            {
+                return type ? mlir::success() : mlir::failure();
+            }
+
+            typeAndInitResolved = true;
+
             auto [type, init, typeProvided] = func(location, genContext);
             if (!type)
             {
@@ -837,7 +862,13 @@ class MLIRGenImpl
         VariableDeclarationDOM::TypePtr createVariableDeclaration(mlir::Location location, const GenContext &genContext)
         {
             auto varDecl = std::make_shared<VariableDeclarationDOM>(fullName, type, location);
-            if (!isConst || varClass == VariableType::ConstRef)
+            // readWriteAccess really means "this binding has real RefType storage that
+            // must be loaded through / can be captured by reference" -- it is not a
+            // const-reassignment check (this codebase doesn't enforce one at this
+            // layer). A const with identity storage (see needsIdentityStorage /
+            // hasBoundMethodField) has real storage exactly like `let`, so it needs
+            // the same load-through-ref and by-ref-capture treatment.
+            if (!isConst || varClass == VariableType::ConstRef || needsIdentityStorage)
             {
                 varDecl->setReadWriteAccess();
                 // TODO: HACK: to mark var as local and ignore when capturing
@@ -925,6 +956,8 @@ class MLIRGenImpl
         Select comdat;
         bool deleted;
         bool isUsed;
+        bool needsIdentityStorage;
+        bool typeAndInitResolved;
     };
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
