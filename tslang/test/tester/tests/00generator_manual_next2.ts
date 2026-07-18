@@ -35,17 +35,11 @@ function main1() {
     assert(rb.done);
 }
 
-// manually drain a generator entirely from inside a plain (non-generator) helper
-// function that receives it as a parameter.
-//
-// NOTE: driving the SAME iterator further from the caller after it has been passed
-// into and mutated by a helper function is a known, separate bug (not covered here):
-// generator objects have value semantics and are copied across a function-parameter
-// boundary, so .next() calls made inside the callee do not advance the caller's
-// binding. That is unlike a same-function const local (see main1/00generator_manual_next.ts),
-// which works via an alloca-caching mechanism scoped to a single function body. Fixing
-// this would require pass-by-reference semantics for generator-typed parameters at the
-// ABI level in mlirGenFunctionParams -- out of scope for this regression file.
+// manually drain a generator partially from inside a plain (non-generator) helper
+// function that receives it as a parameter, then continue driving the SAME iterator
+// from the caller. The generator wrapper is a reference type (heap-boxed ObjectType),
+// so the callee's .next() calls advance the caller's binding too -- regression
+// coverage for the former value-semantics copy bug at the function-parameter boundary.
 function drainTwo(it: ReturnType<typeof gen>) {
     const first = it.next();
     const second = it.next();
@@ -58,6 +52,31 @@ function main2() {
     const [v0, v1] = drainTwo(it);
     assert(v0 == 5);
     assert(v1 == 6);
+
+    // the caller's binding must observe the callee's two next() calls
+    let r = it.next();
+    assert(r.value == 7);
+    assert(!r.done);
+
+    r = it.next();
+    assert(r.value == 8);
+
+    r = it.next();
+    assert(r.done);
+
+    // plain assignment aliases the same generator state
+    const a = gen(0, 5);
+    const b = a;
+    a.next(); // consumes 0
+    const rb = b.next();
+    assert(rb.value == 1);
+
+    // closure capture aliases the same generator state
+    const it2 = gen(100, 3);
+    const drainOne = () => { it2.next(); };
+    drainOne();
+    const r2 = it2.next();
+    assert(r2.value == 101);
 }
 
 // generator closing over outer mutable state; manual .next() calls interleaved with

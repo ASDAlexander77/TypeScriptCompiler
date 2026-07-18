@@ -556,7 +556,11 @@ enum class InternalFlags : number
     DllExport = 1 << 7,
     DllImport = 1 << 8,
     IsPublic = 1 << 9,
-    GenerationProcessed = 1 << 10
+    GenerationProcessed = 1 << 10,
+    // object literal must be heap-boxed into a reference-typed ObjectType value
+    // instead of the default value-typed tuple (used for generator wrappers,
+    // whose mutable `step` state must be shared across aliases)
+    BoxAsObject = 1 << 11
 };
 
 ENUM_OPS(InternalFlags)
