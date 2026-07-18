@@ -7718,6 +7718,28 @@ class MLIRGenImpl
 
                             return mlir::success();
                         })
+                    .template Case<mlir_ts::ObjectType>(
+                        [&](auto objectType) {
+                            // boxed object literal (docs/object-literal-boxing-design.md): a
+                            // pointer, not a value tuple, so read each field via property access
+                            // (like ClassType) rather than DeconstructTupleOp (which needs a value).
+                            mlir::SmallVector<mlir_ts::FieldInfo> destFields;
+                            if (mlir::failed(mth.getFields(objectType, destFields)))
+                            {
+                                return mlir::failure();
+                            }
+
+                            for (auto fieldInfo : destFields)
+                            {
+                                MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
+                                mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext);
+                                if (mlir::failed(addObjectFieldInfo(location, oli, fieldInfo.id, propertyAccess, receiverElementType, genContext))) {
+                                    return mlir::failure();
+                                }
+                            }
+
+                            return mlir::success();
+                        })
                     .Default([&](auto type) {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment not implemented for type: " << type << "\n";);
                         llvm_unreachable("not implemented");
