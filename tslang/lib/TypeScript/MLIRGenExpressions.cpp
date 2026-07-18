@@ -1332,14 +1332,43 @@ namespace mlirgen
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), oli.values);
         auto constantVal =
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
-        if (oli.fieldsToSet.empty())
+
+        auto boxAsObject =
+            (objectLiteral->internalFlags & InternalFlags::BoxAsObject) == InternalFlags::BoxAsObject;
+
+        if (oli.fieldsToSet.empty() && !boxAsObject)
         {
             return V(constantVal);
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
-        auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, oli.fieldsToSet, genContext);
-        return V(tupleValue);
+
+        mlir::Value tupleValue;
+        if (!oli.fieldsToSet.empty())
+        {
+            tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, oli.fieldsToSet, genContext);
+        }
+        else
+        {
+            CAST_A(castedValue, location, tupleType, constantVal, genContext);
+            tupleValue = castedValue;
+        }
+
+        if (!boxAsObject)
+        {
+            return V(tupleValue);
+        }
+
+        // this literal has mutable identity (e.g. a generator wrapper whose `step`
+        // is advanced by next()) -- box it on the GC heap and hand out a
+        // reference-typed ObjectType so every alias (const binding, parameter,
+        // closure capture) shares the same state; same recipe as castTupleToInterface
+        auto objType = mlir_ts::ObjectType::get(tupleType);
+        auto valueAddr =
+            builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, tupleValue, valueAddr);
+        auto objValue = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
+        return V(objValue);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(Identifier identifier, const GenContext &genContext)

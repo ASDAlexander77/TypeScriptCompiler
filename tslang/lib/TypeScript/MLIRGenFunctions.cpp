@@ -616,6 +616,10 @@ namespace mlirgen
         generatorObjectProperties.push_back(nextMethodDecl);
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
+        // the generator object has mutable identity (`step` advanced by next());
+        // it must be a reference type so aliases (params, closures, const bindings)
+        // share state -- box it on the GC heap instead of the default value tuple
+        generatorObject->internalFlags |= InternalFlags::BoxAsObject;
 
         // copy location info, to fix issue with names of anonymous functions
         generatorObject->pos = functionLikeDeclarationBaseAST->pos;
