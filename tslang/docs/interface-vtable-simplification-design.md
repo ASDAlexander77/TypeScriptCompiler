@@ -333,3 +333,69 @@ Known risks: two-pass compilation (`Stages::Discovering`) — the side table
 must be populated consistently in whichever pass builds the vtable initializer;
 and `@dllimport` type reconstruction must keep *missing* from the side table
 (never a stale hit) so imported types deterministically take the fallback.
+
+### Test matrix follow-up (post-PR2, 2026-07-19)
+
+**Captures-bearing literal cast to an interface**: was genuinely uncovered:
+neither `00funcs_capture.ts` (captures an outer var in an object-literal
+method, but never cast to an interface) nor any of `00interface_object.ts` /
+`00interface_global_method.ts` / `00interface_object5.ts` (cast to an
+interface, but capture-free) combined both properties. Added
+`00interface_captures.ts`. Works correctly, confirming §3's PR2
+implementation note that captures need no fallback: `--emit=mlir` shows the
+vtable slot gets the constant `SymbolRefOp` (one lifted function shared by
+every `make(x)` call) and exactly one `ts.New` (boxing the literal, which
+carries the per-instance `.captured` field the shared function reads via
+`this`) — no second heap allocation for a patched vtable. 720/720 with this
+test added.
+
+**The imported-object-type fallback is not just untested - it's currently
+broken, two different ways, independent of this arc's changes.** Attempting
+to actually write the cross-module test surfaced two separate PRE-EXISTING
+bugs (reproduced on `main@1db740c6`, i.e. before this arc's changes were ever
+written into that call path in a way that matters here — both crash sites
+predate PR2 and are unrelated to `objectLiteralMethodSymbolsMap`):
+
+1. `export var counterObj = { count: 0, inc() {...} };` (no explicit type
+   annotation, inferred boxed `ObjectType`) exports its declaration as `let
+   counterObj : object;` — the cross-module declaration-serialization
+   mechanism has no way to write out an inferred object-literal's structural
+   shape, degrading to the bare `object` type. Reimporting and casting that
+   to an interface in the importer hits `mlir::cast<mlir_ts::TupleType>`
+   asserting false at `MLIRGenInterfaces.cpp:312`
+   (`mlirGenObjectVirtualTableDefinitionForInterface`), because
+   `objectType.getStorageType()` for the reconstructed bare-`object` type
+   isn't a `TupleType`/`ObjectStorageType` at all. Stack confirmed via
+   WinDbgX (`WinDbgX.exe -pv -p <pid> -c ".dump /ma <path>" -c "qd"` attached
+   to the process while it was blocked on the assert's message box, then
+   `~*k` on the dump) - crash path: `MLIRGenCast.cpp:1621/1672`
+   (`castObjectToInterface`) → `MLIRGenInterfaces.cpp:193`
+   (`mlirGenCreateInterfaceVTableForObject`) → `:312`.
+2. Giving the export an explicit structural type annotation
+   (`export var counterObj: { count: number; inc(): void } = {...}`) avoids
+   the `object`-degradation (the declaration now serializes as a real tuple
+   type, `let counterObj : [count:number, inc:() => void];`) but the literal
+   no longer gets boxed as `ObjectType` at all (plain tuple instead) — and
+   casting *that* cross-module tuple value to a method-bearing interface in
+   the importer hits `llvm_unreachable("review usage")` at
+   `CastLogicHelper.h:765`, a pre-existing dead/unimplemented branch in the
+   LOWERING-level cast dispatcher (`castLLVMTypes`'s "value to ref of value"
+   case).
+
+Neither is caused by or related to `objectLiteralMethodSymbolsMap`/§3's
+side table — both crash before any vtable-slot content is decided, in the
+object-type reconstruction and generic-cast layers respectively. This means
+casting a cross-module method-bearing object VALUE to an interface inside
+the importing module does not currently work at all, regardless of how it's
+exported. **Test not added** (a test that's expected to crash doesn't
+belong in the regression suite); the attempt and both crash sites are
+recorded here instead. This is a distinct, deeper bug area (object-literal
+type export/reimport across `@dllimport` boundaries, and the generic
+cross-type-system cast lowering) than the vtable-slot work in §3-§5, and
+is a candidate for its own separate investigation if it becomes worth
+fixing - not part of this arc. `export_object_literal_with_interface.ts`'s
+existing pattern (declare the export *already typed as the interface* at
+its definition site, `export var counter: Counter = {...}`, so the cast
+happens in the exporting module where a local `funcOp` genuinely exists)
+remains the only currently-working way to share a method-bearing object
+across modules, and is unaffected by any of the above.
