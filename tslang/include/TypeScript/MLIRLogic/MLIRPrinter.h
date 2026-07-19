@@ -33,6 +33,18 @@ class MLIRPrinter
         auto isVar = t.getIsVarArg();
         for (auto subType : t.getInputs())
         {
+            // an opaque/object-typed first input is an implicit `this` param
+            // (method-member convention, see isBoundReference) - it is not
+            // declarable in source syntax ("Opaque" doesn't parse back), so
+            // omit it like DeclarationPrinter::printParams omits `this`.
+            if (index == 0 &&
+                (isa<mlir_ts::OpaqueType>(subType) || isa<mlir_ts::ObjectType>(subType)))
+            {
+                index++;
+                size--;
+                continue;
+            }
+
             if (!first)
             {
                 out << ", ";

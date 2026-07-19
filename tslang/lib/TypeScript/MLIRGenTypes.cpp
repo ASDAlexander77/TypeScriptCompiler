@@ -2603,6 +2603,26 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
+                // a method member is called through the object, so its field type
+                // must declare an implicit `this` first param (opaque, same
+                // convention as interface method funcTypes): that is what makes
+                // property access create a bound reference (isBoundReference)
+                // binding the receiver. A bare this-less FunctionType here made
+                // the annotation cast drop `this` ("losing this reference") and
+                // later calls pass a garbage receiver.
+                if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+                {
+                    if (funcType.getNumInputs() == 0 ||
+                        !(isa<mlir_ts::OpaqueType>(funcType.getInput(0)) || isa<mlir_ts::ObjectType>(funcType.getInput(0))))
+                    {
+                        SmallVector<mlir::Type> inputs;
+                        inputs.push_back(mlir_ts::OpaqueType::get(builder.getContext()));
+                        inputs.append(funcType.getInputs().begin(), funcType.getInputs().end());
+                        type = mlir_ts::FunctionType::get(builder.getContext(), inputs, funcType.getResults(),
+                                                          funcType.isVarArg());
+                    }
+                }
+
                 types.push_back({TupleFieldName(methodSignature->name, genContext), type, false, mlir_ts::AccessLevel::Public});
             }
             else if (kind == SyntaxKind::ConstructSignature)
