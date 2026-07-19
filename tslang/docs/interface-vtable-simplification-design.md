@@ -399,3 +399,39 @@ its definition site, `export var counter: Counter = {...}`, so the cast
 happens in the exporting module where a local `funcOp` genuinely exists)
 remains the only currently-working way to share a method-bearing object
 across modules, and is unaffected by any of the above.
+
+### Bug 2 crash fixed, but a third bug blocks full correctness (2026-07-19)
+
+The `CastLogicHelper.h:765` `llvm_unreachable("review usage")` from bug 2
+above is fixed: `castTypeScriptTypes`'s `resFuncType`/`BoundFunctionType`
+branch (the "losing this reference" case, used when a bound method value is
+narrowed to a plain function pointer for a vtable slot) was missing the
+equivalent `HybridFunctionType` case - the actual type of a method field
+read off a cross-module reconstructed tuple. Added the missing branch,
+mirroring the existing `BoundFunctionType` one exactly (same `GetMethodOp`
+extraction, same "losing this reference" warning, same rationale: an
+interface vtable call re-supplies its own `thisVal`, so the value's own
+captured/bound `this` is safe to drop).
+
+This alone does **not** make the scenario work end-to-end. Verifying it
+with a real repro (`counterObj: {count,inc}` exported untyped-as-interface,
+cast to `Counter` in the importer, called via `-shared` compile+link+run,
+confirmed with WinDbg breakpoints on the actual call site and live
+register/memory inspection) surfaced a **third, independent, pre-existing
+bug**: the object clone built when casting the cross-module tuple VALUE to
+an interface (the one behind the "Cloned object is used" warning) writes
+its two fields in the wrong order - `inc`'s function pointer lands at
+offset 0 and `count` at offset 8, reversed from the tuple's actual declared
+layout (`struct<(f64, ptr)>`, count@0/inc@8) that the vtable's field-offset
+slot for `count` is computed against. Net effect at runtime: `c.inc()`
+doesn't crash, but silently corrupts the `inc` funcptr slot instead of
+incrementing `count` (confirmed: `rax`/`rcx` and `dq rcx L2` at the call
+site show `[thisVal+0] = <inc's real address>`, `[thisVal+8] = 0`, exactly
+backwards from what the vtable's `count` offset assumes). This is a
+different code path than `CastLogicHelper.h` - almost certainly in
+`MLIRGenCast.cpp`'s `castObjectToInterface` object-cloning logic (wherever
+the "Cloned object is used" warning is emitted) - and is a separate,
+not-yet-investigated bug. No regression test was added for the
+now-fixed crash (a full end-to-end test would still fail, on this new bug,
+not the old one); this section records the fix and the newly-found blocker
+for whoever picks up the clone-bug investigation next.
