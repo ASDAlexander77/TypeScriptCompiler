@@ -3048,6 +3048,13 @@ namespace mlirgen
 
             newInterfaceInfo->recalcOffsets();
 
+            // canonical (extends, then own methods, then own fields) slot numbering for the
+            // synthesized interface's OWN members - see InterfaceInfo::assignCanonicalVirtualIndexes
+            // (MLIRGenStore.h) and mlirGen(InterfaceDeclaration)'s equivalent call
+            // (MLIRGenInterfaces.cpp), which this construction path (intersection types) bypasses
+            // entirely, being a separate programmatic InterfaceInfo builder rather than an AST walk.
+            newInterfaceInfo->assignCanonicalVirtualIndexes();
+
             return newInterfaceInfo->interfaceType;
         }
 
@@ -3323,7 +3330,14 @@ namespace mlirgen
         // TODO: use it to merge with TupleType
         for (auto &item : src.getFields())
         {
-            dest->fields.push_back({item.id, item.type, item.isConditional || conditional, dest->getNextVTableMemberIndex()});
+            // InterfaceFieldInfo is {id, type, isConditional, interfacePosIndex, virtualIndex} - the
+            // getNextVTableMemberIndex() value belongs in virtualIndex, not interfacePosIndex (a
+            // separate, unrelated field only meaningful for methods - MLIRGenClasses.cpp). This
+            // mismatch previously left virtualIndex zero-initialized for every field merged in from
+            // an intersection type's own `{ ... }` member (e.g. `F1 & F2 & { c: number }`'s `c`),
+            // masked only because getVirtualTable() used to overwrite virtualIndex as a side effect
+            // of every cast - see docs/interface-vtable-simplification-design.md §4.
+            dest->fields.push_back({item.id, item.type, item.isConditional || conditional, 0, dest->getNextVTableMemberIndex()});
         }
 
         return mlir::success();

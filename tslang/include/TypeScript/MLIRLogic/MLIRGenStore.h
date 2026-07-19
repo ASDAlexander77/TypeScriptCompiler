@@ -310,6 +310,18 @@ struct InterfaceInfo
         return mlir::success();
     }
 
+    // builds the vtable CONTENTS (constant function-pointer symbols, GEP-on-null field
+    // offsets, or an explicit -1 sentinel for an optional member the specific cast target
+    // doesn't provide) for ONE implementer of this interface. Does NOT assign virtualIndex -
+    // slot numbering is a pure function of the interface's own declaration
+    // (assignCanonicalVirtualIndexes() is the sole writer) and must stay identical across
+    // every implementer, including ones this method is never called for (e.g. a module that
+    // only reads an already-typed interface value it imported never calls this at all - see
+    // docs/interface-vtable-simplification-design.md §4). Earlier versions of this method
+    // wrote virtualIndex here as a side effect of resolving ONE implementer, which corrupted
+    // the shared InterfaceInfo for every OTHER implementer's already-compiled or
+    // yet-to-compile field/method access sites whenever presence of an optional member
+    // differed between casts (§5) - do not reintroduce that.
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
         std::function<std::pair<mlir_ts::FieldInfo, mlir::LogicalResult>(mlir::Attribute, mlir::Type, bool)> resolveField,
@@ -343,7 +355,6 @@ struct InterfaceInfo
                         MethodInfo missingMethod;
                         missingMethod.name = method.name;
                         missingMethod.funcType = method.funcType;
-                        method.virtualIndex = -1;
                         vtable.push_back({missingMethod, true});
                     }
                     else
@@ -353,7 +364,6 @@ struct InterfaceInfo
                 }
                 else
                 {
-                    method.virtualIndex = vtable.size();
                     vtable.push_back({fieldInfo});
                 }
             }
@@ -372,7 +382,6 @@ struct InterfaceInfo
                         MethodInfo missingMethod;
                         missingMethod.name = method.name;
                         missingMethod.funcType = method.funcType;
-                        method.virtualIndex = -1;
                         vtable.push_back({missingMethod, true});
                     }
                     else
@@ -382,7 +391,6 @@ struct InterfaceInfo
                 }
                 else
                 {
-                    method.virtualIndex = vtable.size();
                     vtable.push_back({classMethodInfo});
                 }
             }
@@ -401,7 +409,6 @@ struct InterfaceInfo
                 if (field.isConditional)
                 {
                     mlir_ts::FieldInfo missingField{field.id, field.type, false, mlir_ts::AccessLevel::Public};
-                    field.virtualIndex = -1;
                     vtable.push_back({missingField, true});
                 }
                 else
@@ -411,7 +418,6 @@ struct InterfaceInfo
             }
             else
             {
-                field.virtualIndex = vtable.size();
                 vtable.push_back({fieldInfo});
             }
         }
@@ -443,8 +449,20 @@ struct InterfaceInfo
         return (signed)dist >= (signed)accessors.size() ? -1 : dist;
     }
 
-    InterfaceFieldInfo *findField(mlir::Attribute id)
+    // vtableOffset accumulates the position, within the vtable of the interface this call
+    // started on (the "root" - what the access site's InterfaceType actually is), where the
+    // DECLARING interface's own slots begin. A field/method's own virtualIndex
+    // (assignCanonicalVirtualIndexes()) is only correct standalone - t2 extends F1, F2
+    // means F2's fields sit at vtableOffset = F1's slot count within t2's combined vtable,
+    // not at F2's own standalone index 0. The access site must add the two together
+    // (see InterfaceFieldAccess/InterfaceMethodAccess). Earlier code baked this offset
+    // directly into the shared InterfaceFieldInfo/InterfaceMethodInfo via a getVirtualTable()
+    // side effect keyed to whichever cast ran most recently - correct only by accident for
+    // whichever root interface was cast last; see docs/interface-vtable-simplification-design.md.
+    InterfaceFieldInfo *findField(mlir::Attribute id, int &vtableOffset)
     {
+        vtableOffset = 0;
+
         auto index = getFieldIndex(id);
         if (index >= 0)
         {
@@ -453,9 +471,9 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto field = std::get<1>(extent)->findField(id);
-            if (field)
+            if (auto *field = std::get<1>(extent)->findField(id, vtableOffset))
             {
+                vtableOffset += std::get<0>(extent);
                 return field;
             }
         }
@@ -466,8 +484,16 @@ struct InterfaceInfo
         return nullptr;
     }
 
-    InterfaceMethodInfo *findMethod(mlir::StringRef name)
+    InterfaceFieldInfo *findField(mlir::Attribute id)
     {
+        int vtableOffset;
+        return findField(id, vtableOffset);
+    }
+
+    InterfaceMethodInfo *findMethod(mlir::StringRef name, int &vtableOffset)
+    {
+        vtableOffset = 0;
+
         auto index = getMethodIndex(name);
         if (index >= 0)
         {
@@ -476,13 +502,20 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            if (auto *method = std::get<1>(extent)->findMethod(name))
+            if (auto *method = std::get<1>(extent)->findMethod(name, vtableOffset))
             {
+                vtableOffset += std::get<0>(extent);
                 return method;
             }
         }
 
         return nullptr;
+    }
+
+    InterfaceMethodInfo *findMethod(mlir::StringRef name)
+    {
+        int vtableOffset;
+        return findMethod(name, vtableOffset);
     }
 
     InterfaceAccessorInfo *findAccessor(mlir::StringRef name)

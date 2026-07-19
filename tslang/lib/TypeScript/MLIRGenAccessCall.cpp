@@ -788,18 +788,20 @@ namespace mlirgen
             return InterfaceIndexAccess(interfaceInfo, location, interfaceValue, argument, genContext);
         }
 
-        // check field access        
-        if (auto fieldInfo = interfaceInfo->findField(id))
+        // check field access
+        int fieldVTableOffset;
+        if (auto fieldInfo = interfaceInfo->findField(id, fieldVTableOffset))
         {
-            return InterfaceFieldAccess(location, interfaceValue, fieldInfo);
+            return InterfaceFieldAccess(location, interfaceValue, fieldInfo, fieldVTableOffset);
         }
 
         // check method access
         if (nameAttr)
         {
-            if (auto methodInfo = interfaceInfo->findMethod(nameAttr.getValue()))
+            int methodVTableOffset;
+            if (auto methodInfo = interfaceInfo->findMethod(nameAttr.getValue(), methodVTableOffset))
             {
-                return InterfaceMethodAccess(location, interfaceValue, methodInfo);
+                return InterfaceMethodAccess(location, interfaceValue, methodInfo, methodVTableOffset);
             }
 
             if (auto accessorInfo = interfaceInfo->findAccessor(nameAttr.getValue()))

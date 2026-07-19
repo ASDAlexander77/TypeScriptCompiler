@@ -5501,26 +5501,28 @@ class MLIRGenImpl
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
                                  mlir::Attribute id, mlir::Value argument, const GenContext &genContext);
 
-    mlir::Value InterfaceFieldAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceFieldInfo *fieldInfo) 
+    // vtableOffset is the declaring interface's slot-block position within the root
+    // interface's combined vtable (0 unless fieldInfo was found through an `extends` chain
+    // - see InterfaceInfo::findField's doc comment, MLIRGenStore.h).
+    mlir::Value InterfaceFieldAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceFieldInfo *fieldInfo, int vtableOffset = 0)
     {
         auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
-        if (fieldInfo->virtualIndex == -1)
-        {
-            // no data for conditional interface;
-            if (!fieldInfo->isConditional)
-            {
-                emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
-                return mlir::Value();
-            }
 
-            auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
-                                    ? fieldRefType.getElementType()
-                                    : mlir_ts::OptionalType::get(fieldRefType.getElementType());
-            return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
-        }
-
+        // fieldInfo->virtualIndex is assigned once, canonically, by
+        // InterfaceInfo::assignCanonicalVirtualIndexes() when the interface declaration
+        // resolves - it is never -1 here. Whether THIS PARTICULAR interface value's
+        // underlying object actually provides an optional member is a runtime property (it
+        // can differ between implementers of the same interface), not something this call
+        // site can know at compile time - InterfaceSymbolRefOpLowering's isOptional branch
+        // (LowerToLLVM.cpp) already checks the loaded slot against the -1 sentinel and
+        // produces OptionalUndef at runtime when appropriate. An earlier version of this
+        // function special-cased virtualIndex == -1 here to bypass the runtime read - that
+        // relied on InterfaceInfo::getVirtualTable() mutating the SHARED virtualIndex to -1
+        // as a side effect of whichever cast last happened to be missing this member, which
+        // corrupted access sites for OTHER, unrelated implementers that do provide it. See
+        // docs/interface-vtable-simplification-design.md §5.
         assert(fieldInfo->virtualIndex >= 0);
-        auto vtableIndex = fieldInfo->virtualIndex;
+        auto vtableIndex = vtableOffset + fieldInfo->virtualIndex;
 
         auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
             location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
@@ -5552,10 +5554,11 @@ class MLIRGenImpl
         return value;
     }
 
-    mlir::Value InterfaceMethodAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo) 
+    // see InterfaceFieldAccess's vtableOffset doc comment above.
+    mlir::Value InterfaceMethodAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo, int vtableOffset = 0)
     {
         assert(methodInfo->virtualIndex >= 0);
-        auto vtableIndex = methodInfo->virtualIndex;
+        auto vtableIndex = vtableOffset + methodInfo->virtualIndex;
 
         auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
@@ -5575,9 +5578,10 @@ class MLIRGenImpl
         mlir::Value setMethodInfoValue;
         if (!accessorInfo->getMethod.empty())
         {
-            if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
+            int vtableOffset;
+            if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod, vtableOffset))
             {
-                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo, vtableOffset);
             }
             else
             {
@@ -5592,9 +5596,10 @@ class MLIRGenImpl
 
         if (!accessorInfo->setMethod.empty())
         {
-            if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
+            int vtableOffset;
+            if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod, vtableOffset))
             {
-                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo, vtableOffset);
             }
             else
             {
@@ -5644,9 +5649,10 @@ class MLIRGenImpl
         mlir::Value setMethodInfoValue;
         if (!indexInfo->getMethod.empty())
         {
-            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
+            int vtableOffset;
+            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod, vtableOffset))
             {
-                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo, vtableOffset);
             }
             else
             {
@@ -5661,9 +5667,10 @@ class MLIRGenImpl
 
         if (!indexInfo->setMethod.empty())
         {
-            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
+            int vtableOffset;
+            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod, vtableOffset))
             {
-                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo, vtableOffset);
             }
             else
             {
