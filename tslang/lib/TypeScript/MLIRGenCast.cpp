@@ -7,7 +7,47 @@ namespace typescript
 namespace mlirgen
 {
 
-    ValueOrLogicalResult MLIRGenImpl::selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,  
+    // Field list for the clone made when a tuple/object value can't be cast to an
+    // interface as-is (field types need coercion, e.g. si32 -> number, or a
+    // func-typed field vs a method's funcType). The clone MUST keep the SOURCE
+    // tuple's field order: the interface vtable's field-offset slots and any
+    // methods compiled against the original object layout (in particular in
+    // another module) address fields by byte offset, so reordering to interface
+    // member order (methods-first, per InterfaceInfo::getTupleTypeFields)
+    // silently reads/writes the wrong slots at runtime. Only the TYPES are taken
+    // from the interface; interface-only members are appended after the source
+    // fields.
+    static mlir::LogicalResult getInterfaceCloneFields(mlir::ArrayRef<mlir_ts::FieldInfo> srcFields,
+                                                       InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
+                                                       SmallVector<mlir_ts::FieldInfo> &fields)
+    {
+        SmallVector<mlir_ts::FieldInfo> interfaceFields;
+        if (mlir::failed(interfaceInfo->getTupleTypeFields(interfaceFields, context)))
+        {
+            return mlir::failure();
+        }
+
+        for (auto &origField : srcFields)
+        {
+            auto interfaceField =
+                std::find_if(interfaceFields.begin(), interfaceFields.end(),
+                             [&](auto &item) { return item.id == origField.id; });
+            fields.push_back(interfaceField != interfaceFields.end() ? *interfaceField : origField);
+        }
+
+        for (auto &interfaceField : interfaceFields)
+        {
+            if (std::find_if(fields.begin(), fields.end(),
+                             [&](auto &item) { return item.id == interfaceField.id; }) == fields.end())
+            {
+                fields.push_back(interfaceField);
+            }
+        }
+
+        return mlir::success();
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning)
     {
         auto count = 0;
@@ -1579,22 +1619,9 @@ namespace mlirgen
         if (mlir::failed(mth.canCastTupleToInterface(location, srcTuple, interfaceInfo, true)))
         {
             SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+            if (mlir::failed(getInterfaceCloneFields(srcTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
             {
                 return mlir::failure();
-            }
-
-            // append all fields from original tuple
-            for (auto origField : srcTuple.getFields()) {
-                if (std::find_if(
-                    fields.begin(), 
-                    fields.end(), 
-                    [&] (auto& item) { 
-                        return item.id == origField.id; 
-                    }) == fields.end())
-                {
-                    fields.push_back(origField);
-                }                
             }
 
             auto newInterfaceTupleType = getTupleType(fields);
@@ -1638,22 +1665,9 @@ namespace mlirgen
             if (mlir::failed(mth.canCastTupleToInterface(location, storageTuple, interfaceInfo, true)))
             {
                 SmallVector<mlir_ts::FieldInfo> fields;
-                if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+                if (mlir::failed(getInterfaceCloneFields(storageTuple.getFields(), interfaceInfo, builder.getContext(), fields)))
                 {
                     return mlir::failure();
-                }
-
-                // append all fields from original tuple
-                for (auto origField : storageTuple.getFields()) {
-                    if (std::find_if(
-                        fields.begin(),
-                        fields.end(),
-                        [&] (auto& item) {
-                            return item.id == origField.id;
-                        }) == fields.end())
-                    {
-                        fields.push_back(origField);
-                    }
                 }
 
                 auto newInterfaceTupleType = getTupleType(fields);

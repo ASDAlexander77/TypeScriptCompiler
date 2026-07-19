@@ -435,3 +435,41 @@ not-yet-investigated bug. No regression test was added for the
 now-fixed crash (a full end-to-end test would still fail, on this new bug,
 not the old one); this section records the fix and the newly-found blocker
 for whoever picks up the clone-bug investigation next.
+
+### Clone field-order bug FIXED (2026-07-19, follow-up to the above)
+
+Root cause of the reversed clone: both clone-building blocks (in
+`castTupleToInterface` and `castObjectToInterface`, MLIRGenCast.cpp) built
+the clone's field list from `InterfaceInfo::getTupleTypeFields`, which
+emits **methods first, then fields** (MLIRGenStore.h) - so for
+`Counter {count; inc()}` the clone's layout became `[inc@0, count@8]`,
+reversed from the source tuple's `[count@0, inc@8]`. Two consumers still
+addressed fields by the source layout: the interface vtable's field-offset
+slots and - fatally, unfixable from the importer - the exporting module's
+already-compiled `inc` body, which hard-codes `count` at offset 0. Hence
+`c.count` read the funcptr slot and `inc()` incremented it.
+
+Fix: new file-local helper `getInterfaceCloneFields` (MLIRGenCast.cpp),
+used by both clone sites - the clone now preserves the SOURCE tuple's field
+order, taking only the field TYPES from the interface (the type-coercion
+purpose of the clone, e.g. si32 -> number or func-typed field vs method
+funcType), with interface-only members appended after the source fields.
+All member lookups downstream are name-based, so only the byte layout was
+at stake.
+
+With this plus PR #256, the full cross-module scenario finally works:
+regression test pair added -
+`export_object_literal_structural_typed.ts` (structurally-typed
+method-bearing export, NOT interface-typed at the definition site) /
+`import_object_literal_structural_typed.ts` (casts the imported value to
+the interface in the importer, asserts count 0 -> 1 -> 2 through the
+interface), wired as
+`test-{compile,jit}-shared-export-import-object-literal-structural-typed`.
+Note the cast still clones (warning stands): mutations through the
+interface don't write back to the exporter's global - that's the
+documented value-semantics of this cast, not a bug in this arc. Known
+remaining sharp edge (pre-existing, unchanged): a clone whose field TYPES
+are size-changing coercions (e.g. si32 -> f64 number) still shifts offsets
+relative to already-compiled method bodies expecting the original layout;
+that can only bite literals whose inferred field types differ in size from
+the interface's, and is out of scope here. 722/722 suite (720 + 2 new).
