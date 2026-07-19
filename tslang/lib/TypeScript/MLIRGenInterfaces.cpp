@@ -212,6 +212,37 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
+                // methods this literal's own funcName is known for were already baked into
+                // globalVTableRefValue as constant SymbolRefOps by
+                // mlirGenObjectVirtualTableDefinitionForInterface (see there, and
+                // docs/interface-vtable-simplification-design.md §3) - only the rest (an
+                // imported object type reconstructed from a @dllimport declaration, with no
+                // local funcOp to name) still need their function pointer read out of the
+                // actual object `in` at cast time.
+                llvm::SmallVector<InterfaceMethodInfo *> methodsNeedingPatch;
+                for (auto& method : newInterfacePtr->methods)
+                {
+                    auto fieldId = builder.getStringAttr(method.name);
+                    auto index = mth.getFieldIndexByFieldName(storeType, fieldId);
+                    if (index == -1)
+                    {
+                        return mlir::failure();
+                    }
+
+                    auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
+                    if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty())
+                    {
+                        methodsNeedingPatch.push_back(&method);
+                    }
+                }
+
+                if (methodsNeedingPatch.empty())
+                {
+                    // every method slot is already a compile-time constant - no per-cast
+                    // heap allocation needed, same footing as a method-less interface.
+                    return globalVTableRefValue;
+                }
+
                 // match VTable
                 // 1) clone vtable onto the GC heap (NOT a stack VariableOp): this per-object
                 // patched vtable is pointed at by the resulting interface value, and that
@@ -226,8 +257,9 @@ namespace mlirgen
                 builder.create<mlir_ts::StoreOp>(location, valueVTable, heapVTable);
                 auto varVTable = builder.create<mlir_ts::CastOp>(location, globalVTableRefValue.getType(), heapVTable);
 
-                for (auto& method : newInterfacePtr->methods)
+                for (auto* methodPtr : methodsNeedingPatch)
                 {
+                    auto& method = *methodPtr;
                     auto index = mth.getFieldIndexByFieldName(storeType, builder.getStringAttr(method.name));
                     if (index == -1)
                     {
@@ -246,13 +278,13 @@ namespace mlirgen
                     auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, method.virtualIndex);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
-                                            << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);                    
-                    
-                    builder.create<mlir_ts::LoadSaveOp>(location, methodRefVT, methodRef);   
-                }       
+                                            << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);
+
+                    builder.create<mlir_ts::LoadSaveOp>(location, methodRefVT, methodRef);
+                }
 
                 // patched VTable
-                return V(varVTable);         
+                return V(varVTable);
             }
 
             return globalVTableRefValue;
@@ -301,9 +333,56 @@ namespace mlirgen
                 {
                     if (methodOrField.isField)
                     {
-                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());                        
+                        // an object-literal method is resolved via the FIELD path too
+                        // (methodsAsFields=true, getInterfaceVirtualTableForObject) since it's
+                        // literally stored as a func-typed field on the object - but if it's
+                        // capture-free-or-not-relevant (its funcName is compile-time constant
+                        // regardless of captures, see addObjectFuncFieldInfo), we already know
+                        // exactly which function it is and don't need to derive an object-relative
+                        // offset for it at all: emit the function symbol directly, same as the
+                        // class vtable path (mlirGenClassVirtualTableDefinitionForInterface) does
+                        // for its own (isField=false) methods. This makes the slot a genuine
+                        // compile-time constant, skipping mlirGenCreateInterfaceVTableForObject's
+                        // per-cast heap-clone-and-patch entirely for such methods (see there).
+                        // See docs/interface-vtable-simplification-design.md §3.
+                        //
+                        // Gate on the INTERFACE's own categorization, not merely "is this
+                        // vtable entry func-typed": `methodsAsFields=true` makes every entry
+                        // here isField=true regardless of whether the interface declared it as
+                        // a MethodSignature (`inc(): void`) or a PropertySignature with a
+                        // function type (`toString: () => string`) - only the former is read
+                        // through InterfaceMethodAccess (BoundFunctionType access, raw funcptr
+                        // slot semantics) at the access site; the latter goes through
+                        // InterfaceFieldAccess, which computes thisVal + slotValue expecting an
+                        // OFFSET. Substituting a raw function pointer into a
+                        // PropertySignature-with-function-type's slot corrupts that
+                        // computation (crashes on the resulting garbage address).
+                        std::string methodFuncName;
                         if (!methodOrField.isMissing)
                         {
+                            auto fieldNameAttr = dyn_cast<mlir::StringAttr>(methodOrField.fieldInfo.id);
+                            if (fieldNameAttr && newInterfacePtr->findMethod(fieldNameAttr.getValue()))
+                            {
+                                methodFuncName = lookupObjectLiteralMethodSymbol(methodOrField.fieldInfo.type, methodOrField.fieldInfo.id);
+                            }
+                        }
+
+                        if (!methodFuncName.empty())
+                        {
+                            auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                                location, mlir::cast<mlir_ts::FunctionType>(methodOrField.fieldInfo.type),
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), methodFuncName));
+                            auto methodConstNameRef = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
+                                                           methodConstName, genContext);
+
+                            vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                                location, virtTuple, methodConstNameRef, vtableValue,
+                                MLIRHelper::getStructIndex(builder, fieldIndex));
+                        }
+                        else if (!methodOrField.isMissing)
+                        {
+                            auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+
                             // TODO: test cast result
                             auto objectNull = cast(location, objectType, nullObj, genContext, true);
                             if (!objectNull)

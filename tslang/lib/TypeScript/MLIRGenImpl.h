@@ -7423,6 +7423,21 @@ class MLIRGenImpl
         oli.values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
         oli.fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
 
+        // record (this literal's object-storage type, field name) -> the lifted function's
+        // symbol so a later interface vtable build (mlirGenObjectVirtualTableDefinitionForInterface)
+        // can emit a constant SymbolRefOp for this method slot instead of the runtime
+        // load-from-object patch - see docs/interface-vtable-simplification-design.md §3.
+        // oli.objThis.getStorageType() is the SAME (hash-consed) ObjectStorageType that ends
+        // up embedded as the "this" parameter of this field's own FunctionType, which is how
+        // the vtable builder recovers this key later even though by then it only has the
+        // BOXED object type (whose top-level storage is a plain TupleType, not this
+        // ObjectStorageType directly - see the design doc's §3 implementation notes for why
+        // that indirection is necessary, not optional). Captures are fine here too: a
+        // captures-bearing method's field value is still this same compile-time-constant
+        // funcName (the per-instance data lives in a separate `.captured` field the function
+        // reads via `this`, not in a different function per instance).
+        objectLiteralMethodSymbolsMap[oli.objThis.getStorageType()][fieldId] = funcName;
+
         if (getCaptureVarsMap().find(funcName) != getCaptureVarsMap().end())
         {
             oli.methodInfosWithCaptures.push_back({funcName, oli.fieldInfos.size() - 1});
@@ -10851,6 +10866,43 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 
     llvm::ScopedHashTable<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMap;
+
+    // (object literal's ObjectStorageType -> (field name -> lifted function symbol)) for
+    // capture-free-or-not object-literal methods; see addObjectFuncFieldInfo's doc comment
+    // and docs/interface-vtable-simplification-design.md §3. Not namespace-scoped: an
+    // ObjectStorageType's symbol already embeds the literal's source location, so it's
+    // globally unique regardless of which namespace declared it.
+    mlir::DenseMap<mlir::Type, mlir::DenseMap<mlir::Attribute, std::string>> objectLiteralMethodSymbolsMap;
+
+    // fieldType is a method-as-field's FunctionType, whose first input is the object literal's
+    // own "this" type (ObjectType wrapping the ObjectStorageType key used in
+    // objectLiteralMethodSymbolsMap - see addObjectFuncFieldInfo). Returns the empty string if
+    // fieldType isn't a function, "this" isn't an ObjectType (e.g. a class instance, or an
+    // imported object type reconstructed from a @dllimport declaration with no local funcOp),
+    // or no method was ever registered for this exact (object, field) pair.
+    std::string lookupObjectLiteralMethodSymbol(mlir::Type fieldType, mlir::Attribute fieldId)
+    {
+        auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldType);
+        if (!funcType || funcType.getInputs().empty())
+        {
+            return {};
+        }
+
+        auto thisObjectType = dyn_cast<mlir_ts::ObjectType>(funcType.getInputs().front());
+        if (!thisObjectType)
+        {
+            return {};
+        }
+
+        auto symbolsForObject = objectLiteralMethodSymbolsMap.find(thisObjectType.getStorageType());
+        if (symbolsForObject == objectLiteralMethodSymbolsMap.end())
+        {
+            return {};
+        }
+
+        auto symbolIt = symbolsForObject->second.find(fieldId);
+        return symbolIt == symbolsForObject->second.end() ? std::string{} : symbolIt->second;
+    }
 
     llvm::ScopedHashTable<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMap;
 
