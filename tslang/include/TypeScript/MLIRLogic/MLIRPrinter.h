@@ -316,7 +316,28 @@ class MLIRPrinter
                 out << t.getName().getValue().str().c_str();
             })
             .template Case<mlir_ts::ObjectType>([&](auto t) {
-                out << "object";
+                // print the structural shape (field/method names+types), not just
+                // "object", so a cross-module @dllimport declaration for an
+                // inferred (unannotated) object-literal export round-trips back
+                // into a real structural type on reimport instead of degrading to
+                // bare `object` (which has no fields/methods to cast against).
+                auto storageType = t.getStorageType();
+                if (auto tupleType = dyn_cast<mlir_ts::TupleType>(storageType))
+                {
+                    printObjectType(out, tupleType);
+                }
+                else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(storageType))
+                {
+                    printObjectType(out, constTupleType);
+                }
+                else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(storageType))
+                {
+                    printObjectType(out, objectStorageType);
+                }
+                else
+                {
+                    out << "object";
+                }
             })
             .template Case<mlir_ts::ObjectStorageType>([&](auto t) {
                 printTupleType(out, t);       
