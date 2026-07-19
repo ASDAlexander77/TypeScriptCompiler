@@ -241,6 +241,17 @@ class CastLogicHelper
                 */
                 return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
             }
+
+            if (auto inHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(inType))
+            {
+                // same rationale as the BoundFunctionType case above: a plain FunctionType
+                // value carries no slot for a bound `this`, so the receiver is dropped here
+                // and re-supplied by the caller (e.g. an interface vtable call passes its own
+                // thisVal) - this is the vtable-method-pointer path for a cross-module tuple
+                // value cast to a method-bearing interface.
+                op->emitWarning("losing this reference");
+                return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+            }
         }
 
         if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
