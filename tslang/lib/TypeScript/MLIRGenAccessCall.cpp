@@ -381,6 +381,21 @@ namespace mlirgen
 
         if (!value)
         {
+            // During a speculative discovery/dummy run (e.g. inferring an enclosing
+            // function's return type, which recurses into an object literal's method
+            // bodies to guess ITS return type too), a sibling method's prototype may
+            // not be registered into the literal's (mutable) object-storage type yet -
+            // `this.siblingMethod(...)` used in an expression (not a bare statement)
+            // then fails to resolve here even though it will resolve fine once real
+            // compilation runs with all prototypes registered. Don't hard-fail the
+            // whole discovery run over that; let the caller treat this as "unknown for
+            // now" (same idiom as mlirGenCallExpression's `!result.value &&
+            // genContext.allowPartialResolve` case above).
+            if (genContext.dummyRun || genContext.allowPartialResolve)
+            {
+                return mlir::success();
+            }
+
             emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
             return mlir::failure();
         }
