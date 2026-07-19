@@ -539,6 +539,38 @@ struct InterfaceInfo
         return offset + methods.size() + fields.size();
     }
 
+    // vtable slot numbers must be a pure function of the interface's own declaration
+    // (extends, then own methods in order, then own fields in order) - NOT of whichever
+    // object happens to be cast to it first. getVirtualTable() re-derives the same
+    // methods-then-fields order per-cast (needed to mark per-object optional members
+    // missing), but a module that only reads an already-typed interface value - without
+    // ever casting an object to it itself (e.g. importing an already-boxed global from
+    // another compilation unit) - never runs getVirtualTable() at all. Without this
+    // eagerly-computed, cast-independent pass, such a module falls back on the
+    // interleaved declaration-order index assigned at member-registration time
+    // (mlirGenInterfaceAddFieldMember / addInterfaceMethod), which disagrees with the
+    // methods-first layout whenever a field is declared before a method in source order -
+    // reading through the wrong vtable slot (e.g. a method's function pointer
+    // reinterpreted as a field offset) and crashing.
+    void assignCanonicalVirtualIndexes()
+    {
+        auto offset = 0;
+        for (auto &extent : extends)
+        {
+            offset += std::get<1>(extent)->getVTableSize();
+        }
+
+        for (auto &method : methods)
+        {
+            method.virtualIndex = offset++;
+        }
+
+        for (auto &field : fields)
+        {
+            field.virtualIndex = offset++;
+        }
+    }
+
     void recalcOffsets()
     {
         auto offset = 0;

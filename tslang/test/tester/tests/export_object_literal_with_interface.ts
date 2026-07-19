@@ -14,4 +14,11 @@ namespace A {
 
     // invalid Point3d is not exported
     export var Origin3d: Point3d = { x: 0, y: 0, z: 0 };
+
+    export interface Counter {
+        count: number;
+        inc(): void;
+    }
+
+    export var counter: Counter = { count: 0, inc() { this.count = this.count + 1; } };
 }

@@ -10,4 +10,6 @@ if (A.Origin3d.x == 0)
 	print("ok");
 }
 
+print(A.counter.count);
+
 print("done.");

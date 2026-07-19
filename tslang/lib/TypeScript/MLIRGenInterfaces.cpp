@@ -581,6 +581,11 @@ namespace mlirgen
 
         } while (notResolved > 0);
 
+        // fix up vtable slot numbers to the canonical methods-then-fields order now that
+        // all members are known - see assignCanonicalVirtualIndexes() for why this can't
+        // be left to getVirtualTable()'s per-cast assignment alone.
+        newInterfacePtr->assignCanonicalVirtualIndexes();
+
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))
         {
