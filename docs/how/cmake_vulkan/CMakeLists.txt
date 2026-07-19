@@ -50,7 +50,7 @@ target_link_directories(
     ${GCLIBPATH}
 )
 
-set (LIBS "gcmt-lib")
+set (LIBS "gc")
 
 target_link_libraries(
     ${PROJECT_NAME} 

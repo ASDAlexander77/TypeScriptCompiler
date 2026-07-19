@@ -1,4 +1,4 @@
-set (ROOT_PATH "I:\\tslang\\57")
+set (ROOT_PATH "I:\\tslang")
 set (_3RD_PARTY_PATH "${ROOT_PATH}")
 set (BUILD_PATH "${ROOT_PATH}")
 set (TSLANGPATH "${BUILD_PATH}")
