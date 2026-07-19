@@ -216,6 +216,16 @@ class CastLogicHelper
 
         if (auto resFuncType = dyn_cast<mlir_ts::FunctionType>(resType))
         {
+            // dropping a bound/hybrid value to a plain FunctionType only loses the
+            // receiver when the target has no `this` slot of its own. A target
+            // whose first input is opaque/object-typed (method-member convention,
+            // see isBoundReference) keeps the this param in the funcptr signature
+            // and the receiver is re-bound from the base object at every property
+            // access - nothing is lost, so no warning.
+            auto resKeepsThisParam = resFuncType.getNumInputs() > 0 &&
+                                     (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) ||
+                                      isa<mlir_ts::ObjectType>(resFuncType.getInput(0)));
+
             if (auto inBoundFunc = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 // somehow llvm.trampoline accepts only direct method symbol
@@ -224,7 +234,10 @@ class CastLogicHelper
                 auto methodVal = rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
                 return rewriter.create<mlir_ts::TrampolineOp>(loc, resFuncType, methodVal, thisVal);
                 */
-                op->emitWarning("losing this reference");
+                if (!resKeepsThisParam)
+                {
+                    op->emitWarning("losing this reference");
+                }
                 /*
                 // you can wrap into () => {} lambda call to capture vars
                 const user = {
@@ -249,7 +262,10 @@ class CastLogicHelper
                 // and re-supplied by the caller (e.g. an interface vtable call passes its own
                 // thisVal) - this is the vtable-method-pointer path for a cross-module tuple
                 // value cast to a method-bearing interface.
-                op->emitWarning("losing this reference");
+                if (!resKeepsThisParam)
+                {
+                    op->emitWarning("losing this reference");
+                }
                 return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
             }
         }
