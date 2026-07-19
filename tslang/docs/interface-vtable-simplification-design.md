@@ -1,13 +1,13 @@
 # Interface vtable simplification: design
 
-Status: **PR 1 (§4 + §5) implemented, full suite green (716/716)**. §3
-(constant vtables for capture-free literal methods) not yet started. Follow-up
-to PR #251 (heap-allocated patched vtable) and PR #252 (canonical slot
-numbering, `fix-interface-vtable-index-mismatch@be2c9620`). All anchors below
-verified by code inspection on that branch, except where PR 1's implementation
-notes (end of §4) correct them. Goal: remove the last *runtime-patched* vtable
-path for the common case, make slot numbering single-sourced, and fix one
-latent cast-order miscompile found during review.
+Status: **PR 1 (§4 + §5) and PR 2 (§3) both implemented, full suite green
+(718/718)**. Follow-up to PR #251 (heap-allocated patched vtable) and PR #252
+(canonical slot numbering, `fix-interface-vtable-index-mismatch@be2c9620`).
+All anchors below verified by code inspection at the time each PR started;
+see each section's "Implementation notes" subsection for what changed, or was
+found to be wrong, while building it. Goal: remove the last *runtime-patched*
+vtable path for the common case, make slot numbering single-sourced, and fix
+latent bugs found during review and implementation.
 
 ## 1. Current architecture: what a vtable slot means
 
@@ -119,6 +119,78 @@ Wins: casts become O(1) with no heap allocation (less GC pressure, less code);
 the #251 heap machinery becomes dead on the main path (kept for the fallback);
 the vtable global can be const-qualified; cross-module behavior stops depending
 on which module happened to run a cast.
+
+### Implementation notes (PR 2, as landed)
+
+Two corrections to the plan above, both found by testing rather than
+inspection - the "captures need a fallback" premise was actually wrong in the
+*helpful* direction (one fewer case to handle), and a second, unrelated
+distinction turned out to be load-bearing that the plan didn't mention at all.
+
+**Captures don't need the fallback.** Rereading `addObjectFuncFieldInfo`
+(`MLIRGenImpl.h`) shows the func-typed field's value is
+`FlatSymbolRefAttr(funcName)` unconditionally - captures-with-methods land in
+`methodInfosWithCaptures` *in addition to*, not *instead of*, the same
+symbol-valued field. What captures actually add is a separate `.captured`
+data field the (single, shared) lifted function reads via `this` at call time
+(`mlirGenObjectLiteralCaptures`) - not a different function per instance. So
+the side table (`objectLiteralMethodSymbolsMap`, keyed on the object literal's
+own `ObjectStorageType`, populated in `addObjectFuncFieldInfo` for every
+method, captures or not) needed no captures-awareness at all. The imported-
+object-type fallback (side-table miss, since there's no local `funcOp` to
+name) is the only case actually exercised in practice today - no test yet
+covers it explicitly (see §7's test matrix, still open).
+
+**A vtable-identity subtlety this plan didn't anticipate, but had to solve
+to key the side table at all:** vtable globals are named by
+`hash_value(objectType)` (`interfaceVTableNameForObject`) - structural, not
+nominal. The worry this raises - two differently-implemented, same-shape
+literals colliding on one vtable global and a baked-in constant only being
+correct for one of them - does not happen, verified by compiling a
+counterexample (`{count:0,inc(){...+1}}` vs `{count:0,inc(){...+100}}`):
+they get different vtable globals. Why: a method field's `FunctionType`
+carries `this` as an explicit first parameter typed `object<object_storage<@literal's-own-symbol>>`,
+and that symbol embeds the literal's own source location - so the "same
+shape" premise never actually holds once the method's own signature is
+counted. This is also why the side table has to be keyed on that *nested*
+`ObjectStorageType` (recovered at the vtable-build site by reading
+`FunctionType.getInputs().front()` off the object's own field, cast to
+`ObjectType`, `.getStorageType()`), not on the boxed `ObjectType` directly,
+since the boxed type wraps a converted plain `TupleType` (`mlirGen(ObjectLiteralExpression)`,
+`convertConstTupleTypeToTupleType`), a *different* MLIR `Type` value than
+`oli.objThis` captured when the field was added, even though one is derived
+from the other.
+
+**The bug that actually broke the regression suite (22 failures on the first
+pass): `PropertySignature` with a function type is not a `MethodSignature`.**
+`interface Something { toString: () => string; }` categorizes `toString` as
+an interface **field** (`InterfaceInfo::fields`), not a method
+(`InterfaceInfo::methods`) - `getVirtualTable`'s `methodsAsFields=true` only
+governs how the *object's own* func-typed field gets resolved into the local
+`virtualTable` snapshot; it collapses every entry to `isField=true`
+regardless of which list the *interface* actually declared the member in. The
+access site, however, dispatches on the interface's real categorization
+(`InterfaceMembers` tries `findField` before `findMethod`) - so
+`toString`'s access always goes through `InterfaceFieldAccess`
+(`thisVal + slotValue`, offset semantics), never `InterfaceMethodAccess`
+(raw function-pointer slot, `BoundFunctionType`), no matter how the object
+stores it. The first version of this change substituted a constant
+`SymbolRefOp` into *any* func-typed slot, including `toString`'s - handing a
+raw function pointer to code that adds it to `thisVal` expecting an offset,
+producing a garbage call target. Crash confirmed via WinDbg
+(`WinDbgX.exe -g -c ".dump /ma ..."` then offline `!analyze -v`; see
+[[windbg-available-for-debugging]]): faulting instruction `call qword ptr
+[rax+rdx]`, both registers holding `thisVal`/slot-sum garbage. Fix: gate the
+symbol substitution on `newInterfacePtr->findMethod(fieldName)` actually
+finding the member in the interface's own (extends-inclusive) method list,
+not merely on the vtable entry being func-typed
+(`mlirGenObjectVirtualTableDefinitionForInterface`). Regression test:
+`00interface_function_typed_field.ts` - `00interface_object.ts` (pre-existing)
+already covered this pattern and is what surfaced the bug, but a minimal,
+purpose-labeled test makes the invariant explicit for future readers.
+
+718/718 tests green (716 from PR 1 + this section's new regression test +1
+already counted, plus the incidental fix above).
 
 ## 4. Change 2: a single writer for `virtualIndex`
 
