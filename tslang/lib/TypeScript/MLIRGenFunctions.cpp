@@ -445,11 +445,27 @@ namespace mlirgen
                 exitNamespace();
 
                 auto &passResult = genContextWithPassResult.passResult;
-                if (passResult->functionReturnTypeShouldBeProvided 
+                if (passResult->functionReturnTypeShouldBeProvided
                     && mth.isNoneType(passResult->functionReturnType))
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
+
+                    // if THIS discovery is itself nested inside an outer speculative
+                    // discovery/dummy run (e.g. an object literal's method being
+                    // return-type-discovered as a side effect of discovering the
+                    // enclosing function - see the allowPartialResolve tolerance in
+                    // mlirGenPropertyAccessExpressionBaseLogic), a sibling member's
+                    // prototype may not be registered yet, so a return expression that
+                    // depends on it can legitimately come back as "unknown" here. Don't
+                    // hard-fail the whole discovery over that - the outer caller (and
+                    // the real, non-dummy compile pass) will resolve it once every
+                    // sibling's prototype is registered.
+                    if (genContext.dummyRun || genContext.allowPartialResolve)
+                    {
+                        return mlir::failure();
+                    }
+
                     emitError(loc(functionLikeDeclarationBaseAST)) << "'return' is not found in function or return type can't be resolved";
                     return mlir::failure();
                 }

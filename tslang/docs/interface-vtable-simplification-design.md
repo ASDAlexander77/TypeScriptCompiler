@@ -524,9 +524,87 @@ this.siblingMethod(...)` (using a sibling call's return value directly in
 a `return` statement) within the same type-literal-annotated object
 literal; calling the sibling as a bare statement (discarding its return
 value) works fine. Confirmed same-module, unrelated to cross-module
-casting at all - likely a self-referential type-inference ordering gap
-(the caller's return type depends on resolving the callee's return type,
-which depends on `this`, which is still being constructed). Not
-investigated further; avoided in the committed tests
+casting at all. Avoided in the committed tests
 (`00object_annotated_method_params.ts` uses `setBase`/re-`scale`, not a
-chained-return pattern).
+chained-return pattern). See the next section for the full mechanism,
+found in a follow-up session.
+
+### Chained-return inference gap: mechanism found (2+ of 3 layers fixed), root cause remains (2026-07-19)
+
+Root-caused via `--debug-only=mlir` (traced `discovering 'return type' &
+'captured variables'` LLVM_DEBUG output). The mechanism, precisely:
+
+1. An enclosing function with no explicit return type (e.g. `main()`) runs
+   a speculative **discovery pass** first
+   (`discoverFunctionReturnTypeAndCapturedVars`, MLIRGenFunctions.cpp) to
+   infer its return type and captured variables, via a dummy `FuncOp` and
+   `GenContext{dummyRun=true, allowPartialResolve=true}`.
+2. That pass walks the WHOLE body, including unrelated statements like
+   `let calc = {...}` - which recurses into the object literal's methods
+   (`processObjectFunctionLikeProto`/`processObjectFunctionLike`,
+   MLIRGenImpl.h), each of which ALSO runs the same discovery machinery
+   for ITS OWN return type if not explicit on the method's own literal
+   syntax (or, it turns out, even when it IS explicit - see below).
+3. Methods are discovered in declaration order, but a method's prototype
+   is only registered into the literal's (mutable) `ObjectStorageType`
+   AFTER its OWN discovery completes - so when `scaleAndAdd`'s body (being
+   walked to infer test ITS return type, or just to find captured vars)
+   references `this.scale(...)`, `scale`'s prototype may not be in the
+   storage type yet EVEN THOUGH `scale` is declared earlier in the source
+   and even when `scaleAndAdd` HAS an explicit return type on its own
+   literal syntax (confirmed: adding `: number` to `scaleAndAdd` itself
+   did not avoid the failure - the discovery machinery runs regardless,
+   apparently also needed for captured-variable discovery).
+4. Property access on `this` for `scale` then fails to resolve
+   (`mlirGenPropertyAccessExpressionBaseLogic`, MLIRGenAccessCall.cpp) -
+   but ONLY when the call's result is USED (assigned, returned, or part of
+   a larger expression). A bare-statement call (`this.scale(factor);`,
+   result discarded) does not hit this: statement calls don't need the
+   property access to produce a typed VALUE the way an expression context
+   does, so they don't trip the same resolution path during discovery.
+
+**Fixed** (two gates, both matching the SAME `dummyRun`/`allowPartialResolve`
+tolerance idiom already used elsewhere in both files - e.g.
+`mlirGenCallExpression`'s `!result.value && genContext.allowPartialResolve`
+case in MLIRGenAccessCall.cpp):
+- `mlirGenPropertyAccessExpressionBaseLogic`'s final
+  `emitError("Can't resolve property...")` now returns `mlir::success()`
+  (no value, not a hard failure) when `genContext.dummyRun ||
+  genContext.allowPartialResolve`.
+- `discoverFunctionReturnTypeAndCapturedVars`'s
+  `emitError("'return' is not found...")` now skips the diagnostic (still
+  returns `mlir::failure()` to signal "this discovery attempt didn't
+  converge", but without recording a user-facing error) under the same
+  condition, checked against the OUTER `genContext` (the nested
+  discovery's caller) rather than the freshly-constructed
+  `genContextWithPassResult` (which is unconditionally
+  `dummyRun=true`/`allowPartialResolve=true` for ANY discovery call,
+  nested or not, and so can't distinguish "nested inside another dummy
+  run" from "top-level, real discovery" on its own).
+
+Both verified individually and together: no change in behavior for any
+existing test, full suite stayed at 730/730 with both fixes applied.
+
+**NOT fixed - a third, more fundamental layer remains.** Even with both
+gates, the original repro still fails, now with a bare
+`error: failed statement` for `main()` and no more specific diagnostic.
+Cause: `mlir::failure()` - even without an emitted diagnostic - still
+propagates as a hard abort through ordinary SEQUENTIAL STATEMENT
+processing (`mlirGenFunctionBody` and friends don't distinguish "a nested
+speculative sub-discovery legitimately didn't converge, continue as if
+this statement is fine" from "a real error occurred, stop everything").
+So `scaleAndAdd`'s nested discovery failure - now silent, thanks to the
+two gates above - still bubbles up through processing the (entirely
+unrelated to `main`'s return type) `let calc = {...}` statement, aborting
+`main`'s WHOLE discovery pass, which is where the final `failed statement`
+error comes from. A real fix needs the statement-processing layer (or
+whichever call site turns "one nested dummy sub-discovery didn't
+converge" into "abort the entire enclosing discovery") to tolerate this
+too - and it's not yet known how many such call sites exist, since this
+is the third layer found and each one so far needed its own targeted
+gate. Deliberately not chased further this session - the two committed
+gates are real, idiom-consistent, and non-regressing improvements on their
+own, but do not by themselves fix the user-visible repro. No regression
+test added (the repro this was investigating still fails); the two
+partial fixes are covered only by "full suite still green," not by a
+test proving the original bug is fixed.
