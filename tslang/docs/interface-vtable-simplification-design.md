@@ -473,3 +473,60 @@ are size-changing coercions (e.g. si32 -> f64 number) still shifts offsets
 relative to already-compiled method bodies expecting the original layout;
 that can only bite literals whose inferred field types differ in size from
 the interface's, and is out of scope here. 722/722 suite (720 + 2 new).
+
+### Newly found: multi-method cross-module vtable slot bug (2026-07-19)
+
+Found while extending test coverage beyond this arc's fixes - every prior
+test/fix in #256-#258 only ever exercised a **single-method** interface
+cast cross-module (`Counter {count; inc()}`). Trying a genuinely
+multi-method interface (`Accumulator {total; add(n); addTwice(n);
+scaled(factor): number}`, canonical vtable order after
+`assignCanonicalVirtualIndexes` = methods-first-in-declaration-order then
+fields = `add`@0, `addTwice`@1, `scaled`@2, `total`@3) surfaced a clean,
+reproducible pattern when casting a cross-module structurally-typed VALUE
+to it and calling each method **in isolation** (bisected one at a time via
+a temporary `test-runner.cpp` stdout-surfacing patch, same technique as
+earlier bugs in this file - reverted before commit):
+
+| method (canonical slot) | isolated result |
+|---|---|
+| `add(n)` (slot 0) | correct - mutates `total` as expected |
+| `addTwice(n)` (slot 1) | WRONG VALUE, no crash - `total` ends up incorrect but the process completes and reports the mismatch cleanly |
+| `scaled(factor)` (slot 2) | CRASH - silent, no assert/error text reaches output at all (raw access violation with buffered stdout lost, unlike the controlled assert failures elsewhere in this file) |
+
+Slot 0 works, slot 1 is wrong-but-survives, slot 2 crashes outright -
+consistent with SOMETHING going wrong specifically in how slots beyond 0
+are constructed or addressed for a cross-module structurally-typed cast
+(as opposed to the field-order bug from earlier in this file, which was a
+uniform reversal affecting all slots equally and is already fixed). Not
+yet root-caused - candidates worth checking first: whether
+`getInterfaceCloneFields`/the vtable-patch loop in
+`mlirGenCreateInterfaceVTableForObject` (MLIRGenInterfaces.cpp) iterates
+methods needing patching in the right order relative to the CANONICAL
+`virtualIndex` for interfaces with >1 method (an off-by-one or
+wrong-iteration-source bug would explain "slot 0 fine, slot 1+ broken");
+or whether the heap-cloned vtable's allocated SIZE is computed from a
+stale/undersized type (a 2-slot allocation for a >2-slot vtable would also
+match this exact crash-only-past-slot-N shape).
+
+**Not fixed.** The regression test actually added for this session
+(`export/import_object_literal_structural_typed_params.ts`) deliberately
+stays within the single-method shape that's known to work, to avoid
+committing a failing test; it extends coverage only along the
+"zero-arg -> parameterized method" axis, not the "single-method ->
+multi-method" axis. A genuinely multi-method cross-module test is blocked
+on this bug and is the natural next thing to add once it's fixed.
+
+Also worth noting for whoever investigates: a completely SEPARATE,
+same-module-only finding surfaced while building the initial (broken)
+version of this test - a value-returning method cannot `return
+this.siblingMethod(...)` (using a sibling call's return value directly in
+a `return` statement) within the same type-literal-annotated object
+literal; calling the sibling as a bare statement (discarding its return
+value) works fine. Confirmed same-module, unrelated to cross-module
+casting at all - likely a self-referential type-inference ordering gap
+(the caller's return type depends on resolving the callee's return type,
+which depends on `this`, which is still being constructed). Not
+investigated further; avoided in the committed tests
+(`00object_annotated_method_params.ts` uses `setBase`/re-`scale`, not a
+chained-return pattern).
