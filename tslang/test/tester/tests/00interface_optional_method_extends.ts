@@ -5,27 +5,30 @@
 // not byte offsets), so a fix proven for optional fields isn't automatically
 // proven for optional methods.
 //
-// Found and fixed: casting an object literal that OMITS an optional method
-// inherited via extends used to crash the compiler outright
+// Two bugs found and fixed here:
+//
+// 1. Casting an object literal that OMITS an optional method inherited via
+// extends used to crash the compiler outright
 // (llvm_unreachable("not implemented yet") in
 // mlirGenObjectVirtualTableDefinitionForInterface - building the placeholder
 // vtable for a missing METHOD had never been implemented at all, only for a
 // missing FIELD). Fixed by mirroring the missing-field's -1-sentinel
 // placeholder pattern for a missing method's vtable slot.
 //
-// KNOWN LIMITATION (not fixed here, deferred): comparing an optional
-// interface METHOD against `undefined` (`someObj.optMethod == undefined`)
-// does not work correctly for ANY interface, extends or not - it's hardcoded
-// to a compile-time-constant result in UndefLogicHelper.h's
-// processUndefVale, which only special-cases InterfaceType/ClassType against
-// undefined, not BoundFunctionType. A fix was attempted (zeroing the
-// bound_func's `this` pointer as a missing-sentinel, checking it in the
-// undefined-comparison lowering) but caused a control-flow crash deep in
-// LLVM dialect conversion (execution ran off the end of a JIT-compiled
-// block) that wasn't resolved before this test landed. Do not use
-// `== undefined` / `!= undefined` on an optional interface method in a test
-// until that's fixed - only test presence via calling it or (like here)
-// simply never calling an omitted one.
+// 2. Comparing an optional interface METHOD against `undefined`
+// (`someObj.optMethod == undefined`) never worked for ANY interface, extends
+// or not - hardcoded to a compile-time-constant result in
+// UndefLogicHelper.h's processUndefVale, which only special-cased
+// InterfaceType/ClassType against undefined, not BoundFunctionType. Fixed by:
+// (a) InterfaceSymbolRefOpLowering now selects a null `this` pointer
+// (branchless LLVM::SelectOp) when an optional method's vtable slot holds the
+// "missing" -1 sentinel - a real bound method's `this` is never null; (b)
+// UndefLogicHelper.h's new BoundFunctionType branch checks that null-or-not
+// via a directly-emitted LLVM::ICmpOp - NOT the shared LogicOp<...> helper,
+// whose comparison predicate is a template parameter baked in from the
+// OUTER comparison operator that triggered the whole call (passing a
+// different SyntaxKind at the call site is silently ignored and inverts the
+// result).
 
 function main() {
     interface Base {
@@ -45,14 +48,12 @@ function main() {
     let missing: Derived = <Derived>{ base: 2.0, derived: 20.0 };
 
     assert(present.base == 1);
+    assert(present.opt != undefined);
     assert(present.opt(4) == 5);
     assert(present.derived == 10);
 
-    // does not call missing.opt (per the known limitation above, there is no
-    // reliable way yet to check it's absent before calling it) - just
-    // exercises that constructing/casting this object at all doesn't crash
-    // building its vtable, which is the bug that was actually fixed here.
     assert(missing.base == 2);
+    assert(missing.opt == undefined);
     assert(missing.derived == 20);
 
     // re-read the providing object's method after the non-providing one was
@@ -60,6 +61,7 @@ function main() {
     // resurfaces here
     print(present.opt(9));
     assert(present.opt(9) == 10);
+    assert(present.opt != undefined);
 
     print("done.");
 }

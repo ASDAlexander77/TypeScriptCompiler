@@ -4880,8 +4880,36 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         if (auto boundFunc = dyn_cast<mlir_ts::BoundFunctionType>(interfaceSymbolRefOp.getType()))
         {
+            mlir::Value thisValEffective = thisVal;
+            if (isOptional)
+            {
+                // an optional (`?`) interface method the object literal doesn't provide
+                // is patched with a -1 sentinel in the vtable slot (see
+                // mlirGenObjectVirtualTableDefinitionForInterface's missing-method
+                // branch), same convention as the FIELD case below. Select a null
+                // `this` when the slot is that sentinel, so the resulting bound_func
+                // has a null `this` pointer - a real bound method's `this` is never
+                // null - giving a later undefined-comparison something concrete to
+                // check instead of always reading as "present". A branchless
+                // LLVM::SelectOp is used here rather than CodeLogicHelper's
+                // conditionalExpressionLowering (block-splitting control flow) since
+                // this pattern - used successfully elsewhere in this file, e.g.
+                // ValueOrDefaultOpLowering - is simpler and carries no risk of a
+                // malformed/dangling basic block.
+                LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+                auto intPtrType = llvmtch.getIntPtrType(0);
+                auto negative1 = tsLlvmContext->compileOptions.sizeBits == 32
+                    ? clh.createI32ConstantOf(-1)
+                    : clh.createI64ConstantOf(-1);
+                auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
+                auto isMissing =
+                    rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
+                auto nullThisVal = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+                thisValEffective = rewriter.create<LLVM::SelectOp>(loc, isMissing, nullThisVal, thisVal);
+            }
+
             auto thisOpaque =
-                rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisVal);
+                rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisValEffective);
             auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
                 loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
                 methodOrFieldPtr);
