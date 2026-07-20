@@ -74,11 +74,11 @@ enum class Select: int
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}, isBoxed{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}, isBoxed{false}
     {
     }
 
@@ -97,6 +97,11 @@ struct VariableClass
     bool isVolatile;
     bool nonTemporal;
     bool invariant;
+    // @dllimport declaration-only marker: the exported symbol's storage is a
+    // single boxed pointer to the real data, not the data inline - see
+    // DeclarationPrinter.cpp's printVariableDeclaration and
+    // MLIRGenVariables.cpp's isDynamicImport load branch.
+    bool isBoxed;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 
