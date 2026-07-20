@@ -218,6 +218,33 @@ class MLIRPrinter
         out << "}";
     }
 
+    // a tuple whose fields are all named (real `id`, as opposed to a
+    // positional element with no id) is structurally an object, not a
+    // positional tuple - print it with printObjectType so method-shaped
+    // FunctionType fields round-trip via method-signature syntax instead of
+    // silently downgrading to arrow-type syntax (HybridFunctionType on
+    // reimport - see printFields' allowMethodSignature comment for the full
+    // mechanism and why this matters for cross-module @dllimport decls).
+    template <typename TPL>
+    bool isObjectShapedTuple(TPL t)
+    {
+        auto fields = t.getFields();
+        return !fields.empty() && llvm::all_of(fields, [](auto &field) { return (bool)field.id; });
+    }
+
+    template <typename T, typename TPL>
+    void printTupleOrObjectType(T &out, TPL t)
+    {
+        if (isObjectShapedTuple(t))
+        {
+            printObjectType(out, t);
+        }
+        else
+        {
+            printTupleType(out, t);
+        }
+    }
+
     template <typename T, typename U>
     void printUnionType(T &out, U t, const char *S)
     {
@@ -303,7 +330,7 @@ class MLIRPrinter
                 out << "[]";
             })
             .template Case<mlir_ts::ConstTupleType>([&](auto t) {
-                printTupleType(out, t);
+                printTupleOrObjectType(out, t);
             })
             .template Case<mlir_ts::EnumType>([&](auto t) {
                 //printType(out, t.getElementType());
@@ -340,7 +367,7 @@ class MLIRPrinter
                 out << ">";
             })
             .template Case<mlir_ts::TupleType>([&](auto t) {
-                printTupleType(out, t);
+                printTupleOrObjectType(out, t);
             })
             .template Case<mlir_ts::UnionType>([&](auto t) {
                 printUnionType(out, t, " | ");
@@ -429,7 +456,7 @@ class MLIRPrinter
                 }
             })
             .template Case<mlir_ts::ObjectStorageType>([&](auto t) {
-                printTupleType(out, t);       
+                printObjectType(out, t);
             })
             .template Case<mlir_ts::NeverType>([&](auto) { 
                 out << "never";

@@ -653,13 +653,35 @@ or whether the heap-cloned vtable's allocated SIZE is computed from a
 stale/undersized type (a 2-slot allocation for a >2-slot vtable would also
 match this exact crash-only-past-slot-N shape).
 
-**Not fixed.** The regression test actually added for this session
-(`export/import_object_literal_structural_typed_params.ts`) deliberately
-stays within the single-method shape that's known to work, to avoid
-committing a failing test; it extends coverage only along the
-"zero-arg -> parameterized method" axis, not the "single-method ->
-multi-method" axis. A genuinely multi-method cross-module test is blocked
-on this bug and is the natural next thing to add once it's fixed.
+**FIXED (2026-07-20).** The actual root cause was upstream of all the
+candidates above: it wasn't the vtable-patch loop or the heap-clone size at
+all, both of which were correct. The bug was in the decl-text PRINTER
+(`MLIRPrinter.h`) used to emit a `@dllimport` declaration's type for
+cross-module round-tripping. A structurally-typed export's method fields are
+physically stored as plain `FunctionType` (a raw 8-byte function pointer -
+`this`/the object is implicit via the container, never a separate stored
+pointer). But the printer described named-field (object-shaped) types using
+POSITIONAL TUPLE syntax (`[name: (args) => result]`) instead of object syntax
+(`{name(args): result}`) - and arrow-type syntax parses back as
+`HybridFunctionType` (a 16-byte `{data,func}` runtime-tagged pair, meant for
+call-boundary/variable contexts, never for object-literal field storage). That
+ABI mismatch added a fixed +8-byte read-offset drift per field on reimport:
+the first method field happened to still read correctly, the second read a
+plausible-looking wrong value, and the third read 8 bytes past the end of the
+real object entirely - matching this section's exact "slot 0 fine, slot 1
+wrong, slot 2 crash" bisection precisely, without the vtable-patch code being
+at fault for any of it.
+
+Fix: `printType`'s dispatch for `TupleType`/`ConstTupleType`/`ObjectStorageType`
+now calls `printObjectType` (not `printTupleType`) whenever the fields are all
+named, via a new `isObjectShapedTuple`/`printTupleOrObjectType` helper pair -
+this is exactly what `printFields`'s own pre-existing comment already
+diagnosed, just not yet wired up. Verified via a genuinely multi-method
+(`add`/`addTwice`/`scaled`) cross-module cast returning correct values
+end-to-end; new regression test
+`export/import_object_literal_structural_typed_multi_method.ts` (both
+`-compile-shared` and `-jit-shared` variants) covers exactly the axis this
+section originally left uncovered. Full 734-test suite: 100% pass.
 
 Also worth noting for whoever investigates: a completely SEPARATE,
 same-module-only finding surfaced while building the initial (broken)
