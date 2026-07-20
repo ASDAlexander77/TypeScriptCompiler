@@ -288,18 +288,40 @@ struct InterfaceInfo
 
     // own methods plus every inherited method from `extends`, in the same
     // extends-first-then-own order as getTupleTypeFields/getVirtualTable -
-    // needed wherever code must patch/visit every method slot a cast target
-    // could own, not just this interface's own directly-declared ones.
-    void getAllMethods(llvm::SmallVector<InterfaceMethodInfo *> &allMethods)
+    // paired with the combined vtable slot each one actually occupies IN THIS
+    // (possibly multi-level/diamond `extends`) interface, since
+    // method.virtualIndex is only correct standalone (see findField's doc
+    // comment above); a method inherited through `extends`
+    // needs vtableOffset (the declaring interface's slot-block position) added to
+    // it. Needed by mlirGenCreateInterfaceVTableForObject's per-object patch loop,
+    // which indexes directly into ONE combined vtable for the cast's root
+    // interface - using method.virtualIndex alone there mis-patches every
+    // inherited method beyond the first `extends` target (harmless no-op for a
+    // single `extends` chain, where each level's own slots start where the
+    // previous level's ended and vtableOffset is cumulative from index 0 - but
+    // wrong for a diamond, where a second/third `extends` target's methods all
+    // stack at vtableOffset 0 relative to themselves).
+    void getAllMethodsWithVTableOffset(llvm::SmallVector<std::pair<InterfaceMethodInfo *, int>> &allMethods, int baseOffset = 0)
     {
+        auto offset = baseOffset;
         for (auto &extent : extends)
         {
-            std::get<1>(extent)->getAllMethods(allMethods);
+            std::get<1>(extent)->getAllMethodsWithVTableOffset(allMethods, offset);
+            offset += std::get<1>(extent)->getVTableSize();
         }
 
+        // own methods' virtualIndex (assignCanonicalVirtualIndexes()) is already
+        // absolute WITHIN THIS interface's own combined vtable (it starts counting
+        // after this interface's own extends block) - so at THIS level baseOffset
+        // is 0 and no further adjustment is needed. It's only when THIS interface
+        // is itself reached as an `extends` target (the recursive call above,
+        // baseOffset != 0) that its methods - own AND inherited alike, all already
+        // pushed into `allMethods` by this point - need the caller's baseOffset,
+        // which the recursive call already applied for inherited ones; own ones
+        // get it here via baseOffset.
         for (auto &method : methods)
         {
-            allMethods.push_back(&method);
+            allMethods.push_back({&method, baseOffset});
         }
     }
 

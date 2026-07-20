@@ -201,8 +201,15 @@ namespace mlirgen
             // same as an own one; only checking newInterfacePtr->methods here left every
             // inherited method's slot holding its initial offset-placeholder value
             // (never a real function pointer), crashing on the first call through it.
-            llvm::SmallVector<InterfaceMethodInfo *> allMethods;
-            newInterfacePtr->getAllMethods(allMethods);
+            // Paired with each method's actual combined-vtable slot
+            // (method.virtualIndex + vtableOffset): virtualIndex alone is only correct
+            // standalone, same caveat as InterfaceInfo::findField's doc comment
+            // (MLIRGenStore.h) - a method inherited from a SECOND OR LATER `extends`
+            // target (diamond `extends A, B`) has virtualIndex relative to its OWN
+            // declaring interface, which collides with the FIRST target's slots unless
+            // offset by where that target's own block starts in the combined vtable.
+            llvm::SmallVector<std::pair<InterfaceMethodInfo *, int>> allMethods;
+            newInterfacePtr->getAllMethodsWithVTableOffset(allMethods);
             if (allMethods.size() > 0) {
 
                 mlir_ts::TupleType storeType;
@@ -226,8 +233,8 @@ namespace mlirgen
                 // imported object type reconstructed from a @dllimport declaration, with no
                 // local funcOp to name) still need their function pointer read out of the
                 // actual object `in` at cast time.
-                llvm::SmallVector<InterfaceMethodInfo *> methodsNeedingPatch;
-                for (auto* methodPtr : allMethods)
+                llvm::SmallVector<std::pair<InterfaceMethodInfo *, int>> methodsNeedingPatch;
+                for (auto& [methodPtr, vtableOffset] : allMethods)
                 {
                     auto& method = *methodPtr;
                     auto fieldId = builder.getStringAttr(method.name);
@@ -240,7 +247,7 @@ namespace mlirgen
                     auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
                     if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty())
                     {
-                        methodsNeedingPatch.push_back(methodPtr);
+                        methodsNeedingPatch.push_back({methodPtr, vtableOffset});
                     }
                 }
 
@@ -265,7 +272,7 @@ namespace mlirgen
                 builder.create<mlir_ts::StoreOp>(location, valueVTable, heapVTable);
                 auto varVTable = builder.create<mlir_ts::CastOp>(location, globalVTableRefValue.getType(), heapVTable);
 
-                for (auto* methodPtr : methodsNeedingPatch)
+                for (auto& [methodPtr, vtableOffset] : methodsNeedingPatch)
                 {
                     auto& method = *methodPtr;
                     auto index = mth.getFieldIndexByFieldName(storeType, builder.getStringAttr(method.name));
@@ -282,8 +289,9 @@ namespace mlirgen
                                             << "\n\t object method ref: " << V(methodRef) << "\n\n";);
 
                     // where to save
-                    auto fieldInfoVT = mth.getFieldInfoByIndex(vtableType, method.virtualIndex);
-                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, method.virtualIndex);
+                    auto combinedVirtualIndex = method.virtualIndex + vtableOffset;
+                    auto fieldInfoVT = mth.getFieldInfoByIndex(vtableType, combinedVirtualIndex);
+                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, combinedVirtualIndex);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
                                             << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);
@@ -570,7 +578,23 @@ namespace mlirgen
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     if (interfaceInfo)
                     {
-                        newInterfacePtr->extends.push_back({-1, interfaceInfo});
+                        // mlirGen(InterfaceDeclaration) can run more than once for the same
+                        // already-declared interface (e.g. re-visited from another module or a
+                        // discovery pass) - mlirGenInterfaceAddFieldMember/addInterfaceMethod are
+                        // idempotent (they check getFieldIndex/getMethodIndex before pushing), but
+                        // this push_back had no equivalent guard, so a diamond `extends A, B` got
+                        // BOTH targets appended again on every re-run, multiplying the combined
+                        // vtable's slot count (and every findField/findMethod/getVirtualTable
+                        // offset derived from it) without bound. Skip targets already present.
+                        auto alreadyExtends = llvm::any_of(newInterfacePtr->extends, [&](auto &extent) {
+                            return std::get<1>(extent)->fullName == interfaceInfo->fullName;
+                        });
+
+                        if (!alreadyExtends)
+                        {
+                            newInterfacePtr->extends.push_back({-1, interfaceInfo});
+                        }
+
                         success = true;
                     }
                 })
