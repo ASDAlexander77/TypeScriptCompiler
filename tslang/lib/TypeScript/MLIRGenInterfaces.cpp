@@ -449,8 +449,29 @@ namespace mlirgen
                                 MLIRHelper::getStructIndex(builder, fieldIndex));
                         }
                     }
+                    else if (methodOrField.isMissing)
+                    {
+                        // an optional (`?`) interface METHOD the object literal doesn't
+                        // provide - same "null value, as missing field/method" placeholder
+                        // as the isField branch above (getStructIndex + -1 sentinel), just
+                        // cast to the method's function-pointer-ref type instead of a field
+                        // type. Reachable via extends (see 00interface_optional_method_extends.ts):
+                        // a required method is always compile-time-resolvable through
+                        // lookupObjectLiteralMethodSymbol/findMethod above and never reaches
+                        // isMissing here; only a genuinely-absent optional method does.
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+                                                                             mth.getI64AttrValue(-1));
+                        auto castedPtr = cast(location, mlir_ts::RefType::get(methodOrField.methodInfo.funcType),
+                                              negative1, genContext);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, castedPtr, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
                     else
                     {
+                        // a real, present, non-object-literal method (e.g. a class
+                        // implementing the interface) reaching the METHOD (not
+                        // methodsAsFields) branch - not yet exercised by any test.
                         llvm_unreachable("not implemented yet");
                         /*
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(

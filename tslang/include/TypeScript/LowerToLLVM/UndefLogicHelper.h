@@ -118,6 +118,59 @@ class UndefLogicHelper
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
                                                                        rewriter, typeConverter, compileOptions);
                 }
+                else if (isa<mlir_ts::BoundFunctionType>(t2))
+                {
+                    // an optional (`?`) interface/class METHOD compared against
+                    // `undefined` (e.g. `missing.opt == undefined` -
+                    // 00interface_optional_method_extends.ts). Unlike an optional
+                    // FIELD (OptionalType + HasValueOp runtime check), a bound_func has
+                    // no such wrapper, so this used to fall to whenOneValueIsUndef below
+                    // and return a compile-time-constant false/true regardless of the
+                    // actual value - meaning the comparison never reflected whether the
+                    // method was really present. InterfaceSymbolRefOpLowering now selects
+                    // a null `this` pointer when the vtable slot holds the "missing
+                    // optional member" -1 sentinel (a real bound method's `this` is
+                    // never null), so check that instead.
+                    //
+                    // NOTE: deliberately NOT using LogicOp<StdIOpTy, V1, v1, ...> here to
+                    // compute "is this null" - v1 is a template parameter baked in from
+                    // the ORIGINAL comparison operator that triggered this whole call
+                    // (e.g. arith::CmpIPredicate::ne for a source-level `!=`), not
+                    // something the `op`/SyntaxKind argument can override at the call
+                    // site (LogicOp's isIntOrIndex branch ignores `op` entirely and uses
+                    // `v1` directly) - passing SyntaxKind::EqualsEqualsToken here while v1
+                    // is still `ne` silently computed "this != null" instead of "this ==
+                    // null", inverting the result. Emit the LLVM::ICmpOp directly instead,
+                    // pointer-converting both sides the same way LogicOp's
+                    // isNullableTypeNoUnion branch would.
+                    auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), val2);
+                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                    LLVMTypeConverterHelper llvmtch(&typeConverter);
+                    auto intPtrType = llvmtch.getIntPtrType(0);
+                    auto thisValAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(thisVal.getType()), thisVal);
+                    auto nullValAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(nullVal.getType()), nullVal);
+                    auto thisPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, thisValAsLLVMType);
+                    auto nullPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, nullValAsLLVMType);
+                    mlir::Value isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, thisPtrValue, nullPtrValue);
+
+                    switch (opCmpCode)
+                    {
+                    case SyntaxKind::EqualsEqualsToken:
+                    case SyntaxKind::EqualsEqualsEqualsToken:
+                        return isNull;
+                    case SyntaxKind::ExclamationEqualsToken:
+                    case SyntaxKind::ExclamationEqualsEqualsToken:
+                    {
+                        auto trueVal = clh.createI1ConstantOf(true);
+                        return (mlir::Value)rewriter.create<LLVM::XOrOp>(loc, isNull, trueVal);
+                    }
+                    default:
+                        // ordering comparisons against undefined aren't meaningful for a
+                        // callable - same "result is false already" fallback as any
+                        // other unhandled type below.
+                        return whenOneValueIsUndef(rewriter, loc);
+                    }
+                }
                 else
                 {
                     // result is false already
