@@ -1319,6 +1319,59 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // If the destination has a known field order (e.g. a type-literal
+        // annotation on the receiving var/let), re-lay-out this literal's own
+        // storage to match it BEFORE method bodies are generated. Without
+        // this, the literal's storage stays in "all fields, then all
+        // methods" order (mlirGenObjectLiteralFields/-MethodPrototypes run as
+        // two separate passes over the properties, by design - methods may
+        // need every field already registered), which only coincidentally
+        // matches a declared type whose members interleave fields and
+        // methods in a different order. Method bodies compiled against the
+        // MISMATCHED order silently read/write the wrong byte offset when
+        // later invoked against the (differently laid out) destination
+        // memory - no crash, no error, just corrupted data: a `this.field`
+        // write can land on a neighboring method's function-pointer slot.
+        // Field position resolution inside method bodies is by NAME against
+        // objectStorageType's CURRENT field list (TupleFieldType/getIndex,
+        // MLIRCodeLogic.h), so reordering here - before
+        // mlirGenObjectLiteralMethodBodies runs - is sufficient; no
+        // per-method index patching needed. Must run after
+        // mlirGenObjectLiteralCaptures (methodInfosWithCaptures already holds
+        // pre-reorder indices consumed there) and before the final
+        // setFields/method-bodies pass below.
+        llvm::SmallVector<mlir_ts::FieldInfo> receiverFields;
+        if (oli.receiverType && mlir::succeeded(mth.getFields(oli.receiverType, receiverFields, true)) &&
+            receiverFields.size() == oli.fieldInfos.size())
+        {
+            llvm::SmallVector<mlir::Attribute> reorderedValues;
+            llvm::SmallVector<mlir_ts::FieldInfo> reorderedFieldInfos;
+            reorderedValues.reserve(oli.fieldInfos.size());
+            reorderedFieldInfos.reserve(oli.fieldInfos.size());
+
+            auto allMatched = true;
+            for (auto &receiverField : receiverFields)
+            {
+                auto foundIt = llvm::find_if(oli.fieldInfos,
+                    [&](const mlir_ts::FieldInfo &fieldInfo) { return fieldInfo.id == receiverField.id; });
+                if (foundIt == oli.fieldInfos.end())
+                {
+                    allMatched = false;
+                    break;
+                }
+
+                auto index = std::distance(oli.fieldInfos.begin(), foundIt);
+                reorderedFieldInfos.push_back(*foundIt);
+                reorderedValues.push_back(oli.values[index]);
+            }
+
+            if (allMatched)
+            {
+                oli.fieldInfos = std::move(reorderedFieldInfos);
+                oli.values = std::move(reorderedValues);
+            }
+        }
+
         // final type, update
         objectStorageType.setFields(oli.fieldInfos);
 
