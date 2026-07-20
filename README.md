@@ -2,6 +2,8 @@
 
 Powered by [![LLVM|MLIR](https://llvm.org/img/LLVM-Logo-Derivative-1.png)](https://llvm.org/)
 
+Developed by [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
+
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BBJ4SQYLA6D2L)
 
 A native ahead-of-time (AOT) and JIT compiler for **TypeScript**, built on **LLVM/MLIR**.
