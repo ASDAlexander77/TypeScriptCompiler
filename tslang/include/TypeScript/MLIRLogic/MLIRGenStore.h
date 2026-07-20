@@ -74,11 +74,11 @@ enum class Select: int
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}, isBoxed{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}, isBoxed{false}
     {
     }
 
@@ -97,6 +97,13 @@ struct VariableClass
     bool isVolatile;
     bool nonTemporal;
     bool invariant;
+    // @dllimport declaration-only marker: the exported var's MLIR type is a
+    // boxed (pointer-indirected) ObjectType, not a plain value tuple - see
+    // docs/interface-vtable-simplification-design.md's "Bug 1" sections.
+    // No TS source syntax expresses this, so the exporter's declaration
+    // printer emits a sibling @boxed decorator and the importer's
+    // declaration-mode type resolution reads it back here.
+    bool isBoxed;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 

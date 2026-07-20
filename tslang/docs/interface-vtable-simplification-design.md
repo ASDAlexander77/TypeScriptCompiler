@@ -556,6 +556,68 @@ declaration syntax itself) has no natural TS syntax to piggyback on,
 as an `object`-typed annotation turns out to mean "opaque", not "boxed
 structural".
 
+### `@boxed` decorator: direction (b) implemented, real progress, one more gap found (2026-07-20)
+
+Implemented direction (b): the exporter's declaration printer now emits a
+sibling `@boxed` decorator (alongside the existing `@dllimport`) when the
+variable's real MLIR type is `ObjectType` wrapping a concrete
+`TupleType`/`ConstTupleType`/`ObjectStorageType` -
+`DeclarationPrinter.cpp:printVariableDeclaration`. The importer's
+`declarationMode` type resolution
+(`MLIRGenVariables.cpp:mlirGen(VariableDeclaration...)`'s `initFunc`
+lambda) reads a new `VariableClass::isBoxed` flag - set from the `@boxed`
+decorator via the SAME `iterateDecorators` mechanism already used for
+`@dllimport`/`used`/`atomic`/`volatile`/etc. - and wraps the resolved type
+in `getObjectType(...)` to match. Deliberately scoped narrowly: only
+`evaluateTypeAndInit` (the `declarationMode`-only path) boxes, NOT the
+general `getType()` handling for `SyntaxKind::TypeLiteral` (used
+everywhere - function params, return types, etc.) - boxing there
+unconditionally would have regressed #257's explicitly-typed export test,
+which relies on staying unboxed.
+
+**Verified real progress**: `export var counterObj = {...}` (untyped) no
+longer hits the boxing-mismatch crash from the previous section - the
+`<A.Counter>A.counterObj` cast now constructs without crashing. Full
+ctest suite: 730/730, unchanged - confirms #257's unboxed case is
+unaffected (it never gets `@boxed`, since its type stays `TupleType`) and
+the already-working boxed same-module/interface-typed-export cases (#251,
+`export_object_literal_with_interface.ts`) are unaffected too.
+
+**Not fully working yet - one more gap found, narrower than before.**
+Reading `A.counterObj.count`/calling `A.counterObj.inc()` directly (no
+interface cast at all) still returns garbage / crashes with a null
+funcptr call. Compared against the ALREADY-WORKING boxed cross-module
+global (`export_object_literal_with_interface.ts`'s `A.counter`, an
+INTERFACE-typed export): that one is a 16-byte INLINE value
+(`!llvm.struct<(ptr, ptr)>` - the interface's own `{vtblPtr, thisVal}`
+pair, stored directly in the global slot, both fields populated in place
+by its `__cctor` via native `llvm.mlir.global_ctors`) and works reliably
+(passing all session). `A.counterObj` (this fix's target) is instead a
+SINGLE 8-byte POINTER (`!llvm.ptr` - the global slot holds only an
+address to separately GC-heap-allocated data) - one more level of
+indirection than any other boxed cross-module global this arc has
+exercised. Not yet determined whether this is a genuine
+constructor-ordering issue (does `A.counterObj__cctor` - confirmed to
+exist, e.g. via `llvm.mlir.global_ctors ctors = [@A.counterObj__cctor],
+priorities = [1000 : i32]` in the exporter's own IR - actually run before
+the importer's `main()` reads the global?) or something else entirely
+specific to single-pointer-indirection globals; `-gctors-as-method` alone
+did not resolve it. Confirmed via WinDbg: `A.counterObj.inc()` crashes
+with `rax=0`/`rip=0` (null function pointer call), same signature as the
+earlier boxing-mismatch crash but at a different, later point (now inside
+the read/call itself, not during cast construction) - so this genuinely
+is forward progress, not the same bug recurring.
+
+**Shipped anyway** (user's call): the `@boxed` mechanism is real,
+verified, idiom-consistent (mirrors the `@dllimport`/`used`/`atomic`
+decorator pattern), and non-regressing even though the untyped-export
+scenario still doesn't fully work end-to-end. No regression test added -
+the scenario this was built for still fails, just later and for a
+different reason. Whoever picks this up next should start with a WinDbg
+breakpoint comparing the raw memory at `A.counterObj`'s global slot
+right before vs. right after `main()` starts, to settle the
+constructor-ordering question directly rather than inferring it.
+
 ### Newly found: multi-method cross-module vtable slot bug (2026-07-19)
 
 Found while extending test coverage beyond this arc's fixes - every prior

@@ -663,6 +663,18 @@ namespace mlirgen
             if (declarationMode)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
+
+                // this declaration's export side told us (via the @boxed decorator,
+                // see printVariableDeclaration/DeclarationPrinter.cpp) that its real
+                // MLIR type is a boxed ObjectType, not the plain value tuple its type
+                // annotation text alone would reconstruct - box it here to match, so
+                // the importer's representation agrees with what the exporter's
+                // compiled global actually is. See docs/interface-vtable-simplification-design.md.
+                if (varClass.isBoxed && t && !isa<mlir_ts::ObjectType>(t))
+                {
+                    t = getObjectType(t);
+                }
+
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
@@ -764,7 +776,11 @@ namespace mlirgen
                         varClass.isDynamicImport = true;
                         varClass.isImport = false;
                     }
-                }                
+                }
+
+                if (name == "boxed") {
+                    varClass.isBoxed = true;
+                }
 
                 if (name == "used") {
                     varClass.isUsed = true;

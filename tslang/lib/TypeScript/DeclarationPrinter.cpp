@@ -305,6 +305,26 @@ namespace typescript
         printNamespaceBegin(elementNamespace);
 
         printBeforeDeclaration();
+
+        // no TS source syntax expresses "this type annotation should reconstruct
+        // as a boxed (pointer-indirected) ObjectType, not a plain value tuple" -
+        // an untyped, method-bearing object-literal export is boxed here but its
+        // structural-shape declaration text is indistinguishable from an
+        // explicitly-typed (unboxed) export of the same shape. Emit a sibling
+        // @boxed decorator so the importer's declaration-mode type resolution
+        // (MLIRGenVariables.cpp) can box its reconstruction to match. See
+        // docs/interface-vtable-simplification-design.md's "Bug 1" sections.
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            auto storageType = objectType.getStorageType();
+            if (isa<mlir_ts::TupleType>(storageType) || isa<mlir_ts::ConstTupleType>(storageType) ||
+                isa<mlir_ts::ObjectStorageType>(storageType))
+            {
+                os << "@boxed";
+                newline();
+            }
+        }
+
         os << (isConst ? "const" : "let") << " " << name << " : ";
         print(type);
         os << ";";
