@@ -40,6 +40,22 @@ namespace mlirgen
             if (std::find_if(fields.begin(), fields.end(),
                              [&](auto &item) { return item.id == interfaceField.id; }) == fields.end())
             {
+                // the source has no field of this name at all - only reachable for a
+                // conditional (`?`) interface member (getVirtualTable's resolveField
+                // already rejects a missing non-conditional one, failing
+                // canCastTupleToInterface before this clone path even runs). Match the
+                // convention InterfaceSymbolRefOp's `optional` slot-count check already
+                // relies on for the non-clone path (see 00interface_optional_cast_order.ts):
+                // the field is simply ABSENT from the storage tuple, not present with a
+                // placeholder value - so skip it here rather than appending it. Appending it
+                // with any value/type would desync the clone's field COUNT from what
+                // interfaceVTableNameForObject's slot-index math and the interface's runtime
+                // "is this slot within the actual object's tuple size" check expect.
+                if (interfaceField.isConditional)
+                {
+                    continue;
+                }
+
                 fields.push_back(interfaceField);
             }
         }
