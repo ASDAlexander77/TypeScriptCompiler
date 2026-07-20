@@ -348,7 +348,7 @@ struct InterfaceInfo
 
         for (auto &field : fields)
         {
-            tupleFields.push_back({field.id, field.type, false, mlir_ts::AccessLevel::Public});
+            tupleFields.push_back({field.id, field.type, field.isConditional, mlir_ts::AccessLevel::Public});
         }
 
         return mlir::success();
