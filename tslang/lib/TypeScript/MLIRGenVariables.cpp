@@ -677,6 +677,24 @@ namespace mlirgen
                     auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
                     auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                         location, getOpaqueType(), dllVarName);
+
+                    if (varClass.isBoxed)
+                    {
+                        // the resolved symbol's storage is a single boxed
+                        // pointer (ObjectType lowers to `ptr`) to the real
+                        // data, not the data inline - load the pointer first,
+                        // then load through it, instead of reading
+                        // sizeof(fieldType) bytes directly at the symbol's own
+                        // address (which would read past a lone 8-byte slot).
+                        // See DeclarationPrinter.cpp's @boxed emission.
+                        auto boxedType = getObjectType(fieldType);
+                        auto refToBoxed = cast(location, mlir_ts::RefType::get(boxedType), referenceToStaticFieldOpaque, genContext);
+                        auto boxedPtr = V(builder.create<mlir_ts::LoadOp>(location, boxedType, refToBoxed));
+                        auto refToTyped = V(cast(location, mlir_ts::RefType::get(fieldType), boxedPtr, genContext));
+                        auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
+                        return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
+                    }
+
                     auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
                     auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
                     return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
@@ -764,6 +782,10 @@ namespace mlirgen
                         varClass.isDynamicImport = true;
                         varClass.isImport = false;
                     }
+                }
+
+                if (name == "boxed") {
+                    varClass.isBoxed = true;
                 }
 
                 if (name == "used") {

@@ -306,6 +306,27 @@ namespace typescript
 
         printBeforeDeclaration();
 
+        // no TS source syntax expresses "this symbol's storage is a single
+        // boxed pointer to the real data, not the data inline" - an inferred
+        // (untyped) object-literal export is boxed as ObjectType, but its
+        // structural-shape declaration text alone is indistinguishable from an
+        // explicitly-typed (unboxed, inline) export of the same shape. Emit a
+        // sibling @boxed decorator so the importer's isDynamicImport load
+        // (MLIRGenVariables.cpp, the branch that actually runs for every
+        // ordinary `import '...'` - see mlirGenImportSharedLib's '.' hack)
+        // knows to dereference one extra level instead of reading the tuple
+        // inline at the resolved symbol address.
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            auto storageType = objectType.getStorageType();
+            if (isa<mlir_ts::TupleType>(storageType) || isa<mlir_ts::ConstTupleType>(storageType) ||
+                isa<mlir_ts::ObjectStorageType>(storageType))
+            {
+                os << "@boxed";
+                newline();
+            }
+        }
+
         os << (isConst ? "const" : "let") << " " << name << " : ";
         print(type);
         os << ";";
