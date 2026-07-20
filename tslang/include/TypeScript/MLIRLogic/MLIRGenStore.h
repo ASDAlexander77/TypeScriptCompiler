@@ -286,6 +286,23 @@ struct InterfaceInfo
     {
     }
 
+    // own methods plus every inherited method from `extends`, in the same
+    // extends-first-then-own order as getTupleTypeFields/getVirtualTable -
+    // needed wherever code must patch/visit every method slot a cast target
+    // could own, not just this interface's own directly-declared ones.
+    void getAllMethods(llvm::SmallVector<InterfaceMethodInfo *> &allMethods)
+    {
+        for (auto &extent : extends)
+        {
+            std::get<1>(extent)->getAllMethods(allMethods);
+        }
+
+        for (auto &method : methods)
+        {
+            allMethods.push_back(&method);
+        }
+    }
+
     mlir::LogicalResult getTupleTypeFields(llvm::SmallVector<mlir_ts::FieldInfo> &tupleFields, mlir::MLIRContext *context)
     {
         for (auto &extent : extends)
@@ -335,7 +352,7 @@ struct InterfaceInfo
     {
         for (auto &extent : extends)
         {
-            if (mlir::failed(std::get<1>(extent)->getVirtualTable(vtable, resolveField, resolveMethod)))
+            if (mlir::failed(std::get<1>(extent)->getVirtualTable(vtable, resolveField, resolveMethod, methodsAsFields)))
             {
                 return mlir::failure();
             }

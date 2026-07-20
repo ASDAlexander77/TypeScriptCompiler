@@ -196,7 +196,14 @@ namespace mlirgen
             auto globalVTableRefValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
 
             // we need to update methods references in VTable with functions from object;
-            if (newInterfacePtr->methods.size() > 0) {
+            // includes methods inherited via `extends`, not just this interface's own -
+            // an inherited method's vtable slot needs patching (or at least visiting) the
+            // same as an own one; only checking newInterfacePtr->methods here left every
+            // inherited method's slot holding its initial offset-placeholder value
+            // (never a real function pointer), crashing on the first call through it.
+            llvm::SmallVector<InterfaceMethodInfo *> allMethods;
+            newInterfacePtr->getAllMethods(allMethods);
+            if (allMethods.size() > 0) {
 
                 mlir_ts::TupleType storeType;
                 if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
@@ -220,8 +227,9 @@ namespace mlirgen
                 // local funcOp to name) still need their function pointer read out of the
                 // actual object `in` at cast time.
                 llvm::SmallVector<InterfaceMethodInfo *> methodsNeedingPatch;
-                for (auto& method : newInterfacePtr->methods)
+                for (auto* methodPtr : allMethods)
                 {
+                    auto& method = *methodPtr;
                     auto fieldId = builder.getStringAttr(method.name);
                     auto index = mth.getFieldIndexByFieldName(storeType, fieldId);
                     if (index == -1)
@@ -232,7 +240,7 @@ namespace mlirgen
                     auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
                     if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty())
                     {
-                        methodsNeedingPatch.push_back(&method);
+                        methodsNeedingPatch.push_back(methodPtr);
                     }
                 }
 
