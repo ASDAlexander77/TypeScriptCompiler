@@ -663,19 +663,6 @@ namespace mlirgen
             if (declarationMode)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
-
-                // @dllimport means this declaration is a holder of a reference to
-                // the imported value's storage in the exporting module, not a
-                // value copy - box tuple-shaped ("{...}") reconstructions as
-                // ObjectType so the importer's representation is a boxed reference,
-                // matching the pointer-indirected storage a cross-module object
-                // literal actually has. See docs/interface-vtable-simplification-design.md.
-                if (varClass.isImport && t && !isa<mlir_ts::ObjectType>(t) &&
-                    (isa<mlir_ts::TupleType>(t) || isa<mlir_ts::ConstTupleType>(t)))
-                {
-                    t = getObjectType(t);
-                }
-
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
@@ -692,7 +679,7 @@ namespace mlirgen
                         location, getOpaqueType(), dllVarName);
                     auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
                     auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
                 }
             }
 
@@ -767,13 +754,13 @@ namespace mlirgen
 
                 if (name == DLL_IMPORT)
                 {
-                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;                    
+                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;
                     varClass.isImport = true;
                     // it has parameter, means this is dynamic import, should point to dll path
                     // TODO: finish it, look at mlirGenCustomRTTIDynamicImport as example how to load it
                     if (args.size() > 0)
                     {
-                        varClass.type = VariableType::Var; 
+                        varClass.type = VariableType::Var;
                         varClass.isDynamicImport = true;
                         varClass.isImport = false;
                     }

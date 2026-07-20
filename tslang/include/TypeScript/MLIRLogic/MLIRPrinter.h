@@ -91,8 +91,79 @@ class MLIRPrinter
         }
     }
 
+    // method-signature form ("(...params): result") of printFuncType's output,
+    // for an object/interface field whose type is a `this`-taking FunctionType
+    // (a method) - see printFields' FunctionType case for why this must be
+    // textually distinct from a property with an arrow-type annotation.
+    template <typename T, typename F>
+    void printFuncTypeAsMethodSignature(T &out, F t)
+    {
+        out << "(";
+        auto first = true;
+        auto index = 0;
+        auto size = t.getInputs().size();
+        auto isVar = t.getIsVarArg();
+        for (auto subType : t.getInputs())
+        {
+            if (index == 0 &&
+                (isa<mlir_ts::OpaqueType>(subType) || isa<mlir_ts::ObjectType>(subType)))
+            {
+                index++;
+                size--;
+                continue;
+            }
+
+            if (!first)
+            {
+                out << ", ";
+            }
+
+            if (isVar && size == 1)
+            {
+                out << "...";
+            }
+
+            out << "p" << index << ": ";
+
+            printType(out, subType);
+            first = false;
+            index++;
+            size--;
+        }
+        out << "): ";
+
+        if (t.getNumResults() == 0)
+        {
+            out << "void";
+        }
+        else if (t.getNumResults() == 1)
+        {
+            printType(out, t.getResults().front());
+        }
+        else
+        {
+            out << "[";
+            auto first = true;
+            for (auto subType : t.getResults())
+            {
+                if (!first)
+                {
+                    out << ", ";
+                }
+
+                printType(out, subType);
+                first = false;
+            }
+
+            out << "]";
+        }
+    }
+
+    // allowMethodSignature: method-signature syntax ("name(...): result") is only
+    // valid TS grammar inside object-type-literal braces "{...}" - a tuple "[...]"
+    // element can't use it, so printTupleType must pass false here.
     template <typename T, typename TPL>
-    void printFields(T &out, TPL t)
+    void printFields(T &out, TPL t, bool allowMethodSignature)
     {
         auto first = true;
         for (auto field : t.getFields())
@@ -100,6 +171,24 @@ class MLIRPrinter
             if (!first)
             {
                 out << ", ";
+            }
+
+            // a FunctionType field (a method, taking an explicit `this` first
+            // param - see printFuncType's `this`-omission comment) must print as
+            // method-signature syntax ("name(...): result"), which the parser
+            // resolves back through getMethodSignature to plain FunctionType.
+            // Printing it as a property with an arrow-type annotation
+            // ("name: (...) => result") is textually identical to what a
+            // genuinely bound/hybrid closure field would print, so on reimport
+            // it would parse back as HybridFunctionType instead - a different,
+            // wider (two-pointer-struct vs single-pointer) storage layout that
+            // silently misaligns every subsequent read through the field.
+            if (allowMethodSignature && field.id && isa<mlir_ts::FunctionType>(field.type))
+            {
+                printAttribute(out, field.id, true);
+                printFuncTypeAsMethodSignature(out, mlir::cast<mlir_ts::FunctionType>(field.type));
+                first = false;
+                continue;
             }
 
             if (field.id)
@@ -111,22 +200,22 @@ class MLIRPrinter
             printType(out, field.type);
             first = false;
         }
-    }    
+    }
 
     template <typename T, typename TPL>
     void printTupleType(T &out, TPL t)
     {
         out << "[";
-        printFields(out, t);
-        out << "]";        
+        printFields(out, t, false);
+        out << "]";
     }
 
     template <typename T, typename TPL>
     void printObjectType(T &out, TPL t)
     {
         out << "{";
-        printFields(out, t);
-        out << "}";        
+        printFields(out, t, true);
+        out << "}";
     }
 
     template <typename T, typename U>
