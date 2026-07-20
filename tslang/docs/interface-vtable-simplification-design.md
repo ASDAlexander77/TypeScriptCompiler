@@ -474,6 +474,150 @@ relative to already-compiled method bodies expecting the original layout;
 that can only bite literals whose inferred field types differ in size from
 the interface's, and is out of scope here. 722/722 suite (720 + 2 new).
 
+### Bug 1 (untyped export -> bare `object`) - printer fix implemented, PAUSED before PR (2026-07-19)
+
+Attempted the fix [[imported-object-interface-cast-bugs]] flagged as
+"not yet investigated": `MLIRPrinter::printType`'s `ObjectType` case
+(include/TypeScript/MLIRLogic/MLIRPrinter.h) unconditionally printed the
+literal string `"object"`, discarding the storage type entirely - the root
+cause of the `let counterObj : object;` degradation. Fix (implemented,
+**uncommitted on branch `fix-untyped-object-export-degradation`, not
+pushed, no PR**): print the structural shape via the already-existing
+(previously dead-code) `printObjectType` helper when the storage type is a
+`TupleType`/`ConstTupleType`/`ObjectStorageType`, falling back to bare
+`object` only when it's genuinely opaque. Confirmed this alone fixes the
+originally-described crash: the declaration now round-trips as
+`let counterObj : {count:number, inc:() => void};` instead of
+`object;`, and no longer hits the `mlir::cast<mlir_ts::TupleType>` assert
+at `MLIRGenInterfaces.cpp:312`.
+
+**But this does not make the untyped-export scenario work end-to-end -
+verifying surfaced a fourth, deeper bug**: an untyped, method-bearing
+object literal (`export var counterObj = {...}`, no annotation) is
+auto-boxed as `ObjectType` (pointer-indirected) in the EXPORTING module,
+per the object-literal-boxing rule from the #248/#249 arc. The printed
+`{...}` text is a plain TS structural type-literal syntax with no way to
+say "and this should be boxed" - there is no such TS source syntax, boxing
+is purely an expression-shape heuristic applied to object LITERALS, never
+to type ANNOTATIONS. So the IMPORTER, parsing that declaration as an
+ordinary type annotation, reconstructs an UNBOXED `TupleType` - a
+representation mismatch against the exporting module's actual boxed
+global. Confirmed via WinDbg (same technique as the earlier bugs in this
+file): crashes with a null-funcptr `call rax` DURING the
+`<A.Counter>A.counterObj` cast construction itself, before any method call
+or field read - earlier/more fundamental than the clone-field-order or
+width-coercion bugs above.
+
+Also independently reconfirmed via a same-module (no cross-module import
+at all) repro that the width-coercion sharp edge noted above is real and
+pre-existing: `{ count: 0, ... }` (integer literal, infers `s32`) cast to
+an interface declaring `count: number` reads back
+`4.94066e-324` (= the bit pattern of small int `1` misread as an 8-byte
+double) after one `inc()` - not a NaN or a crash, silently wrong. Using a
+float literal (`count: 0.0`, infers `number`/f64 directly, no
+width-narrowing) avoids this specific bug and cast/mutate/read correctly
+same-module - but does NOT avoid the boxing-mismatch crash above when
+cross-module, since that one triggers before any field is ever touched.
+
+**Not yet investigated**: how to recover "boxed-ness" across the
+`@dllimport` boundary for an untyped export. Two directions worth
+comparing before picking one: (a) teach the declaration-EXPORT side to
+emit some signal distinguishing "this var's type should reconstruct as
+boxed `ObjectType`" (the printer alone can't invent new TS syntax for
+this - would need either a compiler-internal-only declaration extension or
+piggybacking on existing syntax in a way the ordinary parser still
+accepts), or (b) teach `@dllimport` type RECONSTRUCTION (whichever code
+turns a parsed type annotation into the `var`/`let`'s MLIR type during
+declaration-file processing) to apply the same "structural type with
+method members -> box as ObjectType" rule that literal EXPRESSIONS already
+get, at least for declaration-only (no initializer) `@dllimport` bindings.
+Direction (b) seems lower-risk (touches reconstruction, not the
+established literal-boxing heuristic or wire format) but wasn't explored.
+Sequencing note for whoever picks this up: this bug must be fixed BEFORE
+the width-coercion one matters for the untyped-export cross-module case,
+since it crashes strictly earlier in the same call path.
+
+**Follow-up (2026-07-20): confirmed the two directions are NOT symmetric.**
+User hypothesized declaring an explicit intermediate `object`-typed
+binding (`export let counterObj2: object = counterObj;`) might sidestep
+the mismatch. Tested: it does not - it regresses to the ORIGINAL
+`mlir::cast<mlir_ts::TupleType>` assert (MLIRGenInterfaces.cpp:312)
+instead of the boxing-mismatch crash. Reason: `counterObj2`'s own MLIR
+storage type is genuinely opaque (widened away, not just a printer
+omission - its declaration prints as bare `object` even WITH the printer
+fix applied, confirming the concrete shape is erased at assignment, not
+just at print time), so it has strictly LESS structural information than
+`counterObj` itself, not more. This rules out "introduce an explicit
+`object`-typed alias" as a workaround and confirms direction (b) above
+(teach `@dllimport` reconstruction to box a method-bearing structural
+type annotation, matching the literal-expression boxing rule) is the
+right next thing to try - direction (a) (encode boxed-ness in the
+declaration syntax itself) has no natural TS syntax to piggyback on,
+as an `object`-typed annotation turns out to mean "opaque", not "boxed
+structural".
+
+### `@boxed` decorator: direction (b) implemented, real progress, one more gap found (2026-07-20)
+
+Implemented direction (b): the exporter's declaration printer now emits a
+sibling `@boxed` decorator (alongside the existing `@dllimport`) when the
+variable's real MLIR type is `ObjectType` wrapping a concrete
+`TupleType`/`ConstTupleType`/`ObjectStorageType` -
+`DeclarationPrinter.cpp:printVariableDeclaration`. The importer's
+`declarationMode` type resolution
+(`MLIRGenVariables.cpp:mlirGen(VariableDeclaration...)`'s `initFunc`
+lambda) reads a new `VariableClass::isBoxed` flag - set from the `@boxed`
+decorator via the SAME `iterateDecorators` mechanism already used for
+`@dllimport`/`used`/`atomic`/`volatile`/etc. - and wraps the resolved type
+in `getObjectType(...)` to match. Deliberately scoped narrowly: only
+`evaluateTypeAndInit` (the `declarationMode`-only path) boxes, NOT the
+general `getType()` handling for `SyntaxKind::TypeLiteral` (used
+everywhere - function params, return types, etc.) - boxing there
+unconditionally would have regressed #257's explicitly-typed export test,
+which relies on staying unboxed.
+
+**Verified real progress**: `export var counterObj = {...}` (untyped) no
+longer hits the boxing-mismatch crash from the previous section - the
+`<A.Counter>A.counterObj` cast now constructs without crashing. Full
+ctest suite: 730/730, unchanged - confirms #257's unboxed case is
+unaffected (it never gets `@boxed`, since its type stays `TupleType`) and
+the already-working boxed same-module/interface-typed-export cases (#251,
+`export_object_literal_with_interface.ts`) are unaffected too.
+
+**Not fully working yet - one more gap found, narrower than before.**
+Reading `A.counterObj.count`/calling `A.counterObj.inc()` directly (no
+interface cast at all) still returns garbage / crashes with a null
+funcptr call. Compared against the ALREADY-WORKING boxed cross-module
+global (`export_object_literal_with_interface.ts`'s `A.counter`, an
+INTERFACE-typed export): that one is a 16-byte INLINE value
+(`!llvm.struct<(ptr, ptr)>` - the interface's own `{vtblPtr, thisVal}`
+pair, stored directly in the global slot, both fields populated in place
+by its `__cctor` via native `llvm.mlir.global_ctors`) and works reliably
+(passing all session). `A.counterObj` (this fix's target) is instead a
+SINGLE 8-byte POINTER (`!llvm.ptr` - the global slot holds only an
+address to separately GC-heap-allocated data) - one more level of
+indirection than any other boxed cross-module global this arc has
+exercised. Not yet determined whether this is a genuine
+constructor-ordering issue (does `A.counterObj__cctor` - confirmed to
+exist, e.g. via `llvm.mlir.global_ctors ctors = [@A.counterObj__cctor],
+priorities = [1000 : i32]` in the exporter's own IR - actually run before
+the importer's `main()` reads the global?) or something else entirely
+specific to single-pointer-indirection globals; `-gctors-as-method` alone
+did not resolve it. Confirmed via WinDbg: `A.counterObj.inc()` crashes
+with `rax=0`/`rip=0` (null function pointer call), same signature as the
+earlier boxing-mismatch crash but at a different, later point (now inside
+the read/call itself, not during cast construction) - so this genuinely
+is forward progress, not the same bug recurring.
+
+**Shipped anyway** (user's call): the `@boxed` mechanism is real,
+verified, idiom-consistent (mirrors the `@dllimport`/`used`/`atomic`
+decorator pattern), and non-regressing even though the untyped-export
+scenario still doesn't fully work end-to-end. No regression test added -
+the scenario this was built for still fails, just later and for a
+different reason. Whoever picks this up next should start with a WinDbg
+breakpoint comparing the raw memory at `A.counterObj`'s global slot
+right before vs. right after `main()` starts, to settle the
+constructor-ordering question directly rather than inferring it.
+
 ### Newly found: multi-method cross-module vtable slot bug (2026-07-19)
 
 Found while extending test coverage beyond this arc's fixes - every prior

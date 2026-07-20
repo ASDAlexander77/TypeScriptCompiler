@@ -679,7 +679,7 @@ namespace mlirgen
                         location, getOpaqueType(), dllVarName);
                     auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
                     auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);
                 }
             }
 
@@ -754,17 +754,17 @@ namespace mlirgen
 
                 if (name == DLL_IMPORT)
                 {
-                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;                    
+                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;
                     varClass.isImport = true;
                     // it has parameter, means this is dynamic import, should point to dll path
                     // TODO: finish it, look at mlirGenCustomRTTIDynamicImport as example how to load it
                     if (args.size() > 0)
                     {
-                        varClass.type = VariableType::Var; 
+                        varClass.type = VariableType::Var;
                         varClass.isDynamicImport = true;
                         varClass.isImport = false;
                     }
-                }                
+                }
 
                 if (name == "used") {
                     varClass.isUsed = true;

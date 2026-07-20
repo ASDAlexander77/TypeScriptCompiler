@@ -158,6 +158,13 @@ struct GenContext
     mlir::Type receiverType;
     mlir::StringRef receiverName;
     bool isGlobalVarReceiver = false;
+    // set while generating the initializer of an exported var/let - lets a
+    // nested object-literal's method-like properties (processObjectFunctionLike)
+    // know they must be forced to public/external linkage, since their
+    // function pointer is reachable only indirectly through the exported
+    // global's data, not by name; left private, the linker can strip them and
+    // the boxed global ends up with a null method slot cross-module.
+    bool isExportVarReceiver = false;
     PassResult *passResult = nullptr;
     mlir::SmallVector<mlir::Block *> *cleanUps = nullptr;
     mlir::SmallVector<mlir::Operation *> *cleanUpOps = nullptr;

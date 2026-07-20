@@ -305,6 +305,7 @@ namespace typescript
         printNamespaceBegin(elementNamespace);
 
         printBeforeDeclaration();
+
         os << (isConst ? "const" : "let") << " " << name << " : ";
         print(type);
         os << ";";

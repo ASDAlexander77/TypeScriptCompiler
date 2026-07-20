@@ -1117,6 +1117,8 @@ class MLIRGenImpl
             genContextWithNameReceiver.isGlobalVarReceiver = true;
         }
 
+        genContextWithNameReceiver.isExportVarReceiver = variableDeclarationInfo.isExport;
+
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
         {
             return mlir::failure();
@@ -7567,6 +7569,15 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << oli.objThis << "\n";);
 
         funcLikeDecl->parent = oli.objectLiteral;
+
+        // this method's function pointer is reachable only indirectly, baked
+        // into the exported object literal's data - force public/external
+        // linkage (same mechanism exported class methods use, see
+        // MLIRGenClasses.cpp) so the linker doesn't strip it as unreferenced.
+        if (genContext.isExportVarReceiver)
+        {
+            funcLikeDecl->internalFlags |= InternalFlags::IsPublic;
+        }
 
         mlir::OpBuilder::InsertionGuard guard(builder);
         auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
