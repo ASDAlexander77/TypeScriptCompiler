@@ -847,6 +847,9 @@ add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOU
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
 add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-compile-export-import-class-extends-implements-diamond COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 
 # shared libs tests (dlls/compile-time)
 add_test(NAME test-compile-time-shared-decl-emit-type COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_func.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
@@ -862,6 +865,30 @@ add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -shared "$
 # shared libs tests (exports/imports)
 add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+# KNOWN ISSUE (pre-existing, not a regression from the crash fix below): a
+# derived class whose base class lives in another module ("shared lib" /
+# cross-module `class extends`) does not reliably work end-to-end through
+# test-runner's actual -shared invocation (no explicit --shared-libs for the
+# imported DLL; the import statement's own auto-load is all that's used) -
+# AOT fails to link (missing dllimport linkage on the compiler-synthesized
+# `.instanceOf` method every class gets) and JIT fails to even compile
+# (`.instanceOf` sometimes never gets synthesized/registered at all - a
+# discovery/partial-resolve pass ordering bug: it depends sensitively on
+# exact compile-time sequencing, e.g. a manual repro that adds an extra
+# --shared-libs flag "accidentally" avoids it). Two attempts at a targeted
+# fix (deferring synthesis until a non-speculative pass) were reverted after
+# each caused an INFINITE LOOP in unrelated same-module class tests (a
+# same-module class's own discovery retry loop can also always run under
+# allowPartialResolve, so deferring "until a real pass" can mean forever) -
+# worse than the original clean compile error, so left as a known issue
+# rather than risk that regression again. What IS fixed and verified: the
+# crash (access violation) that used to occur instead of this clean error -
+# see MLIRGenFunctions.cpp's mlirGenFunctionLikeDeclarationDynamicImport
+# (registration name/map fix) and MLIRGenImpl.h's ClassMethodAccess
+# (FuncOp-or-variable dual lookup with a null-check backstop).
+# add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+# add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+# add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-with-interface COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-untyped COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
@@ -888,6 +915,10 @@ add_test(NAME test-jit-shared-decl-emit-class COMMAND test-runner -jit -shared "
 # shared libs tests (exports/imports)
 add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+# KNOWN ISSUE - see the matching commented-out compile-shared entries above.
+# add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+# add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+# add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-untyped COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
