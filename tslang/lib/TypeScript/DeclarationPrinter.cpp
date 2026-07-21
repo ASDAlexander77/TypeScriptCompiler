@@ -364,12 +364,12 @@ namespace typescript
             auto any = false;
             for (auto baseClass : classType->baseClasses)
             {
-                if (any) 
+                if (any)
                 {
                     os << ", ";
                 }
 
-                os << classType->fullName;
+                os << baseClass->fullName;
                 any = true;
             }
         }
@@ -425,6 +425,21 @@ namespace typescript
         {
             if (filterField(field.id))
                 continue;
+
+            // a derived class's storage embeds each base class's storage as a synthetic
+            // first field whose id is the base's full name (mlirGenClassHeritageClause);
+            // that is memory layout, not a source member - printing it would make the
+            // importer parse it as a real extra field, shifting every subsequent field's
+            // offset and silently corrupting cross-module field access (the `extends`
+            // clause printed above already carries the inheritance).
+            if (auto strId = dyn_cast<mlir::StringAttr>(field.id))
+            {
+                if (llvm::any_of(classType->baseClasses,
+                                 [&](auto &baseClass) { return strId.getValue() == baseClass->fullName; }))
+                {
+                    continue;
+                }
+            }
 
             os.indent(4);
 

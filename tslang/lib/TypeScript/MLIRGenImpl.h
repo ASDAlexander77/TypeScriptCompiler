@@ -5446,32 +5446,60 @@ class MLIRGenImpl
 
             if (classInfo->isDynamicImport)
             {
-                // need to resolve global variable
+                // Direct (non-virtual) access to a dynamic-import class member - e.g. a
+                // cross-module `super.method(...)` call, or a non-virtual inherited method.
+                // Resolution order:
                 //
-                // Not every method of an isDynamicImport class is actually
-                // registered as a dlsym-style global variable - a
-                // compiler-synthesized method (e.g. .instanceOf, ForceVirtual,
-                // see mlirGenClassInstanceOfMethod) never carries its own
-                // @dllimport decorator (that's only ever attached to
-                // source-declared methods reprinted under `@dllimport class
-                // ... { ... }`), so mlirGenFunctionLikeDeclaration's decorator
-                // check never routes it through
-                // mlirGenFunctionLikeDeclarationDynamicImport - it gets a real
-                // (bodyless-for-a-declaration) FuncOp registered directly
-                // instead, just like a same-module method. Try that first.
+                // 1. A FuncOp WITH a body: the method is actually defined in this module
+                //    (compiler-synthesized methods like .instanceOf get real FuncOps even
+                //    for isDynamicImport classes - see mlirGenClassInstanceOfMethod). Only
+                //    a defined body qualifies: a bodyless declaration FuncOp would lower
+                //    to a plain external symbol reference, which the dynamic import mode
+                //    (-shared without an import .lib) cannot link.
                 if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
                 {
-                    auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-                    return thisSymbOp;
+                    if (!funcOp.getBody().empty())
+                    {
+                        auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                            location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+                        return thisSymbOp;
+                    }
                 }
 
+                // 2. The dlsym-style global variable mlirGenClassMethodMemberDynamicImport /
+                //    mlirGenFunctionLikeDeclarationDynamicImport registered for @dllimport
+                //    members (statics/constructors/.new today).
                 auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
                 if (!globalFuncVar)
                 {
-                    emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
-                    return mlir::Value();
+                    // 3. Inline dlsym. Compiler-synthesized methods (.instanceOf) and plain
+                    //    instance methods of an imported class have neither of the above: no
+                    //    per-member @dllimport decorator ever routes them through the
+                    //    registration path, and their FuncOp (when one exists at all) is a
+                    //    bodyless declaration. Registering a global lazily from HERE is not
+                    //    an option either - this can run inside a transient discovery scope
+                    //    ("simulate scope"), where a fullNameGlobalsMap registration is torn
+                    //    down with the scope, or worse trips its LIFO assert; see
+                    //    docs/cross-module-dynamic-import-instanceof-design.md §5-§7 for the
+                    //    two reverted attempts. So resolve the symbol in place, exactly like
+                    //    the registered variant's initializer does
+                    //    (mlirGenFunctionLikeDeclarationDynamicImport): the DLL is already
+                    //    loaded by the import's LoadLibraryPermanentlyOp global ctor by the
+                    //    time any method body runs. Self-contained: no global state, valid
+                    //    in both discovery (ops land in the throwaway module) and real
+                    //    passes, at the cost of one symbol lookup per call site.
+                    auto symbolNameValue = V(mlirGenStringValue(location, funcName.str(), true));
+                    auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                        location, getOpaqueType(), symbolNameValue);
+                    auto castResult = cast(location, effectiveFuncType, referenceToFuncOpaque, genContext);
+                    if (castResult.failed_or_no_value())
+                    {
+                        emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
+                        return mlir::Value();
+                    }
+
+                    globalFuncVar = V(castResult);
                 }
 
                 CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
