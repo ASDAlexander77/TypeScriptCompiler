@@ -229,7 +229,13 @@ class MLIRPrinter
     bool isObjectShapedTuple(TPL t)
     {
         auto fields = t.getFields();
-        return !fields.empty() && llvm::all_of(fields, [](auto &field) { return (bool)field.id; });
+        // a numeric id (IntegerAttr/FloatAttr) marks a positional element of an
+        // array-mode const tuple (e.g. the literal-type tuple `[1, 2, 3]`, see
+        // getTupleFieldInfo's arrayMode path) - only a string/symbol id denotes
+        // a genuine named field, so only those make the tuple object-shaped.
+        return !fields.empty() && llvm::all_of(fields, [](auto &field) {
+            return field.id && (isa<mlir::StringAttr>(field.id) || isa<mlir::FlatSymbolRefAttr>(field.id));
+        });
     }
 
     template <typename T, typename TPL>
