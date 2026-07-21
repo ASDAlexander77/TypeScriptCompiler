@@ -2333,7 +2333,27 @@ class MLIRTypeHelper
             }
 
             return tupleType.getFieldInfo(index).type;
-        }  
+        }
+
+        if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(srcType))
+        {
+            auto index = objectStorageType.getIndex(fieldName);
+            if (index < 0)
+            {
+                return mlir::Type();
+            }
+
+            return objectStorageType.getFieldInfo(index).type;
+        }
+
+        // a generator/boxed-object return type (e.g. `function*`'s BoxAsObject
+        // wrapper) is not itself a tuple - unwrap to its underlying storage type
+        // (TupleType/ConstTupleType/ObjectStorageType) so structural constraint
+        // matching (e.g. `TIter extends { next(): ... }`) can see its fields.
+        if (auto objectType = dyn_cast<mlir_ts::ObjectType>(srcType))
+        {
+            return getFieldTypeByFieldName(objectType.getStorageType(), fieldName);
+        }
 
         if (auto srcInterfaceType = dyn_cast<mlir_ts::InterfaceType>(srcType))
         {
@@ -2489,9 +2509,22 @@ class MLIRTypeHelper
             auto extIsVarArgs = getVarArgFromFuncRef(extendType);
 
             auto srcReturnType = getReturnTypeFromFuncRef(srcType);
-            auto extReturnType = getReturnTypeFromFuncRef(extendType);       
+            auto extReturnType = getReturnTypeFromFuncRef(extendType);
 
-            return extendsTypeFuncTypes(location, srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs, skipSrcParams);    
+            // when srcType's leading (bound `this`) param is being skipped, the
+            // constraint's own leading `this` placeholder (an OpaqueType standing
+            // in for "any this type", e.g. a method-shaped generic constraint like
+            // `{ next(): ... }`) must be skipped in lockstep - otherwise the two
+            // param lists go out of alignment by one and every real param after it
+            // is compared against the wrong slot (or a null past the end).
+            auto skipExtParams = skipSrcParams > 0 && !extParams.empty() && mlir::isa<mlir_ts::OpaqueType>(extParams.front())
+                ? 1 : 0;
+            if (skipExtParams)
+            {
+                extParams = extParams.drop_front(skipExtParams);
+            }
+
+            return extendsTypeFuncTypes(location, srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs, skipSrcParams);
     }
 
     ExtendsResult extendsTypeFuncTypes(mlir::Location location, ArrayRef<mlir::Type> srcParams, ArrayRef<mlir::Type> extParams, bool extIsVarArgs, 
