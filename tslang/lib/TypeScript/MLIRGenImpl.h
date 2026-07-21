@@ -5353,13 +5353,18 @@ class MLIRGenImpl
                 {
                     // need to resolve global variable
                     auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
+                    if (!globalFuncVar)
+                    {
+                        emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
+                        return mlir::Value();
+                    }
 
                     if (!isThisValueClassRef)
                     {
                         CAST_A(opaqueThisValue, location, getOpaqueType(), thisValue, genContext);
                         auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
-                            location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);  
-                        return boundMethodValue;                          
+                            location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
+                        return boundMethodValue;
                     }
 
                     return globalFuncVar;
@@ -5442,7 +5447,33 @@ class MLIRGenImpl
             if (classInfo->isDynamicImport)
             {
                 // need to resolve global variable
+                //
+                // Not every method of an isDynamicImport class is actually
+                // registered as a dlsym-style global variable - a
+                // compiler-synthesized method (e.g. .instanceOf, ForceVirtual,
+                // see mlirGenClassInstanceOfMethod) never carries its own
+                // @dllimport decorator (that's only ever attached to
+                // source-declared methods reprinted under `@dllimport class
+                // ... { ... }`), so mlirGenFunctionLikeDeclaration's decorator
+                // check never routes it through
+                // mlirGenFunctionLikeDeclarationDynamicImport - it gets a real
+                // (bodyless-for-a-declaration) FuncOp registered directly
+                // instead, just like a same-module method. Try that first.
+                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+                {
+                    auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+                    return thisSymbOp;
+                }
+
                 auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
+                if (!globalFuncVar)
+                {
+                    emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
+                    return mlir::Value();
+                }
+
                 CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
                 auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
                     location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
@@ -5457,7 +5488,7 @@ class MLIRGenImpl
                 return thisSymbOp;
             }
         }
-    }    
+    }
 
     mlir::Value ClassGenericMethodAccess(ClassInfo::TypePtr classInfo, 
             mlir::Location location, mlir::Value thisValue, int genericMethodIndex, 
