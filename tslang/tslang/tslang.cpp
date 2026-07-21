@@ -250,6 +250,12 @@ int main(int argc, char **argv)
     // Set flag to the new value.
     _CrtSetDbgFlag( tmpFlag );
     //_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG);
+    // _CrtSetReportFile alone has no effect unless the report mode for that
+    // category actually includes _CRTDBG_MODE_FILE - without this call the
+    // default mode (_CRTDBG_MODE_WNDW) still pops the blocking "Assertion
+    // failed" MessageBox on every assert(), which just looks like a hang in
+    // a non-interactive/headless run.
+    _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );
     _CrtSetReportFile( _CRT_ASSERT, _CRTDBG_FILE_STDERR );
 #endif
 
