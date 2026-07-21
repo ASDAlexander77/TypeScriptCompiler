@@ -1,11 +1,16 @@
 # Cross-module `.instanceOf` resolution under `-shared`: design
 
-Status: **investigated, NOT implemented** — three fix attempts this session, each
-found to cause real regressions, all reverted. Written up for a future attempt.
+Status: **FIXED** — implemented in a follow-up session (2026-07-22) exactly along
+§9's recommendation, after the first session's three attempts (§4-§7) were all
+reverted for regressions. All six formerly disabled `-shared` class-extends tests
+(basic/multilevel/diamond × compile/JIT) now pass and are enabled; see §10 for
+what the working fix actually was — three co-operating changes, two of them in
+`DeclarationPrinter` and only found by fixing the first. §1-§9 below are the
+original investigation write-up, kept intact as the map that made §10 possible.
 Follow-up to PR #274 (`Fix cross-module class extends crash and add regression
-coverage`), whose commit message names this exact gap as a known, disabled issue.
-All anchors below verified by code inspection and live `ctest` runs on
-`main@89eb9869` during this investigation.
+coverage`), whose commit message named this exact gap as a known, disabled issue.
+All anchors in §1-§9 verified by code inspection and live `ctest` runs on
+`main@89eb9869` during the original investigation.
 
 ## 1. The problem
 
@@ -245,3 +250,71 @@ Whatever the mechanism, verify with the *full* `ctest` suite (not just the
 class-extends tests) before considering it done — both attempt-2 and
 attempt-3's regressions were invisible from the class-extends tests alone and
 only surfaced project-wide.
+
+## 10. The fix that worked (2026-07-22 session)
+
+§9's "dedicated, self-contained resolution path" taken to its logical
+conclusion: don't register anything anywhere — resolve **in place**. Three
+changes, each exposing the next once the previous error stopped masking it:
+
+1. **`ClassMethodAccess` inline dlsym fallback** (`MLIRGenImpl.h`, the
+   `isDynamicImport` instance branch). Resolution order is now: a FuncOp
+   **with a body** (locally defined, e.g. the importer's own synthesized
+   `.instanceOf` override — the bodiless-declaration case is explicitly
+   excluded, since it would lower to an unlinkable external symbol reference);
+   then the registered dlsym-global (statics/ctors/`.new`, the existing
+   mechanism); then, new: an inline
+   `SearchForAddressOfSymbolOp(funcName)` + cast, exactly the recipe
+   `mlirGenFunctionLikeDeclarationDynamicImport`'s initializer uses — but
+   emitted at the call site, with **no global registration at all**. This
+   sidesteps every §5 scope-fragility mode by construction: no
+   `fullNameGlobalsMap` interaction, valid in both discovery (ops land in the
+   throwaway module) and real passes; cost is one symbol lookup per call site.
+   The DLL is guaranteed loaded first because the import's
+   `LoadLibraryPermanentlyOp` ctor precedes all per-symbol resolution (same
+   ordering assumption `mlirGenImportSharedLib` already documents). This alone
+   made the basic test pass compile+link+run.
+
+2. **Class vtable slots owned by a dynamic-import base resolve at runtime**
+   (`MLIRGenClasses.cpp`, `mlirGenClassVirtualTableDefinition`). The vtable is
+   extends-recursive, so a derived class's vtable contains slots for inherited
+   members — with `ADD_STATIC_MEMBERS_TO_VTABLE`, that includes the base's
+   RTTI statics `.rtti`/`.size` — whose symbols live in the imported DLL. A
+   constant `SymbolRefOp` to those is a link error (`lld: undefined symbol:
+   M.Animal..size referenced by .data`): with no import library the address is
+   not a link-time constant. Such slots now emit
+   `SearchForAddressOfSymbolOp` + cast instead; `GlobalOpLowering` already
+   routes any initializer containing that op through the `__cctor`
+   global-constructor path, so no lowering changes were needed. Ownership is
+   determined structurally (walk self + transitive `baseClasses`, match the
+   exact `funcName`/`globalVariableName`), not by name-prefix guessing.
+
+3. **Two `DeclarationPrinter` bugs**, exposed only once the above let the
+   multilevel test (the first with `class B extends A` *inside* the exported
+   decl text) get far enough to parse/run:
+   - `print(ClassInfo::TypePtr)`'s extends clause printed
+     **`classType->fullName` instead of `baseClass->fullName`** — the loop
+     variable was never used, so the DLL's decl text said `class B extends
+     M.B`. The importer then built `B.baseClasses = [B]`, a self-cycle, and
+     `ClassInfo::getVirtualTable`'s unguarded recursion stack-overflowed the
+     compiler (0xC00000FD; root-caused via ProcDump + WinDbg on the dump —
+     every frame `getVirtualTable`).
+   - The class fields loop printed the **synthetic base-class storage field**
+     (a derived class's storage embeds each base's storage as a first field
+     whose id is the base's full name, `mlirGenClassHeritageClause`) as if it
+     were a source member: `M.A: [.vtbl:Opaque, a:number];`. The importer
+     parsed it as a real extra field, shifting every subsequent field's offset
+     — classic silent data corruption: the DLL's own methods read `b=22`
+     (correct) while the importer read `c.b == 0` (one slot past). Now
+     filtered by exact id match against `baseClasses[i]->fullName` (the
+     `extends` clause the importer re-processes reconstructs the same layout
+     itself).
+
+What was **not** touched, per §9: `fullNameGlobalsMap` scoping, the generic
+`dynamicImport` branch's name computation, and `.instanceOf`'s missing
+decorator (moot — the inline fallback makes the decorator unnecessary). All
+six formerly-disabled tests (`test-{compile,jit}-shared-export-import-class-extends{,-multilevel,-implements-diamond}`)
+enabled and green; full suite green (767 tests). The pre-existing
+`getVirtualTable` unguarded recursion on a (now impossible via decl-text, but
+still user-writable) cyclic extends chain remains a latent robustness gap —
+out of scope here.
