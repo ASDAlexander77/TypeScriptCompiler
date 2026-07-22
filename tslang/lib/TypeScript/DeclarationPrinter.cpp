@@ -287,7 +287,20 @@ namespace typescript
         newline();
     }
 
-    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type) 
+    void MLIRDeclarationPrinter::printIndexer(mlir::Type indexType, mlir::Type resultType)
+    {
+        os.indent(4);
+
+        os << "[p0: ";
+        print(indexType);
+        os << "]: ";
+        print(resultType);
+        os << ";";
+
+        newline();
+    }
+
+    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -491,6 +504,21 @@ namespace typescript
             print(field.type);
             os << ";";
             newline();
+        }
+
+        // index signature ([x: T]: U;) - not stored in storageType's fields,
+        // and (unlike accessors) its get/set methods are ordinary named
+        // "get"/"set" methods already covered by the methods loop below; only
+        // the signature declaration itself is missing from a plain method
+        // reprint, and without it a reimporting module's ClassInfo::indexes
+        // stays empty so `obj[i]`/`super[i]` can't resolve (see
+        // super-index-access-gap-fix memory).
+        for (auto indexInfo : classType->indexes)
+        {
+            if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
+                continue;
+
+            printIndexer(indexInfo.indexSignature.getInput(0), indexInfo.indexSignature.getResult(0));
         }
 
         // methods (including static)
