@@ -854,20 +854,34 @@ add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-r
 add_test(NAME test-compile-export-import-class-extends-implements-diamond COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-export-import-class-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
 add_test(NAME test-compile-export-import-class-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
-# Cross-module generic class instantiation: DISABLED, known issue found 2026-07-22. A generic
-# class specialization instantiated in the IMPORTING module incorrectly inherits `export`
-# (dllexport) linkage from the original `export class` declaration, even though the
-# specialization is defined fresh, locally, in this module. For a multi-type-param generic
-# (Pair<A,B>) the resulting mangled name contains a raw comma
-# (M.Pair<!ts.number,!ts.string>..instanceOf), which is a linker-directive metacharacter -
-# lld rejects it with "invalid /export:". Separately, the -shared tiers fail even earlier:
-# once a compiled .dll/.lib for the exporting module already exists next to its .ts source,
-# import resolution reads declarations back from that binary artifact instead of
-# reparsing source, and that path has no representation for an uninstantiated generic
-# template at all, so the whole namespace (M) fails to resolve ("can't resolve name: M").
-# Re-enable once both are fixed; test files are kept in the tree (export_class_generic.ts /
-# import_class_generic.ts) for that follow-up.
-# add_test(NAME test-compile-export-import-class-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+# Cross-module generic class instantiation: FIXED 2026-07-22 (was disabled). Two independent
+# bugs, both now fixed:
+# (1) A generic class specialization instantiated in the IMPORTING module was incorrectly
+#     inheriting `export`/dllexport linkage from the original `export class` declaration, even
+#     though the specialization is a fresh, local instantiation. For a multi-type-param generic
+#     (Pair<A,B>) the resulting mangled name contains a raw comma
+#     (M.Pair<!ts.number,!ts.string>..instanceOf), a linker-directive metacharacter - lld
+#     rejected it with "invalid /export:". Fixed in mlirGen(ClassLikeDeclaration): a concrete
+#     instantiation now forces isExport/isPublic false regardless of the template's own
+#     modifiers (see the comment there).
+# (2) The bare generic class declaration itself (`export class Box<T> {...}`) never reached
+#     addClassDeclarationToExport at all (registerGenericClass's early-return path skipped it
+#     entirely), so nothing about it was ever embedded in the exporting module's __decls
+#     global - once a compiled .dll/.lib for the exporting module already existed next to its
+#     .ts source, import resolution reads declarations back from that binary artifact instead
+#     of reparsing source, and found nothing, so the whole namespace (M) failed to resolve
+#     ("can't resolve name: M"). Fixed by re-exporting the generic's own ORIGINAL source text
+#     (not a signature-only declaration like concrete classes get - a generic has no compiled
+#     body anywhere for the importer to link against, so it needs the real, recompilable
+#     source) via a new addGenericClassDeclarationToExport, embedded in ITS OWN
+#     "__decls_generic_<file>_<hash>" global (kept separate from the regular
+#     "__decls_<file>_<hash>" one) so it can be re-parsed with a plain ".ts" filename instead
+#     of ".d.ts" - re-parsing as ".d.ts" implicitly marks everything ambient/external
+#     regardless of any per-declaration @dllimport marker, which broke instantiation entirely
+#     (crashed the compiler with an unhandled std::out_of_range once the reimported
+#     declaration's own re-export attempt hit a stale source-file/AST-position mismatch).
+# See class-generic-declaration-export-fix memory for the full account.
+add_test(NAME test-compile-export-import-class-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 add_test(NAME test-compile-export-import-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
 add_test(NAME test-compile-export-import-class-implements-interface-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 add_test(NAME test-compile-export-import-class-implements-interface-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
@@ -935,8 +949,8 @@ add_test(NAME test-compile-shared-export-import-class-structural-interface COMMA
 # interface vtable slot, distinct from the link-time issue fixed above) - left for a dedicated
 # follow-up.
 # add_test(NAME test-compile-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
-# DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
-# add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+# FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
+add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 # DISABLED: known issue found 2026-07-22 (separate from the super-accessor-call crash fixed
 # above). Under the -shared dynamic-import path, a base class's get/set accessors are not
 # resolvable at all from a derived class in another module ("Class member 'celsius' can't be
@@ -979,8 +993,8 @@ add_test(NAME test-jit-shared-export-import-class-implements-interface-optional 
 add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 # DISABLED: see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (known issue, 2026-07-22, NOT fixed) - the JIT tier of the abstract variant hits the same this.area()-returns-0-via-interface bug.
 # add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
-# DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
-# add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+# FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
+add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 # DISABLED: see the matching test-compile-shared-export-import-class-accessor comment above (known issue, 2026-07-22).
 # add_test(NAME test-jit-shared-export-import-class-accessor COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")

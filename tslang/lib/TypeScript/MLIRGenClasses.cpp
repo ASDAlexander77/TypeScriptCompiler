@@ -16,6 +16,16 @@ namespace mlirgen
             auto fullNamePtr = getFullNamespaceName(namePtr);
             if (fullNameGenericClassesMap.count(fullNamePtr))
             {
+                // already registered - but the registration itself typically happens during
+                // Stages::Discovering (before addGenericClassDeclarationToExport's
+                // isAddedToExport gate, which only actually emits once stage ==
+                // Stages::SourceGeneration, will do anything) - retry the export step alone
+                // using the existing GenericClassInfo rather than skipping it entirely.
+                if (getExportModifier(classDeclarationAST))
+                {
+                    addGenericClassDeclarationToExport(fullNameGenericClassesMap.lookup(fullNamePtr));
+                }
+
                 return mlir::success();
             }
 
@@ -39,6 +49,18 @@ namespace mlirgen
 
             getGenericClassesMap().insert({namePtr, newGenericClassPtr});
             fullNameGenericClassesMap.insert(fullNamePtr, newGenericClassPtr);
+
+            // support dynamic loading: a generic class is never instantiated in this module
+            // if nothing here uses it concretely, so mlirGen(ClassLikeDeclaration) never
+            // reaches its own addClassDeclarationToExport call below (that only runs for a
+            // SPECIALIZED instantiation, gated on genContext.typeParamsWithArgs being
+            // non-empty) - the bare template needs to be exported here instead, the one
+            // place every generic declaration passes through regardless of whether it is
+            // ever instantiated locally.
+            if (getExportModifier(classDeclarationAST))
+            {
+                addGenericClassDeclarationToExport(newGenericClassPtr);
+            }
 
             return mlir::success();
         }
@@ -71,9 +93,27 @@ namespace mlirgen
             return {mlir::failure(), ""};
         }
 
-        // do not process specialized class second time;
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
+            // a concrete instantiation of a generic class (e.g. Box<number>) reprocesses the
+            // SAME class declaration AST as the bare template (e.g. `export class Box<T>`),
+            // so mlirGenClassInfo's isExport = getExportModifier(classDeclarationAST) above
+            // would otherwise mark this LOCAL, per-instantiation specialization as exported
+            // too - wrong on two counts: (1) semantically, a specialization materialized by
+            // whichever module instantiates it is local to that module, not a re-export of
+            // it (an importer using M.Box<number> isn't re-exporting M.Box<number> further);
+            // (2) mechanically, a multi-type-param instantiation's mangled name contains a
+            // raw comma (e.g. M.Pair<!ts.number,!ts.string>..instanceOf), which is a
+            // metacharacter in the linker's `/EXPORT:name[,option]` directive syntax - lld
+            // rejects it outright ("invalid /export:") the moment anything in it is
+            // actually marked for export. The generic TEMPLATE's own declaration is already
+            // exported correctly and separately (see registerGenericClass /
+            // addGenericClassDeclarationToExport), which is the only export this class
+            // needs.
+            newClassPtr->isExport = false;
+            newClassPtr->isPublic = false;
+
+            // do not process specialized class second time;
             // TODO: investigate why classType is provided already for class
             if (testProcessingState(newClassPtr, ProcessingStages::Processing, genContext))
             {
