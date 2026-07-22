@@ -537,8 +537,9 @@ namespace mlirgen
         }
     }
 
-    mlir::Value MLIRGenImpl::ClassAccessorAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int accessorIndex, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
+    mlir::Value MLIRGenImpl::ClassAccessorAccess(ClassInfo::TypePtr classInfo,
+            mlir::Location location, mlir::Value thisValue, int accessorIndex,
+            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
 
         auto accessorInfo = classInfo->accessors[accessorIndex];
@@ -589,8 +590,9 @@ namespace mlirgen
         }
         else
         {
+            auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
             auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
-                location, accessorResultType, thisValue,
+                location, accessorResultType, effectiveThisValue,
                 getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
                             : mlir::FlatSymbolRefAttr{},
                 setFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFunc.name)
@@ -736,7 +738,7 @@ namespace mlirgen
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)
         {
-            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, accessingFromLevel, genContext);
+            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, isSuperClass, accessingFromLevel, genContext);
         }
 
         for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
