@@ -511,6 +511,20 @@ namespace typescript
         printNamespaceEnd(classType->elementNamespace);
     }
 
+    void MLIRDeclarationPrinter::printGenericClass(NamespaceInfo::TypePtr elementNamespace, StringRef rawDeclarationText)
+    {
+        // unlike print(ClassInfo::TypePtr) above, a generic class has no compiled body for
+        // any given instantiation to @dllimport against - each importing module
+        // instantiates it locally instead, so the caller passes the ORIGINAL source text
+        // (type parameters and method bodies intact) verbatim; this just supplies the
+        // matching namespace wrapper, deliberately WITHOUT printBeforeDeclaration()'s
+        // @dllimport marker.
+        printNamespaceBegin(elementNamespace);
+        os << rawDeclarationText;
+        newline();
+        printNamespaceEnd(elementNamespace);
+    }
+
     void MLIRDeclarationPrinter::print(InterfaceInfo::TypePtr interfaceType)
     {
         printNamespaceBegin(interfaceType->elementNamespace);

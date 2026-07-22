@@ -21,7 +21,8 @@ namespace typescript
         void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool);
         void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType);
         void print(ClassInfo::TypePtr);
-        void print(InterfaceInfo::TypePtr);       
+        void print(InterfaceInfo::TypePtr);
+        void printGenericClass(NamespaceInfo::TypePtr, StringRef);
 
     protected:
         void newline();

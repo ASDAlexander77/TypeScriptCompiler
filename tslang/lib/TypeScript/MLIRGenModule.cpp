@@ -334,9 +334,49 @@ namespace mlirgen
         llvm::sys::path::append(path, llvm::sys::path::filename(mainSourceFileName));
         llvm::sys::path::replace_extension(path, ".d.ts");
         return createDependencyDeclarationFile(path, declText);
-#else   
-        return success();        
-#endif        
+#else
+        return success();
+#endif
+    }
+
+    mlir::LogicalResult MLIRGenImpl::createGenericClassDeclarationExportGlobalVar(const GenContext &genContext)
+    {
+        if (!genericDeclExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
+        {
+            return mlir::success();
+        }
+
+        auto declText = genericDeclExports.str();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! export generic class declaration: \n" << declText << "\n";);
+
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, declText, true));
+            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);
+        };
+
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
+
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        varClass.isPublic = true;
+
+        // "generic" in the middle keeps the "__decls" prefix (so the existing
+        // symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE) enumeration in
+        // mlirGenImportSharedLib still finds it) while staying distinguishable from the
+        // regular per-file "__decls_<file>_<hash>" global, so that call site can tell the
+        // two apart and parse each with the right file_d_ts flag.
+        std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+        varName.append("_generic_");
+        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append("_");
+        varName.append(to_string(hash_value(mainSourceFileName)));
+
+        auto varNameRef = StringRef(varName).copy(stringAllocator);
+
+        registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
+
+        return mlir::success();
     }
 
     bool MLIRGenImpl::isCodeStatment(SyntaxKind kind)
@@ -649,6 +689,11 @@ namespace mlirgen
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
+
+            if (mlir::failed(createGenericClassDeclarationExportGlobalVar(genContext))) {
+                outputDiagnostics(postponedMessages, 1);
+                return mlir::failure();
+            }
         }
 
         clearTempModule();
@@ -879,15 +924,27 @@ namespace mlirgen
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
                 {
-                    MLIRLocationGuard vgLoc(overwriteLoc); 
+                    MLIRLocationGuard vgLoc(overwriteLoc);
                     overwriteLoc = location;
 
+                    // a generic class's declaration (see
+                    // createGenericClassDeclarationExportGlobalVar) must NOT be parsed with
+                    // the ".d.ts" filename convention used below for every other kind of
+                    // declaration: that convention makes the parser mark everything ambient/
+                    // external regardless of any per-declaration @dllimport marker (see the
+                    // comment on parsePartialStatements's file_d_ts parameter), which would
+                    // make the generic's instantiated specializations wrongly look like
+                    // external stubs with no compilable body - they need to be treated as
+                    // ordinary, fully-compilable local source instead.
+                    auto isGenericClassDecl =
+                        declSymbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
+
                     auto importData = convertUTF8toWide(dataPtr);
-                    if (mlir::failed(parsePartialStatements(importData, genContext, false, true)))
+                    if (mlir::failed(parsePartialStatements(importData, genContext, false, !isGenericClassDecl)))
                     {
                         //assert(false);
                         return mlir::failure();
-                    }            
+                    }
                 }
             }
             else

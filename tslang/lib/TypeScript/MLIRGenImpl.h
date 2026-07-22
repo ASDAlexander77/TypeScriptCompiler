@@ -219,6 +219,7 @@ class MLIRGenImpl
 #endif    
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext);
+    mlir::LogicalResult createGenericClassDeclarationExportGlobalVar(const GenContext &genContext);
 
     bool isCodeStatment(SyntaxKind kind);
 
@@ -10308,18 +10309,63 @@ class MLIRGenImpl
         {
             // already added
             return;
-        }    
+        }
 
         exportedTypes.insert(newClassPtr->classType);
 
         addDependancyTypesToExport(newClassPtr->classType);
 
         SmallVector<char> out;
-        llvm::raw_svector_ostream ss(out);        
+        llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss);
         dp.print(newClassPtr);
 
         declExports << ss.str().str();
+    }
+
+    void addGenericClassDeclarationToExport(GenericClassInfo::TypePtr genericClassInfo)
+    {
+        if (isAddedToExport(genericClassInfo->classType))
+        {
+            // already added
+            return;
+        }
+
+        // A generic class re-declared while re-importing another module's embedded
+        // declarations (see mlirGenImportSharedLib) still carries its own `export` keyword
+        // verbatim (it is the original source, copied as-is), so it reaches this same
+        // function a second time from inside the IMPORTER's own compile - but at that
+        // point `sourceFile` is the ambient/outer file (e.g. the importer's own .ts), not
+        // the "partial" buffer parsePartialStatements actually parsed this declaration
+        // from, so classDeclaration's pos/_end (offsets into THAT buffer) do not correspond
+        // to sourceFile->text at all and can exceed its length. Re-exporting a
+        // re-declaration one level removed like this is also simply wrong (the importer
+        // isn't meant to re-export M's generics further) - bounds-check and skip rather
+        // than let getTextOfNodeFromSourceText's substr throw std::out_of_range.
+        auto declEnd = static_cast<size_t>(genericClassInfo->classDeclaration->_end);
+        if (declEnd > genericClassInfo->sourceFile->text.length())
+        {
+            return;
+        }
+
+        exportedTypes.insert(genericClassInfo->classType);
+
+        // unlike a concrete class (printed above as a signature-only, @dllimport-marked
+        // declaration - the real body is already compiled into this module's DLL), a
+        // generic class has no compiled body for any given instantiation: each importing
+        // module instantiates it locally, on demand, exactly like a same-file usage would.
+        // So the FULL original source - type parameters and method bodies intact, no
+        // @dllimport marker - must be re-exported verbatim for parsePartialStatements to
+        // recompile per instantiation in the importer.
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(
+            genericClassInfo->sourceFile->text, genericClassInfo->classDeclaration.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss);
+        dp.printGenericClass(genericClassInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
     }
 
     auto getNamespaceName() -> StringRef
@@ -10990,6 +11036,15 @@ class MLIRGenImpl
     bool declarationMode;
 
     std::stringstream declExports;
+    // generic class declarations must be re-imported as plain (non-".d.ts") source: unlike
+    // declExports (parsed with a "partial.d.ts" filename, which makes the parser mark
+    // everything ambient/external regardless of any per-declaration @dllimport marker - see
+    // createDeclarationExportGlobalVar/mlirGenImportSharedLib), a generic class has no
+    // compiled body for any instantiation to link against - the importer instantiates it
+    // locally, and needs its real method bodies to actually be compilable, not treated as
+    // external stubs. Kept in a separate stream/global so it can be re-parsed with a plain
+    // ".ts" filename instead.
+    std::stringstream genericDeclExports;
     mlir::SmallPtrSet<mlir::Type, 32> exportCheckedDependenciesTypes;
     mlir::SmallPtrSet<mlir::Type, 32> exportedTypes;
 
