@@ -36,6 +36,7 @@ namespace typescript
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
         void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
         void printAccessor(bool, StringRef, StringRef, mlir_ts::AccessLevel, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
+        void printIndexer(mlir::Type, mlir::Type);
         void printNamespaceBegin(NamespaceInfo::TypePtr);
         void printNamespaceEnd(NamespaceInfo::TypePtr);
         void print(mlir::Type);

@@ -715,6 +715,76 @@ namespace mlirgen
         // same as it always did for `super.method()`/`super.<accessor>`.
         auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
 
+        if (classInfo->isDynamicImport)
+        {
+            // same reasoning as ClassAccessorAccess's isDynamicImport branch: a plain
+            // FlatSymbolRefAttr lowers to a call the static linker must resolve, but a
+            // -shared importer never links against the exporter's .lib (see
+            // cross-module-instanceof-investigation.md) - resolve get/set to VALUEs
+            // (direct ref / dlsym-style global / inline SearchForAddressOfSymbolOp) and
+            // drive the call through ThisIndirectIndexAccessorOp instead.
+            auto resolveIndexFunc = [&](FunctionEntry funcEntry) -> mlir::Value {
+                if (!funcEntry)
+                {
+                    return mlir::Value();
+                }
+
+                StringRef funcName = funcEntry.name;
+                auto effectiveFuncType = funcEntry.funcType;
+
+                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
+                {
+                    if (!funcOp.getBody().empty())
+                    {
+                        return builder.create<mlir_ts::SymbolRefOp>(
+                            location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+                    }
+                }
+
+                auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
+                if (!globalFuncVar)
+                {
+                    auto symbolNameValue = V(mlirGenStringValue(location, funcName.str(), true));
+                    auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                        location, getOpaqueType(), symbolNameValue);
+                    auto castResult = cast(location, effectiveFuncType, referenceToFuncOpaque, genContext);
+                    if (castResult.failed_or_no_value())
+                    {
+                        emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
+                        return mlir::Value();
+                    }
+
+                    globalFuncVar = V(castResult);
+                }
+
+                return globalFuncVar;
+            };
+
+            auto getterValue = resolveIndexFunc(getFunc);
+            auto setterValue = resolveIndexFunc(setFunc);
+            if ((getFunc && !getterValue) || (setFunc && !setterValue))
+            {
+                return mlir::Value();
+            }
+
+            auto opaqueThisType = mlir_ts::OpaqueType::get(builder.getContext());
+            if (!getterValue)
+            {
+                getterValue = builder.create<mlir_ts::UndefOp>(
+                    location, mlir_ts::FunctionType::get(builder.getContext(), {opaqueThisType, argumentType}, {indexResultType}, false));
+            }
+
+            if (!setterValue)
+            {
+                setterValue = builder.create<mlir_ts::UndefOp>(
+                    location, mlir_ts::FunctionType::get(builder.getContext(), {opaqueThisType, argumentType, indexResultType}, {}, false));
+            }
+
+            auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
+                location, indexResultType, effectiveThisValue, V(result), getterValue, setterValue, mlir::Value());
+            return thisIndirectIndexAccessorOp.getResult(0);
+        }
+
         auto thisIndexAccessorOp = builder.create<mlir_ts::ThisIndexAccessorOp>(
             location, indexResultType, effectiveThisValue, V(result),
             getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
