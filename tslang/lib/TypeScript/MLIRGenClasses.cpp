@@ -1542,12 +1542,61 @@ genContext);
             return result;
         }
 
+        // a method implementing this interface can itself be owned by a dynamically imported
+        // class (not just a base of it) - such a slot can't be a link-time constant SymbolRefOp
+        // and must be resolved at runtime instead (see the dynamic-import handling in the method
+        // branch below, mirroring mlirGenClassVirtualTableDefinition's existing treatment of its
+        // own (non-interface) vtable slots).
+        std::function<ClassInfo::TypePtr(ClassInfo::TypePtr, mlir::StringRef)> findMethodOwner =
+            [&](ClassInfo::TypePtr cls, mlir::StringRef funcName) -> ClassInfo::TypePtr {
+            if (llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == funcName; }))
+            {
+                return cls;
+            }
+
+            for (auto &base : cls->baseClasses)
+            {
+                if (auto owner = findMethodOwner(base, funcName))
+                {
+                    return owner;
+                }
+            }
+
+            return ClassInfo::TypePtr();
+        };
+
+        auto needsRuntimeSymbolResolution = llvm::any_of(virtualTable, [&](auto &methodOrField) {
+            if (methodOrField.isMissing || methodOrField.isField)
+            {
+                return false;
+            }
+
+            auto owner = findMethodOwner(newClassPtr, methodOrField.methodInfo.funcName);
+            return owner && owner->isDynamicImport;
+        });
+
         // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
         auto registeredType = registerVariable(
             location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
+
+                // this global's initializer can be rebuilt lazily from a call site deep inside
+                // an unrelated function (a cast expression in main(), via
+                // mlirGenCreateInterfaceVTableForClass); `location` still carries that call
+                // site's debug scope. Once any slot needs runtime symbol resolution,
+                // GlobalOpLowering promotes the WHOLE initializer into a synthesized __cctor
+                // function with its own DISubprogram (see the comment there) - so EVERY op
+                // built in this callback (not just the one slot that triggered the promotion)
+                // ends up living in __cctor, and must not carry a `!dbg` pointing at the
+                // calling site's (wrong) subprogram. This is compiler-synthesized glue, not
+                // user source worth stepping through, so drop location info entirely rather
+                // than try to keep it consistent per-op.
+                if (needsRuntimeSymbolResolution)
+                {
+                    location = mlir::UnknownLoc::get(builder.getContext());
+                }
 
                 MLIRCodeLogic mcl(builder, compileOptions);
 
@@ -1557,7 +1606,26 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto methodOrField : virtualTable)
                 {
-                    if (methodOrField.isField)
+                    if (methodOrField.isMissing)
+                    {
+                        // a genuinely-absent optional (`?`) interface field/method the class
+                        // doesn't implement - mirrors the object-literal handling in
+                        // mlirGenObjectVirtualTableDefinitionForInterface
+                        // (MLIRGenInterfaces.cpp): querying the class for a field/method it
+                        // doesn't have (via mlirGenPropertyAccessExpression, below) crashes
+                        // internally instead of failing gracefully, so this case must be
+                        // detected and handled up front rather than falling into the "present"
+                        // branches - use the same -1 sentinel placeholder, cast to the slot's
+                        // ref/func-pointer type.
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+                                                                             mth.getI64AttrValue(-1));
+                        auto slotType = methodOrField.isField ? methodOrField.fieldInfo.type : methodOrField.methodInfo.funcType;
+                        auto castedPtr = cast(location, mlir_ts::RefType::get(slotType), negative1, genContext);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, castedPtr, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
+                    else if (methodOrField.isField)
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
@@ -1568,7 +1636,7 @@ genContext);
                             emitError(location) << "can't find field (or it is inaccessible): " << methodOrField.fieldInfo.id
                                                 << " in interface: " << newInterfacePtr->fullName
                                                 << " for class: " << newClassPtr->fullName;
-                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};                            
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
                         auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
@@ -1587,13 +1655,44 @@ genContext);
                     }
                     else
                     {
-                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                            location, methodOrField.methodInfo.funcType,
-                            mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                         methodOrField.methodInfo.funcName));
+                        // the interface-implementing method can itself be owned by a
+                        // dynamically imported class (not just a base of it - the class
+                        // satisfying the interface may live in another module entirely) - same
+                        // "not a link-time constant, resolve at runtime" situation
+                        // mlirGenClassVirtualTableDefinition already handles for its own
+                        // (non-interface) vtable slots, just not previously mirrored here.
+                        auto owner = findMethodOwner(newClassPtr, methodOrField.methodInfo.funcName);
+                        mlir::Value methodValueRef;
+                        if (owner && owner->isDynamicImport)
+                        {
+                            // `location` is already UnknownLoc here (see
+                            // needsRuntimeSymbolResolution above, computed from this same
+                            // owner->isDynamicImport condition) - the resulting
+                            // SearchForAddressOfSymbolOp forces this whole global's
+                            // initializer into a synthesized __cctor function via
+                            // GlobalOpLowering, and a "live" (main-scoped) location on any op
+                            // living there would attach the wrong DISubprogram to it.
+                            auto symbolNameValue = V(mlirGenStringValue(location, methodOrField.methodInfo.funcName, true));
+                            auto referenceToSymbolOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                                location, getOpaqueType(), symbolNameValue);
+                            auto castResult = cast(location, methodOrField.methodInfo.funcType, referenceToSymbolOpaque, genContext);
+                            if (castResult.failed_or_no_value())
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                            }
+
+                            methodValueRef = V(castResult);
+                        }
+                        else
+                        {
+                            methodValueRef = builder.create<mlir_ts::SymbolRefOp>(
+                                location, methodOrField.methodInfo.funcType,
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                             methodOrField.methodInfo.funcName));
+                        }
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                            location, virtTuple, methodConstName, vtableValue,
+                            location, virtTuple, methodValueRef, vtableValue,
                             MLIRHelper::getStructIndex(builder, fieldIndex));
                     }
 
