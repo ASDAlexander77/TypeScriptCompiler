@@ -255,6 +255,38 @@ namespace typescript
         }
     }
 
+    void MLIRDeclarationPrinter::printAccessor(bool isStatic, StringRef keyword, StringRef name, mlir_ts::AccessLevel accessLevel,
+                                               ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType)
+    {
+        os.indent(4);
+
+        if (accessLevel == mlir_ts::AccessLevel::Protected)
+        {
+            os << "protected ";
+        }
+        else if (accessLevel == mlir_ts::AccessLevel::Private)
+        {
+            os << "private ";
+        }
+
+        if (isStatic)
+        {
+            os << "static ";
+        }
+
+        os << keyword << " " << name;
+
+        printParams(params, thisType);
+
+        if (returnType)
+        {
+            os << " : ";
+            print(returnType);
+        }
+
+        newline();
+    }
+
     void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type) 
     {
         printNamespaceBegin(elementNamespace);
@@ -467,6 +499,22 @@ namespace typescript
             if (filterName(method.name))
                 continue;
 
+            // get/set accessors are ALSO registered here under their mangled
+            // "get_x"/"set_x" funcOp name (so same-file/JIT compiles can find them as
+            // ordinary methods) - but that mangled form is printed separately below,
+            // via classType->accessors, using real `get`/`set` syntax. Printing it
+            // again here as a plain method would make the importer register it as an
+            // ordinary MethodDeclaration instead of a GetAccessor/SetAccessor, so
+            // property-style access (`obj.x`, `super.x`) would never populate the
+            // reconstructed class's accessors list and fail to resolve.
+            if (llvm::any_of(classType->accessors, [&](auto &accessor) {
+                    return (accessor.get && accessor.get.name == method.funcName) ||
+                           (accessor.set && accessor.set.name == method.funcName);
+                }))
+            {
+                continue;
+            }
+
             os.indent(4);
 
             if (method.accessLevel == mlir_ts::AccessLevel::Protected)
@@ -486,6 +534,31 @@ namespace typescript
                 classType->classType);
 
             newline();
+        }
+
+        // accessors
+        for (auto accessor : classType->accessors)
+        {
+            if (filterName(accessor.name))
+                continue;
+
+            if (accessor.get)
+            {
+                printAccessor(
+                    accessor.isStatic, "get", accessor.name, accessor.getAccessLevel,
+                    accessor.get.funcType.getParams(),
+                    accessor.get.funcType.getNumResults() > 0 ? accessor.get.funcType.getResult(0) : mlir::Type(),
+                    classType->classType);
+            }
+
+            if (accessor.set)
+            {
+                printAccessor(
+                    accessor.isStatic, "set", accessor.name, accessor.setAccessLevel,
+                    accessor.set.funcType.getParams(),
+                    mlir::Type(),
+                    classType->classType);
+            }
         }
 
         // TODO: we can't declare generic methods, otherwise we need to declare body of methods
