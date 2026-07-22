@@ -1557,7 +1557,26 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto methodOrField : virtualTable)
                 {
-                    if (methodOrField.isField)
+                    if (methodOrField.isMissing)
+                    {
+                        // a genuinely-absent optional (`?`) interface field/method the class
+                        // doesn't implement - mirrors the object-literal handling in
+                        // mlirGenObjectVirtualTableDefinitionForInterface
+                        // (MLIRGenInterfaces.cpp): querying the class for a field/method it
+                        // doesn't have (via mlirGenPropertyAccessExpression, below) crashes
+                        // internally instead of failing gracefully, so this case must be
+                        // detected and handled up front rather than falling into the "present"
+                        // branches - use the same -1 sentinel placeholder, cast to the slot's
+                        // ref/func-pointer type.
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+                                                                             mth.getI64AttrValue(-1));
+                        auto slotType = methodOrField.isField ? methodOrField.fieldInfo.type : methodOrField.methodInfo.funcType;
+                        auto castedPtr = cast(location, mlir_ts::RefType::get(slotType), negative1, genContext);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, castedPtr, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
+                    else if (methodOrField.isField)
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
@@ -1568,7 +1587,7 @@ genContext);
                             emitError(location) << "can't find field (or it is inaccessible): " << methodOrField.fieldInfo.id
                                                 << " in interface: " << newInterfacePtr->fullName
                                                 << " for class: " << newClassPtr->fullName;
-                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};                            
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
                         auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);

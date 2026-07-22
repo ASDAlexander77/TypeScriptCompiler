@@ -869,6 +869,10 @@ add_test(NAME test-compile-export-import-class-static COMMAND test-runner "${PRO
 # import_class_generic.ts) for that follow-up.
 # add_test(NAME test-compile-export-import-class-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 add_test(NAME test-compile-export-import-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
+add_test(NAME test-compile-export-import-class-implements-interface-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-compile-export-import-class-implements-interface-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-compile-export-import-class-implements-interface-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-compile-export-import-class-structural-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
 
 # shared libs tests (dlls/compile-time)
 add_test(NAME test-compile-time-shared-decl-emit-type COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_func.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
@@ -899,6 +903,36 @@ add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-shared-export-import-class-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
 add_test(NAME test-compile-shared-export-import-class-static COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+# DISABLED: known issue found 2026-07-22. mlirGenClassVirtualTableDefinitionForInterface
+# (a class's own per-interface vtable, built when it `implements` something) always emits a
+# constant SymbolRefOp for the implementing method, unlike mlirGenClassVirtualTableDefinition
+# (the class's ordinary vtable), which already special-cases a method owned by a dynamic-import
+# class/base and resolves it at runtime instead (SearchForAddressOfSymbolOp) since a link-time
+# constant address doesn't exist across a DLL boundary. Here the class ITSELF (M.Impl / M.Shape,
+# not just an ancestor) is the dynamic import, and its interface-vtable is rebuilt from the
+# importer's side, so the constant SymbolRefOp is unresolvable: lld fails with
+# "undefined symbol: M.Impl.describe" (a method reachable only through the interface, e.g.
+# `const asDerived: M.Derived = obj; asDerived.describe()`). A first attempt to mirror the
+# working dynamic-import runtime-resolution pattern into the interface-vtable builder compiled,
+# but broke DWARF debug-info generation ("DISubprogram attached to more than one function") and
+# a runtime assert in the abstract-class variant - reverted rather than land a fix with
+# unexamined side effects (see cross-module-class-coverage-2026-07 memory). The plain "compile"
+# tier (no DLL boundary - both files link into one exe) and the jit-shared tier of the
+# multilevel variant are unaffected and stay enabled below.
+# add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-compile-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+# DISABLED: same dynamic-import interface-vtable gap as
+# test-compile-shared-export-import-class-implements-interface-multilevel above (known issue,
+# 2026-07-22) - M.Widget is itself the dynamic import and gets cast to its own interface
+# (M.Printable) from the importer, so the same "undefined symbol: M.Widget.describe" link
+# failure applies here too, reached via the structural/cast-triggered path
+# (mlirGenCreateInterfaceVTableForClass) rather than the explicit-`implements` declaration-time
+# path - confirms both paths share the same root cause. The LocalWidget half of this test (a
+# class declared locally in the importer, cast to the cross-module interface) is unaffected and
+# still exercised by the other 2 tiers below.
+# add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+# DISABLED: see the matching test-compile-shared-export-import-class-implements-interface-multilevel comment above (known issue, 2026-07-22).
+# add_test(NAME test-compile-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 # DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
 # add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 # DISABLED: known issue found 2026-07-22 (separate from the super-accessor-call crash fixed
@@ -938,6 +972,11 @@ add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND tes
 add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-jit-shared-export-import-class-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
 add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+add_test(NAME test-jit-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-jit-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+# DISABLED: see the test-compile-shared-export-import-class-implements-interface-multilevel comment above (known issue, 2026-07-22) - the JIT tier of the abstract variant also crashes (unlike the multilevel variant's JIT tier, which passes).
+# add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 # DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
 # add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 # DISABLED: see the matching test-compile-shared-export-import-class-accessor comment above (known issue, 2026-07-22).
