@@ -669,6 +669,27 @@ namespace typescript
             newline();
         }
 
+        // index signature ([x: T]: U;) - mirrors the class printer's fix
+        // (see cross-module-class-indexer-shared-gap-fix memory): without
+        // this, a reimporting module's InterfaceInfo::indexes stays empty
+        // and `obj[i]` through the interface fails with "indexer is not
+        // declared" / "Interface member '.index' can't be found".
+        //
+        // Unlike a class's index signature (a plain (arg)->result FunctionType),
+        // an interface's is built via getInterfaceMethodNameAndType with
+        // funcGenContext.thisType set, which prepends an opaque `this` input -
+        // so the real index-argument type is input(1), not input(0) (matching
+        // getIndexSignatureArgumentAndResultTypes's "first parameter is Opaque"
+        // branch in MLIRTypeHelper.h).
+        for (auto indexInfo : interfaceType->indexes)
+        {
+            if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
+                continue;
+
+            auto argIndex = indexInfo.indexSignature.getNumInputs() > 1 ? 1 : 0;
+            printIndexer(indexInfo.indexSignature.getInput(argIndex), indexInfo.indexSignature.getResult(0));
+        }
+
         // methods (including static)
         auto opaqueType = mlir_ts::OpaqueType::get(interfaceType->interfaceType.getContext());
         for (auto method : interfaceType->methods)
