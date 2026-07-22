@@ -903,35 +903,37 @@ add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-shared-export-import-class-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
 add_test(NAME test-compile-shared-export-import-class-static COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
-# DISABLED: known issue found 2026-07-22. mlirGenClassVirtualTableDefinitionForInterface
-# (a class's own per-interface vtable, built when it `implements` something) always emits a
-# constant SymbolRefOp for the implementing method, unlike mlirGenClassVirtualTableDefinition
-# (the class's ordinary vtable), which already special-cases a method owned by a dynamic-import
-# class/base and resolves it at runtime instead (SearchForAddressOfSymbolOp) since a link-time
-# constant address doesn't exist across a DLL boundary. Here the class ITSELF (M.Impl / M.Shape,
-# not just an ancestor) is the dynamic import, and its interface-vtable is rebuilt from the
-# importer's side, so the constant SymbolRefOp is unresolvable: lld fails with
-# "undefined symbol: M.Impl.describe" (a method reachable only through the interface, e.g.
-# `const asDerived: M.Derived = obj; asDerived.describe()`). A first attempt to mirror the
-# working dynamic-import runtime-resolution pattern into the interface-vtable builder compiled,
-# but broke DWARF debug-info generation ("DISubprogram attached to more than one function") and
-# a runtime assert in the abstract-class variant - reverted rather than land a fix with
-# unexamined side effects (see cross-module-class-coverage-2026-07 memory). The plain "compile"
-# tier (no DLL boundary - both files link into one exe) and the jit-shared tier of the
-# multilevel variant are unaffected and stay enabled below.
-# add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+# FIXED 2026-07-22 (was disabled): mlirGenClassVirtualTableDefinitionForInterface (a class's own
+# per-interface vtable, built when it `implements` something) used to always emit a constant
+# SymbolRefOp for the implementing method, unlike mlirGenClassVirtualTableDefinition (the class's
+# ordinary vtable), which already special-cased a method owned by a dynamic-import class/base and
+# resolved it at runtime instead (SearchForAddressOfSymbolOp) since a link-time constant address
+# doesn't exist across a DLL boundary. Mirrored that same runtime-resolution pattern into the
+# interface-vtable builder's method branch. That alone broke DWARF debug-info generation
+# ("DISubprogram attached to more than one function") because this global's initializer can be
+# rebuilt lazily from a call site deep inside an unrelated function (a cast expression in main(),
+# via mlirGenCreateInterfaceVTableForClass) - two further fixes were needed: (1) GlobalOpLowering
+# (LowerToLLVM.cpp) was giving the synthesized __cctor constructor function the triggering call
+# site's own "live" location instead of a neutral one, so the debug-info pass attached the wrong
+# DISubprogram to it; (2) createFunctionFromRegion's replaceOpWithNewOp<ReturnOp> (LLVMCodeHelper.h)
+# implicitly inherited the replaced terminator's (also wrong) location instead of the function's
+# own. See class-implements-interface-dynamic-import-fix memory for the full account.
+add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 add_test(NAME test-compile-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
-# DISABLED: same dynamic-import interface-vtable gap as
-# test-compile-shared-export-import-class-implements-interface-multilevel above (known issue,
-# 2026-07-22) - M.Widget is itself the dynamic import and gets cast to its own interface
-# (M.Printable) from the importer, so the same "undefined symbol: M.Widget.describe" link
-# failure applies here too, reached via the structural/cast-triggered path
-# (mlirGenCreateInterfaceVTableForClass) rather than the explicit-`implements` declaration-time
-# path - confirms both paths share the same root cause. The LocalWidget half of this test (a
-# class declared locally in the importer, cast to the cross-module interface) is unaffected and
-# still exercised by the other 2 tiers below.
-# add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
-# DISABLED: see the matching test-compile-shared-export-import-class-implements-interface-multilevel comment above (known issue, 2026-07-22).
+add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+# DISABLED: a separate, NOT fixed bug found 2026-07-22 while verifying the fix above. Unlike the
+# multilevel/optional/structural variants (all pass now), this one calls describe() - a CONCRETE
+# method inherited from the abstract dynamic-import base M.Shape, whose body internally calls the
+# still-virtual this.area() - through an interface reference
+# (`const asDescribable: M.Describable = s; asDescribable.describe()`). Confirmed via the real
+# harness (instrumented with print instead of assert, see the session transcript): the DIRECT call
+# `s.describe()` and the base-class-cast call `asShape.describe()` both return the correct
+# "red area=9", but the SAME describe() reached through the interface returns "red area=0" -
+# this.area() silently resolves to 0 instead of dispatching to Square's override, specifically
+# when invoked via the interface's function-pointer slot. Root cause not yet isolated (likely a
+# `this`-identity/binding gap specific to calling an inherited concrete method through an
+# interface vtable slot, distinct from the link-time issue fixed above) - left for a dedicated
+# follow-up.
 # add_test(NAME test-compile-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 # DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
 # add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
@@ -975,7 +977,7 @@ add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -ji
 add_test(NAME test-jit-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
-# DISABLED: see the test-compile-shared-export-import-class-implements-interface-multilevel comment above (known issue, 2026-07-22) - the JIT tier of the abstract variant also crashes (unlike the multilevel variant's JIT tier, which passes).
+# DISABLED: see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (known issue, 2026-07-22, NOT fixed) - the JIT tier of the abstract variant hits the same this.area()-returns-0-via-interface bug.
 # add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 # DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
 # add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")

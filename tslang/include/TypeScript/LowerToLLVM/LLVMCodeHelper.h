@@ -279,7 +279,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 rewriter.create<mlir_ts::StoreOp>(location, value, addrToSave);
             }
 
-            rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(lastBlock->getTerminator());
+            // don't let replaceOpWithNewOp inherit the replaced terminator's own location - that
+            // terminator (a GlobalResultOp from the global's original initializer) still carries
+            // whatever "live" source location the initializer happened to be built with (which,
+            // for a lazily-triggered global, can be deep inside an unrelated function's body -
+            // see the caller in LowerToLLVM.cpp for the full explanation). Use this function's
+            // own (already correct) `location` instead, matching newFuncOp's.
+            rewriter.setInsertionPoint(lastBlock->getTerminator());
+            rewriter.create<mlir::func::ReturnOp>(location, mlir::ValueRange{});
+            rewriter.eraseOp(lastBlock->getTerminator());
 
             rewriter.eraseBlock(&newFuncOp.getBody().back());
 

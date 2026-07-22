@@ -3728,7 +3728,17 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
             auto name = globalOp.getSymName().str();
             name.append("__cctor");
-            lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion(), globalOp.getSymName());
+            // this synthesized per-global constructor function is compiler-internal glue, not
+            // user source - it must NOT be created with `loc` (the GlobalOp's own location):
+            // globalOp can be a lazily-triggered vtable/global whose location is wherever the
+            // triggering expression happened to be (e.g. a cast expression deep inside an
+            // unrelated function's body), and giving the new FuncOp that same "live" source
+            // location causes the debug-info pass to attach that enclosing function's
+            // DISubprogram to __cctor too - LLVM's verifier then rejects the module
+            // ("DISubprogram attached to more than one function") since a DISubprogram must
+            // identify exactly one function. Same "no debug info for this synthetic function"
+            // precedent as setDISubProgramTypesToFormOp's bodiless-declaration handling above.
+            lch.createFunctionFromRegion(mlir::UnknownLoc::get(rewriter.getContext()), name, globalOp.getInitializerRegion(), globalOp.getSymName());
 
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
