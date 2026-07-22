@@ -675,14 +675,14 @@ namespace mlirgen
 
     }
 
-    mlir::Value MLIRGenImpl::ClassIndexAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
+    mlir::Value MLIRGenImpl::ClassIndexAccess(ClassInfo::TypePtr classInfo,
+            mlir::Location location, mlir::Value thisValue, mlir::Value argument, bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
 
         if (classInfo->indexes.size() == 0)
         {
             emitError(location) << "indexer is not declared";
-            return mlir::Value();            
+            return mlir::Value();
         }
 
         auto indexInfo = classInfo->indexes.front();
@@ -709,8 +709,14 @@ namespace mlirgen
         // sync index
         CAST_A(result, location, argumentType, argument, genContext);
 
+        // same repair ClassMethodAccess/ClassAccessorAccess apply: `super[i]`'s
+        // thisValue is still the raw by-value ClassStorageType struct at this point,
+        // not a pointer - getThisRefOfClass detects that case and materializes it,
+        // same as it always did for `super.method()`/`super.<accessor>`.
+        auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
+
         auto thisIndexAccessorOp = builder.create<mlir_ts::ThisIndexAccessorOp>(
-            location, indexResultType, thisValue, V(result),
+            location, indexResultType, effectiveThisValue, V(result),
             getFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFunc.name)
                         : mlir::FlatSymbolRefAttr{},
             setFunc ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFunc.name)
@@ -781,7 +787,7 @@ namespace mlirgen
         {
             if (!classInfo->indexes.empty())
             {
-                return ClassIndexAccess(classInfo, location, thisValue, argument, accessingFromLevel, genContext);
+                return ClassIndexAccess(classInfo, location, thisValue, argument, isSuperClass, accessingFromLevel, genContext);
             }
         }
 
@@ -1013,8 +1019,16 @@ namespace mlirgen
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
-        }        
+            // else access of index, e.g. `super[i]` - mirror the ClassType branch
+            // above: route through the ".index" property name so the resolver
+            // dispatches to ClassIndexAccess instead of falling off the end
+            // unimplemented. `super[i]` had no handling at all here before - it
+            // never even reached ClassIndexAccess, unlike `super.method()`/
+            // `super.<accessor>` which already went through the normal (string-name)
+            // branch above.
+            auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+            return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, argumentExpression, genContext);
+        }
         else if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(arrayType))
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
