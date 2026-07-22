@@ -1734,26 +1734,80 @@ genContext);
                     }
                     else
                     {
+                        // The vtable is extends-recursive, so a derived class's vtable can
+                        // contain slots whose symbols (inherited virtual methods, and - with
+                        // ADD_STATIC_MEMBERS_TO_VTABLE - inherited static fields like the
+                        // RTTI `.rtti`/`.size`) are owned by a base class that lives in a
+                        // dynamically imported module. Those cannot be constant SymbolRefOp
+                        // references: with no import library, the address is not a link-time
+                        // constant. Resolve them at runtime instead (SearchForAddressOfSymbolOp
+                        // + cast) - GlobalOpLowering already routes any initializer containing
+                        // a SearchForAddressOfSymbolOp through the __cctor global-constructor
+                        // path, and the module-load ctor is emitted before all per-symbol
+                        // ctors, so the DLL is loaded by the time this resolves.
+                        auto isOwnedByDynamicImport = [&](mlir::StringRef symbolName, bool isStaticField) {
+                            std::function<ClassInfo::TypePtr(ClassInfo::TypePtr)> findOwner =
+                                [&](ClassInfo::TypePtr cls) -> ClassInfo::TypePtr {
+                                if (isStaticField
+                                        ? llvm::any_of(cls->staticFields, [&](auto &f) { return f.globalVariableName == symbolName; })
+                                        : llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == symbolName; }))
+                                {
+                                    return cls;
+                                }
+
+                                for (auto &base : cls->baseClasses)
+                                {
+                                    if (auto owner = findOwner(base))
+                                    {
+                                        return owner;
+                                    }
+                                }
+
+                                return ClassInfo::TypePtr();
+                            };
+
+                            auto owner = findOwner(newClassPtr);
+                            return owner && owner->isDynamicImport;
+                        };
+
                         mlir::Value methodOrFieldNameRef;
+                        mlir::StringRef symbolName;
+                        mlir::Type slotType;
                         if (!vtRecord.isStaticField)
                         {
                             if (vtRecord.methodInfo.isAbstract)
                             {
                                 emitError(location) << "Abstract method '" << vtRecord.methodInfo.name <<  "' is not implemented in '" << newClassPtr->name << "'";
-                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No}; 
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                             }
 
-                            methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
-                                location, vtRecord.methodInfo.funcType,
-                                mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                             vtRecord.methodInfo.funcName));
+                            symbolName = vtRecord.methodInfo.funcName;
+                            slotType = vtRecord.methodInfo.funcType;
+                        }
+                        else
+                        {
+                            symbolName = vtRecord.staticFieldInfo.globalVariableName;
+                            slotType = mlir_ts::RefType::get(vtRecord.staticFieldInfo.type);
+                        }
+
+                        if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
+                        {
+                            auto symbolNameValue = V(mlirGenStringValue(location, symbolName.str(), true));
+                            auto referenceToSymbolOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                                location, getOpaqueType(), symbolNameValue);
+                            auto castResult = cast(location, slotType, referenceToSymbolOpaque, genContext);
+                            if (castResult.failed_or_no_value())
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                            }
+
+                            methodOrFieldNameRef = V(castResult);
                         }
                         else
                         {
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
-                                location, mlir_ts::RefType::get(vtRecord.staticFieldInfo.type),
-                                mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                             vtRecord.staticFieldInfo.globalVariableName));
+                                location, slotType,
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), symbolName));
                         }
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
