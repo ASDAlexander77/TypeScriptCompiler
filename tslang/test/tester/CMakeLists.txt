@@ -235,6 +235,7 @@ add_test(NAME test-compile-00-class-static-block COMMAND test-runner "${PROJECT_
 add_test(NAME test-compile-00-class-discover-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_discover_types.ts")
 add_test(NAME test-compile-00-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 add_test(NAME test-compile-00-class-accessor-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
+add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
 add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 add_test(NAME test-compile-00-class-super-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
 add_test(NAME test-compile-00-class-default-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
@@ -596,6 +597,7 @@ add_test(NAME test-jit-00-class-static-block COMMAND test-runner -jit "${PROJECT
 add_test(NAME test-jit-00-class-discover-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_discover_types.ts")
 add_test(NAME test-jit-00-class-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 add_test(NAME test-jit-00-class-accessor-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor2.ts")
+add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
 add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 add_test(NAME test-jit-00-class-super-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
 add_test(NAME test-jit-00-class-default-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
@@ -850,6 +852,23 @@ add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${
 add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-export-import-class-extends-implements-diamond COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-compile-export-import-class-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-compile-export-import-class-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+# Cross-module generic class instantiation: DISABLED, known issue found 2026-07-22. A generic
+# class specialization instantiated in the IMPORTING module incorrectly inherits `export`
+# (dllexport) linkage from the original `export class` declaration, even though the
+# specialization is defined fresh, locally, in this module. For a multi-type-param generic
+# (Pair<A,B>) the resulting mangled name contains a raw comma
+# (M.Pair<!ts.number,!ts.string>..instanceOf), which is a linker-directive metacharacter -
+# lld rejects it with "invalid /export:". Separately, the -shared tiers fail even earlier:
+# once a compiled .dll/.lib for the exporting module already exists next to its .ts source,
+# import resolution reads declarations back from that binary artifact instead of
+# reparsing source, and that path has no representation for an uninstantiated generic
+# template at all, so the whole namespace (M) fails to resolve ("can't resolve name: M").
+# Re-enable once both are fixed; test files are kept in the tree (export_class_generic.ts /
+# import_class_generic.ts) for that follow-up.
+# add_test(NAME test-compile-export-import-class-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+add_test(NAME test-compile-export-import-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
 
 # shared libs tests (dlls/compile-time)
 add_test(NAME test-compile-time-shared-decl-emit-type COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_func.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
@@ -878,6 +897,16 @@ add_test(NAME test-compile-shared-export-import-object-literal-with-class-types 
 add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-compile-shared-export-import-class-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-compile-shared-export-import-class-static COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+# DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
+# add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+# DISABLED: known issue found 2026-07-22 (separate from the super-accessor-call crash fixed
+# above). Under the -shared dynamic-import path, a base class's get/set accessors are not
+# resolvable at all from a derived class in another module ("Class member 'celsius' can't be
+# found") - the same class of gap as the disabled generic-class tests: declaration
+# reconstruction for a dynamically-imported class is incomplete for some member kinds.
+# add_test(NAME test-compile-shared-export-import-class-accessor COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-with-interface COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-untyped COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
 add_test(NAME test-compile-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
@@ -907,6 +936,12 @@ add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMM
 add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-jit-shared-export-import-class-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+# DISABLED: see the matching test-compile-export-import-class-generic comment above (known issue, 2026-07-22).
+# add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+# DISABLED: see the matching test-compile-shared-export-import-class-accessor comment above (known issue, 2026-07-22).
+# add_test(NAME test-jit-shared-export-import-class-accessor COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-untyped COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")

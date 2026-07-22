@@ -5522,8 +5522,9 @@ class MLIRGenImpl
             mlir::Location location, mlir::Value thisValue, int genericMethodIndex, 
             bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
 
-    mlir::Value ClassAccessorAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int accessorIndex, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+    mlir::Value ClassAccessorAccess(ClassInfo::TypePtr classInfo,
+            mlir::Location location, mlir::Value thisValue, int accessorIndex,
+            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
 
     // TODO: why isSuperClass is not used here?
     mlir::Value ClassIndexAccess(ClassInfo::TypePtr classInfo, 
