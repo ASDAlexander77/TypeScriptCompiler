@@ -1778,7 +1778,8 @@ class MLIRGenImpl
     }
 
     bool processFunctionAttributes(mlir::Location location, StringRef fullName,
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext)
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext,
+        bool suppressExport = false)
     {
 #ifdef ADD_GC_ATTRIBUTE
         attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
@@ -1802,8 +1803,9 @@ class MLIRGenImpl
         });
 
         // add modifiers
-        auto dllExport = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
+        auto dllExport = !suppressExport
+            && (getExportModifier(functionLikeDeclarationBaseAST)
+                || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport));
         if (dllExport)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
@@ -1861,6 +1863,17 @@ class MLIRGenImpl
 
         if (existGenericFunctionMap(name))
         {
+            // already registered - but the registration itself typically happens during
+            // Stages::Discovering (before addGenericFunctionDeclarationToExport's
+            // isAddedToExport gate, which only actually emits once stage ==
+            // Stages::SourceGeneration, will do anything) - retry the export step alone
+            // using the existing GenericFunctionInfo rather than skipping it entirely.
+            // Mirrors registerGenericClass's identical gotcha-3 fix.
+            if (getExportModifier(functionLikeDeclarationBaseAST))
+            {
+                addGenericFunctionDeclarationToExport(lookupGenericFunctionMap(name));
+            }
+
             return {mlir::success(), name};
         }
 
@@ -1908,6 +1921,18 @@ class MLIRGenImpl
 
         getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
         fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
+
+        // support dynamic loading: a generic function is never instantiated in this
+        // module if nothing here uses it concretely, so mlirGenFunctionPrototype's own
+        // addFunctionDeclarationToExport call never runs for the bare template (it only
+        // fires for a SPECIALIZED instantiation) - the bare template needs to be
+        // exported here instead, the one place every generic function declaration
+        // passes through regardless of whether it is ever instantiated locally. Mirrors
+        // registerGenericClass.
+        if (getExportModifier(functionLikeDeclarationBaseAST))
+        {
+            addGenericFunctionDeclarationToExport(newGenericFunctionPtr);
+        }
 
         return {mlir::success(), name};
     }
@@ -8311,6 +8336,26 @@ class MLIRGenImpl
                 }
 
                 getGenericTypeAliasMap().insert({namePtr, {typeParameters, typeAliasDeclarationAST->type}});
+
+                // support dynamic loading: like a generic class/function/interface, a
+                // generic type alias has no compiled body or runtime entity at all -
+                // resolution is pure compile-time type substitution
+                // (getTypeByTypeReference/resolveGenericTypeInNamespace call
+                // getType(typeNode, ...) directly on the stored TypeNode, never
+                // re-invoking mlirGen on the whole declaration), unlike
+                // GenericClassInfo/GenericFunctionInfo/GenericInterfaceInfo there is no
+                // dedicated Info struct tracking sourceFile/elementNamespace for this
+                // declaration kind - print inline here instead of adding one, since this
+                // is the only place needing it and there is no "already registered"
+                // early-return branch to retry from (unlike registerGenericClass/
+                // registerGenericFunctionLike/registerGenericInterface):
+                // isAddedToExport's own stage gate is unnecessary too since a given
+                // top-level TypeAliasDeclaration node is visited exactly once per stage,
+                // so a direct stage check is sufficient dedup.
+                if (hasExportModifier && stage == Stages::SourceGeneration)
+                {
+                    addGenericTypeAliasDeclarationToExport(typeAliasDeclarationAST, currentNamespace);
+                }
             }
             else
             {
@@ -10322,6 +10367,52 @@ class MLIRGenImpl
         declExports << ss.str().str();
     }
 
+    void addGenericFunctionDeclarationToExport(GenericFunctionInfo::TypePtr genericFunctionInfo)
+    {
+        // funcType can be null when registered with ignoreFunctionArgsDetection=true
+        // (see registerGenericFunctionLike) - nothing to key isAddedToExport's dedup on
+        // in that case, so just fall through and re-print (matches
+        // addFunctionDeclarationToExport's own "TODO: add distinct declaration" gap for
+        // the non-generic case).
+        if (genericFunctionInfo->funcType && isAddedToExport(genericFunctionInfo->funcType))
+        {
+            // already added
+            return;
+        }
+
+        // same bounds-check as addGenericClassDeclarationToExport - a generic function
+        // re-declared while re-importing another module's embedded declarations still
+        // carries its own `export` keyword verbatim, but at that point `sourceFile` is
+        // the ambient/outer file, not the "partial" buffer parsePartialStatements
+        // actually parsed this declaration from.
+        auto declEnd = static_cast<size_t>(genericFunctionInfo->functionDeclaration->_end);
+        if (declEnd > genericFunctionInfo->sourceFile->text.length())
+        {
+            return;
+        }
+
+        if (genericFunctionInfo->funcType)
+        {
+            exportedTypes.insert(genericFunctionInfo->funcType);
+        }
+
+        // like a generic class, a generic function has no compiled body for any given
+        // instantiation: each importing module instantiates it locally, on demand,
+        // exactly like a same-file usage would. So the FULL original source - type
+        // parameters and body intact, no @dllimport marker - must be re-exported
+        // verbatim for parsePartialStatements to recompile per instantiation in the
+        // importer.
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(
+            genericFunctionInfo->sourceFile->text, genericFunctionInfo->functionDeclaration.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss);
+        dp.printGenericClass(genericFunctionInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
+    }
+
     void addGenericClassDeclarationToExport(GenericClassInfo::TypePtr genericClassInfo)
     {
         if (isAddedToExport(genericClassInfo->classType))
@@ -10404,6 +10495,36 @@ class MLIRGenImpl
         llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss);
         dp.printGenericClass(genericInterfaceInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
+    }
+
+    void addGenericTypeAliasDeclarationToExport(TypeAliasDeclaration typeAliasDeclarationAST, NamespaceInfo::TypePtr elementNamespace)
+    {
+        // same bounds-check as addGenericClassDeclarationToExport - a generic type alias
+        // re-declared while re-importing another module's embedded declarations still
+        // carries its own `export` keyword verbatim, but at that point `sourceFile` is
+        // the ambient/outer file, not the "partial" buffer parsePartialStatements
+        // actually parsed this declaration from.
+        auto declEnd = static_cast<size_t>(typeAliasDeclarationAST->_end);
+        if (declEnd > sourceFile->text.length())
+        {
+            return;
+        }
+
+        // like a generic class, a generic type alias has no compiled body for any given
+        // instantiation: resolution is pure compile-time type substitution, done fresh in
+        // whichever module references it. So the FULL original source - type parameters
+        // and the aliased type expression intact, no @dllimport marker - must be
+        // re-exported verbatim for parsePartialStatements to recompile per reference in
+        // the importer.
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(
+            sourceFile->text, typeAliasDeclarationAST.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss);
+        dp.printGenericClass(elementNamespace, declText);
 
         genericDeclExports << ss.str().str();
     }

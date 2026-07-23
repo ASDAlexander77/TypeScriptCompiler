@@ -344,9 +344,32 @@ namespace mlirgen
             funcProto->setHasExtraFields(existLocalVarsInThisContextMap(funcProto->getName()));
         }
 
+        // a concrete instantiation of a generic function (e.g. identity<number>) reprocesses
+        // the SAME AST node as the bare template (`export function identity<T>(...)`), so
+        // processFunctionAttributes's own getExportModifier check below would otherwise mark
+        // this LOCAL, per-instantiation specialization as exported too - wrong for the same
+        // two reasons the class-generic fix (class-generic-declaration-export-fix) suppresses
+        // isExport on a specialized ClassInfo: (1) a specialization materialized by whichever
+        // module instantiates it is local to that module, not a re-export of it (the bare
+        // template's own export is handled separately via registerGenericFunctionLike /
+        // addGenericFunctionDeclarationToExport); (2) a multi-type-param instantiation's
+        // mangled name contains a raw comma (e.g. M.pair<!ts.number,!ts.string>), a
+        // metacharacter in the linker's `/EXPORT:name[,option]` directive syntax - lld rejects
+        // it outright ("invalid /export:"). NOTE: can't key this off
+        // genContext.instantiateSpecializedFunction - mlirGenFunctionLikeDeclaration
+        // deliberately clears that flag on funcDeclGenContext before calling
+        // mlirGenFunctionPrototype (to stop nested generics being instantiated by mistake),
+        // so by the time we get here it always reads false. typeParamsWithArgs is the
+        // signal that actually survives - same one the class fix uses. Must be passed INTO
+        // processFunctionAttributes (not applied to its return value afterward) because it
+        // pushes the "export" attribute into `attrs` itself before returning.
+        auto suppressExportForGenericInstantiation =
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0 && !genContext.typeParamsWithArgs.empty();
+
         SmallVector<mlir::NamedAttribute> attrs;
-        auto dllExport = processFunctionAttributes(location, fullName, functionLikeDeclarationBaseAST, attrs, funcProtoGenContext);
-            
+        auto dllExport = processFunctionAttributes(location, fullName, functionLikeDeclarationBaseAST, attrs, funcProtoGenContext,
+            suppressExportForGenericInstantiation);
+
         if (funcType)
         {
             auto it = getCaptureVarsMap().find(funcProto->getName());
