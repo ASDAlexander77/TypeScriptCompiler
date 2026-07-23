@@ -8336,6 +8336,26 @@ class MLIRGenImpl
                 }
 
                 getGenericTypeAliasMap().insert({namePtr, {typeParameters, typeAliasDeclarationAST->type}});
+
+                // support dynamic loading: like a generic class/function/interface, a
+                // generic type alias has no compiled body or runtime entity at all -
+                // resolution is pure compile-time type substitution
+                // (getTypeByTypeReference/resolveGenericTypeInNamespace call
+                // getType(typeNode, ...) directly on the stored TypeNode, never
+                // re-invoking mlirGen on the whole declaration), unlike
+                // GenericClassInfo/GenericFunctionInfo/GenericInterfaceInfo there is no
+                // dedicated Info struct tracking sourceFile/elementNamespace for this
+                // declaration kind - print inline here instead of adding one, since this
+                // is the only place needing it and there is no "already registered"
+                // early-return branch to retry from (unlike registerGenericClass/
+                // registerGenericFunctionLike/registerGenericInterface):
+                // isAddedToExport's own stage gate is unnecessary too since a given
+                // top-level TypeAliasDeclaration node is visited exactly once per stage,
+                // so a direct stage check is sufficient dedup.
+                if (hasExportModifier && stage == Stages::SourceGeneration)
+                {
+                    addGenericTypeAliasDeclarationToExport(typeAliasDeclarationAST, currentNamespace);
+                }
             }
             else
             {
@@ -10434,6 +10454,36 @@ class MLIRGenImpl
         llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss);
         dp.printGenericClass(genericClassInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
+    }
+
+    void addGenericTypeAliasDeclarationToExport(TypeAliasDeclaration typeAliasDeclarationAST, NamespaceInfo::TypePtr elementNamespace)
+    {
+        // same bounds-check as addGenericClassDeclarationToExport - a generic type alias
+        // re-declared while re-importing another module's embedded declarations still
+        // carries its own `export` keyword verbatim, but at that point `sourceFile` is
+        // the ambient/outer file, not the "partial" buffer parsePartialStatements
+        // actually parsed this declaration from.
+        auto declEnd = static_cast<size_t>(typeAliasDeclarationAST->_end);
+        if (declEnd > sourceFile->text.length())
+        {
+            return;
+        }
+
+        // like a generic class, a generic type alias has no compiled body for any given
+        // instantiation: resolution is pure compile-time type substitution, done fresh in
+        // whichever module references it. So the FULL original source - type parameters
+        // and the aliased type expression intact, no @dllimport marker - must be
+        // re-exported verbatim for parsePartialStatements to recompile per reference in
+        // the importer.
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(
+            sourceFile->text, typeAliasDeclarationAST.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss);
+        dp.printGenericClass(elementNamespace, declText);
 
         genericDeclExports << ss.str().str();
     }
