@@ -363,8 +363,9 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     }  
 
     ::mlir::typescript::AccessLevel getAccessLevel(size_t index) const {
-      return ::mlir::typescript::AccessLevel::Public;
-    }    
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index].accessLevel;
+    }
   }];
 }
 
@@ -431,8 +432,9 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     }   
 
     ::mlir::typescript::AccessLevel getAccessLevel(size_t index) const {
-      return ::mlir::typescript::AccessLevel::Public;
-    }    
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index].accessLevel;
+    }
   }];
 }
 
@@ -533,8 +535,9 @@ def TypeScript_ObjectStorage : TypeScript_Type<"ObjectStorage", [IsMutable]> {
     LogicalResult setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields);
 
     ::mlir::typescript::AccessLevel getAccessLevel(size_t index) const {
-      return ::mlir::typescript::AccessLevel::Public;
-    }    
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index].accessLevel;
+    }
   }];
 
   let genStorageClass = 0;
