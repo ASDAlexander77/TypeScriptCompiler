@@ -5792,9 +5792,14 @@ class MLIRGenImpl
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! index value: " << argumentExpression
-                                    << ", check if tuple must be an array\n";);
-            llvm_unreachable("not implemented (index)");
+            // tuples/object-literals here compile to a fixed-layout struct (their fields
+            // are resolved to specific offsets at compile time), not a dynamic hash map -
+            // a runtime-computed (non-constant) index genuinely can't resolve to a
+            // specific field, so this is a real language limitation, not a missing code
+            // path. Fail with a clear diagnostic instead of crashing.
+            emitError(location) << "Element access with a non-constant index is not supported on this type; "
+                                    "only array types and constant keys (obj[\"literal\"]) can be indexed";
+            return ValueOrLogicalResult(mlir::failure());
         }
     }
 
@@ -7859,8 +7864,13 @@ class MLIRGenImpl
                             return mlir::success();
                         })
                     .Default([&](auto type) {
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment not implemented for type: " << type << "\n";);
-                        llvm_unreachable("not implemented");
+                        // spreading a tuple/const-tuple/interface/class/(boxed) object into an
+                        // object literal is handled above; spreading anything else (an array,
+                        // a union, a primitive...) is a real, unimplemented feature (e.g. array
+                        // spread would need to synthesize numeric-string-keyed fields "0","1",...)
+                        // rather than an unreachable state - fail with a clear diagnostic instead
+                        // of crashing until it's implemented.
+                        emitError(location) << "Spread in an object literal is not supported for type: " << to_print(type);
                         return mlir::failure();
                     });
 
