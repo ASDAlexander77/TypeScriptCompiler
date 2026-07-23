@@ -946,20 +946,22 @@ add_test(NAME test-compile-shared-export-import-class-static COMMAND test-runner
 add_test(NAME test-compile-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 add_test(NAME test-compile-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 add_test(NAME test-compile-shared-export-import-class-structural-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
-# DISABLED: a separate, NOT fixed bug found 2026-07-22 while verifying the fix above. Unlike the
-# multilevel/optional/structural variants (all pass now), this one calls describe() - a CONCRETE
-# method inherited from the abstract dynamic-import base M.Shape, whose body internally calls the
-# still-virtual this.area() - through an interface reference
-# (`const asDescribable: M.Describable = s; asDescribable.describe()`). Confirmed via the real
-# harness (instrumented with print instead of assert, see the session transcript): the DIRECT call
-# `s.describe()` and the base-class-cast call `asShape.describe()` both return the correct
-# "red area=9", but the SAME describe() reached through the interface returns "red area=0" -
-# this.area() silently resolves to 0 instead of dispatching to Square's override, specifically
-# when invoked via the interface's function-pointer slot. Root cause not yet isolated (likely a
-# `this`-identity/binding gap specific to calling an inherited concrete method through an
-# interface vtable slot, distinct from the link-time issue fixed above) - left for a dedicated
-# follow-up.
-# add_test(NAME test-compile-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+# FIXED 2026-07-23 (was disabled): the "this.area()-returns-0-via-interface" symptom had nothing
+# to do with interfaces or `this` binding. DeclarationPrinter dropped the `abstract` modifier when
+# embedding the class declaration into the compiled binary (__decls), so the reimporting module
+# treated M.Shape as concrete and synthesized a `.new` method for it - a vtable slot the exporting
+# module never created (mlirGenClassNew skips `.new` for abstract classes). Every base-class slot
+# after `.instanceOf` was thereby shifted by one in the importer's rebuilt vtable, and describe()'s
+# compiled-in slot-1 read for area() landed on `.new` instead - a pointer-returning function called
+# through a double-returning signature, so the "result" was whatever garbage was left in XMM0.
+# That garbage is why the symptom looked interface-specific: a preceding `assert(s.area() == 9)`
+# left 9.0 in XMM0, making the direct and base-class-cast calls "pass" by pure luck, while the
+# interface path (more string machinery in between) got 0. See the abstract-virtual-dispatch tests
+# below for the deterministic minimal regression pair.
+add_test(NAME test-compile-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+# minimal deterministic regression pair for the vtable-slot-shift bug above (single-level abstract,
+# describe() called twice before any area() call so XMM0 luck can't hide a regression)
+add_test(NAME test-compile-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
 # FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
 add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 add_test(NAME test-compile-shared-export-import-function-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
@@ -1007,8 +1009,9 @@ add_test(NAME test-jit-shared-export-import-class-static COMMAND test-runner -ji
 add_test(NAME test-jit-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
 add_test(NAME test-jit-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
-# DISABLED: see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (known issue, 2026-07-22, NOT fixed) - the JIT tier of the abstract variant hits the same this.area()-returns-0-via-interface bug.
-# add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+# FIXED 2026-07-23 (was disabled): see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (DeclarationPrinter dropped `abstract`, shifting the reimported vtable's slots).
+add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-jit-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
 # FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
 add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 add_test(NAME test-jit-shared-export-import-function-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
