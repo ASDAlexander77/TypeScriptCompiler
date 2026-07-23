@@ -425,6 +425,13 @@ add_test(NAME test-compile-41-anonymoustypes COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-42-lambdaproperties COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/42lambdaproperties.ts")
 add_test(NAME test-compile-43-nestednamespace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/43nestednamespace.ts")
 add_test(NAME test-compile-44-toplevelcode COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
+# 44toplevelcode.ts has top-level declarations but wraps its actual test logic in an
+# explicit main() - these two exercise executable statements running directly at root
+# scope with NO main() anywhere (generateGlobalEntryCode compiles the root statements
+# AS the synthesized `main` itself): control flow (for/while/switch/try-catch-finally)
+# plus a closure capturing a root-level `let` (module-scope storage, not a stack local).
+add_test(NAME test-compile-00-toplevel-control-flow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00toplevel_control_flow.ts")
+add_test(NAME test-compile-00-toplevel-no-main-with-helpers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00toplevel_no_main_with_helpers.ts")
 add_test(NAME test-compile-45-enumtostring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
 add_test(NAME test-compile-48-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
 add_test(NAME test-compile-51-exceptions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/51exceptions.ts")
@@ -793,6 +800,8 @@ add_test(NAME test-jit-41-anonymoustypes COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-42-lambdaproperties COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/42lambdaproperties.ts")
 add_test(NAME test-jit-43-nestednamespace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/43nestednamespace.ts")
 add_test(NAME test-jit-44-toplevelcode COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
+add_test(NAME test-jit-00-toplevel-control-flow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00toplevel_control_flow.ts")
+add_test(NAME test-jit-00-toplevel-no-main-with-helpers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00toplevel_no_main_with_helpers.ts")
 add_test(NAME test-jit-45-enumtostring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
 add_test(NAME test-jit-48-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
 add_test(NAME test-jit-51-exceptions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/51exceptions.ts")
