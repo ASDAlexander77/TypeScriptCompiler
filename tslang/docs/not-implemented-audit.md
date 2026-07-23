@@ -1,6 +1,6 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **9 confirmed crashes fixed across four passes, ~110 markers still
+Status: **10 confirmed crashes fixed across five passes, ~106 markers still
 uninvestigated** — written as a roadmap for continuing this audit, not a
 claim that the sweep is complete. Triggered by a user request to review
 every "not implemented" marker in the codebase and see which ones can be
@@ -8,7 +8,9 @@ implemented. Second pass (§4.3-4.5) worked through this document's own §6
 priority list while waiting on the first pass's PR to merge. Third pass
 (§4.6-4.8) closed out §5.4's `MLIRTypeHelper.h` `funcRef` family after that
 PR merged. Fourth pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf`
-sites, the last item left from the original §5.1 named/specific list.
+sites, the last item left from the original §5.1 named/specific list. Fifth
+pass (§4.10) started the `MLIRGenImpl.h` cluster (§5.1's last remaining
+block), closing 4 of its sites.
 
 ## 1. Scope and method
 
@@ -399,6 +401,79 @@ member loop, gated by the same kind of flag used for `castPrimitiveTypeFromAny`
 Verified individually (clean diagnostic, no crash) and via the full suite
 (`ctest -C Debug -j8`: 829/829, no regressions).
 
+### 4.10 `MLIRGenImpl.h` cluster, first 4 sites — 1 real crash, 2 dead, 1 untested-feature-path
+
+Started §5.1's last remaining block (was: 5330, 6732, 7314, 7418, 8164,
+8382/8400/8426, 9342 — this pass covers the first four).
+
+**`getIntTypeAttribute` (was :6737, inside the integer-literal-to-attribute
+helper): a real, confirmed crash**, and a good illustration of why a
+"hanging" test isn't always an infinite loop. A plain integer literal
+needing more than 128 bits (e.g. a 62-digit literal) crashes here - but on
+this dev machine the `test-runner.exe` process appeared to *hang* rather
+than crash: `llvm_unreachable`'s internal `abort()` popped an invisible
+"Microsoft Visual C++ Runtime Library" dialog (confirmed via `Get-Process | Select MainWindowTitle` showing
+"Microsoft Visual C++ Runtime Library" while CPU usage stayed near zero -
+blocked, not busy-looping; the same "idle-CPU hang is actually an invisible
+blocking dialog" pattern applies to `abort()`, not just `assert()`/
+`_CrtDbgReport`). No
+`mlir::Location` is available inside `getIntTypeAttribute` itself (it only
+takes the literal's raw text), so the fix returns a null `Attribute` on
+overflow instead of crashing, and the actual caller two frames up
+(`MLIRGenImpl::mlirGen(NumericLiteral ...)` in `MLIRGenExpressions.cpp`,
+which already has `loc(numericLiteral)` in scope) now checks for null and
+emits `"integer literal is too large to represent (more than 128 bits)"`
+cleanly. Verified: the same repro now fails instantly with a clean
+diagnostic instead of hanging behind an invisible dialog.
+
+Note: `BigIntLiteral` (the `123n` suffix form, a separate AST node handled
+a few lines below in the same file) has its own independent, *unguarded*
+`APSInt`-to-`int64` conversion with no width check at all - a likely
+silent-truncation bug for a large `...n` literal, not a crash. Different
+failure mode (wrong answer vs. crash), out of scope for this "not
+implemented" audit; left as a note for a future pass.
+
+**`createConstArrayOrTuple` (was :7319, the `TypeData::NotSet` fallthrough
+after the `Tuple`/`Array` checks): dead code.** `ArrayInfo::adjustArrayType`
+(called immediately before an `ArrayInfo` is handed to this function)
+unconditionally normalizes `TypeData::NotSet` to `TypeData::Array` - so by
+the time this function runs, `dataType` can only ever be `Tuple` or
+`Array`. Same "producer already guarantees it" shape as the `funcRef`
+family fix in §4.6-4.8, just proven through a normalization step instead of
+a caller-side type check. Fixed anyway (`emitError` + `return failure()`,
+`location` was already in scope) for the same "don't leave a landmine"
+reasoning as the rest of this audit.
+
+**The sibling array-spread `.Default` (was :7423, "array spread value
+type... not implemented", inside the array-literal-into-a-dynamic-array
+builder): also dead code, proven by enumerating every producer.** Every
+site that constructs an `ArrayElement{value, isSpread=true,
+isVariableSizeOfSpreadElement=false}` (the only combination that reaches
+this branch) does so exclusively from the `TupleType` case a few lines
+above the crash - so `val.value.getType()` is always already a `TupleType`
+by construction, meaning the `dyn_cast<mlir_ts::TupleType>` right before
+this `else` always succeeds and this branch is never taken. Fixed anyway.
+
+**`ClassStaticFieldAccess` (was :5330, the `classInfo->isDynamicImport`
+branch): an untested feature path, not a normal-program crash.**
+`isDynamicImport` is only set on a `ClassInfo` by a class-level
+`@dllimport("path")` decorator *with an argument* (the "load this class
+from an external DLL by path at runtime" feature) - grepping the entire
+test suite for `@dllimport(` with any argument found zero matches. This
+whole feature path is untested anywhere, and its sibling variable-level
+version (`MLIRGenVariables.cpp`) carries its own explicit `// TODO: finish
+it, look at mlirGenCustomRTTIDynamicImport as example` - so this reads as
+an intentionally-incomplete feature, not a hidden gap in otherwise-working
+code. Still converted the crash to `emitError` + `return mlir::Value()`
+(matching this function's own established local convention two lines
+above, for the "field not accessible" case - this function returns a bare
+`mlir::Value`, not a `LogicalResult`, so there's no `mlir::failure()` to
+return here), since crashing is strictly worse than a clean "not supported"
+error even for an unfinished feature.
+
+All four verified (repro for the real crash, full-suite for regressions):
+`ctest -C Debug -j8` → 829/829, no regressions.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -410,13 +485,13 @@ verified verdict — see §2 for how to actually check one.
 1159/1219/1535) — see §4.3-4.5. **Fixed a previous pass** (§4.9):
 `MLIRGenCast.cpp`'s two `TypeOf` sites (was lines 1321-1322/1498-1499) — one
 dead (guarded), one a real crash (union with a tuple-shaped member).
+**Fixed this pass** (§4.10): `MLIRGenImpl.h`'s first four sites (was
+5330/6732/7314/7418) — 1 real crash, 2 dead, 1 untested-feature-path.
+`UnaryBinLogicalOrHelper.h:42-43` row removed - already resolved back in §3
+(dead code, `UnaryOp<>` has zero call sites; see §6 item 1).
 
 | Site | Message | Shape (unverified guess) |
 | --- | --- | --- |
-| `MLIRGenImpl.h:5330` | not implemented | unread |
-| `MLIRGenImpl.h:6732` | not implemented | unread |
-| `MLIRGenImpl.h:7314` | not implemented | unread |
-| `MLIRGenImpl.h:7418` | not implemented | unread |
 | `MLIRGenImpl.h:8164` | not implemented | unread |
 | `MLIRGenImpl.h:8382` / `:8400` / `:8426` | not implemented | unread, three sites close together — likely related |
 | `MLIRGenImpl.h:9342` | not implemented | unread |
@@ -425,7 +500,6 @@ dead (guarded), one a real crash (union with a tuple-shaped member).
 | `MLIRGenTypes.cpp:183` | not implemented type declaration | unread |
 | `MLIRGenTypes.cpp:1474` / `:1567` / `:1876` / `:1910` / `:2001` / `:2204` / `:2210` / `:2661` / `:3401` | not implemented | unread, largest single-file cluster after MLIRGenImpl.h |
 | `LLVMCodeHelper.h:452` | array literal is not implemented(1) | likely the LLVM-lowering-side twin of the (confirmed-dead) `MLIRGenImpl.h:7875` "object literal is not implemented(1)" `else` branch — check the same way (is there any other `SyntaxKind` an array-literal element list can produce?) |
-| `UnaryBinLogicalOrHelper.h:42-43` | "Not implemented operator for type 1: 'X'" (`emitError`) then `llvm_unreachable` | **worth a quick look on its own**: this one already calls `emitError` (like §4's fix) but *still* falls through to `llvm_unreachable` right after — likely a copy-paste of the crash-then-message pattern that never got the `return` that would make the error actually graceful. If so, this is a one-line fix (drop the `llvm_unreachable`, return failure), no new investigation needed beyond confirming what emits it currently crashes instead of erroring cleanly. |
 
 ### 5.2 Generic `TypeSwitch::Default` exhaustiveness fallbacks (likely mostly dead, per §3's precedent — verify by checking whether an existing passing test already produces the relevant `mlir::Type` at that pipeline stage)
 
@@ -496,9 +570,13 @@ bug (the built-in utility types); tracing real callers is what worked.
    from §5.1, plus the stray
    `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709` sites
    (confirmed *not* part of the `funcRef` family, see §5.4).
-5. The `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/`MLIRGenTypes.cpp` cluster
-   (§5.1's last remaining block) — read-and-repro each per §2's recipe, same
-   as every other §5.1 item so far.
+5. **In progress**: the `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/
+   `MLIRGenTypes.cpp` cluster (§5.1's last remaining block) — read-and-repro
+   each per §2's recipe. §4.10 closed the first 4 `MLIRGenImpl.h` sites
+   (5330/6732/7314/7418); still open: `MLIRGenImpl.h:8164/8382/8400/8426/9342`,
+   all of `MLIRGenInterfaces.cpp` (475/932/954), all of `MLIRGenTypes.cpp`
+   (183/1474/1567/1876/1910/2001/2204/2210/2661/3401), and
+   `LLVMCodeHelper.h:452`.
 6. §5.2 (generic fallbacks) — triage a handful against existing passing
    tests using §3's method before assuming any individual one is live.
 7. §5.3 (RTTI) — lowest priority from this (Windows) machine; the Linux
