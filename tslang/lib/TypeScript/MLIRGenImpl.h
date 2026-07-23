@@ -10367,6 +10367,47 @@ class MLIRGenImpl
         genericDeclExports << ss.str().str();
     }
 
+    void addGenericInterfaceDeclarationToExport(GenericInterfaceInfo::TypePtr genericInterfaceInfo)
+    {
+        if (genericInterfaceInfo->interfaceType && isAddedToExport(genericInterfaceInfo->interfaceType))
+        {
+            // already added
+            return;
+        }
+
+        // same bounds-check as addGenericClassDeclarationToExport - a generic interface
+        // re-declared while re-importing another module's embedded declarations still
+        // carries its own `export` keyword verbatim, but at that point `sourceFile` is
+        // the ambient/outer file, not the "partial" buffer parsePartialStatements
+        // actually parsed this declaration from.
+        auto declEnd = static_cast<size_t>(genericInterfaceInfo->interfaceDeclaration->_end);
+        if (declEnd > genericInterfaceInfo->sourceFile->text.length())
+        {
+            return;
+        }
+
+        if (genericInterfaceInfo->interfaceType)
+        {
+            exportedTypes.insert(genericInterfaceInfo->interfaceType);
+        }
+
+        // like a generic class, a generic interface has no compiled body for any given
+        // instantiation: each importing module instantiates it locally, on demand,
+        // exactly like a same-file usage would. So the FULL original source - type
+        // parameters and member signatures intact, no @dllimport marker - must be
+        // re-exported verbatim for parsePartialStatements to recompile per instantiation
+        // in the importer.
+        auto declText = convertWideToUTF8(getTextOfNodeFromSourceText(
+            genericInterfaceInfo->sourceFile->text, genericInterfaceInfo->interfaceDeclaration.as<Node>(), true));
+
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);
+        MLIRDeclarationPrinter dp(ss);
+        dp.printGenericClass(genericInterfaceInfo->elementNamespace, declText);
+
+        genericDeclExports << ss.str().str();
+    }
+
     auto getNamespaceName() -> StringRef
     {
         return currentNamespace->name;
