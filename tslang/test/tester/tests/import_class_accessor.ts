@@ -20,12 +20,17 @@ function main() {
     assert(t.celsius == 100);
     assert(t.fahrenheit == 212);
 
-    // NOTE: accessing an overridden accessor through a base-typed reference
-    // (`const asBase: M.Temperature = t; asBase.celsius`) is a known,
-    // pre-existing, non-cross-module-specific gap: get/set accessors are not
-    // part of the vtable, so such access resolves statically to the base's
-    // own accessor rather than dispatching virtually. Not exercised here -
-    // this test only covers the super-accessor-call crash fix.
+    // Accessing an overridden accessor through a base-typed reference used to
+    // be a known, pre-existing, non-cross-module-specific gap: get/set
+    // accessors were not part of the vtable, so such access resolved
+    // statically to the base's own accessor rather than dispatching
+    // virtually (see accessor-vtable-dispatch-fix memory). Fixed - this now
+    // dispatches to ClampedTemperature's override even through the
+    // M.Temperature-typed reference, cross-module.
+    const asBase: M.Temperature = t;
+    asBase.celsius = -5;
+    assert(asBase.celsius == 0);
+    assert(asBase.fahrenheit == 32);
 
     print("done.");
 }
