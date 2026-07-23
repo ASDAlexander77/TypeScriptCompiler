@@ -401,6 +401,17 @@ namespace typescript
         printNamespaceBegin(classType->elementNamespace);
 
         printBeforeDeclaration();
+        // `abstract` is layout-relevant, not just semantic: mlirGenClassNew skips
+        // synthesizing the `.new` method for abstract classes, so dropping the
+        // modifier makes the reimporting module insert a `.new` vtable slot the
+        // exporting module never had, shifting every subsequent virtual index and
+        // corrupting cross-module virtual dispatch (base-module code calling
+        // this.method() lands on the wrong slot).
+        if (classType->isAbstract)
+        {
+            os << "abstract ";
+        }
+
         os << "class " << classType->name;
 
         if (classType->baseClasses.size() > 0)
@@ -552,6 +563,11 @@ namespace typescript
             else if (method.accessLevel == mlir_ts::AccessLevel::Private)
             {
                 os << "private ";
+            }
+
+            if (method.isAbstract)
+            {
+                os << "abstract ";
             }
 
             printMethod(

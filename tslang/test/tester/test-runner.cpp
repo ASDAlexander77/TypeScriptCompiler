@@ -270,7 +270,7 @@ std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
     auto output = readOutput(txtFile);
     auto errors = readOutput(errFile);
 
-    deleteFiles(tempOutputFileNameNoExt);    
+    if (!getenv("TSLANG_TEST_KEEP_TEMP")) deleteFiles(tempOutputFileNameNoExt);
 
     if (output.find("done.") != std::string::npos)
     {
