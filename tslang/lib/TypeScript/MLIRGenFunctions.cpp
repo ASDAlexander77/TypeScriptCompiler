@@ -468,8 +468,25 @@ namespace mlirgen
                 exitNamespace();
 
                 auto &passResult = genContextWithPassResult.passResult;
+
+                // Root cause of the chained-sibling-method-return-gap's third layer (see
+                // that memory): discovery always runs even when the function/method
+                // already has an EXPLICIT return-type annotation - "// seems we need to
+                // discover it all the time due to captured vars" above - so
+                // functionReturnTypeShouldBeProvided/functionReturnType still get set from
+                // trying to INFER a type from the body's return expression(s), even though
+                // that inferred value will never be used when an explicit one already
+                // exists. If a sibling method's prototype isn't registered yet (e.g.
+                // `return this.scale(f) + e;` inside an object literal, discovered as a
+                // side effect of discovering an unrelated OUTER function), the call can't
+                // produce a value during this dummy run, so functionReturnType comes back
+                // "none" - previously treated as "discovery failed to converge" even
+                // though the explicit annotation makes that inferred value moot.
+                auto hasExplicitReturnType = !!functionLikeDeclarationBaseAST->type;
+
                 if (passResult->functionReturnTypeShouldBeProvided
-                    && mth.isNoneType(passResult->functionReturnType))
+                    && mth.isNoneType(passResult->functionReturnType)
+                    && !hasExplicitReturnType)
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
@@ -495,7 +512,10 @@ namespace mlirgen
 
                 funcProto->setDiscovered(true);
                 auto discoveredType = passResult->functionReturnType;
-                if (discoveredType && discoveredType != funcProto->getReturnType())
+                // a "none" discoveredType means inference didn't converge (see above) -
+                // never let that silently overwrite an already-known (explicit or
+                // previously-cached) return type.
+                if (discoveredType && !mth.isNoneType(discoveredType) && discoveredType != funcProto->getReturnType())
                 {
                     // TODO: do we need to convert it here? maybe send it as const object?
 
