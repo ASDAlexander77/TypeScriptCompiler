@@ -1156,7 +1156,13 @@ namespace mlirgen
                 }
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            // same architectural limitation as the tuple/object-literal case
+            // (mlirGenElementAccessTuple): a boxed object literal is a fixed-layout
+            // struct, not a dynamic hash map, so a non-constant (or non-string-typed)
+            // index genuinely can't resolve to a field at compile time.
+            emitError(location) << "Element access with a non-constant index is not supported on this type; "
+                                    "only array types and constant string keys (obj[\"literal\"]) can be indexed";
+            return ValueOrLogicalResult(mlir::failure());
         }
         else if (auto classType = dyn_cast<mlir_ts::ClassType>(arrayType))
         {
@@ -1216,9 +1222,14 @@ namespace mlirgen
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
-        }          
-        else if (auto refType = dyn_cast<mlir_ts::RefType>(arrayType)) 
+            // numeric-enum reverse mapping (`Color[1]` -> "Green") is not implemented
+            // at all yet, not even for a constant index (see
+            // docs/not-implemented-audit.md) - fail cleanly here rather than crash;
+            // implementing the real feature is a separate, larger piece of work.
+            emitError(location) << "Enum reverse lookup by index is not supported";
+            return ValueOrLogicalResult(mlir::failure());
+        }
+        else if (auto refType = dyn_cast<mlir_ts::RefType>(arrayType))
         {
             CAST_A(index, location, mth.getIndexType(), argumentExpression, genContext);
 
@@ -1521,7 +1532,12 @@ namespace mlirgen
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    // mirrors the sibling .Default case below: GetReferenceFromValue
+                    // couldn't produce a reference for this super()-call target, so
+                    // there's nothing sensible to construct a call from - fail cleanly
+                    // instead of crashing.
+                    emitError(location, "not supported function type");
+                    value = mlir::Value();
                 }
             })
             .Default([&](auto type) {

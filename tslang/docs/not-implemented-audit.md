@@ -1,9 +1,11 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **2 confirmed crashes fixed (this pass), ~120 markers still uninvestigated** —
-written as a roadmap for continuing this audit, not a claim that the sweep is
-complete. Triggered by a user request to review every "not implemented" marker
-in the codebase and see which ones can be implemented.
+Status: **5 confirmed crashes fixed across two passes, ~115 markers still
+uninvestigated** — written as a roadmap for continuing this audit, not a
+claim that the sweep is complete. Triggered by a user request to review
+every "not implemented" marker in the codebase and see which ones can be
+implemented. Second pass (§4.3-4.5) worked through this document's own §6
+priority list while waiting on the first pass's PR to merge.
 
 ## 1. Scope and method
 
@@ -95,6 +97,22 @@ fallbacks**: find an existing test that plausibly produces the type in
 question, confirm it passes, and if so the fallback is very likely dead for
 today's feature set (not proof for all future features, but proof for now).
 
+A second, different flavor of dead code: `UnaryBinLogicalOrHelper.h:42-43`'s
+`UnaryOp<>` template (originally flagged in §6 as a likely one-line fix —
+that guess was wrong) has **zero instantiations anywhere in the codebase**
+(`grep -rn "UnaryOp<" lib include tslang` finds nothing outside its own
+definition). Unlike `IntersectionType`, this isn't "a reachable type that
+gets resolved away" — the whole function template is orphaned; unary-minus
+lowering actually goes through a separate, standalone `NegativeOpValue`/
+`NegativeOpBin` pair (`LowerToLLVM.cpp:3023,3047`). Its sibling `BinOp<>` in
+the same file, by contrast, is live (12 call sites in `LowerToLLVM.cpp` for
+`+ - * / % ** >> >>> << & | ^`) and — worth noting — already uses the
+graceful `emitError` + `return failure()` pattern with no `llvm_unreachable`
+at all, so there was nothing to fix there either. **Lesson for triaging
+`.Default` fallbacks generally: check for call sites before assuming a
+marker is reachable, the same way you'd check for a producing test before
+assuming a type is reachable.**
+
 ## 4. Fixed this pass
 
 Both fixes are in `lib/TypeScript/MLIRGenImpl.h`, both converted a hard
@@ -165,6 +183,78 @@ Both verified individually (clean diagnostic, no crash) and via the full
 suite (`ctest -C Debug -j8`: 829/829, no regressions — these `Default`
 branches were never reached by any existing passing test).
 
+### 4.3 `obj[dynamicKey]` on a boxed (method-bearing) object literal
+
+`MLIRGenAccessCall.cpp` (was line 1159), the `ObjectType` branch of
+`mlirGenElementAccess`. Same root cause as §4.1, different runtime
+representation (boxed `ObjectType`, used when the object literal has
+methods, vs. the plain value-`TupleType` §4.1 covers):
+
+```ts
+function main() {
+    const obj = { a: 1, greet() { return "hi"; } };
+    let n = 42;
+    print(obj[n]);   // crash - only constant string keys work here
+}
+```
+
+Note `obj[n]: any` (the *result* typed `any`, e.g. via `const obj: any =
+{...}`) does **not** hit this crash — it's caught earlier by a different,
+already-graceful check. The crash needs the object's own inferred type to
+stay a concrete boxed `ObjectType`. Same fix as §4.1: `emitError` +
+`ValueOrLogicalResult(mlir::failure())`.
+
+### 4.4 `Color[n]` — numeric-enum reverse mapping by a non-constant index
+
+`MLIRGenAccessCall.cpp` (was line 1219), the `EnumType` branch of the same
+function:
+
+```ts
+enum Color { Red, Green, Blue }
+function main() {
+    let n = 1;
+    print(Color[n]);   // crash
+}
+```
+
+Real TypeScript numeric enums support reverse mapping (`Color[1] ===
+"Green"`). Investigating this turned up something more significant than the
+crash itself: **the constant-index case doesn't work either.**
+`Color[1]` (a literal, not a variable) fails with `error: Enum member '' can't
+be found` — the constant-index branch just forwards the raw integer
+attribute into a *string-keyed* property lookup, which was never going to
+resolve. So reverse enum mapping is not implemented **at all**, for any
+index form; the crash on the non-constant path is a symptom, not the actual
+gap. Implementing it for real needs a reverse lookup table generated
+alongside the enum (or a `switch` over values) — out of scope for this pass.
+Converted the crash to `emitError(location) << "Enum reverse lookup by index
+is not supported";` and left the deeper constant-index bug undocumented in
+code (documented here) since fixing the crash without fixing the underlying
+feature would just swap one wrong-but-silent-ish failure for another
+wrong-but-clean one — worth a dedicated follow-up rather than a half fix.
+
+### 4.5 `super(...)` call target with no resolvable reference
+
+`MLIRGenAccessCall.cpp` (was line 1535), inside the `ClassStorageType` case
+of the call-expression dispatch (`mlirGenCallExpressionCases`-style
+`TypeSwitch`, the "seems we are calling type constructor for super()"
+branch). When `MLIRCodeLogic::GetReferenceFromValue` fails to produce a
+reference for the call target, the code crashed instead of falling through
+to the same graceful `.Default` two cases below it in the exact same
+`TypeSwitch` (`emitError(location, "not supported function type"); value =
+mlir::Value();`). No standalone repro was found for this one — it requires
+whatever unusual expression shape makes a `ClassStorageType`-typed call
+target fail `GetReferenceFromValue`, which wasn't reachable from the "obvious"
+`super()` shapes tried. Fixed by literally duplicating the neighboring
+`.Default` body, on the reasoning that whatever situation reaches this
+branch deserves the same treatment its sibling already gives every other
+unsupported call-target shape — lowest-confidence fix of the five in this
+document (untested against a live repro), but also the lowest-risk, since it
+only changes behavior for a path that was already 100% fatal.
+
+All three (§4.3-4.5) verified individually where a repro was found, and via
+the full suite (`ctest -C Debug -j8`: 829/829, no regressions).
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -172,11 +262,11 @@ verified verdict — see §2 for how to actually check one.
 
 ### 5.1 Named/specific (cheapest to investigate next — read the message + local branch, write a 5-line repro)
 
+**Fixed this pass**: `MLIRGenAccessCall.cpp`'s three sites (was lines
+1159/1219/1535) — see §4.3-4.5.
+
 | Site | Message | Shape (unverified guess) |
-|---|---|---|
-| `MLIRGenAccessCall.cpp:1159` | not implemented (ElementAccessExpression) | `boxedObj[computedNonStringExpr]` — cousin of the fixed §4.1 site, one level up in the dispatch (only reached before deciding it's a tuple) |
-| `MLIRGenAccessCall.cpp:1219` | not implemented (ElementAccessExpression) | `enumValue[computedExpr]` with a non-constant index |
-| `MLIRGenAccessCall.cpp:1524` | not implemented | unread this pass |
+| --- | --- | --- |
 | `MLIRGenCast.cpp:1321-1322` | TypeOf NOT IMPLEMENTED for Type | inside a generated `__unbox<T>` helper (generic type-parameter unboxing from `any`); `.Default` for a type kind not in its explicit list (Tuple/Array/Enum/Union/Optional are plausible candidates) |
 | `MLIRGenCast.cpp:1498-1499` | TypeOf NOT IMPLEMENTED for Type | second, near-identical site — check if it's reachable via a different call path than 1321 |
 | `MLIRGenImpl.h:5330` | not implemented | unread |
@@ -230,14 +320,31 @@ input directly in a unit test and see what real callers expect the sensible
 behavior to be, the same way the existing `canWideTypeWithoutDataLoss` tests
 work.
 
+**Attempted this pass, not reached**: tried two plausible `.ts`-level
+triggers — a callback parameter typed as a union of function signatures
+(`type Cb = ((x: number) => void) | ((x: string) => void)`, hoping arrow
+function param-type inference would call `getParamFromFuncRef`/
+`getFirstParamFromFuncRef` with a `UnionType`) — neither crashed; both hit
+earlier, already-graceful type-mismatch errors instead. The `.ts`-level
+approach that worked for §4.1-4.5 doesn't seem to reach this family easily;
+confirms the §5.4 recommendation itself (skip writing more `.ts` repros,
+go straight to unit-testing the functions directly with a constructed
+`mlir::Type` the way `TypeHelper.cpp` already does for other
+`MLIRTypeHelper.h` functions) rather than a reason to deprioritize it.
+
 ## 6. Suggested next steps, in cost order
 
-1. `UnaryBinLogicalOrHelper.h:42-43` — likely a one-line fix, already has the
-   error message, just needs the crash removed.
-2. The rest of §5.1 (named/specific) — cheap repro-and-check, same recipe as
-   §4.
+1. ~~`UnaryBinLogicalOrHelper.h:42-43`~~ — turned out to be dead code
+   (`UnaryOp<>` has zero call sites), not a live one-line fix; see the new
+   §3 entry. No action needed.
+2. ~~The rest of §5.1 (named/specific)~~ — done this pass: found and fixed
+   3 more real crashes (§4.3-4.5); only `MLIRGenCast.cpp`'s two `TypeOf`
+   sites and the large `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/
+   `MLIRGenTypes.cpp` cluster remain from the original list.
 3. §5.4 (`funcRef` family) — extend `unittests/MLIRGen/TypeHelper.cpp` with
-   direct calls instead of writing `.ts` repros; fast to iterate.
+   direct calls instead of writing `.ts` repros; fast to iterate. Two `.ts`
+   attempts this pass didn't reach it (see above) — go straight to unit
+   tests next time.
 4. §5.2 (generic fallbacks) — triage a handful against existing passing
    tests using §3's method before assuming any individual one is live.
 5. §5.3 (RTTI) — lowest priority from this (Windows) machine; the Linux
