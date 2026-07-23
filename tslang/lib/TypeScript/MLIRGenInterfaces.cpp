@@ -505,6 +505,17 @@ namespace mlirgen
             auto fullNamePtr = getFullNamespaceName(namePtr);
             if (fullNameGenericInterfacesMap.count(fullNamePtr))
             {
+                // already registered - but the registration itself typically happens during
+                // Stages::Discovering (before addGenericInterfaceDeclarationToExport's
+                // isAddedToExport gate, which only actually emits once stage ==
+                // Stages::SourceGeneration, will do anything) - retry the export step alone
+                // using the existing GenericInterfaceInfo rather than skipping it entirely.
+                // Mirrors registerGenericClass's identical gotcha-3 fix.
+                if (getExportModifier(interfaceDeclarationAST))
+                {
+                    addGenericInterfaceDeclarationToExport(fullNameGenericInterfacesMap.lookup(fullNamePtr));
+                }
+
                 return mlir::success();
             }
 
@@ -528,6 +539,18 @@ namespace mlirgen
 
             getGenericInterfacesMap().insert({namePtr, newGenericInterfacePtr});
             fullNameGenericInterfacesMap.insert(fullNamePtr, newGenericInterfacePtr);
+
+            // support dynamic loading: a generic interface is never instantiated in this
+            // module if nothing here uses it concretely, so mlirGen(InterfaceDeclaration)'s
+            // own addInterfaceDeclarationToExport call never runs for the bare template (it
+            // only fires for a SPECIALIZED instantiation) - the bare template needs to be
+            // exported here instead, the one place every generic interface declaration
+            // passes through regardless of whether it is ever instantiated locally. Mirrors
+            // registerGenericClass.
+            if (getExportModifier(interfaceDeclarationAST))
+            {
+                addGenericInterfaceDeclarationToExport(newGenericInterfacePtr);
+            }
 
             return mlir::success();
         }
