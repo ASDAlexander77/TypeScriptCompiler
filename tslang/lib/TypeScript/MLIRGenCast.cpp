@@ -1293,6 +1293,7 @@ namespace mlirgen
         SmallVector<mlir::Type> classInstances;
         ss << S("function __unbox<T>(a: any) : T {\n");
         auto subType = type;
+        auto hasUnsupportedType = false;
         mlir::TypeSwitch<mlir::Type>(subType)
             .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = true; })
             .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = true; })
@@ -1317,10 +1318,16 @@ namespace mlirgen
             // review code to use null in "TypeGuard"
             .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
             .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
-            .Default([&](auto type) { 
+            .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
-                llvm_unreachable("not implemented yet"); 
-            });                                   
+                hasUnsupportedType = true;
+            });
+
+        if (hasUnsupportedType)
+        {
+            emitError(location) << "Cast from 'any' to " << to_print(type) << " is not supported";
+            return mlir::failure();
+        }
 
         auto next = false;
         for (auto& pair : typeOfs)
@@ -1457,6 +1464,7 @@ namespace mlirgen
                 StringMap<boolean> typeOfs;
                 SmallVector<mlir::Type> classInstances;
                 SmallVector<mlir::Type> tupleTypes;
+                auto hasUnsupportedType = false;
                 ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
@@ -1494,10 +1502,20 @@ namespace mlirgen
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
                         .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = false; })
-                        .Default([&](auto type) { 
+                        .Default([&](auto type) {
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
-                            llvm_unreachable("not implemented yet"); 
-                        });                                   
+                            hasUnsupportedType = true;
+                        });
+                }
+
+                if (hasUnsupportedType)
+                {
+                    // e.g. a tuple/object-literal-shaped member of the union - see the
+                    // "must be improved"/"can't handle types such as 2 tuples in union"
+                    // TODO on castFromUnion's declaration; typeof-based dispatch can't
+                    // distinguish these today, that's a separate, larger redesign.
+                    emitError(location) << "Cast from " << to_print(value.getType()) << " to " << to_print(type) << " is not supported";
+                    return mlir::failure();
                 }
 
                 if (isNullDest)

@@ -1,13 +1,14 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **8 confirmed crashes fixed across three passes, ~112 markers still
+Status: **9 confirmed crashes fixed across four passes, ~110 markers still
 uninvestigated** — written as a roadmap for continuing this audit, not a
 claim that the sweep is complete. Triggered by a user request to review
 every "not implemented" marker in the codebase and see which ones can be
 implemented. Second pass (§4.3-4.5) worked through this document's own §6
 priority list while waiting on the first pass's PR to merge. Third pass
 (§4.6-4.8) closed out §5.4's `MLIRTypeHelper.h` `funcRef` family after that
-PR merged.
+PR merged. Fourth pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf`
+sites, the last item left from the original §5.1 named/specific list.
 
 ## 1. Scope and method
 
@@ -335,6 +336,69 @@ can't be found" instead of crashing) and via the full suite (`ctest -C Debug
 existing tests exercising these utility types with a real function argument
 (`test/tester/tests/00types_utility.ts`, `01types_utility.ts`) still pass.
 
+### 4.9 `MLIRGenCast.cpp`'s two `TypeOf` sites — one dead, one a real, easily-reachable crash
+
+Both are `.Default` branches of a `TypeSwitch` that builds up a synthetic
+`typeof t == '...'` dispatch function as TS source text, then parses and
+calls it - the compiler's mechanism for runtime type discrimination when
+casting away from a type whose concrete shape isn't known until runtime
+(`any`, or a union that can't be merged into one storage type).
+
+**`castPrimitiveTypeFromAny` (was :1320-1322, the `__unbox<T>` helper for
+generic type-parameter unboxing from `any`, as guessed in the original
+§5.1 entry): dead code.** Its one call site (`MLIRGenCast.cpp:1140`, inside
+`castFromSourceSpecialCases`-family cast dispatch) only invokes it when
+`type` (the cast destination) is one of `{NumberType, BooleanType,
+StringType, BigIntType, IntegerType, FloatType, ClassType}` - a strict
+subset of what the `TypeSwitch` inside already handles (`{Boolean,
+TypePredicate, Number, String, Char, Integer, Float, Index, BigInt,
+Function×4, Class, Interface, Null, Undefined}`). Same "guarded, therefore
+dead" shape as §3's `IntersectionType` and §4.6-4.8's `funcRef` family.
+Fixed anyway (crash → set a flag, `emitError` + `return failure()` after
+the switch) since `location` was already in scope here and leaving a live
+`llvm_unreachable` behind is a landmine for the next caller.
+
+**`castFromUnion` (was :1498-1499): a real, easily-reachable crash.** Called
+from `castFromSourceSpecialCases` whenever casting *from* a union-typed
+value whose members can't be merged into one storage representation
+(`mth.isUnionTypeNeedsTag`) to anything other than `any`. It loops over
+each union member type building the same kind of `typeof`-dispatch
+function, and the `TypeSwitch` per member is missing `TupleType`/
+`ConstTupleType` entirely - i.e. **any union with an object-literal-shaped
+member hits this the moment it needs a runtime cast**, which is a very
+ordinary shape (not an obscure corner case like §4.4's enum reverse-mapping
+or §4.5's `super()` edge case):
+
+```ts
+function main() {
+    let x: number | { a: number };
+    x = 5;
+    let y = <number>x;   // crash: UNREACHABLE at MLIRGenCast.cpp:1499
+}
+```
+
+The function's own forward declaration in `MLIRGenImpl.h` already carries a
+`// TODO: remove using typeof for Union types as it can't handle types such
+as 2 tuples in union etc` - confirming this is a known, **genuinely missing
+feature** (like §4.2), not just an unreached architectural corner: even two
+*different* tuple-shaped union members couldn't be told apart by `typeof`
+alone (both report `"object"`), so a real fix needs a structural redesign
+(a runtime shape tag, not `typeof` string dispatch), out of scope here. A
+partial start at this is visible in the code - a `tupleTypes`
+`SmallVector` and `TYPE_TUPLE_ALIAS` templating exist and are wired up at
+the end of the function, but nothing ever pushes into `tupleTypes` because
+no `.Case<mlir_ts::TupleType>` was ever added to populate it; that
+half-finished thread was left as-is rather than completed, since finishing
+it properly means solving the "2 tuples in union" ambiguity the TODO
+already flags, not just adding one more `.Case`. Converted the crash to
+`emitError(location) << "Cast from " << to_print(value.getType()) << " to "
+<< to_print(type) << " is not supported"; return mlir::failure();` after the
+member loop, gated by the same kind of flag used for `castPrimitiveTypeFromAny`
+(a per-subtype lambda can't `return` the enclosing function directly).
+
+Verified individually (clean diagnostic, no crash) and via the full suite
+(`ctest -C Debug -j8`: 829/829, no regressions).
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -343,12 +407,12 @@ verified verdict — see §2 for how to actually check one.
 ### 5.1 Named/specific (cheapest to investigate next — read the message + local branch, write a 5-line repro)
 
 **Fixed this pass**: `MLIRGenAccessCall.cpp`'s three sites (was lines
-1159/1219/1535) — see §4.3-4.5.
+1159/1219/1535) — see §4.3-4.5. **Fixed a previous pass** (§4.9):
+`MLIRGenCast.cpp`'s two `TypeOf` sites (was lines 1321-1322/1498-1499) — one
+dead (guarded), one a real crash (union with a tuple-shaped member).
 
 | Site | Message | Shape (unverified guess) |
 | --- | --- | --- |
-| `MLIRGenCast.cpp:1321-1322` | TypeOf NOT IMPLEMENTED for Type | inside a generated `__unbox<T>` helper (generic type-parameter unboxing from `any`); `.Default` for a type kind not in its explicit list (Tuple/Array/Enum/Union/Optional are plausible candidates) |
-| `MLIRGenCast.cpp:1498-1499` | TypeOf NOT IMPLEMENTED for Type | second, near-identical site — check if it's reachable via a different call path than 1321 |
 | `MLIRGenImpl.h:5330` | not implemented | unread |
 | `MLIRGenImpl.h:6732` | not implemented | unread |
 | `MLIRGenImpl.h:7314` | not implemented | unread |
@@ -424,17 +488,23 @@ bug (the built-in utility types); tracing real callers is what worked.
    (faster than the originally-planned unit-test approach), found and fixed
    3 more live crashes (§4.6-4.8); the other 3 functions in the family were
    fixed too even though proven dead, for consistency within the family.
-4. §5.2 (generic fallbacks) — triage a handful against existing passing
+4. ~~`MLIRGenCast.cpp`'s two `TypeOf` sites~~ — done this pass (§4.9): one
+   dead (guarded), one a real crash (union with a tuple-shaped member,
+   `<number>x` where `x: number | {a: number}`) — fixed. That was the last
+   item from the original §5.1 named/specific list; only the large
+   `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/`MLIRGenTypes.cpp` cluster remains
+   from §5.1, plus the stray
+   `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709` sites
+   (confirmed *not* part of the `funcRef` family, see §5.4).
+5. The `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/`MLIRGenTypes.cpp` cluster
+   (§5.1's last remaining block) — read-and-repro each per §2's recipe, same
+   as every other §5.1 item so far.
+6. §5.2 (generic fallbacks) — triage a handful against existing passing
    tests using §3's method before assuming any individual one is live.
-5. §5.3 (RTTI) — lowest priority from this (Windows) machine; the Linux
+7. §5.3 (RTTI) — lowest priority from this (Windows) machine; the Linux
    variants need a WSL/Linux build to exercise at all, and even the Windows
    ones are deep in a code path (RTTI/exception typeinfo generation) that's
    hard to reach without a specific class-hierarchy-plus-exception scenario.
-6. `MLIRGenCast.cpp`'s two `TypeOf` sites, the large `MLIRGenImpl.h`/
-   `MLIRGenInterfaces.cpp`/`MLIRGenTypes.cpp` cluster, and the stray
-   `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709` sites
-   (confirmed *not* part of the `funcRef` family, see §5.4) all remain
-   unread from the original §5.1 list.
 
 ## 7. Non-goals / out of scope
 
