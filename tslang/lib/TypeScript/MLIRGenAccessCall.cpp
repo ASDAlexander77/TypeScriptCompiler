@@ -592,6 +592,100 @@ namespace mlirgen
         {
             auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
 
+            // Accessor vtable dispatch (see accessor-vtable-dispatch-fix memory): overriding
+            // a get/set pair in a subclass and accessing it through a BASE-TYPED reference
+            // (an ordinary upcast, not `super`) used to always resolve statically to the
+            // base's own accessor - accessors were never part of the vtable dispatch
+            // decision at all, even though their backing get/set functions are ALREADY
+            // registered as ordinary (virtual-by-default) MethodInfo entries with real
+            // vtable slots via registerClassMethodMember/getVirtualTable, exactly like
+            // regular methods. Mirror ClassMethodAccess's own isVirtual/isStorageType check
+            // (isStorageType is true for `super.<accessor>`'s raw-struct thisValue, so this
+            // naturally excludes super access from virtual dispatch, same as methods) and
+            // route through the vtable via VirtualSymbolRefOp + the existing "indirect"
+            // (function-value) ThisIndirectAccessorOp, instead of hardcoding this class's
+            // own get/set symbol names. Checked BEFORE the isDynamicImport branch below,
+            // same ordering as ClassMethodAccess - the vtable's own construction already
+            // resolves dynamic-import-owned slots (mlirGenClassVirtualTableDefinition's
+            // isOwnedByDynamicImport handling), so virtual dispatch through it is correct
+            // regardless of module boundaries, without needing separate dlsym resolution.
+            auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
+
+            auto findMethodInfo = [&](FunctionEntry funcEntry) -> const MethodInfo * {
+                if (!funcEntry)
+                {
+                    return nullptr;
+                }
+
+                auto it = llvm::find_if(classInfo->methods,
+                    [&](auto &m) { return m.funcName == funcEntry.name; });
+                return it != classInfo->methods.end() ? &*it : nullptr;
+            };
+
+            auto getMethodInfo = findMethodInfo(getFunc);
+            auto setMethodInfo = findMethodInfo(setFunc);
+
+            auto isVirtualAccessor = !isStorageType &&
+                ((getMethodInfo && (getMethodInfo->isAbstract || getMethodInfo->isVirtual)) ||
+                 (setMethodInfo && (setMethodInfo->isAbstract || setMethodInfo->isVirtual)));
+
+            if (isVirtualAccessor)
+            {
+                // effectiveThisValue can still carry a wider static type here (e.g. a
+                // union like `T | null` that the caller narrowed at the type-info level to
+                // find classInfo, but never actually cast the VALUE to) - getThisRefOfClass
+                // only narrows for the isSuperClass branch, a no-op otherwise.
+                // mlirGenPropertyAccessExpression's vtable lookup needs a genuine class
+                // reference, unlike the plain-AnyType ThisAccessorOp this branch replaces,
+                // so cast explicitly first (same narrowing getThisRefOfClass already does
+                // for super).
+                CAST_A(vtableThisValue, location, classInfo->classType, effectiveThisValue, genContext);
+
+                auto vtableAccess =
+                    mlirGenPropertyAccessExpression(location, vtableThisValue, VTABLE_NAME, genContext);
+
+                if (!vtableAccess)
+                {
+                    emitError(location, "") << "class '" << classInfo->fullName << "' missing 'virtual table'";
+                }
+
+                EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)
+
+                auto resolveVirtualAccessorFunc = [&](FunctionEntry funcEntry, const MethodInfo *methodInfo) -> mlir::Value {
+                    if (!funcEntry)
+                    {
+                        return mlir::Value();
+                    }
+
+                    assert(genContext.allowPartialResolve || methodInfo->virtualIndex >= 0);
+
+                    return builder.create<mlir_ts::VirtualSymbolRefOp>(
+                        location, funcEntry.funcType, vtableAccess,
+                        builder.getI32IntegerAttr(methodInfo->virtualIndex),
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcEntry.name));
+                };
+
+                auto getterValue = resolveVirtualAccessorFunc(getFunc, getMethodInfo);
+                auto setterValue = resolveVirtualAccessorFunc(setFunc, setMethodInfo);
+
+                auto opaqueThisType = mlir_ts::OpaqueType::get(builder.getContext());
+                if (!getterValue)
+                {
+                    getterValue = builder.create<mlir_ts::UndefOp>(
+                        location, mlir_ts::FunctionType::get(builder.getContext(), {opaqueThisType}, {accessorResultType}, false));
+                }
+
+                if (!setterValue)
+                {
+                    setterValue = builder.create<mlir_ts::UndefOp>(
+                        location, mlir_ts::FunctionType::get(builder.getContext(), {opaqueThisType, accessorResultType}, {}, false));
+                }
+
+                auto thisIndirectAccessorOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
+                    location, accessorResultType, vtableThisValue, getterValue, setterValue, mlir::Value());
+                return thisIndirectAccessorOp.getResult(0);
+            }
+
             if (classInfo->isDynamicImport)
             {
                 // A plain FlatSymbolRefAttr (the path below) lowers to a call the static linker
