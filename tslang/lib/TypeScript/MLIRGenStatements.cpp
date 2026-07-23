@@ -96,8 +96,28 @@ namespace mlirgen
             // repeat if not all resolved
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                // class can depends on other class declarations
-                emitError(errorLocation, "can't resolve dependencies in namespace");
+                // Third layer of the chained-sibling-method-return discovery gap (see
+                // chained-sibling-method-return-gap memory): a statement in THIS list can
+                // fail to converge not because of a real dependency cycle, but because it
+                // contains an object literal whose method bodies are being speculatively
+                // walked (return-type/captured-var discovery for an OUTER function with no
+                // explicit return type - discoverFunctionReturnTypeAndCapturedVars) and a
+                // sibling method's prototype isn't registered yet. That nested discovery
+                // already fails silently (no diagnostic) under dummyRun/allowPartialResolve
+                // per the two gates in mlirGenPropertyAccessExpressionBaseLogic and
+                // discoverFunctionReturnTypeAndCapturedVars - but this loop's own "no
+                // progress across retries" diagnostic didn't check the same condition, so a
+                // legitimately-not-yet-resolvable statement here still hard-aborted the
+                // whole enclosing discovery with a real, user-facing error. Same idiom as
+                // those two gates: skip the diagnostic, still signal non-convergence via
+                // mlir::failure() so the real (non-dummy) compile pass gets a chance to
+                // resolve it once every sibling's prototype is registered.
+                if (!genContext.dummyRun && !genContext.allowPartialResolve)
+                {
+                    // class can depends on other class declarations
+                    emitError(errorLocation, "can't resolve dependencies in namespace");
+                }
+
                 return mlir::failure();
             }
         } while (notResolved > 0);
