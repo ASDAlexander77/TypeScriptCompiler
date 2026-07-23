@@ -481,6 +481,9 @@ add_test(NAME test-compile-internals COMMAND test-runner "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 add_test(NAME test-compile-reference-null-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 add_test(NAME test-compile-reference-index-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
+# present on disk but never wired into any add_test - found while auditing for orphaned
+# test files; compiles and passes cleanly in both tiers, exercises Ref<T>/Deref semantics
+add_test(NAME test-compile-reference-ref-deref COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_ref_deref.ts")
 add_test(NAME test-compile-uint-compare-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
 add_test(NAME test-compile-gc-malloc-cse-o3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
 add_test(NAME test-compile-fast-math COMMAND test-runner -fast-math "${PROJECT_SOURCE_DIR}/test/tester/tests/fast_math.ts")
@@ -849,6 +852,7 @@ add_test(NAME test-jit-internals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
 add_test(NAME test-jit-reference-null-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_null_bug.ts")
 add_test(NAME test-jit-reference-index-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_index_bug.ts")
+add_test(NAME test-jit-reference-ref-deref COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reference_ref_deref.ts")
 add_test(NAME test-jit-uint-compare-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00uint_compare_bug.ts")
 add_test(NAME test-jit-gc-malloc-cse-o3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/gc_malloc_cse_o3.ts")
 add_test(NAME test-jit-fast-math COMMAND test-runner -jit -fast-math "${PROJECT_SOURCE_DIR}/test/tester/tests/fast_math.ts")

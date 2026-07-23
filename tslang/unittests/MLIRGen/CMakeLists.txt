@@ -1,6 +1,7 @@
 add_mlir_unittest(MLIRGenTests
   TypeToString.cpp
   DeclarationPrinter.cpp
+  TypeHelper.cpp
 )
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
