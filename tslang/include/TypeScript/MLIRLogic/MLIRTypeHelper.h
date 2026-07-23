@@ -706,10 +706,10 @@ class MLIRTypeHelper
 
     bool hasReturnTypeFromFuncRef(mlir::Type funcType)
     {
-        return getReturnsFromFuncRef(funcType, true).size() > 0;
+        return getReturnsFromFuncRef(funcType).size() > 0;
     }
 
-    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType, bool noError = false)
+    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType)
     {
         mlir::ArrayRef<mlir::Type> returnTypes;
 
@@ -724,13 +724,11 @@ class MLIRTypeHelper
             .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Default([&](auto type) {
-                if (noError)
-                {
-                    return;
-                }
-
+                // not a function-like type (e.g. ReturnType<T> used with a non-function T) -
+                // fail gracefully by returning no results rather than crashing; the caller
+                // (embedded-utility-type resolution) already treats an empty/null result as
+                // "generic type can't be found", matching getParamsTupleTypeFromFuncRef's sibling behavior.
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
         return returnTypes;
@@ -752,8 +750,8 @@ class MLIRTypeHelper
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
+                // not a function-like type - fail gracefully (null param type), see getReturnsFromFuncRef
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
         return paramType;
@@ -776,8 +774,9 @@ class MLIRTypeHelper
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
+                // not a function-like type (e.g. ThisParameterType<T> used with a non-function T) -
+                // fail gracefully (null param type), see getReturnsFromFuncRef
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getFirstParamFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
         return paramType;
@@ -802,8 +801,8 @@ class MLIRTypeHelper
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
+                // not a function-like type - fail gracefully (empty param list), see getReturnsFromFuncRef
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
         return paramsType;
@@ -860,8 +859,8 @@ class MLIRTypeHelper
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
             .Case<mlir::NoneType>([&](auto calledFuncType) {})
             .Default([&](auto type) {
+                // not a function-like type - fail gracefully (not vararg), see getReturnsFromFuncRef
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << " = " << isVarArg << "\n";);
@@ -895,8 +894,10 @@ class MLIRTypeHelper
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
-            .Default([&](auto type) { 
-                llvm_unreachable("not implemented"); 
+            .Default([&](auto type) {
+                // not a function-like type (e.g. OmitThisParameter<T> used with a non-function T) -
+                // fail gracefully (null result), see getReturnsFromFuncRef
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getOmitThisFunctionTypeFromFuncRef is not implemented for " << type << "\n";);
             });
 
         return isOptType ? mlir_ts::OptionalType::get(paramsType) : paramsType;
