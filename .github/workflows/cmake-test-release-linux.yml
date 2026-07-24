@@ -151,7 +151,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tslang/ninja/release
       shell: sh
-      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
 
     - name: Test
       continue-on-error: false
@@ -159,7 +159,7 @@ jobs:
       shell: sh
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+      run: ctest -j8 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
       env:
         LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
       
