@@ -8429,7 +8429,11 @@ class MLIRGenImpl
             return mlirGen(moduleReference.as<Identifier>(), genContext);
         }
 
-        llvm_unreachable("not implemented");
+        // e.g. `import fs = require("fs")` (SyntaxKind::ExternalModuleReference) -
+        // tslang compiles as one flat program with no Node.js-style dynamic
+        // require() at all, so there is nothing sensible to resolve this to.
+        emitError(loc(moduleReference), "'import X = require(...)' is not supported");
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGen(ImportEqualsDeclaration importEqualsDeclarationAST, const GenContext &genContext)
@@ -8438,6 +8442,7 @@ class MLIRGenImpl
         if (!name.empty())
         {
             auto result = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
+            EXIT_IF_FAILED(result)
             auto value = V(result);
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
@@ -8455,7 +8460,10 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            llvm_unreachable("not implemented");
+            // e.g. `import X = SomeEnum` or `import X = someFunction` - only
+            // namespace/class/interface targets are supported for import-equals.
+            emitError(loc(importEqualsDeclarationAST), "this import-equals target is not supported");
+            return mlir::failure();
         }
 
         return mlir::failure();
@@ -9371,7 +9379,7 @@ class MLIRGenImpl
     {
         if (methodName.empty())
         {
-            llvm_unreachable("not implemented");
+            emitError(location, "interface method name cannot be empty");
             return mlir::failure();
         }
 
