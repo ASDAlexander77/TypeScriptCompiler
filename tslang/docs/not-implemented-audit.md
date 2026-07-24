@@ -1,6 +1,6 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **10 confirmed crashes fixed across five passes, ~106 markers still
+Status: **12 confirmed crashes fixed across six passes, ~103 markers still
 uninvestigated** — written as a roadmap for continuing this audit, not a
 claim that the sweep is complete. Triggered by a user request to review
 every "not implemented" marker in the codebase and see which ones can be
@@ -10,7 +10,9 @@ priority list while waiting on the first pass's PR to merge. Third pass
 PR merged. Fourth pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf`
 sites, the last item left from the original §5.1 named/specific list. Fifth
 pass (§4.10) started the `MLIRGenImpl.h` cluster (§5.1's last remaining
-block), closing 4 of its sites.
+block), closing 4 of its sites. Sixth pass (§4.11) closed 3 more sites in
+the same cluster, including two real, easily-reachable `import X = ...`
+crashes.
 
 ## 1. Scope and method
 
@@ -474,6 +476,69 @@ error even for an unfinished feature.
 All four verified (repro for the real crash, full-suite for regressions):
 `ctest -C Debug -j8` → 829/829, no regressions.
 
+### 4.11 `MLIRGenImpl.h` cluster, 3 more sites — 2 real `import X = ...` crashes, 1 defensive fix
+
+Continues §4.10's sweep of the same cluster (was: 8164, 8382/8400/8426,
+9342 remaining after the previous pass; this pass covers 3 of those 4
+entries).
+
+**`mlirGenModuleReference` (was :8432): a real, easily-reachable crash.**
+`import X = require("module")` - the classic CommonJS/Node-interop form of
+TypeScript's import-equals syntax, still common in real-world legacy TS -
+crashed, because the function only handled `SyntaxKind::QualifiedName`
+(`import X = A.B.C`) and `SyntaxKind::Identifier` (`import X = Foo`), never
+`SyntaxKind::ExternalModuleReference` (confirmed via the parser: `ts-new-
+parser` does have a dedicated `ExternalModuleReference` node and
+`isExternalModuleReference` check, so this genuinely parses). Since tslang
+compiles as one flat program with no Node.js-style dynamic `require()` at
+runtime, there's nothing sensible to resolve this to - converted to a clean
+`emitError` instead ("'import X = require(...)' is not supported").
+
+**`mlirGen(ImportEqualsDeclaration...)` (was :8458): also a real,
+easily-reachable crash**, once the target resolves to anything other than
+a namespace, class, or interface - e.g. `import X = SomeEnum` or `import X
+= someFunction`. Confirmed via repro (`enum Color {...}; import C =
+Color;`). Converted to a clean `emitError`.
+
+Fixing the first crash uncovered a **second, latent bug** in the exact same
+function: after making `mlirGenModuleReference` return a graceful
+`mlir::failure()` instead of crashing, the `require()` repro immediately
+hit a *different* crash - `Assertion failed: detail::isPresent(Val) &&
+"dyn_cast on a non-existent value"` - because the caller
+(`mlirGen(ImportEqualsDeclaration...)`) unwraps the callee's result with
+`V(result)` without ever checking `result.failed()` first. That check was
+never needed before, because the callee previously only ever *crashed* or
+*succeeded* - a graceful failure return was a code path this caller had
+never had to handle. Added the missing `EXIT_IF_FAILED(result)` guard
+before the `V(result)` unwrap. **Lesson for the rest of this audit**:
+converting a `llvm_unreachable` into `return mlir::failure()` can surface a
+second bug one level up, in a caller that assumed its callee could never
+fail gracefully - always re-run the specific repro after the fix, not just
+the full test suite, to catch this.
+
+**`addInterfaceMethod` (was :9342, the `methodName.empty()` guard): fixed,
+but unlike every other fix in this document, reachability was *not*
+verified with a repro this time** - this one already had `llvm_unreachable`
+immediately followed by a dead `return mlir::failure();` (the exact
+"crash-then-already-written-graceful-return" shape flagged early in this
+audit for `UnaryBinLogicalOrHelper.h:42-43`, which turned out to be fully
+dead code). `location` was already in scope, so the fix was a trivial
+one-line swap (`emitError(location, "interface method name cannot be
+empty"); return mlir::failure();`), cheap enough to apply defensively
+without spending time on a repro attempt (an interface method with a
+computed name is one plausible trigger, not investigated).
+
+Still open from this cluster: `MLIRGenImpl.h:8164` (`processTypeParameter`'s
+empty-name branch) and one of the "three close together" sites - the
+`TypeAliasDeclaration` empty-name `else` (was :8414, the fourth of the
+original 8382/8400/8426 trio once read in full) - both look parser-
+grammar-guaranteed unreachable (a type alias or type parameter without a
+name shouldn't parse at all) but neither was actually verified against the
+parser; left as genuinely unread rather than assumed dead.
+
+Verified via repro (both real crashes) and the full suite: `ctest -C Debug
+-j8` → 829/829, no regressions.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -488,13 +553,16 @@ dead (guarded), one a real crash (union with a tuple-shaped member).
 **Fixed this pass** (§4.10): `MLIRGenImpl.h`'s first four sites (was
 5330/6732/7314/7418) — 1 real crash, 2 dead, 1 untested-feature-path.
 `UnaryBinLogicalOrHelper.h:42-43` row removed - already resolved back in §3
-(dead code, `UnaryOp<>` has zero call sites; see §6 item 1).
+(dead code, `UnaryOp<>` has zero call sites; see §6 item 1). **Fixed a
+previous pass** (§4.11): `MLIRGenImpl.h`'s next three sites (was
+8400/8426/9342 - `import X = require(...)`, `import X = <non-namespace/
+class/interface>`, and `addInterfaceMethod`'s empty-name guard) — 2 real
+crashes, 1 defensive/unverified.
 
 | Site | Message | Shape (unverified guess) |
 | --- | --- | --- |
-| `MLIRGenImpl.h:8164` | not implemented | unread |
-| `MLIRGenImpl.h:8382` / `:8400` / `:8426` | not implemented | unread, three sites close together — likely related |
-| `MLIRGenImpl.h:9342` | not implemented | unread |
+| `MLIRGenImpl.h:8164` | not implemented | unread — `processTypeParameter`'s empty-name branch, likely parser-grammar-unreachable but not verified |
+| `MLIRGenImpl.h:8382` | not implemented | unread — `TypeAliasDeclaration`'s empty-name `else`, likely parser-grammar-unreachable but not verified (the other two of the original "three close together" trio, 8400/8426, were fixed in §4.11) |
 | `MLIRGenInterfaces.cpp:475` | not implemented yet | unread |
 | `MLIRGenInterfaces.cpp:932` / `:954` | not implemented | unread |
 | `MLIRGenTypes.cpp:183` | not implemented type declaration | unread |
@@ -573,8 +641,10 @@ bug (the built-in utility types); tracing real callers is what worked.
 5. **In progress**: the `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/
    `MLIRGenTypes.cpp` cluster (§5.1's last remaining block) — read-and-repro
    each per §2's recipe. §4.10 closed the first 4 `MLIRGenImpl.h` sites
-   (5330/6732/7314/7418); still open: `MLIRGenImpl.h:8164/8382/8400/8426/9342`,
-   all of `MLIRGenInterfaces.cpp` (475/932/954), all of `MLIRGenTypes.cpp`
+   (5330/6732/7314/7418); §4.11 closed 3 more (8400/8426/9342, 2 of them
+   real `import X = ...` crashes); still open: `MLIRGenImpl.h:8164/8382`
+   (both look parser-grammar-unreachable but unverified), all of
+   `MLIRGenInterfaces.cpp` (475/932/954), all of `MLIRGenTypes.cpp`
    (183/1474/1567/1876/1910/2001/2204/2210/2661/3401), and
    `LLVMCodeHelper.h:452`.
 6. §5.2 (generic fallbacks) — triage a handful against existing passing
