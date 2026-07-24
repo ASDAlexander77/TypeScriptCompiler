@@ -469,20 +469,15 @@ namespace mlirgen
                     }
                     else
                     {
-                        // a real, present, non-object-literal method (e.g. a class
-                        // implementing the interface) reaching the METHOD (not
-                        // methodsAsFields) branch - not yet exercised by any test.
-                        llvm_unreachable("not implemented yet");
-                        /*
-                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                            location, methodOrField.methodInfo.funcOp.getType(),
-                            mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                        methodOrField.methodInfo.funcOp.getSymName()));
-
-                        vtableValue =
-                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
-                                                                      MLIRHelper::getStructIndex(rewriter, fieldIndex));
-                        */
+                        // unreachable: getInterfaceVirtualTableForObject (this function's
+                        // only caller of newInterfacePtr->getVirtualTable) hardcodes
+                        // methodsAsFields=true, so every entry in `virtualTable` is
+                        // guaranteed isField=true - this branch (a real method reaching
+                        // here as something other than a field) can never be taken for
+                        // an object's interface vtable. Fail gracefully rather than crash
+                        // in case that invariant is ever violated by a future caller.
+                        emitError(location, "interface method could not be resolved for this object");
+                        return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
                     }
 
                     fieldIndex++;
@@ -929,7 +924,13 @@ namespace mlirgen
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // every interface-member SyntaxKind TypeScript's grammar allows
+            // (PropertySignature, MethodSignature, ConstructSignature,
+            // CallSignature, GetAccessor, SetAccessor, IndexSignature) is
+            // handled above; fail gracefully rather than crash if some other
+            // kind is ever produced here.
+            emitError(location, "unsupported interface member");
+            return mlir::failure();
         }
 
         return mlir::success();
