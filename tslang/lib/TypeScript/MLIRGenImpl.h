@@ -5327,7 +5327,13 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    // @dllimport(path)-based class import (ClassInfo::isDynamicImport)
+                    // has no test coverage anywhere in the suite - it's an unfinished
+                    // feature path (see the sibling TODO on the variable-level version
+                    // in MLIRGenVariables.cpp), not a normal-program crash. Fail
+                    // gracefully rather than crash either way.
+                    emitError(location, "Static field ") << fieldInfo.id << " access on a dynamically-imported class is not supported";
+                    return mlir::Value();
                 }
             }
 
@@ -6729,12 +6735,18 @@ class MLIRGenImpl
             unsignedVal = true;
             break;
         default:
-            //if (width < 8) width = 8; else 
-            //if (width < 16) width = 16; else 
-            if (width < 32) width = 32; else 
-            if (width < 64) width = 64; else 
+            //if (width < 8) width = 8; else
+            //if (width < 16) width = 16; else
+            if (width < 32) width = 32; else
+            if (width < 64) width = 64; else
             if (width < 128) width = 128;
-            else llvm_unreachable("not implemented");
+            else
+            {
+                // no mlir::Location available at this layer to emitError with;
+                // return a null Attribute and let the caller (which has the
+                // literal's location) report it cleanly instead of crashing.
+                return mlir::Attribute();
+            }
         }
 
         auto type = builder.getIntegerType(width, !unsignedVal);
@@ -7316,7 +7328,12 @@ class MLIRGenImpl
                 location, getConstArrayType(arrayElementType, constValues.size()), arrayAttr));
         }
 
-        llvm_unreachable("not implemented");
+        // arrayInfo.adjustArrayType() always normalizes TypeData::NotSet to
+        // TypeData::Array before an ArrayInfo reaches this function, so this
+        // should be unreachable; fail gracefully rather than crash if that
+        // invariant is ever violated by a future caller.
+        emitError(location, "unsupported array literal shape");
+        return mlir::failure();
     }
 
     ValueOrLogicalResult createTupleFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
@@ -7419,8 +7436,13 @@ class MLIRGenImpl
                 }
                 else
                 {
+                    // every producer of a (isSpread=true, isVariableSizeOfSpreadElement=false)
+                    // ArrayElement pushes a value whose type is already a TupleType (see the
+                    // TupleType branch above), so this should be unreachable; fail gracefully
+                    // rather than crash if that invariant is ever violated by a future producer.
                     LLVM_DEBUG(llvm::dbgs() << "\n!! array spread value type: " << val.value.getType() << "\n";);
-                    llvm_unreachable("not implemented");
+                    emitError(location, "unsupported array spread element type");
+                    return mlir::failure();
                 }
                 
                 assert(vals.size() > 0);

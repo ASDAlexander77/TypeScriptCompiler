@@ -1189,6 +1189,12 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
     {
         auto attrVal = getNumericLiteralAttribute(numericLiteral);
+        if (!attrVal)
+        {
+            emitError(loc(numericLiteral), "integer literal is too large to represent (more than 128 bits)");
+            return mlir::failure();
+        }
+
         auto attrType = mlir::cast<mlir::TypedAttr>(attrVal).getType();
         auto valueType = isa<mlir::FloatType>(attrType) ? getNumberType() : attrType;
         auto literalType = mlir_ts::LiteralType::get(attrVal, valueType);
