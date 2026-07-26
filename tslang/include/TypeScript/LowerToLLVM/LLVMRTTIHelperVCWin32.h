@@ -16,6 +16,8 @@
 
 #include <sstream>
 
+#define DEBUG_TYPE "llvm"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -138,7 +140,7 @@ class LLVMRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -153,7 +155,7 @@ class LLVMRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch float width: " << floatType << "\n";);
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -166,7 +168,7 @@ class LLVMRTTIHelperVCWin32
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) { LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";); });
     }
 
     void setRTTIForType(mlir::Location loc, mlir::Type type)
@@ -509,5 +511,7 @@ class LLVMRTTIHelperVCWin32
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_

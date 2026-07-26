@@ -2106,7 +2106,7 @@ class MLIRTypeHelper
             return typedAttr.getType();
         }
 
-        llvm_unreachable("not implemented");
+        return mlir_ts::UnknownType::get(context);
     }
 
     mlir::Type getFieldNames(mlir::Type srcType)
@@ -2255,7 +2255,7 @@ class MLIRTypeHelper
         }
 
         LLVM_DEBUG(llvm::dbgs() << "!! getFields is not implemented for type [" << srcType << "]\n";);
-        llvm_unreachable("not implemented");
+        return mlir::failure();
     }
 
     mlir::LogicalResult getFieldTypes(mlir::Type srcType, llvm::SmallVector<mlir::Type> &destTupleTypes)
@@ -2286,9 +2286,9 @@ class MLIRTypeHelper
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(srcType))
         {
             return tupleType.getIndex(fieldName);
-        }  
+        }
 
-        llvm_unreachable("not implemented");
+        return -1;
     }
 
     mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcType, int index)
@@ -2298,14 +2298,14 @@ class MLIRTypeHelper
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
             return constTupleType.getFieldInfo(index);
-        }          
-        
+        }
+
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(srcType))
         {
             return tupleType.getFieldInfo(index);
-        }  
+        }
 
-        llvm_unreachable("not implemented");
+        return mlir::typescript::FieldInfo();
     }
 
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
@@ -2668,23 +2668,23 @@ class MLIRTypeHelper
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(extendType))
         {
             auto falseResult = ExtendsResult::False;
-            auto pred = [&](auto &item) { 
-                if (item.id)
+            llvm::SmallVector<mlir_ts::FieldInfo> srcFields;
+            auto hasSrcFields = mlir::succeeded(getFields(srcType, srcFields, true));
+            auto index = -1;
+            auto pred = [&](auto &item) {
+                index++;
+                // unnamed (positional) tuple element - e.g. `T extends [number, string]` -
+                // match srcType's field at the same position rather than by name.
+                auto fieldType = item.id
+                    ? getFieldTypeByFieldName(srcType, item.id)
+                    : (hasSrcFields && (size_t)index < srcFields.size() ? srcFields[index].type : mlir::Type());
+                auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
+                if (fieldExtResult == ExtendsResult::Never)
                 {
-                    auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                    auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
-                    if (fieldExtResult == ExtendsResult::Never)
-                    {
-                        falseResult = fieldExtResult;
-                    }
+                    falseResult = fieldExtResult;
+                }
 
-                    return isTrue(fieldExtResult); 
-                }
-                else
-                {
-                    // TODO: get it by function
-                    llvm_unreachable("not implemented");
-                }
+                return isTrue(fieldExtResult);
             };
             return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred) ? ExtendsResult::True : falseResult;
         }
@@ -2692,23 +2692,22 @@ class MLIRTypeHelper
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(extendType))
         {
             auto falseResult = ExtendsResult::False;
-            auto pred = [&](auto &item) { 
-                if (item.id)
+            llvm::SmallVector<mlir_ts::FieldInfo> srcFields;
+            auto hasSrcFields = mlir::succeeded(getFields(srcType, srcFields, true));
+            auto index = -1;
+            auto pred = [&](auto &item) {
+                index++;
+                // unnamed (positional) tuple element - same as the TupleType case above.
+                auto fieldType = item.id
+                    ? getFieldTypeByFieldName(srcType, item.id)
+                    : (hasSrcFields && (size_t)index < srcFields.size() ? srcFields[index].type : mlir::Type());
+                auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
+                if (fieldExtResult == ExtendsResult::Never)
                 {
-                    auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                    auto fieldExtResult = extendsType(location, fieldType, item.type, typeParamsWithArgs);
-                    if (fieldExtResult == ExtendsResult::Never)
-                    {
-                        falseResult = fieldExtResult;
-                    }
+                    falseResult = fieldExtResult;
+                }
 
-                    return isTrue(fieldExtResult); 
-                }
-                else
-                {
-                    // TODO: get it by function
-                    llvm_unreachable("not implemented");
-                }
+                return isTrue(fieldExtResult);
             };
             return std::all_of(constTupleType.getFields().begin(), constTupleType.getFields().end(), pred) ? ExtendsResult::True : falseResult;
         }

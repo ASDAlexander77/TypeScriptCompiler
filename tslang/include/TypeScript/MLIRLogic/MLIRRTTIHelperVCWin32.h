@@ -205,6 +205,7 @@ class MLIRRTTIHelperVCWin32
             return false;
         }
 
+        auto result = true;
         llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
@@ -213,7 +214,7 @@ class MLIRRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    result = false;
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -223,7 +224,7 @@ class MLIRRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    result = false;
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -237,11 +238,11 @@ class MLIRRTTIHelperVCWin32
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "...throw type: " << type << "\n";);
-                llvm_unreachable("not implemented");
+                LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
+                result = false;
             });
 
-        return true;
+        return result;
     }
 
     template <typename T>

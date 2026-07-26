@@ -105,8 +105,8 @@ class MLIRRTTIHelperVC
             return rttiLinux.getLandingPadType();
         }
 
-        llvm_unreachable("not implemented");
-    } 
+        return mlir_ts::TupleType();
+    }
 };
 } // namespace typescript
 

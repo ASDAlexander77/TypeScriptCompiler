@@ -110,7 +110,7 @@ class LLVMRTTIHelperVCLinux
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -125,7 +125,7 @@ class LLVMRTTIHelperVCLinux
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch float width: " << floatType << "\n";);
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -139,7 +139,7 @@ class LLVMRTTIHelperVCLinux
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Case<mlir_ts::NullType>([&](auto nullType) { rethrow = true; })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) { LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";); });
     }
 
     bool hasType()

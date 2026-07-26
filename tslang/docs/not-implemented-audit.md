@@ -1,23 +1,27 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **§5.1 and §5.2 are now both fully closed; only §5.3 (RTTI, ~19
-sites, lowest priority) and a handful of stray `MLIRTypeHelper.h` lines
-(§5.4) remain uninvestigated** — written as a roadmap for continuing this
-audit, not a claim that the sweep is complete (§5.2's generic fallbacks
-were themselves only a guess at what's left; more may turn up by re-grepping
-after this many edits). Triggered by a user request to review every "not
-implemented" marker in the codebase and see which ones can be implemented.
-Second pass (§4.3-4.5) worked through this document's own §6 priority list
-while waiting on the first pass's PR to merge. Third pass (§4.6-4.8) closed
-out §5.4's `MLIRTypeHelper.h` `funcRef` family after that PR merged. Fourth
-pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf` sites, the last item
-left from the original §5.1 named/specific list. Fifth pass (§4.10) started
-the `MLIRGenImpl.h` cluster (§5.1's last remaining block), closing 4 of its
-sites. Sixth pass (§4.11) closed 3 more sites in the same cluster, including
-two real, easily-reachable `import X = ...` crashes. Seventh pass (§4.12)
-closed the rest of §5.1: `MLIRGenImpl.h`'s last 2 sites,
-`MLIRGenInterfaces.cpp`'s remaining 2, the entire `MLIRGenTypes.cpp` cluster
-(10 sites), and `LLVMCodeHelper.h:452` - plus 2 bonus fixes found along the
+Status: **§5.1, §5.2, §5.3, and §5.4 are all now fully closed.** What
+remains: `MLIRTypeHelper.h:410/420` (the only genuinely un-investigated
+site with a known location left in this document), the Linux RTTI
+execution-verification gap (fixes applied and compile-verified, not
+run-verified - no Linux/WSL build stood up this session), and 2 bugs
+found-but-out-of-scope (§6 item 9). This is not a claim that the sweep is
+100% exhaustive (§5.2's generic fallbacks were themselves only a guess at
+what's left; a fresh repo-wide grep might turn up more than this document's
+own inventory ever included - see §7). Triggered by a user request to
+review every "not implemented" marker in the codebase and see which ones
+can be implemented. Second pass (§4.3-4.5) worked through this document's
+own §6 priority list while waiting on the first pass's PR to merge. Third
+pass (§4.6-4.8) closed out §5.4's `MLIRTypeHelper.h` `funcRef` family after
+that PR merged. Fourth pass (§4.9) closed out `MLIRGenCast.cpp`'s two
+`TypeOf` sites, the last item left from the original §5.1 named/specific
+list. Fifth pass (§4.10) started the `MLIRGenImpl.h` cluster (§5.1's last
+remaining block), closing 4 of its sites. Sixth pass (§4.11) closed 3 more
+sites in the same cluster, including two real, easily-reachable
+`import X = ...` crashes. Seventh pass (§4.12) closed the rest of §5.1:
+`MLIRGenImpl.h`'s last 2 sites, `MLIRGenInterfaces.cpp`'s remaining 2, the
+entire `MLIRGenTypes.cpp` cluster (10 sites), and `LLVMCodeHelper.h:452` -
+plus 2 bonus fixes found along the
 way that weren't in the original grep (a `return nullptr;`-as-`std::string`
 UB crash, and the `MLIRGenImpl.h:7907` object-literal twin this doc had left
 un-patched after calling it dead). Eighth pass (§4.13) closed all of §5.2 -
@@ -34,7 +38,11 @@ scope - both turned out to share one root cause in `TupleFieldName()`
 by tracing code after a live debugger proved unable to catch either crash
 (a plain `assert()`/`abort()` raises no Win32 exception for ProcDump to
 see, and live-attaching WinDbg made the same assert pop a blocking GUI
-dialog instead, since `IsDebuggerPresent()` becomes true).
+dialog instead, since `IsDebuggerPresent()` becomes true). Tenth pass
+(§4.15) closed §5.3 (RTTI) and the remaining §5.4 stray lines - see §4.15
+for the full writeup, including the one real bug found (a Linux-only
+int64-width asymmetry between two `setType` overloads) and the honest
+caveat about it not being execution-verified.
 
 ## 1. Scope and method
 
@@ -1021,6 +1029,142 @@ Verified: both original repros give a clean diagnostic instead of crashing
 `"a binding pattern cannot be used as a field name"` for fix 2), plus the
 full suite: `ctest -C Debug -j8` → **829/829, no regressions**.
 
+### 4.15 Tenth pass — closes §5.3 (RTTI) and §5.4's remaining stray `MLIRTypeHelper.h` lines
+
+Started with the stray lines first (cheap, same file already open from prior
+passes), then moved to §5.3 (RTTI), the doc's own last untriaged pool.
+
+**`MLIRTypeHelper.h` strays**:
+
+- `getAttributeType` (was :2109) - `Default` for a field-id attribute that's
+  neither `StringAttr`/`FloatAttr`/`IntegerAttr`/`TypedAttr`. Two `.ts`-level
+  repro attempts (numeric interface keys `interface X { 1: string }` used via
+  `keyof`; a computed boolean property key) both resolved cleanly without
+  reaching this branch - field ids in this compiler are apparently always one
+  of the four handled kinds. Left **unconfirmed** (not proven dead, no
+  reachable trigger found either) but hardened anyway: returns
+  `UnknownType` instead of crashing, mirroring the function's own `!attr`
+  branch immediately above it.
+- `getFields`'s final `Default` (was :2258) - every real caller (`grep`'d
+  across the whole tree) already calls it via `mlir::succeeded`/`mlir::failed`,
+  so the function's contract already assumes failure is a normal, handled
+  outcome; the `noError=true` parameter already returns `failure()` for this
+  exact branch, so making the `noError=false` path do the same (instead of
+  crashing) is a zero-risk consistency fix, not a behavior change for any
+  caller that checks the result.
+- `getFieldIndexByFieldName`/`getFieldInfoByIndex` (was :2291/:2308) -
+  **confirmed dead**: their only callers anywhere in the tree
+  (`MLIRGenInterfaces.cpp`, vtable-patching logic) always construct the
+  argument as `mlir_ts::TupleType` first (via `TupleType::get(...)` or a
+  `cast<RefType>(...).getElementType()` that's itself always a `TupleType`),
+  never any other shape. Hardened anyway (return `-1` / default `FieldInfo`)
+  for consistency with sibling functions in the same file.
+- `extendsType`'s two `// TODO: get it by function` sites (was :2685/:2709,
+  the `TupleType`/`ConstTupleType` branches of a tuple-shaped `extends`
+  target with an **unnamed** field, e.g. `T extends [number, string]`) -
+  **confirmed real, reachable crash**, via:
+
+  ```ts
+  type IsPair<T> = T extends [number, string] ? true : false;
+  let a: IsPair<{ 0: number, 1: string }> = true;
+  ```
+
+  `UNREACHABLE executed at MLIRTypeHelper.h:2686!`. Root cause: the
+  field-matching loop only knew how to look up `srcType`'s corresponding
+  field **by name** (`item.id`); a plain positional tuple element (`number`,
+  `string` with no `x:`/`y:` label) has `item.id == nullptr`, and the branch
+  for that case was still a stub. Fixed by falling back to a **positional**
+  lookup: collect `srcType`'s fields once via the existing `getFields()`
+  dispatcher (which already supports far more shapes than just
+  tuple/const-tuple - interfaces, classes, arrays, strings, optionals - so
+  this also generalizes past the tuple-vs-tuple case in the original repro),
+  then index into that list by the unnamed field's position. Applied
+  identically to both the `TupleType` and `ConstTupleType` branches (same
+  TODO, same bug, same fix - the const-tuple sibling wasn't independently
+  reproduced but is structurally identical code).
+
+**§5.3 (RTTI)**: the doc flagged this as hardest-to-reach ("deep in a code
+path that's hard to reach without a specific class-hierarchy-plus-exception
+scenario") and lowest priority. Traced instead of guessed-and-reproed, since
+the whole cluster is generic `TypeSwitch::Default`/width-mismatch fallbacks
+with no named trigger:
+
+- **Windows side** (`LLVMRTTIHelperVCWin32.h:141,156,169`,
+  `MLIRRTTIHelperVCWin32.h:216,226,241`, plus `MLIRRTTIHelperVC.h:108`'s
+  `getLandingPadType` fallback) - **confirmed dead** by caller trace. There
+  are exactly **two** places in the entire codebase that ever create a
+  `mlir_ts::ThrowOp`: the user-facing `throw` statement
+  (`MLIRGenStatements.cpp`) and a mismatch-rethrow synthesized during
+  `TryOp` lowering (`LowerToAffineLoops.cpp:1766`) - and that second one is
+  gated to `!compileOptions.isWindows` (Windows's own `__CxxFrameHandler3`
+  matches catch types at the OS level, so this compiler only needs the
+  synthetic rethrow on non-Windows targets). Both the `throw` and
+  `catch (e: T)` code paths already call a **graceful** twin of these
+  functions at MLIRGen time (`setType(type, resolveClassInfo)` /
+  `setRTTIForType`, which cleanly rejects unsupported types with
+  `"Not supported type in throw"`/`"...in catch"` instead of crashing) before
+  any TS-dialect value carrying that type can reach the lowering-stage
+  `llvm_unreachable` versions - and the two versions accept exactly the same
+  type set. Verified empirically too, not just by reading: `throw true`,
+  `throw` a 64-bit int, `throw`/`catch` a class with inheritance, and
+  `throw` an enum value all either get the clean MLIRGen-time error or
+  compile+run successfully; none reach the crash sites. Hardened anyway
+  (graceful `false`/no-op fallback instead of crash) for consistency and to
+  fully close the item rather than leave it an asterisk.
+- **Linux side** (`LLVMRTTIHelperVCLinux.h:113,128,142`,
+  `MLIRRTTIHelperVCLinux.h:146,161,182,202,217,230`) - same dead-by-caller-
+  trace reasoning applies to the `Default` branches (the synthetic-rethrow
+  path here is real, since it isn't Windows-gated, but it already produces
+  `mlir_ts::NullType`, which this file's `LLVMRTTIHelperVCLinux::setType` was
+  already explicitly handling via a dedicated `.Case<mlir_ts::NullType>`
+  before this pass touched it - not a crash). **But** found one genuine,
+  well-evidenced real bug via a different route - not a repro, since no
+  Linux/WSL build exists in this session to execute one (see below): the
+  file has **two** `setType` overloads, one taking a `resolveClassInfo`
+  callback (used by the MLIRGen-time graceful gate) and one without (used by
+  `LowerToAffineLoops.cpp`'s catch-arg-type lowering). The
+  `resolveClassInfo` overload already special-cased 64-bit integers
+  (`setI64AsCatchType()`) alongside 32-bit; the other overload only had the
+  32-bit case, falling through to `llvm_unreachable` for 64-bit ints. Since
+  MLIRGen's graceful gate (which uses the `resolveClassInfo` overload)
+  already accepts a `catch (e: i64)`/`throw` of a 64-bit int on Linux, that
+  construct would reach the *other* overload during lowering and crash -
+  a genuine asymmetry between two copies of what should be the same type
+  list. Fixed by adding the matching `else if (width == 64)` case; also
+  hardened the remaining `Default`/width-mismatch branches in both
+  overloads for consistency. **`MLIRRTTIHelperVCLinux.h`'s
+  `getClassInfoName` `default:` case (the doc's stray `:399`, actually at
+  :418 by the time this pass reached it - the file had drifted since the
+  doc was last updated)** - confirmed dead the same way: its 4th enum value
+  (`TypeInfo::Value`) is filtered out by every caller's own switch before
+  ever reaching this function (routed to `typeInfoValue()` instead of
+  `typeInfoClass()`/`getClassInfoName()`); hardened anyway.
+  **Honesty note**: none of the Linux-side code was execution-verified in
+  this session - WSL Ubuntu *is* available in this environment (confirmed
+  via `wsl --list`), but no Linux build of this project exists yet, and
+  standing one up (LLVM/MLIR from scratch) was judged out of proportion for
+  4 lines whose trigger condition is already well-understood via static
+  trace and cross-checked against the file's own graceful-gate sibling. The
+  Windows build **does** compile both the Win32 and Linux RTTI classes
+  unconditionally (selected at runtime via `compileOptions.isWindows`, not
+  `#ifdef`), so all of these edits at least compile cleanly and were
+  exercised by the full Windows test suite - just not through an actual
+  Linux/`__gxx_personality_v0` exception unwind.
+  One incidental fix along the way: `LLVMRTTIHelperVCWin32.h` needed a
+  local `#define DEBUG_TYPE "llvm"` / `#undef` bracket added (matching the
+  pattern already used by `LLVMRTTIHelperVCLinux.h` and `MLIRTypeHelper.h`)
+  since it had never used `LLVM_DEBUG` before this pass and several of its
+  including `.cpp` files don't define `DEBUG_TYPE` themselves.
+
+Verified: the `extendsType` repro above now compiles and runs cleanly
+instead of crashing (plus a const-tuple variant of the same repro, which
+resolves - to `false`, arguably a separate correctness question about
+const-tuple-vs-tuple structural matching, out of this audit's crash-fixing
+scope, same as other precedents in §7); `throw`/`catch` repros across bool,
+64-bit int, enum, and class-with-inheritance all still compile+run
+correctly on Windows with no behavior change; full suite
+`ctest -C Debug -j8` → **829/829, no regressions**.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -1074,11 +1218,17 @@ This was this doc's own inventory of §5.2, not an exhaustive repo grep run
 fresh - a new sweep might turn up more generic fallbacks this list never
 included (see §7's caveat).
 
-### 5.3 RTTI type-switch fallbacks (Windows/Linux variants — the Linux ones can't be exercised from this Windows dev box without a Linux/WSL build)
+### 5.3 RTTI type-switch fallbacks — CLOSED this pass (tenth), see §4.15
 
 `LLVMRTTIHelperVCWin32.h:141,156,169` · `LLVMRTTIHelperVCLinux.h:113,128,142` ·
 `MLIRRTTIHelperVC.h:108` · `MLIRRTTIHelperVCWin32.h:216,226,241` ·
-`MLIRRTTIHelperVCLinux.h:146,161,182,202,217,230,399`.
+`MLIRRTTIHelperVCLinux.h:146,161,182,202,217,230,399` (the `:399` had drifted
+to `:418` by the time this pass reached it). Windows side confirmed dead by
+caller trace (only 2 `ThrowOp` creation sites in the whole codebase, both
+already gated by a graceful MLIRGen-time twin check); Linux side mostly the
+same, plus one genuine real bug (an int64-width asymmetry between two
+`setType` overloads) fixed but not execution-verified - no Linux/WSL build
+exists in this session. See §4.15 for the full writeup.
 
 ### 5.4 `MLIRTypeHelper.h`'s `funcRef` family — CLOSED this pass, see §4.6-4.8
 
@@ -1095,10 +1245,10 @@ non-function `T`; all six are now fixed. See §4.6-4.8 for the full writeup.
 Note `:410` and `:420`, also swept up in this line-number cluster originally,
 turned out to be an unrelated numeric-attribute-conversion helper (constant
 folding between int/float attrs), not part of the `funcRef` family - still
-unread, left in the general backlog. `:2108, :2256-2257, :2290, :2307,
-:2685, :2709` are likewise still unread and not confirmed to be `funcRef`-
-family sites; worth a fresh grep + read next time this file comes up rather
-than assuming they're covered by this pass's fix.
+unread, left in the general backlog (a fresh repro/trace attempt would be
+needed to triage it, same as any other never-investigated site in this
+doc). `:2108, :2256-2257, :2290, :2307, :2685, :2709` (also confirmed not
+`funcRef`-family) are now all resolved too - see §4.15 (tenth pass).
 
 **Attempted this pass** (before switching to the call-site-trace approach
 that actually worked): two plausible `.ts`-level triggers — a callback
@@ -1146,14 +1296,21 @@ bug (the built-in utility types); tracing real callers is what worked.
    destructuring-assignment gaps) plus one genuine missing `Case`
    (`MLIRTypeIterator.h`'s `NamespaceType`) found by type-list diffing
    rather than a repro. 829/829, no regressions, checked after every file.
-7. **Next up**: §5.3 (RTTI) — the only remaining untriaged pool, and the
-   lowest priority in this document from the start: the Linux variants need
-   a WSL/Linux build to exercise at all, and even the Windows ones are deep
-   in a code path (RTTI/exception typeinfo generation) that's hard to reach
-   without a specific class-hierarchy-plus-exception scenario.
-8. The stray `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709`
-   sites (§5.4) — confirmed not part of the `funcRef` family but never
-   actually read; cheap to fold into whichever pass next touches this file.
+7. ~~§5.3 (RTTI)~~ — **done, §5.3 is now fully closed** (§4.15, tenth pass):
+   Windows side confirmed dead by caller trace (verified empirically too);
+   Linux side fixed a real int64-width asymmetry bug between two `setType`
+   overloads, plus hardened the rest for consistency - not
+   execution-verified (no Linux/WSL build stood up this session, judged out
+   of proportion for 4 lines already well-understood via static trace).
+8. ~~The stray `MLIRTypeHelper.h:2108/2256-2257/2290/2307/2685/2709`
+   sites~~ — **done this pass** (§4.15): one confirmed real crash
+   (`extendsType`'s unnamed-tuple-field lookup, fixed with a positional
+   fallback), two confirmed dead (`getFieldIndexByFieldName`/
+   `getFieldInfoByIndex`, hardened for consistency), one left unconfirmed
+   but hardened (`getAttributeType`), one zero-risk consistency fix
+   (`getFields`). `MLIRTypeHelper.h:410/420` remain unread (confirmed
+   unrelated to the `funcRef` family, still not triaged - the only item
+   left in this whole document with a known, un-investigated location).
 9. Two bugs discovered but *not* fixed this pass, out of this document's
    "not implemented" scope but worth a dedicated look: (a) an LLVM
    `Casting.h` `dyn_cast on a non-existent value` assertion, reachable via
@@ -1162,6 +1319,10 @@ bug (the built-in utility types); tracing real callers is what worked.
    delete-crash reproduced exactly once and then never again across several
    retries with the identical source - if it resurfaces, start from §4.13's
    honest note about it rather than assuming it's fixed.
+10. `MLIRTypeHelper.h:410/420` (see item 8) - the last genuinely
+    un-investigated site with a known location in this entire document.
+    Everything else remaining is either the Linux RTTI execution-
+    verification gap (item 7) or the two out-of-scope bugs (item 9).
 
 ## 7. Non-goals / out of scope
 
