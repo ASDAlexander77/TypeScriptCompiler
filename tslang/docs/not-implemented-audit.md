@@ -27,7 +27,14 @@ the way (array-to-`any[]` widening, `class`/`interface extends`ing the wrong
 kind of type, accessor `++`/`--`, generic-call type-argument inference
 failure, destructuring assignment gaps) plus one gap found by diffing
 against a type list rather than reproducing a crash (`MLIRTypeIterator.h`
-was missing `NamespaceType` entirely).
+was missing `NamespaceType` entirely). Ninth pass (§4.14) went back and
+fixed the two bugs §4.13 had explicitly found-but-not-fixed as out of
+scope - both turned out to share one root cause in `TupleFieldName()`
+(a null `mlir::Attribute` reaching an unguarded `dyn_cast`/`cast`), found
+by tracing code after a live debugger proved unable to catch either crash
+(a plain `assert()`/`abort()` raises no Win32 exception for ProcDump to
+see, and live-attaching WinDbg made the same assert pop a blocking GUI
+dialog instead, since `IsDebuggerPresent()` becomes true).
 
 ## 1. Scope and method
 
@@ -942,6 +949,77 @@ never used one.
 Verified: every confirmed-crash repro re-run clean after its fix, plus the
 full suite after *every* file's fixes in this pass (not just once at the
 end): `ctest -C Debug -j8` → **829/829, no regressions**, every single time.
+
+### 4.14 Ninth pass — fixes the two bugs §4.13 found but deliberately left unfixed
+
+§4.13 explicitly deferred two crashes as "a different category, out of this
+audit's `llvm_unreachable` scope." This pass root-caused and fixed both,
+via careful code tracing rather than a live debugger - ProcDump couldn't
+catch either crash (a plain `assert()` failure calls `abort()`, which exits
+cleanly via `_exit(3)` with no Win32 exception raised at all, so neither
+`-e` exception-monitor mode nor `-t` terminate-monitor mode captured a
+useful stack; live-attaching WinDbg to set a breakpoint made the *same*
+assert instead pop a blocking "Debug Error!" GUI dialog, since
+`IsDebuggerPresent()` becomes true - a live debugger changes this specific
+crash's behavior rather than just observing it). Abandoned the debugger
+and traced both by reading code instead - both turned out to share one
+root cause, `TupleFieldName()` in `MLIRGenTypes.cpp`.
+
+**Root cause**: `TupleFieldName(Node name, ...)` returns a null
+`mlir::Attribute` in two situations its callers didn't guard against:
+
+1. `getNameFromComputedPropertyName` fails to extract a compile-time
+   constant from a computed name (e.g. `[key]` where `key` is a `const`
+   whose value isn't directly a `ConstantOp` - referencing it takes an
+   extra symbol-resolution layer this extraction logic doesn't see
+   through) - it already emits its own clean diagnostic before returning
+   the null/failure pair, but `TupleFieldName` propagates the null
+   `Attribute` onward with no failure signal for a non-computed-name caller
+   to check.
+2. `name` is a `BindingPattern` (`ObjectBindingPattern`/`ArrayBindingPattern`)
+   rather than an `Identifier`/`ComputedPropertyName` - `MLIRHelper::getName`
+   correctly returns empty for it (patterns have no simple name), but
+   `getNameFromComputedPropertyName` only special-cases
+   `SyntaxKind::ComputedPropertyName`, so a `BindingPattern` falls through
+   to `TupleFieldName`'s own fallback path, which unconditionally does
+   `mlirGen(name.as<Expression>(), genContext)` - `.as<Expression>()` on a
+   node that isn't an `Expression` subtype at all, an invalid downcast.
+
+Both failure modes manifest identically at the call sites: a null
+`mlir::Attribute` (or an invalid AST-node cast) reaching an unguarded
+`dyn_cast<mlir::StringAttr>(...)`/`mlir::cast<mlir::StringAttr>(...)` a few
+lines later, which crashes with `Assertion failed: detail::isPresent(Val)
+&& "dyn_cast on a non-existent value"` - `dyn_cast` (unlike
+`dyn_cast_or_null`) requires its input to already be non-null/valid; none
+of the crash sites were using the `_or_null` variant.
+
+**Fix 1 - computed class-field name** (`class X { [key] = 42; }` where
+`key` doesn't fold to a `ConstantOp`): added a null-check on `TupleFieldName`'s
+result immediately in all 4 call sites inside `MLIRGenClasses.cpp`
+(`mlirGenClassDataFieldMember`, `mlirGenClassStaticFieldMember`,
+`mlirGenClassStaticFieldMemberDynamicImport`,
+`mlirGenClassConstructorPublicDataFieldMembers` - the last one's trigger is
+believed unreachable in practice since constructor parameter names can't
+actually be computed property names, but guarded anyway for consistency and
+because `dyn_cast` crashes on null regardless of how unlikely the null is).
+Each returns `mlir::failure()` early, matching `getNameFromComputedPropertyName`'s
+own already-emitted diagnostic rather than adding a second, redundant one.
+
+**Fix 2 - parameter property + destructuring pattern**
+(`constructor(public {x, y}: T) {}` - itself invalid real TypeScript,
+TS2369, but this compiler didn't check that and crashed instead of
+erroring): added a `SyntaxKind::ObjectBindingPattern`/
+`SyntaxKind::ArrayBindingPattern` check directly in `TupleFieldName` itself,
+before the unconditional `.as<Expression>()` cast - this fixes the root
+function once, benefiting all ~13 call sites across the codebase (only the
+`MLIRGenClasses.cpp` constructor-parameter path was confirmed reachable via
+repro, but the fix is at the one shared choke point rather than duplicated
+per caller).
+
+Verified: both original repros give a clean diagnostic instead of crashing
+(`"not supported 'Computed Property Name' expression"` for fix 1,
+`"a binding pattern cannot be used as a field name"` for fix 2), plus the
+full suite: `ctest -C Debug -j8` → **829/829, no regressions**.
 
 ## 5. Inventory of remaining markers (untested this pass)
 

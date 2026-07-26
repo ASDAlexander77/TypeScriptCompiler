@@ -2514,7 +2514,21 @@ namespace mlirgen
             {
                 return attrComputed;
             }
-                        
+
+            if (name == SyntaxKind::ObjectBindingPattern || name == SyntaxKind::ArrayBindingPattern)
+            {
+                // e.g. a parameter property combined with a destructuring pattern
+                // (`constructor(public {x, y}: T) {}`) - real TS rejects this combination
+                // (TS2369) but this compiler doesn't enforce that check earlier, so a
+                // BindingPattern (not a ComputedPropertyName, and MLIRHelper::getName correctly
+                // returns empty for it since it has no simple name) reaches here. `name.as
+                // <Expression>()` below is only valid for actual Expression-kind names - a
+                // BindingPattern isn't one, and forcing the cast crashes (confirmed via repro:
+                // "dyn_cast on a non-existent value"). Fail cleanly instead.
+                emitError(loc(name), "a binding pattern cannot be used as a field name");
+                return mlir::Attribute();
+            }
+
             MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<Expression>(), genContext);
             auto value = V(result);

@@ -766,7 +766,17 @@ namespace mlirgen
         }
         
         auto fieldId = TupleFieldName(name, genContext);
-        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) 
+        if (!fieldId)
+        {
+            // e.g. a computed field name (`[key] = 42;`) that doesn't resolve to a compile-time
+            // constant (getNameFromComputedPropertyName already emitted its own diagnostic in
+            // that case) - fail cleanly here instead of crashing on the null Attribute below
+            // (dyn_cast/cast require their input to be non-null; that's what dyn_cast_or_null is
+            // for, and this code wasn't using it).
+            return mlir::failure();
+        }
+
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
             if (strAttr.getValue().starts_with("#"))
             {
@@ -827,8 +837,16 @@ namespace mlirgen
         }
 
         auto fieldId = TupleFieldName(name, genContext);
+        if (!fieldId)
+        {
+            // same shape as mlirGenClassDataFieldMember's identical guard above - a computed
+            // field name that failed to resolve to a constant already got its own diagnostic
+            // from getNameFromComputedPropertyName; fail cleanly instead of crashing on the
+            // unconditional mlir::cast<StringAttr> a few lines below.
+            return mlir::failure();
+        }
 
-        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) 
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
             if (strAttr.getValue().starts_with("#"))
             {
@@ -889,12 +907,20 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGenClassStaticFieldMemberDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
         auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        if (!fieldId)
+        {
+            // same shape as mlirGenClassDataFieldMember's/mlirGenClassStaticFieldMember's
+            // identical guard - fail cleanly instead of crashing on the unconditional
+            // mlir::cast<StringAttr> below.
+            return mlir::failure();
+        }
+
         auto accessLevel = getAccessLevel(propertyDeclaration);
 
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
-        
+
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) -> TypeValueInitType {
@@ -956,6 +982,15 @@ namespace mlirgen
             }
 
             auto fieldId = TupleFieldName(parameter->name, genContext);
+            if (!fieldId)
+            {
+                // constructor parameter names can't actually be computed property names (only a
+                // plain identifier or binding pattern), so this is believed unreachable in
+                // practice - guarded anyway for consistency with this function's siblings above,
+                // since dyn_cast (unlike dyn_cast_or_null) still asserts on a null Attribute.
+                return mlir::failure();
+            }
+
             if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) {
                 isPrivate |= strAttr.getValue().starts_with("#");
             }
