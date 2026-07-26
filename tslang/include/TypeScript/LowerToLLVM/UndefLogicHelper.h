@@ -71,7 +71,11 @@ class UndefLogicHelper
                 undefFlagCmpResult = clh.createI1ConstantOf(false);
                 break;
             default:
-                llvm_unreachable("not implemented");
+                // opCmpCode's only caller (LowerToLLVM.cpp's LogicalBinaryOpLowering) switches
+                // on the exact same 8 comparison SyntaxKinds this switch handles above and
+                // never passes anything else; fail cleanly instead of crashing if that ever
+                // stops being true.
+                op->emitError("unsupported comparison operator for undefined type");
             }
 
             return undefFlagCmpResult;
@@ -104,7 +108,8 @@ class UndefLogicHelper
                     undefFlagCmpResult = clh.createI1ConstantOf(leftUndefType ? true : false);
                     break;
                 default:
-                    llvm_unreachable("not implemented");
+                    // same call-site-guaranteed shape as the sibling switch above.
+                    op->emitError("unsupported comparison operator for undefined type");
                 }
 
                 return undefFlagCmpResult;

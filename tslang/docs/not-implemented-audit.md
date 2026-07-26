@@ -1,18 +1,33 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **12 confirmed crashes fixed across six passes, ~103 markers still
-uninvestigated** — written as a roadmap for continuing this audit, not a
-claim that the sweep is complete. Triggered by a user request to review
-every "not implemented" marker in the codebase and see which ones can be
-implemented. Second pass (§4.3-4.5) worked through this document's own §6
-priority list while waiting on the first pass's PR to merge. Third pass
-(§4.6-4.8) closed out §5.4's `MLIRTypeHelper.h` `funcRef` family after that
-PR merged. Fourth pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf`
-sites, the last item left from the original §5.1 named/specific list. Fifth
-pass (§4.10) started the `MLIRGenImpl.h` cluster (§5.1's last remaining
-block), closing 4 of its sites. Sixth pass (§4.11) closed 3 more sites in
-the same cluster, including two real, easily-reachable `import X = ...`
-crashes.
+Status: **§5.1 and §5.2 are now both fully closed; only §5.3 (RTTI, ~19
+sites, lowest priority) and a handful of stray `MLIRTypeHelper.h` lines
+(§5.4) remain uninvestigated** — written as a roadmap for continuing this
+audit, not a claim that the sweep is complete (§5.2's generic fallbacks
+were themselves only a guess at what's left; more may turn up by re-grepping
+after this many edits). Triggered by a user request to review every "not
+implemented" marker in the codebase and see which ones can be implemented.
+Second pass (§4.3-4.5) worked through this document's own §6 priority list
+while waiting on the first pass's PR to merge. Third pass (§4.6-4.8) closed
+out §5.4's `MLIRTypeHelper.h` `funcRef` family after that PR merged. Fourth
+pass (§4.9) closed out `MLIRGenCast.cpp`'s two `TypeOf` sites, the last item
+left from the original §5.1 named/specific list. Fifth pass (§4.10) started
+the `MLIRGenImpl.h` cluster (§5.1's last remaining block), closing 4 of its
+sites. Sixth pass (§4.11) closed 3 more sites in the same cluster, including
+two real, easily-reachable `import X = ...` crashes. Seventh pass (§4.12)
+closed the rest of §5.1: `MLIRGenImpl.h`'s last 2 sites,
+`MLIRGenInterfaces.cpp`'s remaining 2, the entire `MLIRGenTypes.cpp` cluster
+(10 sites), and `LLVMCodeHelper.h:452` - plus 2 bonus fixes found along the
+way that weren't in the original grep (a `return nullptr;`-as-`std::string`
+UB crash, and the `MLIRGenImpl.h:7907` object-literal twin this doc had left
+un-patched after calling it dead). Eighth pass (§4.13) closed all of §5.2 -
+every generic `TypeSwitch::Default`/switch fallback this doc had inventoried
+across 12 files - finding several more real, easily-reachable crashes along
+the way (array-to-`any[]` widening, `class`/`interface extends`ing the wrong
+kind of type, accessor `++`/`--`, generic-call type-argument inference
+failure, destructuring assignment gaps) plus one gap found by diffing
+against a type list rather than reproducing a crash (`MLIRTypeIterator.h`
+was missing `NamespaceType` entirely).
 
 ## 1. Scope and method
 
@@ -539,6 +554,395 @@ parser; left as genuinely unread rather than assumed dead.
 Verified via repro (both real crashes) and the full suite: `ctest -C Debug
 -j8` → 829/829, no regressions.
 
+### 4.12 Seventh pass — closes §5.1 entirely: `MLIRGenImpl.h`'s last 2 sites, `MLIRGenInterfaces.cpp`'s remaining 2, all of `MLIRGenTypes.cpp` (10 sites), `LLVMCodeHelper.h:452`, plus 2 bonus finds
+
+**`MLIRGenImpl.h:8164` (`processTypeParameter`) and `:8382`
+(`mlirGen(TypeAliasDeclaration...)`)**: the two sites left open at the end
+of §4.11. Both are the "name came back empty" branch for a construct whose
+grammar requires an `Identifier` (`<T>` / `type X = ...`), so - like
+`addInterfaceMethod` before them - genuinely look parser-guaranteed
+unreachable and neither was reproduced. Fixed anyway per this audit's
+running "don't leave a landmine" policy: `mlirGen(TypeAliasDeclaration...)`
+got a trivial `emitError` swap (a `mlir::failure()` return already existed
+one line below); `processTypeParameter` needed a real code change since its
+only path back to callers is a `TypeParameterDOM::TypePtr` - callers
+(`processTypeParameters` et al.) push whatever it returns into a vector and
+later dereference it, so returning `nullptr` for "fail" would just move the
+crash one level up. Fixed by emitting the error and returning
+`std::make_shared<TypeParameterDOM>("")` - a valid, if semantically empty,
+object the caller can hold without crashing.
+
+**`MLIRGenInterfaces.cpp`'s two remaining sites** (this doc's original
+:475/:932/:954 - line numbers drifted from PR #302, which had already fixed
+the middle one, "unsupported interface member", before this pass started):
+
+- **The `extends` heritage-clause `TypeSwitch::Default` (interface
+  extending a non-InterfaceType/TupleType target): a real, confirmed
+  crash.** `interface X extends SomeClass {}` - real, documented TypeScript
+  (extending an interface from a class's instance shape) - hit this
+  immediately (confirmed via the "idle-CPU-but-actually-blocked-on-an-
+  invisible-abort-dialog" pattern from [[windows-assert-dialog-looks-like-hang]],
+  same as §4.10's `getIntTypeAttribute` finding). Root-caused further:
+  `mth.getFields` (the same helper the `TupleType` `Case` above it already
+  called) *already* handles `ClassType`, `ConstTupleType`, `ObjectType`,
+  `ArrayType`, and `StringType` internally - so the fix was to make
+  `Default` call `mth.getFields` too (generalizing, not hand-rolling a new
+  per-type `Case`) and only `emitError` if that itself fails. This
+  incidentally fixes `ConstTupleType`/`ObjectType`/`ArrayType`/`StringType`
+  extends-targets as a side effect, not just the `ClassType` one that was
+  reproduced.
+- **`getNameForMethod`'s non-`StringAttr` computed-name branch: a real,
+  confirmed crash.** `interface X { [1](): void; }` (a constant-foldable
+  non-string computed method name) reaches this - `1` folds to a
+  `ConstantOp` with an `IntegerAttr`, which isn't a `StringAttr`. Converted
+  to `emitError` + `return {"", false}` (the same failure shape the
+  function already returns one branch above for the `mlir::failed(result)`
+  case).
+
+**Bonus find, not in the original "not implemented" grep**:
+investigating the numeric-computed-method-name repro above first hit a
+*different*, more severe crash before reaching `getNameForMethod` at all -
+`getNameWithArguments` (`MLIRGenImpl.h`, the general
+name-or-anonymous-name-synthesis helper used by every function-like
+declaration, not just interface methods) had `return nullptr;` inside a
+function returning `std::string`. That's UB: `nullptr` converts to `const
+char*`, and `std::string(const char*)` calls `strlen` on it, which
+segfaults. WinDbg/ProcDump confirmed the crash (`strlen` →
+`basic_string::basic_string<char*>` → `getNameWithArguments:9277` in the
+stack). Worse, this early return also *skipped* the anonymous-name
+synthesis fallback every other empty-name case in the same function falls
+through to - so the fix was to delete the early return entirely (not just
+guard it), letting the computed-name failure fall through to that existing
+fallback. This bug was reachable for *any* function-like declaration whose
+computed name fails to resolve (not just the specific interface-method
+repro that found it), making it plausibly the most broadly-reachable single
+bug found in this entire audit.
+
+**All 10 sites in `MLIRGenTypes.cpp`** (this doc's :183/1474/1567/1876/
+1910/2001/2204/2210/2661/3401 list, closing §5.1's last file):
+
+- **`getType(Node, ...)` master dispatcher (:183) and `getTypeByTypeName`
+  (:277, an already-exhaustive `Identifier`/`QualifiedName` EntityName
+  dispatch) and `getResolveTypeParameter(TypeParameterDeclaration...)`
+  (:250, another empty-type-parameter-name case, same shape as
+  `processTypeParameter` above)**: converted to `emitError` +
+  `mlir::Type()`/graceful-return without a repro; `getType`'s only
+  identified-but-unconfirmed gap is `ImportType` (`import("mod").Foo`,
+  grepped and confirmed unhandled anywhere in the codebase) - a real gap,
+  just not cheap to reproduce (needs a second module) so left undemonstrated.
+- **`RecordType`'s and `OmitTypes`' non-literal-key `Default`/`else`
+  branches (:1474, :1567): confirmed dead code**, by the same call-site-
+  trace method §4.6-4.8 used for the `funcRef` family. `Record<K,T>`,
+  `Pick<T,K>`, `Omit<T,K>`, `Exclude<T,U>`, `Extract<T,U>` are *all*
+  declared as ordinary generic type aliases in the default lib
+  (`lib.generics.ts`, e.g. `type Record<K extends string|number|symbol, T> =
+  { [P in K]: T }`), and `getTypeByTypeReference` always tries
+  `resolveGenericType` before ever reaching the builtin-fallback family
+  these two functions belong to (`getEmbeddedTypeWithManyParamsBuiltins`) -
+  confirmed live by testing `Record<string,V>`/`Record<number,V>` and
+  watching them route through the mapped-type machinery (a *different*,
+  unrelated "mapped type is empty for constrain" warning) instead of
+  crashing. Fixed to no-op (matching `PickTypes`' sibling
+  `pickTypesProcessKey`, which already silently ignores an unrecognized key
+  shape) rather than crash, for the "don't leave a landmine" reason, not
+  because either is expected to ever actually run.
+- **`getMappedType`'s two `Default`/`else` branches for `as`-remapped
+  mapped-type keys (:2204, :2210): unconfirmed, converted defensively.**
+  These fire only when a mapped type's `as` name-remapping clause produces
+  a shape (non-literal, or a union/non-union mismatch against the value
+  type) that couldn't be constructed from a simple repro attempt in the
+  time available; left as genuinely untested rather than claimed dead,
+  same honesty standard as the rest of this document.
+- **`getTypeOperator`'s final fallthrough (:1876): grammar-exhaustive**
+  (`unique`/`keyof`/`readonly` are the only three TS type-operator
+  keywords, all three handled above) - converted defensively, no repro
+  expected to exist.
+- **`getIndexedAccessType`'s `StringType`-index branch (:1910): a real,
+  confirmed crash.** `type X = Foo[string]` (indexing a type by the general
+  `string` type rather than a specific literal key - invalid in real TS
+  unless the target has a string index signature, which this compiler's
+  indexed-access resolution doesn't model) crashed instantly. This function
+  had no `mlir::Location` parameter at all (nor did its 3 recursive
+  self-calls or its `IndexedAccessTypeNode` entry point) - threaded one
+  through the whole call chain (5 call sites total, all in this file) rather
+  than falling back to some contextless diagnostic.
+- **`getIndexedAccessType`'s final fallthrough (:2001), same function,
+  same location threading applies**: unconfirmed (nothing tried reached
+  it), converted defensively using the same threaded `location`.
+- **`getTupleFieldInfo(TypeLiteralNode...)`'s member-kind `else` (:2661): a
+  real, confirmed, easily-reachable crash.** A `TypeLiteral`
+  (`type X = { ... }`) resolves to this compiler's plain-value `TupleType`
+  representation, and this function only handled
+  `PropertySignature`/`MethodSignature`/`ConstructSignature`/
+  `IndexSignature`/`CallSignature` - missing `GetAccessor`/`SetAccessor`,
+  which real TS type literals do support (`type X = { get foo(): number }`).
+  Confirmed via repro. Unlike `InterfaceDeclaration` (which has its own
+  accessor/vtable machinery in `MLIRGenInterfaces.cpp`), a `TupleType` has
+  no getter/setter dispatch representation to plug an accessor into at all
+  - implementing this for real is a separate, scoped feature (same
+  "real gap, not dead code, out of scope for a crash-audit pass" category
+  as §4.2's array/union spread and §4.9's union-tuple `TypeOf` cast).
+  Converted to a clean `emitError` instead. The final catch-all `else`
+  (any *other* unhandled member kind) got the same treatment.
+- **`getLiteralType(LiteralTypeNode...)`'s final fallthrough (:3401):
+  unconfirmed.** Tried negative numeric literals (`-1`) and `BigIntLiteral`
+  (`100n`) as plausible triggers - both already handled cleanly (fold to a
+  `ConstantOp` before reaching this point). Converted defensively without a
+  confirmed repro.
+
+**`LLVMCodeHelper.h:452` (`getArrayValue`'s final fallthrough, LLVM-lowering
+stage): unconfirmed, likely dead per this doc's own earlier hypothesis.**
+Tried an array of `null` elements and a mixed `number|string` union array as
+plausible triggers for an unhandled const-array-literal element type -
+neither reached this branch (both already handled by earlier cases in the
+same function). This file has zero prior `emitError`-style diagnostics
+anywhere in it (this pass of the audit is LLVM-lowering-stage code, past
+the point normal MLIRGen diagnostics are emitted) - used the `op->emitError`
+idiom instead (confirmed as a live pattern via `LowerToLLVM.cpp`'s own
+debug-assert error calls) plus a `return mlir::Value()`, rather than
+`llvm_unreachable`.
+
+**Bonus fix, the twin this document itself had already flagged**:
+`MLIRGenImpl.h:7907` ("object literal is not implemented(1)") - §5.1's table
+entry for `LLVMCodeHelper.h:452` speculated this was its already-confirmed-
+dead MLIRGen-level twin, but the `llvm_unreachable` itself had never
+actually been replaced. Verified the grammar-exhaustiveness claim by reading
+`mlirGenObjectLiteralFields`'s full dispatch (`PropertyAssignment`|
+`ShorthandPropertyAssignment`|`SpreadAssignment`|`MethodDeclaration`|
+`GetAccessor`|`SetAccessor` - the complete `ObjectLiteralElementLike`
+grammar) and converted it to the standard `emitError` + graceful-failure
+shape while here, rather than leave the confirmed-dead crash in place.
+
+Verified: every confirmed-crash repro re-run clean after the fix (no
+crashes, clean diagnostics), plus the full suite: `ctest -C Debug -j8` →
+**829/829, no regressions**.
+
+### 4.13 Eighth pass — closes §5.2 entirely (12 files), several more real crashes found
+
+Worked through every site in §5.2's inventory list, file by file, using the
+same repro-when-possible / defensive-fix-when-not approach as every prior
+pass. Rebuilt and ran the full suite after each file (not just once at the
+end) specifically so a bad fix would be caught close to its cause; 829/829
+green after every single rebuild in this pass, no regression ever surfaced.
+
+**`CastLogicHelper.h` (LLVM-lowering-stage `cast()` helper), 7 sites**:
+
+- **`castToArrayType`'s final `else` (was :1002): a real, easily-reachable
+  crash.** Widening `number[]` to an `any[]` function parameter (an entirely
+  ordinary pattern) crashed - the function only ever handled a source that
+  was itself `ConstArrayType`/`NullType`/`UndefinedType`, never a plain
+  dynamic `ArrayType`. Properly supporting it needs a runtime per-element
+  boxing loop (`number` and boxed `any` aren't bit-compatible) - a separate,
+  scoped feature, not a quick fix. Converted to a clean `emitError`.
+- **The other 6 sites (array-to-string, tuple-to-interface ×2, union-to-
+  boolean-with-RTTI-tag, optional-to-other-type), all marked "must be
+  processed at MLIR pass": confirmed dead or blocked upstream, not
+  reproduced.** Array-to-string and tuple-to-interface casts were confirmed
+  to already work end-to-end via direct JIT repros without ever reaching
+  these branches (they're resolved by a dedicated MLIR-level pass/pattern
+  before LLVM lowering, exactly as their own comment says). The union-to-
+  boolean case is blocked one stage earlier by MLIRGen's own union-to-
+  boolean rejection (`castFromUnion`, §4.9) - confirmed via two repro
+  attempts (`if (x)` and `!!x` where `x: number | {a: number}`), both
+  already fail cleanly before LLVM lowering runs. The optional-to-other-type
+  case wasn't reproduced despite two attempts (widening to a broader union,
+  casting through `any`). All 6 converted to `emitError` defensively.
+
+**`MLIRGenClasses.cpp`, 5 sites**:
+
+- **The `extends` and `implements` heritage-clause `TypeSwitch::Default`s
+  (was :603, :635, plus :1802's mirror of the `implements` one): both real,
+  confirmed crashes.** `class Sub extends SomeInterface {}` (real TS itself
+  rejects extending an interface, but this compiler didn't check) and
+  `class Square implements SomeTypeAlias` where the alias resolves to an
+  object-shape `TupleType` rather than a declared interface (real, valid,
+  common TypeScript - this compiler's `implements` only accepts a genuine
+  `InterfaceType`, so this is a real gap, not an error case). Fixing the
+  `extends` one surfaced a **second bug in the same spot**: the original
+  code had no failure-tracking at all in that loop (unconditionally
+  `return mlir::success()` regardless of which `TypeSwitch` case fired), so
+  the first attempt's `emitError` was silently swallowed - the repro
+  compiled "successfully" with the class heritage just quietly dropped.
+  Caught by testing the exact repro after the fix (not just the full
+  suite), per §4.11's own lesson about second bugs one level up. Added a
+  `success` bool matching the sibling `implements` branch's existing
+  pattern.
+- **Two empty-member-name guards (was :2269, :2306): unconfirmed.** Tried a
+  computed class-property initializer (`class X { [key] = 42; }`) and a
+  parameter-property combined with a destructuring pattern
+  (`constructor(public {x,y}: T)`, itself invalid real TS - TS2369) as
+  plausible triggers; both hit a *different*, undocumented crash first (an
+  LLVM `Casting.h` `dyn_cast on a non-existent value` assertion, in
+  `getNameWithArguments`'s computed-property-name path or nearby - not
+  chased further, out of this audit's "not implemented" scope, noted here
+  as a discovered-but-unfixed bug for a future pass). Converted both
+  defensively regardless.
+
+**`MLIRGenExpressions.cpp`, bonus find + 3 sites**:
+
+- **Bonus, not in the original grep**: the master `mlirGen(Expression...)`
+  dispatcher's final `llvm_unreachable("unknown expression")` (a different
+  message, missed by the original `"not implemented"` grep) - found while
+  investigating the ctor-destructuring-parameter-property repro above.
+  Reachable via that exact same invalid-but-unchecked pattern (a
+  `BindingPattern` name node, not an `Expression` kind, reaching this
+  dispatcher). Converted to `emitError`.
+- **`mlirGen(DeleteExpression...)`'s final `else` (was :996): a confirmed
+  real crash on first repro, but not reproducible afterward.** `delete
+  obj.a` on a plain mutable-tuple object literal crashed on the first
+  attempt (`UNREACHABLE executed at ...:996!`, exact repro, exact line) -
+  but re-running the identical repro after the fix (and several variants:
+  `const` instead of `let`, an rvalue tuple from a function call) never
+  reached the new code path at all; property access on a tuple value
+  apparently always yields a `RefType`, which this branch's guarding `if`
+  already excludes. Genuinely unclear why the first run differed - noted
+  honestly rather than claimed as a confirmed live bug. Fixed anyway
+  (real TS itself rejects deleting a non-optional property, TS2790 - this
+  compiler doesn't check that either, and there's no way to "delete" a
+  fixed-layout tuple field regardless): `emitError` instead of crash.
+- **Prefix/postfix unary operator `default` branches (was :538, :560):
+  grammar-exhaustive** (`+ - ~ ! ++ --` prefix, `++ --` postfix are the
+  complete TS operator sets, all handled above) - converted defensively,
+  no repro expected to exist.
+
+**`MLIRGenGenerics.cpp`, 4 sites**:
+
+- **`instantiateSpecializedFunction`'s type-argument-resolution `else`
+  (was :911, in the middle of the file's numbering): a real, confirmed
+  crash.** `function foo<T>(): T { ... }` called as `foo()` - no explicit
+  type argument, and nothing to infer `T` from (zero parameters, zero call
+  operands). Real TS rejects this too ("type argument cannot be inferred
+  from usage"). Converted to a clean `emitError`.
+- **Three more (function-ref-shape dispatch ×2, a `CreateBoundFunctionOp`
+  result-type switch): unconfirmed or construction-guaranteed.** The
+  `CreateBoundFunctionOp` one is dead by construction (that op's result can
+  only ever be `BoundFunctionType`/`HybridFunctionType`, both handled).
+  The other two (a generic function reference that's neither wrapped in
+  `CreateBoundFunctionOp` nor a bare `SymbolRefOp`/`ThisSymbolRefOp`) each
+  had one plausible trigger tried (a generic function assigned to a
+  variable then called; `super.genericMethod(...)`) and neither reached the
+  crash - both resolve through the already-handled paths. Converted
+  defensively.
+
+**`MLIRGenImpl.h`'s §5.2 cluster, 7 sites**:
+
+- **`mlirGenSaveLogicArray`'s and `mlirGenSaveLogicObject`'s
+  `TypeSwitch`/dispatch `Default`s (destructuring-assignment codegen,
+  2 sites): both real, confirmed crashes.** `[a, b] = "hi"` (array-
+  destructuring from a string - this compiler's destructuring-assignment
+  codegen only positionally indexes Array/ConstArray/Tuple/ConstTuple, never
+  gained the iterator-protocol handling `for...of` has) and `({ a, ...rest
+  } = obj)` (rest-destructuring in an object-destructuring assignment - a
+  real, separate missing feature, same shape as §4.2's object-literal
+  spread gap: synthesizing `rest` needs enumerating every not-yet-
+  destructured field). Both converted to clean `emitError`s; the array one
+  needed an added `hasUnsupportedType` flag since the original code had no
+  failure path out of that `TypeSwitch` either (same "silently swallowed"
+  risk as the `MLIRGenClasses.cpp` extends fix above - caught this time
+  before testing, not after).
+- **The switch-case jump-op dispatch, the prefix-unary-on-constant switch,
+  and a nested nested-`isDynamicImport` RTTI branch (3 sites): construction-
+  or call-site-guaranteed dead**, all converted defensively without a
+  repro attempt (the jump-op one only ever receives a `CondBranchOp`/
+  `BranchOp` by construction two lines below; the constant-unary switch's
+  only caller already guards with the same 4-operator check; the RTTI one
+  is nested inside `isDynamicImport`, itself an untested feature path per
+  §4.10).
+- **The spread-iterator-protocol `TypeSwitch`/`else` pair (`hasIterator`
+  and `processArrayValuesSpreadElement`, 2 sites each = the remaining
+  entries): the array-spread one is a real, confirmed crash.**
+  `[...new MyIter()]` where `MyIter`'s `next(): any` (a custom iterator
+  whose `next()` return type isn't a `Tuple`/`ConstTuple`) crashed in
+  `processArrayValuesSpreadElement`. The `for...of` sibling (`hasIterator`)
+  wasn't reproduced with the identical class (a `for (let x of
+  new MyIter())` repro hit an unrelated, pre-existing "any"-property-
+  resolution error first) but shares the exact same `TypeSwitch` shape, so
+  fixed identically. Both `Default` branches now treat an unrecognized
+  `next()` return shape as "not a well-formed iterator" (return
+  `false`/`emitError`) rather than crash.
+
+**`CodeLogicHelper.h:241` (`saveResult`, LLVM-lowering-stage `++`/`--`
+codegen): a real, confirmed crash, and the oldest-documented gap in this
+whole audit** - the function's own comment already said `// TODO: finish it
+for field access` before this pass touched it. `b.v++` where `v` is a
+get/set accessor pair (not a plain field) crashed: a plain variable/field
+increment loads through a `LoadOp` and stores straight back to its
+reference, but an accessor has no reference to store to - it would need
+calling the setter with the incremented value instead, a real, separate
+feature. Plain `obj.field++` (the common case) was confirmed to already
+work fine first, to isolate exactly what the TODO was still missing.
+Converted to `mlir::emitError` (this file had no prior diagnostic-emission
+precedent at all, unlike the sibling LLVM-lowering helpers).
+
+**`OptionalLogicHelper.h` and `UndefLogicHelper.h`, 4 sites total
+(2 each): confirmed dead by call-site trace, same method as the `funcRef`
+family (§4.6-4.8).** Both files' `switch (opCmpCode) { ... default:
+llvm_unreachable }` pairs handle exactly the 8 comparison `SyntaxKind`s
+(`== === != !== > >= < <=`); traced every path `opCmpCode` can take back to
+`LowerToLLVM.cpp`'s `LogicalBinaryOpLowering`, which dispatches via a
+`switch` over the identical 8-way set before ever calling into either
+helper - the `default` branches are unreachable for as long as those two
+switches stay in sync. Converted to `mlir::emitError`/`op->emitError`
+defensively rather than left crashing.
+
+**`MLIRCodeLogic.h`, 4 sites: unconfirmed, converted defensively.**
+An enum-member constant-attribute dispatch (`StringAttr`/`IntegerAttr`/
+`FloatAttr`/`BoolAttr` handled, matching the string/numeric-literal-only
+grammar for TS enum members) and three property-access helpers
+(`Ref`/`Object`/`Class`) whose non-tuple/non-`ClassStorageType` branches
+look reachable only through deep, already-extensively-tested class/object/
+array property-access machinery; no repro attempt succeeded in the time
+available. All four converted to `emitError` + a null-value return (the
+enum one additionally needed an early-return guard added after the
+`TypeSwitch`, since constructing a `LiteralType` from a null base type
+afterward would just move the crash one line down).
+
+**`MLIRPrinter.h:303` (`printAttribute`'s `Default`): likely a real gap,
+not reproduced.** Handles `StringAttr`/`FlatSymbolRefAttr`/`IntegerAttr`/
+`FloatAttr` but not `mlir::BoolAttr` - and `MLIRCodeLogic.h`'s own enum-
+attribute dispatch (just above) treats `BoolAttr` as a *separate* case from
+`IntegerAttr` in this codebase, suggesting a boolean-valued attribute
+wouldn't already be caught by the `IntegerAttr` case here either. No
+repro found in the time available. Changed to fall back to the
+attribute's own default printer (`out << a;`), matching the sibling
+`printType`'s own `Default` two dozen lines below (already non-crashing,
+`out << t;` - was mis-flagged as still-crashing in this doc's §5.2
+inventory; it wasn't).
+
+**`MLIRTypeIterator.h:404`: not a "convert the crash" fix - a genuine,
+previously-undetected missing `Case`, found by diffing against
+`TypeScriptTypes.td`'s full type list rather than by reproducing a
+crash.** This recursive type-walker (used by `isGenericType`/
+`hasInferType`/`forEachTypes`/`getAllInferTypes` - i.e. called on nearly
+every resolved type throughout the whole compiler) had `Case`s for every
+one of this compiler's ~45 `mlir_ts::*Type` kinds *except*
+`NamespaceType`. Grepped every `TypeScript_*` type def in
+`TypeScriptTypes.td` and diffed against every `Case<mlir_ts::...Type>` in
+this switch to find the gap - the same technique §4.6-4.8 used for the
+`funcRef` family, just applied to a type-list instead of a call-site list.
+Added the missing `Case` (a leaf type - just a name, nothing to recurse
+into) rather than merely guarding the `Default`; also softened the
+`Default` itself to a debug log instead of a crash, in case some other
+type is still missing. Not confirmed via a live crash repro (a namespace-
+qualified generic class instantiation, `NS.Box<T>`, was tried but the fix
+was already in place by the time it ran) - documented honestly as a
+static-analysis fix, not a reproduced one.
+
+**`Win32ExceptionPass.cpp:584` (`getCallBundleFromCatchRegion`'s final
+`else`): confirmed dead by construction, matching this file's own existing
+convention for the identical invariant.** Every `CatchRegion` gets exactly
+one of `catchPad`/`cleanupPad` set, at the exact site that first identifies
+it (two `CatchPadInst::Create` call sites vs. one `CleanupPadInst::Create`,
+mutually exclusive) - and this same file already asserts precisely this
+invariant twice elsewhere (lines 393, 426) rather than treating it as a
+diagnosable error. Matched that existing convention (`assert(...)`) instead
+of introducing a new diagnostic pattern in a raw LLVM-IR pass that had
+never used one.
+
+Verified: every confirmed-crash repro re-run clean after its fix, plus the
+full suite after *every* file's fixes in this pass (not just once at the
+end): `ctest -C Debug -j8` → **829/829, no regressions**, every single time.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -557,31 +961,40 @@ dead (guarded), one a real crash (union with a tuple-shaped member).
 previous pass** (§4.11): `MLIRGenImpl.h`'s next three sites (was
 8400/8426/9342 - `import X = require(...)`, `import X = <non-namespace/
 class/interface>`, and `addInterfaceMethod`'s empty-name guard) — 2 real
-crashes, 1 defensive/unverified.
+crashes, 1 defensive/unverified. **§5.1 is now fully closed** (§4.12,
+seventh pass): `MLIRGenImpl.h`'s last 2 sites, `MLIRGenInterfaces.cpp`'s
+remaining 2 (the middle one, :932, had already been fixed by PR #302 before
+this pass started), the entire `MLIRGenTypes.cpp` cluster (10 sites), and
+`LLVMCodeHelper.h:452` (plus its `MLIRGenImpl.h:7907` MLIRGen-level twin,
+which turned out to still be an un-patched crash despite this doc's own
+earlier "confirmed-dead" note about it). No `.cpp`/`.h` named/specific
+marker with a message naming its trigger remains as `llvm_unreachable`
+today - what's left is exclusively §5.2's generic `TypeSwitch::Default`
+fallbacks and §5.3's RTTI fallbacks, both harder to triage because they
+carry no clue about their trigger beyond the enclosing type switch.
 
-| Site | Message | Shape (unverified guess) |
-| --- | --- | --- |
-| `MLIRGenImpl.h:8164` | not implemented | unread — `processTypeParameter`'s empty-name branch, likely parser-grammar-unreachable but not verified |
-| `MLIRGenImpl.h:8382` | not implemented | unread — `TypeAliasDeclaration`'s empty-name `else`, likely parser-grammar-unreachable but not verified (the other two of the original "three close together" trio, 8400/8426, were fixed in §4.11) |
-| `MLIRGenInterfaces.cpp:475` | not implemented yet | unread |
-| `MLIRGenInterfaces.cpp:932` / `:954` | not implemented | unread |
-| `MLIRGenTypes.cpp:183` | not implemented type declaration | unread |
-| `MLIRGenTypes.cpp:1474` / `:1567` / `:1876` / `:1910` / `:2001` / `:2204` / `:2210` / `:2661` / `:3401` | not implemented | unread, largest single-file cluster after MLIRGenImpl.h |
-| `LLVMCodeHelper.h:452` | array literal is not implemented(1) | likely the LLVM-lowering-side twin of the (confirmed-dead) `MLIRGenImpl.h:7875` "object literal is not implemented(1)" `else` branch — check the same way (is there any other `SyntaxKind` an array-literal element list can produce?) |
+The table this section used to carry (unread sites) is gone - all of it is
+now covered by §4.10-§4.12 above. See §4.12 for real-vs-dead-vs-unconfirmed
+verdicts on every site, and the `MLIRTypeHelper.h` stray lines noted in §5.4
+below for the one still-unread pocket adjacent to this list.
 
-### 5.2 Generic `TypeSwitch::Default` exhaustiveness fallbacks (likely mostly dead, per §3's precedent — verify by checking whether an existing passing test already produces the relevant `mlir::Type` at that pipeline stage)
+### 5.2 Generic `TypeSwitch::Default` exhaustiveness fallbacks — CLOSED this pass, see §4.13
 
-`MLIRGenClasses.cpp:603,635,1802,2269,2306` · `MLIRGenExpressions.cpp:530,552,988` ·
-`MLIRGenGenerics.cpp:424,542,911,1342` · `MLIRGenImpl.h:3203,3477,3803,4402,4518,6379,7080,7094` ·
-`MLIRGenInterfaces.cpp:656` · `CastLogicHelper.h:338,344,353,359,460,487,1002` (four of these say
-"must be processed at MLIR pass" — suggests a *specific*, documented reason
-they should be unreachable at the LLVM-lowering stage, worth reading before
-assuming they're arbitrary) · `CodeLogicHelper.h:241` · `OptionalLogicHelper.h:143,213` ·
+Every site originally listed here (`MLIRGenClasses.cpp:603,635,1802,2269,2306` ·
+`MLIRGenExpressions.cpp:530,552,988` · `MLIRGenGenerics.cpp:424,542,911,1342` ·
+`MLIRGenImpl.h:3203,3477,3803,4402,4518,6379,7080,7094` ·
+`MLIRGenInterfaces.cpp:656` · `CastLogicHelper.h:338,344,353,359,460,487,1002` ·
+`CodeLogicHelper.h:241` · `OptionalLogicHelper.h:143,213` ·
 `UndefLogicHelper.h:74,107` · `MLIRCodeLogic.h:1218,1660,1680,1722` ·
-`MLIRPrinter.h:302-303,534` (type-name printing — a `Default` here would show
-up immediately as a printer test failure, so likely easy to check against
-`unittests/MLIRGen/TypeToString.cpp`'s existing coverage) · `MLIRTypeIterator.h:403-404` ·
-`Win32ExceptionPass.cpp:584`.
+`MLIRPrinter.h:302-303,534` · `MLIRTypeIterator.h:403-404` ·
+`Win32ExceptionPass.cpp:584`) is now fixed - see §4.13 for the full
+real/dead/unconfirmed breakdown per site. `MLIRGenInterfaces.cpp:656` turned
+out to already be resolved as a side effect of §4.12's interface-extends
+fix, before this pass even started touching it directly.
+
+This was this doc's own inventory of §5.2, not an exhaustive repo grep run
+fresh - a new sweep might turn up more generic fallbacks this list never
+included (see §7's caveat).
 
 ### 5.3 RTTI type-switch fallbacks (Windows/Linux variants — the Linux ones can't be exercised from this Windows dev box without a Linux/WSL build)
 
@@ -638,21 +1051,39 @@ bug (the built-in utility types); tracing real callers is what worked.
    from §5.1, plus the stray
    `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709` sites
    (confirmed *not* part of the `funcRef` family, see §5.4).
-5. **In progress**: the `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/
-   `MLIRGenTypes.cpp` cluster (§5.1's last remaining block) — read-and-repro
-   each per §2's recipe. §4.10 closed the first 4 `MLIRGenImpl.h` sites
-   (5330/6732/7314/7418); §4.11 closed 3 more (8400/8426/9342, 2 of them
-   real `import X = ...` crashes); still open: `MLIRGenImpl.h:8164/8382`
-   (both look parser-grammar-unreachable but unverified), all of
-   `MLIRGenInterfaces.cpp` (475/932/954), all of `MLIRGenTypes.cpp`
-   (183/1474/1567/1876/1910/2001/2204/2210/2661/3401), and
-   `LLVMCodeHelper.h:452`.
-6. §5.2 (generic fallbacks) — triage a handful against existing passing
-   tests using §3's method before assuming any individual one is live.
-7. §5.3 (RTTI) — lowest priority from this (Windows) machine; the Linux
-   variants need a WSL/Linux build to exercise at all, and even the Windows
-   ones are deep in a code path (RTTI/exception typeinfo generation) that's
-   hard to reach without a specific class-hierarchy-plus-exception scenario.
+5. ~~The `MLIRGenImpl.h`/`MLIRGenInterfaces.cpp`/`MLIRGenTypes.cpp` cluster
+   (§5.1's last remaining block)~~ — **done, §5.1 is now fully closed**.
+   §4.10 closed the first 4 `MLIRGenImpl.h` sites (5330/6732/7314/7418);
+   §4.11 closed 3 more (8400/8426/9342, 2 of them real `import X = ...`
+   crashes); §4.12 (seventh pass) closed the rest: `MLIRGenImpl.h:8164/8382`,
+   `MLIRGenInterfaces.cpp`'s 2 remaining sites, all 10 of `MLIRGenTypes.cpp`,
+   `LLVMCodeHelper.h:452`, plus 2 bonus finds (a `getNameWithArguments`
+   `return nullptr;`-as-`std::string` UB crash, and `MLIRGenImpl.h:7907`'s
+   still-unpatched "confirmed dead" object-literal twin). 829/829, no
+   regressions.
+6. ~~§5.2 (generic fallbacks)~~ — **done, §5.2 is now fully closed** (§4.13,
+   eighth pass): all 12 files' sites fixed, several real crashes found
+   (array-to-`any[]` widening, `class`/`interface` heritage-clause type
+   errors, accessor `++`/`--`, generic zero-arg inference failure,
+   destructuring-assignment gaps) plus one genuine missing `Case`
+   (`MLIRTypeIterator.h`'s `NamespaceType`) found by type-list diffing
+   rather than a repro. 829/829, no regressions, checked after every file.
+7. **Next up**: §5.3 (RTTI) — the only remaining untriaged pool, and the
+   lowest priority in this document from the start: the Linux variants need
+   a WSL/Linux build to exercise at all, and even the Windows ones are deep
+   in a code path (RTTI/exception typeinfo generation) that's hard to reach
+   without a specific class-hierarchy-plus-exception scenario.
+8. The stray `MLIRTypeHelper.h:410/420/2108/2256-2257/2290/2307/2685/2709`
+   sites (§5.4) — confirmed not part of the `funcRef` family but never
+   actually read; cheap to fold into whichever pass next touches this file.
+9. Two bugs discovered but *not* fixed this pass, out of this document's
+   "not implemented" scope but worth a dedicated look: (a) an LLVM
+   `Casting.h` `dyn_cast on a non-existent value` assertion, reachable via
+   a computed class-property initializer (`class X { [key] = 42; }`) -
+   see §4.13's `MLIRGenClasses.cpp` writeup; (b) `MLIRGenExpressions.cpp`'s
+   delete-crash reproduced exactly once and then never again across several
+   retries with the identical source - if it resurfaces, start from §4.13's
+   honest note about it rather than assuming it's fixed.
 
 ## 7. Non-goals / out of scope
 

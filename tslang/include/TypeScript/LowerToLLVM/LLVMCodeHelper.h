@@ -448,8 +448,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
         }            
 
+        // every element type a const-folded array literal (ArrayAttr) can actually carry at this
+        // lowering stage is handled above (int/float go through the dense-attr path); tried a
+        // few plausible triggers (null elements, a mixed number|string union) and neither reached
+        // here - documented in docs/not-implemented-audit.md as likely dead rather than confirmed.
         LLVM_DEBUG(llvm::dbgs() << "type: "; originalElementType.dump(); llvm::dbgs() << "\n";);
-        llvm_unreachable("array literal is not implemented(1)");
+        op->emitError("array literal is not supported for this element type");
+        return mlir::Value();
     }
 
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, unsigned size,

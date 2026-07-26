@@ -588,6 +588,7 @@ namespace mlirgen
                 auto result = mlirGen(extendingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto baseType = V(result);
+                auto success = false;
                 mlir::TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
@@ -599,8 +600,27 @@ namespace mlirgen
                         {
                             baseClassInfos.push_back(classInfo);
                         }
+
+                        success = true;
                     })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) {
+                        // e.g. `class Sub extends SomeInterface {}` - real TypeScript rejects
+                        // extending an interface (only a class/constructor value is allowed
+                        // there) but this compiler doesn't enforce that rule at the heritage-
+                        // clause level, so it reaches here instead of being caught earlier.
+                        // Confirmed via repro. The original code had no failure-tracking at all
+                        // here (unconditionally `return mlir::success()` below regardless of
+                        // which case fired) - added `success` so this diagnostic isn't silently
+                        // swallowed the way it was on first attempt (emitError alone doesn't
+                        // fail this function; verified the fix actually surfaces as a compile
+                        // error, not just a silently-succeeding no-op).
+                        emitError(loc(extendingType)) << "class cannot extend type: " << to_print(type);
+                    });
+
+                if (!success)
+                {
+                    return mlir::failure();
+                }
             }
             return mlir::success();
         }
@@ -632,7 +652,16 @@ namespace mlirgen
                             interfaceInfos.push_back({interfaceInfo, -1, false});
                         }
                     })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) {
+                        // e.g. `class X implements SomeTypeAlias` where the alias resolves to an
+                        // object-shape TupleType (`type Shape = {area(): number}`) rather than a
+                        // declared InterfaceType - real, valid, and common TypeScript (implementing
+                        // a type-alias-described shape), confirmed via repro. This compiler's
+                        // `implements` handling only accepts a genuine InterfaceType - properly
+                        // supporting a TupleType target would need synthesizing an anonymous
+                        // interface from it, a separate, scoped feature. Fail cleanly for now.
+                        emitError(loc(implementingType)) << "class cannot implement type: " << to_print(type);
+                    });
             }
         }
 
@@ -1799,7 +1828,13 @@ genContext);
                         success = true;
                     }
                 })
-                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                .Default([&](auto type) {
+                    // same shape as mlirGenClassHeritageClause's `implements` branch above (a
+                    // type-alias-resolved TupleType target, not a genuine InterfaceType) - this
+                    // function builds the vtable definition for whatever `implements` already
+                    // registered, so it hits the same real gap from a different stage.
+                    emitError(loc(implementingType)) << "class cannot implement type: " << to_print(type);
+                });
 
             if (!success)
             {
@@ -2266,7 +2301,12 @@ genContext);
                 auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
                 if (memberNamePtr.empty())
                 {
-                    llvm_unreachable("not implemented");
+                    // e.g. a computed property name (`[expr] = value;`) reaches here with no
+                    // plain-identifier name; tried as a repro but it hits a different, earlier
+                    // bug first (an LLVM Casting.h assertion, undocumented/unfixed - see
+                    // docs/not-implemented-audit.md), so this specific branch's reachability is
+                    // unconfirmed. Fail cleanly rather than crash regardless.
+                    emitError(loc(propertyDeclaration), "computed property name is not supported here");
                     return mlir::failure();
                 }
 
@@ -2303,7 +2343,14 @@ genContext);
                     auto propertyNamePtr = MLIRHelper::getName(parameter->name, stringAllocator);
                     if (propertyNamePtr.empty())
                     {
-                        llvm_unreachable("not implemented");
+                        // e.g. a parameter property combined with a destructuring pattern
+                        // (`constructor(public {x, y}: T) {}`) - real TS rejects this combination
+                        // (TS2369) but this compiler doesn't enforce that, so the binding pattern
+                        // reaches here with no plain-identifier name. Tried as a repro but it
+                        // crashes earlier, in MLIRGenExpressions.cpp's expression dispatcher
+                        // (fixed separately this pass), so this specific branch's reachability
+                        // is unconfirmed. Fail cleanly rather than crash regardless.
+                        emitError(loc(parameter), "a parameter property cannot use a binding pattern");
                         return mlir::failure();
                     }
 

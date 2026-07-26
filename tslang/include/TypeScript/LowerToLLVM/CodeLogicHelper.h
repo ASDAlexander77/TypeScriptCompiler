@@ -238,7 +238,13 @@ class CodeLogicHelper
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // e.g. `obj.accessor++` where `accessor` is a get/set pair (confirmed via repro) -
+            // a plain field/variable increment loads through a LoadOp (handled above) and stores
+            // straight back to its reference, but an accessor has no reference to store to; it
+            // would need calling the setter with the incremented value instead. That's a real,
+            // separate feature (matches this function's own long-standing "finish it for field
+            // access" TODO) - fail cleanly instead of crashing.
+            mlir::emitError(loc, "'++'/'--' on a get/set accessor property is not supported");
         }
     }
 

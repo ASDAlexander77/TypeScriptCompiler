@@ -180,8 +180,10 @@ namespace mlirgen
             return getNeverType();
         }
 
-        llvm_unreachable("not implemented type declaration");
-        // return getAnyType();
+        // e.g. ImportType (`import("module").Foo`) - not every TypeNode kind TS's grammar
+        // allows is handled above; fail cleanly instead of crashing for whichever isn't.
+        emitError(loc(typeReferenceAST), "unsupported type");
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::getInferType(mlir::Location location, InferTypeNode inferTypeNodeAST, const GenContext &genContext)
@@ -247,7 +249,9 @@ namespace mlirgen
         auto name = MLIRHelper::getName(typeParameterDeclaration->name);
         if (name.empty())
         {
-            llvm_unreachable("not implemented");
+            // grammar requires an Identifier for a type parameter's name, so this should be
+            // unreachable; fail cleanly instead of crashing if that ever stops being true.
+            emitError(loc(typeParameterDeclaration), "type parameter name cannot be empty");
             return mlir::Type();
         }
 
@@ -273,8 +277,11 @@ namespace mlirgen
             auto val = V(result);
             return val.getType();
         }
-        
-        llvm_unreachable("not implemented");
+
+        // TS's EntityName grammar is Identifier | QualifiedName, both handled above; fail
+        // cleanly instead of crashing if this is ever reached some other way.
+        emitError(loc(node), "unsupported type name");
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
@@ -1469,10 +1476,12 @@ namespace mlirgen
         {
             addTypeProcessKey(litType);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }        
+        // else: keys isn't a literal or a union of literals (e.g. the general `string`/`number`
+        // type, as in `Record<string, V>`) - this builtin fallback can't enumerate an unbounded
+        // key set into fields. In practice this is dead: Record<K, T> is declared as a mapped
+        // type in lib.generics.ts and resolveGenericType resolves it before this fallback is
+        // ever reached (see docs/not-implemented-audit.md); kept as a no-op rather than a crash
+        // for the same reason PickTypes's analogous pickTypesProcessKey already no-ops here.
 
         return getTupleType(fields);
     }
@@ -1562,10 +1571,9 @@ namespace mlirgen
             {
                 return fieldInfo.id == litType.getValue();
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            // else: keys isn't a literal or a union of literals - same dead-in-practice shape as
+            // RecordType's addTypeProcessKey above (Omit<T,K> is itself a mapped-type alias in
+            // lib.generics.ts, resolved before this fallback is reached); no-op like its sibling.
 
             return false;
         };
@@ -1871,9 +1879,12 @@ namespace mlirgen
         {
             // TODO: finish it
             return getType(typeOperatorNode->type, genContext);
-        }        
+        }
 
-        llvm_unreachable("not implemented");
+        // unique/keyof/readonly are the only TypeOperator keywords TS's grammar allows, so this
+        // should be unreachable; fail cleanly instead of crashing if that ever stops being true.
+        emitError(loc(typeOperatorNode), "unsupported type operator");
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::getIndexedAccessTypeForArrayElement(mlir_ts::ArrayType type)
@@ -1891,7 +1902,7 @@ namespace mlirgen
         return getCharType();
     }
 
-    mlir::Type MLIRGenImpl::getIndexedAccessType(mlir::Type type, mlir::Type indexType, const GenContext &genContext)
+    mlir::Type MLIRGenImpl::getIndexedAccessType(mlir::Location location, mlir::Type type, mlir::Type indexType, const GenContext &genContext)
     {
         // in case of Generic Methods but not specialized yet
         if (auto namedGenericType = dyn_cast<mlir_ts::NamedGenericType>(type))
@@ -1906,13 +1917,18 @@ namespace mlirgen
 
         if (isa<mlir_ts::StringType>(indexType))
         {
+            // e.g. `type X = SomeObj[string]` - indexing by the general `string` type rather
+            // than a specific literal key. Real TS only allows this when the indexed type has
+            // a string index signature; this compiler's indexed-access resolution only handles
+            // literal keys. Fail cleanly instead of crashing.
             LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted, index type should not be 'string' it should be literal type \n";);
-            llvm_unreachable("not implemented");
+            emitError(location, "indexing a type by 'string' is not supported; use a literal key");
+            return mlir::Type();
         }
 
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
-            return getIndexedAccessType(literalType.getElementType(), indexType, genContext);
+            return getIndexedAccessType(location, literalType.getElementType(), indexType, genContext);
         }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
@@ -1920,7 +1936,7 @@ namespace mlirgen
             SmallVector<mlir::Type> types;
             for (auto subType : unionType)
             {
-                auto typeByKey = getIndexedAccessType(subType, indexType, genContext);
+                auto typeByKey = getIndexedAccessType(location, subType, indexType, genContext);
                 if (!typeByKey)
                 {
                     return mlir::Type();
@@ -1930,14 +1946,14 @@ namespace mlirgen
             }
 
             return getUnionType(types);
-        }        
+        }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(indexType))
         {
             SmallVector<mlir::Type> resolvedTypes;
             for (auto itemType : unionType.getTypes())
             {
-                auto resType = getIndexedAccessType(type, itemType, genContext);
+                auto resType = getIndexedAccessType(location, type, itemType, genContext);
                 if (!resType)
                 {
                     return mlir::Type();
@@ -1998,8 +2014,8 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : \n\t" << type << " \n\tindex " << indexType << " is not implemeneted \n";);
 
-        llvm_unreachable("not implemented");
-        //return mlir::Type();
+        emitError(location) << "indexed access is not supported on type: " << to_print(type);
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
@@ -2016,7 +2032,7 @@ namespace mlirgen
             return indexType;
         }
 
-        return getIndexedAccessType(type, indexType, genContext);
+        return getIndexedAccessType(loc(indexedAccessTypeNode), type, indexType, genContext);
     }
 
     mlir::Type MLIRGenImpl::getTemplateLiteralType(TemplateLiteralTypeNode templateLiteralTypeNode, const GenContext &genContext)
@@ -2201,13 +2217,18 @@ namespace mlirgen
                         }
                         else
                         {
-                            llvm_unreachable("not implemented");
+                            // remapped key (`as` clause) for this member of the union isn't a
+                            // literal - can't turn it into a field name; skip this member rather
+                            // than crash, same as the "filtering out" cases above.
+                            emitError(loc(mappedTypeNode)) << "mapped type key remapping produced a non-literal name";
                         }
                     }
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    // nameType/type shape mismatch (one is a union, the other isn't) for a
+                    // remapped (`as`) mapped type key - not supported, skip rather than crash.
+                    emitError(loc(mappedTypeNode)) << "unsupported mapped type key remapping";
                 }
             }
         };
@@ -2656,9 +2677,20 @@ namespace mlirgen
 
                 types.push_back({MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()), type, false, mlir_ts::AccessLevel::Public});
             }
+            else if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
+            {
+                // unlike InterfaceDeclaration (which has its own accessors/vtable machinery,
+                // see MLIRGenInterfaces.cpp), a TypeLiteral resolves to a plain value TupleType -
+                // there's no getter/setter dispatch representation to plug an accessor into here.
+                // A real fix needs the same kind of accessor support TupleType field access
+                // doesn't have at all yet; out of scope for a crash-to-diagnostic fix.
+                emitError(loc(typeItem), "get/set accessors in a type literal are not supported");
+                return mlir::failure();
+            }
             else
             {
-                llvm_unreachable("not implemented");
+                emitError(loc(typeItem), "unsupported type literal member");
+                return mlir::failure();
             }
         }
 
@@ -3398,7 +3430,8 @@ namespace mlirgen
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! value of literal: " << value << "\n";);
 
-        llvm_unreachable("not implemented");
+        emitError(loc(literalTypeNode), "unsupported literal type");
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::getOptionalType(OptionalTypeNode optionalTypeNode, const GenContext &genContext)

@@ -178,7 +178,15 @@ namespace mlirgen
             return mlir::success();
         }
 
-        llvm_unreachable("unknown expression");
+        // e.g. a constructor parameter property combined with a destructuring pattern
+        // (`constructor(public {x, y}: T) {}`) - real TypeScript rejects that combination
+        // (TS2369, parameter properties can't use a binding pattern) but this compiler doesn't
+        // enforce that check, so the pattern's ObjectBindingPattern/ArrayBindingPattern name node
+        // (not an Expression kind at all) ends up passed to this dispatcher. Fail cleanly instead
+        // of crashing rather than trying to guess every non-Expression node kind that could land
+        // here.
+        emitError(loc(expressionAST)) << "unsupported expression";
+        return ValueOrLogicalResult(mlir::failure());
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
@@ -527,7 +535,10 @@ namespace mlirgen
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
-            llvm_unreachable("not implemented");
+            // `+ - ~ ! ++ --` are the complete set of TS prefix-unary operators, all handled
+            // above; fail cleanly instead of crashing if that ever stops being true.
+            emitError(location, "unsupported prefix unary operator");
+            return ValueOrLogicalResult(mlir::failure());
         }
     }
 
@@ -549,7 +560,10 @@ namespace mlirgen
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
                                                              builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
-            llvm_unreachable("not implemented");
+            // `++ --` are the complete set of TS postfix-unary operators, both handled above;
+            // fail cleanly instead of crashing if that ever stops being true.
+            emitError(location, "unsupported postfix unary operator");
+            return ValueOrLogicalResult(mlir::failure());
         }
     }
 
@@ -985,7 +999,15 @@ namespace mlirgen
             }
             else
             {
-                llvm_unreachable("not implemented");
+                // e.g. `delete obj.a` where `a` is a plain, non-optional field of a value-tuple
+                // object literal - confirmed via repro. Real TypeScript itself rejects this
+                // (TS2790: "The operand of a 'delete' operator must be optional"), since deleting
+                // a required property doesn't type-check; this compiler doesn't enforce that
+                // check, so it fell through to here instead. There's also no way to actually
+                // "delete" a field from this compiler's fixed-layout value tuple regardless
+                // (unlike a real heap object) - fail cleanly rather than crash.
+                emitError(location, "the operand of a 'delete' operator must be optional");
+                return mlir::failure();
             }
         }
 

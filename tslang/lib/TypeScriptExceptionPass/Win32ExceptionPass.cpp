@@ -581,7 +581,11 @@ struct Win32ExceptionPassCode
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // every CatchRegion gets exactly one of catchPad/cleanupPad set, at the same site
+            // that first identifies it (both branches above set one or the other, never
+            // neither) - same invariant this file already asserts elsewhere (lines 393, 426)
+            // rather than crashing via llvm_unreachable; match that existing convention.
+            assert(catchRegion.catchPad || catchRegion.cleanupPad);
         }
 
         return opBundle;

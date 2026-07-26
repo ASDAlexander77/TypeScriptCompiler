@@ -333,30 +333,41 @@ class CastLogicHelper
                 return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
 
+            // array-to-string (e.g. `<string>numberArray`, real JS array.toString() semantics)
+            // confirmed to already work end-to-end via a JIT repro without ever reaching here -
+            // it must be resolved by a dedicated MLIR-level pass/pattern before this generic LLVM-
+            // lowering cast() helper runs, matching this branch's own "must be processed at MLIR
+            // pass" comment. Fail cleanly instead of crashing on the off chance some other path
+            // still reaches this with an unconverted array.
             if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(inType))
             {
-                llvm_unreachable("not implemented, must be processed at MLIR pass");
+                emitError(loc) << "cast from " << inType << " to " << resType << " is not supported";
                 return mlir::Value();
             }
 
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
             {
-                llvm_unreachable("not implemented, must be processed at MLIR pass");
+                emitError(loc) << "cast from " << inType << " to " << resType << " is not supported";
                 return mlir::Value();
             }
         }
 
         if (auto interfaceTypeRes = dyn_cast<mlir_ts::InterfaceType>(resType))
         {
+            // tuple-to-interface casting (`<SomeInterface>tupleValue`) confirmed to already work
+            // end-to-end via a JIT repro without reaching here - like the array-to-string case
+            // above, it must be resolved by a dedicated MLIR-level pass (interface construction/
+            // vtable wiring) before this generic cast() helper runs. Fail cleanly instead of
+            // crashing on the off chance some other path still reaches this unconverted.
             if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
-                llvm_unreachable("not implemented, must be processed at MLIR pass");
+                emitError(loc) << "cast from " << inType << " to " << resType << " is not supported";
                 return mlir::Value();
             }
 
             if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
-                llvm_unreachable("not implemented, must be processed at MLIR pass");
+                emitError(loc) << "cast from " << inType << " to " << resType << " is not supported";
                 return mlir::Value();
             }
         }
@@ -456,8 +467,14 @@ class CastLogicHelper
                 }
                 else
                 {
+                    // truthy-checking a union type that needs an RTTI tag (e.g. `if (x)` where
+                    // `x: number | {a: number}`) confirmed to already fail cleanly one stage
+                    // earlier - MLIRGen's own union-to-boolean cast dispatch (see
+                    // MLIRGenCast.cpp's castFromUnion, §4.9 of docs/not-implemented-audit.md)
+                    // rejects it before this LLVM-lowering helper ever runs. Fail cleanly here
+                    // too rather than crash, in case some other path still reaches this.
                     // TODO: finish it, union type has RTTI field, test it first
-                    llvm_unreachable("not implemented");
+                    emitError(loc) << "cast from " << unionType << " to " << boolType << " is not supported";
                     return mlir::Value();
                 }
             }
@@ -484,7 +501,11 @@ class CastLogicHelper
 
             LLVM_DEBUG(llvm::dbgs() << "\n\t opt cast: " << inType << "->" << resType << "\n";);
 
-            llvm_unreachable("not implemented, must be processed at MLIR pass");
+            // casting an optional to something other than its own element type: tried widening
+            // to a broader union and casting through `any` as plausible triggers, neither
+            // reached here (both resolved earlier in the pipeline) - matches this branch's own
+            // "must be processed at MLIR pass" comment. Fail cleanly rather than crash.
+            emitError(loc) << "cast from " << inType << " to " << resType << " is not supported";
             return mlir::Value();
         }
 
@@ -997,9 +1018,16 @@ class CastLogicHelper
         }        
         else
         {
+            // e.g. widening `number[]` to an `any[]` parameter: the source is itself a
+            // (non-const, non-null, non-undefined) dynamic ArrayType, which this function never
+            // handled - a real, easily-reachable gap (confirmed via a plain array-widening call),
+            // not dead code. Properly supporting it needs a runtime per-element conversion loop
+            // (`number` and boxed `any` aren't bit-compatible), which is a separate, scoped
+            // feature - fail cleanly instead of crashing for now.
             LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " as type: " << type << " to type: " << arrayType
                                     << "\n";);
-            llvm_unreachable("not implemented");
+            emitError(loc) << "cast from array type " << type << " to array type " << arrayType << " is not supported";
+            return mlir::Value();
         }
 
         auto ptrType = th.getPtrType();

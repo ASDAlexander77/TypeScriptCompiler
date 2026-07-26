@@ -140,7 +140,11 @@ class OptionalLogicHelper
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftUndefFlagValue, rightUndefFlagValue);
                 break;
             default:
-                llvm_unreachable("not implemented");
+                // opCmpCode's only caller (LowerToLLVM.cpp's LogicalBinaryOpLowering) switches
+                // on the exact same 8 comparison SyntaxKinds this switch handles above and
+                // never passes anything else; fail cleanly instead of crashing if that ever
+                // stops being true.
+                mlir::emitError(loc, "unsupported comparison operator for optional type");
             }
 
             return undefFlagCmpResult;
@@ -210,7 +214,8 @@ class OptionalLogicHelper
                 rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftUndefFlagValue, rightUndefFlagValue);
             break;
         default:
-            llvm_unreachable("not implemented");
+            // same call-site-guaranteed shape as the sibling switch above.
+            mlir::emitError(loc, "unsupported comparison operator for optional type");
         }
 
         return undefFlagCmpResult;

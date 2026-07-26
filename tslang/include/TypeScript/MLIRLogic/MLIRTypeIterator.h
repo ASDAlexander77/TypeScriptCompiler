@@ -383,10 +383,18 @@ class MLIRTypeIterator
                           })                          
                           .Case<mlir_ts::NullType>([&](auto) {
                               return true;
-                          })                                                 
+                          })
                           .Case<mlir_ts::BigIntType>([&](auto) {
                               return true;
-                          })                                                 
+                          })
+                          .Case<mlir_ts::NamespaceType>([&](auto) {
+                              // a leaf type (just a name, no nested mlir::Type to recurse into) -
+                              // was missing from this switch entirely (confirmed via grep against
+                              // TypeScriptTypes.td's full type list), crashing whenever a
+                              // namespace-qualified generic reference (e.g. `NS.Box<T>`) reached
+                              // isGenericType/hasInferType/etc.
+                              return true;
+                          })
                           .Case<mlir::NoneType>([&](auto) {
                               return true;
                           })                          
@@ -399,10 +407,13 @@ class MLIRTypeIterator
                           .Case<mlir::IndexType>([&](auto) {
                               return true;
                           })     
-                          .Default([](mlir::Type t) { 
+                          .Default([](mlir::Type t) {
+                            // this switch is meant to be exhaustive over every mlir_ts type (see
+                            // the NamespaceType case just added above, confirmed missing via a
+                            // grep against TypeScriptTypes.td's full type list) - fail cleanly
+                            // rather than crash if some other type still isn't covered.
                             LLVM_DEBUG(llvm::dbgs() << "\n!! Type Iteration is not implemented for : " << t << "\n";);
-                            llvm_unreachable("not implemented");
-                            return true; 
+                            return true;
                           });
 
         return result;
