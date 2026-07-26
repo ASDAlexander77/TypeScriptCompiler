@@ -298,9 +298,13 @@ class MLIRPrinter
                 StringRef strRef(Str.data(), Str.size());
                 out << strRef.str().c_str();
             })            
-            .Default([](mlir::Attribute a) { 
+            .Default([&](mlir::Attribute a) {
+                // e.g. mlir::BoolAttr (a distinct attribute kind from IntegerAttr in this
+                // codebase, per MLIRCodeLogic.h's own separate BoolAttr/IntegerAttr cases) isn't
+                // handled above; fall back to the attribute's own default printer instead of
+                // crashing, matching this class's sibling printType's Default a few lines below.
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << a << "\n";);
-                llvm_unreachable("not implemented");
+                out << a;
             });
     }
 

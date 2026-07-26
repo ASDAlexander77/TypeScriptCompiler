@@ -1215,7 +1215,17 @@ class MLIRPropertyAccessCodeLogic
                 [&](auto floatAttr) { typeFromAttr = mlir_ts::NumberType::get(builder.getContext()); })
             .Case<mlir::BoolAttr>(
                 [&](auto boolAttr) { typeFromAttr = mlir_ts::BooleanType::get(builder.getContext()); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                // TS enum members can only be string or numeric literals (string/int/float
+                // attrs cover both, bool is an extra defensive case); fail cleanly instead of
+                // crashing if some other constant attribute kind is ever produced here.
+                emitError(location, "unsupported enum member value type");
+            });
+
+        if (!typeFromAttr)
+        {
+            return mlir::Value();
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << propName << " value attr: " << valueAttr << "\n");
 
@@ -1657,7 +1667,12 @@ class MLIRPropertyAccessCodeLogic
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // property access through a RefType whose element isn't a Tuple/ConstTuple; this
+            // function's only caller (MLIRGenAccessCall.cpp's property-access TypeSwitch) only
+            // reaches the RefType Case for values shaped like a mutable tuple local. Fail
+            // cleanly instead of crashing if some other RefType element shape reaches here.
+            emitError(location) << "property access on reference to type '" << refType.getElementType() << "' is not supported";
+            return mlir::Value();
         }
     }
 
@@ -1674,10 +1689,14 @@ class MLIRPropertyAccessCodeLogic
         else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
         {
             return RefLogic(objectStorageType);
-        }        
+        }
         else
         {
-            llvm_unreachable("not implemented");
+            // a boxed ObjectType's storage type is always synthesized as one of the three cases
+            // above (see docs/object-literal-boxing-design.md) - fail cleanly instead of
+            // crashing if that ever stops being true.
+            emitError(location) << "property access on object storage type '" << objectType.getStorageType() << "' is not supported";
+            return mlir::Value();
         }
     }
 
@@ -1719,7 +1738,10 @@ class MLIRPropertyAccessCodeLogic
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // a ClassType's storage type is always a ClassStorageType by construction; fail
+            // cleanly instead of crashing if that ever stops being true.
+            emitError(location) << "unsupported class storage type: " << classType.getStorageType();
+            return mlir::Value();
         }
     }
 

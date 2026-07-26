@@ -3200,7 +3200,10 @@ class MLIRGenImpl
                 return;
             }
 
-            llvm_unreachable("not implemented");
+            // previousConditionOrFirstBranchOp is only ever assigned a CondBranchOp or BranchOp
+            // (both cases a few lines below), both handled above; fail cleanly instead of
+            // crashing if that ever stops being true.
+            emitError(location, "unsupported switch-case jump operation");
         };
 
         // condition
@@ -3474,7 +3477,11 @@ class MLIRGenImpl
                         });
                 break;
             default:
-                llvm_unreachable("not implemented");
+                // this function's only caller (MLIRGenExpressions.cpp's PrefixUnaryExpression
+                // constant-folding fast path) guards the call with the exact same 4-operator
+                // check (+ - ~ !) as the cases above; fail cleanly instead of crashing if that
+                // guard and this switch ever drift apart.
+                emitError(location, "unsupported prefix unary operator on a constant");
         }
 
         return value;
@@ -3800,7 +3807,12 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    // isDynamicImport (@dllimport(path) with an argument) is itself an untested
+                    // feature path with zero coverage anywhere in the test suite (see §4.10 of
+                    // docs/not-implemented-audit.md) - this crash is nested one level deeper
+                    // inside that already-untested path. Fail cleanly instead of crashing.
+                    emitError(location, "unsupported RTTI value type for dynamic import");
+                    return mlir::Value();
                 }
             }
 
@@ -4392,6 +4404,7 @@ class MLIRGenImpl
         LLVM_DEBUG(dbgs() << "\n!! right expr.: " << rightExpressionValue << "\n";);
 
         auto isTuple = false;
+        auto hasUnsupportedType = false;
         mlir::Type elementType;
         mlir_ts::TupleType tupleType;
         mlir::TypeSwitch<mlir::Type>(rightExpressionValue.getType())
@@ -4399,7 +4412,21 @@ class MLIRGenImpl
             .Case<mlir_ts::ConstArrayType>([&](auto constArrayType) { elementType = constArrayType.getElementType(); })
             .Case<mlir_ts::TupleType>([&](auto tupleType_) { isTuple = true; tupleType = tupleType_; })
             .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { isTuple = true; tupleType = mth.convertConstTupleTypeToTupleType(constTupleType); })
-            .Default([](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                // e.g. `[a, b] = "hi"` (array-destructuring from a string) - confirmed via repro.
+                // Real JS supports destructuring any iterable, but this compiler's destructuring-
+                // assignment codegen only positionally indexes Array/ConstArray/Tuple/ConstTuple;
+                // supporting String (and other iterables) would need the same per-character/
+                // iterator-protocol handling `for...of` already has elsewhere, which this
+                // assignment path never gained - a real, scoped gap, not dead code.
+                hasUnsupportedType = true;
+                emitError(location) << "array destructuring assignment is not supported for type: " << to_print(type);
+            });
+
+        if (hasUnsupportedType)
+        {
+            return mlir::failure();
+        }
 
         if (!isTuple)
         {
@@ -4515,7 +4542,14 @@ class MLIRGenImpl
             }
             else
             {
-                llvm_unreachable("not implemented");
+                // e.g. `({ a, ...rest } = obj)` - rest-destructuring in an object-destructuring
+                // assignment. Confirmed via repro. A real, genuinely missing feature (same shape
+                // as §4.2's array/union object-literal spread gap): synthesizing `rest` needs
+                // enumerating every field of `obj` not already destructured elsewhere in this
+                // pattern, which this function never implemented. Fail cleanly instead of
+                // crashing rather than attempting that here.
+                emitError(location, "rest destructuring in an object destructuring assignment is not supported");
+                return mlir::failure();
             }
         }
 
@@ -6384,10 +6418,15 @@ class MLIRGenImpl
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { 
                         fields = tupleType.getFields(); 
                     })
-                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { 
-                        fields = constTupleType.getFields(); 
+                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) {
+                        fields = constTupleType.getFields();
                     })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) {
+                        // a custom iterator whose next() return type isn't a Tuple/ConstTuple
+                        // (e.g. `next(): any`, confirmed via repro) - not the well-formed iterator
+                        // protocol shape this function checks for; treat as "not an iterator"
+                        // rather than crash, matching this function's own bool contract.
+                    });
 
                 auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
                 if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
@@ -6395,8 +6434,8 @@ class MLIRGenImpl
                     return true;
                 }
             }
-        }     
-        
+        }
+
         return false;
     }
 
@@ -7094,7 +7133,12 @@ class MLIRGenImpl
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { fields = constTupleType.getFields(); })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) {
+                        // a custom iterator whose next() return type isn't a Tuple/ConstTuple
+                        // (e.g. `next(): any`) - same shape as hasIterator's identical TypeSwitch
+                        // above; `fields` just stays empty, handled by the "no 'value' field"
+                        // branch below rather than crashing here too.
+                    });
 
                 auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
                 if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
@@ -7108,12 +7152,16 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    // either the next() return type has no 'value' field, or (per the Default
+                    // case above) wasn't a Tuple/ConstTuple at all - a malformed/non-standard
+                    // iterator protocol implementation. Fail cleanly instead of crashing.
+                    emitError(location, "spread source's iterator does not implement the expected 'next(): {value, done}' shape");
+                    return mlir::failure();
                 }
 
-                return mlir::success();    
+                return mlir::success();
             }
-        }                             
+        }
 
         // DO NOT PUT before xxx.next() property otherwise ""..."" for Iterator will not work
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
@@ -7904,7 +7952,12 @@ class MLIRGenImpl
             }
             else
             {
-                llvm_unreachable("object literal is not implemented(1)");
+                // ObjectLiteralElementLike's grammar (PropertyAssignment |
+                // ShorthandPropertyAssignment | SpreadAssignment | MethodDeclaration |
+                // GetAccessor | SetAccessor) is fully handled above; fail cleanly instead of
+                // crashing if that ever stops being true.
+                emitError(location, "unsupported object literal member");
+                return ValueOrLogicalResult(mlir::failure());
             }
 
             assert(genContext.allowPartialResolve || itemValue);
@@ -8193,7 +8246,8 @@ class MLIRGenImpl
         }
         else
         {
-            llvm_unreachable("not implemented");
+            emitError(loc(typeParameter), "type parameter name cannot be empty");
+            return std::make_shared<TypeParameterDOM>("");
         }
     }
 
@@ -8411,7 +8465,7 @@ class MLIRGenImpl
         }
         else
         {
-            llvm_unreachable("not implemented");
+            emitError(loc(typeAliasDeclarationAST), "type alias name cannot be empty");
         }
 
         return mlir::failure();
@@ -9271,14 +9325,18 @@ class MLIRGenImpl
         if (name.empty())
         {
             auto [attr, result] = getNameFromComputedPropertyName(declarationAST->name, genContext);
-            if (mlir::failed(result))
+            // getNameFromComputedPropertyName already emits its own diagnostic on failure (or
+            // when attr isn't a name-shaped value below); leave `name` empty either way and
+            // fall through to the anonymous-name synthesis below rather than returning early -
+            // this used to `return nullptr;` here, which as a `std::string` return is UB
+            // (constructs a string from a null `const char*`, crashing in strlen) and also
+            // skipped the fallback every other empty-name case in this function relies on.
+            if (mlir::succeeded(result))
             {
-                return nullptr;
-            }
-
-            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(attr))
-            {
-                name = strAttr.getValue();
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(attr))
+                {
+                    name = strAttr.getValue();
+                }
             }
         }
 
@@ -9865,7 +9923,7 @@ class MLIRGenImpl
     }
 
     // TODO: sync it with mth.getFields
-    mlir::Type getIndexedAccessType(mlir::Type type, mlir::Type indexType, const GenContext &genContext);
+    mlir::Type getIndexedAccessType(mlir::Location location, mlir::Type type, mlir::Type indexType, const GenContext &genContext);
 
     mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext);
 

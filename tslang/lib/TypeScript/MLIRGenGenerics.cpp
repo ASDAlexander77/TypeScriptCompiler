@@ -421,7 +421,13 @@ namespace mlirgen
                                                             recieverType, discoverReturnType, genContext);
         }
 
-        llvm_unreachable("not implemented");
+        // a plausible trigger (a generic function assigned to a variable, then called through
+        // that variable) hits a different, earlier "can't instantiate specialized function"
+        // error instead of reaching here - this specific shape (functionRefValue resolving to
+        // neither a CreateBoundFunctionOp-wrapped nor a bare SymbolRefOp) remains unconfirmed.
+        // Fail cleanly instead of crashing.
+        emitError(location, "unsupported generic function reference");
+        return mlir::Type();
     }
 
     mlir::Type MLIRGenImpl::instantiateSpecializedFunctionTypeHelper(mlir::Location location, FunctionLikeDeclarationBase funcDecl,
@@ -539,7 +545,12 @@ namespace mlirgen
                         functionRefValue.setType(
                             mlir_ts::HybridFunctionType::get(builder.getContext(), funcType));
                     })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) {
+                        // a CreateBoundFunctionOp's result can only ever be BoundFunctionType or
+                        // HybridFunctionType by construction, both handled above; fail cleanly
+                        // instead of crashing if that ever stops being true.
+                        emitError(location) << "unsupported bound function type: " << to_print(type);
+                    });
             }
 
             symbolOp->removeAttr(GENERIC_ATTR_NAME);
@@ -908,7 +919,12 @@ namespace mlirgen
             }
             else
             {
-                llvm_unreachable("not implemented");
+                // e.g. `function foo<T>(): T { ... }` called as `foo()` - no explicit type
+                // argument and no parameters/call operands to infer `T` from. Confirmed via
+                // repro. Real TS rejects this too ("type argument cannot be inferred from
+                // usage"); fail cleanly here instead of crashing.
+                emitError(location) << "generic type arguments for '" << name << "' cannot be inferred";
+                return {mlir::failure(), mlir_ts::FunctionType(), ""};
             }
 
             // we need to wide all types when initializing function
@@ -1339,7 +1355,12 @@ namespace mlirgen
             }
             else
             {
-                llvm_unreachable("not implemented");
+                // tried `super.genericMethod(...)` as a plausible trigger (a generic method
+                // reference that isn't a plain SymbolRefOp/ThisSymbolRefOp) - it resolves via
+                // SymbolRefOp too and didn't reach here, so this branch's reachability is
+                // unconfirmed. Fail cleanly instead of crashing regardless.
+                emitError(location, "unsupported generic function reference");
+                return mlir::failure();
             }
 
             auto [result, funcType, funcSymbolName] =

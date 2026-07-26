@@ -648,7 +648,26 @@ namespace mlirgen
                                 mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional, orderWeight));
                     }
                 })
-                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                .Default([&](auto type) {
+                    // e.g. `interface X extends SomeClass {}` (a real TS pattern - extending
+                    // an interface from a class's instance shape) or any other fields-bearing
+                    // type the two Cases above don't special-case (ConstTupleType, ObjectType,
+                    // ...): mth.getFields already knows how to pull fields out of all of these,
+                    // reuse it instead of hand-rolling another per-type Case.
+                    llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+                    if (mlir::succeeded(mth.getFields(type, destTupleFields)))
+                    {
+                        orderWeight++;
+                        success = true;
+                        for (auto field : destTupleFields)
+                            success &= mlir::succeeded(
+                                mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional, orderWeight));
+                    }
+                    else
+                    {
+                        emitError(loc(extendsType)) << "interface cannot extend type: " << to_print(type);
+                    }
+                });
 
             if (!success)
             {
@@ -952,7 +971,8 @@ namespace mlirgen
             }
             else
             {
-                llvm_unreachable("not implemented");
+                emitError(loc(methodSignature->name), "computed method/property name must be a string");
+                return {"", false};
             }
         }
 
