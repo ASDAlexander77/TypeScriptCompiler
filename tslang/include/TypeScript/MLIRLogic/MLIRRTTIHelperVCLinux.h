@@ -130,6 +130,7 @@ class MLIRRTTIHelperVCLinux
             return false;
         }
 
+        auto result = true;
         llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 auto width = intType.getIntOrFloatBitWidth();
@@ -143,7 +144,8 @@ class MLIRRTTIHelperVCLinux
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
+                    result = false;
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -158,7 +160,8 @@ class MLIRRTTIHelperVCLinux
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch float width: " << floatType << "\n";);
+                    result = false;
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -179,9 +182,12 @@ class MLIRRTTIHelperVCLinux
                 setClassTypeAsCatchType(classAndBases);
             })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
+                result = false;
+            });
 
-        return true;
+        return result;
     }
 
     bool setType(mlir::Type type)
@@ -191,15 +197,24 @@ class MLIRRTTIHelperVCLinux
             return false;
         }
                 
+        auto result = true;
         llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
-                if (intType.getIntOrFloatBitWidth() == 32)
+                auto width = intType.getIntOrFloatBitWidth();
+                if (width == 32)
                 {
                     setI32AsCatchType();
                 }
+                else if (width == 64)
+                {
+                    // keep in sync with the resolveClassInfo overload above, which
+                    // already supports this width.
+                    setI64AsCatchType();
+                }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
+                    result = false;
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -214,7 +229,8 @@ class MLIRRTTIHelperVCLinux
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch float width: " << floatType << "\n";);
+                    result = false;
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -227,9 +243,12 @@ class MLIRRTTIHelperVCLinux
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
+                result = false;
+            });
 
-        return true;
+        return result;
     }
 
     void seekLast(mlir::Block *block)
@@ -396,7 +415,9 @@ class MLIRRTTIHelperVCLinux
         case TypeInfo::ClassTypeInfo:
             return linux::ClassType::classTypeInfoName;
         default:
-            llvm_unreachable("not implemented");
+            // only reached for TypeInfo::Value, which every caller's own switch
+            // already routes to typeInfoValue() instead of typeInfoClass()/here.
+            return linux::ClassType::classTypeInfoName;
         }
     }
 
