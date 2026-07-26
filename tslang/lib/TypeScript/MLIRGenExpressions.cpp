@@ -509,8 +509,12 @@ namespace mlirgen
             }
         case SyntaxKind::TildeToken:
             {
+                // `~` always yields a 32-bit int result per JS ToInt32 semantics - a raw
+                // float type (e.g. `f64`/`f32`) satisfies isIntOrIndexOrFloat() just like an
+                // int does, but still needs truncating to i32 the same way mlir_ts::NumberType
+                // already does below; only a value that's already int/index can skip the cast.
                 auto numberValue = expressionValue;
-                if (!expressionValue.getType().isIntOrIndexOrFloat())
+                if (!expressionValue.getType().isIntOrIndex())
                 {
                     CAST(numberValue, location, builder.getI32Type(), expressionValue, genContext);
                 }

@@ -722,7 +722,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       }
       else
       {
-          llvm_unreachable("not implemented");
+          // every current caller of this builder already guarantees callee is one
+          // of the two cases above (or passes an explicit TypeRange via the other
+          // builder instead); leave results empty rather than crash if that ever
+          // stops being true.
       }
     }]>,
     OpBuilder<(ins "TypeRange":$results, "Value":$callee,
