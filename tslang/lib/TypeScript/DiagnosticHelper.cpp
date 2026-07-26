@@ -99,9 +99,10 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
                 os << ':' << ' ';
             }
         })        
-        .Default([&](auto loc) { 
+        .Default([&](auto loc) {
+            // every builtin mlir::Location kind is handled above and this dialect
+            // never registers a custom one, so this is defensive only.
             LLVM_DEBUG(llvm::dbgs() << "not impl location type: " << loc << "\n";);
-            llvm_unreachable("not implemented"); 
         });
 }
 

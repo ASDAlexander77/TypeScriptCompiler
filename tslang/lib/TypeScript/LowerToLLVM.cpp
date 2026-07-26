@@ -686,7 +686,10 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
                                                                   compareResult.getResult(), const0);
                     break;
                 default:
-                    llvm_unreachable("not implemented");
+                    // op's opcode always comes from LogicalBinaryOp, whose only construction
+                    // sites (traced across the whole codebase) use one of the 8 relational
+                    // operators handled above.
+                    op->emitError("unsupported string comparison operator");
                     return mlir::Value();
                 }
 
@@ -724,7 +727,10 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
                         rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftPtrValue, rightPtrValue);
                     break;
                 default:
-                    llvm_unreachable("not implemented");
+                    // op's opcode always comes from LogicalBinaryOp, whose only construction
+                    // sites (traced across the whole codebase) use one of the 8 relational
+                    // operators handled above.
+                    op->emitError("unsupported string comparison operator");
                     return mlir::Value();
                 }
 
@@ -802,7 +808,10 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                                                                   compareResult.getResult(), const0);
                     break;
                 default:
-                    llvm_unreachable("not implemented");
+                    // code always comes from LogicalBinaryOp's opcode, whose only construction
+                    // sites (traced across the whole codebase) use one of the 8 relational
+                    // operators handled above.
+                    op->emitError("unsupported 'any' comparison operator");
                     return mlir::Value();
                 }
 
@@ -3038,7 +3047,8 @@ LogicalResult NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value o
     }
     else
     {
-        llvm_unreachable("not implemented");
+        unaryOp->emitError("unary '-'/'+' is not supported for this operand type");
+        return mlir::failure();
     }
 
     return mlir::failure();
@@ -3067,7 +3077,8 @@ LogicalResult NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value ope
     }
     else
     {
-        llvm_unreachable("not implemented");
+        unaryOp->emitError("unary '!'/'~' is not supported for this operand type");
+        return mlir::failure();
     }
 
     return mlir::failure();
@@ -3095,7 +3106,10 @@ struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnary
         case SyntaxKind::TildeToken:
             return NegativeOpBin(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
         default:
-            llvm_unreachable("not implemented");
+            // `+ - ~ !` are the complete set of opcodes MLIRGen ever constructs this op
+            // with (mlirGen(PrefixUnaryExpression) routes `++`/`--` to a different op,
+            // PrefixUnaryOp, and rejects any other operator before reaching codegen).
+            arithmeticUnaryOp->emitError("unsupported unary operator");
             return failure();
         }
     }
@@ -3187,7 +3201,11 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
                                                                            transformed.getOperand2(), rewriter);
 
         default:
-            llvm_unreachable("not implemented");
+            // every ArithmeticBinaryOp construction site (MLIRGenExpressions.cpp's
+            // binaryOpLogic default branch, plus a handful of synthetic-codegen sites in
+            // MLIRGenClasses.cpp/MLIRGenVariables.cpp/MLIRGenImpl.h) only ever uses one of
+            // the opcodes already handled above.
+            arithmeticBinaryOp->emitError("unsupported arithmetic operator");
             return failure();
         }
     }
@@ -3297,7 +3315,9 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 
             break;
         default:
-            llvm_unreachable("not implemented");
+            // every LogicalBinaryOp construction site (traced across the whole codebase)
+            // only ever uses one of the 8 relational operators handled above.
+            logicalBinaryOp->emitError("unsupported relational operator");
             return failure();
         }
 
@@ -3464,7 +3484,10 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
         if (!loadedValue)
         {
-            llvm_unreachable("not implemented");
+            // LoadOp's `reference` operand is TableGen-constrained to
+            // TypeScript_RefOrBoundRefOrValueRef (RefType|BoundRefType|ValueRefType),
+            // enforced by the verifier - every case is handled above.
+            loadOp->emitError("unsupported reference type in load");
             return failure();
         }
 
@@ -4810,7 +4833,11 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // every VirtualSymbolRefOp construction site (traced across the whole
+            // codebase) only ever passes an explicit RefType or a FunctionType-typed
+            // FunctionEntry/MethodInfo field, despite the op's TableGen result-type
+            // constraint (TypeScript_AnyRefOrCallable) technically allowing more.
+            virtualSymbolRefOp->emitError("unsupported virtual symbol reference type");
             return failure();
         }
 
@@ -4850,7 +4877,10 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
         }
         else
         {
-            llvm_unreachable("not implemented");
+            // the sole construction site always passes getBoundFunctionType(...)'s
+            // (strongly BoundFunctionType-typed) result, despite the op's TableGen
+            // result-type constraint technically allowing more.
+            thisVirtualSymbolRefOp->emitError("unsupported this-virtual symbol reference type");
             return failure();
         }
 
@@ -5336,9 +5366,13 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         }
         else
         {
+            // GetMethodOp's `boundFunc` operand is TableGen-constrained to
+            // TypeScript_BoundFunctionLike (BoundFunctionType|HybridFunctionType),
+            // enforced by the verifier - the LLVMStructType case above is already
+            // stricter than that constraint requires.
             LLVM_DEBUG(llvm::dbgs() << "\n!! GetMethodOp: " << getMethodOp << " result type: " << getMethodOp.getType()
                                     << "\n");
-            llvm_unreachable("not implemented");
+            getMethodOp->emitError("unsupported bound-function type in GetMethod");
             return failure();
         }
 

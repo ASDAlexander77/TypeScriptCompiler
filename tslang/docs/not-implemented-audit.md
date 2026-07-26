@@ -1,14 +1,20 @@
 # `llvm_unreachable("not implemented")` audit
 
 Status: **§5.1, §5.2, §5.3, and §5.4 are all now fully closed - every
-marker this document's own inventory ever named has been triaged.** What
-remains: the Linux RTTI execution-verification gap (fixes applied and
+marker this document's own inventory ever named has been triaged, AND a
+fresh, corrected repo-wide grep (§1's command was missing `.td` files, and
+`LowerToLLVM.cpp` had never actually been triaged despite being mentioned
+in passing) found and closed 14 more real live sites (§4.17, twelfth
+pass) - as of this pass, `grep -rn 'llvm_unreachable("not implemented")'`
+across every `.cpp`/`.h`/`.td` file in the repo returns zero live hits.**
+What remains: the Linux RTTI execution-verification gap (fixes applied and
 compile-verified, not run-verified - no Linux/WSL build stood up this
-session), and 2 bugs found-but-out-of-scope (§6 item 9). This is not a
-claim that the sweep is 100% exhaustive (§5.2's generic fallbacks were
-themselves only a guess at what's left; a fresh repo-wide grep might turn
-up more than this document's own inventory ever included - see §7).
-Triggered by a user request to
+session), and 2 bugs found-but-out-of-scope (§6 item 9). This is still not
+a claim that every conceivable crash is gone (§7's caveats about other
+`llvm_unreachable` messages - "type mismatch", "cast must happen earlier" -
+and other diagnostic-message patterns this specific grep pattern doesn't
+catch), but the specific `"not implemented"` marker this whole document
+tracks is now fully accounted for. Triggered by a user request to
 review every "not implemented" marker in the codebase and see which ones
 can be implemented. Second pass (§4.3-4.5) worked through this document's
 own §6 priority list while waiting on the first pass's PR to merge. Third
@@ -45,6 +51,12 @@ int64-width asymmetry between two `setType` overloads) and the honest
 caveat about it not being execution-verified. Eleventh pass (§4.16), a new
 session after PR #305 merged, closed the very last named site in this
 document, `MLIRTypeHelper.h:410/420` (`convertAttrIntoType`) - see §4.16.
+Twelfth pass (§4.17), same session, prompted by a user spotting a still-
+live site in `TypeScriptOps.td` (a file this audit's own grep had never
+covered): found and closed 14 more sites across `TypeScriptOps.td`,
+`DiagnosticHelper.cpp`, and `LowerToLLVM.cpp` (which the doc's §1 overview
+had mentioned but §5 never actually inventoried), including one real crash
+(`~` on a raw `f64`/`f32` value) - see §4.17.
 
 ## 1. Scope and method
 
@@ -58,6 +70,17 @@ Grep command used:
 grep -rn "not implemented\|Not implemented\|NOT IMPLEMENTED\|not yet implemented\|NotImplemented" \
   --include=*.cpp --include=*.h lib include tslang
 ```
+
+**Correction from §4.17 (twelfth pass)**: this command has a real gap -
+`--include=*.td` was never added, so TableGen files (which can embed live
+C++ in `extraClassDeclaration`/`builders`/etc., like
+`TypeScriptOps.td:725`) were invisible to every pass before the twelfth.
+Also, being *mentioned* in this doc's prose (like `LowerToLLVM.cpp` was,
+in the paragraph below) is not the same as being *triaged* - always
+cross-check against §5's per-file lists, which is the actual bookkeeping;
+`LowerToLLVM.cpp` sat un-triaged for 11 passes despite being named here
+from the start. Add `--include=*.td` before trusting this command's
+output as complete again.
 
 These markers span three very different situations that look identical in a
 grep, and need to be told apart before deciding what "implement" even means
@@ -1216,6 +1239,87 @@ unchanged; full suite `ctest -C Debug -j8` → **829/829, no regressions**.
 This closes the last named/known-location site in this document - see §6
 for what (if anything) is still open.
 
+### 4.17 Twelfth pass — the audit's own scope had a hole: `LowerToLLVM.cpp` was never actually triaged, and `.td` files were never grepped at all
+
+Prompted by a user spotting `TypeScriptOps.td:725` still crashing - a file
+this audit's own grep command (§1) never covered, since `--include=*.cpp
+--include=*.h` silently excludes TableGen `.td` files even though they can
+embed live C++ (`extraClassDeclaration`, `builders`, etc.). Re-running the
+grep with `--include=*.td` added, and separately re-checking `lib/TypeScript/
+LowerToLLVM.cpp` specifically, turned up **14 more live sites this
+document's own §1 overview had mentioned in passing ("mostly...
+low-level LLVM-lowering... code") but §5's actual per-file inventory never
+listed for investigation** - a real gap in this audit's own bookkeeping,
+not just an unlucky miss. Breakdown: `TypeScriptOps.td:725` (1),
+`DiagnosticHelper.cpp:104` (1), `LowerToLLVM.cpp` (12; `:6267`'s
+IntersectionType site was already correctly triaged as dead in §3, so
+excluded from this count).
+
+**One real, reachable crash found**: `~x` (bitwise NOT) on a value with an
+explicit raw float type (`f64`/`f32` - this compiler's low-level typed
+variables distinct from the wrapped `number` type) crashed at
+`LowerToLLVM.cpp:3070` (`NegativeOpBin`'s else branch). Root cause was at
+MLIRGen time, not lowering: `mlirGen(PrefixUnaryExpression)`'s `~` case
+(`MLIRGenExpressions.cpp`) only cast the operand to `i32` when it *wasn't*
+already `isIntOrIndexOrFloat()` - but a raw float type already satisfies
+that check, so it silently skipped the truncation every other numeric
+representation (including the wrapped `number` type) already got. JS
+`~x` always yields a 32-bit int (`ToInt32` semantics) regardless of input
+type, so this wasn't just a missing cast, it was wrong for any raw-float
+input. Fixed by tightening the condition to `!isIntOrIndex()` (cast unless
+already int/index, matching real `~` semantics) so raw floats get the same
+i32 truncation as everything else. Verified: `~3.5` on an `f64` variable
+now compiles, runs, and yields `-4` (`ToInt32` semantics, printed as
+unsigned `4294967292` = `0xFFFFFFFC`) instead of crashing.
+
+**Everything else in this pass was confirmed dead** via caller trace, two
+different strengths of proof:
+
+- **TableGen-verifier-enforced exhaustiveness** (the strongest kind seen
+  anywhere in this audit - not just "every caller I found," but "the
+  verifier physically rejects anything else"): `LoadOp`'s `reference`
+  operand is constrained to `TypeScript_RefOrBoundRefOrValueRef`
+  (`RefType|BoundRefType|ValueRefType`) and `GetMethodOp`'s `boundFunc` to
+  `TypeScript_BoundFunctionLike` (`BoundFunctionType|HybridFunctionType`) -
+  both lowering patterns already handled every case the verifier permits.
+- **Caller trace, C++-type-guaranteed**: `ArithmeticBinaryOp`,
+  `ArithmeticUnaryOp`, `LogicalBinaryOp` (and by extension `StringCompareOp`/
+  `AnyCompareOp`, which receive the same opcode `LogicalBinaryOp` already
+  validated) are only ever constructed with opcodes from a small closed set
+  - traced every construction site across the whole codebase (not just the
+  obvious ones; `binaryOpLogic`'s generic `default:` dispatch in
+  `MLIRGenExpressions.cpp` looked the riskiest since it forwards *any*
+  leftover `SyntaxKind` into `ArithmeticBinaryOp`, but tracing back through
+  `isNeededToSaveData`'s compound-assignment normalization and the
+  `&&`/`||`/`??`/`in`/`instanceof`/`=` guards above it showed the reachable
+  set is an exact match for the lowering switch's cases). `VirtualSymbolRefOp`/
+  `ThisVirtualSymbolRefOp` were the interesting edge case: their TableGen
+  result-type constraint (`TypeScript_AnyRefOrCallable`) is genuinely
+  *broader* than what the lowering code handles (allows `ValueRefType`/
+  `BoundFunctionType`/`HybridFunctionType`, not just `RefType`/`FunctionType`)
+  - looked like a real gap until every actual construction site turned out
+  to pass a C++-strongly-typed `mlir_ts::FunctionType`/`RefType` field
+  (`FunctionEntry::funcType`, `MethodInfo::funcType`, or an explicit
+  `RefType::get(...)`), never anything the broader constraint would also
+  allow. `TypeScriptOps.td:725` (`CallIndirectOp`'s type-inferring builder)
+  and `DiagnosticHelper.cpp:104` (`printLocation`'s `Location` TypeSwitch,
+  exhaustive over all 6 of MLIR's builtin location kinds, no custom one
+  registered anywhere in this dialect) were both dead the same way.
+
+All were hardened to fail gracefully (`emitError`+`return failure()` where
+a `Location`/op is in scope, matching this audit's established
+convention) rather than left as bare crashes, even the TableGen-verifier-
+proven ones - consistent with how this audit has always treated confirmed-
+dead sites (§4.6-4.8, §4.15's Windows RTTI, etc.).
+
+Verified: `~x`-on-raw-float repro now runs correctly (was crashing);
+`ctest -C Debug -j8` → **829/829, no regressions**. This pass's own
+lesson for whoever re-runs this audit's grep next: **re-check the grep
+command against `--include=*.td` too**, and don't trust a file being
+*mentioned* in this doc's prose as proof it was ever actually *triaged* -
+cross-check against §5's per-file lists, which is where the real
+bookkeeping lives.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -1381,12 +1485,22 @@ bug (the built-in utility types); tracing real callers is what worked.
     exists in this environment. The only way to fully close this would be
     standing up a Linux build of the project and exercising the C++
     exception-unwind path directly.
+12. ~~`TypeScriptOps.td`/`DiagnosticHelper.cpp`/`LowerToLLVM.cpp`'s 14
+    never-triaged sites~~ — **done** (§4.17, twelfth pass): found via a
+    user spotting a still-live crash this audit's own grep command never
+    covered (missing `--include=*.td`). One real crash fixed (`~` on a raw
+    `f64`/`f32` value); the other 13 confirmed dead, several via a
+    TableGen-verifier-enforced type constraint - the strongest proof of
+    dead code found anywhere in this audit.
 
-With items 1-9 all closed, **every named/known-location marker this
-document ever tracked has been triaged** - what's left (items 10-11) is a
+With items 1-9 and 12 all closed, **every named/known-location marker this
+document ever tracked has been triaged, using a corrected grep command
+that now also covers `.td` files.** What's left (items 10-11) is a
 Linux-only verification gap and two out-of-scope bugs, plus the standing
-caveat in §7 that a fresh repo-wide grep might surface markers this
-document's own inventory never included.
+caveat in §7 that a fresh repo-wide grep (for message patterns other than
+this document's own `"not implemented"`, e.g. `llvm_unreachable`'s other
+messages like "type mismatch" or "cast must happen earlier") might surface
+markers this document's own inventory never included.
 
 ## 7. Non-goals / out of scope
 
