@@ -1,14 +1,14 @@
 # `llvm_unreachable("not implemented")` audit
 
-Status: **§5.1, §5.2, §5.3, and §5.4 are all now fully closed.** What
-remains: `MLIRTypeHelper.h:410/420` (the only genuinely un-investigated
-site with a known location left in this document), the Linux RTTI
-execution-verification gap (fixes applied and compile-verified, not
-run-verified - no Linux/WSL build stood up this session), and 2 bugs
-found-but-out-of-scope (§6 item 9). This is not a claim that the sweep is
-100% exhaustive (§5.2's generic fallbacks were themselves only a guess at
-what's left; a fresh repo-wide grep might turn up more than this document's
-own inventory ever included - see §7). Triggered by a user request to
+Status: **§5.1, §5.2, §5.3, and §5.4 are all now fully closed - every
+marker this document's own inventory ever named has been triaged.** What
+remains: the Linux RTTI execution-verification gap (fixes applied and
+compile-verified, not run-verified - no Linux/WSL build stood up this
+session), and 2 bugs found-but-out-of-scope (§6 item 9). This is not a
+claim that the sweep is 100% exhaustive (§5.2's generic fallbacks were
+themselves only a guess at what's left; a fresh repo-wide grep might turn
+up more than this document's own inventory ever included - see §7).
+Triggered by a user request to
 review every "not implemented" marker in the codebase and see which ones
 can be implemented. Second pass (§4.3-4.5) worked through this document's
 own §6 priority list while waiting on the first pass's PR to merge. Third
@@ -42,7 +42,9 @@ dialog instead, since `IsDebuggerPresent()` becomes true). Tenth pass
 (§4.15) closed §5.3 (RTTI) and the remaining §5.4 stray lines - see §4.15
 for the full writeup, including the one real bug found (a Linux-only
 int64-width asymmetry between two `setType` overloads) and the honest
-caveat about it not being execution-verified.
+caveat about it not being execution-verified. Eleventh pass (§4.16), a new
+session after PR #305 merged, closed the very last named site in this
+document, `MLIRTypeHelper.h:410/420` (`convertAttrIntoType`) - see §4.16.
 
 ## 1. Scope and method
 
@@ -1165,6 +1167,55 @@ scope, same as other precedents in §7); `throw`/`catch` repros across bool,
 correctly on Windows with no behavior change; full suite
 `ctest -C Debug -j8` → **829/829, no regressions**.
 
+### 4.16 Eleventh pass — closes the last named site, `MLIRTypeHelper.h:410/420` (`convertAttrIntoType`)
+
+New session, after PR #305 (tenth pass) merged. `convertAttrIntoType(attr,
+destType, builder)` const-folds a constant attribute (from a literal array
+element) into a target element type; its only caller is
+`createConstArrayOrTuple` (`MLIRGenImpl.h:7343`), used when a const
+array/tuple literal is being cast to a different element type than the one
+inferred from its own literals (`arrayInfo.applyCast`) - e.g. a receiver
+type annotation that disagrees with what the literal values would infer on
+their own.
+
+Three `.ts`-level repro attempts (`let arr: boolean[] = [1, 0]`,
+`let arr: i32[] = [true, false]`, `let arr: string[] = [1, 2, 3]`) all
+compiled and ran with no crash and no diagnostic - none reached either
+`llvm_unreachable`. Read (not guessed) why: this compiler represents
+boolean literals as plain builtin `i1` `IntegerAttr`, which already
+satisfies `isIntOrIndex()` at the top of the int-handling branch, so a
+bool-vs-int mismatch never reaches the `else` at :410 in the first place -
+it's silently treated as an int/int conversion instead (a separate,
+pre-existing type-looseness issue, out of this audit's scope). The
+`string[] = [1,2,3]` case should exercise the final `Default` at :420
+(`StringType` destination isn't `NumberType`/int/float), but three misses
+is the audit's own established stopping point for blind repro attempts -
+matching the pattern from the `funcRef` family (§4.6-4.8) - so this was
+converted to a **static hardening fix** rather than pursued with a fourth
+guess: an unconfirmed trigger is still worth defusing, especially since the
+existing failure mode here (a null `mlir::Attribute` silently entering an
+`ArrayAttr`) is worse than the audit's usual `llvm_unreachable` - it
+wouldn't even give a "not implemented" message, just a delayed, confusing
+crash somewhere downstream in the verifier or lowering.
+
+**Fix**: both `llvm_unreachable` sites in `convertAttrIntoType` now return
+`mlir::Attribute()` (null), matching the established convention for
+`mlir::Type`-in/`mlir::Type`-out-style helpers with no `Location` in scope
+(§2's fix-convention note) - and matching this exact function's own
+sibling `convertFromFloatAttrIntoType`, which already returns null for its
+own unsupported case a few lines above. Since the caller
+(`createConstArrayOrTuple`) previously pushed whatever `convertAttrIntoType`
+returned straight into the `ArrayAttr` with no check, added a null-check at
+the call site that emits `"can't cast array literal element to '<type>'"`
+and returns `mlir::failure()` cleanly instead - this is the actual
+crash-preventing half of the fix, since the helper alone would just move
+the problem one frame later.
+
+Verified: the 3 original (non-crashing) repros still compile/run
+unchanged; full suite `ctest -C Debug -j8` → **829/829, no regressions**.
+This closes the last named/known-location site in this document - see §6
+for what (if anything) is still open.
+
 ## 5. Inventory of remaining markers (untested this pass)
 
 Grouped by file. "Shape" is a guess from reading the surrounding code, not a
@@ -1303,26 +1354,39 @@ bug (the built-in utility types); tracing real callers is what worked.
    execution-verified (no Linux/WSL build stood up this session, judged out
    of proportion for 4 lines already well-understood via static trace).
 8. ~~The stray `MLIRTypeHelper.h:2108/2256-2257/2290/2307/2685/2709`
-   sites~~ — **done this pass** (§4.15): one confirmed real crash
-   (`extendsType`'s unnamed-tuple-field lookup, fixed with a positional
-   fallback), two confirmed dead (`getFieldIndexByFieldName`/
-   `getFieldInfoByIndex`, hardened for consistency), one left unconfirmed
-   but hardened (`getAttributeType`), one zero-risk consistency fix
-   (`getFields`). `MLIRTypeHelper.h:410/420` remain unread (confirmed
-   unrelated to the `funcRef` family, still not triaged - the only item
-   left in this whole document with a known, un-investigated location).
-9. Two bugs discovered but *not* fixed this pass, out of this document's
-   "not implemented" scope but worth a dedicated look: (a) an LLVM
-   `Casting.h` `dyn_cast on a non-existent value` assertion, reachable via
-   a computed class-property initializer (`class X { [key] = 42; }`) -
-   see §4.13's `MLIRGenClasses.cpp` writeup; (b) `MLIRGenExpressions.cpp`'s
-   delete-crash reproduced exactly once and then never again across several
-   retries with the identical source - if it resurfaces, start from §4.13's
-   honest note about it rather than assuming it's fixed.
-10. `MLIRTypeHelper.h:410/420` (see item 8) - the last genuinely
-    un-investigated site with a known location in this entire document.
-    Everything else remaining is either the Linux RTTI execution-
-    verification gap (item 7) or the two out-of-scope bugs (item 9).
+   sites~~ — **done** (§4.15): one confirmed real crash (`extendsType`'s
+   unnamed-tuple-field lookup, fixed with a positional fallback), two
+   confirmed dead (`getFieldIndexByFieldName`/`getFieldInfoByIndex`,
+   hardened for consistency), one left unconfirmed but hardened
+   (`getAttributeType`), one zero-risk consistency fix (`getFields`).
+9. ~~`MLIRTypeHelper.h:410/420` (`convertAttrIntoType`)~~ — **done**
+   (§4.16, eleventh pass, new session after PR #305 merged): 3 repro
+   attempts missed (this compiler represents booleans as plain `i1`, so a
+   bool-vs-int mismatch never reaches the crash branch at all), so
+   converted to a static hardening fix instead of a 4th guess - both sites
+   now return null, and the one caller (`createConstArrayOrTuple`) now
+   checks for that null and emits a clean diagnostic instead of building a
+   malformed `ArrayAttr`. This was the **last named/known-location site in
+   the entire document**.
+10. Two bugs discovered but *not* fixed, out of this document's "not
+    implemented" scope but worth a dedicated look: (a) an LLVM `Casting.h`
+    `dyn_cast on a non-existent value` assertion, reachable via a computed
+    class-property initializer (`class X { [key] = 42; }`) - see §4.13's
+    `MLIRGenClasses.cpp` writeup; (b) `MLIRGenExpressions.cpp`'s
+    delete-crash reproduced exactly once and then never again across
+    several retries with the identical source - if it resurfaces, start
+    from §4.13's honest note about it rather than assuming it's fixed.
+11. The Linux RTTI execution-verification gap (§4.15) - fixes are applied
+    and compile-verified but not run-verified, since no Linux/WSL build
+    exists in this environment. The only way to fully close this would be
+    standing up a Linux build of the project and exercising the C++
+    exception-unwind path directly.
+
+With items 1-9 all closed, **every named/known-location marker this
+document ever tracked has been triaged** - what's left (items 10-11) is a
+Linux-only verification gap and two out-of-scope bugs, plus the standing
+caveat in §7 that a fresh repo-wide grep might surface markers this
+document's own inventory never included.
 
 ## 7. Non-goals / out of scope
 
