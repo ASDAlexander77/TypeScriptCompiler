@@ -7340,11 +7340,18 @@ class MLIRGenImpl
             auto constOp = itemValue.value.getDefiningOp<mlir_ts::ConstantOp>();
             if (arrayInfo.applyCast)
             {
-                constValues.push_back(mth.convertAttrIntoType(constOp.getValueAttr(), arrayInfo.arrayElementType, builder)); 
+                auto castAttr = mth.convertAttrIntoType(constOp.getValueAttr(), arrayInfo.arrayElementType, builder);
+                if (!castAttr)
+                {
+                    emitError(location, "can't cast array literal element to '") << arrayInfo.arrayElementType << "'";
+                    return mlir::failure();
+                }
+
+                constValues.push_back(castAttr);
             }
             else
             {
-                constValues.push_back(constOp.getValueAttr()); 
+                constValues.push_back(constOp.getValueAttr());
             }
         }
 

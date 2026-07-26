@@ -407,17 +407,17 @@ class MLIRTypeHelper
             }
             else
             {
-                llvm_unreachable("not implemented");
+                return mlir::Attribute();
             }
-        }        
+        }
 
         // this is Float
         if (destType.isIntOrIndexOrFloat())
         {
             return convertFromFloatAttrIntoType(attr, destType, builder);
-        }        
+        }
 
-        llvm_unreachable("not implemented");
+        return mlir::Attribute();
     }
 
     mlir::Type wideStorageType(mlir::Type type)
