@@ -259,6 +259,18 @@ harmless, and commit to nothing.** Step 5 is the commitment.
 
 This is the detail that decides how big step 2 is.
 
+> **Status: path 1 landed 2026-09-02 and the full release suite passes.** The header is
+> reserved in `_MemoryAlloc` / `_MemoryRealloc` / `_MemoryFree` and the word is never read.
+> All three helpers were genuinely exercised: 19 tests drive array `push`/`splice`/`unshift`
+> through realloc, 37 exercise string allocation and `SetStringLength`, and 9 use `delete`
+> (including `00new_delete.ts`) through free. **The provenance worry did not materialise** —
+> nothing reaches realloc or free holding a pointer that did not come from the allocator, so
+> the base adjustment is safe in practice, not merely in principle. The 72 cross-module tests
+> pass, which is the result that matters most for §4.
+>
+> Still unvalidated by this run: the WASM allocator path (`ts_malloc`/`ts_realloc`/`ts_free`),
+> which is built and tested separately.
+
 **Path 1 — the generic helpers (easy).** `_MemoryAlloc`, `_MemoryRealloc` and `_MemoryFree`
 all live in `LLVMCodeHelperBase.h:253/300/330`. Eleven of the twelve allocation sites route
 through them, and so does the single `free` site (`DeleteOpLowering`, `LowerToLLVM.cpp:3022`,
