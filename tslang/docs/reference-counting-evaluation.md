@@ -270,6 +270,43 @@ This is the detail that decides how big step 2 is.
 >
 > Still unvalidated by this run: the WASM allocator path (`ts_malloc`/`ts_realloc`/`ts_free`),
 > which is built and tested separately.
+>
+> **Status: path 2 resolved 2026-09-03 by removing it, not by shifting it.** Investigating the
+> descriptor shift showed the bitmap it would shift was never correct, so `ENABLE_TYPED_GC` is
+> now `false` and class instances take the generic path like everything else. See §9.2.
+
+### 9.2 The typed path was retired rather than adapted
+
+The plan in §9.1 was to shift every descriptor bit by the header size. Reading
+`mlirGenClassTypeBitmap` (`MLIRGenClasses.cpp:1322`) first showed there was nothing sound to
+shift. Three defects, each confirmed against the code:
+
+1. **Shift direction inverted.** Line 1427 passes `GreaterThanGreaterThanToken`, which maps to
+   `rightShift` (`MLIRGenImpl.h:4996`), sitting directly under a comment reading
+   `// 1 << index_mod`. `1 >> bitIndex` is zero for every bit position but zero, so no bit
+   above position zero could ever be set.
+2. **Wrong array index.** Line 1412 indexes the bitmap with `calcIndex`, the field's word index
+   *within the object*, where it needs `calcIndex / bitsPerWord`. The array holds only
+   `ceil(N/64)` elements, so any class with pointer fields past word zero also read and wrote
+   past the end of the stack allocation.
+3. **Never zeroed.** `AllocaOpLowering` emits a bare alloca under an explicit
+   `// TODO: call MemSet` (`LowerToLLVM.cpp:2223`), and the generator only ORs bits in. The
+   descriptor was therefore derived from uninitialized stack memory.
+
+Net effect: `GC_make_descriptor` received a garbage bitmap, and any pointer field whose bit
+read as zero went untraced, so a reachable object could be collected. Latent because short
+tests seldom trigger a collection cycle.
+
+Since the precision was fictitious, the cheaper and safer resolution was to stop using the
+typed path rather than repair and then shift it. Class instances now lower through
+`NewOp` → `NewOpLowering` → `MemoryAlloc` (`LowerToLLVM.cpp:2261`), which means they are
+conservatively scanned — what they effectively got anyway — and they pick up the block header
+uniformly, which is what §4 needed. The `#else` branches for this already existed; only the
+`Config.h` flag changed.
+
+This closes the ABI question: **every heap allocation now carries the header.** The bitmap
+generator's three defects remain in the tree, unused and documented, and are worth their own
+fix if precise class scanning is ever wanted back.
 
 **Path 1 — the generic helpers (easy).** `_MemoryAlloc`, `_MemoryRealloc` and `_MemoryFree`
 all live in `LLVMCodeHelperBase.h:253/300/330`. Eleven of the twelve allocation sites route
