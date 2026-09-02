@@ -250,6 +250,47 @@ class LLVMCodeHelperBase
         return allocated;
     }
 
+    // === Heap block header (memory-model groundwork) ===
+    //
+    // Every heap block allocated through _MemoryAlloc reserves a leading pointer-sized word,
+    // and the pointer handed back to the rest of the compiler addresses the payload just past
+    // it. Under GC that word is never read - it exists so the block layout already has a place
+    // for a reference count if the RC memory model (-mm=rc) is built later. Keeping the layout
+    // identical in both memory models is what makes a GC-built module and an RC-built module
+    // safe to link together; see docs/reference-counting-evaluation.md, sections 4 and 9.1.
+    //
+    // Only the generic allocation path is covered here. Class instances allocated through
+    // GC_malloc_explicitly_typed (GCNewExplicitlyTypedOpLowering) are deliberately untouched:
+    // their Boehm type descriptor indexes bits relative to the object base, so moving the base
+    // without shifting the generated bitmap would make the collector trace the wrong words.
+    unsigned getHeapBlockHeaderSize()
+    {
+        return compileOptions.sizeBits / 8;
+    }
+
+    mlir::Value createHeapBlockHeaderSizeConstant(mlir::Location loc, mlir::Type llvmIndexType, bool negated = false)
+    {
+        auto bytes = static_cast<int64_t>(getHeapBlockHeaderSize());
+        return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
+                                                 rewriter.getIntegerAttr(llvmIndexType, negated ? -bytes : bytes));
+    }
+
+    // payload = block + headerSize
+    mlir::Value getPayloadPtrFromBlockPtr(mlir::Location loc, mlir::Value blockPtr, mlir::Type llvmIndexType)
+    {
+        TypeHelper th(rewriter);
+        auto offset = createHeapBlockHeaderSizeConstant(loc, llvmIndexType);
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI8Type(), blockPtr, ValueRange{offset});
+    }
+
+    // block = payload - headerSize
+    mlir::Value getBlockPtrFromPayloadPtr(mlir::Location loc, mlir::Value payloadPtr, mlir::Type llvmIndexType)
+    {
+        TypeHelper th(rewriter);
+        auto offset = createHeapBlockHeaderSizeConstant(loc, llvmIndexType, /*negated=*/true);
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI8Type(), payloadPtr, ValueRange{offset});
+    }
+
     template <typename T> mlir::Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet memAllocMode)
     {
         TypeHelper th(rewriter);
@@ -277,23 +318,30 @@ class LLVMCodeHelperBase
             effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
+        // reserve the block header in front of the payload
+        auto headerSizeValue = createHeapBlockHeaderSizeConstant(loc, llvmIndexType);
+        mlir::Value paddedSize = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{effectiveSize, headerSizeValue});
+
+        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{paddedSize});
         if (memAllocMode == MemoryAllocSet::Atomic)
         {
             callResults->setAttr("mode", rewriter.getStringAttr("atomic"));
         }
 
-        auto ptr = callResults.getResult();
+        auto blockPtr = callResults.getResult();
 
         if (memAllocMode == MemoryAllocSet::Zero)
         {
+            // NOTE: zero the whole block, header included, rather than just the payload. That keeps
+            // this memset's first operand the raw allocation call itself, which is what GCPass's
+            // removeRedundantMemSet matches on in order to drop it when GC_malloc already zeroed.
             // TODO: replace with @llvm.memset.p0.i64 & @llvm.memset.p0.i32
             auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), llvmIndexType}));
             auto const0 = clh.createI32ConstantOf(0);
-            rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{ptr, const0, effectiveSize});
+            rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{blockPtr, const0, paddedSize});
         }
 
-        return ptr;
+        return getPayloadPtrFromBlockPtr(loc, blockPtr, llvmIndexType);
     }
 
     template <typename T> mlir::Value _MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
@@ -323,8 +371,14 @@ class LLVMCodeHelperBase
             effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{ptrValue, effectiveSize});
-        return callResults.getResult();
+        // the incoming pointer addresses the payload; realloc must see the block base, and the
+        // block must stay large enough for the header it carries
+        auto headerSizeValue = createHeapBlockHeaderSizeConstant(loc, llvmIndexType);
+        mlir::Value paddedSize = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{effectiveSize, headerSizeValue});
+        auto blockPtrValue = getBlockPtrFromPayloadPtr(loc, ptrValue, llvmIndexType);
+
+        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{blockPtrValue, paddedSize});
+        return getPayloadPtrFromBlockPtr(loc, callResults.getResult(), llvmIndexType);
     }
 
     template <typename T> mlir::LogicalResult _MemoryFree(mlir::Value ptrValue)
@@ -342,7 +396,11 @@ class LLVMCodeHelperBase
 
         auto casted = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
 
-        rewriter.create<LLVM::CallOp>(loc, freeFuncOp, ValueRange{casted});
+        // the incoming pointer addresses the payload; free must see the block base
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtrValue = getBlockPtrFromPayloadPtr(loc, casted, llvmIndexType);
+
+        rewriter.create<LLVM::CallOp>(loc, freeFuncOp, ValueRange{blockPtrValue});
 
         return mlir::success();
     }
