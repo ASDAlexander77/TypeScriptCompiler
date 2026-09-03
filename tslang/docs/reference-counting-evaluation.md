@@ -686,3 +686,34 @@ An accidental cycle still leaks silently; weak references let a programmer break
 about. The natural follow-on is a debug-mode leak report at exit — every block whose strong
 count never reached zero — which is cheap once counts are maintained, and is a far better answer
 than a cycle collector for a language whose users can switch to `-mm=gc` with one flag.
+
+### 9.9 The first real caller: `delete`
+
+Landed 2026-09-03, 847/847 green.
+
+Everything before this generated release machinery that nothing called. `delete` is the one
+place a reference is dropped that the language already spells out, so it makes the natural first
+caller — and unlike ownership tracking it is a single lowering site, not a whole-program
+analysis.
+
+Under `-mm=rc`, `DeleteOp` now drops a reference instead of freeing outright: the object goes
+only if this was the last reference, and what it owns is released with it. Under `gc` and
+`none` it still frees directly, so the default is untouched. Two things fall out that a bare
+free did not give: an object's fields are released rather than leaked to the collector, and
+`delete` can no longer free an immortal block.
+
+`ReleaseRoutineLogic::emitReleaseValue` is the entry point ownership tracking will reuse. The
+per-type routines address storage rather than values, so it goes through a small value-taking
+wrapper whose alloca sits in the wrapper own entry block — which keeps every caller from having
+to find a safe place for one, since a release inside a loop must not grow the frame, and LLVM
+inlines and promotes it away.
+
+Verified under both models: a class owning a string and an array of strings releases correctly,
+and `delete` on a string literal leaves the static block untouched, which is the immortal marker
+doing its job. `delete` on a plain string local emits no `DeleteOp` in either model —
+pre-existing behaviour, unchanged here.
+
+**This is the first change that is not inert.** It only affects `-mm=rc`, and only `delete`, but
+a release now actually frees. With no retains inserted yet every block still has a count of one,
+so a released object is always the last reference — which is exactly the case ownership tracking
+will complicate.

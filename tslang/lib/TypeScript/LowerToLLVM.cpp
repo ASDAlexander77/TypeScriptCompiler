@@ -3049,6 +3049,18 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
     {
         
 
+        // Under reference counting `delete` drops a reference rather than freeing outright:
+        // the object goes only if this was the last one, and what it owns is released with it.
+        // That also keeps `delete` off an immortal block, which a bare free would not.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            ReleaseRoutineLogic rrl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            rrl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());
+
+            rewriter.eraseOp(deleteOp);
+            return mlir::success();
+        }
+
         LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         if (mlir::failed(ch.MemoryFree(transformed.getReference())))

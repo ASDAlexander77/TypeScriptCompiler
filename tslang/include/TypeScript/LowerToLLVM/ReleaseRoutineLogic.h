@@ -9,6 +9,7 @@
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 #include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
@@ -84,6 +85,25 @@ class ReleaseRoutineLogic
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
         return name;
+    }
+
+    // Drops one reference held by `value`, whose TypeScript type is `type`. Emits nothing
+    // when the type owns no heap memory.
+    //
+    // The per-type routines address storage rather than values, so this goes through a small
+    // value-taking wrapper. Its alloca sits in the wrapper's own entry block, which keeps
+    // every caller from having to find a safe place for one - a release inside a loop must not
+    // grow the frame - and LLVM inlines and promotes the whole thing away.
+    void emitReleaseValue(mlir::Type type, mlir::Value value)
+    {
+        auto wrapperName = getOrCreateReleaseValueRoutine(type);
+        if (wrapperName.empty())
+        {
+            return;
+        }
+
+        rewriter.create<LLVM::CallOp>(op->getLoc(), TypeRange{},
+                                      FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
     }
 
     // Does a value of this type own heap memory, directly or through its fields?
@@ -173,6 +193,49 @@ class ReleaseRoutineLogic
         }
 
         return result;
+    }
+
+    std::string getOrCreateReleaseValueRoutine(mlir::Type type)
+    {
+        auto slotRoutine = getOrCreateReleaseRoutine(type);
+        if (slotRoutine.empty())
+        {
+            return {};
+        }
+
+        std::stringstream nameStream;
+        nameStream << "tsrelv_" << (size_t)hash_value(type);
+        auto name = nameStream.str();
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto loc = op->getLoc();
+        auto llvmType = tch.convertType(type);
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(loc, name, th.getFunctionType(th.getVoidType(), {llvmType}),
+                                                        LLVM::Linkage::Internal);
+
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        auto slot = rewriter.create<LLVM::AllocaOp>(loc, th.getPtrType(), llvmType, clh.createI32ConstantOf(1));
+        rewriter.create<LLVM::StoreOp>(loc, entryBlock->getArgument(0), slot);
+        rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), slotRoutine),
+                                      ValueRange{slot});
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        return name;
     }
 
     std::string getRoutineName(mlir::Type type)
