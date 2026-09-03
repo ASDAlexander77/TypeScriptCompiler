@@ -1378,6 +1378,22 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 {
                     tsContext->unwind[op] = catchesBlock;
                 }
+                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                {
+                    // A throw leaves the catch clause just as abruptly as a return does, and
+                    // owes the same end-of-catch. It cannot be recorded in `unwind` with the
+                    // others: for a throw that map already means its invoke destination, and
+                    // the finally handling below writes exactly that into it.
+                    //
+                    // Only when there is no finally, though. With one, that same handling
+                    // turns this throw into an invoke into the finally block, and the finally
+                    // is what ends the catch - ending it here as well runs it twice and
+                    // breaks the unwind (51exceptions.ts is the case that proves it).
+                    if (!finallyHasOps)
+                    {
+                        tsContext->leavesCatch.insert(op);
+                    }
+                }
             };
             auto it = catchesBlock;
             do
@@ -1956,6 +1972,17 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         CodeLogicHelper clh(throwOp, rewriter);
 
         Location loc = throwOp.getLoc();
+
+        // Throwing out of a catch clause has to end the active catch first, the same as a
+        // return, break or continue leaving one. Without it the catch region is left with no
+        // end marker at all - CutBlock below removes the one TryOpLowering placed before the
+        // terminator - and Win32ExceptionPass then picks an end for itself, splitting the
+        // block ahead of the throw and emitting the catchret before a call that still carries
+        // the funclet token. That IR reaches the backend and crashes it.
+        if (tsContext->leavesCatch.contains(throwOp.getOperation()))
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
 
         if (auto unwind = tsContext->unwind[throwOp])
         {

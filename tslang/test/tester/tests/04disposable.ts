@@ -59,6 +59,31 @@ function insideHandWrittenTry() {
     }
 }
 
+// A `using` inside a catch clause. Synthesizing the unwind cleanup here crashes the compiler,
+// so this block must be left on the plain dispose path - blockIsInsideCatchOrFinally. Covered
+// because dropping the old root-body condition briefly re-enabled the wrapping here and no
+// test noticed.
+function insideCatchClause() {
+    try {
+        throw 1;
+    }
+    catch (e: TypeOf<1>) {
+        using r = new Res();
+        print("in catch");
+    }
+}
+
+// the same for a finally clause
+function insideFinallyClause() {
+    try {
+        print("try body");
+    }
+    finally {
+        using r = new Res();
+        print("in finally");
+    }
+}
+
 function expectThrow(f: () => void) {
     try {
         f();
@@ -94,6 +119,14 @@ function main() {
     disposed = 0;
     insideHandWrittenTry();
     assert(disposed == 1, "a using inside a hand-written try must dispose exactly once");
+
+    disposed = 0;
+    insideCatchClause();
+    assert(disposed == 1, "a using inside a catch clause must dispose exactly once");
+
+    disposed = 0;
+    insideFinallyClause();
+    assert(disposed == 1, "a using inside a finally clause must dispose exactly once");
 
     print("done.");
 }

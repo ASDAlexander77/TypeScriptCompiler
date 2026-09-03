@@ -550,6 +550,46 @@ class MLIRGenImpl
         return found;
     }
 
+    // Whether the insertion point sits inside the catches or finally region of an enclosing
+    // TryOp.
+    //
+    // Synthesizing a TryOp there crashes the compiler: `try { throw 1; } catch (e: int) {
+    // using r = new Res(); }` segfaults with the wrapping and compiles without it. Nesting a
+    // synthesized TryOp inside another one's *body* is fine and is exercised by
+    // 04disposable.ts - it is the catch and finally regions specifically that do not tolerate
+    // it, which is the half of the old blockIsFunctionRootBody condition that was doing real
+    // work and was dropped with it.
+    bool blockIsInsideCatchOrFinally()
+    {
+        auto *block = builder.getInsertionBlock();
+        while (block)
+        {
+            auto *region = block->getParent();
+            if (!region)
+            {
+                break;
+            }
+
+            auto *parentOp = region->getParentOp();
+            if (!parentOp)
+            {
+                break;
+            }
+
+            if (auto tryOp = dyn_cast<mlir_ts::TryOp>(parentOp))
+            {
+                if (region == &tryOp.getCatches() || region == &tryOp.getFinally())
+                {
+                    return true;
+                }
+            }
+
+            block = parentOp->getBlock();
+        }
+
+        return false;
+    }
+
     mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);

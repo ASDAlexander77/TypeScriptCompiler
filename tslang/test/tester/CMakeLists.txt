@@ -606,6 +606,7 @@ add_test(NAME test-jit-01-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-02-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
 add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-jit-00-in-method-names COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -1096,6 +1097,9 @@ add_test(NAME test-jit-rc-try-catch COMMAND test-runner -jit -mm=rc "${PROJECT_S
 add_test(NAME test-jit-rc-for-of COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_of.ts")
 add_test(NAME test-jit-rc-print COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-rc-owned-locals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+add_test(NAME test-jit-rc-throw-in-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
+add_test(NAME test-jit-rc-disposable-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
+add_test(NAME test-jit-rc-disposable-unwind COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
 
 # `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
 # rename. One test, so a future change to the model plumbing cannot silently break it.

@@ -25,6 +25,11 @@ struct TSContext
     mlir::DenseMap<Operation *, mlir::Block *> cleanup;
     mlir::DenseMap<Operation *, Operation *> parentTryOp;
     mlir::DenseMap<Operation *, mlir::Block *> landingBlockOf;
+    // Throws that sit inside a catch clause and therefore have to end the active catch before
+    // they leave it. `return`, `break` and `continue` carry the same meaning in `unwind`, but
+    // a throw cannot: `unwind` already means its invoke destination, which is a different
+    // question with a different answer.
+    mlir::DenseSet<Operation *> leavesCatch;
     mlir::Block *returnBlock;
 };
 

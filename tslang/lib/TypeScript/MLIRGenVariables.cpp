@@ -116,6 +116,17 @@ namespace mlirgen
             return;
         }
 
+        // A release inside a catch or finally clause is a call inside an exception funclet,
+        // and a call there is fragile independently of ownership: `catch (e: int) { new Res();
+        // throw 2; }` crashes at run time with nothing of this involved. Rather than add a
+        // second way to reach it, locals declared in those clauses are not owned. They leak,
+        // which under `-mm=rc` the collector still reclaims - the same trade every other
+        // exclusion here makes.
+        if (blockIsInsideCatchOrFinally())
+        {
+            return;
+        }
+
         auto refType = dyn_cast<mlir_ts::RefType>(variableDeclarationInfo.storage.getType());
         if (!refType || !mth.ownsHeapMemory(location, refType.getElementType()))
         {

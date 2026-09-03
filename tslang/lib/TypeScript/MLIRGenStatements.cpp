@@ -132,13 +132,14 @@ namespace mlirgen
     {
         // A `using` here needs disposal on the unwind path too, and only a TryOp has a
         // landing pad to run that from - see mlirGenBlockWithUnwindCleanup and
-        // blockDeclaresUsing. Any block qualifies: a function's own body, an if/loop body, a
-        // nested `{ }`, a hand-written try's own body. The two remaining conditions each guard
-        // against a real, still-open bug the wrapping would otherwise hit (see their comments).
-        // A block that fails either keeps the plain path below unchanged: no TryOp, no
-        // personality attribute, same IR as before this check existed.
+        // blockDeclaresUsing. Most blocks qualify: a function's own body, an if/loop body, a
+        // nested `{ }`, a hand-written try's own body. The three remaining conditions each
+        // guard against a real, still-open bug the wrapping would otherwise hit (see their
+        // comments). A block that fails any of them keeps the plain path below unchanged: no
+        // TryOp, no personality attribute, same IR as before this check existed.
         if (blockDeclaresUsing(blockAST, skipStatements) &&
-            blockUsingInitializersAreAllNewExpr(blockAST, skipStatements) && !blockHasNestedUsing(blockAST))
+            blockUsingInitializersAreAllNewExpr(blockAST, skipStatements) && !blockHasNestedUsing(blockAST) &&
+            !blockIsInsideCatchOrFinally())
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }

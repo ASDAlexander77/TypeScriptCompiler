@@ -987,8 +987,69 @@ heap types anywhere in it, so neither ownership insertion nor the `using` machin
 involved. Recorded here because it surfaced while building the matrix above; not fixed, and no
 test asserts it, which is why nothing caught it before.
 
+> **Fixed 2026-09-03, see §9.14.**
+
 New test: `test/tester/tests/04disposable.ts` (`test-compile-04-disposable`,
 `test-jit-04-disposable`), covering the four newly-working shapes plus the two exact-count
 cases that would catch a double dispose — a function that throws past a `using` on one path and
 returns past it on the other, and a synthesized cleanup nested inside a hand-written `try`.
 Full release suite green: 854/854.
+
+### 9.14 Throwing out of a `catch` clause
+
+`try { throw 1; } catch (e: int) { throw 2; }` crashed the compiler. The cause is one missing
+line, and the shape of it is worth keeping.
+
+`ThrowOpLowering` ends with `clh.CutBlock()`, which drops everything after the throw in its
+block — including the `EndCatchOp` that `TryOpLowering` had placed just before the region's
+terminator. `Win32ExceptionPass` then finds a catch region with no end marker, picks one for
+itself by splitting the block *ahead* of the throw, and emits the `catchret` there. The result
+is a `catchret` followed by a call that still carries `"funclet"(token %catchpad)` — a bundle
+naming a funclet it has already returned from. That reaches the backend and crashes it.
+
+`ReturnOpLowering`, `BreakOpLowering` and `ContinueOpLowering` all emit an `EndCatchOp` before
+leaving a catch. `ThrowOpLowering` was the only abrupt exit that did not.
+
+**It needed a new side table rather than the existing one.** The other three record "I am
+leaving a catch" by having `tsContext->unwind[op]` set. A throw cannot: for a throw that map
+already means its invoke destination, and the finally handling writes exactly that into it. So
+`leavesCatch` is its own set, populated by the same walk over the catches region that already
+marks returns.
+
+**And only when there is no `finally`.** With one, the throw becomes an invoke into the finally
+block and *the finally* ends the catch; ending it at the throw as well runs it twice and breaks
+the unwind. `51exceptions.ts` — `catch (e: number) { … if (k >= 10) throw e } finally { … }` —
+is the case that proves it, and it caught the first version of this fix.
+
+**Still open, and each confirmed independent of this fix:**
+
+- **An exception escaping a catch clause is lost under AOT**, and always was. A *call* in a
+  catch that throws (`catch (e) { thrower(); }`) loses it too, with no `throw` statement
+  involved anywhere and nothing in this change able to affect it. The IR is well-formed at
+  both `-O0` and `-O3`; the gap is in the AOT exception tables. `00throw_in_catch.ts` is
+  therefore registered JIT-only.
+- **A call inside a catch followed by a throw out of it** (`catch (e) { new Res(); throw 2; }`)
+  crashes at run time, AOT and JIT alike, at every optimisation level and memory model. Its IR
+  is well-formed too. Unrelated to ending the catch.
+- **Throwing from a `finally`** (`try { throw 1; } finally { throw 2; }`) segfaults, from the
+  same `CutBlock` cause — `ts.BeginCleanup` with no `ts.EndCleanup`. Not fixed here because
+  `EndCleanupOp` is a terminator taking a landing pad and unwind destinations rather than a
+  marker, and the finally region is cloned once per exit path, so each copy would need its own.
+
+**A regression in §9.13 turned up while testing this, and is fixed here too.** Dropping
+`blockIsFunctionRootBody` also stopped excluding *catch and finally regions*, and synthesizing
+a cleanup `TryOp` in one crashes the compiler — `catch (e: int) { using r = new Res(); }`
+segfaults with the wrapping and compiles without it. §9.13's matrix checked nesting inside a
+try *body* and never inside a catch region. `blockIsInsideCatchOrFinally` restores exactly that
+half; the four shapes §9.13 fixed all still work.
+
+The same predicate also excludes those clauses from ownership (§9.12): under `-mm=rc` a release
+in a catch clause is a call inside a funclet, which is the fragile construct above, and
+`catch (e: int) { let r = new Res(); }` segfaulted. Locals there are simply not owned now —
+they leak, which the collector still reclaims, the trade every other exclusion in §9.12 makes.
+Both holes existed because no test had a `using` or a heap local inside a catch clause;
+`04disposable.ts` now has both, and `03disposable.ts`/`04disposable.ts` gained `-mm=rc`
+variants, which is what would have caught the ownership half.
+
+New test: `test/tester/tests/00throw_in_catch.ts` (`test-jit-00-throw-in-catch`,
+`test-jit-rc-throw-in-catch`). Full release suite green: 858/858.
