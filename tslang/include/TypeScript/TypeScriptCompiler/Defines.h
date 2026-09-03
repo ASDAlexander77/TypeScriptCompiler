@@ -39,4 +39,19 @@ enum MemoryModel
     MemoryModelNone
 };
 
+// The spelling used both by the `-mm=` flag and by the shared-library marker symbol, so the
+// two can never disagree about what a model is called.
+inline const char *memoryModelName(enum MemoryModel model)
+{
+    switch (model)
+    {
+    case MemoryModelRC:
+        return "rc";
+    case MemoryModelNone:
+        return "none";
+    default:
+        return "gc";
+    }
+}
+
 #endif // TYPESCRIPT_COMPILER_DEFINES_H_

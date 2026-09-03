@@ -143,6 +143,10 @@ owner.
 
 ## 4. The new central problem: two models in one link
 
+> **Decided 2026-09-03: allow mixed links, treating what crosses as immortal** — leak rather
+> than double-free, chosen over a hard error because an error forces a per-model default lib.
+> The marker this needs landed in §9.7; the marking itself lands with ownership insertion.
+
 This risk **does not exist under the replacement framing** and is the single most important
 finding of the revision.
 
@@ -180,6 +184,10 @@ Doing neither is the worst outcome. (a) and (b) are not exclusive; (a) plus the 
 (b) is the strongest position.
 
 ## 5. Cycles: a blocker under replacement, a documented tradeoff as an option
+
+> **Decided 2026-09-03: weak references in the language, spelled `WeakRef<T>`.** Not
+> leak-and-document. Representation settled in §9.8 — a weak count in front of the strong one,
+> so `-mm=gc` builds keep their single header word.
 
 Plain RC leaks cycles, and here the cycles are not exotic:
 
@@ -349,6 +357,10 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 4b. **`-mm={gc,rc,none}`, and maintain the count.** The flag step 5 hangs off, plus
    initialising the header at allocation and turning §9.4 destroy routines into real
    reference drops. Still inert. **Done 2026-09-03, see §9.6.**
+4c. **Memory-model marker in `declExports`.** §4's last outstanding piece, and a prerequisite
+   for marking foreign objects immortal. **Done 2026-09-03, see §9.7.**
+4d. **`WeakRef<T>` representation.** Settled on paper before any code, because the header
+   layout it implies is ABI. **Designed 2026-09-03, see §9.8; not implemented.**
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
    no return* — and the first step where a mistake is not inert: a missing retain frees live
@@ -570,3 +582,107 @@ those is the ownership tracking, and it is where a mistake stops being inert: a 
 frees live memory, an extra one leaks. That still wants the verifier the plan describes — every
 owned value with a matching release on every path, unwind paths included — built alongside it
 rather than after.
+
+### 9.7 The memory-model marker
+
+Landed 2026-09-03, 847/847 green. The last outstanding piece of §4.
+
+A shared library records the model it was built under as an exported data symbol
+`__tsmm_<model>_<file>_<hash>`. The model is in the **name**, so an importer reads it during the
+symbol enumeration it already performs and never loads the data. Deliberately *not*
+`__decls`-prefixed, so it can never reach the declaration re-parser — see
+`decls-cross-module-declaration-mechanism` for why that enumeration is prefix-driven. A library
+with no marker predates this, and everything collected back then, so a missing marker reads as
+`gc`.
+
+Both spellings come from one `memoryModelName()`, so the `-mm=` flag and the marker cannot
+disagree about what a model is called.
+
+Verified end to end: a DLL built `-mm=gc` carries `__tsmm_gc_export_vars_<hash>`; importing it
+`-mm=gc` is silent, importing it `-mm=rc` reports
+
+> shared library './export_vars.dll' was built with -mm=gc, this module with -mm=rc. Objects
+> crossing between them are never reclaimed.
+
+and still runs, which is the agreed policy: allow the link, treat what crosses as immortal, leak
+rather than double-free.
+
+**Two things this does not yet do.** Nothing marks crossing objects immortal — that lands with
+ownership insertion, and until a release actually frees, a mixed link is harmless anyway. And
+the mismatch path has no automated test: the 106 cross-module tests all build both sides the
+same way, and giving the runner a per-side model would be more plumbing than the one warning is
+worth. The marker's *presence* is covered by all of them, which is the part that could break
+something.
+
+**The consequence to keep in view:** the default lib is GC-built. Under `-mm=rc` everything it
+allocates crosses a boundary and therefore leaks. Avoiding a per-model default lib is what the
+allow-and-leak policy bought — this is the price of it, and it means `-mm=rc` will not be
+leak-free for real programs until the default lib can be built per model.
+
+### 9.8 Weak references: `WeakRef<T>`
+
+The decision on cycles is **weak references in the language**, rather than leak-and-document.
+This section settles their representation, because it is ABI-shaped and this arc has been
+sequenced around making those decisions before writing code.
+
+#### Surface: `WeakRef<T>`, not a `weak` keyword
+
+JavaScript already has `WeakRef<T>` with `.deref(): T | undefined` (lib.es2021.weakref). Using
+that spelling costs no change to the vendored `ts-new-parser`, rides the generics machinery that
+is already cross-module-complete, and is a shape TypeScript programmers know.
+
+The semantics come out *stronger* than JavaScript's, compatibly: `deref()` returns undefined
+exactly when the last strong reference went, deterministically, rather than "whenever the
+collector felt like it". Under `-mm=gc` it can be backed by a plain strong reference that never
+returns undefined — a legal implementation of the JS contract, and one that keeps both models
+working. `WeakMap`/`WeakSet` are out of scope.
+
+#### Representation: a weak count, and where to put it
+
+Something has to outlive the object to answer "is it dead". Three ways: a weak count beside the
+strong one, a side table keyed by address, or a per-object indirection cell (which needs a
+header slot or a table to be found, so it collapses into one of the other two).
+
+The objection to a weak count was that §9.5's uniform-header requirement would force it on
+`-mm=gc` builds too — doubling a header that is already dead weight there. **That objection
+dissolves once the header grows downwards.** Put the strong count immediately before the
+payload and the weak count before *that*:
+
+```
+    [ weak ] [ strong ] | payload
+                        ^ the pointer everything holds
+```
+
+`strong` is at `payload - wordSize` in **every** model. That is the only field a cross-model
+write touches — marking a foreign object immortal — so the uniformity §9.7 needs is preserved
+while `weak` exists only under `-mm=rc`. GC builds keep the single word they have today.
+
+This does split one constant in two: the *block* size, used for allocation and free, and the
+*strong offset*, used by the count operations. `getBlockPtrFromPayloadPtr` currently serves
+both, and the count paths would move to the strong offset.
+
+Taking a weak reference to an immortal object — a string literal, or anything from a
+differently-managed module — never touches the weak word: immortal means never dies, so the
+reference is trivially always valid. That keeps a `-mm=rc` module from reading a second header
+word that a `-mm=gc` module never wrote.
+
+#### Lifecycle
+
+Strong zero destroys, weak zero frees. When the last strong reference goes, the fields are
+released as they are today, but the block itself survives while any weak reference remains — a
+tombstone, distinguished by `strong == 0 && weak > 0`. `deref()` checks `strong > 0`, and if so
+increments it and returns the object, so the referent cannot die between the check and the use.
+
+`WeakRef<T>` is itself an owned type with its own release routine — decrement `weak`, free the
+block if both counts are zero — which makes it one more shape for `ReleaseRoutineLogic` rather
+than anything new.
+
+None of the count operations are atomic. That matches the rest of the compiler today and should
+be revisited with threading, not before.
+
+#### What this does not solve
+
+An accidental cycle still leaks silently; weak references let a programmer break one they know
+about. The natural follow-on is a debug-mode leak report at exit — every block whose strong
+count never reached zero — which is cheap once counts are maintained, and is a far better answer
+than a cycle collector for a language whose users can switch to `-mm=gc` with one flag.

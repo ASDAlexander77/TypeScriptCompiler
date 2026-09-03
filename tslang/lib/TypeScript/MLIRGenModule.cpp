@@ -339,6 +339,46 @@ namespace mlirgen
 #endif
     }
 
+    // Records which memory model this module was built under, so an importer can tell whether
+    // objects arriving from it are managed the same way its own are. Emitted alongside the
+    // declaration text and under the same condition: a module that exports no declarations
+    // cannot be imported, so there is no boundary to mark.
+    mlir::LogicalResult MLIRGenImpl::createMemoryModelExportGlobalVar(const GenContext &genContext)
+    {
+        if (!declExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
+        {
+            return mlir::success();
+        }
+
+        auto modelName = std::string(memoryModelName(compileOptions.memoryModel));
+
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, modelName, true));
+            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);
+        };
+
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
+
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        varClass.isPublic = true;
+
+        // the model is part of the symbol name, so reading it back is a symbol enumeration
+        // rather than a data load
+        std::string varName(SHARED_LIB_MEMORY_MODEL);
+        varName.append(modelName);
+        varName.append("_");
+        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append("_");
+        varName.append(to_string(hash_value(mainSourceFileName)));
+
+        auto varNameRef = StringRef(varName).copy(stringAllocator);
+
+        registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult MLIRGenImpl::createGenericClassDeclarationExportGlobalVar(const GenContext &genContext)
     {
         if (!genericDeclExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
@@ -694,6 +734,11 @@ namespace mlirgen
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
+
+            if (mlir::failed(createMemoryModelExportGlobalVar(genContext))) {
+                outputDiagnostics(postponedMessages, 1);
+                return mlir::failure();
+            }
         }
 
         clearTempModule();
@@ -840,16 +885,41 @@ namespace mlirgen
         SmallVector<StringRef> symbolsAll;
         Dump::getSymbols(filePath, symbolsAll, stringAllocator);
 
+        StringRef memoryModelSymbol;
         for (auto symbol : symbolsAll)
         {
             if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
             {
                 symbols.push_back(symbol);
             }
+            else if (symbol.starts_with(SHARED_LIB_MEMORY_MODEL))
+            {
+                memoryModelSymbol = symbol;
+            }
             else if (symbol == MLIR_GCTORS)
             {
                 mlirGctors = symbol;
             }
+        }
+
+        // "__tsmm_<model>_<file>_<hash>" - the model is the segment after the prefix. A library
+        // with no marker predates it, and everything did collect back then.
+        auto libraryModel = std::string("gc");
+        if (!memoryModelSymbol.empty())
+        {
+            auto rest = memoryModelSymbol.drop_front(StringRef(SHARED_LIB_MEMORY_MODEL).size());
+            libraryModel = rest.take_until([](char c) { return c == '_'; }).str();
+        }
+
+        if (libraryModel != memoryModelName(compileOptions.memoryModel))
+        {
+            // Allowed on purpose: an object arriving from a module managed differently is
+            // treated as immortal rather than rejected, so it leaks instead of being freed
+            // twice. See docs/reference-counting-evaluation.md section 4.
+            emitWarning(location) << "shared library '" << filePath << "' was built with -mm="
+                                  << libraryModel << ", this module with -mm="
+                                  << memoryModelName(compileOptions.memoryModel)
+                                  << ". Objects crossing between them are never reclaimed.";
         }
 #else
         // only 1 file to load        

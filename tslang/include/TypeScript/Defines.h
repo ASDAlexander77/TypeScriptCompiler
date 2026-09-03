@@ -64,6 +64,15 @@
 #define SHARED_LIB_DECLARATIONS_FILENAME "__decls.ts"
 #define SHARED_LIB_DECLARATIONS_2UNDERSCORE "__decls"
 #define SHARED_LIB_DECLARATIONS "___decls"
+// A shared library records the memory model it was built under as an exported data symbol
+// named "__tsmm_<model>_<file>_<hash>" - the model is in the NAME, so an importer reads it by
+// enumerating symbols and never has to load the data. Deliberately not "__decls"-prefixed, so
+// it can never reach the declaration re-parser.
+//
+// Objects allocated by a module built under a different model must not be freed by this one:
+// see docs/reference-counting-evaluation.md section 4. A missing marker means a module built
+// before this existed, which is always garbage-collected.
+#define SHARED_LIB_MEMORY_MODEL "__tsmm_"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 

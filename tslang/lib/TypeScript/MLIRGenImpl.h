@@ -219,6 +219,7 @@ class MLIRGenImpl
 #endif    
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext);
+    mlir::LogicalResult createMemoryModelExportGlobalVar(const GenContext &genContext);
     mlir::LogicalResult createGenericClassDeclarationExportGlobalVar(const GenContext &genContext);
 
     bool isCodeStatment(SyntaxKind kind);
