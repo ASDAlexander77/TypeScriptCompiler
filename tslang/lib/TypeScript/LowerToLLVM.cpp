@@ -346,6 +346,34 @@ class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
     }
 };
 
+class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::TypeDescriptorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TypeDescriptorOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeOfOpHelper toh(rewriter);
+
+        auto descriptorType = op.getDescriptorType();
+        auto name = toh.typeOfAsString(descriptorType);
+        if (name.empty())
+        {
+            // TypeOfOpHelper::typeDescriptorValue only builds this op when the type has a
+            // name, so an empty one here means a type grew a descriptor without growing a
+            // typeOf name.
+            op.emitError("no 'typeof' name for type: ") << descriptorType;
+            return mlir::failure();
+        }
+
+        rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name, TypeOfOpHelper::typeKindFromName(name)));
+
+        return success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -854,21 +882,18 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
 
         // typeOfAsString reports concrete-width tags ("s32"/"s64"/...) for integer
         // literals and only uses "number" for float-typed values (see
-        // TypeOfOpHelper::typeOfAsString) -- so "is this any numeric" must check the
-        // realistic set of concrete tags a `number`-inferred literal can carry, not
-        // just the literal string "number".
-        auto isNumericTag = [&](mlir::Value tag) {
-            mlir::Value result = isTag(tag, "number");
-            for (auto name : {"s32", "s64", "u32", "u64", "i32", "i64", "f32", "f64"})
-            {
-                result = rewriter.create<LLVM::OrOp>(loc, result, isTag(tag, name));
-            }
-            return result;
-        };
+        // TypeOfOpHelper::typeOfAsString), so "is this any numeric" cannot just test the
+        // name "number". The descriptor behind every tag carries the category directly, so
+        // this is one load and one compare rather than a chain of strcmps -- and it covers
+        // every numeric width rather than the nine that were spelled out here before.
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto isKind = [&](mlir::Value tag, int kind) { return tdl.isKind(tag, kind); };
 
         // unbox a numeric `any` (whatever its concrete boxed width/signedness) into
         // a normalized f64 for comparison, dispatching on the exact tag reported at
-        // box time so we read back the same width that was stored.
+        // box time so we read back the same width that was stored. This one stays
+        // name-based: the descriptor's kind says "numeric", not which width, and the
+        // width is what decides how many bytes to read back.
         auto unboxNumericAsF64 = [&](mlir::Value numberSideAny, mlir::Value numberTag) {
             auto asF64 = [&](mlir::Type storedTy) {
                 auto raw = al.UnboxAny(numberSideAny, tch.convertType(storedTy));
@@ -923,12 +948,12 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
             return compareAsString(coercedStr, strVal);
         };
 
-        auto tag1IsNumber = isNumericTag(tag1);
-        auto tag1IsString = isTag(tag1, "string");
-        auto tag1IsBoolean = isTag(tag1, "boolean");
-        auto tag2IsNumber = isNumericTag(tag2);
-        auto tag2IsString = isTag(tag2, "string");
-        auto tag2IsBoolean = isTag(tag2, "boolean");
+        auto tag1IsNumber = isKind(tag1, TYPE_KIND_NUMBER);
+        auto tag1IsString = isKind(tag1, TYPE_KIND_STRING);
+        auto tag1IsBoolean = isKind(tag1, TYPE_KIND_BOOLEAN);
+        auto tag2IsNumber = isKind(tag2, TYPE_KIND_NUMBER);
+        auto tag2IsString = isKind(tag2, TYPE_KIND_STRING);
+        auto tag2IsBoolean = isKind(tag2, TYPE_KIND_BOOLEAN);
 
         auto op1IsNumberOp2IsString = rewriter.create<LLVM::AndOp>(loc, tag1IsNumber, tag2IsString);
         auto op1IsStringOp2IsNumber = rewriter.create<LLVM::AndOp>(loc, tag1IsString, tag2IsNumber);
@@ -6781,7 +6806,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 

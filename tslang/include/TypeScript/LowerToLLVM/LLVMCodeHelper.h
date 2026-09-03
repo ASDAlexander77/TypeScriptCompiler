@@ -14,6 +14,7 @@
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -342,6 +343,61 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     StringAttr getStringAttrWith0(std::string value)
     {
         return rewriter.getStringAttr(StringRef(value.data(), value.length() + 1));
+    }
+
+    // Emits, once per concrete type, the static descriptor for that type, and returns a
+    // pointer to its trailing name bytes. That pointer is the runtime type tag: it reads as
+    // an ordinary NUL-terminated type name, and the record is at `tag - sizeof(record)`.
+    // See TYPE_DESCR_* in Defines.h.
+    mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind)
+    {
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        // keyed by the concrete type rather than by the name: every class reports the name
+        // "class", but each needs its own record, which is the point of having one at all
+        std::stringstream varName;
+        varName << "td_" << (size_t)hash_value(type) << "_" << name;
+
+        auto recordType = TypeDescriptorLogic::getRecordType(rewriter);
+        auto nameArrayType = th.getArrayType(th.getI8Type(), name.length() + 1);
+        auto descriptorType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {recordType, nameArrayType}, false);
+
+        LLVM::GlobalOp global;
+        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(varName.str())))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            seekLast(parentModule.getBody());
+
+            global = rewriter.create<LLVM::GlobalOp>(loc, descriptorType, true, LLVM::Linkage::Internal, varName.str(),
+                                                     mlir::Attribute{});
+
+            setStructWritingPoint(global);
+
+            auto i32Ty = th.getI32Type();
+
+            mlir::Value recordValue = rewriter.create<LLVM::UndefOp>(loc, recordType);
+            setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(kind)),
+                           TYPE_DESCR_KIND);
+            setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(0)),
+                           TYPE_DESCR_RESERVED);
+            // no release routine yet - see the note on TYPE_DESCR_RELEASE
+            setStructValue(loc, recordValue, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), TYPE_DESCR_RELEASE);
+
+            mlir::Value descriptorValue = rewriter.create<LLVM::UndefOp>(loc, descriptorType);
+            setStructValue(loc, descriptorValue, recordValue, 0);
+            setStructValue(loc, descriptorValue,
+                           rewriter.create<LLVM::ConstantOp>(loc, nameArrayType, getStringAttrWith0(name)), 1);
+
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{descriptorValue});
+        }
+
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), descriptorType, globalPtr, ArrayRef<LLVM::GEPArg>{0, 1, 0});
     }
 
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)

@@ -93,6 +93,44 @@
 #define ANY_TYPE 1
 #define ANY_DATA 2
 
+// Runtime type descriptor.
+//
+// The ANY_TYPE slot of an "any" box, and the UNION_TAG_INDEX slot of a tagged union, both
+// hold a "type tag": a pointer to the NUL-terminated type name, which is what `typeof`
+// returns. That name is stored immediately after a fixed-size descriptor record, so the
+// descriptor for a tag is reachable at `tag - sizeof(descriptor)` - the same
+// header-in-front-of-payload arrangement used for heap blocks. The trailing name is a byte
+// array, so it never needs padding in front of it and that offset is exactly the record
+// size on every target.
+//
+// This makes the layout below a cross-module contract even though each module emits its
+// own internal-linkage descriptors: a tag produced by one module is read back by another.
+// Fields may be appended, but never reordered or resized.
+#define TYPE_DESCR_KIND 0
+#define TYPE_DESCR_RESERVED 1
+// Reserved for the per-type release routine (docs/reference-counting-evaluation.md step 4).
+// Always null today and never called; it exists now so pinning the layout is a decision made
+// once rather than a later break of the contract above.
+#define TYPE_DESCR_RELEASE 2
+
+// Coarse category of the described type. These correspond one-to-one with the names
+// TypeOfOpHelper::typeOfAsString reports, and are derived from that name so the two cannot
+// drift apart - see TypeOfOpHelper::typeKindFromName.
+#define TYPE_KIND_UNKNOWN 0
+#define TYPE_KIND_NUMBER 1
+#define TYPE_KIND_STRING 2
+#define TYPE_KIND_BOOLEAN 3
+#define TYPE_KIND_CHAR 4
+#define TYPE_KIND_ARRAY 5
+#define TYPE_KIND_TUPLE 6
+#define TYPE_KIND_OBJECT 7
+#define TYPE_KIND_CLASS 8
+#define TYPE_KIND_INTERFACE 9
+#define TYPE_KIND_FUNCTION 10
+#define TYPE_KIND_SYMBOL 11
+#define TYPE_KIND_UNDEFINED 12
+#define TYPE_KIND_NULL 13
+
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 

@@ -124,6 +124,10 @@ future language feature has to be correct under both.
 release an `any`'s payload you must know whether it holds a pointer and which routine
 frees it. There is no id-to-release-function table. Tagged unions have the same problem.
 
+> **Addressed 2026-09-03 (§9.3).** Every tag now points into a per-concrete-type descriptor
+> carrying a kind id and a reserved release slot. The table step 4 needs has somewhere to
+> live; nothing fills it in yet.
+
 ### 3.5 Cleanup landing pads
 
 `ENABLE_EXCEPTIONS` is on. Every throw path must release the live owned values in each
@@ -333,6 +337,7 @@ word as non-pointer, and it perturbs machinery that is live and load-bearing tod
 path 1 first and alone; treat path 2 as its own change with its own verification.
 3. **Real type ids in `any`/union boxes**, replacing the type-name string (§3.4).
    Independently useful — `any` comparison already pays for stringly-typed tags.
+   **Done 2026-09-03, see §9.3.**
 4. **Generate per-type release routines** from the existing bitmap machinery, initially
    unreferenced and verifiable in isolation.
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
@@ -355,3 +360,40 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 
 The other drivers that would justify Tier D: hard real-time latency budgets, and shipping
 without a runtime dependency on libgc.
+
+### 9.3 Step 3: the tag now points into a per-type descriptor
+
+Landed 2026-09-03, full release suite green (829/829, 106 of them cross-module).
+
+The obstacle was that the tag is not merely *a* string, it is the **`typeof` result itself**:
+`GetTypeInfoFromUnionOp` returns it straight to `typeof`, `MLIRGenImpl.h:3895` `strcmp`s it
+against `"class"` to implement `instanceof` over `any`, and the generated union operator
+helpers compare `typeof(r) == "class"` in source text. Anything that stops the tag being a
+readable `char*` breaks all three.
+
+So the tag stays a `char*` and the record moves in front of it. Each distinct type gets one
+static global `{ { i32 kind, i32 reserved, ptr release }, [N x i8] name }`, and the tag is
+the address of `name`. Every existing consumer keeps reading a NUL-terminated type name and
+is untouched; anything wanting the record takes `tag - sizeof(record)`, which the emitted IR
+constant-folds to `getelementptr i8, ptr @td_..., i64 -16`. The trailing name is a byte
+array, so nothing is padded in front of it and that offset equals the record size on every
+target. This is the same header-in-front-of-payload shape as step 2, deliberately.
+
+Three consequences worth recording:
+
+- **The descriptor is keyed by the concrete type, not by the name.** Two classes both report
+  `"class"` and now get two records — which is the entire point, since step 4 needs somewhere
+  per-class to hang a release routine, and the name erases exactly that distinction.
+  `typeOfBaseType` strips the wrappers `typeOfAsString` already sees through, so all the
+  string literal types still share one `"string"` record rather than minting their own.
+- **`TYPE_DESCR_*` is a cross-module contract**, even though every record has internal
+  linkage. A tag produced by one module is read back by another, so the reader applies *its*
+  idea of the record size to *the producer's* record. Same §4 hazard as the heap header, same
+  answer: pin the layout once. The release slot is reserved now for that reason, not because
+  anything calls it.
+- **`any` comparison stopped paying for stringly-typed tags.** Asking "is this operand
+  numeric" ran nine `strcmp`s per operand, because `typeOfAsString` reports `"s32"`/`"f64"`
+  and not `"number"` for anything but a float. It is now one load and one compare against
+  `TYPE_KIND_NUMBER`, and it covers every numeric width instead of the nine that happened to
+  be listed. The width dispatch in `unboxNumericAsF64` stays name-based on purpose: the kind
+  says *numeric*, and it is the width that decides how many bytes to read back.

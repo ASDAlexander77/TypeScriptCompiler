@@ -499,6 +499,22 @@ def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny", [Pure]> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
+def TypeScript_TypeDescriptorOp : TypeScript_Op<"TypeDescriptor", [Pure]> {
+  let summary = "type name from the static descriptor of a type";
+  let description = [{
+    Yields the type name of $descriptorType, as `typeof` reports it. The name is a pointer
+    into a static per-type descriptor record, so consumers that only want the name treat
+    this exactly like any other string, while consumers that want the record reach it at
+    `name - sizeof(descriptor)` - see TYPE_DESCR_* in Defines.h.
+
+    This is what produces the runtime type tag stored in an "any" box and in a tagged
+    union, so every such tag points into a descriptor.
+  }];
+
+  let arguments = (ins TypeAttr:$descriptorType);
+  let results = (outs TypeScript_String:$name);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{
