@@ -349,7 +349,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     // pointer to its trailing name bytes. That pointer is the runtime type tag: it reads as
     // an ordinary NUL-terminated type name, and the record is at `tag - sizeof(record)`.
     // See TYPE_DESCR_* in Defines.h.
-    mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind)
+    mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
+                                             StringRef releaseRoutineName)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -385,8 +386,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                            TYPE_DESCR_KIND);
             setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(0)),
                            TYPE_DESCR_RESERVED);
-            // no release routine yet - see the note on TYPE_DESCR_RELEASE
-            setStructValue(loc, recordValue, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), TYPE_DESCR_RELEASE);
+            // empty when the type owns no heap memory, which a null slot states positively:
+            // "nothing to release", rather than leaving it unknown
+            mlir::Value releaseValue =
+                releaseRoutineName.empty()
+                    ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
+                    : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), releaseRoutineName);
+            setStructValue(loc, recordValue, releaseValue, TYPE_DESCR_RELEASE);
 
             mlir::Value descriptorValue = rewriter.create<LLVM::UndefOp>(loc, descriptorType);
             setStructValue(loc, descriptorValue, recordValue, 0);

@@ -339,7 +339,12 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    Independently useful — `any` comparison already pays for stringly-typed tags.
    **Done 2026-09-03, see §9.3.**
 4. **Generate per-type release routines** from the existing bitmap machinery, initially
-   unreferenced and verifiable in isolation.
+   unreferenced and verifiable in isolation. **Done 2026-09-03, see §9.4** — built fresh
+   rather than from the bitmap machinery, which §9.2 had already retired as unsound.
+4a. **Give static string literals the block header, with an immortal marker.** Inserted by
+   §9.4's finding: a `string` field can hold a pointer into a read-only global, so releasing
+   strings is impossible until heap and static strings are distinguishable. Blocks the
+   strings-first scope below.
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
    no return.*
@@ -350,7 +355,7 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 - **`string` only (Tier C).** Strings are leaves — a string never points to another heap
   object, so release is a single free with no recursive traversal and **no cycle is
   representable**. Strings are also the highest allocation-rate type. Highest benefit, zero
-  cycle risk, bounded blast radius.
+  cycle risk, bounded blast radius. **Blocked on step 4a** — see §9.4.
 - **WASM target.** The strongest driver for RC existing at all. WASM is the one environment
   where conservative native-stack scanning is unavailable, which is the assumption Boehm
   rests on (`docs/llvm-gc-integration.md`), and the compiler already forks its allocation
@@ -397,3 +402,68 @@ Three consequences worth recording:
   `TYPE_KIND_NUMBER`, and it covers every numeric width instead of the nine that happened to
   be listed. The width dispatch in `unboxNumericAsF64` stays name-based on purpose: the kind
   says *numeric*, and it is the width that decides how many bytes to read back.
+
+### 9.4 Step 4: per-type release routines
+
+Landed 2026-09-03, full release suite green (829/829). Nothing calls them; the only reference
+is the descriptor slot from §9.3, which is also what keeps them from being dead-stripped.
+
+The doc originally said "from the existing bitmap machinery". That machinery turned out to be
+the unsound generator §9.2 retired, so this is built fresh — and built the other way round.
+The old bitmap was *computed at run time*, with shifts and ORs into a stack array, which is
+the root of all three of its defects. The pointer layout of a type is knowable at compile
+time, so the routines are emitted as straight-line code with the offsets baked in.
+
+**Calling convention:** a routine takes a pointer to the *storage holding* a value, not the
+value. That is uniform across value categories — a class field, an `any` payload slot and a
+local all address the same way — and it makes releasing a field a plain GEP plus a call.
+
+**What each shape does:**
+
+| type | owns | routine |
+| --- | --- | --- |
+| `string` | its own block | null check, free |
+| `array<E>` | data block + elements | loop `0..length` calling E's routine, then free data |
+| class / object | the instance block | release storage fields, free instance |
+| `any` | its own box | read the tag's descriptor, call *its* release on the payload slot, free box |
+| tagged union | nothing (payload inline) | same descriptor dispatch, no free |
+| `optional<T>` | nothing | release the value slot when the flag is set |
+| tuple, class storage | nothing | release the fields, free nothing |
+
+The `any` and union rows are the payoff of §9.3: a value whose type is known only at run time
+still resolves to a release routine, through the tag.
+
+Recursion works because the symbol is created before its body: `class Node { next: Node }`
+emits a routine that calls itself. That also means a cyclic *object* graph would recurse
+forever, which is the cycle problem of §5 showing up in concrete form rather than a new one.
+
+**Deliberately not released**, each for a stated reason: `InterfaceType` carries only a name,
+so the layout behind its `this` pointer is not recoverable from the type and needs an RTTI
+lookup rather than a static walk; function types do not mention their capture box, so there is
+nothing to walk even though the box is heap-allocated; `RefType`/`ValueRefType` point at
+storage the value does not own; `ConstArrayType` and `ConstTupleType` are static data. A null
+release slot says "nothing to release" positively — it is not an "unknown".
+
+#### The finding: static strings block releasing strings
+
+Writing the string routine surfaced a prerequisite that reorders the plan. A string literal
+compiles to `store ptr @s_..., ...` — a `string` field can hold a pointer directly into a
+read-only global that no allocator produced. `free(@s_... - headerSize)` corrupts the heap.
+
+This lands squarely on §9's recommended first shipping scope, which is **strings only**,
+chosen because strings are leaves with no representable cycle. That scope is not reachable
+until heap strings and static strings are distinguishable at run time.
+
+The consistent answer is the same one used twice already: give static string globals the same
+block header, with an immortal marker in the count, so `__tslang_free_block` can test it and
+skip. Every heap string already has that header from step 1, and every string pointer is
+already `&bytes` of something — this only changes what precedes those bytes. It is deliberately
+*not* part of this change: it touches every string literal in every module, on a hot path, and
+deserves its own verification.
+
+So the order from here is: **static-string immortality first, then ownership tracking (step 5)** —
+not straight to step 5 as originally written.
+
+**Cost note.** These routines are emitted under GC, where they are pure dead weight, so that
+their construction and module verification are exercised by every test. That is the "verifiable
+in isolation" the plan asked for, paid for in a few small internal functions per module.

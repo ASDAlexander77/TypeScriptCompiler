@@ -12,6 +12,7 @@
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/ReleaseRoutineLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVC.h"
 #include "TypeScript/LowerToLLVM/AssertLogic.h"
 #include "TypeScript/LowerToLLVM/DefaultLogic.h"

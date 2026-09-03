@@ -368,7 +368,14 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
             return mlir::failure();
         }
 
-        rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name, TypeOfOpHelper::typeKindFromName(name)));
+        // generated first: the descriptor's initializer takes the routine's address, so the
+        // symbol has to exist before the global is built
+        ReleaseRoutineLogic rrl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = rrl.getOrCreateReleaseRoutine(descriptorType);
+
+        rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
+                                                               TypeOfOpHelper::typeKindFromName(name),
+                                                               releaseRoutineName));
 
         return success();
     }
