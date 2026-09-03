@@ -361,10 +361,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    for marking foreign objects immortal. **Done 2026-09-03, see §9.7.**
 4d. **`WeakRef<T>` representation.** Settled on paper before any code, because the header
    layout it implies is ABI. **Designed 2026-09-03, see §9.8; not implemented.**
+4e. **`ts.Retain` / `ts.Release` in the dialect**, with retain routines to match the release
+   ones, so that ownership can be *stated* before deciding where. Still inert — nothing emits
+   them. **Done 2026-09-03, see §9.10.**
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
    no return* — and the first step where a mistake is not inert: a missing retain frees live
-   memory, an extra one leaks.
+   memory, an extra one leaks. Narrowed by §9.10: the mistake can only reach `-mm=rc`.
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -717,3 +720,49 @@ pre-existing behaviour, unchanged here.
 a release now actually frees. With no retains inserted yet every block still has a count of one,
 so a released object is always the last reference — which is exactly the case ownership tracking
 will complicate.
+
+
+### 9.10 Step 4e: `ts.Retain` and `ts.Release`
+
+Ownership is now sayable in the dialect. `ts.Retain` records that a further owner holds a
+value; `ts.Release` gives one owner's claim up, destroying the value and freeing its block when
+it was the last. Nothing emits either yet, so this step is still inert.
+
+**The ops erase under any model that is not reference counting.** This is the design decision
+the rest of the step follows from, and it is what makes "RC is an option" hold at the level of
+the code rather than as an aspiration. MLIRGen can state ownership once, unconditionally, with
+no `isRefCounted()` branching through it; the ops carry the intent and the lowering decides
+whether it costs anything.
+
+It also reshapes the risk of step 5 considerably. Ownership insertion is where a mistake stops
+being inert — a missing retain frees live memory, an extra one leaks — but a misplaced op is
+*erased* in a collected build. The ~830 GC tests are therefore structurally immune to
+insertion bugs, not merely expected to pass. Only the 17 `-mm=rc` tests can break, which is a
+blast radius small enough to reason about.
+
+**Retain is not the mirror image of release, and the asymmetry is the whole difficulty.**
+Retaining a *reference* stops at the block it names: a second reference to an object does not
+duplicate that object's own references to its fields. Release does walk the fields, but only
+inside `emitIfLastReference` — that is, only when the block is about to die and its fields'
+references die with it. What does propagate a retain inwards is a value held *inline* — a
+tuple, an optional, a tagged union — because copying one really does duplicate every reference
+it holds. Getting this backwards leaks (retaining fields that were never released) or
+double-frees (releasing fields that were never retained), and neither shows up until a count
+is wrong much later, so the two builders sit next to each other in one file with the reasoning
+written between them. `ReleaseRoutineLogic` became `OwnershipRoutineLogic` for that reason.
+
+`__tslang_inc_ref` skips a block marked `HEAP_BLOCK_IMMORTAL`, which is not an optimisation:
+incrementing all-ones gives zero, and the next release would read that as "last reference" and
+free a string literal.
+
+The descriptor record grew a retain slot beside the release one (`TYPE_DESCR_RETAIN`), for the
+same reason the release slot exists — a tagged union carries its payload inline, so copying one
+has to retain a value whose type is only known at run time, and the tag is what knows it. The
+block header stays last, immediately in front of the name bytes, so a tag still reads as an
+immortal string payload; the name simply moved from offset 24 to 32.
+
+Verified by reading the emitted IR under both models. A retain routine loads the reference and
+calls `__tslang_inc_ref`, with no field walk, confirming the asymmetry holds in the generated
+code and not just in intent. Temporarily emitting both ops at the `delete` site showed
+`tsretv_`/`tsrelv_` calls under `-mm=rc` and *nothing at all* under `-mm=gc`, where only the
+collector's `GC_free` remains; the hook was then reverted. Full release suite green: 847/847.

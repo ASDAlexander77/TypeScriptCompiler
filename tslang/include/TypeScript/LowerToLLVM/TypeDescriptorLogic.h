@@ -37,7 +37,7 @@ class TypeDescriptorLogic
     {
         auto i32Ty = builder.getI32Type();
         auto ptrTy = LLVM::LLVMPointerType::get(builder.getContext());
-        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, llvmIndexType}, false);
+        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, ptrTy, llvmIndexType}, false);
     }
 
     LLVM::LLVMStructType getRecordType()

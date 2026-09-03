@@ -1,5 +1,5 @@
-#ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_RELEASEROUTINELOGIC_H_
-#define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_RELEASEROUTINELOGIC_H_
+#ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_OWNERSHIPROUTINELOGIC_H_
+#define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_OWNERSHIPROUTINELOGIC_H_
 
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
@@ -35,7 +35,7 @@ namespace typescript
 // type, not the value. That is uniform across value categories - a class field, an "any"
 // payload slot and a local variable are all addressed the same way - and it is what lets a
 // field's release be a plain call with a GEP.
-class ReleaseRoutineLogic
+class OwnershipRoutineLogic
 {
     Operation *op;
     PatternRewriter &rewriter;
@@ -43,7 +43,7 @@ class ReleaseRoutineLogic
     CompileOptions &compileOptions;
 
   public:
-    ReleaseRoutineLogic(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter,
+    OwnershipRoutineLogic(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter,
                         CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
@@ -54,7 +54,7 @@ class ReleaseRoutineLogic
     // slot means "nothing to release", not "unknown".
     std::string getOrCreateReleaseRoutine(mlir::Type type)
     {
-        if (!needsRelease(type))
+        if (!ownsHeapMemory(type))
         {
             return {};
         }
@@ -87,6 +87,59 @@ class ReleaseRoutineLogic
         return name;
     }
 
+    // Symbol name of the retain routine for `type`, generating it if needed. Empty when the
+    // type owns no heap memory, in which case the descriptor's retain slot stays null.
+    //
+    // Like release, the routine addresses the storage holding a value rather than the value.
+    std::string getOrCreateRetainRoutine(mlir::Type type)
+    {
+        if (!ownsHeapMemory(type))
+        {
+            return {};
+        }
+
+        auto name = getRetainRoutineName(type);
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+            loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+
+        // as with release, the symbol must exist before the body is built, so that a
+        // recursive type reaches its own routine while generating it
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        buildRetainBody(type, entryBlock->getArgument(0));
+
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        return name;
+    }
+
+    // Takes one reference to `value`, whose TypeScript type is `type`. Emits nothing when the
+    // type owns no heap memory. Wrapped for the same reason as emitReleaseValue.
+    void emitRetainValue(mlir::Type type, mlir::Value value)
+    {
+        auto wrapperName = getOrCreateRetainValueRoutine(type);
+        if (wrapperName.empty())
+        {
+            return;
+        }
+
+        rewriter.create<LLVM::CallOp>(op->getLoc(), TypeRange{},
+                                      FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
+    }
+
     // Drops one reference held by `value`, whose TypeScript type is `type`. Emits nothing
     // when the type owns no heap memory.
     //
@@ -106,15 +159,16 @@ class ReleaseRoutineLogic
                                       FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
     }
 
-    // Does a value of this type own heap memory, directly or through its fields?
-    bool needsRelease(mlir::Type type)
+    // Does a value of this type own heap memory, directly or through its fields? The same
+    // question decides both directions: a type with nothing to release has nothing to retain.
+    bool ownsHeapMemory(mlir::Type type)
     {
         llvm::SmallPtrSet<mlir::Type, 8> visiting;
-        return needsRelease(type, visiting);
+        return ownsHeapMemory(type, visiting);
     }
 
   private:
-    bool needsRelease(mlir::Type type, llvm::SmallPtrSetImpl<mlir::Type> &visiting)
+    bool ownsHeapMemory(mlir::Type type, llvm::SmallPtrSetImpl<mlir::Type> &visiting)
     {
         if (!visiting.insert(type).second)
         {
@@ -139,17 +193,17 @@ class ReleaseRoutineLogic
                 return true;
             }
 
-            return needsRelease(baseType, visiting);
+            return ownsHeapMemory(baseType, visiting);
         }
 
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
         {
-            return needsRelease(optionalType.getElementType(), visiting);
+            return ownsHeapMemory(optionalType.getElementType(), visiting);
         }
 
         for (auto fieldType : getFieldTypes(type))
         {
-            if (needsRelease(fieldType, visiting))
+            if (ownsHeapMemory(fieldType, visiting))
             {
                 return true;
             }
@@ -197,14 +251,41 @@ class ReleaseRoutineLogic
 
     std::string getOrCreateReleaseValueRoutine(mlir::Type type)
     {
-        auto slotRoutine = getOrCreateReleaseRoutine(type);
+        return getOrCreateValueWrapper(type, getOrCreateReleaseRoutine(type), "tsrelv_");
+    }
+
+    std::string getRoutineName(mlir::Type type)
+    {
+        std::stringstream ss;
+        ss << "tsrel_" << (size_t)hash_value(type);
+        return ss.str();
+    }
+
+    std::string getRetainRoutineName(mlir::Type type)
+    {
+        std::stringstream ss;
+        ss << "tsret_" << (size_t)hash_value(type);
+        return ss.str();
+    }
+
+    std::string getOrCreateRetainValueRoutine(mlir::Type type)
+    {
+        return getOrCreateValueWrapper(type, getOrCreateRetainRoutine(type), "tsretv_");
+    }
+
+    // A value-taking wrapper around a storage-taking routine: stores the value into an alloca
+    // in the wrapper's own entry block and calls through. Keeping the alloca here rather than
+    // at each call site means a retain or release inside a loop never grows the caller's
+    // frame, and LLVM inlines and promotes the whole thing away.
+    std::string getOrCreateValueWrapper(mlir::Type type, std::string slotRoutine, StringRef prefix)
+    {
         if (slotRoutine.empty())
         {
             return {};
         }
 
         std::stringstream nameStream;
-        nameStream << "tsrelv_" << (size_t)hash_value(type);
+        nameStream << prefix.str() << (size_t)hash_value(type);
         auto name = nameStream.str();
 
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -236,13 +317,6 @@ class ReleaseRoutineLogic
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
         return name;
-    }
-
-    std::string getRoutineName(mlir::Type type)
-    {
-        std::stringstream ss;
-        ss << "tsrel_" << (size_t)hash_value(type);
-        return ss.str();
     }
 
     // free(payload - headerSize). One generated helper rather than an inline free at every
@@ -336,6 +410,66 @@ class ReleaseRoutineLogic
                                                     FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
                                                     ValueRange{payloadPtr});
         return callOp.getResult();
+    }
+
+    // Takes one more reference to a block, when there is a block and it is mortal.
+    //
+    // Skipping an immortal block is not an optimisation: incrementing HEAP_BLOCK_IMMORTAL
+    // would turn all-ones into zero, and the next release would read that as "last reference"
+    // and free a string literal.
+    void emitIncRef(mlir::Value payloadPtr)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        const char *helperName = "__tslang_inc_ref";
+        if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            auto helper = rewriter.create<LLVM::LLVMFuncOp>(
+                loc, helperName, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+
+            auto *entryBlock = helper.addEntryBlock(rewriter);
+            rewriter.setInsertionPointToStart(entryBlock);
+
+            TypeConverterHelper tch(typeConverter);
+            LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto payload = entryBlock->getArgument(0);
+
+            auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+            auto isNotNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, payload, nullPtr);
+
+            auto *loadBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *incBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *returnBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+
+            rewriter.setInsertionPointToEnd(entryBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, isNotNull, loadBlock, returnBlock);
+
+            rewriter.setInsertionPointToStart(loadBlock);
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payload, llvmIndexType);
+            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            auto immortal = rewriter.create<LLVM::ConstantOp>(
+                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, incBlock, returnBlock);
+
+            rewriter.setInsertionPointToStart(incBlock);
+            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::AddOp>(loc, llvmIndexType, count, one), blockPtr);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
+
+            rewriter.setInsertionPointToStart(returnBlock);
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+        }
+
+        rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
+                                      ValueRange{payloadPtr});
     }
 
     // Runs `thenBody` -- the destroy half: release what the value owns, then free it -- only
@@ -551,6 +685,166 @@ class ReleaseRoutineLogic
         releaseFields(type, slotPtr);
     }
 
+    // Calls the retain routine of `type` on `slotPtr`, if it has one.
+    void retainSlot(mlir::Type type, mlir::Value slotPtr)
+    {
+        auto routineName = getOrCreateRetainRoutine(type);
+        if (routineName.empty())
+        {
+            return;
+        }
+
+        rewriter.create<LLVM::CallOp>(op->getLoc(), TypeRange{},
+                                      FlatSymbolRefAttr::get(rewriter.getContext(), routineName), ValueRange{slotPtr});
+    }
+
+    // Retains each field an inline record-shaped value owns. `basePtr` addresses the record.
+    void retainFields(mlir::Type recordType, mlir::Value basePtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto llvmRecordType = tch.convertType(recordType);
+
+        for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
+        {
+            auto routineName = getOrCreateRetainRoutine(fieldType);
+            if (routineName.empty())
+            {
+                continue;
+            }
+
+            auto fieldPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmRecordType, basePtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, (int32_t)index});
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{},
+                                          FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
+                                          ValueRange{fieldPtr});
+        }
+    }
+
+    // The retain counterpart of releaseViaDescriptor, reading the descriptor's retain slot.
+    void retainViaDescriptor(mlir::Value tagValue, mlir::Value valueSlotPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        TypeDescriptorLogic tdl(rewriter, tch, op->getLoc());
+
+        auto loc = op->getLoc();
+
+        auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
+        auto retainPtrSlot =
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
+                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RETAIN});
+        auto retainFn = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), retainPtrSlot);
+
+        emitIfNonNull(retainFn, [&]() {
+            mlir::SmallVector<mlir::Value> ops{retainFn, valueSlotPtr};
+            auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{}, ops);
+            callOp.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+            callOp.setOpBundleSizes({});
+        });
+    }
+
+    // The mirror of buildBody, and it is shorter for one reason worth stating plainly:
+    // retaining a *reference* stops at the block. Release recurses into an object's fields,
+    // but only inside emitIfLastReference - that is, only when the block is about to die and
+    // its fields' references die with it. A second reference to the same object does not
+    // duplicate the object's own references to its fields, so retain must not touch them.
+    // Only values held *inline* - tuples, optionals, tagged unions - propagate a retain
+    // inwards, because copying one really does duplicate every reference it holds.
+    void buildRetainBody(mlir::Type type, mlir::Value slotPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+
+        // each of these is a reference to a block of its own: string, class and object
+        // instances, and an "any" box
+        if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type) ||
+            isa<mlir_ts::AnyType>(type))
+        {
+            emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr));
+            return;
+        }
+
+        // an array value is { data, length }: the copy shares the data block, and the block
+        // already holds whatever the elements own
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            auto llvmArrayType = tch.convertType(arrayType);
+            auto dataSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmArrayType, slotPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+            emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot));
+            return;
+        }
+
+        // a tagged union carries its payload inline, so what it holds is copied with it
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            {
+                auto llvmUnionType = tch.convertType(unionType);
+                auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
+                                                            ArrayRef<LLVM::GEPArg>{0, UNION_TAG_INDEX});
+                auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+                auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
+                                                              ArrayRef<LLVM::GEPArg>{0, UNION_VALUE_INDEX});
+
+                retainViaDescriptor(tagValue, valueSlot);
+            }
+            else
+            {
+                retainSlot(baseType, slotPtr);
+            }
+
+            return;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            buildRetainOptionalBody(optionalType, slotPtr);
+            return;
+        }
+
+        // everything left is record-shaped and inline
+        retainFields(type, slotPtr);
+    }
+
+    void buildRetainOptionalBody(mlir_ts::OptionalType optionalType, mlir::Value slotPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmOptionalType = tch.convertType(optionalType);
+
+        auto hasValueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmOptionalType, slotPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, OPTIONAL_HASVALUE_INDEX});
+        auto hasValue = rewriter.create<LLVM::LoadOp>(loc, th.getLLVMBoolType(), hasValueSlot);
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmOptionalType, slotPtr,
+                                                      ArrayRef<LLVM::GEPArg>{0, OPTIONAL_VALUE_INDEX});
+        retainSlot(optionalType.getElementType(), valueSlot);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, hasValue, thenBlock, continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+    }
+
     void buildOptionalBody(mlir_ts::OptionalType optionalType, mlir::Value slotPtr)
     {
         TypeHelper th(rewriter);
@@ -652,4 +946,4 @@ class ReleaseRoutineLogic
 
 } // namespace typescript
 
-#endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_RELEASEROUTINELOGIC_H_
+#endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_OWNERSHIPROUTINELOGIC_H_

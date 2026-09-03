@@ -350,7 +350,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     // an ordinary NUL-terminated type name, and the record is at `tag - sizeof(record)`.
     // See TYPE_DESCR_* in Defines.h.
     mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
-                                             StringRef releaseRoutineName)
+                                             StringRef releaseRoutineName, StringRef retainRoutineName)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -395,6 +395,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
                     : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), releaseRoutineName);
             setStructValue(loc, recordValue, releaseValue, TYPE_DESCR_RELEASE);
+            mlir::Value retainValue =
+                retainRoutineName.empty()
+                    ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
+                    : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), retainRoutineName);
+            setStructValue(loc, recordValue, retainValue, TYPE_DESCR_RETAIN);
             // a tag doubles as a string payload, so what precedes the name has to read as an
             // immortal block header - see TYPE_DESCR_BLOCK_HEADER
             setStructValue(loc, recordValue,

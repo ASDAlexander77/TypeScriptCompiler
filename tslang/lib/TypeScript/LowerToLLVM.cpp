@@ -370,14 +370,57 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
 
         // generated first: the descriptor's initializer takes the routine's address, so the
         // symbol has to exist before the global is built
-        ReleaseRoutineLogic rrl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        auto releaseRoutineName = rrl.getOrCreateReleaseRoutine(descriptorType);
+        OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
-                                                               releaseRoutineName));
+                                                               releaseRoutineName, retainRoutineName));
 
         return success();
+    }
+};
+
+// Retain and Release lower to nothing at all unless the memory model is reference
+// counting. That is what lets MLIRGen state ownership unconditionally: the ops carry the
+// intent, and the model decides whether it costs anything. It also means the collected
+// builds cannot be broken by where the ops are placed, only the counted ones can.
+class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainValue(op.getReference().getType(), transformed.getReference());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
     }
 };
 
@@ -3054,8 +3097,8 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
         // That also keeps `delete` off an immortal block, which a bare free would not.
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
-            ReleaseRoutineLogic rrl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            rrl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());
+            OwnershipRoutineLogic orl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());
 
             rewriter.eraseOp(deleteOp);
             return mlir::success();
@@ -6825,7 +6868,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 

@@ -515,6 +515,36 @@ def TypeScript_TypeDescriptorOp : TypeScript_Op<"TypeDescriptor", [Pure]> {
   let results = (outs TypeScript_String:$name);
 }
 
+def TypeScript_RetainOp : TypeScript_Op<"Retain"> {
+  let summary = "take one reference to a value";
+  let description = [{
+    Records that a further owner now holds $reference, so that its heap blocks outlive the
+    original owner. The mirror of `ts.Release`, and the two are only ever emitted in pairs.
+
+    Under a memory model that is not reference counting this op is erased: a collector needs
+    no help tracking who holds what, so ownership can be expressed once, in MLIRGen, without
+    the insertion having to ask which model is in force.
+
+    Retaining a *reference* stops at the block it names. Only values held inline - tuples,
+    optionals, tagged unions - propagate the retain to what they contain, because copying one
+    really does duplicate every reference it holds.
+  }];
+
+  let arguments = (ins AnyType:$reference);
+}
+
+def TypeScript_ReleaseOp : TypeScript_Op<"Release"> {
+  let summary = "drop one reference to a value";
+  let description = [{
+    Gives up one owner's claim on $reference. When it was the last, the value is destroyed -
+    what it owns is released in turn - and its block freed.
+
+    Erased under a memory model that is not reference counting, like `ts.Retain`.
+  }];
+
+  let arguments = (ins AnyType:$reference);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{
