@@ -362,7 +362,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         std::stringstream varName;
         varName << "td_" << (size_t)hash_value(type) << "_" << name;
 
-        auto recordType = TypeDescriptorLogic::getRecordType(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto recordType = TypeDescriptorLogic::getRecordType(rewriter, llvmIndexType);
         auto nameArrayType = th.getArrayType(th.getI8Type(), name.length() + 1);
         auto descriptorType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {recordType, nameArrayType}, false);
 
@@ -393,6 +395,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
                     : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), releaseRoutineName);
             setStructValue(loc, recordValue, releaseValue, TYPE_DESCR_RELEASE);
+            // a tag doubles as a string payload, so what precedes the name has to read as an
+            // immortal block header - see TYPE_DESCR_BLOCK_HEADER
+            setStructValue(loc, recordValue,
+                           rewriter.create<LLVM::ConstantOp>(
+                               loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                           TYPE_DESCR_BLOCK_HEADER);
 
             mlir::Value descriptorValue = rewriter.create<LLVM::UndefOp>(loc, descriptorType);
             setStructValue(loc, descriptorValue, recordValue, 0);
@@ -400,6 +408,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                            rewriter.create<LLVM::ConstantOp>(loc, nameArrayType, getStringAttrWith0(name)), 1);
 
             rewriter.create<LLVM::ReturnOp>(loc, ValueRange{descriptorValue});
+
+            // the header immediately before the name is read as a whole word
+            global.setAlignment(getHeapBlockHeaderSize());
         }
 
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);

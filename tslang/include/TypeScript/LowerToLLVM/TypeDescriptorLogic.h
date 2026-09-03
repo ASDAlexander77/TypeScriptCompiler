@@ -32,12 +32,17 @@ class TypeDescriptorLogic
     {
     }
 
-    // { i32 kind, i32 reserved, ptr release }
-    static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder)
+    // { i32 kind, i32 reserved, ptr release, index blockHeader }
+    static LLVM::LLVMStructType getRecordType(mlir::OpBuilder &builder, mlir::Type llvmIndexType)
     {
         auto i32Ty = builder.getI32Type();
         auto ptrTy = LLVM::LLVMPointerType::get(builder.getContext());
-        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy}, false);
+        return LLVM::LLVMStructType::getLiteral(builder.getContext(), {i32Ty, i32Ty, ptrTy, llvmIndexType}, false);
+    }
+
+    LLVM::LLVMStructType getRecordType()
+    {
+        return getRecordType(rewriter, tch.convertType(th.getIndexType()));
     }
 
     // Size of the record, and therefore the distance from a tag back to it. The name is a
@@ -49,7 +54,7 @@ class TypeDescriptorLogic
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrTy);
-        auto endAddr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, getRecordType(rewriter), nullPtr, ArrayRef<LLVM::GEPArg>{1});
+        auto endAddr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, getRecordType(), nullPtr, ArrayRef<LLVM::GEPArg>{1});
         return rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, endAddr);
     }
 
@@ -68,7 +73,7 @@ class TypeDescriptorLogic
     mlir::Value getKindFromTag(mlir::Value tagValue)
     {
         auto recordPtr = getRecordPtrFromTag(tagValue);
-        auto kindPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(rewriter), recordPtr,
+        auto kindPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), getRecordType(), recordPtr,
                                                     ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_KIND});
         return rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), kindPtr);
     }

@@ -178,15 +178,15 @@ class ReleaseRoutineLogic
         return ss.str();
     }
 
-    // free(payload - headerSize), routed through one generated helper so the step where a
-    // release becomes conditional -- on a reference count, and on whether this is a heap
-    // block at all -- has a single place to land.
+    // free(payload - headerSize), unless the block says it is immortal.
     //
-    // That second condition is not hypothetical and is why these routines stay unreferenced:
-    // a string literal compiles to `store ptr @s_..., ...`, so a `string` field can hold a
-    // pointer straight into a read-only global that no allocator ever produced. Freeing
-    // `@s_... - headerSize` would corrupt the heap. Releasing strings therefore needs static
-    // strings to carry the same block header with an immortal marker - see section 9.4.
+    // The check is not decoration: a string literal compiles to `store ptr @s_..., ...`, so a
+    // `string` field can hold a pointer into a read-only global that no allocator produced.
+    // Static blocks carry the header too, marked HEAP_BLOCK_IMMORTAL, which is what lets this
+    // tell them apart.
+    //
+    // Routed through one generated helper so the other condition a release will grow -- a
+    // reference count reaching zero -- has a single place to land.
     void emitFreeBlock(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
@@ -205,9 +205,29 @@ class ReleaseRoutineLogic
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
 
+            TypeConverterHelper tch(typeConverter);
             LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
-            ch.MemoryFree(entryBlock->getArgument(0));
 
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto payloadPtr = entryBlock->getArgument(0);
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+            auto headerWord = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            auto immortal = rewriter.create<LLVM::ConstantOp>(
+                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, headerWord, immortal);
+
+            auto *freeBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *returnBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+
+            rewriter.setInsertionPointToEnd(entryBlock);
+
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, freeBlock, returnBlock);
+
+            rewriter.setInsertionPointToStart(freeBlock);
+            ch.MemoryFree(payloadPtr);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
+
+            rewriter.setInsertionPointToStart(returnBlock);
             rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
         }
 
@@ -289,8 +309,9 @@ class ReleaseRoutineLogic
 
         auto recordPtr = tdl.getRecordPtrFromTag(tagValue);
         auto releasePtrSlot =
-            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), TypeDescriptorLogic::getRecordType(rewriter), recordPtr,
-                                         ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RELEASE});
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(),
+                                         TypeDescriptorLogic::getRecordType(rewriter, tch.convertType(th.getIndexType())),
+                                         recordPtr, ArrayRef<LLVM::GEPArg>{0, TYPE_DESCR_RELEASE});
         auto releaseFn = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), releasePtrSlot);
 
         emitIfNonNull(releaseFn, [&]() {

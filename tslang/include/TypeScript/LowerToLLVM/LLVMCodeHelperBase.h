@@ -146,6 +146,14 @@ class LLVMCodeHelperBase
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
+        // A static string is a block like any other: the same header word sits in front of
+        // the characters, marked immortal, so a pointer to a string literal and a pointer to
+        // a heap string are the same shape and a release can tell them apart. All-ones bytes
+        // encode HEAP_BLOCK_IMMORTAL whatever the word size or endianness.
+        auto headerSize = getHeapBlockHeaderSize();
+        std::string blockBytes(headerSize, (char)0xFF);
+        blockBytes.append(value.data(), value.size());
+
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
         if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
@@ -155,13 +163,16 @@ class LLVMCodeHelperBase
 
             seekLast<StringAttr>(parentModule.getBody());
 
-            auto type = th.getArrayType(th.getI8Type(), value.size());
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(value));
+            auto type = th.getArrayType(th.getI8Type(), blockBytes.size());
+            global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(blockBytes));
+            // the header is read as a whole word, so the block base has to be word-aligned
+            global.setAlignment(headerSize);
         }
 
-        // Get the pointer to the first character in the global string.
+        // Get the pointer to the first character in the global string - past the header.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr,
+                                            ArrayRef<LLVM::GEPArg>{0, (int32_t)headerSize});
     }
 
   public:

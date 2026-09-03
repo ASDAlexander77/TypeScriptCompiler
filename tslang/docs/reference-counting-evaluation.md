@@ -343,8 +343,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    rather than from the bitmap machinery, which §9.2 had already retired as unsound.
 4a. **Give static string literals the block header, with an immortal marker.** Inserted by
    §9.4's finding: a `string` field can hold a pointer into a read-only global, so releasing
-   strings is impossible until heap and static strings are distinguishable. Blocks the
-   strings-first scope below.
+   strings is impossible until heap and static strings are distinguishable.
+   **Done 2026-09-03, see §9.5** — which also closed a second hole, `typeof` results pointing
+   into descriptors.
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
    no return.*
@@ -355,7 +356,8 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 - **`string` only (Tier C).** Strings are leaves — a string never points to another heap
   object, so release is a single free with no recursive traversal and **no cycle is
   representable**. Strings are also the highest allocation-rate type. Highest benefit, zero
-  cycle risk, bounded blast radius. **Blocked on step 4a** — see §9.4.
+  cycle risk, bounded blast radius. Step 4a (§9.5) cleared the static-string blocker; what is
+  left before this scope is reachable is maintaining the count itself.
 - **WASM target.** The strongest driver for RC existing at all. WASM is the one environment
   where conservative native-stack scanning is unavailable, which is the assumption Boehm
   rests on (`docs/llvm-gc-integration.md`), and the compiler already forks its allocation
@@ -467,3 +469,47 @@ not straight to step 5 as originally written.
 **Cost note.** These routines are emitted under GC, where they are pure dead weight, so that
 their construction and module verification are exercised by every test. That is the "verifiable
 in isolation" the plan asked for, paid for in a few small internal functions per module.
+
+### 9.5 Step 4a: static blocks carry the header too
+
+Landed 2026-09-03, full release suite green (829/829). This is the prerequisite §9.4 turned up,
+done straight away because it changes the layout of globals and so cannot be retrofitted.
+
+A string literal compiles to `store ptr @s_..., ...`. Before this, a `string` value was two
+different shapes depending on where it came from — a heap payload with a header in front, or a
+raw pointer into a read-only global — and nothing at run time could tell them apart. Every
+global string now carries the same header word as a heap block, set to `HEAP_BLOCK_IMMORTAL`,
+and `__tslang_free_block` skips a block that says it is immortal.
+
+The encoding is all-ones bytes, so the marker reads as `-1` whatever the word size or
+endianness, and it stays a plain `[N x i8]` global with a `StringAttr` initializer — no
+initializer region, and the existing `seekLast<StringAttr>` placement still works. The global
+is aligned to the header size so the word can be read as a word. Deliberately not zero: a
+zeroed word is what a fresh heap block reads.
+
+**Every global string gets it, not just the ones that could be released.** Deciding
+per-call-site which `getOrCreateGlobalString` produces a TypeScript string — as opposed to a
+printf format or a symbol name — would be an audit whose failure mode is silent corruption in
+exchange for saving eight bytes per constant. Uniformity is the same call made in step 2, for
+the same reason. The `"true"`/`"false"` globals from a boolean cast are a good example of a
+site that is not obviously a string value but is one.
+
+#### The tag was the second hole
+
+`typeof x` returns a pointer into a type descriptor, and `let s: string = typeof x` is ordinary
+TypeScript — so a tag is a string value that can be released like any other. The descriptor's
+name had nothing in front of it but the `release` field, which would have read as a very
+mortal-looking count.
+
+The record therefore ends with the block header, immediately before the name:
+`{ i32 kind, i32 reserved, ptr release, index blockHeader }`. Both reads now work off the same
+pointer — `tag - sizeof(header)` is the immortal marker, `tag - sizeof(record)` the record —
+and a tag is simultaneously a descriptor's name and a well-formed immortal payload.
+
+#### What this does not do
+
+Nothing writes the header on allocation, because nothing maintains a count yet. So the immortal
+test is meaningful for static blocks, where the marker is baked into the initializer, and says
+nothing useful about a heap block, whose word is whatever the allocator left. That half belongs
+with maintaining the count, in steps 5 and 6 — the static half is separated out here only
+because it is the half that changes an ABI.
