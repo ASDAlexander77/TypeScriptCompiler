@@ -8,7 +8,7 @@
 struct CompileOptions
 {
     bool isJit;
-    bool disableGC;
+    enum MemoryModel memoryModel;
     bool enableBuiltins;
     bool noDefaultLib;
     std::string defaultDeclarationTSFile;
@@ -27,6 +27,19 @@ struct CompileOptions
     bool appendGCtorsToMethod;
     bool strictNullChecks;
     bool enableFastMath;
+
+    // Whether the Boehm runtime has to be present: it is what reclaims under both `gc` and,
+    // for now, `rc`.
+    bool needsGCRuntime() const
+    {
+        return memoryModel != MemoryModelNone;
+    }
+
+    // Whether allocations maintain a reference count in the block header.
+    bool isRefCounted() const
+    {
+        return memoryModel == MemoryModelRC;
+    }
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_

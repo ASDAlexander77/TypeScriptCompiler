@@ -20,11 +20,15 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-// Generates, once per type, the routine that releases everything a value of that type owns:
-// the heap blocks it is the sole owner of, and, recursively, whatever its fields own. The
-// routine's address goes in the type's descriptor (TYPE_DESCR_RELEASE), which is the only
-// thing that references it -- nothing calls these yet. See
-// docs/reference-counting-evaluation.md section 9.4.
+// Generates, once per type, the routine that drops one reference to a value of that type:
+// each heap block it owns loses a reference, and the ones that lose their last are destroyed -
+// their fields released in turn, then freed. The routine's address goes in the type's
+// descriptor (TYPE_DESCR_RELEASE), which is the only thing that references it -- nothing calls
+// these yet. See docs/reference-counting-evaluation.md sections 9.4 and 9.6.
+//
+// The routines are reference-counting shaped in every memory model, because they are dead code
+// in all but `-mm=rc`, and one shape is simpler than two. Only `-mm=rc` initialises the count
+// they read (LLVMCodeHelperBase::_MemoryAlloc).
 //
 // Calling convention: the routine takes a pointer to the *storage holding* a value of the
 // type, not the value. That is uniform across value categories - a class field, an "any"
@@ -178,15 +182,11 @@ class ReleaseRoutineLogic
         return ss.str();
     }
 
-    // free(payload - headerSize), unless the block says it is immortal.
+    // free(payload - headerSize). One generated helper rather than an inline free at every
+    // site, so there is a single place for the allocator to change under `-mm=rc`.
     //
-    // The check is not decoration: a string literal compiles to `store ptr @s_..., ...`, so a
-    // `string` field can hold a pointer into a read-only global that no allocator produced.
-    // Static blocks carry the header too, marked HEAP_BLOCK_IMMORTAL, which is what lets this
-    // tell them apart.
-    //
-    // Routed through one generated helper so the other condition a release will grow -- a
-    // reference count reaching zero -- has a single place to land.
+    // Only ever reached from inside emitIfLastReference, so the block is known to be mortal
+    // and to have just lost its last reference.
     void emitFreeBlock(mlir::Value payloadPtr)
     {
         TypeHelper th(rewriter);
@@ -205,34 +205,102 @@ class ReleaseRoutineLogic
             auto *entryBlock = helper.addEntryBlock(rewriter);
             rewriter.setInsertionPointToStart(entryBlock);
 
-            TypeConverterHelper tch(typeConverter);
             LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+            ch.MemoryFree(entryBlock->getArgument(0));
 
-            auto llvmIndexType = tch.convertType(th.getIndexType());
-            auto payloadPtr = entryBlock->getArgument(0);
-            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
-            auto headerWord = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
-            auto immortal = rewriter.create<LLVM::ConstantOp>(
-                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
-            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, headerWord, immortal);
-
-            auto *freeBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-            auto *returnBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
-
-            rewriter.setInsertionPointToEnd(entryBlock);
-
-            rewriter.create<LLVM::CondBrOp>(loc, isMortal, freeBlock, returnBlock);
-
-            rewriter.setInsertionPointToStart(freeBlock);
-            ch.MemoryFree(payloadPtr);
-            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, returnBlock);
-
-            rewriter.setInsertionPointToStart(returnBlock);
             rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
         }
 
         rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
                                       ValueRange{payloadPtr});
+    }
+
+    // Drops one reference to a block, answering "was that the last one?" - that is, should the
+    // caller now destroy the value and free the block.
+    //
+    // A block marked HEAP_BLOCK_IMMORTAL is neither decremented nor ever the last. That is what
+    // lets a string literal, or a `typeof` result pointing into a descriptor, be released like
+    // any other string without writing to read-only memory or freeing a static block.
+    mlir::Value emitDecRef(mlir::Value payloadPtr)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        const char *helperName = "__tslang_dec_ref";
+        if (!parentModule.lookupSymbol<LLVM::LLVMFuncOp>(helperName))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            auto helper = rewriter.create<LLVM::LLVMFuncOp>(
+                loc, helperName, th.getFunctionType(th.getLLVMBoolType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+
+            auto *entryBlock = helper.addEntryBlock(rewriter);
+            rewriter.setInsertionPointToStart(entryBlock);
+
+            TypeConverterHelper tch(typeConverter);
+            LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, entryBlock->getArgument(0), llvmIndexType);
+            auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+            auto immortal = rewriter.create<LLVM::ConstantOp>(
+                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+            auto isMortal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, count, immortal);
+
+            auto *decBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+            auto *immortalBlock = rewriter.createBlock(&helper.getBody(), helper.getBody().end());
+
+            rewriter.setInsertionPointToEnd(entryBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, decBlock, immortalBlock);
+
+            rewriter.setInsertionPointToStart(decBlock);
+            auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            auto newCount = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, count, one);
+            rewriter.create<LLVM::StoreOp>(loc, newCount, blockPtr);
+            auto zero = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+            auto wasLast = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, newCount, zero);
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{wasLast});
+
+            rewriter.setInsertionPointToStart(immortalBlock);
+            rewriter.create<LLVM::ReturnOp>(
+                loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
+                                                                  rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+        }
+
+        auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{th.getLLVMBoolType()},
+                                                    FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
+                                                    ValueRange{payloadPtr});
+        return callOp.getResult();
+    }
+
+    // Runs `thenBody` -- the destroy half: release what the value owns, then free it -- only
+    // when `payloadPtr` is non-null and the reference being dropped was the last one.
+    void emitIfLastReference(mlir::Value payloadPtr, llvm::function_ref<void()> thenBody)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        auto *decBlock = rewriter.createBlock(thenBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        thenBody();
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(decBlock);
+        auto wasLast = emitDecRef(payloadPtr);
+        rewriter.create<LLVM::CondBrOp>(loc, wasLast, thenBlock, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(currentBlock);
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        auto isNotNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, payloadPtr, nullPtr);
+        rewriter.create<LLVM::CondBrOp>(loc, isNotNull, decBlock, continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
     }
 
     // Runs `thenBody` only when `ptrValue` is not null, and leaves the insertion point on the
@@ -336,7 +404,7 @@ class ReleaseRoutineLogic
         if (isa<mlir_ts::StringType>(type))
         {
             auto strValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
-            emitIfNonNull(strValue, [&]() { emitFreeBlock(strValue); });
+            emitIfLastReference(strValue, [&]() { emitFreeBlock(strValue); });
             return;
         }
 
@@ -355,7 +423,7 @@ class ReleaseRoutineLogic
                                                              : cast<mlir_ts::ObjectType>(type).getStorageType();
 
             auto instanceValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
-            emitIfNonNull(instanceValue, [&]() {
+            emitIfLastReference(instanceValue, [&]() {
                 releaseFields(storageType, instanceValue);
                 emitFreeBlock(instanceValue);
             });
@@ -367,7 +435,7 @@ class ReleaseRoutineLogic
         if (isa<mlir_ts::AnyType>(type))
         {
             auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
-            emitIfNonNull(boxValue, [&]() {
+            emitIfLastReference(boxValue, [&]() {
                 auto anyStructType = LLVM::LLVMStructType::getLiteral(
                     rewriter.getContext(), {tch.convertType(th.getIndexType()), ptrTy, th.getI8Type()}, false);
 
@@ -463,7 +531,7 @@ class ReleaseRoutineLogic
                                                      ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
-        emitIfNonNull(dataValue, [&]() {
+        emitIfLastReference(dataValue, [&]() {
             auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
             if (!elementRoutine.empty())
             {

@@ -56,7 +56,7 @@ MLIRGen, both lowering passes, and `GCPass`. `disableGC` already rides it end to
 One cleanup this should force: `-nogc` today means *leak everything* — `malloc` with no
 `free`. With RC added there are three models, so the flag should become
 `-mm={gc,rc,none}` with `-nogc` kept as an alias, rather than two independent booleans
-that can contradict each other.
+that can contradict each other. **Done 2026-09-03 — see §9.6.**
 
 ## 2. What already exists to build on
 
@@ -346,9 +346,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    strings is impossible until heap and static strings are distinguishable.
    **Done 2026-09-03, see §9.5** — which also closed a second hole, `typeof` results pointing
    into descriptors.
+4b. **`-mm={gc,rc,none}`, and maintain the count.** The flag step 5 hangs off, plus
+   initialising the header at allocation and turning §9.4 destroy routines into real
+   reference drops. Still inert. **Done 2026-09-03, see §9.6.**
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
-   no return.*
+   no return* — and the first step where a mistake is not inert: a missing retain frees live
+   memory, an extra one leaks.
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -513,3 +517,56 @@ test is meaningful for static blocks, where the marker is baked into the initial
 nothing useful about a heap block, whose word is whatever the allocator left. That half belongs
 with maintaining the count, in steps 5 and 6 — the static half is separated out here only
 because it is the half that changes an ABI.
+
+### 9.6 Step 5, part one: the flag exists and the count is maintained
+
+Landed 2026-09-03, 847/847 green — the suite plus 17 new `-mm=rc` variants and one `-mm=none`.
+**This is not step 5.** Step 5 is ownership tracking in MLIRGen, and it is still the point of no
+return; what this does is build the two things step 5 needs to exist first, both of which are
+still inert.
+
+**`-mm={gc,rc,none}` replaces `-nogc`.** The flag cleanup this document has called for since the
+first draft: there were always three models — `-nogc` meant "leak everything", not "collect
+differently" — spelled as a single boolean. `-nogc` stays as a deprecated alias for `-mm=none`,
+and `CompileOptions` grew `needsGCRuntime()` and `isRefCounted()` so no caller reads the model
+enum directly.
+
+`-mm=rc` currently means *counts are maintained and the release machinery is generated*; the
+collector still runs and is still what frees. That is deliberately an intermediate: it makes the
+header word real without anything depending on it being right.
+
+**Allocation initialises the count.** `_MemoryAlloc` stores 1 into the block header, after any
+memset, so a block starts owned by exactly the reference being returned. **Only under
+`-mm=rc`** — under `gc` nothing reads the word, and a store per allocation on the hot path is not
+worth paying for dead code. Confirmed in the emitted IR: zero such stores under `gc`, one per
+allocation site under `rc`.
+
+**The generated routines became real releases.** §9.4's routines destroyed unconditionally,
+which is a destructor, not a release. Each one now drops a reference and only destroys when it
+was the last:
+
+```
+if (p != null && __tslang_dec_ref(p)) { release fields; __tslang_free_block(p); }
+```
+
+`__tslang_dec_ref` is where the immortal marker from §9.5 does its work: an immortal block is
+neither decremented nor ever the last, so a string literal and a `typeof` result survive being
+released like any other string, without a write to read-only memory. `__tslang_free_block` is
+now a plain free, since it is only reachable behind that test.
+
+The routines are reference-counting shaped in *every* model, because they are dead code in all
+but `rc` and one shape is simpler than two. Only `rc` initialises the count they read.
+
+**Coverage.** The test runner gained the `-mm=` variant alongside `-fast-math`, using the same
+per-variant cached-script trick, and 17 tests now run under `-mm=rc`: strings, arrays and their
+elements, `any`, tagged unions, tuples, classes, interfaces, generators, closures, `delete`, and
+unwind paths. These prove the model compiles and runs correctly across the shapes the routines
+walk — **not** that counting is correct, which nothing yet exercises. `-mm=none` also picked up
+its first test ever, since the old `-nogc` had none and the rename would otherwise have been
+unguarded.
+
+**What is still ahead of step 5 proper.** Nothing calls a release, and nothing retains. Adding
+those is the ownership tracking, and it is where a mistake stops being inert: a missing retain
+frees live memory, an extra one leaks. That still wants the verifier the plan describes — every
+owned value with a matching release on every path, unwind paths included — built alongside it
+rather than after.

@@ -75,7 +75,6 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
-extern cl::opt<bool> disableGC;
 extern cl::opt<bool> disableWarnings;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
@@ -158,7 +157,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
         }
 
-        if (!disableGC)
+        if (compileOptions.needsGCRuntime())
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }

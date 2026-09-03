@@ -1827,7 +1827,7 @@ namespace mlirgen
     {
         mlir::Value newOp;
 #if ENABLE_TYPED_GC
-        auto enabledGC = !compileOptions.disableGC;
+        auto enabledGC = compileOptions.needsGCRuntime();
         if (enabledGC && !stackAlloc)
         {
             auto typeDescrType = builder.getI64Type();

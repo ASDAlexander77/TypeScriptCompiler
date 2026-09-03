@@ -192,7 +192,7 @@ namespace mlirgen
 #endif
 
 #if ENABLE_TYPED_GC
-        auto enabledGC = !compileOptions.disableGC;
+        auto enabledGC = compileOptions.needsGCRuntime();
         if (enabledGC && !newClassPtr->isStatic)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);

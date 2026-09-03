@@ -42,7 +42,6 @@ extern cl::opt<int> sizeLevel;
 extern cl::list<std::string> clSharedLibs;
 extern cl::opt<bool> dumpObjectFile;
 extern cl::opt<std::string> objectFilename;
-extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
 
@@ -323,7 +322,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     });
 
     std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
-    if (!disableGC.getValue() && !hasTypeScriptRuntime)
+    if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime)
     {
         auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
         if (absPath3.empty())

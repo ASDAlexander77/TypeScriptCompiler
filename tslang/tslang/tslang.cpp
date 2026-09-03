@@ -114,7 +114,12 @@ cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print s
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
-cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of compiled code"),
+                                       cl::values(clEnumValN(MemoryModelGC, "gc", "garbage collection (default)")),
+                                       cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting (in development; the collector still runs)")),
+                                       cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
+                                       cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection. Deprecated alias for '-mm=none'"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));

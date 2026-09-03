@@ -352,6 +352,17 @@ class LLVMCodeHelperBase
             rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{blockPtr, const0, paddedSize});
         }
 
+        if (compileOptions.isRefCounted())
+        {
+            // The block starts owned by exactly one reference: the one being returned here.
+            // Written after any memset above, which zeroes the header along with the payload.
+            // Only under `-mm=rc` -- under `gc` nothing reads the word, and a store per
+            // allocation on the hot path is not worth paying for dead code.
+            rewriter.create<LLVM::StoreOp>(
+                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1)),
+                blockPtr);
+        }
+
         return getPayloadPtrFromBlockPtr(loc, blockPtr, llvmIndexType);
     }
 

@@ -109,7 +109,15 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compilefm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitfm.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilefm.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitfm.sh"
-    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.sh")
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilerc.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitrc.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledrc.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdrc.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilerc.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitrc.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledrc.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdrc.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilenone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitnone.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilenone.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitnone.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh")
 
 ######## enable testing ############
 # open __build\tslang   
@@ -1055,3 +1063,30 @@ add_test(NAME test-jit-shared-export-import-object-literal-structural-typed-exte
 add_test(NAME test-jit-shared-export-import-vars COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
 add_test(NAME test-jit-shared-export-import-vars-2 COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 add_test(NAME test-jit-shared-export-import-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+
+# -mm=rc builds every allocation with a live reference count in the block header and
+# generates the reference-dropping routines. Nothing calls those yet, so these prove the
+# model compiles and runs correctly across the shapes the routines walk - not that
+# counting is correct. A representative set rather than the whole suite, since the cost
+# is a second full compile per test.
+add_test(NAME test-jit-rc-strings COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
+add_test(NAME test-jit-rc-str-null COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00str_null.ts")
+add_test(NAME test-jit-rc-array COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
+add_test(NAME test-jit-rc-array-push-pop COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
+add_test(NAME test-jit-rc-array-splice COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
+add_test(NAME test-jit-rc-any COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any.ts")
+add_test(NAME test-jit-rc-any-compare COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_compare.ts")
+add_test(NAME test-jit-rc-any-types COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
+add_test(NAME test-jit-rc-class COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
+add_test(NAME test-jit-rc-union-type COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_type.ts")
+add_test(NAME test-jit-rc-tuple COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple.ts")
+add_test(NAME test-jit-rc-interface COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface.ts")
+add_test(NAME test-jit-rc-generator COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator.ts")
+add_test(NAME test-jit-rc-new-delete COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-jit-rc-try-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-jit-rc-for-of COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_of.ts")
+add_test(NAME test-jit-rc-print COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
+
+# `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
+# rename. One test, so a future change to the model plumbing cannot silently break it.
+add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")

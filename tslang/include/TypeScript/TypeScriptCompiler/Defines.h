@@ -24,4 +24,19 @@ enum Exports
     IgnoreAll
 };
 
+// How compiled code reclaims heap memory. There have always been three of these - `-nogc`
+// meant "leak everything", not "collect differently" - but they were spelled as one boolean.
+// See docs/reference-counting-evaluation.md.
+enum MemoryModel
+{
+    // Boehm-Demers-Weiser collector. The default, and the only model that reclaims today.
+    MemoryModelGC,
+    // Reference counting. In development: counts are maintained and the release machinery is
+    // generated, but nothing inserts retains or releases yet, so the collector still runs and
+    // is still what actually frees. See section 9.6.
+    MemoryModelRC,
+    // No reclamation at all.
+    MemoryModelNone
+};
+
 #endif // TYPESCRIPT_COMPILER_DEFINES_H_

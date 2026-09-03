@@ -100,20 +100,26 @@ auto tslang_opt = "--di --opt_level=0 --no-default-lib";
 #endif
 
 auto fastMath = false;
+auto memoryModel = std::string("");
 auto tslang_opt_ext = std::string("");
 
-// -fast-math tests get their own cached script (jitfm/compilefm) because the
-// plain jit/compile scripts are shared across all parallel single-file tests
-// and embed tslang_opt_ext at creation time - reusing the same file name would
-// let whichever runner created it first decide the flags for everyone.
+// Tests that pass extra compiler flags get their own cached script (jitfm/jitrc, and the
+// compile equivalents) because the plain jit/compile scripts are shared across all parallel
+// single-file tests and embed tslang_opt_ext at creation time - reusing the same file name
+// would let whichever runner created it first decide the flags for everyone.
+std::string optVariantSuffix()
+{
+    return std::string(fastMath ? "fm" : "") + memoryModel;
+}
+
 std::string jitBatName()
 {
-    return std::string(JIT_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+    return std::string(JIT_NAME) + optVariantSuffix() + BAT_NAME;
 }
 
 std::string compileBatName()
 {
-    return std::string(COMPILE_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+    return std::string(COMPILE_NAME) + optVariantSuffix() + BAT_NAME;
 }
 
 void createJitBatchFile()
@@ -683,6 +689,12 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             fastMath = true;
             tslang_opt_ext += " --fast-math";
+        }
+        else if (std::string(argv[index]) == "-mm=rc" || std::string(argv[index]) == "-mm=none")
+        {
+            memoryModel = std::string(argv[index]).substr(4);
+            tslang_opt_ext += " ";
+            tslang_opt_ext += argv[index];
         }
         else if (exists(argv[index]))
         {

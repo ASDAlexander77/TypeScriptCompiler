@@ -25,7 +25,6 @@ namespace cl = llvm::cl;
 
 extern cl::opt<enum Action> emitAction;
 extern cl::opt<std::string> outputFilename;
-extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> TargetTriple;
 extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
@@ -406,7 +405,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }        
     }    
 
-    if (!disableGC)
+    if (compileOptions.needsGCRuntime())
     {
         gcLibPathOpt = getLibsPathOpt(getGCLibPath());
         if (!gcLibPathOpt.empty())
@@ -463,7 +462,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     }
 
     // tslang libs
-    if (!disableGC)
+    if (compileOptions.needsGCRuntime())
     {    
         args.push_back("-lgc");
     }
