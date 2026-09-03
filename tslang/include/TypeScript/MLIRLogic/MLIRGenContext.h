@@ -69,7 +69,7 @@ struct GenContext
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
-        allocateUsingVarsOutsideOfOperation = false;
+        allocateScopeOwnedVarsOutsideOfOperation = false;
     }
 
     void clearReceiverTypes()
@@ -144,7 +144,12 @@ struct GenContext
     bool allowConstEval = false;
     bool allocateVarsInContextThis = false;
     bool allocateVarsOutsideOfOperation = false;
-    bool allocateUsingVarsOutsideOfOperation = false;
+    // Hoist the storage of scope-owned locals - the ones a `using` declares and the ones that
+    // own a heap reference - out in front of `currentOperation`, instead of leaving it inside
+    // the region it was declared in. A `TryOp`'s cleanup region is a sibling of its body, so
+    // storage declared in the body does not dominate it; hoisting is what lets the unwind leg
+    // dispose and release what the body's scope owes.
+    bool allocateScopeOwnedVarsOutsideOfOperation = false;
     bool forceDiscover = false;
     bool discoverParamsOnly = false;
     bool insertIntoParentScope = false;

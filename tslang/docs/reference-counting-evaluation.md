@@ -915,6 +915,10 @@ the reference when an exception passes through. Fixing it means hoisting owned s
 the operation the way `using` variables already are (`allocateUsingVarsOutsideOfOperation`) —
 tractable, and left for the step that also brings the verifier.
 
+> **Update (§9.15).** The hoisting landed and the dominance problem is gone; the release still
+> does not, for an unrelated reason — it trips a JIT-only Win64 unwind defect that predates all
+> of this. The leak described here therefore stays for now.
+
 **Where it hooks in.** Three points, all of them ones that already existed:
 
 - `takeOwnershipOfLocal` (`MLIRGenVariables.cpp`), called from `registerVariable` right where
@@ -1053,3 +1057,97 @@ variants, which is what would have caught the ownership half.
 
 New test: `test/tester/tests/00throw_in_catch.ts` (`test-jit-00-throw-in-catch`,
 `test-jit-rc-throw-in-catch`). Full release suite green: 858/858.
+
+### 9.15 Step 5b: owned storage is hoisted out of the `TryOp` — and the unwind release is blocked
+
+§9.12 left one hole on purpose: an owned local's storage was allocated inside the `TryOp` body
+region, which does not dominate the cleanup region, so the release could not be emitted on the
+unwind leg and the reference leaked when an exception passed through. This step closes the
+dominance half and then stops one line short of the goal, for a reason that has nothing to do
+with reference counting.
+
+**What landed.** Owned storage is hoisted out in front of the `TryOp`, exactly the way `using`
+storage already was. `allocateUsingVarsOutsideOfOperation` is renamed
+`allocateScopeOwnedVarsOutsideOfOperation` because it now serves both, and the hoist decision
+for an owning local cannot be made in `detectFlags` with the rest — it needs the variable's
+type, which is not known until `createLocalVariable`. Verified in the emitted LLVM: the
+`alloca` moves to the function entry and the initialising store stays at the declaration, in
+both memory models. Nothing else about a collected build changes.
+
+**One predicate, two callers.** `localTakesOwnership` is the single test for "does this
+declaration make its scope the owner", shared by the hoisting decision and by
+`takeOwnershipOfLocal`. They must agree: a local that is hoisted but not owned only wastes a
+move, but one that is owned and *not* hoisted puts a release in a region its slot does not
+dominate and the module stops verifying. This is the same lesson as moving `ownsHeapMemory`
+into `MLIRTypeHelper` in §9.12 — two sides asking the same question separately is the failure
+mode with no local symptom.
+
+**Hoisted storage starts null, under `-mm=rc` only.** A hoisted slot's initialising store stays
+behind at the declaration, and the unwind edge can reach the cleanup region before that store
+runs — the allocation in `let r = new Res()` is itself an `invoke` whose unwind destination is
+that region. A release there would read whatever the frame happened to hold, which is precisely
+how the catch-variable bug in §9.12 trapped. Null is the one value every release routine treats
+as nothing to do (`emitIfLastReference` null-checks first), so `VariableOpLowering` zero-fills a
+hoisted owned slot. Gated on `isRefCounted()` in the *lowering*, not in MLIRGen: no other model
+reads the slot before its store, and a collected build is meant to come out of this step
+byte-identical.
+
+#### The blocker: a JIT-only Win64 unwind defect, older than this work
+
+With the cleanup region calling `mlirGenScopeExit` instead of `mlirGenDisposable`, exactly one
+test went red — `test-jit-rc-disposable-scopes` — and the failure is not a reference-counting
+bug at all.
+
+Reduced, it is this, and it needs no reference counting to reproduce:
+
+```ts
+let disposed = 0;
+class Res { [Symbol.dispose]() { disposed = disposed + 1; } }
+function f() {
+    try { using r = new Res(); throw 1; }
+    catch (e: TypeOf<1>) { print("a"); print("b"); }
+}
+function main() { disposed = 0; f(); assert(disposed == 1, "d"); print("done."); }
+```
+
+That program **crashes under `-mm=gc` on the commit before this one** (`--emit=jit --opt`, any
+`--opt_level` above 0). Compiled AOT from the same IR it is correct. So is `-O0`. Checked by
+stashing this change, rebuilding and running it: baseline crashes.
+
+**The symptom, from the crash dump.** `main` keeps `&disposed` in `rsi` across the call to `f`,
+which is legal — `rsi` is callee-saved. On return, `rsi` has had its low 32 bits zeroed:
+`0x196198300CC` comes back as `0x19600000000`, and `cmp dword ptr [rsi],1` faults. The unwind
+info the JIT registers for `f` decodes cleanly and matches its prologue
+(`push rbp; push rsi; sub rsp,0x48; lea rbp,[rsp+0x40]`, and unwind codes `PUSH_NONVOL rbp`,
+`PUSH_NONVOL rsi`, `ALLOC_SMALL`, `SET_FPREG` in the required descending order). Something
+overwrites `f`'s saved-`rsi` slot while the exception is in flight; the exact writer was not
+identified.
+
+**Why the JIT and not AOT.** JIT'd code uses the large code model, so every call materialises a
+64-bit address into a register first. That is what makes the catch funclet use `rsi` at all
+(`mov rsi, <puts>; call rsi` — two calls, so it is worth a register), which in turn is why the
+parent saves `rsi`. The AOT build reaches `puts` with a `rel32` call, uses no callee-saved
+register in the funclet, and never enters the broken configuration.
+
+**Why this step trips it.** A release in the cleanup region raises register pressure in the
+cleanup funclet the same way, and the parent then saves one more callee-saved register. Several
+programs that sat just on the safe side move across. This is not fixable from the ownership
+side: keeping the routine a call rather than letting it inline (`noinline` on `tsrel_`/`tsret_`)
+was tried and does not help, because in the large code model even a single call needs its
+address in a register.
+
+**So the release stays off the unwind leg**, and the leak §9.12 described stays. Everything the
+release needs is now in place — the storage dominates the cleanup region, the slot starts null,
+the predicate is shared — and turning it on is one `mlirGenDisposable` → `mlirGenScopeExit` at
+each of the two cleanup sites, marked in the source. The order of work changed as a result: the
+JIT unwind defect has to be fixed before step 5 can finish, and it is worth fixing on its own
+account, since it silently miscompiles ordinary `try`/`catch`-with-`using` code in the default
+`--emit=jit --opt` configuration.
+
+New test: `test/tester/tests/00try_using_catch.ts`, registered AOT-only
+(`test-compile-00-try-using-catch`) — it pins the shape above as correct when compiled, and the
+JIT variant is deliberately absent because it crashes. Writing it turned up one more thing worth
+recording: moving the `using` one scope deeper, into an `if` inside the try body, crashes the
+*compiler* in every memory model. That is §9.11's second item — a synthesized cleanup `TryOp`
+nested inside a real `TryOp`'s body — still open, and it is why the test covers only the flat
+shape. Full release suite green: 859/859.

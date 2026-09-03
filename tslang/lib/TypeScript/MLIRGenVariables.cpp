@@ -105,30 +105,18 @@ namespace mlirgen
     //    the one that matters: it is declared here but written by the landing pad, so
     //    retaining at the declaration would read an uninitialized slot as a live reference.
     //    Consequently a `let s: string;` assigned later never becomes an owner - the
-    //    assignment path below only fires on a slot this marked, so that stays balanced.
+    //    assignment path below only fires on a slot this marked, so that stays balanced;
+    //  - locals declared in a catch or finally clause. A release there is a call inside an
+    //    exception funclet, and a call there is fragile independently of ownership: `catch (e:
+    //    int) { new Res(); throw 2; }` crashes at run time with nothing of this involved.
+    //    Rather than add a second way to reach it, those locals are not owned.
+    //
+    // The test itself is localTakesOwnership, shared with the hoisting decision in
+    // createLocalVariable so the two cannot disagree about which declarations these are.
     void MLIRGenImpl::takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
                                            const GenContext &genContext)
     {
-        if (genContext.ownedVars == nullptr || variableDeclarationInfo.isGlobal || variableDeclarationInfo.deleted ||
-            variableDeclarationInfo.allocateInContextThis || !variableDeclarationInfo.storage ||
-            !variableDeclarationInfo.initial)
-        {
-            return;
-        }
-
-        // A release inside a catch or finally clause is a call inside an exception funclet,
-        // and a call there is fragile independently of ownership: `catch (e: int) { new Res();
-        // throw 2; }` crashes at run time with nothing of this involved. Rather than add a
-        // second way to reach it, locals declared in those clauses are not owned. They leak,
-        // which under `-mm=rc` the collector still reclaims - the same trade every other
-        // exclusion here makes.
-        if (blockIsInsideCatchOrFinally())
-        {
-            return;
-        }
-
-        auto refType = dyn_cast<mlir_ts::RefType>(variableDeclarationInfo.storage.getType());
-        if (!refType || !mth.ownsHeapMemory(location, refType.getElementType()))
+        if (!variableDeclarationInfo.storage || !localTakesOwnership(location, variableDeclarationInfo, genContext))
         {
             return;
         }

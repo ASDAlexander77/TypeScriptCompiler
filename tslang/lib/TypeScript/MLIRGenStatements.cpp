@@ -199,7 +199,7 @@ namespace mlirgen
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
         GenContext tryGenContext(genContext);
-        tryGenContext.allocateUsingVarsOutsideOfOperation = true;
+        tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
 
         SmallVector<mlir::Type, 0> types;
@@ -228,9 +228,11 @@ namespace mlirgen
 
             builder.create<mlir_ts::ResultOp>(location);
 
-            // cleanup: same dispose calls, reached only from the unwind edge. Disposal only -
-            // an owned local's storage lives inside the body region, which does not dominate
-            // this one, so its release stays on the normal exit above (mlirGenScopeExit).
+            // cleanup, reached only from the unwind edge. Disposal only, still: the owned
+            // storage now dominates this region and the release verifies and runs correctly
+            // AOT, but a release here makes the cleanup funclet use one more callee-saved
+            // register and that trips a pre-existing JIT-only Win64 unwind defect (§9.15).
+            // mlirGenScopeExit is the one-line change once that is fixed.
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
@@ -1025,7 +1027,7 @@ namespace mlirgen
         GenContext tryGenContext(genContext);
         // TODO: why do I need to allocate variables outside of "try" block?
         // well - short answer: to get access to vars in nested blocks for example 'cleanup'
-        tryGenContext.allocateUsingVarsOutsideOfOperation = true;
+        tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
 
         SmallVector<mlir::Type, 0> types;
@@ -1061,8 +1063,9 @@ namespace mlirgen
             // cleanup
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             // we need to call dispose for those which are in "using"
-            // usingVars are empty here. Disposal only - an owned local's storage lives inside
-            // the body region and does not dominate this one, so its release stays above.
+            // usingVars are empty here. Disposal only, though the owned storage now dominates
+            // this region as well - see the same note in mlirGenBlockWithUnwindCleanup and
+            // §9.15 for why the release is not emitted here yet.
             EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
             // terminator

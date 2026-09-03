@@ -2246,6 +2246,19 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         }
 
         auto value = transformed.getInitializer();
+        if (!value && tsLlvmContext->compileOptions.isRefCounted() && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
+        {
+            // An owned local with no initializer here is one whose storage was hoisted out in
+            // front of a TryOp; its initializing store stayed behind at the declaration. The
+            // unwind edge can reach the cleanup region before that store runs, and the release
+            // waiting there reads whatever the frame happened to hold. Null is the one value
+            // the release routines treat as nothing to do, so the slot starts as null.
+            //
+            // Only under -mm=rc: nothing reads the slot before its store in any other model, and
+            // a collected build is meant to come out of this step byte-identical.
+            rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
+        }
+
         if (value)
         {
             rewriter.create<LLVM::StoreOp>(location, value, allocated);

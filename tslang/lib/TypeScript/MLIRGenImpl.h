@@ -672,10 +672,11 @@ class MLIRGenImpl
     // references its locals took. In that order - a disposable is still usable while its
     // `[Symbol.dispose]()` runs, and dropping the last reference first could have freed it.
     //
-    // The two halves stay separate functions because the unwind leg wants only the first: an
-    // owned local's storage is allocated inside the try body, which does not dominate the
-    // cleanup region, so a release there would not verify. That leaks the reference when an
-    // exception passes through, which under `-mm=rc` the collector still reclaims.
+    // The unwind leg is *able* to call this now - a scope that owes a release has its storage
+    // hoisted out in front of the `TryOp` (allocateScopeOwnedVarsOutsideOfOperation), so the slot
+    // dominates the cleanup region as well as the body - but it still calls only
+    // mlirGenDisposable, because a release inside a cleanup funclet trips a JIT-only unwind
+    // defect that predates this. See docs/reference-counting-evaluation.md §9.15.
     mlir::LogicalResult mlirGenScopeExit(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
         EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, loopLabel, genContext));
@@ -696,9 +697,9 @@ class MLIRGenImpl
                 builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
             }
 
-            // Process-once, as for usingVars. Unlike disposal there is no second pass over
-            // the same scope to keep the list for: the unwind leg deliberately skips these.
-            if (disposeDepth == DisposeDepth::CurrentScope || disposeDepth == DisposeDepth::CurrentScopeKeepAfterUse)
+            // Process-once, as for usingVars: CurrentScopeKeepAfterUse is what the try body
+            // passes so that the cleanup region, generated after it, still sees the list.
+            if (disposeDepth == DisposeDepth::CurrentScope)
             {
                 const_cast<GenContext *>(genContext)->ownedVars = nullptr;
             }
@@ -979,7 +980,7 @@ class MLIRGenImpl
             }
 
             allocateOutsideOfOperation = genContext.allocateVarsOutsideOfOperation
-                || genContext.allocateUsingVarsOutsideOfOperation && varClass_.isUsing;
+                || genContext.allocateScopeOwnedVarsOutsideOfOperation && varClass_.isUsing;
             allocateInContextThis = genContext.allocateVarsInContextThis;
 
             isGlobal = scope == VariableScope::Global || varClass == VariableType::Var;
@@ -1176,6 +1177,24 @@ class MLIRGenImpl
         bool typeAndInitResolved;
     };
 
+    // Will this declaration make its scope the owner of what it holds - a retain now, a release
+    // at every exit? Asked twice from two different places, and they must not disagree: the
+    // hoisting decision below reads it before the storage exists, and takeOwnershipOfLocal reads
+    // it again once the storage does. A local that is hoisted but not owned only wastes a move;
+    // one that is owned but not hoisted puts a release in a region its slot does not dominate,
+    // and the module stops verifying.
+    //
+    // Everything excluded here is excluded because the frame borrows the reference rather than
+    // owning it; takeOwnershipOfLocal documents each case.
+    bool localTakesOwnership(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
+                             const GenContext &genContext)
+    {
+        return genContext.ownedVars != nullptr && !variableDeclarationInfo.isGlobal &&
+               !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
+               variableDeclarationInfo.initial && variableDeclarationInfo.type &&
+               mth.ownsHeapMemory(location, variableDeclarationInfo.type) && !blockIsInsideCatchOrFinally();
+    }
+
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
         auto type = variableDeclarationInfo.type;
@@ -1254,6 +1273,16 @@ class MLIRGenImpl
                 << variableDeclarationInfo.variableName << "' is referencing generic type." 
                 << (mth.isAnyFunctionType(variableDeclarationInfo.type) ? " use 'const' instead of 'let'" : "");
             return mlir::failure();
+        }
+
+        // An owned local is hoisted for the same reason a `using` one is: its release belongs on
+        // the unwind leg too, and the cleanup region does not see storage declared in the body.
+        // The decision cannot be made in detectFlags with the rest - it needs the type, and the
+        // type is only known here.
+        if (genContext.allocateScopeOwnedVarsOutsideOfOperation && !variableDeclarationInfo.allocateOutsideOfOperation
+            && localTakesOwnership(location, variableDeclarationInfo, genContext))
+        {
+            variableDeclarationInfo.allocateOutsideOfOperation = true;
         }
 
         // scope to restore inserting point
