@@ -2009,6 +2009,47 @@ class MLIRTypeHelper
         return isUnionTypeNeedsTag(location, unionType, baseType);
     }
 
+    // Does a value of this type own heap memory, directly or through its fields? The same
+    // question decides both directions: a type with nothing to release has nothing to retain.
+    //
+    // Lives here rather than beside the routines it drives (OwnershipRoutineLogic) because
+    // MLIRGen has to ask it too - it is what decides whether a local is an owner - and the two
+    // sides disagreeing about which types own memory would place retains that never pair with
+    // a release.
+    bool ownsHeapMemory(mlir::Location location, mlir::Type type)
+    {
+        llvm::SmallPtrSet<mlir::Type, 8> visiting;
+        return ownsHeapMemory(location, type, visiting);
+    }
+
+    // Field types of a record-shaped type, empty for anything else.
+    llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type type)
+    {
+        llvm::SmallVector<mlir::Type> result;
+
+        auto addFields = [&](auto fields) {
+            for (auto &field : fields)
+            {
+                result.push_back(field.type);
+            }
+        };
+
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            addFields(tupleType.getFields());
+        }
+        else if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(type))
+        {
+            addFields(classStorageType.getFields());
+        }
+        else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(type))
+        {
+            addFields(objectStorageType.getFields());
+        }
+
+        return result;
+    }
+
     bool isUnionTypeNeedsTag(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
         auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
@@ -3554,6 +3595,58 @@ class MLIRTypeHelper
     }
 
 protected:
+    bool ownsHeapMemory(mlir::Location location, mlir::Type type, llvm::SmallPtrSetImpl<mlir::Type> &visiting)
+    {
+        if (!visiting.insert(type).second)
+        {
+            return false;
+        }
+
+        // owns its own block
+        if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ClassType>(type) ||
+            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
+        {
+            return true;
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            mlir::Type baseType;
+            if (isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                // which member it holds is only known at run time, so the tag's descriptor
+                // decides - assume it may own something
+                return true;
+            }
+
+            return ownsHeapMemory(location, baseType, visiting);
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return ownsHeapMemory(location, optionalType.getElementType(), visiting);
+        }
+
+        for (auto fieldType : getOwnershipFieldTypes(type))
+        {
+            if (ownsHeapMemory(location, fieldType, visiting))
+            {
+                return true;
+            }
+        }
+
+        // Deliberately not owning, each for its own reason:
+        //  - InterfaceType carries only a name, so the concrete layout behind its `this`
+        //    pointer is not recoverable from the type. Needs an RTTI lookup, not a static
+        //    walk.
+        //  - Function/BoundFunction/HybridFunction: the capture box is heap-allocated
+        //    (ALLOC_CAPTURE_IN_HEAP) but its type does not appear in the function type, so
+        //    there is nothing here to walk.
+        //  - RefType/ValueRefType point at storage this value does not own.
+        //  - ConstArrayType and ConstTupleType are static data.
+        return false;
+    }
+
     std::function<ClassInfo::TypePtr(StringRef)> getClassInfoByFullName;
 
     std::function<GenericClassInfo::TypePtr(StringRef)> getGenericClassInfoByFullName;

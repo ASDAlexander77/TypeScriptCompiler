@@ -2351,7 +2351,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::AddressOfOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, 
         mlir_ts::ElementRefOp, mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, 
         mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
-        mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::TypeDescriptorOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
+        mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::TypeDescriptorOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
         mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::AnyCompareOp, 
         mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
         mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, 

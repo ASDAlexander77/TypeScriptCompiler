@@ -229,6 +229,7 @@ add_test(NAME test-compile-00-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-compile-01-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 add_test(NAME test-compile-02-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 add_test(NAME test-compile-00-new-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-compile-00-owned-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 add_test(NAME test-compile-00-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-compile-00-in-method-names COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -603,6 +604,7 @@ add_test(NAME test-jit-00-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-01-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 add_test(NAME test-jit-02-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-jit-00-in-method-names COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -1066,11 +1068,14 @@ add_test(NAME test-jit-shared-export-import-vars COMMAND test-runner -jit -share
 add_test(NAME test-jit-shared-export-import-vars-2 COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 add_test(NAME test-jit-shared-export-import-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
 
-# -mm=rc builds every allocation with a live reference count in the block header and
-# generates the reference-dropping routines. Nothing calls those yet, so these prove the
-# model compiles and runs correctly across the shapes the routines walk - not that
-# counting is correct. A representative set rather than the whole suite, since the cost
-# is a second full compile per test.
+# -mm=rc builds every allocation with a live reference count in the block header, generates
+# the reference-counting routines, and now calls them: a local holding a heap reference takes
+# one at its declaration and gives it back at every exit from its scope. A representative set
+# rather than the whole suite, since the cost is a second full compile per test.
+#
+# These are the only tests ownership insertion can break. The ops it emits erase whole under a
+# collector, so the rest of the suite is immune to where they land, not merely expected to
+# survive it.
 add_test(NAME test-jit-rc-strings COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
 add_test(NAME test-jit-rc-str-null COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00str_null.ts")
 add_test(NAME test-jit-rc-array COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1088,6 +1093,7 @@ add_test(NAME test-jit-rc-new-delete COMMAND test-runner -jit -mm=rc "${PROJECT_
 add_test(NAME test-jit-rc-try-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-jit-rc-for-of COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_of.ts")
 add_test(NAME test-jit-rc-print COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
+add_test(NAME test-jit-rc-owned-locals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 
 # `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
 # rename. One test, so a future change to the model plumbing cannot silently break it.

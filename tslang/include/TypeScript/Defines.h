@@ -11,6 +11,11 @@
 #define NONTEMPORAL_ATTR_NAME "__nontemporal"
 #define INVARIANT_ATTR_NAME "__invariant"
 #define INSTANCES_COUNT_ATTR_NAME "InstancesCount"
+// Marks a local's storage as holding a reference the scope owns, so that assigning through it
+// hands the count over rather than dropping a reference nobody took. Only variable
+// declarations set it, which is what keeps parameters and fields - references the frame
+// borrows rather than owns - out of the assignment path. See MLIRGen's takeOwnershipOfLocal.
+#define OWNED_LOCAL_ATTR_NAME "__owned"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"

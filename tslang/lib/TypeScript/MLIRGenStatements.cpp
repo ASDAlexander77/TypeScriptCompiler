@@ -162,11 +162,15 @@ namespace mlirgen
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 
+        auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+        genContextUsing.ownedVars = ownedVars.get();
+
         EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing, skipStatements));
 
-        // we need to call dispose for those which are in "using"
+        // we need to call dispose for those which are in "using", and to give up the
+        // references the block's own locals took
         // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
 
         return mlir::success();
     }
@@ -217,13 +221,18 @@ namespace mlirgen
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();
 
+            auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+            tryBodyGenContext.ownedVars = ownedVars.get();
+
             EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, tryBodyGenContext, skipStatements));
 
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
 
             builder.create<mlir_ts::ResultOp>(location);
 
-            // cleanup: same dispose calls, reached only from the unwind edge
+            // cleanup: same dispose calls, reached only from the unwind edge. Disposal only -
+            // an owned local's storage lives inside the body region, which does not dominate
+            // this one, so its release stays on the normal exit above (mlirGenScopeExit).
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
@@ -402,12 +411,12 @@ namespace mlirgen
                 VALIDATE(expressionValue, location)
             }
 
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
         builder.create<mlir_ts::ReturnOp>(location);
         return mlir::success();
@@ -874,7 +883,7 @@ namespace mlirgen
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
         builder.create<mlir_ts::ContinueOp>(location, builder.getStringAttr(label));
         return mlir::success();
@@ -886,7 +895,7 @@ namespace mlirgen
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
         builder.create<mlir_ts::BreakOp>(location, builder.getStringAttr(label));
         return mlir::success();
@@ -1040,10 +1049,13 @@ namespace mlirgen
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();
 
+            auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+            tryBodyGenContext.ownedVars = ownedVars.get();
+
             auto result = mlirGenNoScopeVarsAndDisposable(tryStatementAST->tryBlock, tryBodyGenContext);
             EXIT_IF_FAILED(result)
 
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
 
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
@@ -1051,7 +1063,8 @@ namespace mlirgen
             // cleanup
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             // we need to call dispose for those which are in "using"
-            // usingVars are empty here
+            // usingVars are empty here. Disposal only - an owned local's storage lives inside
+            // the body region and does not dominate this one, so its release stays above.
             EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
             // terminator

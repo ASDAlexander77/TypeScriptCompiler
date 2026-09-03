@@ -545,6 +545,34 @@ def TypeScript_ReleaseOp : TypeScript_Op<"Release"> {
   let arguments = (ins AnyType:$reference);
 }
 
+def TypeScript_RetainSlotOp : TypeScript_Op<"RetainSlot"> {
+  let summary = "take one reference to the value held in a slot";
+  let description = [{
+    `ts.Retain` for a value that is already in memory: $slot addresses the storage rather than
+    naming the value. That is the form MLIRGen has at a variable declaration and at scope exit,
+    and it is also the form the per-type routines take, so nothing has to be spilled to an
+    alloca on the way.
+
+    Erased under a memory model that is not reference counting - and erased whole, taking the
+    load with it, which is why ownership insertion can use it in a collected build without
+    leaving dead reads behind.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
+def TypeScript_ReleaseSlotOp : TypeScript_Op<"ReleaseSlot"> {
+  let summary = "drop one reference to the value held in a slot";
+  let description = [{
+    The mirror of `ts.RetainSlot`, and `ts.Release` addressed by storage. When the released
+    reference was the last, the value is destroyed and its block freed.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

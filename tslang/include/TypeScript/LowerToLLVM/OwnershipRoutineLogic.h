@@ -159,94 +159,41 @@ class OwnershipRoutineLogic
                                       FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
     }
 
+    // Drops one reference held by the value in `slotPtr`, whose TypeScript type is `type`.
+    // Emits nothing when the type owns no heap memory.
+    //
+    // The slot-taking form is what `ts.ReleaseSlot` lowers to: MLIRGen already has the
+    // variable's storage in hand, so going through emitReleaseValue's alloca wrapper would
+    // only spill a value that was already in memory.
+    void emitReleaseSlot(mlir::Type type, mlir::Value slotPtr)
+    {
+        releaseSlot(type, slotPtr);
+    }
+
+    // Takes one reference on the value in `slotPtr`. The mirror of emitReleaseSlot.
+    void emitRetainSlot(mlir::Type type, mlir::Value slotPtr)
+    {
+        retainSlot(type, slotPtr);
+    }
+
     // Does a value of this type own heap memory, directly or through its fields? The same
     // question decides both directions: a type with nothing to release has nothing to retain.
+    //
+    // The answer lives in MLIRTypeHelper because MLIRGen has to ask it too - it is what
+    // decides whether a local is an owner - and the two sides disagreeing would place retains
+    // that never pair with a release.
     bool ownsHeapMemory(mlir::Type type)
     {
-        llvm::SmallPtrSet<mlir::Type, 8> visiting;
-        return ownsHeapMemory(type, visiting);
+        MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+        return mth.ownsHeapMemory(op->getLoc(), type);
     }
 
   private:
-    bool ownsHeapMemory(mlir::Type type, llvm::SmallPtrSetImpl<mlir::Type> &visiting)
-    {
-        if (!visiting.insert(type).second)
-        {
-            return false;
-        }
-
-        // owns its own block
-        if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ClassType>(type) ||
-            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
-        {
-            return true;
-        }
-
-        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
-        {
-            MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
-            mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(op->getLoc(), unionType, baseType))
-            {
-                // which member it holds is only known at run time, so the tag's descriptor
-                // decides - assume it may own something
-                return true;
-            }
-
-            return ownsHeapMemory(baseType, visiting);
-        }
-
-        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
-        {
-            return ownsHeapMemory(optionalType.getElementType(), visiting);
-        }
-
-        for (auto fieldType : getFieldTypes(type))
-        {
-            if (ownsHeapMemory(fieldType, visiting))
-            {
-                return true;
-            }
-        }
-
-        // Deliberately not released, each for its own reason:
-        //  - InterfaceType carries only a name, so the concrete layout behind its `this`
-        //    pointer is not recoverable from the type. Needs an RTTI lookup, not a static
-        //    walk.
-        //  - Function/BoundFunction/HybridFunction: the capture box is heap-allocated
-        //    (ALLOC_CAPTURE_IN_HEAP) but its type does not appear in the function type, so
-        //    there is nothing here to walk.
-        //  - RefType/ValueRefType point at storage this value does not own.
-        //  - ConstArrayType and ConstTupleType are static data.
-        return false;
-    }
-
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)
     {
-        llvm::SmallVector<mlir::Type> result;
-
-        auto addFields = [&](auto fields) {
-            for (auto &field : fields)
-            {
-                result.push_back(field.type);
-            }
-        };
-
-        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
-        {
-            addFields(tupleType.getFields());
-        }
-        else if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(type))
-        {
-            addFields(classStorageType.getFields());
-        }
-        else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(type))
-        {
-            addFields(objectStorageType.getFields());
-        }
-
-        return result;
+        MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+        return mth.getOwnershipFieldTypes(type);
     }
 
     std::string getOrCreateReleaseValueRoutine(mlir::Type type)

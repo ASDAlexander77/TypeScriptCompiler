@@ -117,6 +117,10 @@ largest and most intricate part of the codebase.
 **This is also where the two models permanently diverge.** GC mode needs none of it. Every
 future language feature has to be correct under both.
 
+> **Started 2026-09-03 (§9.12).** Locals now own what they hold. The "correct under both"
+> tax turned out smaller than written here: ownership is stated once, in ops that erase under
+> a collector, so MLIRGen carries no second model - only a second lowering does.
+
 ### 3.4 Type-erased release
 
 `any` boxes as `{size, typeNamePtr, payload}` (`AnyLogic.h:48`) where the type tag is a
@@ -373,6 +377,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    owned value without a matching release on every path, unwind paths included. *Point of
    no return* — and the first step where a mistake is not inert: a missing retain frees live
    memory, an extra one leaks. Narrowed by §9.10: the mistake can only reach `-mm=rc`.
+5a. **Locals own what they hold.** The first slice of step 5 and the one that builds the
+   mechanism the rest reuses. Deliberately balanced by construction, so it cannot
+   over-release. **Done 2026-09-03, see §9.12.**
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -590,6 +597,10 @@ those is the ownership tracking, and it is where a mistake stops being inert: a 
 frees live memory, an extra one leaks. That still wants the verifier the plan describes — every
 owned value with a matching release on every path, unwind paths included — built alongside it
 rather than after.
+
+> **Superseded in part 2026-09-03 (§9.12).** Locals retain and release. The verifier is still
+> outstanding, and so is everything that is not a local: fields, elements, arguments, returns
+> and temporaries.
 
 ### 9.7 The memory-model marker
 
@@ -843,3 +854,87 @@ not worse.
 New test: `test/tester/tests/03disposable.ts` (`test-compile-03-disposable`,
 `test-jit-03-disposable`) - the originally reported shape, now asserting dispose actually ran.
 Full release suite green: 849/849 (847 existing + the 2 new).
+
+### 9.12 Step 5a: locals own what they hold
+
+The first slice of step 5, and the first time anything in the compiler calls a retain or a
+release on its own account rather than because the program said `delete`. Full release suite
+green: 852/852 (849 existing plus 3 new).
+
+**The rule.** A local variable declaration whose type owns heap memory takes a reference when
+it is declared and gives it back at every exit from its scope — the block's end, a `return`
+from anywhere inside it, a `break` or `continue` that leaves it. Assigning through such a local
+hands the count over: the incoming value gains this scope as an owner and the outgoing one
+loses it.
+
+**Stated unconditionally, and the collected build shows no trace of it.** MLIRGen never asks
+which memory model is in force; it emits `ts.RetainSlot` / `ts.ReleaseSlot`, and the lowering
+decides. Confirmed by reading the emitted LLVM for the same file under both models: under `rc`
+the retain sits immediately after the initialising store and the releases sit in reverse
+declaration order at each exit; under `gc` the two functions are **instruction-for-instruction
+what they were before this step** — not a dead load left for a later pass to remove, because
+the slot-addressed ops erase whole and take the access with them. That is what the new
+`ts.RetainSlot`/`ts.ReleaseSlot` pair buys over the value-addressed `ts.Retain`/`ts.Release`
+from §9.10, which would have needed a load kept alive under a collector to have an operand.
+
+**Balanced by construction, which is the property that makes this safe to land first.** The
+reference an allocation is born with (§9.6) is never given up here. Every release this step
+emits is therefore paired with a retain this step emitted, so no release can outnumber its
+retains and nothing can be freed early. What it can do is leak — and under `-mm=rc` the
+collector is still what reclaims, so the leak is inert. That direction is deliberate: an
+over-release is a use-after-free that surfaces far from its cause, and a leak is not. Removing
+the slack is later work, and each piece of it is a separate decision: consuming the +1 when the
+initialiser is a fresh allocation, retaining on field and element stores, and releasing
+temporaries.
+
+**Where a local is *not* made an owner**, each because the frame borrows the reference rather
+than owning it, and releasing one would drop a count nobody took:
+
+- globals, which outlive every scope;
+- parameters — only variable declarations reach the hook, so a parameter's slot is never
+  marked, and assigning to a parameter neither retains nor releases;
+- captured variables held in the `this` context, whose slot belongs to the context;
+- `const` bindings with no storage, which have no slot to release from;
+- **declarations with no initialiser.** This one was found the hard way and is the single bug
+  this step produced: a `catch (v: string)` variable is declared like any other `let` but
+  written by the landing pad, not by an initialiser, so retaining at the declaration read an
+  uninitialised slot as a live reference and trapped. `00try_catch.ts` under `-mm=rc` was the
+  only test in 849 that failed, which is exactly the blast radius §9.10 predicted. The
+  consequence is that a `let s: string;` assigned later never becomes an owner either —
+  correct rather than merely safe, since the assignment path only fires on a slot the
+  declaration marked, so that stays balanced too.
+
+**The unwind leg is skipped, on purpose.** An owned local's storage is allocated inside the
+`TryOp` body region, which does not dominate the cleanup region, so a release emitted there
+would not verify. Disposal still runs on that leg (§9.11); the release does not, which leaks
+the reference when an exception passes through. Fixing it means hoisting owned storage out of
+the operation the way `using` variables already are (`allocateUsingVarsOutsideOfOperation`) —
+tractable, and left for the step that also brings the verifier.
+
+**Where it hooks in.** Three points, all of them ones that already existed:
+
+- `takeOwnershipOfLocal` (`MLIRGenVariables.cpp`), called from `registerVariable` right where
+  `usingVars` is collected, marks the storage with `__owned` and emits the retain.
+- `mlirGenScopeExit` (`MLIRGenImpl.h`) wraps `mlirGenDisposable` and the new
+  `mlirGenReleaseOwned`, so all eleven existing scope-exit call sites — block end, `return`,
+  `break`, `continue`, try body — got the releases for free. Disposal runs first: a disposable
+  is still usable while its `[Symbol.dispose]()` runs, and dropping the last reference first
+  could have freed it.
+- `mlirGenSaveLogicOneItem` (`MLIRGenImpl.h`) is the single choke point every assignment form
+  passes through — plain, compound and destructuring alike. Retain-then-release, in that
+  order, is what makes `x = x` safe: releasing first could drop the last reference and free the
+  value about to be stored back.
+
+`ownsHeapMemory` moved from `OwnershipRoutineLogic` to `MLIRTypeHelper` so that both sides ask
+one function. The two disagreeing about which types own memory would place retains that never
+pair with a release, which is the failure mode with no local symptom.
+
+**Coverage.** `test/tester/tests/00owned_locals.ts`, run under all three models
+(`test-compile-00-owned-locals`, `test-jit-00-owned-locals`, `test-jit-rc-owned-locals`).
+Beyond one local of each owning shape, it covers the paths that reach a slot *without* going
+through an assignment expression, since that is where a missing retain would turn into a
+release of a reference nobody took: `for…of` bindings, destructured declarations and
+destructured assignment (`[a, b] = [b, a]`), a captured local, `break`/`continue` out of a
+loop, a `return` out of a nested block, and returning a value the caller is about to own. A
+2000-iteration churn loop makes an early free likely to be handed straight back out rather than
+silently tolerated.

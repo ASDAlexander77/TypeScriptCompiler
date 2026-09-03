@@ -85,6 +85,54 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // A local that holds a heap reference becomes an owner of it: it takes a reference here and
+    // gives it back at every exit from its scope (mlirGenReleaseOwned). Stated unconditionally
+    // - `ts.RetainSlot`/`ts.ReleaseSlot` erase whole under a collector, so a collected build
+    // sees no trace of this and cannot be broken by where the pair lands.
+    //
+    // The pair is balanced by construction, which is the property that makes this safe to add
+    // before anything consumes a count: the reference an allocation is born with is never given
+    // up here, so no release can outnumber its retains. It leaks rather than over-releases -
+    // and under `-mm=rc` the collector is still what reclaims, so the leak is inert.
+    //
+    // Deliberately excluded, each because the frame borrows the reference rather than owning
+    // it, and releasing one would drop a count nobody took:
+    //  - globals, which outlive every scope;
+    //  - parameters, owned by the caller - only variable declarations reach this;
+    //  - captured variables held in the `this` context, whose slot belongs to the context;
+    //  - const bindings with no storage, which have no slot to release from;
+    //  - declarations with no initializer, whose slot holds nothing yet. A catch variable is
+    //    the one that matters: it is declared here but written by the landing pad, so
+    //    retaining at the declaration would read an uninitialized slot as a live reference.
+    //    Consequently a `let s: string;` assigned later never becomes an owner - the
+    //    assignment path below only fires on a slot this marked, so that stays balanced.
+    void MLIRGenImpl::takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
+                                           const GenContext &genContext)
+    {
+        if (genContext.ownedVars == nullptr || variableDeclarationInfo.isGlobal || variableDeclarationInfo.deleted ||
+            variableDeclarationInfo.allocateInContextThis || !variableDeclarationInfo.storage ||
+            !variableDeclarationInfo.initial)
+        {
+            return;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(variableDeclarationInfo.storage.getType());
+        if (!refType || !mth.ownsHeapMemory(location, refType.getElementType()))
+        {
+            return;
+        }
+
+        auto varOp = variableDeclarationInfo.storage.getDefiningOp<mlir_ts::VariableOp>();
+        if (!varOp)
+        {
+            return;
+        }
+
+        varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+        builder.create<mlir_ts::RetainSlotOp>(location, variableDeclarationInfo.storage);
+        genContext.ownedVars->push_back(variableDeclarationInfo.storage);
+    }
+
     mlir::Type MLIRGenImpl::registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings, bool forceLocalVar)
     {
@@ -133,6 +181,8 @@ namespace mlirgen
         }
 
         //LLVM_DEBUG(variableDeclarationInfo.printDebugInfo(););
+
+        takeOwnershipOfLocal(location, variableDeclarationInfo, genContext);
 
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
         if (genContext.usingVars != nullptr && varDecl->getUsing())

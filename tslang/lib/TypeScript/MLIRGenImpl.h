@@ -685,6 +685,61 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // Everything a scope owes on the way out: dispose what `using` declared, then give up the
+    // references its locals took. In that order - a disposable is still usable while its
+    // `[Symbol.dispose]()` runs, and dropping the last reference first could have freed it.
+    //
+    // The two halves stay separate functions because the unwind leg wants only the first: an
+    // owned local's storage is allocated inside the try body, which does not dominate the
+    // cleanup region, so a release there would not verify. That leaks the reference when an
+    // exception passes through, which under `-mm=rc` the collector still reclaims.
+    mlir::LogicalResult mlirGenScopeExit(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
+    {
+        EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, loopLabel, genContext));
+        return mlirGenReleaseOwned(location, disposeDepth, loopLabel, genContext);
+    }
+
+    // Drops the reference each local of this scope took when it was declared. Shaped after
+    // mlirGenDisposable, and walks outwards on the same terms, so that a `return` from a
+    // nested block releases every scope it leaves and a `break` releases up to the loop.
+    mlir::LogicalResult mlirGenReleaseOwned(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
+    {
+        if (genContext->ownedVars != nullptr)
+        {
+            // reverse declaration order, the order a scope is unwound in: a later local may
+            // hold the only other reference to what an earlier one points at
+            for (auto storage : llvm::reverse(*genContext->ownedVars))
+            {
+                builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+            }
+
+            // Process-once, as for usingVars. Unlike disposal there is no second pass over
+            // the same scope to keep the list for: the unwind leg deliberately skips these.
+            if (disposeDepth == DisposeDepth::CurrentScope || disposeDepth == DisposeDepth::CurrentScopeKeepAfterUse)
+            {
+                const_cast<GenContext *>(genContext)->ownedVars = nullptr;
+            }
+
+            auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
+                    || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
+            if (continueIntoDepth)
+            {
+                EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
+            }
+        }
+
+        return mlir::success();
+    }
+
+    // Does this reference address a local whose scope owns what it holds? Only a variable
+    // declaration marks its storage that way, so a parameter's slot and a field reference both
+    // answer no, and assigning through them neither retains nor releases.
+    bool isOwnedLocalSlot(mlir::Value reference)
+    {
+        auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
+    }
+
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
         if (genContext->usingVars != nullptr)
@@ -1509,6 +1564,8 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo &variableDeclarationInfo, bool showWarnings, const GenContext &genContext);
+
+    void takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext);
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false);
@@ -4349,6 +4406,17 @@ class MLIRGenImpl
             if (!savingValue)
             {
                 return mlir::failure();
+            }
+
+            // Overwriting an owned local hands the count over: the incoming value gains this
+            // scope as an owner and the outgoing one loses it. Retaining first is what makes
+            // `x = x` safe - releasing first could drop the last reference and free the value
+            // about to be stored back. Without this the scope-exit release below would give up
+            // a reference the assignment never took.
+            if (isOwnedLocalSlot(loadOp.getReference()))
+            {
+                builder.create<mlir_ts::RetainOp>(location, savingValue);
+                builder.create<mlir_ts::ReleaseSlotOp>(location, loadOp.getReference());
             }
 
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have

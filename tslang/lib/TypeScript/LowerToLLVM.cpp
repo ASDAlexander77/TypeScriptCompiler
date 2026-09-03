@@ -424,6 +424,46 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
     }
 };
 
+// The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
+// access with it - there is no load to leave behind in a collected build.
+class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainSlotOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseSlotOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseSlotOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -6868,7 +6908,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 

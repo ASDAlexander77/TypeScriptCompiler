@@ -65,6 +65,7 @@ struct GenContext
         passResult = nullptr;
         capturedVars = nullptr;
         usingVars = nullptr;
+        ownedVars = nullptr;
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
@@ -152,6 +153,15 @@ struct GenContext
     FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars = nullptr;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars = nullptr;
+    // Storage of the locals declared in this scope that took a reference of their own and owe
+    // a release on the way out. Filled unconditionally, whatever the memory model: what it
+    // drives are `ts.RetainSlot`/`ts.ReleaseSlot` pairs, which erase whole in a collected
+    // build (see TypeScriptOps.td).
+    //
+    // The storage value is held directly rather than the declaration, so that scope exit
+    // releases the slot the retain was paired with. Resolving the name again, as the `using`
+    // list has to, would find whichever declaration shadows it at the exit point.
+    llvm::SmallVector<mlir::Value> *ownedVars = nullptr;
     mlir::Type thisType;
     mlir_ts::ClassType thisClassType;
     mlir::Type receiverFuncType;
