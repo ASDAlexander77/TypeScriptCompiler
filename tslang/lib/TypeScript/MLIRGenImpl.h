@@ -468,13 +468,12 @@ class MLIRGenImpl
     // `new SomeClass(...)`.
     //
     // Disposing a class instance through the synthesized TryOp is verified working; disposing
-    // an object literal (`{ [Symbol.dispose]() {...} }`) is not - that shape already fails
-    // MLIR verification inside a hand-written try, with nothing synthesized at all, so it is
-    // a separate pre-existing gap in mlirGenDisposable, not something wrapping fixes or should
-    // paper over. What actually needs disposing is a semantic fact (the initializer's
-    // resolved type), not available before generation - see blockDeclaresUsing for why the
-    // check has to run before that. `new X(...)` is the syntactic proxy: every case wrapping
-    // is verified safe for is written exactly this way, and it costs nothing to check.
+    // an object literal (`{ [Symbol.dispose]() {...} }`) is not - dropping this check alone
+    // and compiling `using r = loggy(); throw 1;` fails the build, so the gap is in disposing
+    // that shape rather than in the wrapping. What actually needs disposing is a semantic fact
+    // (the initializer's resolved type), not available before generation - see
+    // blockDeclaresUsing for why the check has to run before that. `new X(...)` is the
+    // syntactic proxy, and it costs nothing to check.
     bool blockUsingInitializersAreAllNewExpr(ts::Block blockAST, int skipStatements = 0)
     {
         auto index = 0;
@@ -514,12 +513,12 @@ class MLIRGenImpl
     // body - anything short of a nested function or class, which starts its own scope)
     // declares its own `using`, other than at this block's own top level.
     //
-    // A block with such a nested using-bearing scope is left unwrapped, on the same evidence
-    // as blockIsInsideExistingTryOp: `try { using a=...; { using c=...; } } finally {}`,
-    // written by hand with no synthesis involved, already fails MLIR verification (a
-    // ts.PropertyRef on the inner using's dispose method comes out with the wrong ref type).
-    // Wrapping this block would place that inner block inside a TryOp's body region for the
-    // first time, the same placement the hand-written case already breaks on.
+    // Wrapping such a block puts the inner using-scope inside a TryOp body region, which
+    // crashes the compiler outright - verified by dropping this check alone and compiling
+    // `using a = new Res(); { using c = new Res(); } throw 1;`. The inner block is still
+    // wrapped on its own account when it qualifies, which is why only the *outer* one has to
+    // stand down; scanning this block's own subtree is exactly the right scope, since what
+    // matters is what would land inside the region this wrapping creates.
     bool blockHasNestedUsing(ts::Block blockAST)
     {
         auto found = false;
@@ -549,62 +548,6 @@ class MLIRGenImpl
         }
 
         return found;
-    }
-
-    // Whether this block contains a `return` anywhere in its subtree (short of a nested
-    // function or class, which starts its own scope) while a `using` from this same block is
-    // still in scope.
-    //
-    // `using` plus `return` inside a try body is independently broken today, unrelated to
-    // throw/catch/finally entirely: `try { using a=...; return; } finally {...}`, written by
-    // hand with nothing synthesized, already fails MLIR verification (mlirGenDisposable's
-    // FullStack walk at the return site and the try-body's own tail dispose both try to
-    // dispose the same using var). Wrapping a block that mixes `using` and `return` would
-    // hit that same pre-existing bug, so it stays unwrapped - no worse than before, and the
-    // return-plus-using gap is left exactly as broken as it already was, not fixed here.
-    bool blockHasReturn(ts::Block blockAST)
-    {
-        auto found = false;
-        ts::FilterVisitorSkipFuncsAST<Node> visitor(SyntaxKind::ReturnStatement, [&](Node) { found = true; });
-
-        for (auto statement : blockAST->statements)
-        {
-            if (found)
-            {
-                break;
-            }
-
-            if ((SyntaxKind)statement == SyntaxKind::ReturnStatement)
-            {
-                found = true;
-                break;
-            }
-
-            visitor.visit(statement);
-        }
-
-        return found;
-    }
-
-    // Whether this block IS the enclosing function's own top-level body - not a nested `{ }`,
-    // if/while/for body, or a hand-written try's body/catch/finally.
-    //
-    // Restricting synthesis to exactly this case is what keeps blockHasNestedUsing and
-    // blockHasReturn sufficient: when blockAST is the whole function, scanning its subtree
-    // for another using-scope or a return covers every statement the function has - there is
-    // no sibling scope outside blockAST left for either to hide in. It also rules out nesting
-    // inside any existing TryOp in one check, structurally: a nested `{ }`, if/while/for, or
-    // hand-written try body all put at least one more op between the insertion point and
-    // funcOp, so only the function's own root body can ever satisfy this.
-    bool blockIsFunctionRootBody(const GenContext &genContext)
-    {
-        if (!genContext.funcOp)
-        {
-            return false;
-        }
-
-        mlir_ts::FuncOp funcOp = genContext.funcOp;
-        return builder.getInsertionBlock()->getParentOp() == funcOp.getOperation();
     }
 
     mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0)

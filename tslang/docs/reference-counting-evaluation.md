@@ -855,6 +855,10 @@ New test: `test/tester/tests/03disposable.ts` (`test-compile-03-disposable`,
 `test-jit-03-disposable`) - the originally reported shape, now asserting dispose actually ran.
 Full release suite green: 849/849 (847 existing + the 2 new).
 
+> **Re-audited 2026-09-03 (§9.13). Two of the four guards were already stale when written and
+> have been deleted; two of the "pre-existing bugs" above do not reproduce.** Read §9.13 rather
+> than this list for the current state.
+
 ### 9.12 Step 5a: locals own what they hold
 
 The first slice of step 5, and the first time anything in the compiler calls a retain or a
@@ -938,3 +942,53 @@ destructured assignment (`[a, b] = [b, a]`), a captured local, `break`/`continue
 loop, a `return` out of a nested block, and returning a value the caller is about to own. A
 2000-iteration churn loop makes an early free likely to be handed straight back out rather than
 silently tolerated.
+
+### 9.13 Re-auditing the `using` guards: half of them were already unnecessary
+
+§9.11 added four conditions, each meant to keep the synthesized `TryOp` away from a shape that
+crashed. Each was real when observed. But they were all observed *before* §9.11's own
+`unwindDests` fix landed, and that fix — the cleanup-only `TryOp` that pushed a null `Block *`
+— turned out to be the cause of more of them than the notes credited. Re-running every guarded
+shape against the current build:
+
+| shape | before | after |
+|---|---|---|
+| `using` in an `if` block, throw | dispose skipped | **disposes** |
+| `using` in a loop body, throw | dispose skipped | **disposes** |
+| `using` two scopes deep, throw | dispose skipped | **disposes** |
+| `using` sharing a function with `return`, throw | dispose skipped | **disposes** |
+| `using` inside a hand-written `try` | worked | works |
+| object-literal `using`, throw | dispose skipped | dispose skipped |
+| outer `using` with a nested `using` scope, throw | outer skipped | outer skipped |
+
+**`blockIsFunctionRootBody` and `blockHasReturn` are deleted.** Both were guarding shapes that
+now work. Dropping the root-body condition is the one that matters: synthesis is no longer
+confined to a function's own top-level body, so a `using` in an `if` branch, a loop body, or a
+block nested inside a hand-written `try` all dispose on the way out. Nested `TryOp`s, which
+§9.11 recorded as crashing LLVM translation, compose correctly — `try/catch` inside
+`try/catch`, and a synthesized cleanup inside a hand-written `try`, both verified.
+
+**`blockUsingInitializersAreAllNewExpr` and `blockHasNestedUsing` stay, and each was confirmed
+individually necessary** by dropping it alone and rebuilding: without the first, an
+object-literal disposable fails the build; without the second, an outer `using` whose block
+also contains a nested `using` scope segfaults the compiler. Those are the two genuinely open
+bugs, and they are now stated in terms of what was actually reproduced rather than what was
+inferred.
+
+Method worth repeating: the gate was made maskable by an environment variable for the duration
+of the experiment, so one build could test all sixteen combinations. Four rebuilds' worth of
+bisection in a single compile, and the mask made "necessary individually" a question that could
+be asked directly instead of argued from a combined result.
+
+**Separately, a genuinely new pre-existing bug, unrelated to any of this.** Throwing from
+inside a `catch` clause crashes the LLVM backend (`X86 Assembly Printer`, access violation) —
+reduced to `try { throw 1; } catch (e: int) { throw 2; }` with no `using`, no locals and no
+heap types anywhere in it, so neither ownership insertion nor the `using` machinery can be
+involved. Recorded here because it surfaced while building the matrix above; not fixed, and no
+test asserts it, which is why nothing caught it before.
+
+New test: `test/tester/tests/04disposable.ts` (`test-compile-04-disposable`,
+`test-jit-04-disposable`), covering the four newly-working shapes plus the two exact-count
+cases that would catch a double dispose — a function that throws past a `using` on one path and
+returns past it on the other, and a synthesized cleanup nested inside a hand-written `try`.
+Full release suite green: 854/854.
