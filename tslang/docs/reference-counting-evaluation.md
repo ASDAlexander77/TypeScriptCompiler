@@ -364,6 +364,11 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 4e. **`ts.Retain` / `ts.Release` in the dialect**, with retain routines to match the release
    ones, so that ownership can be *stated* before deciding where. Still inert — nothing emits
    them. **Done 2026-09-03, see §9.10.**
+4f. **`using` disposes on the unwind path, for the case ownership tracking will lean on.**
+   A prerequisite for step 5, not step 5 itself: confirms the scope-exit machinery ownership
+   insertion will reuse actually runs on `throw`, for at least one real shape. Narrowly scoped
+   after surfacing several independent pre-existing gaps in the same machinery. **Done
+   2026-09-03, see §9.11.**
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
    owned value without a matching release on every path, unwind paths included. *Point of
    no return* — and the first step where a mistake is not inert: a missing retain frees live
@@ -766,3 +771,75 @@ calls `__tslang_inc_ref`, with no field walk, confirming the asymmetry holds in 
 code and not just in intent. Temporarily emitting both ops at the `delete` site showed
 `tsretv_`/`tsrelv_` calls under `-mm=rc` and *nothing at all* under `-mm=gc`, where only the
 collector's `GC_free` remains; the hook was then reverted. Full release suite green: 847/847.
+
+### 9.11 Step 4f: `using` disposes when an exception unwinds with no enclosing `try`
+
+The reported gap: `using r = new Res(); throw 1;` at a function's top level, with no `try`
+anywhere in that function, never ran `[Symbol.dispose]()` on the way out — confirmed at both
+`-O0` and `-O3` before any fix. `mlirGen(Block)` disposed a `using` only on the block's *normal*
+exit path; nothing gave it a landing pad to run from on `throw`.
+
+**The fix synthesizes a catch-less `TryOp` around a block that declares `using`.** Mirrors
+`mlirGen(TryStatement)`'s own try-body/cleanup handling almost exactly - a real
+`try { using x = ...; } finally {}` already goes through that path and already disposes
+correctly on throw, so the synthetic version reuses it rather than inventing a second mechanism.
+Catches and finally stay empty; `TryOpLowering` erases an empty catches region and wires the
+cleanup block as a plain cleanup landing pad, so the exception is never caught, only cleaned up
+after.
+
+**Building this surfaced four independent pre-existing bugs in the `TryOp`/dispose machinery,
+none caused by this session's other changes.** Each was confirmed with 100% hand-written source
+- an explicit `try`/`catch`/`finally`, no synthesis involved - before being treated as
+out-of-scope for this step:
+
+1. **A `TryOp` with cleanup but no catch and no finally crashed the lowering.** Every TypeScript
+   `try` statement had always had at least one of catch/finally, so
+   `unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock)` in
+   `LowerToAffineLoops.cpp`'s `TryOpLowering` had never had to handle both being null. The
+   synthetic wrapper is the first thing to build a cleanup-only `TryOp` at all, so it's the
+   first thing to hit this. **This one is fixed, not just avoided** - a null `Block*` doesn't
+   belong in `unwindDests` in the first place, and the Linux side of the same function already
+   had the correct three-way fallback (`catchesBlock -> finallyBlock -> parentTryOpLandingPad ->
+   empty (resume)`) sitting right next to the broken Windows one, comment already anticipating
+   exactly this case. The Windows site now matches it.
+2. **`TryOp` nested inside another `TryOp`'s body crashes the LLVM translation** with an LLVM
+   assertion (`Cannot assign a name to void values!`), reproduced by hand:
+   `try { try { using x=...; throw; } finally {} } catch {}`. Not fixed - guarded against:
+   `blockIsFunctionRootBody` restricts synthesis to a function's own top-level body, which by
+   construction can never be nested inside anything.
+3. **A block with its own `using` nested inside a `TryOp` that already has other `using`s
+   breaks MLIR verification** (`ts.PropertyRef` gets the wrong ref type for the inner
+   `using`'s dispose method), reproduced by hand:
+   `try { using a=...; { using c=...; } } finally {}`. Not fixed - guarded against:
+   `blockHasNestedUsing` scans (skipping into neither a nested function nor class) for a
+   `using` anywhere below the block's own top level.
+4. **`using` plus `return` inside a `try` body is broken independent of throw entirely**,
+   reproduced by hand with the simplest possible shape: `try { using a=...; return; } finally
+   {}`. `mlirGenDisposable`'s `FullStack` walk at the return site and the try-body's own tail
+   dispose both try to dispose the same var. Not fixed - guarded against: `blockHasReturn` scans
+   the whole function body for any `return`.
+5. **A separate, still-unexplained hang** (not a compile failure) turned up disposing an
+   *object-literal* `using` (`{ [Symbol.dispose]() {...} }`, as opposed to a class instance)
+   across an unwind with no enclosing try - reproduced with the exact same shape as the fixed
+   case, swapping only `new Res()` for a `loggy()`-style object literal, and confirmed the
+   synthesis correctly declined to wrap it (no `ts.Try` in the emitted MLIR) before the hang was
+   traced to the untouched pre-existing plain-dispose path. Guarded against the same way as the
+   others: `blockUsingInitializersAreAllNewExpr` restricts synthesis to `using x = new
+   SomeClass(...)` - every case actually verified working is written exactly this way.
+
+Since none of these four are cheaply detectable from a resolved *type* before generation (the
+type isn't known yet - see `blockDeclaresUsing`'s own comment on why the check has to be
+syntactic), each guard is a syntactic proxy for "would this hit the known-broken shape,"
+checked before deciding whether to wrap: `blockDeclaresUsing`, `blockIsFunctionRootBody`,
+`blockUsingInitializersAreAllNewExpr`, `!blockHasNestedUsing`, `!blockHasReturn`. Failing any
+of them falls back to the exact pre-existing plain-dispose path, byte-for-byte - a function that
+doesn't qualify is no worse off than before this step, just not newly fixed either. The net
+result is narrow: `using x = new SomeClass(...)` declared directly in a function's own
+top-level body, with no other `using`-bearing scope and no `return` anywhere in that function,
+now disposes correctly on `throw` with no enclosing `try`. Everything else - object-literal
+disposables, `using` plus `return`, nested `using` scopes - is exactly as before: not fixed,
+not worse.
+
+New test: `test/tester/tests/03disposable.ts` (`test-compile-03-disposable`,
+`test-jit-03-disposable`) - the originally reported shape, now asserting dispose actually ran.
+Full release suite green: 849/849 (847 existing + the 2 new).

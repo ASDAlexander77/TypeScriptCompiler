@@ -1582,10 +1582,27 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
             mlir::SmallVector<mlir::Block *> unwindDests;
-            unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock);
+            // catchesBlock and finallyBlock both being null is a real case, not an oversight:
+            // a cleanup-only try (a `using` with no explicit catch/finally) has nowhere of its
+            // own to hand the unwind to. Leaving unwindDests empty here is what tells
+            // EndCleanupOp to resume unwinding instead of branching to a block that does not
+            // exist - the Linux cleanup-only case below already relies on the same fallback
+            // chain, catchesBlock -> finallyBlock -> parentTryOpLandingPad -> resume.
+            if (catchesBlock)
+            {
+                unwindDests.push_back(catchesBlock);
+            }
+            else if (finallyBlock)
+            {
+                unwindDests.push_back(finallyBlock);
+            }
+            else if (parentTryOpLandingPad)
+            {
+                unwindDests.push_back(parentTryOpLandingPad);
+            }
 
             auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
-            rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);                
+            rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
         }
 
         mlir::Value cmpValue;

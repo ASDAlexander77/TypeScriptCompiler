@@ -130,6 +130,22 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ts::Block blockAST, const GenContext &genContext, int skipStatements)
     {
+        // A `using` here needs disposal on the unwind path too, and only a TryOp has a
+        // landing pad to run that from - see mlirGenBlockWithUnwindCleanup and
+        // blockDeclaresUsing. Narrowly scoped to a function's own top-level body, using only
+        // `new SomeClass(...)` initializers, with no other using-scope and no return anywhere
+        // in it - blockIsFunctionRootBody, blockUsingInitializersAreAllNewExpr,
+        // blockHasNestedUsing and blockHasReturn each guard against a real, pre-existing
+        // TryOp/dispose bug that combination would otherwise hit (see their comments). Every
+        // other block keeps the plain path below unchanged: no TryOp, no personality
+        // attribute, same IR as before this check existed.
+        if (blockDeclaresUsing(blockAST, skipStatements) && blockIsFunctionRootBody(genContext) &&
+            blockUsingInitializersAreAllNewExpr(blockAST, skipStatements) && !blockHasNestedUsing(blockAST) &&
+            !blockHasReturn(blockAST))
+        {
+            return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
+        }
+
         auto location = loc(blockAST);
 
         SymbolTableScopeT varScope(symbolTable);
@@ -151,6 +167,78 @@ namespace mlirgen
         // we need to call dispose for those which are in "using"
         // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
         EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
+
+        return mlir::success();
+    }
+
+    // The unwind-safe counterpart of mlirGen(Block): the same statements and the same
+    // dispose-on-exit, but wrapped in a catch-less TryOp so an exception passing through
+    // still runs the cleanup region before it keeps unwinding. Mirrors mlirGen(TryStatement)'s
+    // own try-body/cleanup handling - a real `try { using x = ...; } finally {}` already goes
+    // through that path and already disposes correctly on throw, which is what this reuses.
+    // Catches and finally stay empty: TryOpLowering erases an empty catches region and wires
+    // the cleanup block as a plain cleanup landing pad, so the exception is never caught here,
+    // only cleaned up after.
+    mlir::LogicalResult MLIRGenImpl::mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext,
+                                                                    int skipStatements)
+    {
+        auto location = loc(blockAST);
+
+        DITableScopeT debugBlockScope(debugScope);
+        if (compileOptions.generateDebugInfo && !blockAST->parent)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            mdi.setLexicalBlock(location);
+        }
+
+        mlir_ts::FuncOp funcOp = genContext.funcOp;
+        funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+
+        auto tryOp = builder.create<mlir_ts::TryOp>(location);
+
+        GenContext tryGenContext(genContext);
+        tryGenContext.allocateUsingVarsOutsideOfOperation = true;
+        tryGenContext.currentOperation = tryOp;
+
+        SmallVector<mlir::Type, 0> types;
+
+        builder.createBlock(&tryOp.getBody(), {}, types);
+        builder.createBlock(&tryOp.getCleanup(), {}, types);
+        builder.createBlock(&tryOp.getCatches(), {}, types);
+        builder.createBlock(&tryOp.getFinally(), {}, types);
+
+        {
+            builder.setInsertionPointToStart(&tryOp.getBody().front());
+
+            SymbolTableScopeT varScope(symbolTable);
+            GenContext tryBodyGenContext(tryGenContext);
+            tryBodyGenContext.parentBlockContext = &tryGenContext;
+
+            auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+            tryBodyGenContext.usingVars = usingVars.get();
+
+            EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, tryBodyGenContext, skipStatements));
+
+            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+
+            builder.create<mlir_ts::ResultOp>(location);
+
+            // cleanup: same dispose calls, reached only from the unwind edge
+            builder.setInsertionPointToStart(&tryOp.getCleanup().front());
+            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+
+            builder.create<mlir_ts::ResultOp>(location);
+        }
+
+        // no catch clause
+        builder.setInsertionPointToStart(&tryOp.getCatches().front());
+        builder.create<mlir_ts::ResultOp>(location);
+
+        // no finally block
+        builder.setInsertionPointToStart(&tryOp.getFinally().front());
+        builder.create<mlir_ts::ResultOp>(location);
+
+        builder.setInsertionPointAfter(tryOp);
 
         return mlir::success();
     }
