@@ -3,15 +3,19 @@
 // resulting IR - a catchret emitted ahead of a call still carrying the funclet token - crashed
 // the backend.
 //
-// JIT only, deliberately: an exception that escapes a catch clause is lost under AOT, and
-// always was. A call inside a catch that throws (`catch (e) { thrower(); }`) loses it too,
-// with no `throw` statement in the catch anywhere and nothing here able to affect it, so the
-// gap is in the AOT exception tables rather than in what this file covers. The emitted IR is
-// well-formed at -O0 and -O3; it is the runtime side that drops it.
+// This file was JIT-only when it was written, for three reasons that have all since gone
+// away, and none of which were about ending the catch:
 //
-// Known still-broken and deliberately not covered here: a *call* inside a catch clause
-// followed by a throw out of it (`catch (e) { new Res(); throw 2; }`) crashes at run time.
-// Separate bug, unrelated to ending the catch - that IR is well-formed too.
+//  - An exception escaping a catch clause was said to be lost under AOT. It was the
+//    CatchableType::sizeOrOffset miscompile, fixed in the commit after this file landed; see
+//    docs/reference-counting-evaluation.md section 9.15.
+//  - So was `catch (e) { new Res(); throw 2; }` crashing at run time - a call in a catch
+//    followed by a throw out of it. Same fix, same reason: a frame slot overwritten by a
+//    caught `int` copied as 8 bytes.
+//  - `catch (e) { thrower(); }`, a call in a catch that throws with no `throw` statement
+//    anywhere, was blamed on the AOT exception tables. It was neither AOT-specific nor
+//    exception-table-related: the MLIR inliner was erasing the throw. 00throw_inlined.ts
+//    covers it, and section 9.16 has the detail.
 
 function throwsALiteralFromCatch() {
     try {

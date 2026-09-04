@@ -1031,9 +1031,24 @@ is the case that proves it, and it caught the first version of this fix.
   involved anywhere and nothing in this change able to affect it. The IR is well-formed at
   both `-O0` and `-O3`; the gap is in the AOT exception tables. `00throw_in_catch.ts` is
   therefore registered JIT-only.
+
+  > **Update.** Both wrong, and differently wrong. The first was the
+  > `CatchableType::sizeOrOffset` miscompile (§9.15) and went away with it; this file's tests
+  > now run under AOT as well, as `test-compile-00-throw-in-catch`. The second was neither
+  > AOT-specific nor in the exception tables: the MLIR inliner was **erasing the throw**
+  > (§9.16). "The IR is well-formed" was checked on the callee, which is exactly the function
+  > that survives intact — the deletion happens at the call site.
+
 - **A call inside a catch followed by a throw out of it** (`catch (e) { new Res(); throw 2; }`)
   crashes at run time, AOT and JIT alike, at every optimisation level and memory model. Its IR
   is well-formed too. Unrelated to ending the catch.
+
+  > **Update.** Also the `CatchableType::sizeOrOffset` miscompile (§9.15); fixed there, and
+  > covered now by `00try_using_catch.ts`. Correctly identified as unrelated to ending the
+  > catch — it just wasn't an EH bug at all. Three of these entries had one cause between
+  > them, and the thing they had in common was a *call in a catch*: that is the shape whose
+  > frame layout the overflow reached.
+
 - **Throwing from a `finally`** (`try { throw 1; } finally { throw 2; }`) segfaults, from the
   same `CutBlock` cause — `ts.BeginCleanup` with no `ts.EndCleanup`. Not fixed here because
   `EndCleanupOp` is a terminator taking a landing pad and unwind destinations rather than a
@@ -1157,3 +1172,73 @@ model. That is §9.11's second item — a synthesized cleanup `TryOp` nested ins
 `TryOp`'s body — still open, and it is why the test covers only the flat shape.
 
 Full release suite green: 862/862.
+
+### 9.16 The inliner was deleting throws
+
+Not an RC bug at all, and not an EH bug either — a silent wrong-code bug in the ordinary
+optimised build, found by re-testing §9.14's open list after the §9.15 fix and asking why one
+entry survived. Two defects, one behind the other.
+
+**A function whose body ends in a throw inlined down to nothing.** This:
+
+```ts
+function thrower() { throw 5; }
+function callsIt() { thrower(); }
+```
+
+compiled, under `--opt`, to a `callsIt` that does nothing but return:
+
+```mlir
+ts.Func @callsIt !ts.func<, , false> {
+    "ts.ReturnInternal"() : () -> ()
+}
+```
+
+MLIR's inliner has a fast path for a single-block callee (`inlineRegionImpl`, the
+`singleBlockFastPath` branch): it offers the block's terminator to the dialect's
+`handleTerminator` hook and then calls `firstBlockTerminator->erase()` **unconditionally**. The
+assumption is that a terminator is return-like and its operands are all the block had left to
+say. `ts.ThrowCall` is a terminator too, and `TypeScriptInlinerInterface::handleTerminator` only
+ever did anything for `ReturnInternalOp` — so the throw was handed over, ignored, and erased.
+The multi-block path has no such erase, which is why a *conditional* throw was always fine and
+only the throw-only helper was hit.
+
+The fix is the hook MLIR provides for exactly this, `allowSingleBlockOptimization`: decline the
+fast path unless the terminator is a return. The multi-block path then leaves the throw in place
+as the block's terminator and puts the code after the call site in an unreachable block, which
+is what it should have been all along.
+
+**Then the same throw inlined into a `catch` clause crashed the backend** — the case that had
+been recorded as "lost under AOT, so the gap is in the AOT exception tables". It was neither.
+`Win32ExceptionPass` ends a catch region at a `_CxxThrowException` call by splitting the block
+*ahead* of it and emitting the `catchret` there, which leaves the throw outside the funclet; but
+it also collected that same call into `catchRegion.calls`, which is what stamps
+`"funclet"(token %catchpad)` on. So the throw named a pad it had already returned from — the
+identical malformed shape §9.14 describes, reached by a different route. An `__cxa_end_catch`
+marker is what normally keeps the two apart, by closing the region before the throw is reached,
+and a throw the inliner brought in has no marker: the `EndCatchOp` that followed the call it
+replaced went with the rest of the now-unreachable code after it.
+
+**The first attempt at that overreached, and 00try_catch.ts caught it.** Closing the region on
+the throw, the way the marker does, broke three tests. That scan walks `instructions(F)` in
+order rather than by region, so once inlining has merged several functions into one, a throw
+belonging to one catch turns up while another is still open — and closing there strands the rest
+of that catch's calls with no bundle at all. Skipping the call is all that is needed; the region
+stays open. The `isCatch()` guard matters too: a cleanup region gets no `catchret`, so its throw
+stays inside the funclet and does still need the bundle.
+
+**What this says about the earlier diagnosis.** Three entries on §9.14's open list had two
+causes between them, and both diagnoses pointed at the runtime — "the AOT exception tables", "it
+is the runtime side that drops it" — on the strength of the IR being well-formed. It was: the IR
+of the *callee*, which is the one function the bug leaves intact. The deletion happens at the
+call site, and the call site was never looked at. The cheap check that would have settled it in
+minutes is the one that eventually did — dump `--emit=mlir-affine` with and without `--opt` and
+diff, which is a much smaller step than reasoning about exception tables.
+
+New test: `test/tester/tests/00throw_inlined.ts`, run under all three models
+(`test-compile-00-throw-inlined`, `test-jit-00-throw-inlined`, `test-jit-rc-throw-inlined`,
+`test-jit-none-throw-inlined`). It covers the plain call, the call from inside a catch clause,
+and a conditional throw as the control that always worked. `00throw_in_catch.ts` picks up its
+AOT variant here as well, now that nothing on its header's list is true any more.
+
+Full release suite green: 867/867.

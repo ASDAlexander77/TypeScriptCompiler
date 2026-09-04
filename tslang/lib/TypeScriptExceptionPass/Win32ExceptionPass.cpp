@@ -169,8 +169,34 @@ struct Win32ExceptionPassCode
                     // possible end
                     if (CI->getCalledFunction()->getName() == "_CxxThrowException")
                     {
-                        // do not put continue, we need to add facelet
                         catchRegion->end = &I;
+
+                        // For a catch, the end-of-catch handling below splits the block ahead
+                        // of `end` and emits the catchret there, which leaves this call on the
+                        // far side of it - outside the funclet. So it must not be collected
+                        // into `calls`, which is what stamps the funclet bundle on: a bundle
+                        // naming a pad the throw has already returned from is malformed IR,
+                        // and it crashes the backend.
+                        //
+                        // The __cxa_end_catch marker above keeps the two apart for this same
+                        // instruction whenever MLIRGen emitted one, by closing the region
+                        // before the throw is ever reached. A throw the inliner brought in has
+                        // no marker - the EndCatchOp that followed the call it replaced went
+                        // with the rest of the now-unreachable code after it - so it has to be
+                        // recognised on its own.
+                        //
+                        // Skipping the call is all that takes, though: leave the region open.
+                        // This scan walks the function's instructions in order rather than by
+                        // region, so after inlining a throw belonging to one catch can turn up
+                        // while another is still open, and closing on it would strand the rest
+                        // of that catch's calls with no bundle at all (00try_catch.ts).
+                        //
+                        // A cleanup region gets no catchret, so its throw stays inside the
+                        // funclet and does still need the bundle; leave that path alone.
+                        if (catchRegion->isCatch())
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
