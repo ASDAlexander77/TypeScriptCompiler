@@ -726,7 +726,7 @@ class MLIRGenImpl
     // A field of a record held *inline* - a tuple in a local, a parameter's slot - is not this.
     // Its fields are released by whatever owns the record, which is only tracked when that is
     // an owned local, and retaining into a record nothing releases would leak. Left out until
-    // the slice that takes arguments and elements, which is where the general answer lives.
+    // the slice that takes arguments, which is where the general answer lives.
     bool isOwnedFieldSlot(mlir::Location location, mlir::Value reference)
     {
         auto propertyRefOp = reference.getDefiningOp<mlir_ts::PropertyRefOp>();
@@ -746,11 +746,43 @@ class MLIRGenImpl
         return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
+    // Does this reference address an element of an array that will release what the element
+    // holds? A `T[]` value is { data, length }, and its release routine walks the elements of
+    // the data block before freeing it (`buildArrayBody` in OwnershipRoutineLogic) - the exact
+    // mirror of what `releaseFields` does for an instance. So `arr[i] = x` carries the same
+    // debt as `obj.f = x`.
+    //
+    // Only ArrayType. `ts.ElementRef` also addresses a ConstArrayType, whose data is a static
+    // literal nothing releases, and a StringType, whose characters are not references at all.
+    //
+    // This covers the element *store*. The array-mutating builtins - push, unshift, splice -
+    // put a value into that same data block through their own ops rather than through an
+    // assignment, and pop and shift take one back out; neither is here. The taking-out half
+    // asks the same question a return does (give up a reference to a value the caller is about
+    // to hold), so the two belong in one slice, not this one.
+    bool isOwnedElementSlot(mlir::Location location, mlir::Value reference)
+    {
+        auto elementRefOp = reference.getDefiningOp<mlir_ts::ElementRefOp>();
+        if (!elementRefOp)
+        {
+            return false;
+        }
+
+        if (!isa<mlir_ts::ArrayType>(elementRefOp.getArray().getType()))
+        {
+            return false;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
     // Storage that hands ownership over when it is overwritten: the incoming value gains an
     // owner and the outgoing one loses one.
     bool isOwningSlot(mlir::Location location, mlir::Value reference)
     {
-        return isOwnedLocalSlot(reference) || isOwnedFieldSlot(location, reference);
+        return isOwnedLocalSlot(reference) || isOwnedFieldSlot(location, reference) ||
+               isOwnedElementSlot(location, reference);
     }
 
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)

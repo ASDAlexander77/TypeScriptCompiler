@@ -385,6 +385,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    2026-09-04, see §9.15.**
 5c. **Fields own what they hold.** The first insertion point beyond locals, and the first the
    verifier guarded rather than followed. **Done 2026-09-04, see §9.19.**
+5d. **Elements own what they hold.** `arr[i] = x`, the direct sibling of 5c. Exposed the first
+   latent *over*-release: an array literal stores its elements without retaining them.
+   **Done 2026-09-04, see §9.20.**
+5e. **Literal construction retains what it captures.** Array and object literals, which build an
+   owning block in one go rather than through an assignment. Ahead of the rest because 5d showed
+   it is already wrong rather than merely incomplete, and it has to land before the slack comes
+   out.
+5f. **The array-mutating ops.** `push`/`unshift`/`splice` take a reference, `pop`/`shift` give
+   one up — the latter being the same question a `return` asks, which is why they go together.
+5g. **Arguments and returns**, and with them the inline-record field case 5c left out.
+5h. **Remove 5a's slack**: consume a freshly allocated value's birth reference. The point where a
+   mistake stops being an inert leak, and where every test written since 5a gains teeth.
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -1451,3 +1463,61 @@ New test: `test/tester/tests/00owned_fields.ts`, all three models
 self-assignment, one value shared between two holders, and a field assigned from another field.
 
 Full release suite green: 879/879.
+
+### 9.20 Step 5d: elements own what they hold — and the literal that does not
+
+The direct sibling of §9.19. A `T[]` value is `{ data, length }`, and its release routine walks
+the elements of the data block before freeing it (`buildArrayBody` in `OwnershipRoutineLogic`) —
+the exact mirror of what `releaseFields` does for an instance. So `arr[i] = x` carried the same
+debt `obj.f = x` did, and was likewise a bare `ts.Store`.
+
+**The fix** is a third arm on `isOwningSlot`: `isOwnedElementSlot` — a `ts.ElementRef` whose base
+is an `ArrayType` and whose element type owns heap memory. Only `ArrayType`; `ts.ElementRef` also
+addresses a `ConstArrayType`, whose data is a static literal nothing releases, and a `StringType`,
+whose characters are not references at all. Element access already produces `ts.Load` on a
+`ts.ElementRef`, so the store flows through the same assignment path fields do and needed no new
+emission code — only the predicate.
+
+**Scoped deliberately.** `push`, `unshift` and `splice` put a value into that same data block
+through their own ops rather than through an assignment, and `pop` and `shift` take one back out.
+The taking-out half asks the same question a `return` does — give up a reference to a value the
+caller is about to hold — so those belong together in one later slice rather than half here.
+
+**These tests do have teeth, unlike §9.19's, and that is the interesting part.** The same
+release-before-retain swap that left every field case passing makes `test-jit-rc-owned-elements`
+fail outright: the element self-assignment reads back `0` where the field self-assignment still
+reads `5`. Reduced to two five-line programs, that asymmetry is not about elements at all.
+
+**What it exposes: an array literal stores its elements without retaining them.** The IR for
+`let arr = [kept];` is a `ts.CreateArray(%kept)` with no `ts.Retain` anywhere near it, while the
+`ts.ReleaseSlot` at scope exit runs the array's release routine, which releases every element.
+The array gives up a reference it never took. A field filled through the assignment path holds
+birth + field = 2 and survives a stray release; an element seeded by a literal holds only its
+birth reference, so releasing first drops it to zero and frees a live value.
+
+Today this is masked, completely, by the same slack §9.12 chose: the birth reference is
+unconsumed, so the array's unearned release is exactly cancelled by the reference nobody ever
+gave back. It is an over-release *in waiting* — the first thing that will free live memory when
+the slack is removed:
+
+```ts
+let kept = new Leaf(7);
+{ let arr = [kept]; }   // arr dies, releases the element it never retained
+return kept.n;          // alive only because the birth reference is still there
+```
+
+Object literals construct the same way and will have the same hole. That makes literal
+construction, not arguments or returns, the next thing to take — it is the one insertion point
+now shown to be latently wrong rather than merely incomplete, and it has to land before the slack
+comes out, not after.
+
+The verifier is unchanged by this step: still the same two files and six retain sites, all the
+known throwing-`[Symbol.dispose]()` path, and no new "released but never retained" — the
+hand-over recognition added in §9.19 generalised to elements without modification.
+
+New test: `test/tester/tests/00owned_elements.ts`, all three models. Repeated overwrite, an alias
+outliving the element's reference, self-assignment, one leaf shared between two arrays, an element
+assigned from another array's element, one value reaching two slots of the same array, and
+overwriting a single slot inside a loop.
+
+Full release suite green: 883/883.
