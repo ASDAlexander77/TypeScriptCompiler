@@ -76,6 +76,7 @@ extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
+extern cl::opt<bool> verifyOwnership;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
@@ -122,6 +123,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
 #endif
+
+        // Ahead of the optimisation passes, so it checks what MLIRGen and the affine lowering
+        // actually produced rather than what the inliner left of it, and after the lowering,
+        // because that is what turns unwind paths into ordinary CFG edges.
+        if (verifyOwnership)
+        {
+            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipVerifierPass());
+        }
 
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)

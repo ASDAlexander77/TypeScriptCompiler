@@ -374,7 +374,8 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    after surfacing several independent pre-existing gaps in the same machinery. **Done
    2026-09-03, see §9.11.**
 5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
-   owned value without a matching release on every path, unwind paths included. *Point of
+   owned value without a matching release on every path, unwind paths included. **Verifier done
+   2026-09-04, see §9.18.** *Point of
    no return* — and the first step where a mistake is not inert: a missing retain frees live
    memory, an extra one leaks. Narrowed by §9.10: the mistake can only reach `-mm=rc`.
 5a. **Locals own what they hold.** The first slice of step 5 and the one that builds the
@@ -1325,3 +1326,75 @@ scope already closed and with both still live, asserting disposal *order* rather
 it happened.
 
 Full release suite green: 871/871.
+
+### 9.18 The verifier, and the first thing it found
+
+Step 5's plan named a verifier from the start — "every owned value with a matching release on
+every path, unwind paths included" — and said to build it alongside the insertion rather than
+after. This is that, one step ahead of the work it exists to guard.
+
+**Where it runs, and in which model.** `OwnershipVerifierPass`, at the affine level, behind
+`--verify-ownership`. Affine because that is the first point where the unwind paths are ordinary
+CFG edges and can be walked like any other; before `TryOpLowering` they are regions, and after
+`LowerToLLVM` the ops are gone. And in **every** memory model, not just `-mm=rc`:
+`ts.RetainSlot` and `ts.ReleaseSlot` survive to there regardless of model and are only erased on
+the way to LLVM, so a collected build checks the same invariant a counted one does. That matters
+more than it sounds — most of the suite, and most of CI, is collected.
+
+**What it checks.** For each `ts.RetainSlot`, a backward must-analysis over the function's
+blocks: is there a path from the retain to a function exit that passes no `ts.ReleaseSlot` on
+the same slot? A block releases if it does so directly or inside a region of one of its own
+operations — counting nested regions as releasing rather than as opaque, because a verifier that
+reports a leak the IR does pay somewhere the walk does not follow is a verifier that gets
+switched off. Being a must-analysis it starts optimistic and is driven down to a fixed point,
+which leaves a loop with no exit reading as satisfied — correctly, as it has no path to an exit
+to leak on. The cheap structural half of the other direction is there too: a release naming a
+slot that is never retained.
+
+It checks the direction that leaks rather than the direction that frees live memory, on purpose.
+Step 5a's insertion is balanced by construction, so an unmatched release cannot currently be
+generated; what an extension to fields, elements, arguments or returns will get wrong first is a
+path out that nobody released on.
+
+**Confirmed to fire before being trusted.** A verifier that has never failed is a verifier that
+might not work. The unwind-leg release from §9.15 was reverse-applied, and it reported the leak
+at the right declaration, in all three memory models; restored, it went quiet again.
+
+**What it found on its first run.** 460 test files, two with findings, both real.
+
+1. **A `break` or `continue` written inside another block skipped every scope between itself and
+   the loop** — the disposals a `using` declared *and* the references those scopes' locals took.
+   Not an RC bug: `using` had it too, and that half is user-visible. Three iterations of
+   `for (…) { using r = new Res(); if (i == 1) continue; }` disposed twice.
+
+   The walk outwards stopped at the first scope that was not itself a loop. `isLoop` is set by a
+   loop on the context it hands its body and then inherited by every context copied from it, so
+   it answers "somewhere inside a loop", not "is the loop" — and the very first step of the walk
+   thought it had already arrived. Written directly in the loop body it happened to be right,
+   which is why that shape always worked and hid this one. Fixed by splitting the two meanings:
+   `isLoopBodyScope` is taken by the block that becomes the loop's body and cleared for anything
+   nested further in.
+
+   Two attempts either side of it were wrong and are worth recording. Carrying the target label
+   into the recursion instead of the empty one looks obviously right and breaks
+   `02disposable.ts`: the loop sites clear `label` before storing it, so a labelled loop's
+   context holds an empty label too, and `continue cont1` relies on the outer loop matching the
+   empty label the recursion passes down. And moving the recursion out of the
+   `ownedVars != nullptr` guard — on the reasonable theory that a scope owning nothing says
+   nothing about its parents — broke `Path.ts`. The `isLoop` fix made it unnecessary anyway.
+
+2. **A `[Symbol.dispose]()` that itself throws during unwind skips the release that follows it.**
+   The cleanup region invokes dispose, and its unwind edge goes to the enclosing catch without
+   passing the `ts.ReleaseSlot` on the far side. Real, and left alone: releasing before disposing
+   would fix the path and break the ordering §9.12 chose deliberately — a disposable is still
+   usable while its `[Symbol.dispose]()` runs, and dropping the last reference first could have
+   freed it. `00using_nested_scopes.ts` is the one file that still reports.
+
+New tests: `test/tester/tests/00break_continue_scope_exit.ts`, all three models
+(`test-compile-00-break-continue-scope-exit`, `test-jit-00-break-continue-scope-exit`,
+`test-jit-rc-break-continue-scope-exit`, `test-jit-none-break-continue-scope-exit`). It covers
+`continue` and `break` from inside an `if`, two levels of nesting, a `using` in the intermediate
+scope as well, the labelled form, and the shape that always worked as a control. Confirmed to
+fail with the fix reverse-applied.
+
+Full release suite green: 875/875.

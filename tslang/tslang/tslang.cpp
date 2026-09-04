@@ -121,6 +121,7 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection. Deprecated alias for '-mm=none'"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful to compile the same code into 'lib' (static library) and/or 'dll/so' (dynamic library)) "),

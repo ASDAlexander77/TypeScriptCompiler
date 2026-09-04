@@ -151,6 +151,12 @@ namespace mlirgen
         GenContext genContextUsing(genContext);
         genContextUsing.parentBlockContext = &genContext;
 
+        // This block is the loop's own body scope exactly when the loop offered the marker to
+        // the context it handed down. Take it, and clear the offer so a block nested further in
+        // does not claim to be the loop as well - see GenContext::isLoopBodyScope.
+        genContextUsing.isLoopBodyScope = genContext.isLoop;
+        genContextUsing.isLoop = false;
+
         DITableScopeT debugBlockScope(debugScope);
         if (compileOptions.generateDebugInfo && !blockAST->parent)
         {
@@ -216,6 +222,11 @@ namespace mlirgen
             SymbolTableScopeT varScope(symbolTable);
             GenContext tryBodyGenContext(tryGenContext);
             tryBodyGenContext.parentBlockContext = &tryGenContext;
+
+            // as in mlirGen(Block): this is the block's own scope, so it is where a break or
+            // continue walking outwards stops
+            tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();
@@ -1044,6 +1055,11 @@ namespace mlirgen
             SymbolTableScopeT varScope(symbolTable);
             GenContext tryBodyGenContext(tryGenContext);
             tryBodyGenContext.parentBlockContext = &tryGenContext;
+
+            // as in mlirGen(Block): this is the block's own scope, so it is where a break or
+            // continue walking outwards stops
+            tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();

@@ -191,8 +191,16 @@ struct GenContext
     bool disableSpreadParams = false;
     const GenContext* parentBlockContext = nullptr;
     const GenContext* rootContext = nullptr;
+    // Set by a loop on the context it hands its body, and inherited by every context copied
+    // from it - so it answers "somewhere inside a loop", not "is the loop".
     bool isLoop = false;
     std::string loopLabel;
+    // Set by the block that becomes the loop's own body scope, and cleared for anything nested
+    // further in. That is the distinction a `break` or `continue` needs: it owes a dispose and
+    // a release to every scope between itself and the loop, so the walk outwards can only stop
+    // at the loop's own scope - and `isLoop` alone reads true for all of them, which is what
+    // made a `break` written inside an `if` skip the lot.
+    bool isLoopBodyScope = false;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

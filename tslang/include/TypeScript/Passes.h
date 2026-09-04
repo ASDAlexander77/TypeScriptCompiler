@@ -26,6 +26,11 @@ std::unique_ptr<mlir::Pass> createLowerToLLVMPass(CompileOptions&);
 // TODO: should you process, switch satate in createLowerToAffinePass to resolve issue?
 std::unique_ptr<mlir::Pass> createRelocateConstantPass();
 
+/// Checks that a slot which takes a reference gives it back on every path out of the function,
+/// unwind paths included. Runs at the affine level, where unwind paths are ordinary CFG edges,
+/// and in every memory model - the ownership ops survive to there regardless of model.
+std::unique_ptr<mlir::Pass> createOwnershipVerifierPass();
+
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 /// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free

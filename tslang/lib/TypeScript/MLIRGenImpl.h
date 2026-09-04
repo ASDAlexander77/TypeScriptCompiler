@@ -645,6 +645,39 @@ class MLIRGenImpl
         return mlirGenReleaseOwned(location, disposeDepth, loopLabel, genContext);
     }
 
+    // Whether a scope exit that has just finished with this scope still owes the scopes outside
+    // it. `FullStack` - a `return` - owes all of them. A `break` or `continue` owes every scope
+    // up to and including the body scope of the loop it targets.
+    //
+    // The loop test belongs here, and on `isLoopBodyScope`. Written as
+    // `disposeDepth == LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel`
+    // in the "keep going" position it stopped the walk at the first scope that was not itself
+    // a loop - and since `isLoop` is inherited by every context inside a loop, the very first
+    // step thought it had already arrived. A `break` or `continue` written inside an `if`,
+    // which is where they are usually written, then skipped every scope between it and the
+    // loop, disposing and releasing none of them. Found by the ownership verifier.
+    static bool scopeExitContinuesOutwards(DisposeDepth disposeDepth, const std::string &loopLabel,
+                                           const GenContext *genContext)
+    {
+        if (disposeDepth == DisposeDepth::FullStack)
+        {
+            return true;
+        }
+
+        if (disposeDepth != DisposeDepth::LoopScope)
+        {
+            return false;
+        }
+
+        // The label comparison is left exactly as it was, including the empty label the
+        // recursion below hands the parent. It looks like it should carry the target label
+        // outwards instead, but the loop sites clear `label` before storing it, so a labelled
+        // loop's context holds an empty one too - and `continue cont1` then relies on the outer
+        // loop matching that empty label. 02disposable.ts is the case that proves it.
+        auto isTargetLoop = genContext->isLoopBodyScope && genContext->loopLabel == loopLabel;
+        return !isTargetLoop;
+    }
+
     // Drops the reference each local of this scope took when it was declared. Shaped after
     // mlirGenDisposable, and walks outwards on the same terms, so that a `return` from a
     // nested block releases every scope it leaves and a `break` releases up to the loop.
@@ -666,9 +699,7 @@ class MLIRGenImpl
                 const_cast<GenContext *>(genContext)->ownedVars = nullptr;
             }
 
-            auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
-                    || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
-            if (continueIntoDepth)
+            if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
             {
                 EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
             }
@@ -709,9 +740,7 @@ class MLIRGenImpl
                 const_cast<GenContext *>(genContext)->usingVars = nullptr;
             }
 
-            auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
-                    || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
-            if (continueIntoDepth)
+            if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
             {
                 EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
             }
