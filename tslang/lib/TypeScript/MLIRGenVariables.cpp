@@ -140,6 +140,7 @@ namespace mlirgen
         if (producesOwnedReference(variableDeclarationInfo.initial))
         {
             varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            consumeOwnedReference(variableDeclarationInfo.initial);
         }
         else
         {

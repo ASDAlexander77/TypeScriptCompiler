@@ -432,11 +432,17 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    return needing a cast retains the wrong value. Benign (the extra reference is simply never
    taken, so it leaks) but it excludes 92 functions from 5k's classification. Fix is to apply the
    cast before the retain.
-5l. **Discarded temporaries** — `f();`, `arr.pop();`, and every call result used as an argument
-   without being bound to anything, which is what expression-shaped code is made of. Needs a
-   last-use notion, not a receiver. **Step 6 reclassified this as the dominant leak rather than a
-   loose end**: `raytrace.ts` reclaims nothing at all under `-mm=rc` for exactly this reason
-   (§9.28). Next slice.
+5l. **Discarded temporaries** — `f();`, and every call result used as an argument without being
+   bound to anything, which is what expression-shaped code is made of. **Done 2026-09-04, see
+   §9.30**: consumption is recorded explicitly now, and what nothing consumed is released at the
+   end of the block that produced it. Closing it also closed a §9.27 gap that kept it from firing
+   at all — `return new C()` forwards a reference rather than retaining one, so those functions
+   were never classified as returning owned. `raytrace.ts` 129.5 MB → 79.3 MB, below `none` for
+   the first time; the nested-call shape on its own is flat.
+5n. **An object literal returned through an interface** reclaims essentially nothing (41.5 MB
+   against `none`'s 42.3), which is where `raytrace`'s remaining leak lives now that arrays,
+   strings and call temporaries all reclaim. Either the boxed literal or the clone an interface
+   cast makes. Next slice.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2072,3 +2078,65 @@ never reads a catch value; nothing there should be made to depend on a broken fe
 in the same subsystem, still open.
 
 Full release suite green: 913/913.
+
+### 9.30 Step 5l: giving back the temporaries
+
+§9.28's measurement made this the priority: `raytrace.ts` reclaimed **nothing** under `-mm=rc`.
+It is built almost entirely out of `Vector.plus(Vector.times(k, a), b)`, so nearly every
+allocation it makes is an intermediate passed straight as an argument and never bound to
+anything - carrying the +1 its return retained (§9.24) with no owner to give it back.
+
+**Consumption is now recorded rather than implied.** Every receiving site (§9.25) answered
+`producesOwnedReference` by *not* emitting a retain, which left no trace: after §9.27 erased a
+receiver's retain, a consumed call and a call nobody received looked identical. A second
+attribute, `OWNED_RESULT_CONSUMED_ATTR_NAME`, is set wherever a receiver takes a reference over,
+and its absence is what identifies a discarded temporary.
+
+**The release goes at the end of the producer's own block.** That is a temporary's natural
+lifetime - the enclosing statement, or one iteration of a loop body - and, more to the point, it
+is unconditionally after every use in that block. Placing it after the last *user* looks tighter
+and is wrong: the receiver of `let x = <T>f()` retains the result of the **cast**, not of the
+call, so the call's last user is the cast and a release put there runs before that retain and
+frees the value out from under it. Two shapes are refused and left leaking as before: a user
+outside the producer's block, and a user that is a terminator (a value handed to a successor as a
+block argument is still live past the release point).
+
+**A second gap had to close before any of this fired.** §9.27 classified a function as returning
+owned only when every return was preceded by a `ts.Retain`. But there are two ways to hand back a
+reference: retain one, or forward one already held - and `return new C()` consumes the instance's
+own +1 rather than adding a second (§9.25), so there is no retain to find. Every
+`static times(...) { return new Vector(...) }` was therefore unclassified, which is most of what
+expression-shaped code is built from. A return whose value comes from an `OWNED_RESULT` operation
+now counts too.
+
+**What it reclaims**, peak working set, AOT:
+
+| program | gc | rc before | rc after | none |
+|---|---|---|---|---|
+| `raytrace.ts`, `-O3` | 4.1 MB | 129.5 MB | **79.3 MB** | 106.7 MB |
+| nested call temporaries, 500k iterations, `-O0` | 4.2 MB | — | **3.8 MB** | 188.0 MB |
+| object literal returned as an interface, `-O0` | 4.2 MB | — | 41.5 MB | 42.3 MB |
+
+The second line is the shape this step is about, and it is now flat. The third is what `raytrace`
+still leaks: an **object literal returned through an interface** reclaims essentially nothing.
+Arrays and strings were checked the same way and both reclaim (3.9 MB against 42.6, and 3.8 MB
+against 27.2), so the remaining leak is specific to the literal/interface path - the boxed literal
+or the clone an interface cast makes - and is the next thing to look at, not another temporaries
+problem.
+
+New test `test/tester/tests/00owned_temporaries.ts`, four variants. **Teeth, measured per case
+with two separate probes** rather than assumed:
+
+- releasing consumed results as well as discarded ones is caught only by the loop case, because
+  an end-of-block release lands after every read in that block - a useful reminder that this
+  particular perturbation cannot reach most of the file;
+- releasing immediately after the producer instead of at end of block - the ordering the whole
+  design rests on - is caught by 4 of the 8 cases at `-O3` and by 6 of 8 at `-O0`.
+
+Two cases cannot fail loudly and are kept knowingly: `discardedResult` has nothing that reads the
+discarded values, and `temporaryKeptByCallee` is balanced by push's own retain either way. The
+first version of `usedAsArgumentAndBound` passed under both probes for the wrong reason - a freed
+block still held its old value - so `argumentReadAfterCalleeAllocates` was added, where the callee
+allocates before reading its arguments and a block freed early is overwritten before the read.
+
+Full release suite green: 917/917.

@@ -813,6 +813,17 @@ class MLIRGenImpl
         return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
     }
 
+    // Records that a receiver has taken over the reference this value carried, so nothing later
+    // reads it as a temporary nobody claimed. Every site that answers `producesOwnedReference`
+    // by skipping its retain calls this; what is left unmarked is what §9.30 releases.
+    void consumeOwnedReference(mlir::Value value)
+    {
+        if (auto *definingOp = value ? value.getDefiningOp() : nullptr)
+        {
+            definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+        }
+    }
+
     // Takes a reference to each of `values` that owns heap memory.
     //
     // For construction sites that fill an owning block in one go rather than through an
@@ -832,9 +843,18 @@ class MLIRGenImpl
     {
         for (auto value : values)
         {
+            if (!mth.ownsHeapMemory(location, value.getType()))
+            {
+                continue;
+            }
+
             // a value that already carries a reference for its receiver is taken over rather
             // than retained again (§9.25) - `[new C()]`, and `return new C()` alike
-            if (mth.ownsHeapMemory(location, value.getType()) && !producesOwnedReference(value))
+            if (producesOwnedReference(value))
+            {
+                consumeOwnedReference(value);
+            }
+            else
             {
                 builder.create<mlir_ts::RetainOp>(location, value);
             }
@@ -4555,7 +4575,11 @@ class MLIRGenImpl
                 // reference over instead of adding one. The release still runs either way -
                 // what the slot was holding has to be given up regardless of where the
                 // incoming reference came from.
-                if (!producesOwnedReference(savingValue))
+                if (producesOwnedReference(savingValue))
+                {
+                    consumeOwnedReference(savingValue);
+                }
+                else
                 {
                     builder.create<mlir_ts::RetainOp>(location, savingValue);
                 }

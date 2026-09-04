@@ -65,8 +65,11 @@ class OwnedReturnConsumptionPass
             }
         });
 
+        // `new C()` is marked where it is built, so there can be discarded temporaries to give
+        // back even when no function here is classified as returning owned.
         if (returnsOwned.empty())
         {
+            releaseDiscardedTemporaries(mth, module);
             return;
         }
 
@@ -99,17 +102,114 @@ class OwnedReturnConsumptionPass
             if (auto *retain = findReceiverRetain(result))
             {
                 callOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                 toErase.push_back(retain);
+                return;
             }
+
+            // Nobody took it. The +1 stands with no owner, which is the leak §9.30 closes -
+            // marked here, released below once every consumer has had its say.
+            callOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
         });
 
         for (auto *op : toErase)
         {
             op->erase();
         }
+
+        releaseDiscardedTemporaries(mth, module);
     }
 
   private:
+    // Gives back the +1 on a produced reference that no receiver ever took.
+    //
+    // Every function retains its result on the way out (§9.24), so a call hands back a reference
+    // whether or not the caller does anything with it. Where a receiver takes it over the pair is
+    // balanced (§9.25, §9.27); where nothing does, the reference stands with no owner and the
+    // value is never freed. That is not a corner case: `raytrace.ts` is built out of
+    // `Vector.plus(Vector.times(k, a), b)`, so nearly every allocation it makes is an
+    // intermediate passed straight as an argument, and it reclaimed nothing at all before this.
+    //
+    // WHERE the release goes is the whole difficulty - "after the last use" is not something
+    // MLIRGen can see while it is still building the expression. The answer here is the END OF
+    // THE PRODUCER'S OWN BLOCK, which is a temporary's natural lifetime (the enclosing statement,
+    // or one iteration of a loop body) and, more importantly, is unconditionally after every use
+    // in that block. Placing it after the last *user* instead looks tighter and is wrong: the
+    // receiver of `let x = <T>f()` retains the result of the CAST, not of the call, so the call's
+    // last user is the cast and a release put there would run before that retain and free the
+    // value out from under it. End-of-block cannot get that ordering wrong.
+    //
+    // Two things disqualify a value, and both simply leave it leaking as before:
+    //
+    //  - a user outside the producer's block, so the value outlives the block or is used on a
+    //    path this cannot see;
+    //  - a user that is a terminator, since a value handed to a successor as a block argument is
+    //    still live after the point this would release it.
+    //
+    // That bias is the same one the rest of this arc takes: an unreleased reference is invisible,
+    // a released one that was still owned is a use-after-free.
+    void releaseDiscardedTemporaries(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        llvm::SmallVector<mlir::Operation *> discarded;
+        module.walk([&](mlir::Operation *op) {
+            if (!op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
+            {
+                return;
+            }
+
+            if (op->getNumResults() != 1 || !mth.ownsHeapMemory(op->getLoc(), op->getResult(0).getType()))
+            {
+                return;
+            }
+
+            discarded.push_back(op);
+        });
+
+        mlir::OpBuilder builder(&getContext());
+        for (auto *op : discarded)
+        {
+            if (!allUsesReleasableInOwnBlock(op))
+            {
+                continue;
+            }
+
+            auto *block = op->getBlock();
+            auto *terminator = block->getTerminator();
+            if (terminator)
+            {
+                builder.setInsertionPoint(terminator);
+            }
+            else
+            {
+                builder.setInsertionPointToEnd(block);
+            }
+
+            builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
+        }
+    }
+
+    // Can a release at the end of this value's own block give its reference back safely? See
+    // releaseDiscardedTemporaries for what disqualifies a use and why.
+    static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
+    {
+        auto *block = op->getBlock();
+        for (auto *user : op->getResult(0).getUsers())
+        {
+            if (user->getBlock() != block || user->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static bool producesOwnedResult(mlir::Value value)
+    {
+        auto *definingOp = value.getDefiningOp();
+        return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
+    }
+
     // The symbol a call names, when it names one directly. An indirect call through a value -
     // a callback, a method off an interface - answers empty and is left alone: there is no one
     // callee to inspect, so the caller keeps its retain and leaks rather than guessing.
@@ -162,7 +262,14 @@ class OwnedReturnConsumptionPass
             }
 
             sawOwningReturn = true;
-            if (!retainPrecedes(returnOp, value))
+
+            // Two ways a return can hand back a reference. It retains one of its own, which is
+            // the ordinary case - or it forwards a reference it was already given, and then
+            // there is no retain to find: `return new C()` consumes the instance's own +1
+            // rather than adding a second (§9.25). Reading only the first shape as "returns
+            // owned" left every `static times(...) { return new Vector(...) }` unclassified,
+            // which is most of what expression-shaped code is built from.
+            if (!retainPrecedes(returnOp, value) && !producesOwnedResult(value))
             {
                 everyReturnRetains = false;
             }

@@ -35,6 +35,15 @@
 // `ts.RetainSlot` to pair the release with. The ownership verifier reads this attribute as the
 // retain it stands in for.
 #define OWNED_LOCAL_CONSUMED_ATTR_NAME "__owned_consumed"
+
+// Marks an OWNED_RESULT_ATTR_NAME operation whose reference some receiver has taken over, so the
+// +1 it produced is now somebody's to give back. Set at each of the receiving sites (§9.25) and
+// by OwnedReturnConsumptionPass (§9.27) when it removes a receiver's retain.
+//
+// Its absence is what identifies a discarded temporary: an operation that produced a reference
+// nothing took. `f();` on its own, and - far more commonly - a call result used as an argument
+// and then dropped, which is what expression-shaped code is made of. See §9.30.
+#define OWNED_RESULT_CONSUMED_ATTR_NAME "__owned_result_consumed"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
