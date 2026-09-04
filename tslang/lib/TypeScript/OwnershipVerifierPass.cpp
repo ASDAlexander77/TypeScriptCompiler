@@ -4,6 +4,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/Defines.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -42,38 +43,52 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
     {
         auto f = getFunction();
 
-        llvm::SmallVector<mlir_ts::RetainSlotOp> retains;
-        llvm::DenseSet<mlir::Value> retainedSlots;
+        // Every point at which a slot acquires a reference, paired with the operation to blame
+        // if it is not given back. Two shapes reach this list, and keeping both in one list is
+        // the point: a `ts.RetainSlot`, and a declaration that took ownership by consuming its
+        // initializer's already-owned reference instead of retaining (§9.25). The second has no
+        // retain operation at all, so treating "acquisition" as a synonym for `ts.RetainSlot`
+        // would quietly stop checking exactly the locals whose release now matters most.
+        llvm::SmallVector<std::pair<mlir::Value, mlir::Operation *>> acquisitions;
+        llvm::DenseSet<mlir::Value> acquiredSlots;
         llvm::SmallVector<mlir_ts::ReleaseSlotOp> releases;
         f.walk([&](mlir::Operation *op) {
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(op))
             {
-                retains.push_back(retainOp);
-                retainedSlots.insert(retainOp.getSlot());
+                acquisitions.emplace_back(retainOp.getSlot(), retainOp.getOperation());
+                acquiredSlots.insert(retainOp.getSlot());
             }
             else if (auto releaseOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
                 releases.push_back(releaseOp);
             }
+            else if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(op))
+            {
+                if (varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME))
+                {
+                    acquisitions.emplace_back(varOp.getResult(), varOp.getOperation());
+                    acquiredSlots.insert(varOp.getResult());
+                }
+            }
         });
 
-        if (retains.empty() && releases.empty())
+        if (acquisitions.empty() && releases.empty())
         {
             return;
         }
 
         for (auto releaseOp : releases)
         {
-            if (!retainedSlots.contains(releaseOp.getSlot()) && !isHandOver(releaseOp))
+            if (!acquiredSlots.contains(releaseOp.getSlot()) && !isHandOver(releaseOp))
             {
                 releaseOp.emitError("ownership: this slot is released but never retained");
                 signalPassFailure();
             }
         }
 
-        for (auto retainOp : retains)
+        for (auto [slot, acquireOp] : acquisitions)
         {
-            verifyReleasedOnEveryPath(f, retainOp);
+            verifyReleasedOnEveryPath(f, slot, acquireOp);
         }
     }
 
@@ -146,10 +161,9 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
         return terminator != nullptr && terminator->getNumSuccessors() == 0;
     }
 
-    void verifyReleasedOnEveryPath(mlir_ts::FuncOp f, mlir_ts::RetainSlotOp retainOp)
+    void verifyReleasedOnEveryPath(mlir_ts::FuncOp f, mlir::Value slot, mlir::Operation *acquireOp)
     {
-        auto slot = retainOp.getSlot();
-        auto *retainBlock = retainOp->getBlock();
+        auto *retainBlock = acquireOp->getBlock();
         auto *region = retainBlock->getParent();
         if (region == nullptr)
         {
@@ -204,10 +218,10 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
             }
         }
 
-        // The retain's own block is special: only what follows the retain in it counts, since a
-        // release ahead of the retain belongs to some earlier trip round a loop.
+        // The acquiring block is special: only what follows the acquisition in it counts, since
+        // a release ahead of it belongs to some earlier trip round a loop.
         auto releasedAfterRetain = false;
-        for (auto it = std::next(retainOp->getIterator()); it != retainBlock->end(); ++it)
+        for (auto it = std::next(acquireOp->getIterator()); it != retainBlock->end(); ++it)
         {
             it->walk([&](mlir_ts::ReleaseSlotOp releaseOp) {
                 if (releaseOp.getSlot() == slot)
@@ -224,7 +238,7 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
 
         if (blockExitsFunction(retainBlock))
         {
-            reportLeak(retainOp);
+            reportLeak(acquireOp);
             return;
         }
 
@@ -233,16 +247,16 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
             auto it = releasedFromStart.find(successor);
             if (it != releasedFromStart.end() && !it->second)
             {
-                reportLeak(retainOp);
+                reportLeak(acquireOp);
                 return;
             }
         }
     }
 
-    void reportLeak(mlir_ts::RetainSlotOp retainOp)
+    void reportLeak(mlir::Operation *acquireOp)
     {
-        retainOp.emitError("ownership: this slot takes a reference that some path out of the "
-                           "function never gives back");
+        acquireOp->emitError("ownership: this slot takes a reference that some path out of the "
+                             "function never gives back");
         signalPassFailure();
     }
 };

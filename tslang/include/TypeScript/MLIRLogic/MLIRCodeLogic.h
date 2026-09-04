@@ -692,10 +692,20 @@ class MLIRCustomMethods
         MLIRTypeHelper mth(builder.getContext(), compileOptions);
         for (auto value : values)
         {
-            if (value && mth.ownsHeapMemory(location, value.getType()))
+            if (!value || !mth.ownsHeapMemory(location, value.getType()))
             {
-                builder.create<mlir_ts::RetainOp>(location, value);
+                continue;
             }
+
+            // `arr.push(new C())` arrives already owned (§9.25) - the data block takes that
+            // reference over rather than adding one of its own
+            auto *definingOp = value.getDefiningOp();
+            if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+            {
+                continue;
+            }
+
+            builder.create<mlir_ts::RetainOp>(location, value);
         }
     }
 

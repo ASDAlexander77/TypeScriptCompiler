@@ -5,18 +5,18 @@
 // the reference it was releasing, and nothing gave up the reference an overwritten value still
 // held.
 //
-// What these assertions currently guard is the shape and the run path, NOT the counting.
-// Checked, rather than assumed: swapping the store to release-before-retain - the classic way
-// to free the value you are about to store back - leaves every case below passing. It has to,
-// while a freshly allocated value's birth reference is still unconsumed (step 5a's deliberate
-// slack): every count sits one above the truth, so a release can never reach zero on a live
-// value and nothing is ever freed early.
+// These now guard the counting, which they did not when they were written. At that point a
+// freshly allocated value's birth reference was still unconsumed, so every count sat one above
+// the truth, nothing could reach zero on a live value, and swapping the store to
+// release-before-retain - the classic way to free the value you are about to store back - left
+// every case below passing. The header said so, and asked for the experiment to be re-run once
+// the slack went.
 //
-// They are written as aliasing cases anyway, and kept in every model, because that is what
-// gives them teeth the moment the slack goes: each keeps its own reference to a value,
-// overwrites the field that also held it, and then reads through the reference it kept. Once a
-// birth reference is consumed, an over-release there frees live memory and these reads are what
-// notices.
+// It has been. Allocations are born unowned (section 9.24) and `new C()` is consumed rather than
+// retained again (section 9.25), so `selfAssign` below now reads through a freed value under that
+// swap and the test fails as it should. They were written as aliasing cases for exactly this:
+// each keeps its own reference to a value, overwrites the field that also held it, and then reads
+// through the reference it kept.
 //
 // See docs/reference-counting-evaluation.md section 9.19.
 

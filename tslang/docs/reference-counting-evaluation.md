@@ -414,14 +414,21 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    boxed object literals; still neutral for class instances, because `new C()` is a call to
    `C..new` and that return retain hands back the same +1 the birth reference did (verified by
    the release-before-retain swap, not assumed).
-5i. **Consume the +1 at the receiving sites** — a declaration, store, literal capture or push
-   whose incoming value is already +1 must not retain it again. The classification fails safe
-   towards +0 (an unrecognised producer is retained, and leaks), but the unsafe direction has a
-   name: a runtime or builtin helper, or a function imported from a module built before this
-   convention, returns a heap value *without* the retain, so treating it as +1 skips a retain
-   nobody performed and frees live memory. First slice in the arc whose failure mode is a
-   premature free rather than a leak.
-6. **Flip the allocator under the flag.** GC stays the default.
+5i. **Consume the +1 at the receiving sites** — all four (declaration, store, literal capture,
+   push) now take an already-owned value over instead of retaining it again. **Done 2026-09-04,
+   see §9.25.** Only `new C()` is marked as producing one, at the site that knows the callee is
+   the generated `C..new`; nothing is inferred from an operation being a call, because a runtime
+   helper or a pre-convention import returns a heap value with no retain behind it and consuming
+   one of those frees live memory. **`let x = new C()` is now genuinely freed, and the
+   release-before-retain swap finally fails three of the ownership tests** — the experiment
+   §9.19 asked to be re-run once the slack went.
+5j. **Consume the rest of the +1s** — an ordinary call's result (`let y = f()`), a discarded
+   `pop`, a returned value the caller drops. Needs the producer classification to extend past
+   `new`, which means telling a user function with a generated retaining return from a runtime
+   helper or an import. This is the risky remainder 5i deliberately left.
+6. **Flip the allocator under the flag.** GC stays the default. Note `needsGCRuntime()` is
+   currently true for `rc` too, so Boehm still reclaims under `-mm=rc` — which is why no memory
+   measurement taken before this step demonstrates anything about reference counting.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
 
@@ -1764,9 +1771,15 @@ pass, so they have not gained teeth yet.
 **Which names the second half precisely.** The convention is now uniform - calls hand out +1 - so
 what remains is for the receiving sites to *consume* it: a local declaration, a field or element
 store, a literal capture or a push whose incoming value is already +1 should not retain again.
-The classification is structural (a call result, `ts.CreateArray`, `ts.New`, `ts.ArrayPop`,
-`ts.ArrayShift` are +1; loads, parameters and constants are +0) and it fails safe in the
-direction of not knowing: an unrecognised producer is treated as +0, retained, and leaks.
+The classification fails safe in the direction of not knowing: an unrecognised producer is treated
+as +0, retained, and leaks.
+
+> **Correction, made while implementing §9.25.** This paragraph originally listed
+> `ts.CreateArray`, `ts.New`, `ts.ArrayPop` and `ts.ArrayShift` as +1 producers alongside calls.
+> That was carried over from the model in which allocations were born at one. They are not:
+> once a block starts unowned, `ts.CreateArray` and `ts.New` hand back a value at **zero**, and
+> their receiver's retain is exactly right. Only a call that retained on the way out, and
+> `pop`/`shift` transferring a reference the data block held, are genuinely +1.
 
 The dangerous direction is the opposite one, and it has a specific name: a call that returns a
 heap value **without** passing through the return path patched here - a runtime or builtin helper
@@ -1777,3 +1790,53 @@ generated return from an external one. That is the next slice, and it is the fir
 where the failure mode is a premature free rather than a leak.
 
 Full release suite green: 895/895.
+
+### 9.25 Step 5i: consuming the transferred reference, and the tests finally bite
+
+§9.24 left the convention uniform - every function returns +1 - and the leak that came with it:
+a receiver that retains an already-owned value is one owner above the truth. This closes that for
+the case that was still leaking on every program, and in doing so it is the first slice where the
+counting is load-bearing rather than slack.
+
+**First, a correction to §9.24's own list of producers.** That section named `ts.CreateArray`,
+`ts.New`, `ts.ArrayPop` and `ts.ArrayShift` as +1 alongside calls. That was written from the old
+model. Once allocations are born unowned, a freshly allocated block is at **zero**, so
+`ts.CreateArray` and `ts.New` produce +0 and their receiver's retain is exactly right. What is
+genuinely +1 is narrower: a call that retained its result on the way out, and `pop`/`shift`, which
+hand over a reference the data block was holding.
+
+**What is marked, and what deliberately is not.** Only `new C()` is marked here, at the one place
+that builds the call and therefore knows the callee is the generated `C..new` - which goes through
+the retaining return path. Nothing infers ownership from an operation merely being a call. That
+restraint is the whole safety argument: a runtime or builtin helper, or a function imported from a
+module built before this convention, hands back a heap value with no retain behind it, and
+consuming one of those would skip a retain nobody performed and free live memory. Answering "not
+owned" for something that was in fact owned only leaks, so the unknown case falls the safe way.
+
+**The four receivers all consume**: a local declaration, a field or element store, a literal
+capturing a value, and `push`/`unshift`/`splice`. The release side is untouched in every case -
+what a slot was holding still has to be given up, whoever the incoming reference came from.
+
+**The declaration case needed the verifier extended, and the first attempt silenced it instead.**
+A consumed local has no `ts.RetainSlot`; the declaration itself is the acquisition. Adding the
+slot to the "was it ever retained" set stopped the false "released but never retained" reports -
+but the every-path check iterated the `ts.RetainSlot` list, so it quietly stopped running for
+exactly the locals whose release now matters most. The sweep went from two findings to zero, which
+looked like an improvement and was a regression. The pass now collects *acquisitions* - a slot
+paired with the operation to blame - from both shapes, and the two known
+throwing-`[Symbol.dispose]()` findings are back. Third time this arc that a new insertion point
+taught the verifier a new shape, and the first time the symptom was silence rather than noise.
+
+**The tests have teeth now, and this is the milestone §9.19 was waiting for.** Re-running the
+release-before-retain swap: before this slice it failed nothing; now it fails
+`test-jit-rc-owned-locals`, `test-jit-rc-owned-fields` and `test-jit-rc-owned-elements`.
+`00owned_fields.ts` was written at §9.19 with a header explaining that it guarded shape and run
+path but not counting, and asking for exactly this experiment to be re-run once the slack went.
+It now catches the bug it was written for.
+
+**Still leaking, and now the whole of what is left.** Every +1 that is not consumed: the result of
+an ordinary function call assigned anywhere (`let y = f()` retains a value `f` already retained),
+a discarded `pop`, and a returned value the caller drops. Closing those needs the producer
+classification to extend past `new`, which is the risky work this slice deliberately did not do.
+
+Full release suite green: 895/895. Verifier: two files, six sites, unchanged.

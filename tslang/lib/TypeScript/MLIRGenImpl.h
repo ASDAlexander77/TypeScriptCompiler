@@ -796,6 +796,23 @@ class MLIRGenImpl
         return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
+    // Does this value already carry a reference for whoever receives it, rather than one the
+    // receiver has to take for itself? Only an operation explicitly marked as such answers yes -
+    // see OWNED_RESULT_ATTR_NAME. Nothing is inferred from an operation merely being a call: a
+    // runtime helper, or a function from a module built before returns retained their result,
+    // hands back a heap value with no retain behind it, and consuming one of those would skip a
+    // retain nobody performed. Answering "no" for something that was in fact owned only leaks.
+    bool producesOwnedReference(mlir::Value value)
+    {
+        if (!value)
+        {
+            return false;
+        }
+
+        auto *definingOp = value.getDefiningOp();
+        return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
+    }
+
     // Takes a reference to each of `values` that owns heap memory.
     //
     // For construction sites that fill an owning block in one go rather than through an
@@ -815,7 +832,9 @@ class MLIRGenImpl
     {
         for (auto value : values)
         {
-            if (mth.ownsHeapMemory(location, value.getType()))
+            // a value that already carries a reference for its receiver is taken over rather
+            // than retained again (§9.25) - `[new C()]`, and `return new C()` alike
+            if (mth.ownsHeapMemory(location, value.getType()) && !producesOwnedReference(value))
             {
                 builder.create<mlir_ts::RetainOp>(location, value);
             }
@@ -4532,7 +4551,15 @@ class MLIRGenImpl
             // up a reference the assignment never took.
             if (isOwningSlot(location, loadOp.getReference()))
             {
-                builder.create<mlir_ts::RetainOp>(location, savingValue);
+                // `h.item = new C()` arrives already owned (§9.25), so the slot takes that
+                // reference over instead of adding one. The release still runs either way -
+                // what the slot was holding has to be given up regardless of where the
+                // incoming reference came from.
+                if (!producesOwnedReference(savingValue))
+                {
+                    builder.create<mlir_ts::RetainOp>(location, savingValue);
+                }
+
                 builder.create<mlir_ts::ReleaseSlotOp>(location, loadOp.getReference());
             }
 

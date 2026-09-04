@@ -16,6 +16,25 @@
 // declarations set it, which is what keeps parameters and fields - references the frame
 // borrows rather than owns - out of the assignment path. See MLIRGen's takeOwnershipOfLocal.
 #define OWNED_LOCAL_ATTR_NAME "__owned"
+
+// Marks an operation whose result already carries a reference the receiver is expected to take
+// over, rather than one it must retain for itself. `new C()` is the case that matters: it lowers
+// to a call of the generated `C..new`, and every function retains its result before returning
+// (§9.24), so the value arrives owned. A receiver that retained it again would be one owner
+// above the truth, which is exactly the leak §9.25 removes.
+//
+// Only set where the producer is known to retain - never inferred from a call being a call. A
+// runtime or builtin helper, or a function imported from a module built before that convention,
+// returns a heap value without any retain, and treating one of those as owned would skip a
+// retain nobody performed and free live memory.
+#define OWNED_RESULT_ATTR_NAME "__owned_result"
+
+// Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
+// instead of by retaining. The slot still releases at every scope exit - that release is what
+// gives the consumed reference back - so the pair is still balanced, but there is no
+// `ts.RetainSlot` to pair the release with. The ownership verifier reads this attribute as the
+// retain it stands in for.
+#define OWNED_LOCAL_CONSUMED_ATTR_NAME "__owned_consumed"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
