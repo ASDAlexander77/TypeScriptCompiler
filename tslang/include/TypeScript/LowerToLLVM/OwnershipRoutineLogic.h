@@ -176,6 +176,52 @@ class OwnershipRoutineLogic
         retainSlot(type, slotPtr);
     }
 
+    // === Capture cells ===
+    //
+    // A variable captured by reference does not live in its frame: its storage is a heap block
+    // of its own, so that the frame and every closure over it read and write the same value.
+    // `cellPtr` addresses that block, and these two count owners *of the block* - which is a
+    // different question from emitRetainSlot/emitReleaseSlot, who count owners of the value in
+    // it. See docs/reference-counting-evaluation.md section 9.34.
+
+    void emitRetainCell(mlir::Value cellPtr)
+    {
+        emitIncRef(cellPtr);
+    }
+
+    // The value goes back before the block does, and in that order: releasing it reads the
+    // cell.
+    void emitReleaseCell(mlir::Type contentsType, mlir::Value cellPtr)
+    {
+        emitIfLastReference(cellPtr, [&]() {
+            releaseSlot(contentsType, cellPtr);
+            emitFreeBlock(cellPtr);
+        });
+    }
+
+    // === Capture boxes ===
+    //
+    // A closure's `this` is a heap block with one field per captured variable, and it owns two
+    // different things at once: the cell of each variable captured by reference, and whatever
+    // the inline copy of each variable captured by value owns. The generic record routines
+    // handle only the second - a RefType field is storage a value does not own, everywhere
+    // else in the compiler - so a capture box gets routines of its own.
+    //
+    // They are keyed by the capture's own `ref<tuple<..>>` type rather than by the box's
+    // `object<tuple<..>>`, so that the descriptor and the routines cannot collide with the
+    // generic ones for an object of the same shape.
+    std::string getOrCreateCaptureBoxReleaseRoutine(mlir_ts::RefType captureRefType)
+    {
+        return buildCaptureBoxRoutine(captureRefType, "tsrelcb_", /*retaining=*/false);
+    }
+
+    // Copying a closure duplicates its one reference to the box and nothing else - what the
+    // box holds is not duplicated - so this stops at the block, as an object's retain does.
+    std::string getOrCreateCaptureBoxRetainRoutine(mlir_ts::RefType captureRefType)
+    {
+        return buildCaptureBoxRoutine(captureRefType, "tsretcb_", /*retaining=*/true);
+    }
+
     // Does a value of this type own heap memory, directly or through its fields? The same
     // question decides both directions: a type with nothing to release has nothing to retain.
     //
@@ -577,6 +623,84 @@ class OwnershipRoutineLogic
     void releaseViaInterfaceTag(mlir::Type type, mlir::Value slotPtr, bool retaining)
     {
         releaseViaTagBesideThis(type, slotPtr, INTERFACE_TYPE_INDEX, retaining);
+    }
+
+    // Body of both capture-box routines: they take the storage holding the box pointer, like
+    // every other routine, so each begins by loading the box out of it.
+    std::string buildCaptureBoxRoutine(mlir_ts::RefType captureRefType, StringRef prefix, bool retaining)
+    {
+        std::stringstream nameStream;
+        nameStream << prefix.str() << (size_t)hash_value(captureRefType);
+        auto name = nameStream.str();
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+            loc, name, th.getFunctionType(th.getVoidType(), {ptrTy}), LLVM::Linkage::Internal);
+
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        auto boxValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, entryBlock->getArgument(0));
+        if (retaining)
+        {
+            emitIncRef(boxValue);
+        }
+        else
+        {
+            emitIfLastReference(boxValue, [&]() {
+                releaseCapturedFields(captureRefType.getElementType(), boxValue);
+                emitFreeBlock(boxValue);
+            });
+        }
+
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        return name;
+    }
+
+    // Gives back what a dying box holds: one owner of each captured cell, and the contents of
+    // each field captured by value.
+    void releaseCapturedFields(mlir::Type tupleType, mlir::Value boxPtr)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmTupleType = tch.convertType(tupleType);
+
+        for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(tupleType)))
+        {
+            auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType);
+            if (!refFieldType && !ownsHeapMemory(fieldType))
+            {
+                continue;
+            }
+
+            auto fieldPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmTupleType, boxPtr,
+                                                         ArrayRef<LLVM::GEPArg>{0, (int32_t)index});
+            if (refFieldType)
+            {
+                // the field holds the cell's address, so the cell is one load further in
+                emitReleaseCell(refFieldType.getElementType(), rewriter.create<LLVM::LoadOp>(loc, ptrTy, fieldPtr));
+            }
+            else
+            {
+                releaseSlot(fieldType, fieldPtr);
+            }
+        }
     }
 
     void buildBody(mlir::Type type, mlir::Value slotPtr)

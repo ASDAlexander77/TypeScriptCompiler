@@ -1461,17 +1461,24 @@ namespace mlirgen
                 if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
                 {
                     varOp.setCapturedAttr(builder.getBoolAttr(true));
+                    // the box about to be built is a further owner of this variable's cell
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else if (auto paramOp = refValue.getDefiningOp<mlir_ts::ParamOp>())
                 {
                     paramOp.setCapturedAttr(builder.getBoolAttr(true));
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else if (auto paramOptOp = refValue.getDefiningOp<mlir_ts::ParamOptionalOp>())
                 {
                     paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else
                 {
+                    // no retain here: what makes a variable's storage a cell is being marked
+                    // captured, and nothing was marked. Retaining a stack slot would write a
+                    // count into the frame word in front of it.
                     // TODO: review it.
                     // find out if u need to ensure that data is captured and belong to VariableOp or ParamOp with
                     // captured = true
@@ -1482,8 +1489,10 @@ namespace mlirgen
             }
             else
             {
-                // this is not ref, this is const value
+                // this is not ref, this is const value - the box holds a copy, and a copy of a
+                // reference is a further owner of what it points at
                 capturedValues.push_back(varValue);
+                mlirGenRetainCaptured(location, mlir::ValueRange{varValue});
             }
         }
 

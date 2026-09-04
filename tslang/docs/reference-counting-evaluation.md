@@ -461,12 +461,23 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ownership of its receiver. Measuring it turned up the larger of the two: **§9.30's releases
    were being placed after `ts.ReturnVal`, which is not a terminator, and the affine lowering was
    dropping them** - 36 of `raytrace`'s 47. `raytrace` 113.8 -> 103.4 MB.
-5q. **A captured variable is released by the frame that made it.** A parameter or local a closure
-   captures gets a heap cell of its own, and `let bump = new Vec(k); return v => v.x + bump.x`
-   releases `bump` at `makeAdder`'s scope exit while the returned closure still points at it -
-   a use-after-free, and older than any of this work. The cells are also what the closure
-   benchmark still holds (46.9 MB against `none`'s 75.1, two cells per box). Both halves are the
-   same question: the box has to own what it captures. **Next slice.**
+5q. **A captured variable's cell is owned, not borrowed.** **Done 2026-09-04, see §9.34.** A
+   variable a closure captures by reference gets a heap block of its own - a *cell* - and it had
+   no owner at all: the frame released the *value* at scope exit while the box still pointed at
+   the cell, and the cell itself was never freed. The cell now has owners - the frame that
+   declared the variable, and each box that captured it - and the box has routines of its own
+   that give the cells back. Two further over-releases fell out of writing the cases: a `const`
+   captured by value was not retained by the box, and assigning to a captured variable *from
+   inside the closure* stored a value nothing had taken, which §9.30 then freed as a discarded
+   temporary. `raytrace` 103.4 -> **2.6 MB**, below `gc`'s 4.2.
+5r. **A captured parameter's cell is never given back.** A parameter is borrowed, not owned, so
+   nothing in the frame releases it - and a captured parameter's cell therefore has a frame
+   owner that never lets go. It is a leak and only a leak: the cell outliving everything is what
+   keeps the box from releasing an argument the caller still owns. Measured on the closure
+   benchmark at `-O0`: capturing a local is flat at 2.6 MB against `none`'s 31.9, capturing a
+   parameter grows to 22.6. Closing it means the cell taking a reference to the argument stored
+   into it, and the frame releasing the cell on the way out - which makes a captured parameter
+   an owner, a change to what a parameter *is*. **Next slice.**
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2398,11 +2409,97 @@ function makeAdder(k: number) { let bump = new Vec(k); return (v: Vec) => v.x + 
 `makeAdder`'s scope exit releases `bump`, and the returned closure's box still points at it —
 `ts.ReleaseSlot` on the captured local, emitted by MLIRGen, nothing to do with this slice. Filed
 as 5q. `00owned_closures.ts` deliberately captures a number in its two escaping cases so that this
-older bug does not mask what they are there to check.
+older bug does not mask what they are there to check. (Closed in §9.34, which also revised what
+the cells cost: measured against a benchmark that survives `-O3`, they were the whole of
+`raytrace`'s remaining leak, not a share of it.)
 
 New test `test/tester/tests/00owned_closures.ts`, four variants, six cases. **Teeth**: releasing
 the closure immediately after construction breaks it at both `-O0` and `-O3`. Note that
 *disabling* the tag does not break it and cannot — that is the leaking direction, which no test
 can see.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+### 9.34 Step 5q: a captured variable's cell is owned
+
+A variable a closure captures by reference does not live in its frame. Its storage is a heap
+block of its own — call it a **cell** — so that the frame and every closure over it read and
+write the one variable (`ALLOC_CAPTURE_IN_HEAP`, `VariableOpLowering`). The box holds the cell's
+address; the frame holds the same address in the slot the variable's name resolves to.
+
+Nothing owned that cell. The frame's scope exit released the *value in it* and the cell itself
+was never freed, which is two failures in one:
+
+```ts
+function makeAdder(k: number) { let bump = new Vec(k); return (v: Vec) => v.x + bump.x; }
+```
+
+`makeAdder`'s exit freed the `Vec` while the returned closure still pointed at the cell holding
+it — a use-after-free older than any of this work — and leaked the cell on the way out.
+
+**The cell has owners now**, and there are exactly two kinds: the frame that declared the
+variable, and each capture box that captured it. So:
+
+- A cell is **born owned** (`VariableOpLowering`, under `-mm=rc`). That is the opposite of a
+  value block, which is born unowned because a receiver is about to take it (§9.24) — a cell has
+  no receiver, and its creator is its first owner. The one heap variable this must *not* apply to
+  is the box itself, whose `captured = true` means only "allocate in the heap"; `CaptureOpLowering`
+  marks it `CAPTURE_BOX_ATTR_NAME` so the two cannot be confused.
+- **The box takes one too**, at the capture site — and only where a `ts.Variable`/`ts.Param` was
+  actually marked captured, because that marking is what makes storage a cell. Retaining a stack
+  slot would write a count into the frame word in front of it.
+- **A scope exit releasing a captured local emits `ts.ReleaseCell`**, not `ts.ReleaseSlot`. The
+  frame is giving up the cell; the value inside it goes when the last owner does.
+
+`ts.RetainCell` / `ts.ReleaseCell` are new ops for that difference — the existing pair addresses
+storage in order to reach the value in it, these address the block *as* the value. Both erase
+under a model that is not reference counting, like every other ownership op.
+
+**The box needed routines of its own.** Its release had been the generic `object<tuple<..>>` one,
+and that skips a `RefType` field — correctly, everywhere else in the compiler, since a reference
+field points at storage its holder does not own. A capture-by-reference field is the exception:
+it holds a cell address, and the box co-owns that cell. `getOrCreateCaptureBoxReleaseRoutine`
+walks the fields itself, releasing a cell through the field and anything else in place, and is
+keyed by the capture's own `ref<tuple<..>>` type rather than the box's `object<tuple<..>>` so
+that neither the routines nor the descriptor can be shared with a plain object of the same shape.
+
+Writing the cases turned up two more over-releases, both older than this slice and both confirmed
+against a rebuilt baseline rather than assumed:
+
+- **A `const` captured by value** goes into the box as a copy of the reference, and a copy of a
+  reference is a further owner. Nothing retained it, so `const held = new Vec(15); return () =>
+  held.x` read freed memory. `mlirGenRetainCaptured` at the capture site.
+- **Assigning to a captured variable from inside the closure.** Inside the closure the variable
+  is a load of the box's field, which none of `isOwningSlot`'s cases recognised, so `cur = new
+  Vec(..)` stored a value nothing had taken — and §9.30 then released it at the end of the block
+  as a discarded temporary, freeing what the assignment had just set. `isCapturedCellSlot`
+  recognises the shape: a tuple field whose type is a reference is what a capture by reference
+  is, and nothing else builds one.
+
+The ownership verifier had to be told that `ts.ReleaseCell` discharges a slot too — without that
+it reported every captured local in the suite as a leak, which is the verifier being right about
+its own model and wrong about the program.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `raytrace.ts`, `-O3` | 4.2 | **2.6** | 114.5 |
+| closure over a local, per call, `-O0` | 2.6 | **2.6** | 31.9 |
+| closure over a parameter, per call, `-O0` | 2.6 | **22.6** | 2.6 |
+
+`raytrace` 103.4 → **2.6 MB**, below `gc`'s own 4.2, and the size of that step says what the
+cells were: its per-pixel closures (`addLight`, `recenterX`/`recenterY`) declare their captured
+variables inside functions called once per pixel, so the leak was a cell per capture per pixel.
+
+The third row is the remaining hole and is filed as 5r. A parameter is borrowed, so nothing in
+the frame releases it, and a captured parameter's cell therefore has an owner that never lets go.
+That is a leak and only a leak — the cell outliving everything is exactly what stops the box from
+releasing an argument the caller still owns — and it is why the `none` column there is the small
+one: with no ownership calls to keep it alive, the whole allocation is optimised away in the other
+two models.
+
+Five new cases in `00owned_closures.ts`. **Teeth**, each checked by disabling the fix and
+rebuilding: removing the box's retain of the cell, and removing the cell's birth reference, each
+abort the test. Disabling the box's *release* of the cells does not and cannot — that is the
+leaking direction.
 
 Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.

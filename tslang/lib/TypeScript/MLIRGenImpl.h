@@ -689,7 +689,14 @@ class MLIRGenImpl
             // hold the only other reference to what an earlier one points at
             for (auto storage : llvm::reverse(*genContext->ownedVars))
             {
-                builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+                if (isCapturedVariableCell(storage))
+                {
+                    builder.create<mlir_ts::ReleaseCellOp>(location, storage);
+                }
+                else
+                {
+                    builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+                }
             }
 
             // Process-once, as for usingVars: CurrentScopeKeepAfterUse is what the try body
@@ -706,6 +713,50 @@ class MLIRGenImpl
         }
 
         return mlir::success();
+    }
+
+    // Does this reference address a captured variable's cell - a heap block the frame shares
+    // with the closures that captured it - rather than ordinary frame storage?
+    //
+    // The question is asked at scope exit, which is generated after the closure that does the
+    // capturing, so the answer is settled by then. A `return` written *before* the capture is
+    // one where the closure cannot exist on that path: releasing the value there is right, and
+    // all that is lost is the cell, which those paths leak.
+    static bool isCapturedVariableCell(mlir::Value reference)
+    {
+        auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && varOp.getCaptured().has_value() && varOp.getCaptured().value();
+    }
+
+    // Does this reference address a captured variable's cell, reached through a capture box?
+    // Inside a closure that is how the variable is named: the box's field holds the cell's
+    // address, so the reference is a load of that field, and neither the load nor the field is
+    // anything the other cases here recognise.
+    //
+    // A cell owns what it holds - releasing the last owner of the cell releases the value in it
+    // - so assigning through one hands the count over exactly as assigning to the variable in
+    // its own frame does. Without this, `cur = new Vec(..)` written inside a closure stored a
+    // value nothing had taken, which §9.30 then released at the end of the block as a discarded
+    // temporary, freeing the variable the assignment had just set.
+    //
+    // The shape is what identifies it: a tuple field whose type is a reference is what a
+    // capture by reference is, and nothing else builds one.
+    static bool isCapturedCellSlot(mlir::Value reference)
+    {
+        auto loadOp = reference.getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || !isa<mlir_ts::RefType>(loadOp.getType()))
+        {
+            return false;
+        }
+
+        auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        auto boxRefType = dyn_cast<mlir_ts::RefType>(propertyRefOp.getObjectRef().getType());
+        return boxRefType && isa<mlir_ts::TupleType>(boxRefType.getElementType());
     }
 
     // Does this reference address a local whose scope owns what it holds? Only a variable
@@ -865,8 +916,8 @@ class MLIRGenImpl
     // owner and the outgoing one loses one.
     bool isOwningSlot(mlir::Location location, mlir::Value reference)
     {
-        return isOwnedLocalSlot(reference) || isOwnedFieldSlot(location, reference) ||
-               isOwnedElementSlot(location, reference);
+        return isOwnedLocalSlot(reference) || isCapturedCellSlot(reference) ||
+               isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
     }
 
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)

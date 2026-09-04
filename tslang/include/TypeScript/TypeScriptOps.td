@@ -573,6 +573,42 @@ def TypeScript_ReleaseSlotOp : TypeScript_Op<"ReleaseSlot"> {
   let arguments = (ins TypeScript_Ref:$slot);
 }
 
+def TypeScript_RetainCellOp : TypeScript_Op<"RetainCell"> {
+  let summary = "take one reference to a captured variable's storage";
+  let description = [{
+    A variable a closure captures by reference does not live in the frame: its storage is a
+    heap block of its own - a *cell* - so that the frame and every closure over it read and
+    write the same value. $slot addresses that cell, and this records one more owner of the
+    cell itself, not of the value inside it.
+
+    That is what separates this from `ts.RetainSlot`, which addresses storage in order to
+    reach the value in it. A cell has two kinds of owner: the frame that declared the
+    variable, and each capture box that captured it.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
+def TypeScript_ReleaseCellOp : TypeScript_Op<"ReleaseCell"> {
+  let summary = "drop one reference to a captured variable's storage";
+  let description = [{
+    The mirror of `ts.RetainCell`. When the dropped reference was the cell's last, the value
+    in the cell is released and the cell freed - in that order, because releasing the value
+    reads the cell.
+
+    A scope exit releasing a captured local emits this rather than `ts.ReleaseSlot`: the
+    frame is giving up the *cell*, and the value inside it outlives the frame whenever a
+    closure does. Assigning to the variable still releases the old value with
+    `ts.ReleaseSlot`, which is the other question and unaffected.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

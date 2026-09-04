@@ -15,7 +15,10 @@
 // closure escapes - returned, stored, kept in an array - are the ones that would break if the
 // box were given back at the end of the block that built it.
 //
-// See docs/reference-counting-evaluation.md section 9.33.
+// The cases from `capturedObjectEscapes` down are about the other half: who owns the *cell* a
+// captured variable lives in, which is section 9.34.
+//
+// See docs/reference-counting-evaluation.md sections 9.33 and 9.34.
 
 class Vec {
     x: number;
@@ -61,10 +64,9 @@ function closureReadAfterCalleeAllocates() {
 // A closure that outlives the block that made it: the box must not be given back at the end of
 // `makeAdder`, which is exactly where a discarded one would be.
 //
-// These two capture a number rather than an object on purpose. A captured *object* carried out
-// of its frame is freed by that frame's own scope exit - a separate, older bug that has nothing
-// to do with the capture box (section 9.33), and one that would mask what these are here to
-// check.
+// These two capture a number, so that what they check is the box's own lifetime and nothing
+// else. What a captured *object* needs on top of that is section 9.34's question, and has cases
+// of its own further down.
 function makeAdder(k: number): (v: Vec) => number {
     let bump = k + 1;
 
@@ -129,6 +131,85 @@ function boundMethodKeepsItsObject() {
     return f() + holder.v.x - holder.read();
 }
 
+// A variable a closure captures by reference does not live in the frame: its storage is a heap
+// block of its own - a cell - so that the frame and the closure read and write the same
+// variable. Section 9.34 is about who owns that cell, and the cases below are the four shapes
+// that answer differently.
+//
+// Until then the frame released the *value* at scope exit and left the cell to leak, so a
+// captured object carried out of its frame was read through a pointer to freed memory - the
+// oldest bug in this file's neighbourhood, and older than any of the ownership work.
+function makeObjectAdder(k: number): (v: Vec) => number {
+    let bump = new Vec(k);
+
+    return (v: Vec) => v.x + bump.x;
+}
+
+function capturedObjectEscapes() {
+    let add = makeObjectAdder(40);
+    churn();
+
+    return add(new Vec(2));
+}
+
+// Captured by value rather than through a cell: a `const` goes into the box as a copy of the
+// reference, and a copy of a reference is a further owner of what it points at.
+function makeReader(): () => number {
+    const held = new Vec(15);
+
+    return () => held.x;
+}
+
+function constCaptureIsOwned() {
+    let read = makeReader();
+    churn();
+
+    return read();
+}
+
+// One variable, two closures. While both live the cell has three owners - the frame and each
+// box - and nothing may free it until the last of them lets go.
+function makePair(k: number): ((v: Vec) => number)[] {
+    let shared = new Vec(k);
+
+    return [(v: Vec) => v.x + shared.x, (v: Vec) => v.x - shared.x];
+}
+
+function capturedCellSharedByTwoClosures() {
+    let fns = makePair(10);
+    churn();
+
+    return fns[0](new Vec(5)) + fns[1](new Vec(5));
+}
+
+// The other direction: the frame outlives every closure over the variable. Dropping the last
+// box must not take the variable with it, which is what the frame's own reference to the cell
+// is for.
+function frameOutlivesTheClosure() {
+    let kept = new Vec(3);
+    {
+        let f = (v: Vec) => v.x + kept.x;
+        apply(f, new Vec(1));
+    }
+
+    churn();
+
+    return kept.x;
+}
+
+// Assigning to a captured variable is still an ordinary assignment - the value in the cell is
+// replaced, the cell is not - and the frame and the closure see the one variable.
+function mutateThroughCapture() {
+    let cur = new Vec(1);
+    let step = () => { cur = new Vec(cur.x + 1); };
+
+    step();
+    step();
+    churn();
+
+    return cur.x;
+}
+
 function main() {
     assert(closureAsArgument() == 10, "a closure used as an argument survives the call");
     assert(closureReadAfterCalleeAllocates() == 12, "a capture box survives a callee that allocates first");
@@ -136,6 +217,11 @@ function main() {
     assert(closureKeptInArray() == 23, "a stored closure keeps its capture box");
     assert(closuresInALoop() == 72, "a loop's capture boxes do not disturb one another");
     assert(boundMethodKeepsItsObject() == 30, "a bound method does not take ownership of its object");
+    assert(capturedObjectEscapes() == 42, "a captured object leaves the frame that made it");
+    assert(constCaptureIsOwned() == 15, "a box owns what it captured by value");
+    assert(capturedCellSharedByTwoClosures() == 10, "two closures share one captured variable");
+    assert(frameOutlivesTheClosure() == 3, "a captured variable outlives the closures over it");
+    assert(mutateThroughCapture() == 3, "the frame and the closure see one variable");
 
     print("done.");
 }

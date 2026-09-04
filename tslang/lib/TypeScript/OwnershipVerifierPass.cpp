@@ -128,6 +128,26 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
         return false;
     }
 
+    // Does this operation give back what `slot` took? Either release does. A `ts.ReleaseCell`
+    // gives up a captured variable's whole cell, and the value in the cell goes with it when
+    // the last owner lets go - so a captured local's scope exit discharges its declaration
+    // exactly as a `ts.ReleaseSlot` does, and reading only the latter would report every
+    // captured local in the suite as a leak.
+    static bool releasesSlot(mlir::Operation *op, mlir::Value slot)
+    {
+        if (auto releaseOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+        {
+            return releaseOp.getSlot() == slot;
+        }
+
+        if (auto releaseCellOp = mlir::dyn_cast<mlir_ts::ReleaseCellOp>(op))
+        {
+            return releaseCellOp.getSlot() == slot;
+        }
+
+        return false;
+    }
+
     // Whether this block gives the slot back - directly, or inside a region of one of its own
     // operations. Nested regions count as releasing rather than as opaque: reporting a leak
     // that the IR does pay, somewhere this walk does not follow, would be the one kind of
@@ -137,8 +157,8 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
         auto found = false;
         for (auto &op : *block)
         {
-            op.walk([&](mlir_ts::ReleaseSlotOp releaseOp) {
-                if (releaseOp.getSlot() == slot)
+            op.walk([&](mlir::Operation *inner) {
+                if (releasesSlot(inner, slot))
                 {
                     found = true;
                 }
@@ -223,8 +243,8 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
         auto releasedAfterRetain = false;
         for (auto it = std::next(acquireOp->getIterator()); it != retainBlock->end(); ++it)
         {
-            it->walk([&](mlir_ts::ReleaseSlotOp releaseOp) {
-                if (releaseOp.getSlot() == slot)
+            it->walk([&](mlir::Operation *inner) {
+                if (releasesSlot(inner, slot))
                 {
                     releasedAfterRetain = true;
                 }

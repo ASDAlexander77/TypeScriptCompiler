@@ -50,6 +50,12 @@
 // only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of
 // the object it is bound to. Set where the closure is built and the difference is known.
 #define OWNS_CAPTURE_ATTR_NAME "__owns_capture"
+
+// Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
+// `captured = true` only because that is how a variable asks to be allocated in the heap, and
+// without this marker it would be indistinguishable from the cell of a captured variable - and
+// so would be given a frame's reference it has no owner for. A box's owner is the closure.
+#define CAPTURE_BOX_ATTR_NAME "__capture_box"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"

@@ -464,6 +464,47 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
     }
 };
 
+// The cell-addressed forms. The slot is itself a heap block - a captured variable's storage -
+// so these count owners of that block, where the two above count owners of the value in it.
+class RetainCellOpLowering : public TsLlvmPattern<mlir_ts::RetainCellOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainCellOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainCellOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainCell(transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseCellOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseCellOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseCell(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(),
+                                transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -2211,6 +2252,17 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         {
 
             allocated = ch.MemoryAlloc(storageType);
+
+            // A captured variable's storage is a heap block - a cell - shared by the frame that
+            // declared it and by every capture box that captured it. Unlike a value block, which
+            // is born unowned because a receiver is about to take it (§9.24), a cell is born
+            // owned: the frame is its first owner, and the frame's scope exit is what gives that
+            // reference back. A box is the one heap variable with no frame owner, and says so.
+            if (tsLlvmContext->compileOptions.isRefCounted() && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
+            {
+                OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+                orl.emitRetainCell(allocated);
+            }
         }
 
 #ifdef GC_ENABLE
@@ -5488,13 +5540,19 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
             return nullTag();
         }
 
-        // generated first: the descriptor's initializer takes their addresses
+        // generated first: the descriptor's initializer takes their addresses.
+        //
+        // The box has routines of its own rather than an object's, because a captured
+        // variable's field holds the address of that variable's *cell* - a heap block the box
+        // co-owns - and a RefType field owns nothing anywhere else in the compiler. Keyed by
+        // the capture's `ref<tuple<..>>` for the same reason, so neither the routines nor the
+        // descriptor can be reused for a plain object of the same shape.
         OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(boxType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(boxType);
+        auto releaseRoutineName = orl.getOrCreateCaptureBoxReleaseRoutine(captureRefType);
+        auto retainRoutineName = orl.getOrCreateCaptureBoxRetainRoutine(captureRefType);
 
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        return ch.getOrCreateTypeDescriptorName(boxType, name, TypeOfOpHelper::typeKindFromName(name),
+        return ch.getOrCreateTypeDescriptorName(captureRefType, name, TypeOfOpHelper::typeKindFromName(name),
                                                 releaseRoutineName, retainRoutineName);
     }
 
@@ -7027,7 +7085,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
