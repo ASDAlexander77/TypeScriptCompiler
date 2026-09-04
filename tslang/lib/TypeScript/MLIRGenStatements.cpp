@@ -39,6 +39,15 @@ namespace mlirgen
             auto resultValue = V(result);
             if (resultValue)
             {
+                // A concise arrow body (`() => expr`) returns without going through the return
+                // statement, so it did not get the retain that makes every function hand back
+                // +1 (§9.24). There is no scope exit here to free the value, so this is not
+                // fixing a dangling read - it is the convention itself: a caller cannot be told
+                // "calls return owned" while one shape of function quietly returns borrowed.
+                // §9.27's classification checks for exactly this retain, so without it every
+                // arrow function would be excluded.
+                mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue});
+
                 return mlirGenReturnValue(loc(body), resultValue, false, genContext);
             }
 

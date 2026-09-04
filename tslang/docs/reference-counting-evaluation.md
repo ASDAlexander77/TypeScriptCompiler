@@ -424,12 +424,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    §9.19 asked to be re-run once the slack went.
 5j. **`pop`/`shift` transfers consumed** — the compiler's own operations, so nothing to
    classify. **Done 2026-09-04, see §9.26.**
-5k. **An ordinary call's result** (`let y = f()`) — the dominant remaining leak. Needs a pass
-   *after* MLIRGen rather than another marking site: the retain lives in the return statement so
-   a concise arrow body and `yield` bypass it, the callee's `FuncOp` may not exist when the call
-   is generated (making a lookup order-dependent), and a `declare`d/imported/runtime callee looks
-   identical to a local one while having no retaining return at all. That last is the case where
-   being wrong frees live memory.
+5k. **An ordinary call's result** (`let y = f()`) — done via a module pass after MLIRGen that
+   inspects each function's returns instead of predicting them. **Done 2026-09-04, see §9.27.**
+   469 call sites marked across the suite.
+5m. **Retain the value a return actually returns.** The retain lands on the value the return
+   statement evaluated, but `mlirGenReturnValue` then casts it to the declared return type, so a
+   return needing a cast retains the wrong value. Benign (the extra reference is simply never
+   taken, so it leaks) but it excludes 92 functions from 5k's classification. Fix is to apply the
+   cast before the retain.
 5l. **Discarded temporaries** — `f();` and `arr.pop();` drop a +1 nobody consumes. Needs a
    last-use notion, not a receiver.
 6. **Flip the allocator under the flag.** GC stays the default. Note `needsGCRuntime()` is
@@ -1895,3 +1897,53 @@ already-owned, so receivers stop retaining - fails six of the ownership tests. T
 detect premature frees broadly now, which is the property that matters most from here on.
 
 Full release suite green: 899/899. Verifier: two files, unchanged.
+
+### 9.27 Step 5k: consuming an ordinary call's result
+
+The dominant remaining leak, and the first piece of this arc that is a pass rather than a marking
+site. §9.26 gave the reason: deciding whether *this* callee retains its result cannot be settled
+where MLIRGen builds the call. All three obstacles it named dissolve once every function exists,
+so the work moves to a module pass that runs straight after MLIRGen.
+
+**It looks rather than predicts.** A function counts as returning owned only when every
+`ts.ReturnVal` of a heap-owning value in it is preceded by a `ts.Retain` of *that same value* in
+the same block. Anything else is left alone: a callee with no body, a call through a function
+value with no single callee to inspect, a generator (vetoed outright, since what its caller
+receives is the generator object rather than anything those returns produce). Those callers keep
+retaining, which leaks rather than freeing something live. The whole design puts the uncertain
+case on the leaking side.
+
+Each exclusion was checked on emitted IR rather than assumed: a `declare`d callee keeps its
+`ts.RetainSlot`, an indirect call through a parameter keeps its own, and a local function's call
+is marked and its receiver's retain removed - with the declaration marked as the acquisition so
+the verifier can still pair the release that follows.
+
+**A prerequisite that had to land first.** A concise arrow body (`() => expr`) returns without
+going through the return statement, so it never got §9.24's retain and would have been excluded
+from the convention entirely. It has one now. This is not fixing a dangling read - there is no
+scope exit there to free anything - it is the convention itself: callers cannot be told "calls
+return owned" while one shape of function quietly returns borrowed.
+
+**What the check actually excludes, measured rather than guessed.** Removing it raises the number
+of marked call sites across the suite from **469 to 497**, so it is not a formality - it excludes
+28 real calls, reaching 92 distinct functions. Following one of them to its IR explains all of
+them: the retain is emitted on the value the return statement *evaluated*, while
+`mlirGenReturnValue` then casts that value to the declared return type, and it is the cast result
+that `ts.ReturnVal` carries. So a return needing a cast retains the wrong value. It is benign -
+the reference lands on a value nobody releases, which leaks - and the pass is right to exclude
+those functions, but the fix is to apply the return-type cast before the retain rather than
+inside the return. That is a separate slice.
+
+**An honest coverage note.** Disabling the retain check entirely - marking every function with an
+owning return, sound or not - still leaves the suite at 903/903. The guard is reasoned rather than
+test-validated, because no test currently exercises a callee that returns a heap value without
+retaining it. The *other* direction is covered: over-consuming a call result, by removing every
+receiver retain instead of one, segfaults `00owned_call_results.ts` outright.
+
+New test: `test/tester/tests/00owned_call_results.ts`, all three models - a result outliving the
+local that received it, shared between two locals, stored into a field, captured by an array
+literal and by `push`, forwarded through two frames, returned from a method, and returned from an
+arrow function. Each calls `churn()` between the last release and the read, for the reason §9.26
+learned the hard way.
+
+Full release suite green: 903/903. Verifier: two files, unchanged.

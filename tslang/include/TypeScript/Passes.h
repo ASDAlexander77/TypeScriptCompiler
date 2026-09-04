@@ -31,6 +31,11 @@ std::unique_ptr<mlir::Pass> createRelocateConstantPass();
 /// and in every memory model - the ownership ops survive to there regardless of model.
 std::unique_ptr<mlir::Pass> createOwnershipVerifierPass();
 
+/// Lets a call take over the reference its callee returned instead of retaining a second one.
+/// Runs on the whole module, after MLIRGen, because deciding which callees retain their result
+/// needs every function to be present - see docs/reference-counting-evaluation.md section 9.27.
+std::unique_ptr<mlir::Pass> createOwnedReturnConsumptionPass(CompileOptions&);
+
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 /// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free

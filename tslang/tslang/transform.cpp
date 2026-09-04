@@ -92,6 +92,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
     bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;
     bool isLoweringToLLVM = emitAction >= Action::DumpMLIRLLVM;
 
+    // Before anything is lowered, and in every memory model: the ops it removes erase on the
+    // way to LLVM under `gc` and `none` anyway, so doing this here keeps the IR the same shape
+    // in all three and keeps the ownership verifier checking one thing rather than two.
+    pm.addPass(mlir::typescript::createOwnedReturnConsumptionPass(compileOptions));
+
     if (isLoweringToAffine)
     {
         pm.addPass(mlir::createCanonicalizerPass());
