@@ -687,6 +687,22 @@ class MLIRCustomMethods
     // references dropped without a release. That leaks rather than over-releases, so it waits -
     // and it cannot be fixed here anyway, because the count to release is only known inside the
     // lowering.
+    // Records that this value already carries a reference for whoever receives it. Only used
+    // where the transfer is a property of the operation itself - see OWNED_RESULT_ATTR_NAME.
+    void markResultOwned(mlir::Value value)
+    {
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        if (!value || !mth.ownsHeapMemory(location, value.getType()))
+        {
+            return;
+        }
+
+        if (auto *definingOp = value.getDefiningOp())
+        {
+            definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+    }
+
     void retainInsertedElements(ArrayRef<mlir::Value> values)
     {
         MLIRTypeHelper mth(builder.getContext(), compileOptions);
@@ -763,6 +779,12 @@ class MLIRCustomMethods
         mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
             location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
 
+        // The data block gives up the element without releasing it - the size shrinks past the
+        // slot, so its release routine never reaches it again - which hands the block's own
+        // reference to whoever receives the result. Saying so lets that receiver take it over
+        // rather than add one of its own (§9.26).
+        markResultOwned(value);
+
         return value;
     }
 
@@ -819,6 +841,9 @@ class MLIRCustomMethods
 
         mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
             location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
+
+        // same transfer as pop, from the front
+        markResultOwned(value);
 
         return value;
     }    

@@ -422,10 +422,16 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    one of those frees live memory. **`let x = new C()` is now genuinely freed, and the
    release-before-retain swap finally fails three of the ownership tests** — the experiment
    §9.19 asked to be re-run once the slack went.
-5j. **Consume the rest of the +1s** — an ordinary call's result (`let y = f()`), a discarded
-   `pop`, a returned value the caller drops. Needs the producer classification to extend past
-   `new`, which means telling a user function with a generated retaining return from a runtime
-   helper or an import. This is the risky remainder 5i deliberately left.
+5j. **`pop`/`shift` transfers consumed** — the compiler's own operations, so nothing to
+   classify. **Done 2026-09-04, see §9.26.**
+5k. **An ordinary call's result** (`let y = f()`) — the dominant remaining leak. Needs a pass
+   *after* MLIRGen rather than another marking site: the retain lives in the return statement so
+   a concise arrow body and `yield` bypass it, the callee's `FuncOp` may not exist when the call
+   is generated (making a lookup order-dependent), and a `declare`d/imported/runtime callee looks
+   identical to a local one while having no retaining return at all. That last is the case where
+   being wrong frees live memory.
+5l. **Discarded temporaries** — `f();` and `arr.pop();` drop a +1 nobody consumes. Needs a
+   last-use notion, not a receiver.
 6. **Flip the allocator under the flag.** GC stays the default. Note `needsGCRuntime()` is
    currently true for `rc` too, so Boehm still reclaims under `-mm=rc` — which is why no memory
    measurement taken before this step demonstrates anything about reference counting.
@@ -1840,3 +1846,52 @@ a discarded `pop`, and a returned value the caller drops. Closing those needs th
 classification to extend past `new`, which is the risky work this slice deliberately did not do.
 
 Full release suite green: 895/895. Verifier: two files, six sites, unchanged.
+
+### 9.26 Step 5j: the transfers that can be settled, and the call that cannot
+
+5j was meant to extend the producer classification past `new` to ordinary calls. Half of it is
+here; the other half turned out to need a different shape than "one more marking site", and this
+section records why rather than shipping a heuristic for it.
+
+**What landed: `pop` and `shift`.** These are the compiler's own operations with known semantics,
+so there is nothing to classify. The data block gives up the element without releasing it - the
+size shrinks past the slot, so its release routine never reaches it again - which hands the
+block's reference to whoever receives the result. Marking those two results owned lets a receiver
+take that reference over instead of adding one, so `let x = arr.pop()` is now one owner rather
+than two.
+
+**What did not, and the specific reason.** Every function retains its result on the way out
+(§9.24), so `let y = f()` is one owner above the truth as well - and that is the dominant
+remaining leak. Marking it needs to know that *this* callee retains, and three separate things
+stop that being answerable where the call is generated:
+
+- **Not every return path retains.** The retain sits in the return *statement*, but a concise
+  arrow body (`() => expr`) reaches `mlirGenReturnValue` down a different path, and so does
+  `yield`. Marking a function whose body takes one of those would consume a reference nobody
+  took.
+- **The callee may not exist yet.** MLIRGen emits `ts.CallIndirect` on a symbol reference; the
+  callee's `FuncOp` need not have been created when the call site is generated, so a lookup would
+  answer differently depending on declaration order. Always-safe, since the unknown case falls to
+  +0 and leaks — but silently order-dependent, which is worse than not doing it.
+- **External callees look identical.** A `declare`d function, one imported through `__decls`, or
+  a runtime helper has no retaining return at all. These are the cases where being wrong frees
+  live memory.
+
+The shape that answers all three is a pass after MLIRGen, when every `FuncOp` is present and each
+one's return paths can be inspected rather than predicted. That is a different piece of work from
+the marking sites of §9.25, and it is the right place to stop this slice.
+
+**A test that was worthless, caught by the habit rather than by luck.** The first version of
+`00owned_transfer.ts` passed with a deliberate over-release injected into `pop` — because a freed
+block keeps its contents until something else claims them, so reading through the receiver read
+the right answer out of freed memory. It caught nothing the existing tests did not already catch.
+Each case now calls a `churn()` helper between the transfer and the read, allocating enough
+same-shaped blocks to land on the freed one, and it then fails against that injection as it
+should. This is the same trap as §9.24's memory measurement: an experiment that confirms what you
+expected is worth less than one you tried to break.
+
+Worth recording separately: injecting the *opposite* mistake - treating every `ts.Load` result as
+already-owned, so receivers stop retaining - fails six of the ownership tests. The suite does
+detect premature frees broadly now, which is the property that matters most from here on.
+
+Full release suite green: 899/899. Verifier: two files, unchanged.
