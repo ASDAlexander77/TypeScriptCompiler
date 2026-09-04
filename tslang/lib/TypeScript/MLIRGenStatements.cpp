@@ -421,6 +421,18 @@ namespace mlirgen
                 VALIDATE(expressionValue, location)
             }
 
+            // The scope exit below releases every owned local in the frame, and the value being
+            // returned is very often held by one of them - `return x` after `let x = new C()`
+            // being the whole of it. Once an allocation is born unowned (§9.24) that local's
+            // release is the last one, so without this the value would be freed on the way out
+            // and the caller handed a dangling pointer.
+            //
+            // Retaining the value rather than trying to spot which local holds it is what makes
+            // this work for `return h.item`, `return arr[0]` and `return cond ? a : b` alike. It
+            // hands the caller a reference of its own, which is the same +1 transfer `pop` and
+            // `shift` perform (§9.22) - and, like those, one the caller does not yet consume.
+            mlirGenRetainCaptured(location, mlir::ValueRange{expressionValue});
+
             EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
             return mlirGenReturnValue(location, expressionValue, false, genContext);

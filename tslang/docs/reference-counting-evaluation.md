@@ -407,10 +407,20 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    reference). 5e's unboxed object literal was never broken either — construction balances
    through the owned local's `RetainSlot`. **Done 2026-09-04, see §9.23.**
 5h. **Remove 5a's slack**: consume a freshly allocated value's birth reference. The point where a
-   mistake stops being an inert leak, and where every test written since 5a gains teeth. Note
-   from 5g: this is what makes returns load-bearing — once the birth reference is consumed, the
-   scope-exit release on `return x` becomes the last one and would free the value before it is
-   returned. Arguments become load-bearing at the same moment.
+   mistake stops being an inert leak, and where every test written since 5a gains teeth.
+   **First half done 2026-09-04, see §9.24**: allocations are born unowned, and a `return`
+   retains its value so the scope exit cannot free it on the way out — which makes the
+   convention uniform at *every function returns +1*. A real removal for arrays, strings and
+   boxed object literals; still neutral for class instances, because `new C()` is a call to
+   `C..new` and that return retain hands back the same +1 the birth reference did (verified by
+   the release-before-retain swap, not assumed).
+5i. **Consume the +1 at the receiving sites** — a declaration, store, literal capture or push
+   whose incoming value is already +1 must not retain it again. The classification fails safe
+   towards +0 (an unrecognised producer is retained, and leaks), but the unsafe direction has a
+   name: a runtime or builtin helper, or a function imported from a module built before this
+   convention, returns a heap value *without* the retain, so treating it as +1 skips a retain
+   nobody performed and frees live memory. First slice in the arc whose failure mode is a
+   premature free rather than a leak.
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -1705,5 +1715,65 @@ caught a case that passed either way.
 The verifier is unchanged once more, same two files and six sites.
 
 New test: `test/tester/tests/00owned_inline_records.ts`, all three models.
+
+Full release suite green: 895/895.
+
+### 9.24 Step 5h, first half: allocations are born unowned, and every function returns +1
+
+Two things happened here. One is the change; the other is that two comments in the tree were
+wrong and cost real time before the change could even be designed, which is worth recording
+because both were the kind of stale note that reads as authoritative.
+
+**The wrong comments.** `Defines.h` said of the header word "the word is not yet initialized on
+allocation - nothing maintains a count". That stopped being true at §9.6. Reading it, and the
+sibling note in `getHeapBlockHeaderSize` claiming class instances bypass the header through
+`GC_malloc_explicitly_typed`, led to an hour of reasoning from a model in which blocks were born
+at zero and none of §9.12-§9.23's arithmetic held. `_MemoryAlloc` settles it in one line — it
+stored `1`, with the comment "the block starts owned by exactly one reference" — and the typed
+path that would have bypassed the header sits behind `ENABLE_TYPED_GC` and was retired in §9.2.
+Both comments are now corrected. The lesson is narrow and practical: in this area, read the
+emitting code, not the note describing it.
+
+**The change.** `_MemoryAlloc` now writes **0**. A block starts unowned; whoever first takes it -
+a local's declaration, a field or element store, a literal capturing it, a push - is what brings
+the count to one, and that owner's release is what takes it back to zero and frees it. That is
+the slack §9.12 deliberately left, and every insertion point that had to exist before it could
+come out now does (§9.19-§9.23).
+
+Being born at zero also gives the remaining mistakes a benign shape at the boundary: a release of
+a block nobody ever took underflows to all-ones, which is `HEAP_BLOCK_IMMORTAL`, so the block
+leaks instead of being freed out from under a live reference.
+
+**The companion change, which is not optional.** The scope exit at a `return` releases every
+owned local in the frame, and the returned value is very often held by one of them. Once
+allocations are born unowned that release is the last one, so `return x` after `let x = new C()`
+would free the value on the way out. The value is therefore retained before the scope exit.
+Retaining the value rather than trying to identify which local holds it is what makes this work
+for `return h.item`, `return arr[0]` and `return cond ? a : b` alike — and it establishes a
+uniform convention: **every function returns +1**, the same transfer `pop` and `shift` perform.
+
+**What this does and does not achieve, stated exactly.** For arrays, strings and boxed object
+literals it is a real removal of the slack: `let a = [1, 2, 3]` now takes its data block to one
+and back to zero, and the block is freed. For **class instances it is currently neutral**, and
+that was verified rather than assumed. `new C()` is a call to a compiler-generated `C..new`, so
+the return retain applies to it too and hands back exactly the +1 the birth reference used to
+provide. The check was the release-before-retain swap from §9.20: if class instances had lost
+their slack, that swap would now free live memory and the owned-* tests would fail. All 35 still
+pass, so they have not gained teeth yet.
+
+**Which names the second half precisely.** The convention is now uniform - calls hand out +1 - so
+what remains is for the receiving sites to *consume* it: a local declaration, a field or element
+store, a literal capture or a push whose incoming value is already +1 should not retain again.
+The classification is structural (a call result, `ts.CreateArray`, `ts.New`, `ts.ArrayPop`,
+`ts.ArrayShift` are +1; loads, parameters and constants are +0) and it fails safe in the
+direction of not knowing: an unrecognised producer is treated as +0, retained, and leaks.
+
+The dangerous direction is the opposite one, and it has a specific name: a call that returns a
+heap value **without** passing through the return path patched here - a runtime or builtin helper
+such as string concatenation, or a function imported from a module built before this convention.
+Treating those as +1 would skip a retain that was never performed and free live memory. So the
+second half cannot simply say "calls are +1"; it has to distinguish a user function with a
+generated return from an external one. That is the next slice, and it is the first in this arc
+where the failure mode is a premature free rather than a leak.
 
 Full release suite green: 895/895.

@@ -265,15 +265,15 @@ class LLVMCodeHelperBase
     //
     // Every heap block allocated through _MemoryAlloc reserves a leading pointer-sized word,
     // and the pointer handed back to the rest of the compiler addresses the payload just past
-    // it. Under GC that word is never read - it exists so the block layout already has a place
-    // for a reference count if the RC memory model (-mm=rc) is built later. Keeping the layout
-    // identical in both memory models is what makes a GC-built module and an RC-built module
-    // safe to link together; see docs/reference-counting-evaluation.md, sections 4 and 9.1.
+    // it. Under GC that word is never read; under `-mm=rc` it is the reference count. Keeping
+    // the layout identical in both memory models is what makes a GC-built module and an
+    // RC-built module safe to link together; see docs/reference-counting-evaluation.md,
+    // sections 4 and 9.1.
     //
-    // Only the generic allocation path is covered here. Class instances allocated through
-    // GC_malloc_explicitly_typed (GCNewExplicitlyTypedOpLowering) are deliberately untouched:
-    // their Boehm type descriptor indexes bits relative to the object base, so moving the base
-    // without shifting the generated bitmap would make the collector trace the wrong words.
+    // This covers every heap block that the compiler still emits, class instances included.
+    // The one path it would not have covered - GC_malloc_explicitly_typed, whose Boehm type
+    // descriptor indexes bits relative to the object base and so could not tolerate the base
+    // moving - sits behind ENABLE_TYPED_GC and was retired in §9.2, before the header existed.
     unsigned getHeapBlockHeaderSize()
     {
         return compileOptions.sizeBits / 8;
@@ -354,12 +354,26 @@ class LLVMCodeHelperBase
 
         if (compileOptions.isRefCounted())
         {
-            // The block starts owned by exactly one reference: the one being returned here.
+            // The block starts *unowned*. Whoever first takes it - a local's declaration, a
+            // field or element store, a literal capturing it, a push - is what brings the count
+            // to one, and that owner's release is what takes it back to zero and frees it.
+            //
+            // It was born at one until §9.24: the reference an allocation came with was never
+            // consumed, so every count sat one above the truth and nothing was ever freed. That
+            // was deliberate while the insertion points were being built one at a time, because
+            // it made a missing retain an inert leak rather than a premature free. All of them
+            // are in place now (§9.19 through §9.23), so the slack comes out here.
+            //
+            // Being born at zero also gives the remaining mistakes a benign shape at the
+            // boundary: a release of a block nobody ever took underflows to all-ones, which is
+            // HEAP_BLOCK_IMMORTAL, so the block leaks instead of being freed out from under a
+            // live reference.
+            //
             // Written after any memset above, which zeroes the header along with the payload.
             // Only under `-mm=rc` -- under `gc` nothing reads the word, and a store per
             // allocation on the hot path is not worth paying for dead code.
             rewriter.create<LLVM::StoreOp>(
-                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1)),
+                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0)),
                 blockPtr);
         }
 

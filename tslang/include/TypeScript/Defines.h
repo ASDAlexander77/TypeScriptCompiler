@@ -116,10 +116,11 @@
 // is not a value a real count reaches. It is deliberately not zero: a zeroed word is what a
 // fresh heap block reads.
 //
-// Note the word is not yet initialized on allocation - nothing maintains a count. Only the
-// static side is pinned here, because it is the side that changes a global's layout and so
-// cannot be retrofitted without an ABI break. See docs/reference-counting-evaluation.md
-// section 9.5.
+// Under `-mm=rc` the word holds a live reference count: _MemoryAlloc writes zero into it, and
+// a block is freed when a release takes it back to zero (§9.6, §9.24). Under `gc` and `none`
+// nothing reads it and nothing writes it - only the static side below is pinned in every model,
+// because it is the side that changes a global's layout and so cannot be retrofitted without an
+// ABI break. See docs/reference-counting-evaluation.md sections 9.5 and 9.24.
 #define HEAP_BLOCK_IMMORTAL -1
 
 // Runtime type descriptor.
