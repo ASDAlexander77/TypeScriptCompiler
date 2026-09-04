@@ -394,9 +394,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    live value on the compiler as it stood. **Done 2026-09-04, see §9.21.** The spread form
    (`[...xs, y]`) goes through `ts.ArrayPush` and waits for 5f; the unboxed object literal is the
    inline-record case and waits for 5g.
-5f. **The array-mutating ops.** `push`/`unshift`/`splice` take a reference, `pop`/`shift` give
-   one up — the latter being the same question a `return` asks, which is why they go together.
-5g. **Arguments and returns**, and with them the inline-record field case 5c left out.
+5f. **The array-mutating ops.** `push`/`unshift`/`splice` now take a reference; `pop`/`shift`
+   correctly need none — the block transfers its reference to the result rather than releasing
+   it, which is the existing "+1 nobody consumed" convention. Also closes 5e's spread-literal
+   hole, since `[...xs]` is built out of `push`. **Done 2026-09-04, see §9.22.** What `splice`
+   *deletes* still drops references without releasing them (a leak, and the first item needing
+   emission from `LowerToLLVM` rather than MLIRGen).
+5g. **Arguments and returns**, and with them the inline-record field case 5c left out and the
+   unboxed object literal from 5e.
 5h. **Remove 5a's slack**: consume a freshly allocated value's birth reference. The point where a
    mistake stops being an inert leak, and where every test written since 5a gains teeth.
 6. **Flip the allocator under the flag.** GC stays the default.
@@ -1580,3 +1585,51 @@ site's retain against the owning block's eventual release needs to reason about 
 about a slot in a frame, and nothing here does that yet.
 
 Full release suite green: 887/887.
+
+### 9.22 Step 5f: the array-mutating ops
+
+The last of the insertion points that fill an array's data block. `push`, `unshift` and `splice`
+put a value in through their own ops rather than through an assignment, so like the literal in
+§9.21 none of them took a reference to what they inserted, while the block goes on releasing
+every element it holds when it dies. Same bug, same recipe to expose it — one value reaching two
+slots that are both later overwritten — and the same fix: retain each inserted value, in
+`MLIRCustomMethods` where the three ops are built.
+
+**This also closes the spread literal §9.21 left open.** `[...xs, y]` is not built by
+`ts.CreateArray` at all: `mlirGenAppendArrayByEachElement` synthesises a `for..of` calling
+`push`, so it inherits push's retain rather than needing one of its own. That is the whole of
+what §9.21 deferred on the array side.
+
+**`pop` and `shift` get no counterpart, and that is a decision rather than an omission.** The
+block does not release the element it gives up — the size shrinks past the slot, so the release
+routine (`buildArrayBody`, which loops to `size`) never reaches it. The reference the block held
+simply transfers to the returned value. That leaves the result carrying the same "+1 nobody has
+consumed" that every freshly produced value already carries, which is the convention §9.12 chose
+and §5h removes wholesale. Pairing a release here instead would free a value the caller is about
+to use. So the question §9.20 flagged — what a `pop` and a `return` owe each other — turns out to
+be already answered by the existing convention, and needs nothing of its own until the slack goes.
+
+**Still open, and bounded.** What `splice` *deletes* is memmoved over and its references dropped
+without a release. That leaks rather than over-releases, so it is inert; and it cannot be fixed at
+this level anyway, because the number of elements to release is only known inside the lowering.
+It is the first item in this arc that will need a retain or release emitted from `LowerToLLVM`
+rather than from MLIRGen, which also puts it outside what the verifier can see.
+
+**One test case had to be strengthened, and only running each case separately found it.**
+`spreadLiteralSharesValue` passed on the unfixed compiler with two overwrites: the source array is
+itself a literal, so under §9.21 it already holds a legitimate retained reference, and that one
+extra absorbed the second release. The case was worthless as written and looked fine. Overwriting
+the source as well spends the literal's own reference and puts the two spread copies back on the
+hook for theirs — 6 where 13 is due, on the compiler as it stood. The habit that caught it is the
+one from §9.21: check each case against the unfixed compiler, not the file as a whole.
+
+The verifier is unchanged again — same two files, same six sites — and for the same structural
+reason as §9.21: these are value-form `ts.Retain`s against a block's eventual release, which is
+not the pairing it tracks.
+
+New test: `test/tester/tests/00owned_array_ops.ts`, all three models. push, unshift and
+splice-insert each sharing a value between two arrays; one array pushed twice with the same value;
+the spread literal; `pop` and `shift` as run-path coverage of the transfer; and a single overwrite
+after a push as a control.
+
+Full release suite green: 891/891.

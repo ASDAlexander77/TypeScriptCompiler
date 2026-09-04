@@ -670,6 +670,35 @@ class MLIRCustomMethods
         return mlir::Value();
     }
 
+    // Takes a reference to each value about to be handed to an array's data block. That block
+    // releases every element it holds when it dies, so it has to have taken one - the same debt
+    // an array literal carries (§9.21 in docs/reference-counting-evaluation.md). These ops fill
+    // the block through their own lowering rather than through an assignment, so nothing else on
+    // the path takes it.
+    //
+    // The ops that take an element back out - pop and shift - need no counterpart here, and that
+    // is not an omission. The block simply stops holding it: the size shrinks past the slot, so
+    // the release routine never reaches it, and the reference the block held transfers to the
+    // returned value. That leaves the result carrying the same "+1 nobody has consumed" every
+    // freshly produced value already carries, which is removed with the rest of the slack rather
+    // than one op at a time.
+    //
+    // What splice deletes is a different matter: those elements are memmoved over and their
+    // references dropped without a release. That leaks rather than over-releases, so it waits -
+    // and it cannot be fixed here anyway, because the count to release is only known inside the
+    // lowering.
+    void retainInsertedElements(ArrayRef<mlir::Value> values)
+    {
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        for (auto value : values)
+        {
+            if (value && mth.ownsHeapMemory(location, value.getType()))
+            {
+                builder.create<mlir_ts::RetainOp>(location, value);
+            }
+        }
+    }
+
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
@@ -696,6 +725,8 @@ class MLIRCustomMethods
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
+
+        retainInsertedElements(castedValues);
 
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArrayPushOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
@@ -751,6 +782,8 @@ class MLIRCustomMethods
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
+
+        retainInsertedElements(castedValues);
 
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
@@ -816,6 +849,8 @@ class MLIRCustomMethods
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
+
+        retainInsertedElements(castedValues);
 
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArraySpliceOp>(location, builder.getIndexType(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
