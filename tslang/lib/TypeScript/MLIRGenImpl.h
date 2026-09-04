@@ -777,6 +777,32 @@ class MLIRGenImpl
         return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
+    // Takes a reference to each of `values` that owns heap memory.
+    //
+    // For construction sites that fill an owning block in one go rather than through an
+    // assignment - an array literal's data block, a boxed object literal's storage. The block's
+    // release routine walks what it holds when it dies, so it has to have taken a reference to
+    // each of them; nothing else on this path does.
+    //
+    // Without this the block gives up references it never took, and that is not a leak but an
+    // over-release, reachable today: an element seeded by a literal is one below an equivalent
+    // field, one overwrite is masked by the unconsumed birth reference, and a second overwrite
+    // of the same value takes it past zero and frees it while a local still holds it. See
+    // §9.21 in docs/reference-counting-evaluation.md.
+    //
+    // A record-shaped value retains through its own routine, which walks its owning fields, so
+    // the boxed-literal case needs one of these on the whole tuple rather than one per field.
+    void mlirGenRetainCaptured(mlir::Location location, mlir::ValueRange values)
+    {
+        for (auto value : values)
+        {
+            if (mth.ownsHeapMemory(location, value.getType()))
+            {
+                builder.create<mlir_ts::RetainOp>(location, value);
+            }
+        }
+    }
+
     // Storage that hands ownership over when it is overwritten: the incoming value gains an
     // owner and the outgoing one loses one.
     bool isOwningSlot(mlir::Location location, mlir::Value reference)
@@ -7734,6 +7760,9 @@ class MLIRGenImpl
 
             arrayValues.push_back(arrayValue);
         }
+
+        // the data block about to be filled releases every element when it dies
+        mlirGenRetainCaptured(location, arrayValues);
 
         auto newArrayOp =
             builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(arrayInfo.arrayElementType), arrayValues);

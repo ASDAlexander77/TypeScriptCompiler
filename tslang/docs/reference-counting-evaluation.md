@@ -386,12 +386,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 5c. **Fields own what they hold.** The first insertion point beyond locals, and the first the
    verifier guarded rather than followed. **Done 2026-09-04, see §9.19.**
 5d. **Elements own what they hold.** `arr[i] = x`, the direct sibling of 5c. Exposed the first
-   latent *over*-release: an array literal stores its elements without retaining them.
+   *over*-release: an array literal stores its elements without retaining them.
    **Done 2026-09-04, see §9.20.**
-5e. **Literal construction retains what it captures.** Array and object literals, which build an
-   owning block in one go rather than through an assignment. Ahead of the rest because 5d showed
-   it is already wrong rather than merely incomplete, and it has to land before the slack comes
-   out.
+5e. **Literal construction retains what it captures.** Array literals and boxed object literals,
+   which fill an owning block in one go rather than through an assignment. Taken ahead of the
+   rest because it turned out not to be latent at all — two holders and two overwrites freed a
+   live value on the compiler as it stood. **Done 2026-09-04, see §9.21.** The spread form
+   (`[...xs, y]`) goes through `ts.ArrayPush` and waits for 5f; the unboxed object literal is the
+   inline-record case and waits for 5g.
 5f. **The array-mutating ops.** `push`/`unshift`/`splice` take a reference, `pop`/`shift` give
    one up — the latter being the same question a `return` asks, which is why they go together.
 5g. **Arguments and returns**, and with them the inline-record field case 5c left out.
@@ -1495,21 +1497,17 @@ The array gives up a reference it never took. A field filled through the assignm
 birth + field = 2 and survives a stray release; an element seeded by a literal holds only its
 birth reference, so releasing first drops it to zero and frees a live value.
 
-Today this is masked, completely, by the same slack §9.12 chose: the birth reference is
-unconsumed, so the array's unearned release is exactly cancelled by the reference nobody ever
-gave back. It is an over-release *in waiting* — the first thing that will free live memory when
-the slack is removed:
+Object literals construct the same way and have the same hole. That makes literal construction,
+not arguments or returns, the next thing to take.
 
-```ts
-let kept = new Leaf(7);
-{ let arr = [kept]; }   // arr dies, releases the element it never retained
-return kept.n;          // alive only because the birth reference is still there
-```
-
-Object literals construct the same way and will have the same hole. That makes literal
-construction, not arguments or returns, the next thing to take — it is the one insertion point
-now shown to be latently wrong rather than merely incomplete, and it has to land before the slack
-comes out, not after.
+> **Correction, made while implementing §9.21.** This section originally called the gap an
+> over-release *in waiting*, masked entirely by the slack, and illustrated it with an array going
+> out of scope and releasing an element it never retained. That mechanism is wrong: the data
+> block has an unconsumed birth reference of its own, so it does not die at scope exit and never
+> reaches its elements at all. The real mechanism is that the element is simply one count below
+> an equivalent field, and it is *each explicit overwrite* that spends the missing reference —
+> the first cancelled by the birth slack, the second going past zero. Which means it was never
+> latent: it frees live memory today. §9.21 has the reduced case.
 
 The verifier is unchanged by this step: still the same two files and six retain sites, all the
 known throwing-`[Symbol.dispose]()` path, and no new "released but never retained" — the
@@ -1521,3 +1519,64 @@ assigned from another array's element, one value reaching two slots of the same 
 overwriting a single slot inside a loop.
 
 Full release suite green: 883/883.
+
+### 9.21 Step 5e: literal construction, and the first over-release that was already live
+
+§9.20 ended by predicting that array and object literals capture without retaining, and filed it
+as a latent problem for after the slack came out. Writing the fix meant reducing the case
+properly, and the reduction said something different: it frees live memory now.
+
+**The reduced case.** Two array literals holding one value, each overwritten once:
+
+```ts
+let kept = new Leaf(7);
+let a = [kept];
+let b = [kept];
+print("A", kept.n);   // 7
+a[0] = new Leaf(1);
+print("C", kept.n);   // 7
+b[0] = new Leaf(2);
+print("D", kept.n);   // 0   <- freed while `kept` still holds it
+```
+
+**Why §9.20's account of it was wrong.** That section said the array dies at scope exit and
+releases an element it never retained. It does not: the data block carries an unconsumed birth
+reference of its own, so its count never reaches zero and its release routine never runs. The
+elements are not reached that way at all.
+
+What actually happens is quieter and worse. An element seeded by a literal sits at **one** —
+its birth reference only — where a field filled through the assignment path sits at two. Every
+`arr[i] = x` releases what the slot held. The first such release is exactly cancelled by the
+birth slack, which is why one overwrite looks fine and why §9.19's and §9.20's tests pass. The
+**second** release of the same value, through a different literal, has nothing left to spend and
+takes it past zero. Two holders and two overwrites is the whole recipe, and it needs no future
+change to become reachable.
+
+So the slack was never masking this. It was masking exactly one release of it.
+
+**The fix** is one helper, `mlirGenRetainCaptured`, used at the two places that fill an owning
+block in one go instead of through an assignment: the array literal's `ts.CreateArray`, and the
+boxed object literal's `ts.New` + `ts.Store`. Both blocks release what they hold when they die,
+so both must take a reference to it. A record-shaped value retains through its own routine, which
+walks its owning fields, so the boxed case needs one `ts.Retain` on the whole tuple rather than
+one per field.
+
+**Still open, and now precisely bounded.** The spread form of an array literal (`[...xs, y]`)
+builds its array through `ts.ArrayPush` rather than `ts.CreateArray`, so it keeps the same hole
+until §5f takes the mutating ops. An unboxed object literal — one with no methods — stays an
+inline const-tuple or tuple, which is the inline-record case §9.19 deferred and §5g will answer.
+
+**The test does have teeth, and each case was checked rather than the file as a whole.** Against
+the compiler as it stood, `00owned_literals.ts` returns 3 where 10 is due, 1 where 7 is, 7 where 8
+is — six of its seven cases wrong, the seventh being a deliberate control that must pass either
+way. A single overwrite is not enough to bite; what bites is one value reaching two slots that are
+both later overwritten, whether that is two literals sharing it or one literal holding it twice.
+
+The verifier is again unchanged — same two files, same six sites. It tracks `ts.RetainSlot` and
+`ts.ReleaseSlot`, and this step adds neither; the value-form `ts.Retain` is outside what it pairs.
+That is a real limit rather than a clean bill of health, and it is worth saying plainly: the check
+that would have caught this bug is not the one that exists. A verifier that pairs a construction
+site's retain against the owning block's eventual release needs to reason about the block, not
+about a slot in a frame, and nothing here does that yet.
+
+Full release suite green: 887/887.

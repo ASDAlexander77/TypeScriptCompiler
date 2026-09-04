@@ -1458,6 +1458,12 @@ namespace mlirgen
         auto objType = mlir_ts::ObjectType::get(tupleType);
         auto valueAddr =
             builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+
+        // this block releases what its fields hold when it dies, so it has to take a reference
+        // to each of them - the same debt an array literal's data block carries, and for the
+        // same reason there is no assignment on this path to carry it (§9.21)
+        mlirGenRetainCaptured(location, mlir::ValueRange{tupleValue});
+
         builder.create<mlir_ts::StoreOp>(location, tupleValue, valueAddr);
         auto objValue = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
         return V(objValue);
