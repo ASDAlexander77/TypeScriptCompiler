@@ -509,47 +509,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
 
-    // Whether some construct nested inside this block (a bare `{ }`, an if/while/for/switch
-    // body - anything short of a nested function or class, which starts its own scope)
-    // declares its own `using`, other than at this block's own top level.
-    //
-    // Wrapping such a block puts the inner using-scope inside a TryOp body region, which
-    // crashes the compiler outright - verified by dropping this check alone and compiling
-    // `using a = new Res(); { using c = new Res(); } throw 1;`. The inner block is still
-    // wrapped on its own account when it qualifies, which is why only the *outer* one has to
-    // stand down; scanning this block's own subtree is exactly the right scope, since what
-    // matters is what would land inside the region this wrapping creates.
-    bool blockHasNestedUsing(ts::Block blockAST)
-    {
-        auto found = false;
-        ts::FilterVisitorSkipFuncsAST<VariableDeclarationList> visitor(
-            SyntaxKind::VariableDeclarationList, [&](VariableDeclarationList declarationListNode) {
-                if ((declarationListNode->flags & NodeFlags::Using) == NodeFlags::Using)
-                {
-                    found = true;
-                }
-            });
-
-        for (auto statement : blockAST->statements)
-        {
-            if (found)
-            {
-                break;
-            }
-
-            if ((SyntaxKind)statement == SyntaxKind::VariableStatement)
-            {
-                // this block's own top-level `using` declarations are handled directly by
-                // wrapping the block itself - only a nested one is the problem here
-                continue;
-            }
-
-            visitor.visit(statement);
-        }
-
-        return found;
-    }
-
     // Whether the insertion point sits inside the catches or finally region of an enclosing
     // TryOp.
     //
@@ -559,6 +518,11 @@ class MLIRGenImpl
     // 04disposable.ts - it is the catch and finally regions specifically that do not tolerate
     // it, which is the half of the old blockIsFunctionRootBody condition that was doing real
     // work and was dropped with it.
+    //
+    // Re-checked after the ToInvoke fix in Win32ExceptionPass, which retired the sibling
+    // blockHasNestedUsing guard: this one is still needed, and the crash it avoids still has a
+    // cause of its own. Note it also costs ownership - localTakesOwnership consults it, so a
+    // heap local declared in a catch or finally clause is not owned and leaks under -mm=rc.
     bool blockIsInsideCatchOrFinally()
     {
         auto *block = builder.getInsertionBlock();

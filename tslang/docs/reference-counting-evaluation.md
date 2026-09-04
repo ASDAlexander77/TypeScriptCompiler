@@ -818,12 +818,23 @@ out-of-scope for this step:
    `try { try { using x=...; throw; } finally {} } catch {}`. Not fixed - guarded against:
    `blockIsFunctionRootBody` restricts synthesis to a function's own top-level body, which by
    construction can never be nested inside anything.
+
+   > **Update (§9.17).** Fixed. `blockIsFunctionRootBody` was already gone by §9.13; what was
+   > left of this was a `using` one scope deeper than a hand-written `try`'s body, and it was
+   > `Win32ExceptionPass::ToInvoke` mangling an operation that was already an invoke. A
+   > `using` in a catch or finally *clause* is still guarded, by
+   > `blockIsInsideCatchOrFinally`, and was re-checked against the fix: a different cause.
 3. **A block with its own `using` nested inside a `TryOp` that already has other `using`s
    breaks MLIR verification** (`ts.PropertyRef` gets the wrong ref type for the inner
    `using`'s dispose method), reproduced by hand:
    `try { using a=...; { using c=...; } } finally {}`. Not fixed - guarded against:
    `blockHasNestedUsing` scans (skipping into neither a nested function nor class) for a
    `using` anywhere below the block's own top level.
+
+   > **Update (§9.17).** Fixed, and `blockHasNestedUsing` is deleted. Same `ToInvoke` cause as
+   > item 2. The guard's cost was that the *outer* `using` stood down from being wrapped so
+   > the inner one could be, so it never disposed on unwind at all - the row in §9.13's table
+   > reading "outer skipped" in both columns.
 4. **`using` plus `return` inside a `try` body is broken independent of throw entirely**,
    reproduced by hand with the simplest possible shape: `try { using a=...; return; } finally
    {}`. `mlirGenDisposable`'s `FullStack` walk at the return site and the try-body's own tail
@@ -962,7 +973,7 @@ shape against the current build:
 | `using` sharing a function with `return`, throw | dispose skipped | **disposes** |
 | `using` inside a hand-written `try` | worked | works |
 | object-literal `using`, throw | dispose skipped | dispose skipped |
-| outer `using` with a nested `using` scope, throw | outer skipped | outer skipped |
+| outer `using` with a nested `using` scope, throw | outer skipped | outer skipped (**both dispose since §9.17**) |
 
 **`blockIsFunctionRootBody` and `blockHasReturn` are deleted.** Both were guarding shapes that
 now work. Dropping the root-body condition is the one that matters: synthesis is no longer
@@ -977,6 +988,12 @@ object-literal disposable fails the build; without the second, an outer `using` 
 also contains a nested `using` scope segfaults the compiler. Those are the two genuinely open
 bugs, and they are now stated in terms of what was actually reproduced rather than what was
 inferred.
+
+> **Update (§9.17).** `blockHasNestedUsing` is now deleted too — the segfault it was standing
+> in front of was `Win32ExceptionPass::ToInvoke`, not anything about nesting. The method here
+> is what made that possible to check: confirming a guard is *individually* necessary is what
+> turns it from folklore into a one-line experiment to redo after any fix in the area.
+> `blockUsingInitializersAreAllNewExpr` was re-checked and stays.
 
 Method worth repeating: the gate was made maskable by an environment variable for the duration
 of the experiment, so one build could test all sixteen combinations. Four rebuilds' worth of
@@ -1171,6 +1188,8 @@ one scope deeper, into an `if` inside the try body, crashes the *compiler* in ev
 model. That is §9.11's second item — a synthesized cleanup `TryOp` nested inside a real
 `TryOp`'s body — still open, and it is why the test covers only the flat shape.
 
+> **Update (§9.17).** Fixed, and `00using_nested_scopes.ts` now covers the deeper shape.
+
 Full release suite green: 862/862.
 
 ### 9.16 The inliner was deleting throws
@@ -1242,3 +1261,67 @@ and a conditional throw as the control that always worked. `00throw_in_catch.ts`
 AOT variant here as well, now that nothing on its header's list is true any more.
 
 Full release suite green: 867/867.
+
+### 9.17 A nested `using` scope, and the guards that were standing in for one bug
+
+Two of §9.11's guards turned out to be avoiding the same defect, in a place neither of them
+named. Fixing it retires one guard outright and closes the last two `using`-on-unwind gaps.
+
+**The shapes.** Both crashed the compiler, in every memory model:
+
+```ts
+try { if (flag) { using r = new Res(); throw 1; } } catch (e: int) { }   // one scope deeper
+using a = new Res(); { using c = new Res(); } throw 1;                   // outer plus inner
+```
+
+The first was §9.11's item 2, guarded by `blockIsFunctionRootBody` and, once that went in
+§9.13, by nothing — it simply crashed. The second was item 3, guarded by
+`blockHasNestedUsing`, whose cost was that the *outer* `using` stood down from being wrapped so
+that the inner one could be, and therefore never disposed on unwind at all.
+
+**One cause: `Win32ExceptionPass::ToInvoke`.** The helper exists to turn a call into an invoke
+with a given unwind destination, so it splits the block at the call to make room for the new
+terminator. But two of its callers hand it an operation that is *already* an invoke — the
+"fix incorrect landing pad" loop that redirects an invoke whose unwind destination is wrong. An
+invoke already ends its block, so splitting at it puts it alone in the new continuation block,
+and every caller erases it immediately afterwards. What is left is an empty block with no
+terminator, and the real continuation stranded with no predecessors:
+
+```llvm
+  %invoke = invoke void %24(ptr %23) [ "funclet"(token %cleanuppad) ]
+          to label %invoke.cont unwind label %26
+invoke.cont:                                      ; preds = %15
+                                                  ; <- empty, no terminator
+25:                                               ; No predecessors!
+  cleanupret from %cleanuppad unwind label %26
+```
+
+That reaches `AlwaysInlinerPass`, which walks the empty block and dies. An invoke needs its
+unwind edge redirected and the bundle added, not a block of its own; cloning it in place with
+`CallBase::Create` and calling `setUnwindDest` is what the funclet-bundle loop a few hundred
+lines above already does.
+
+**Then the guards were re-tested, one at a time.** This is the payoff and the reason §9.13 was
+careful to establish that each guard was *individually* necessary — that turns "is this still
+needed?" into a one-line experiment rather than an argument.
+
+- `blockHasNestedUsing` — **deleted.** The outer and inner `using` now both dispose on unwind,
+  innermost first.
+- `blockIsInsideCatchOrFinally` — **stays.** Dropped alone, `catch (e: int) { using r = new
+  Res(); }` still crashes. A different cause, still open. It is worth naming its second cost:
+  `localTakesOwnership` consults the same predicate, so a heap local declared in a catch or
+  finally clause is not owned and leaks under `-mm=rc`.
+- `blockUsingInitializersAreAllNewExpr` — stays, re-checked, unchanged.
+
+**Also still open, and confirmed independent:** throwing from a `finally` still crashes the
+compiler, in both memory models. That is the `ts.BeginCleanup`-with-no-`ts.EndCleanup` shape
+§9.14 describes, and this fix does not touch it.
+
+New test: `test/tester/tests/00using_nested_scopes.ts`, run under all three models
+(`test-compile-00-using-nested-scopes`, `test-jit-00-using-nested-scopes`,
+`test-jit-rc-using-nested-scopes`, `test-jit-none-using-nested-scopes`). It covers a `using` in
+an `if` and in a bare block inside a try body, and the outer/inner pair both with the inner
+scope already closed and with both still live, asserting disposal *order* rather than just that
+it happened.
+
+Full release suite green: 871/871.

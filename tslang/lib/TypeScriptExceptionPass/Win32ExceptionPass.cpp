@@ -672,6 +672,20 @@ struct Win32ExceptionPassCode
 
     InvokeInst *ToInvoke(CallBase *CB, BasicBlock *unwind, llvm::SmallVector<OperandBundleDef> &opBundle)
     {
+        // An invoke already ends its block and already names a normal destination, so all it
+        // needs is its unwind edge redirected and the bundle added - not a block of its own.
+        // Splitting at one puts it alone in the continuation block, and every caller erases it
+        // immediately afterwards, which leaves that block empty and without a terminator while
+        // the real continuation is left with no predecessors at all. A `using` in a nested
+        // scope inside a try body produced exactly that, and the empty block crashed the
+        // inliner. Cloning it in place is what the funclet-bundle loop above already does.
+        if (auto *II = dyn_cast<InvokeInst>(CB))
+        {
+            auto *newInvoke = cast<InvokeInst>(CallBase::Create(II, opBundle, II->getIterator()));
+            newInvoke->setUnwindDest(unwind);
+            return newInvoke;
+        }
+
         BasicBlock *CurrentBB = CB->getParent();
         BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CB->getIterator(), "invoke.cont");
 
