@@ -915,9 +915,8 @@ the reference when an exception passes through. Fixing it means hoisting owned s
 the operation the way `using` variables already are (`allocateUsingVarsOutsideOfOperation`) —
 tractable, and left for the step that also brings the verifier.
 
-> **Update (§9.15).** The hoisting landed and the dominance problem is gone; the release still
-> does not, for an unrelated reason — it trips a JIT-only Win64 unwind defect that predates all
-> of this. The leak described here therefore stays for now.
+> **Update (§9.15).** Done. The hoisting landed, the dominance problem is gone, and the
+> release now runs on the unwind leg too, so the leak described here no longer happens.
 
 **Where it hooks in.** Three points, all of them ones that already existed:
 
@@ -1058,13 +1057,12 @@ variants, which is what would have caught the ownership half.
 New test: `test/tester/tests/00throw_in_catch.ts` (`test-jit-00-throw-in-catch`,
 `test-jit-rc-throw-in-catch`). Full release suite green: 858/858.
 
-### 9.15 Step 5b: owned storage is hoisted out of the `TryOp` — and the unwind release is blocked
+### 9.15 Step 5b: owned storage is hoisted out of the `TryOp`, and the unwind leg releases
 
 §9.12 left one hole on purpose: an owned local's storage was allocated inside the `TryOp` body
 region, which does not dominate the cleanup region, so the release could not be emitted on the
-unwind leg and the reference leaked when an exception passed through. This step closes the
-dominance half and then stops one line short of the goal, for a reason that has nothing to do
-with reference counting.
+unwind leg and the reference leaked when an exception passed through. This step closes it — and
+turned up a miscompile of our own on the way, which is the more valuable half of the result.
 
 **What landed.** Owned storage is hoisted out in front of the `TryOp`, exactly the way `using`
 storage already was. `allocateUsingVarsOutsideOfOperation` is renamed
@@ -1092,62 +1090,70 @@ hoisted owned slot. Gated on `isRefCounted()` in the *lowering*, not in MLIRGen:
 reads the slot before its store, and a collected build is meant to come out of this step
 byte-identical.
 
-#### The blocker: a JIT-only Win64 unwind defect, older than this work
 
-With the cleanup region calling `mlirGenScopeExit` instead of `mlirGenDisposable`, exactly one
-test went red — `test-jit-rc-disposable-scopes` — and the failure is not a reference-counting
-bug at all.
+**The unwind leg releases.** The cleanup region now calls `mlirGenScopeExit` rather than only
+`mlirGenDisposable`, so an exception passing through a scope gives back the references that
+scope took. Confirmed in the emitted LLVM: under `rc` the cleanup funclet holds one `tsrel_` per
+owned local, in reverse declaration order, each carrying the funclet bundle; under `gc` the same
+region is empty, because the slot-addressed ops erase whole. Step 5's local half is now complete
+on every path.
 
-Reduced, it is this, and it needs no reference counting to reproduce:
+#### The detour: a miscompile of our own, found because this step tripped it
+
+Turning the release on broke exactly one test, and chasing it turned up a bug that had nothing
+to do with reference counting and had been in the tree the whole time.
+
+The shape, which needs no ownership at all and fails under `-mm=gc`:
 
 ```ts
-let disposed = 0;
-class Res { [Symbol.dispose]() { disposed = disposed + 1; } }
 function f() {
     try { using r = new Res(); throw 1; }
     catch (e: TypeOf<1>) { print("a"); print("b"); }
 }
-function main() { disposed = 0; f(); assert(disposed == 1, "d"); print("done."); }
 ```
 
-That program **crashes under `-mm=gc` on the commit before this one** (`--emit=jit --opt`, any
-`--opt_level` above 0). Compiled AOT from the same IR it is correct. So is `-O0`. Checked by
-stashing this change, rebuilding and running it: baseline crashes.
+`main` keeps a pointer in `rsi` across the call to `f` — legal, `rsi` is callee-saved — and gets
+it back with its **low 32 bits zeroed**.
 
-**The symptom, from the crash dump.** `main` keeps `&disposed` in `rsi` across the call to `f`,
-which is legal — `rsi` is callee-saved. On return, `rsi` has had its low 32 bits zeroed:
-`0x196198300CC` comes back as `0x19600000000`, and `cmp dword ptr [rsi],1` faults. The unwind
-info the JIT registers for `f` decodes cleanly and matches its prologue
-(`push rbp; push rsi; sub rsp,0x48; lea rbp,[rsp+0x40]`, and unwind codes `PUSH_NONVOL rbp`,
-`PUSH_NONVOL rsi`, `ALLOC_SMALL`, `SET_FPREG` in the required descending order). Something
-overwrites `f`'s saved-`rsi` slot while the exception is in flight; the exact writer was not
-identified.
+**Root cause: `CatchableType::sizeOrOffset` said a caught `int` was 8 bytes.** Both RTTI helpers
+(`MLIRRTTIHelperVCWin32.h` and `LLVMRTTIHelperVCWin32.h`) hardcoded `8` for every catchable
+type. The CRT copies exactly that many bytes into the catch variable's frame slot, so catching a
+4-byte `int` wrote 8 and clobbered whatever sat above the slot. The symbol name we emit had been
+saying so all along: `_CT??_R0H@8` **4** — the trailing digit is the size, and it disagreed with
+the record it named.
 
-**Why the JIT and not AOT.** JIT'd code uses the large code model, so every call materialises a
-64-bit address into a register first. That is what makes the catch funclet use `rsi` at all
-(`mov rsi, <puts>; call rsi` — two calls, so it is worth a register), which in turn is why the
-parent saves `rsi`. The AOT build reaches `puts` with a `rel32` call, uses no callee-saved
-register in the funclet, and never enters the broken configuration.
+**Why it hid for so long.** What sits above the catch slot is a question of frame layout. Ahead
+of time it was padding, so the overflow was invisible. The JIT compiles with the **large code
+model**, where every call materialises a 64-bit address into a register; that pressure makes a
+catch funclet use a callee-saved register, which makes the parent save it, which puts a saved
+register exactly where the overflow lands. Hence: JIT-only in practice, sensitive to unrelated
+code changes, and not reproducible with clang — clang emits `4`.
 
-**Why this step trips it.** A release in the cleanup region raises register pressure in the
-cleanup funclet the same way, and the parent then saves one more callee-saved register. Several
-programs that sat just on the safe side move across. This is not fixable from the ownership
-side: keeping the routine a call rather than letting it inline (`noinline` on `tsrel_`/`tsret_`)
-was tried and does not help, because in the large code model even a single call needs its
-address in a register.
+**How it was found**, because the route generalises. `llc -code-model=large` on the same IR
+reproduced it ahead of time, which exonerated the JIT's unwind-table registration and turned a
+compiler-rebuild loop into a seconds-long one. clang's C++ equivalent at `-mcmodel=large` did
+*not* reproduce, which said the defect was in our IR rather than the backend. Deleting the
+cleanup funclet still reproduced, which said the `using` was a red herring. A hardware
+write-breakpoint on the saved-register slot then named the writer: an 8-byte store from inside
+the CRT's EH machinery, of the value `1`, at establisher+52 — the catch object, one word wide
+for a four-byte `int`.
 
-**So the release stays off the unwind leg**, and the leak §9.12 described stays. Everything the
-release needs is now in place — the storage dominates the cleanup region, the slot starts null,
-the predicate is shared — and turning it on is one `mlirGenDisposable` → `mlirGenScopeExit` at
-each of the two cleanup sites, marked in the source. The order of work changed as a result: the
-JIT unwind defect has to be fixed before step 5 can finish, and it is worth fixing on its own
-account, since it silently miscompiles ordinary `try`/`catch`-with-`using` code in the default
-`--emit=jit --opt` configuration.
+**The fix** gives each catchable type its real size: `int` is 4 and `double` is 8 on every
+target, while the pointer-shaped ones (string, opaque pointer, class reference) take
+`compileOptions.sizeBits / 8`, since those genuinely do follow the architecture flag. Both
+helpers were wrong identically and both are fixed; leaving one behind is the classic trap with a
+duplicated table. Worth recording while in there: the whole name table in
+`LLVMRTTIHelperVCWin32Const.h` is 64-bit MSVC mangling (`PEA` is a `__ptr64` pointer, and
+pointer entries bake `@88` into the symbol), so a 32-bit target needs its own table, not just a
+different size.
 
-New test: `test/tester/tests/00try_using_catch.ts`, registered AOT-only
-(`test-compile-00-try-using-catch`) — it pins the shape above as correct when compiled, and the
-JIT variant is deliberately absent because it crashes. Writing it turned up one more thing worth
-recording: moving the `using` one scope deeper, into an `if` inside the try body, crashes the
-*compiler* in every memory model. That is §9.11's second item — a synthesized cleanup `TryOp`
-nested inside a real `TryOp`'s body — still open, and it is why the test covers only the flat
-shape. Full release suite green: 859/859.
+New test: `test/tester/tests/00try_using_catch.ts`, run under all three models
+(`test-compile-00-try-using-catch`, `test-jit-00-try-using-catch`,
+`test-jit-rc-try-using-catch`, `test-jit-none-try-using-catch`). It covers the caught-`int` case
+that was broken and a caught `number`, which is genuinely eight bytes and has to keep working
+now that `int` narrowed. Writing it turned up one more thing worth recording: moving the `using`
+one scope deeper, into an `if` inside the try body, crashes the *compiler* in every memory
+model. That is §9.11's second item — a synthesized cleanup `TryOp` nested inside a real
+`TryOp`'s body — still open, and it is why the test covers only the flat shape.
+
+Full release suite green: 862/862.

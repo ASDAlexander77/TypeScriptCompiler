@@ -672,11 +672,9 @@ class MLIRGenImpl
     // references its locals took. In that order - a disposable is still usable while its
     // `[Symbol.dispose]()` runs, and dropping the last reference first could have freed it.
     //
-    // The unwind leg is *able* to call this now - a scope that owes a release has its storage
+    // The unwind leg calls this too. It can, because a scope that owes a release has its storage
     // hoisted out in front of the `TryOp` (allocateScopeOwnedVarsOutsideOfOperation), so the slot
-    // dominates the cleanup region as well as the body - but it still calls only
-    // mlirGenDisposable, because a release inside a cleanup funclet trips a JIT-only unwind
-    // defect that predates this. See docs/reference-counting-evaluation.md §9.15.
+    // dominates the cleanup region as well as the body.
     mlir::LogicalResult mlirGenScopeExit(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
         EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, loopLabel, genContext));

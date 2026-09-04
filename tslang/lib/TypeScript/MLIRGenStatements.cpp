@@ -228,13 +228,11 @@ namespace mlirgen
 
             builder.create<mlir_ts::ResultOp>(location);
 
-            // cleanup, reached only from the unwind edge. Disposal only, still: the owned
-            // storage now dominates this region and the release verifies and runs correctly
-            // AOT, but a release here makes the cleanup funclet use one more callee-saved
-            // register and that trips a pre-existing JIT-only Win64 unwind defect (§9.15).
-            // mlirGenScopeExit is the one-line change once that is fixed.
+            // cleanup: everything the body's scope owes, reached only from the unwind edge. The
+            // storage it names was hoisted out in front of the TryOp, so it dominates here as
+            // well as in the body.
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
             builder.create<mlir_ts::ResultOp>(location);
         }
@@ -1062,11 +1060,9 @@ namespace mlirgen
 
             // cleanup
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
-            // we need to call dispose for those which are in "using"
-            // usingVars are empty here. Disposal only, though the owned storage now dominates
-            // this region as well - see the same note in mlirGenBlockWithUnwindCleanup and
-            // §9.15 for why the release is not emitted here yet.
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+            // dispose what "using" declared and release what the body's locals took; their
+            // storage was hoisted out in front of the TryOp so it dominates this region too
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
