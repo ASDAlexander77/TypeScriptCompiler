@@ -400,10 +400,17 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    hole, since `[...xs]` is built out of `push`. **Done 2026-09-04, see §9.22.** What `splice`
    *deletes* still drops references without releasing them (a leak, and the first item needing
    emission from `LowerToLLVM` rather than MLIRGen).
-5g. **Arguments and returns**, and with them the inline-record field case 5c left out and the
-   unboxed object literal from 5e.
+5g. **Inline records** — an assignment through a field of a record held inline now retains and
+   releases, conditionally on the storage under it owning. Arguments turned out to need nothing
+   (a parameter's slot is not owned, so they are already borrowed at +0) and returns likewise
+   (the scope-exit release balances the declaration's retain, and the caller receives the birth
+   reference). 5e's unboxed object literal was never broken either — construction balances
+   through the owned local's `RetainSlot`. **Done 2026-09-04, see §9.23.**
 5h. **Remove 5a's slack**: consume a freshly allocated value's birth reference. The point where a
-   mistake stops being an inert leak, and where every test written since 5a gains teeth.
+   mistake stops being an inert leak, and where every test written since 5a gains teeth. Note
+   from 5g: this is what makes returns load-bearing — once the birth reference is consumed, the
+   scope-exit release on `return x` becomes the last one and would free the value before it is
+   returned. Arguments become load-bearing at the same moment.
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -1633,3 +1640,70 @@ the spread literal; `pop` and `shift` as run-path coverage of the transfer; and 
 after a push as a control.
 
 Full release suite green: 891/891.
+
+### 9.23 Step 5g: inline records — and why arguments and returns needed nothing
+
+Three things were queued for this step: arguments, returns, and the inline-record cases §9.19 and
+§9.21 deferred. Checking each before writing anything turned two of the three into no-ops, and
+the third into a live over-release.
+
+**Arguments are already borrowed, and that is the right convention.** A parameter's slot is not
+marked owned, so passing a heap value neither retains nor releases: the callee borrows for the
+duration of the call and the caller's own reference keeps it alive. The hazard worth testing is a
+callee that drops every holder of what it was handed, so the sharpest available case was written —
+a function passed a value plus the class field, the second holder and the array that all point at
+it, dropping all three before reading it. It reads correctly. It has to: every holder that drops
+also retained when it took, so the count cannot fall below the number of live holders. Nothing to
+do here now; the convention becomes load-bearing at 5h.
+
+**Returns already work, for a reason worth naming.** `return x` releases `x`'s owned slot on the
+way out, which balances the retain at its declaration — and what the caller receives is the birth
+reference, unconsumed. That is exactly the +1 transfer `pop` and `shift` perform in §9.22, arrived
+at from the other direction. Verified through two frames. This is also precisely what 5h has to be
+careful about: once the birth reference is consumed by the local's retain, that scope-exit release
+becomes the last one and would free the value before it is returned.
+
+**The inline-record case, however, was an over-release, and the reasoning that deferred it was
+half wrong.** §9.19 excluded a field of a record held inline because "retaining into a record
+nothing releases would leak". The half that does not hold is that an owned local holding a record
+*does* release its fields: `ts.RetainSlot` and `ts.ReleaseSlot` on a record-shaped slot go through
+the type's own routines, and those walk the fields. So the local retained the field's original
+value and released whatever the field held at scope exit, while an assignment in between swapped
+that value taking and giving nothing:
+
+```ts
+let x = new Leaf(1);
+{
+    let a = { item: new Leaf(9) };
+    let b = { item: new Leaf(9) };
+    a.item = x;     // no retain
+    b.item = x;     // no retain
+}                   // both locals release x at scope exit: 2 -> 1 -> 0, freed
+print(x.n);         // 0
+```
+
+**The rule is conditional, unlike the class one.** A class or object field always owns, because
+the instance is a heap block whose release routine always runs over its fields. An inline record's
+field owns exactly when the storage under it owns — so `isOwnedFieldSlot` now recurses through a
+`RefType` base into `isOwningSlot`. A parameter's slot answers no, and so does the scratch storage
+a literal is built in, which is what keeps construction from leaking.
+
+**Construction needed nothing, and that too was checked rather than assumed.** A literal is built
+in scratch storage nobody owns and then copied into the owned local, whose `RetainSlot` retains
+the fields on the way in. That balances, which also closes the unboxed-object-literal item §9.21
+left open — it was never broken, only unexamined.
+
+**Two of the six test cases had to be reshaped after failing to bite**, the same way §9.22's
+spread case did. `recordsInsideAnArray` cannot bite yet at all: the releases would come from the
+array's own release routine, and that never runs while its data block still carries an unconsumed
+birth reference. It is kept, labelled as coverage of the predicate's element/record recursion
+rather than as a counting test. The other needed a third record, because an array holding the same
+value retains it legitimately and that reference has to be spent first. Both were found by running
+each case against the unfixed compiler individually — three slices running, three times this has
+caught a case that passed either way.
+
+The verifier is unchanged once more, same two files and six sites.
+
+New test: `test/tester/tests/00owned_inline_records.ts`, all three models.
+
+Full release suite green: 895/895.

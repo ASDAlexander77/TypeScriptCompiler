@@ -723,10 +723,18 @@ class MLIRGenImpl
     // OwnershipRoutineLogic). So overwriting such a field carries the same debt as overwriting
     // an owned local - the incoming value gains an owner, the outgoing one loses one.
     //
-    // A field of a record held *inline* - a tuple in a local, a parameter's slot - is not this.
-    // Its fields are released by whatever owns the record, which is only tracked when that is
-    // an owned local, and retaining into a record nothing releases would leak. Left out until
-    // the slice that takes arguments, which is where the general answer lives.
+    // A record held *inline* - a tuple in a local - answers the same question, but conditionally:
+    // its fields are released by whatever holds the record, so the field owns exactly when the
+    // storage under it does. That is the recursive case below, and it is why this is not simply
+    // "the base is a heap reference".
+    //
+    // This was first excluded outright, on the reasoning that retaining into a record nothing
+    // releases would leak. The half of that reasoning which was wrong is that an owned local
+    // holding a record *does* release its fields: `ts.RetainSlot` and `ts.ReleaseSlot` on a
+    // record-shaped slot go through the type's own routines, which walk its fields. So the local
+    // retained the field's original value and released whatever the field held at scope exit,
+    // while an assignment in between swapped that value without taking or giving anything - and
+    // two such assignments of one value released it twice and freed it live (§9.23).
     bool isOwnedFieldSlot(mlir::Location location, mlir::Value reference)
     {
         auto propertyRefOp = reference.getDefiningOp<mlir_ts::PropertyRefOp>();
@@ -735,7 +743,18 @@ class MLIRGenImpl
             return false;
         }
 
-        if (!isa<mlir_ts::ClassType, mlir_ts::ObjectType>(propertyRefOp.getObjectRef().getType()))
+        auto objectRef = propertyRefOp.getObjectRef();
+        if (isa<mlir_ts::RefType>(objectRef.getType()))
+        {
+            // an inline record: it owns its fields only if something owns the record. A
+            // parameter's slot, and the scratch storage a literal is built in, both answer no -
+            // nothing releases those, so retaining into them would leak.
+            if (!isOwningSlot(location, objectRef))
+            {
+                return false;
+            }
+        }
+        else if (!isa<mlir_ts::ClassType, mlir_ts::ObjectType>(objectRef.getType()))
         {
             return false;
         }
