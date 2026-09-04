@@ -1261,16 +1261,34 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto i8PtrTy = mth.getOpaqueType();
 
         // find catch var
+        //
+        // This region walk must stop at a nested `try`: a `try/catch` written inside a catch
+        // clause puts a second CatchOp in this region, and picking it up here means setting the
+        // RTTI type from the *inner* clause and pointing catchOpPtr at a catch that belongs to
+        // another try. That is a wrong type filter on this try's landing pad, which faults at
+        // run time in every memory model at every optimisation level (the debug assert below
+        // fires on it first). A nested try is lowered by its own application of this pattern,
+        // which finds its own catch there.
+        //
+        // Pre-order, because `skip()` only prunes the regions still to come - a post-order walk
+        // has already visited them by the time the callback sees the TryOp.
         Operation *catchOpPtr = nullptr;
         auto visitorCatchContinue = [&](Operation *op) {
+            if (op != tryOp.getOperation() && isa<mlir_ts::TryOp>(op))
+            {
+                return WalkResult::skip();
+            }
+
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
                 rttih.setType(cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType());
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
+
+            return WalkResult::advance();
         };
-        tryOp.getCatches().walk(visitorCatchContinue);
+        tryOp.getCatches().walk<mlir::WalkOrder::PreOrder>(visitorCatchContinue);
 
         // set TryOp -> child TryOp
         auto visitorTryOps = [&](Operation *op) {

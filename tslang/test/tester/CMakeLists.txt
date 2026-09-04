@@ -1158,6 +1158,12 @@ add_test(NAME test-jit-00-alloc-in-catch COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-rc-alloc-in-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
 add_test(NAME test-jit-none-alloc-in-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
 
+# A try/catch inside a catch clause - crashed in every model at every optimisation level.
+add_test(NAME test-compile-00-nested-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-00-nested-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-rc-nested-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-none-nested-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+
 # `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
 # rename. One test, so a future change to the model plumbing cannot silently break it.
 add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")

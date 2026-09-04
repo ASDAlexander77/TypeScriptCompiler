@@ -83,10 +83,25 @@ function twoAllocsInCatch() {
     return total;
 }
 
-// NOT covered here: an allocation inside a try/catch nested within a catch clause. A nested
-// try/catch inside a catch crashes on its own, with no allocation in it at all, in every memory
-// model and at every optimisation level - a separate bug from this one, and one that would make
-// this file fail for a reason it is not about.
+// a handler nested inside another handler. This one had to wait: a try/catch inside a catch
+// crashed on its own, with nothing allocated in it, until 00nested_catch.ts's two fixes landed.
+function allocInNestedCatch() {
+    let total = 0;
+    try {
+        throw 1;
+    }
+    catch (e: TypeOf<1>) {
+        try {
+            throw 2;
+        }
+        catch (inner: TypeOf<2>) {
+            const leaf = new Leaf(11);
+            total = leaf.get();
+        }
+    }
+
+    return total;
+}
 
 // the handler allocates and then throws on, so the funclet is left by unwinding rather than by
 // falling off its end
@@ -109,6 +124,7 @@ function main() {
     assert(allocInFinally() == 5, "and in a finally clause");
     assert(arrayInCatch() == 12, "an array literal allocated in a catch clause is usable there");
     assert(twoAllocsInCatch() == 6, "two allocations in one handler both survive");
+    assert(allocInNestedCatch() == 11, "a handler nested inside a handler allocates too");
 
     let rethrown = false;
     try {

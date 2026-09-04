@@ -2023,3 +2023,52 @@ New tests: `00alloc_in_catch.ts` in all four variants, plus `-mm=none` variants 
 and `04disposable.ts` - the file that caught this had no non-`gc` coverage of its own.
 
 Full release suite green: 909/909. Verifier: two files, unchanged.
+
+### 9.29 A `try`/`catch` inside a `catch` clause
+
+Not RC's, and older than any of this - §9.28 only found it because a test written for that step
+tried to allocate inside a nested handler. It crashed in every memory model, at every optimisation
+level, with nothing allocated in it at all. A try nested in a try *body* or in a `finally` always
+worked; only the catch clause was affected, which is why nothing had caught it.
+
+Two independent bugs, the second visible only once the first was fixed. Both are confirmed
+individually load-bearing by disabling each alone and rebuilding.
+
+**1. The catch-variable search descended into the nested try.** `TryOpLowering` finds its clause's
+`ts.CatchOp` by walking the catches region, and the walk went straight through a nested `ts.TryOp`
+into that try's own catches. It picked up the *inner* clause's catch, so the outer try's landing
+pad got its RTTI type filter from the wrong clause. The debug build says this outright - the
+`assert(!catchOpPtr)` on the second catch found - which is worth remembering: the release build
+faulted with no diagnostic at all and no usable stack, and the debug build named the line in one
+run without a debugger. The walk is now pre-order and skips a nested try, because `skip()` only
+prunes regions still to come and the default post-order has already visited them.
+
+**2. A catch clause can be ended twice over.** §9.14 has a `throw` leaving a catch clause end that
+catch ahead of itself. A nested `try`'s throw is such a throw, so the enclosing clause is already
+ended by the time the outer try emits its own end-of-catch marker - and the surplus marker became
+the region's `end` instruction, which is where the catchret goes, so it survived into the emitted
+code. `__cxa_end_catch` is an Itanium marker with no Win64 counterpart, so it failed to link
+(`Symbols not found: [ __cxa_end_catch ]`). Win32ExceptionPass now skips past end-of-catch markers
+while looking for a region's end and removes them, which handles any number of them, and removes
+an unclaimed one found with no region open at all.
+
+New test `test/tester/tests/00nested_catch.ts`, four variants: a catch in a catch, three levels
+deep, an inner clause that is never taken, a nested try with a `finally` of its own, the whole
+thing inside a loop, an inner clause that throws past the outer one, and the try-in-body and
+try-in-finally shapes that always worked, kept alongside so a fix here cannot quietly break them.
+`00alloc_in_catch.ts` regained the nested case it had to leave out.
+
+**The direct test of bug 1 is a type test, not a value test.** `outerFilterIsItsOwn` throws a
+string caught by the outer clause and an int caught by the inner, so an outer pad carrying the
+inner clause's filter would not catch the string at all.
+
+**Found while writing these, and deliberately NOT fixed: reading a catch variable's value is
+broken on its own.** No nesting involved. `try { throw 2 } catch (v: int) { t = v }` reads 0 rather
+than 2 - but only in a module that throws just that one type; adding the other clauses of
+`00try_catch.ts` to the same file makes it read correctly, which is why that test passes and this
+went unnoticed. Reproduced in every model, and at `-O3` a separate variant of the same shape reads
+0 where `-O0` reads 3. `00nested_catch.ts` therefore checks which clause runs and in what order and
+never reads a catch value; nothing there should be made to depend on a broken feature. A third bug,
+in the same subsystem, still open.
+
+Full release suite green: 913/913.

@@ -72,6 +72,13 @@ struct Win32ExceptionPassCode
     {
     }
 
+    static bool isEndCatchCall(llvm::Instruction *I)
+    {
+        auto *CI = dyn_cast<CallInst>(I);
+        return CI && CI->getCalledFunction() != nullptr && CI->getCalledFunction()->hasName() &&
+               CI->getCalledFunction()->getName() == "__cxa_end_catch";
+    }
+
     bool runOnFunction(Function &F)
     {
         auto MadeChange = false;
@@ -101,6 +108,15 @@ struct Win32ExceptionPassCode
             // it is outsize of catch/finally region
             if (!catchRegion)
             {
+                // A surplus end-of-catch marker, with no region left for it to close. See the
+                // note at the `endOfCatch` handling below for where they come from; either way
+                // one that survives is an unresolved symbol at link time, so it goes.
+                if (isEndCatchCall(&I))
+                {
+                    toRemoveWorkSet.push_back(&I);
+                    MadeChange = true;
+                }
+
                 continue;
             }
 
@@ -113,6 +129,24 @@ struct Win32ExceptionPassCode
 
             if (endOfCatch)
             {
+                // A second end-of-catch marker can follow the one that just closed this region,
+                // and it must not become the region's `end`: `end` is where the catchret goes,
+                // and leaving an `__cxa_end_catch` there keeps an Itanium marker with no Win64
+                // counterpart in the emitted code - an unresolved symbol at link time.
+                //
+                // They arise wherever a catch clause is ended twice over. A `try/catch` written
+                // inside a catch clause is the case that found this: the inner `throw` ends the
+                // enclosing catch ahead of itself (§9.14), and the outer try then emits its own
+                // end marker as well, so the tail carries both. Skipping past them - staying in
+                // this state rather than leaving it - handles any number of them and leaves the
+                // real end instruction to close the region.
+                if (isEndCatchCall(&I))
+                {
+                    toRemoveWorkSet.push_back(&I);
+                    MadeChange = true;
+                    continue;
+                }
+
                 // BR, or instraction without BR
                 catchRegion->end = &I;
                 endOfCatch = false;
