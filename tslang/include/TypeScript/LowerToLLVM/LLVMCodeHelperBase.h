@@ -306,16 +306,32 @@ class LLVMCodeHelperBase
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        CodeLogicHelper clh(op, rewriter);
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto loc = op->getLoc();
 
+        // A zeroed block is asked for as `calloc`, not as `malloc` followed by a zero-fill, and
+        // that is not cosmetic. LLVM recognises the pair and rewrites it into `calloc` itself -
+        // DeadStoreElimination's tryFoldIntoCalloc - and it builds the replacement call without
+        // carrying the original's operand bundles over. A pair sitting inside a Win64 catch
+        // funclet therefore loses its `funclet` bundle, WinEHPrepare stops seeing those
+        // instructions as part of the funclet, and the handler is emitted as a bare prologue
+        // with no body and no catchret: it faults the moment it runs. `new` inside a `catch`
+        // was enough to hit it. Asking for calloc outright leaves nothing for that fold to
+        // rewrite. Only `gc` was ever safe here, and by accident - GCPass deletes the zero-fill,
+        // so the pattern never survived to LLVM. See §9.28.
+        //
+        // The wasm allocator fork has no `ts_calloc`, and no Win64 funclets either, so it keeps
+        // the two-step form.
+        auto zeroing = memAllocMode == MemoryAllocSet::Zero;
+        auto useCalloc = zeroing && !compileOptions.isWasm;
+
         auto i8PtrTy = th.getPtrType();
-        auto mallocFuncOp = getOrInsertFunction(
-            compileOptions.isWasm ? "ts_malloc" : "malloc", 
-            th.getFunctionType(i8PtrTy, {llvmIndexType}));
+        auto mallocFuncOp = useCalloc
+            ? getOrInsertFunction("calloc", th.getFunctionType(i8PtrTy, {llvmIndexType, llvmIndexType}))
+            : getOrInsertFunction(compileOptions.isWasm ? "ts_malloc" : "malloc",
+                                  th.getFunctionType(i8PtrTy, {llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
 
@@ -333,23 +349,36 @@ class LLVMCodeHelperBase
         auto headerSizeValue = createHeapBlockHeaderSizeConstant(loc, llvmIndexType);
         mlir::Value paddedSize = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{effectiveSize, headerSizeValue});
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{paddedSize});
-        if (memAllocMode == MemoryAllocSet::Atomic)
+        mlir::Value blockPtr;
+        if (useCalloc)
         {
-            callResults->setAttr("mode", rewriter.getStringAttr("atomic"));
+            auto oneValue =
+                rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+            blockPtr = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{oneValue, paddedSize}).getResult();
         }
-
-        auto blockPtr = callResults.getResult();
-
-        if (memAllocMode == MemoryAllocSet::Zero)
+        else
         {
-            // NOTE: zero the whole block, header included, rather than just the payload. That keeps
-            // this memset's first operand the raw allocation call itself, which is what GCPass's
-            // removeRedundantMemSet matches on in order to drop it when GC_malloc already zeroed.
-            // TODO: replace with @llvm.memset.p0.i64 & @llvm.memset.p0.i32
-            auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), llvmIndexType}));
-            auto const0 = clh.createI32ConstantOf(0);
-            rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{blockPtr, const0, paddedSize});
+            auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{paddedSize});
+            if (memAllocMode == MemoryAllocSet::Atomic)
+            {
+                callResults->setAttr("mode", rewriter.getStringAttr("atomic"));
+            }
+
+            blockPtr = callResults.getResult();
+
+            if (zeroing)
+            {
+                // wasm only, per useCalloc above. Zero the whole block, header included, rather
+                // than just the payload, so the destination stays the allocation call itself -
+                // which is what GCPass's redundant-zero-fill check matches on.
+                //
+                // The intrinsic rather than a call to `memset`: `ts_malloc` is not a name LLVM
+                // recognises, so the calloc fold described above cannot reach this pair, but the
+                // intrinsic is the form LLVM converts a memset call into at -O1 anyway and the
+                // one this code always meant to emit.
+                auto const0 = rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0));
+                rewriter.create<LLVM::MemsetOp>(loc, blockPtr, const0, paddedSize, /*isVolatile=*/false);
+            }
         }
 
         if (compileOptions.isRefCounted())
@@ -369,7 +398,7 @@ class LLVMCodeHelperBase
             // HEAP_BLOCK_IMMORTAL, so the block leaks instead of being freed out from under a
             // live reference.
             //
-            // Written after any memset above, which zeroes the header along with the payload.
+            // Written after the zeroing above, which covers the header along with the payload.
             // Only under `-mm=rc` -- under `gc` nothing reads the word, and a store per
             // allocation on the hot path is not worth paying for dead code.
             rewriter.create<LLVM::StoreOp>(

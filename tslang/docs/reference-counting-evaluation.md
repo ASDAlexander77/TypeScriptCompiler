@@ -432,11 +432,16 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    return needing a cast retains the wrong value. Benign (the extra reference is simply never
    taken, so it leaks) but it excludes 92 functions from 5k's classification. Fix is to apply the
    cast before the retain.
-5l. **Discarded temporaries** — `f();` and `arr.pop();` drop a +1 nobody consumes. Needs a
-   last-use notion, not a receiver.
-6. **Flip the allocator under the flag.** GC stays the default. Note `needsGCRuntime()` is
-   currently true for `rc` too, so Boehm still reclaims under `-mm=rc` — which is why no memory
-   measurement taken before this step demonstrates anything about reference counting.
+5l. **Discarded temporaries** — `f();`, `arr.pop();`, and every call result used as an argument
+   without being bound to anything, which is what expression-shaped code is made of. Needs a
+   last-use notion, not a receiver. **Step 6 reclassified this as the dominant leak rather than a
+   loose end**: `raytrace.ts` reclaims nothing at all under `-mm=rc` for exactly this reason
+   (§9.28). Next slice.
+6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
+   names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
+   memory measurement under it finally means something — a million-iteration allocation loop stays
+   flat at 3.8 MB where `none` reaches 172.8 MB. Flushed out a Win64 crash that was never RC's:
+   allocating inside a catch funclet, latent under `-mm=none` since long before this work.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
 
@@ -614,9 +619,10 @@ differently" — spelled as a single boolean. `-nogc` stays as a deprecated alia
 and `CompileOptions` grew `needsGCRuntime()` and `isRefCounted()` so no caller reads the model
 enum directly.
 
-`-mm=rc` currently means *counts are maintained and the release machinery is generated*; the
+`-mm=rc` at this point means *counts are maintained and the release machinery is generated*; the
 collector still runs and is still what frees. That is deliberately an intermediate: it makes the
-header word real without anything depending on it being right.
+header word real without anything depending on it being right. It held until step 6 (§9.28), which
+took the collector out from under `rc` entirely.
 
 **Allocation initialises the count.** `_MemoryAlloc` stores 1 into the block header, after any
 memset, so a block starts owned by exactly the reference being returned. **Only under
@@ -1136,8 +1142,9 @@ half; the four shapes §9.13 fixed all still work.
 
 The same predicate also excludes those clauses from ownership (§9.12): under `-mm=rc` a release
 in a catch clause is a call inside a funclet, which is the fragile construct above, and
-`catch (e: int) { let r = new Res(); }` segfaulted. Locals there are simply not owned now —
-they leak, which the collector still reclaims, the trade every other exclusion in §9.12 makes.
+`catch (e: int) { let r = new Res(); }` segfaulted. Locals there are simply not owned now — they
+leak, the trade every other exclusion in §9.12 makes. (That leak was covered by the collector when
+this was written; since step 6 (§9.28) it is a real one under `-mm=rc`.)
 Both holes existed because no test had a `using` or a heap local inside a catch clause;
 `04disposable.ts` now has both, and `03disposable.ts`/`04disposable.ts` gained `-mm=rc`
 variants, which is what would have caught the ownership half.
@@ -1947,3 +1954,72 @@ arrow function. Each calls `churn()` between the last release and the read, for 
 learned the hard way.
 
 Full release suite green: 903/903. Verifier: two files, unchanged.
+
+### 9.28 Step 6: the allocator flips, and the first measurement that means anything
+
+`needsGCRuntime()` returned true for `rc` from §9.6 onward, so under `-mm=rc` Boehm was still
+allocating and still collecting behind the counts. That was the right call while the insertion
+points were being built one at a time - a missing release stayed an inert leak - but it meant no
+memory number taken under `rc` said anything about reference counting. The predicate now names
+exactly one model, `gc`. Under `rc` the program allocates from `malloc`, frees through `free`, and
+links no libgc; what the counts miss now leaks, and shows.
+
+**What the flip cost: one crash, and it was not RC's.** `test-jit-rc-disposable-scopes` failed
+immediately - and the same file failed under `-mm=none` too, on a build with none of this work in
+it. A `using` inside a `catch` clause, at `-O3`, on Win64. Narrowed to a bare `new` inside a
+handler whose result is used there.
+
+The chain: a handler is its own funclet, and every call inside one has to carry a `funclet`
+operand bundle naming its pad. `Win32ExceptionPass` stamps them correctly - verified on emitted IR
+at `--opt --opt_level=0`, where the allocation and its zero-fill both carry the bundle. LLVM then
+rewrites `malloc` + `memset(0)` into `calloc`, and builds the replacement **without carrying the
+operand bundles over**. WinEHPrepare stops seeing the instructions after it as part of the
+funclet, and the handler is emitted as a bare prologue: no body, no `catchret`. It faults the
+moment it runs.
+
+Each step was checked rather than reasoned about. Stock `opt -O3` on our own pre-optimisation IR
+reproduces the dropped bundle, so the defect is LLVM's, not the pass's. `llc` on that output shows
+the empty funclet directly; hand-adding the bundle back to the `calloc` restores the full handler
+body and its `catchret`. `-print-after-all` names the pass: **DSE's `tryFoldIntoCalloc`**, not
+SimplifyLibCalls, which is why emitting the zero-fill as `llvm.memset` rather than a `memset` call
+fixed `none` but left `rc` still crashing.
+
+**The fix is to ask for what we mean.** A zeroed block is now requested as `calloc` outright, so
+there is no pair left for that fold to rewrite; GCPass maps it onto `GC_malloc` - rewritten rather
+than renamed, since the arity differs - and drops the now-unreferenced declaration. The wasm fork
+has no `ts_calloc` and no Win64 funclets, so it keeps the two-step form, as the intrinsic.
+
+Only `gc` was ever safe here, and by accident: GCPass deletes the zero-fill, so the pattern the
+fold looks for never survived to LLVM. That is why the new test needs its non-`gc` variants to be
+worth anything, and the teeth were confirmed the usual way - with the fix disabled and rebuilt,
+`00alloc_in_catch.ts` faults under `-mm=rc`.
+
+**Found and left alone:** a try/catch nested *inside* a catch clause crashes with no allocation in
+it at all, in every memory model and at every optimisation level. Unrelated to this, and older
+than it; the case is called out in `00alloc_in_catch.ts` rather than covered by it.
+
+**The measurement, at last.** Peak working set, AOT executables:
+
+| program | gc | rc | none |
+|---|---|---|---|
+| allocation churn, 1M iterations, `-O0` | 4.2 MB | **3.8 MB** | 172.8 MB |
+| `raytrace.ts`, `-O3` | 4.1 MB | **129.5 MB** | 106.3 MB |
+
+The first line is what this whole arc was for: a value bound to an owned local is allocated,
+released and reclaimed a million times over, flat, without a collector - marginally below Boehm.
+(At `-O3` that loop vanishes in all three models, allocations and release calls together, which is
+its own small piece of good news about the generated code.)
+
+The second line is the honest other half. `raytrace.ts` reclaims **nothing**: it is built almost
+entirely out of `return new Vector(...)` used inline - `Vector.plus(Vector.times(k, a), b)` - so
+every intermediate is a call result passed straight as an argument and never bound to any slot.
+Each carries the +1 its return retained (§9.24) with no owner to give it back. That is item 5l,
+discarded temporaries, and this measurement reclassifies it: not a nicety at the end of the list
+but the dominant leak in ordinary expression-shaped code. `rc` sitting *above* `none` is the same
+story seen from the other side - the release calls are uses, so fewer dead allocations get
+optimised away, and nothing is reclaimed to pay for it.
+
+New tests: `00alloc_in_catch.ts` in all four variants, plus `-mm=none` variants of `03disposable.ts`
+and `04disposable.ts` - the file that caught this had no non-`gc` coverage of its own.
+
+Full release suite green: 909/909. Verifier: two files, unchanged.

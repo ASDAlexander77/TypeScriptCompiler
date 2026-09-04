@@ -28,11 +28,18 @@ struct CompileOptions
     bool strictNullChecks;
     bool enableFastMath;
 
-    // Whether the Boehm runtime has to be present: it is what reclaims under both `gc` and,
-    // for now, `rc`.
+    // Whether the Boehm runtime has to be present. Only `gc` needs it: it is the model whose
+    // reclamation *is* the collector. `rc` frees through the reference counts it maintains and
+    // `none` frees nothing, so both allocate straight from `malloc` and neither links libgc.
+    //
+    // This was true for `rc` too while the retain/release insertion points were being built
+    // (§9.6 through §9.27). Boehm collecting behind them made a missing release invisible, which
+    // was the point at the time - but it also meant no memory measurement taken under `rc` said
+    // anything about reference counting, since the collector was doing the reclaiming either
+    // way. See docs/reference-counting-evaluation.md §9.28.
     bool needsGCRuntime() const
     {
-        return memoryModel != MemoryModelNone;
+        return memoryModel == MemoryModelGC;
     }
 
     // Whether allocations maintain a reference count in the block header.

@@ -116,7 +116,7 @@ cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print s
 
 cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of compiled code"),
                                        cl::values(clEnumValN(MemoryModelGC, "gc", "garbage collection (default)")),
-                                       cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting (in development; the collector still runs)")),
+                                       cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting, no collector (in development; cycles and anything the counts miss leak)")),
                                        cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection. Deprecated alias for '-mm=none'"), cl::cat(TypeScriptCompilerCategory));

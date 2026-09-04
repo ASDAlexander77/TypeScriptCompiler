@@ -22,6 +22,9 @@ namespace mlir_ts = mlir::typescript;
 namespace
 {
 
+// what LLVMCodeHelperBase::_MemoryAlloc asks for when it wants a zeroed block
+constexpr auto CALLOC_NAME = "calloc";
+
 class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 {
   public:
@@ -40,6 +43,9 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: BEFORE DUMP: \n" << m << "\n";);
 
         auto added = false;
+        llvm::SmallVector<LLVM::MemsetOp> redundantMemSets;
+        llvm::SmallVector<LLVM::CallOp> callocCalls;
+        llvm::SmallVector<LLVM::LLVMFuncOp> callocDecls;
         m.walk([&](mlir::Operation *op) {
             // process gctors first
             if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
@@ -51,6 +57,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 }
 
                 auto name = std::string(symbolAttr.getValue());
+                if (name == CALLOC_NAME)
+                {
+                    callocDecls.push_back(funcOp);
+                    return;
+                }
+
                 if (!funcOp.getBody().empty())
                 {
                     if (!added)
@@ -69,6 +81,17 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 renameFunction(name, funcOp);
             }
 
+            if (auto memsetOp = dyn_cast_or_null<LLVM::MemsetOp>(op))
+            {
+                if (zeroesAGCAllocation(memsetOp))
+                {
+                    // erased after the walk, not during it
+                    redundantMemSets.push_back(memsetOp);
+                }
+
+                return;
+            }
+
             if (auto callOp = dyn_cast_or_null<LLVM::CallOp>(op))
             {
                 if (!callOp.getCallee().has_value())
@@ -77,16 +100,22 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 }
 
                 auto name = callOp.getCallee().value();
-                if (name == "memset")
+                if (name == CALLOC_NAME)
                 {
-                    removeRedundantMemSet(callOp);
-
+                    callocCalls.push_back(callOp);
                     return;
                 }
 
                 renameCall(name, callOp);
             }
         });
+
+        for (auto memsetOp : redundantMemSets)
+        {
+            memsetOp.erase();
+        }
+
+        replaceCallocWithGCMalloc(m, callocCalls, callocDecls);
 
         if (!added)
         {
@@ -104,9 +133,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: AFTER DUMP: \n" << m << "\n";);
     }
 
+    // `calloc` is deliberately absent here: it takes two arguments where GC_malloc takes one, so
+    // a rename in place would leave a call whose arity disagrees with its callee. It goes through
+    // replaceCallocWithGCMalloc instead.
     bool mapName(StringRef name, StringRef modeName, StringRef &newName)
     {
-        if (name == "malloc" || name == "calloc")
+        if (name == "malloc")
         {
             if (modeName == "atomic")
             {
@@ -190,6 +222,13 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         llvm::SmallVector<mlir::Attribute> passthrough;
         if (auto existing = funcOp.getPassthroughAttr())
         {
+            // one declaration, many call sites: this runs once per call for the injected
+            // declarations, and a second `allockind` entry would be a duplicate LLVM attribute
+            if (llvm::is_contained(existing, kindEntry))
+            {
+                return;
+            }
+
             passthrough.append(existing.begin(), existing.end());
         }
         passthrough.push_back(kindEntry);
@@ -230,6 +269,44 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         markAsAllocatorIfNeeded("GC_malloc_atomic", gcInitFuncOp);
     }
 
+    // `calloc(1, n)` is how a zeroed block is asked for (LLVMCodeHelperBase::_MemoryAlloc), and
+    // GC_malloc already returns zeroed memory - so the count argument is dropped and the size
+    // handed straight over. Rewritten rather than renamed because the arity differs; a rename in
+    // place would leave a two-argument call to a one-argument callee.
+    //
+    // The declarations go too. Every `calloc` in the module came from _MemoryAlloc, so once the
+    // calls are gone nothing names them, and a declaration left behind would make the linked
+    // program depend on libc's allocator for a symbol it never calls.
+    void replaceCallocWithGCMalloc(mlir::ModuleOp module, llvm::SmallVector<LLVM::CallOp> &calls,
+                                   llvm::SmallVector<LLVM::LLVMFuncOp> &decls)
+    {
+        if (calls.empty() && decls.empty())
+        {
+            return;
+        }
+
+        PatternRewriter rewriter(module.getContext());
+        TypeHelper th(module.getContext());
+
+        for (auto callOp : calls)
+        {
+            LLVMCodeHelper ch(callOp, rewriter, nullptr, tsContext.compileOptions);
+            auto sizeValue = callOp.getOperand(1);
+            auto gcMallocFuncOp = ch.getOrInsertFunction(
+                "GC_malloc", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{sizeValue.getType()}));
+            markAsAllocatorIfNeeded("GC_malloc", gcMallocFuncOp);
+
+            rewriter.setInsertionPoint(callOp);
+            auto gcMallocCall = rewriter.create<LLVM::CallOp>(callOp->getLoc(), gcMallocFuncOp, ValueRange{sizeValue});
+            rewriter.replaceOp(callOp, gcMallocCall.getResults());
+        }
+
+        for (auto funcOp : decls)
+        {
+            funcOp.erase();
+        }
+    }
+
     void injectInit(LLVM::LLVMFuncOp funcOp)
     {
         PatternRewriter rewriter(funcOp.getContext());
@@ -243,24 +320,19 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
     }
 
-    void removeRedundantMemSet(LLVM::CallOp memSetCallOp)
+    // GC_malloc hands back zeroed memory, so zeroing the block it just returned is wasted work.
+    bool zeroesAGCAllocation(LLVM::MemsetOp memSetOp)
     {
-        // this is memset, find out if it is used by GC_malloc
-        LLVM_DEBUG(llvm::dbgs() << "DBG: " << memSetCallOp.getOperand(0) << "\n";);
-        if (auto probMemAllocCall = dyn_cast_or_null<LLVM::CallOp>(memSetCallOp.getOperand(0).getDefiningOp()))
+        LLVM_DEBUG(llvm::dbgs() << "DBG: " << memSetOp.getDst() << "\n";);
+        auto probMemAllocCall = dyn_cast_or_null<LLVM::CallOp>(memSetOp.getDst().getDefiningOp());
+        if (!probMemAllocCall || !probMemAllocCall.getCallee().has_value())
         {
-            if (!probMemAllocCall.getCallee().has_value())
-            {
-                return;
-            }
-
-            auto name = probMemAllocCall.getCallee().value();
-            if (name == "GC_malloc")
-            {
-                PatternRewriter rewriter(memSetCallOp.getContext());
-                rewriter.replaceOp(memSetCallOp, ValueRange{probMemAllocCall.getResult()});
-            }
+            return false;
         }
+
+        // The allocation is renamed before this runs - the walk reaches it first, since it
+        // defines the pointer being zeroed - so the name to match is the GC one.
+        return probMemAllocCall.getCallee().value() == "GC_malloc";
     }
 };
 } // end anonymous namespace

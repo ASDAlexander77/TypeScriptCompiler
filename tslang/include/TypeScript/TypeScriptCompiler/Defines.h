@@ -31,9 +31,10 @@ enum MemoryModel
 {
     // Boehm-Demers-Weiser collector. The default, and the only model that reclaims today.
     MemoryModelGC,
-    // Reference counting. In development: counts are maintained and the release machinery is
-    // generated, but nothing inserts retains or releases yet, so the collector still runs and
-    // is still what actually frees. See section 9.6.
+    // Reference counting. In development, and now standing on its own: the block header holds
+    // the count, the insertion points maintain it, and reaching zero frees through `free`. No
+    // collector runs behind it, so what the counts miss - a cycle, an unowned case not yet
+    // covered - leaks rather than being swept up. See sections 9.6 and 9.28.
     MemoryModelRC,
     // No reclamation at all.
     MemoryModelNone

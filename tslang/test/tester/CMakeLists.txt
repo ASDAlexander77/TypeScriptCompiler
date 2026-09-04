@@ -1147,7 +1147,16 @@ add_test(NAME test-jit-none-owned-call-results COMMAND test-runner -jit -mm=none
 add_test(NAME test-jit-rc-try-using-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-none-try-using-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-rc-disposable-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
+add_test(NAME test-jit-none-disposable-scopes COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
 add_test(NAME test-jit-rc-disposable-unwind COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+add_test(NAME test-jit-none-disposable-unwind COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+
+# Allocating inside a Win64 catch/finally funclet - the shape that only faults once the model
+# stops going through the collector, so it needs both non-gc variants to be worth anything.
+add_test(NAME test-compile-00-alloc-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-00-alloc-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-rc-alloc-in-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-none-alloc-in-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
 
 # `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
 # rename. One test, so a future change to the model plumbing cannot silently break it.
