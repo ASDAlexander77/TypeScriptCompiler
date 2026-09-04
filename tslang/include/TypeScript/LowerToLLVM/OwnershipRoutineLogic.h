@@ -536,28 +536,30 @@ class OwnershipRoutineLogic
         });
     }
 
-    // Both directions for an interface value, which differ only in which descriptor slot they
-    // read: load the tag beside `this`, and hand the address of the `this` field to the
-    // concrete type's own routine. That address is what the routine wants either way - a
-    // release or retain routine takes the storage holding a value, and the interface's second
-    // field is exactly the storage holding the class or object reference.
+    // Both directions for a value shaped { .., this, type } - an interface, and a bound or
+    // hybrid function. They differ only in which descriptor slot they read: load the tag beside
+    // `this`, and hand the address of the `this` field to the concrete type's own routine. That
+    // address is what the routine wants either way - a release or retain routine takes the
+    // storage holding a value, and the second field is exactly the storage holding the class,
+    // object or capture-box reference.
     //
     // The tag is checked before anything reads through it: getRecordPtrFromTag walks backwards
     // from the tag to the record, so a null tag would be dereferenced, not skipped, by the
-    // null check inside releaseViaDescriptor.
-    void releaseViaInterfaceTag(mlir::Type type, mlir::Value slotPtr, bool retaining)
+    // null check inside releaseViaDescriptor. A null tag is the ordinary case for a function
+    // value that is not a closure, so this is not a corner.
+    void releaseViaTagBesideThis(mlir::Type type, mlir::Value slotPtr, int32_t tagIndex, bool retaining)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
         auto loc = op->getLoc();
         auto ptrTy = th.getPtrType();
-        auto llvmInterfaceType = tch.convertType(type);
+        auto llvmType = tch.convertType(type);
 
-        auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmInterfaceType, slotPtr,
-                                                    ArrayRef<LLVM::GEPArg>{0, INTERFACE_TYPE_INDEX});
+        auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                    ArrayRef<LLVM::GEPArg>{0, tagIndex});
         auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
-        auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmInterfaceType, slotPtr,
+        auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
                                                      ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
 
         emitIfNonNull(tagValue, [&]() {
@@ -570,6 +572,11 @@ class OwnershipRoutineLogic
                 releaseViaDescriptor(tagValue, thisSlot);
             }
         });
+    }
+
+    void releaseViaInterfaceTag(mlir::Type type, mlir::Value slotPtr, bool retaining)
+    {
+        releaseViaTagBesideThis(type, slotPtr, INTERFACE_TYPE_INDEX, retaining);
     }
 
     void buildBody(mlir::Type type, mlir::Value slotPtr)
@@ -637,6 +644,14 @@ class OwnershipRoutineLogic
         if (isa<mlir_ts::InterfaceType>(type))
         {
             releaseViaInterfaceTag(type, slotPtr, /*retaining=*/false);
+            return;
+        }
+
+        // a closure is { func, this, type } and owns its `this` when that `this` is a capture
+        // box - which is what the tag says, and says nothing where it is a bound method
+        if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
+        {
+            releaseViaTagBesideThis(type, slotPtr, CLOSURE_TYPE_INDEX, /*retaining=*/false);
             return;
         }
 
@@ -779,6 +794,13 @@ class OwnershipRoutineLogic
         if (isa<mlir_ts::InterfaceType>(type))
         {
             releaseViaInterfaceTag(type, slotPtr, /*retaining=*/true);
+            return;
+        }
+
+        // copying a closure duplicates its one reference to the capture box and nothing else
+        if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
+        {
+            releaseViaTagBesideThis(type, slotPtr, CLOSURE_TYPE_INDEX, /*retaining=*/true);
             return;
         }
 

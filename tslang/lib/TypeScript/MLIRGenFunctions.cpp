@@ -1530,7 +1530,18 @@ namespace mlirgen
             auto captureType = mcl.CaptureType(captureVars->getValue());
             auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
             auto captured = V(result);
-            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), captured, funcSymbolOp);
+            auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), captured, funcSymbolOp);
+
+            // The capture box was allocated for this closure and nothing else holds it, so the
+            // closure is its owner - which is the one shape of function value that owns its
+            // `this`, and the reason for OWNS_CAPTURE_ATTR_NAME. A closure built here and then
+            // dropped - `apply(v => v.x + base.x, v)` - is released at the end of the block that
+            // made it (§9.30), which is what gives the box back.
+            boundFuncVal->setAttr(OWNS_CAPTURE_ATTR_NAME, builder.getUnitAttr());
+            builder.create<mlir_ts::RetainOp>(location, boundFuncVal);
+            boundFuncVal->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+
+            return V(boundFuncVal);
         }
 
         if (thisValue)

@@ -44,6 +44,12 @@
 // nothing took. `f();` on its own, and - far more commonly - a call result used as an argument
 // and then dropped, which is what expression-shaped code is made of. See §9.30.
 #define OWNED_RESULT_CONSUMED_ATTR_NAME "__owned_result_consumed"
+
+// Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
+// rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
+// only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of
+// the object it is bound to. Set where the closure is built and the difference is known.
+#define OWNS_CAPTURE_ATTR_NAME "__owns_capture"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
@@ -132,6 +138,17 @@
 // Null when `this` owns no heap memory - a null interface, or one made from a value that
 // carries nothing.
 #define INTERFACE_TYPE_INDEX 2
+
+// A bound or hybrid function value is { func, this, type }, and the third word is there for the
+// same reason as an interface's: the `this` of a closure is its capture box, heap-allocated and
+// not named anywhere in the function type, so nothing could give it back. The tag makes it
+// releasable through the box's own routine.
+//
+// Null for every function value that is not a closure over captured variables - a plain function
+// pointer, a bound method, an interface's method slot - which is what keeps `obj.m` from taking
+// ownership of `obj`. Only CreateBoundFunctionOp builds one of these, so there is no path that
+// leaves the slot undefined. See section 9.33.
+#define CLOSURE_TYPE_INDEX 2
 
 #define ARRAY_DATA_INDEX 0
 #define ARRAY_SIZE_INDEX 1

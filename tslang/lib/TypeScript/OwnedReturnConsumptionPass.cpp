@@ -156,6 +156,23 @@ class OwnedReturnConsumptionPass
     // a released one that was still owned is a use-after-free.
     void releaseDiscardedTemporaries(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
+        // Whole generators are left alone, the same way functionReturnsOwned leaves them alone
+        // and for the same reason: what a generator's body looks like here is not what runs.
+        // The state machine cuts its blocks at every resume point afterwards, so a position that
+        // is plainly after a definition now may not be on the path that reaches it later - and
+        // the failure is a dominance error in the affine lowering, not something visible here.
+        // Their temporaries leak, which is the side of the line this arc keeps everything
+        // uncertain on.
+        llvm::DenseSet<mlir::Operation *> generators;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            auto isGenerator = false;
+            funcOp.walk([&](mlir_ts::YieldReturnValOp) { isGenerator = true; });
+            if (isGenerator)
+            {
+                generators.insert(funcOp.getOperation());
+            }
+        });
+
         llvm::SmallVector<mlir::Operation *> discarded;
         module.walk([&](mlir::Operation *op) {
             if (!op->hasAttr(OWNED_RESULT_ATTR_NAME) || op->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
@@ -166,6 +183,14 @@ class OwnedReturnConsumptionPass
             if (op->getNumResults() != 1 || !mth.ownsHeapMemory(op->getLoc(), op->getResult(0).getType()))
             {
                 return;
+            }
+
+            if (auto funcOp = op->getParentOfType<mlir_ts::FuncOp>())
+            {
+                if (generators.contains(funcOp.getOperation()))
+                {
+                    return;
+                }
             }
 
             discarded.push_back(op);
@@ -180,8 +205,11 @@ class OwnedReturnConsumptionPass
             }
 
             auto *block = op->getBlock();
-            auto *terminator = block->getTerminator();
-            if (terminator)
+            if (auto *exiting = firstExitingOpAfter(op))
+            {
+                builder.setInsertionPoint(exiting);
+            }
+            else if (auto *terminator = block->getTerminator())
             {
                 builder.setInsertionPoint(terminator);
             }
@@ -217,6 +245,35 @@ class OwnedReturnConsumptionPass
         }
 
         return true;
+    }
+
+    // The first op after `op` that ends this block's execution, if there is one.
+    //
+    // "End of the block" is not the end of what runs. `ts.ReturnVal` is not a terminator - the
+    // scope-exit releases and `ts.Exit` follow it in the same block - but the affine lowering
+    // turns it into a branch to the exit block, and everything the pass appended after it is
+    // dropped as unreachable. A release placed there does not merely run late; it never runs.
+    //
+    // That is not a corner: any function whose block ends with a `return` has this shape, which
+    // is most of them. Before this, 36 of `raytrace.ts`'s 47 releases were discarded on the way
+    // to affine, so §9.30 was largely inert for exactly the code it was written for. The
+    // scope-exit releases MLIRGen emits never had the problem, because it emits them before
+    // building the return.
+    //
+    // Releasing before the return is right for a discarded temporary by definition: what is
+    // being returned was consumed by the return's own retain (§9.24) and so is not in this set.
+    static mlir::Operation *firstExitingOpAfter(mlir::Operation *op)
+    {
+        auto *block = op->getBlock();
+        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+        {
+            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp>(*it))
+            {
+                return &*it;
+            }
+        }
+
+        return nullptr;
     }
 
     static bool producesOwnedResult(mlir::Value value)

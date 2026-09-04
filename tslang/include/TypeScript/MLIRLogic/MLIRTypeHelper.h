@@ -3619,6 +3619,16 @@ protected:
             return true;
         }
 
+        // A closure owns its capture box, and the box is not mentioned anywhere in the function
+        // type - so, like an interface, the value carries a tag beside the pointer and releases
+        // through it (CLOSURE_TYPE_INDEX). The type cannot say which function values are
+        // closures, so all of them answer yes and the ones that are not - a plain function
+        // pointer, a bound method - carry a null tag and cost a call that does nothing.
+        if (isa<mlir_ts::BoundFunctionType>(type) || isa<mlir_ts::HybridFunctionType>(type))
+        {
+            return true;
+        }
+
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             mlir::Type baseType;
@@ -3646,9 +3656,8 @@ protected:
         }
 
         // Deliberately not owning, each for its own reason:
-        //  - Function/BoundFunction/HybridFunction: the capture box is heap-allocated
-        //    (ALLOC_CAPTURE_IN_HEAP) but its type does not appear in the function type, so
-        //    there is nothing here to walk.
+        //  - a plain FunctionType is a code pointer and carries nothing; only the bound and
+        //    hybrid forms have a `this` that can be a capture box, and those are above.
         //  - RefType/ValueRefType point at storage this value does not own.
         //  - ConstArrayType and ConstTupleType are static data.
         return false;

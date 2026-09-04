@@ -455,11 +455,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    redeclaring a private method and dispatches to the override, where TypeScript rejects the
    program. Doing it properly needs the callee's override set, which the pass cannot see and
    MLIRGen cannot close cross-module, and it buys 2.6% of `raytrace`. Left open deliberately.
-5p. **A closure's capture box is never released.** `ownsHeapMemory` excludes function types
-   because the box is heap-allocated but its type does not appear in the function type - the same
-   shape of reason interfaces had before §9.31, and the same answer is available, since a closure
-   value is a pair like an interface. This is what `raytrace` actually leaks: a closure built per
-   call sits at 76.8 MB under `rc` against `none`'s 77.8 and `gc`'s 4.2. **Next slice.**
+5p. **A closure owns its capture box.** **Done 2026-09-04, see §9.33.** A bound or hybrid
+   function value carries the tag of its `this` beside the pointer, as an interface does, and
+   only a closure over captured variables is marked as owning it - a bound method must not take
+   ownership of its receiver. Measuring it turned up the larger of the two: **§9.30's releases
+   were being placed after `ts.ReturnVal`, which is not a terminator, and the affine lowering was
+   dropping them** - 36 of `raytrace`'s 47. `raytrace` 113.8 -> 103.4 MB.
+5q. **A captured variable is released by the frame that made it.** A parameter or local a closure
+   captures gets a heap cell of its own, and `let bump = new Vec(k); return v => v.x + bump.x`
+   releases `bump` at `makeAdder`'s scope exit while the returned closure still points at it -
+   a use-after-free, and older than any of this work. The cells are also what the closure
+   benchmark still holds (46.9 MB against `none`'s 75.1, two cells per box). Both halves are the
+   same question: the box has to own what it captures. **Next slice.**
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2120,6 +2127,12 @@ frees the value out from under it. Two shapes are refused and left leaking as be
 outside the producer's block, and a user that is a terminator (a value handed to a successor as a
 block argument is still live past the release point).
 
+*Amended at §9.33: "the end of the block" was taken literally, and `ts.ReturnVal` is not a
+terminator - so in any function ending with a `return` the release landed after it, and the
+affine lowering dropped it as unreachable. 36 of `raytrace`'s 47 releases never ran. The rule is
+now "before the first op that ends the block's execution", which is what MLIRGen's own scope exit
+had been doing all along.*
+
 **A second gap had to close before any of this fired.** §9.27 classified a function as returning
 owned only when every return was preceded by a `ts.Retain`. But there are two ways to hand back a
 reference: retain one, or forward one already held - and `return new C()` consumes the instance's
@@ -2316,3 +2329,80 @@ value is a pair the same way an interface is. Filed as 5p, and it is where the n
 go rather than 5o.
 
 Full release suite green: 921/921.
+
+### 9.33 Step 5p: a closure owns its capture box — and the release that never ran
+
+Two things landed together here. The second was found while measuring the first, is much larger
+than it, and is not about closures at all.
+
+**A closure's capture box.** `ownsHeapMemory` excluded function types for a reason with exactly
+the shape the interface exclusion had (§9.31): the box is heap-allocated but its type appears
+nowhere in the function type. So the same answer applies. A bound or hybrid function value grows
+a third word carrying the runtime type tag of its `this` (`CLOSURE_TYPE_INDEX`), and release and
+retain go through it — `releaseViaTagBesideThis` is now shared by both cases, which differ only
+in which slot the tag sits in.
+
+The tag is what separates the two kinds of value that share this representation. **A closure owns
+its capture box; a bound method's `this` is an object that belongs to somebody else**, and
+`obj.m` must not take a reference to `obj`. Only the closure built over captured variables is
+marked (`OWNS_CAPTURE_ATTR_NAME`, set where MLIRGen knows the difference); everything else carries
+a null tag and its release costs a call that does nothing. As with `NewInterface`, one op builds
+every such value, so no path leaves the slot undefined.
+
+**The release that never ran.** Measuring that change showed no movement at all, and the reason
+was not in the closure work:
+
+> **`ts.ReturnVal` is not a terminator.** The scope-exit releases and `ts.Exit` follow it in the
+> same block. But the affine lowering turns it into a branch to the exit block, so anything
+> appended *after* it is dropped as unreachable — and §9.30 appends its releases at the end of the
+> block.
+
+Any function whose block ends with a `return` has that shape, which is most of them. **In
+`raytrace.ts`, 36 of 47 releases were being discarded on the way to affine**: §9.30 had been
+largely inert for exactly the code it was written for, and the tests never saw it because a
+release that vanishes only leaks. MLIRGen's own scope-exit releases never had the problem — it
+emits them before building the return, which is the model the pass now follows: insert before the
+first `ts.ReturnVal`/`ts.Return`/`ts.Exit` after the definition, else at end of block. 46 of 47
+survive now.
+
+Releasing before the return is right for a discarded temporary by definition — what is being
+returned was consumed by the return's own retain, so it is not in this set.
+
+That fix also had to be paid for: it made releases survive in **generators**, where a position
+plainly after a definition may not be on the path that reaches it once the state machine cuts the
+block at every resume point. Three generator tests failed with dominance errors. §9.30's narrower
+`ts.StateLabel` guard is not enough, so whole generators are now excluded from the discarded
+release, the same way `functionReturnsOwned` already excludes them and for the same reason. Their
+temporaries leak.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| closure created per call, in a loop | 4.2 | **46.9** | 75.1 |
+| interface temporary as an argument | 4.2 | 3.8 | 114.6 |
+| `raytrace.ts`, `-O3` | 4.2 | **103.4** | 114.5 |
+
+`raytrace` 113.8 → 103.4, of which the release placement is 4.3 MB and the capture box 6.1 MB.
+
+**What the closure benchmark still holds is not the box.** It is down from 77.8 MB but not flat,
+and the rest is the *captured variables themselves*: a parameter or local that a closure captures
+is given a heap cell of its own so the box can point at it, and nothing frees those. Two cells per
+call in that benchmark against one box, which is the ratio the number shows.
+
+The same allocation is behind a **use-after-free that predates all of this**: a captured object
+carried out of its frame is released by that frame's own scope exit.
+
+```ts
+function makeAdder(k: number) { let bump = new Vec(k); return (v: Vec) => v.x + bump.x; }
+```
+
+`makeAdder`'s scope exit releases `bump`, and the returned closure's box still points at it —
+`ts.ReleaseSlot` on the captured local, emitted by MLIRGen, nothing to do with this slice. Filed
+as 5q. `00owned_closures.ts` deliberately captures a number in its two escaping cases so that this
+older bug does not mask what they are there to check.
+
+New test `test/tester/tests/00owned_closures.ts`, four variants, six cases. **Teeth**: releasing
+the closure immediately after construction breaks it at both `-O0` and `-O3`. Note that
+*disabling* the tag does not break it and cannot — that is the leaking direction, which no test
+can see.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.

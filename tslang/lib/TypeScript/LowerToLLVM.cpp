@@ -5451,6 +5451,53 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 {
     using TsLlvmPattern<mlir_ts::CreateBoundFunctionOp>::TsLlvmPattern;
 
+    // The runtime type tag of the capture box, for CLOSURE_TYPE_INDEX.
+    //
+    // Null unless MLIRGen marked this closure as owning its `this` - a bound method's receiver
+    // belongs to whoever holds the object, and giving the closure a tag for it would have `obj.m`
+    // take a reference to `obj` and hand it back when the bound value dies.
+    //
+    // The box arrives as a `ref` to its tuple, which owns nothing by itself (a reference into
+    // storage is not ownership). What has to be released is the block, so the tag names the
+    // ObjectType over that tuple: its routine decrefs, releases whatever the box holds, and
+    // frees - which is exactly what a capture box needs.
+    mlir::Value getCaptureTypeTag(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp,
+                                  ConversionPatternRewriter &rewriter) const
+    {
+        TypeHelper th(rewriter);
+        auto loc = createBoundFunctionOp.getLoc();
+        auto nullTag = [&]() -> mlir::Value { return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()); };
+
+        if (!createBoundFunctionOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
+        {
+            return nullTag();
+        }
+
+        auto captureRefType = dyn_cast<mlir_ts::RefType>(createBoundFunctionOp.getThisVal().getType());
+        if (!captureRefType || !isa<mlir_ts::TupleType>(captureRefType.getElementType()))
+        {
+            return nullTag();
+        }
+
+        auto boxType = mlir_ts::ObjectType::get(captureRefType.getElementType());
+
+        TypeOfOpHelper toh(rewriter);
+        auto name = toh.typeOfAsString(boxType);
+        if (name.empty())
+        {
+            return nullTag();
+        }
+
+        // generated first: the descriptor's initializer takes their addresses
+        OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(boxType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(boxType);
+
+        LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        return ch.getOrCreateTypeDescriptorName(boxType, name, TypeOfOpHelper::typeKindFromName(name),
+                                                releaseRoutineName, retainRoutineName);
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -5480,7 +5527,13 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
+        // Every bound or hybrid function value in the program is built here, which is what makes
+        // the tag safe to read - the same property NewInterface has (§9.31).
+        auto structVal4 = rewriter.create<LLVM::InsertValueOp>(
+            loc, structVal3, getCaptureTypeTag(createBoundFunctionOp, rewriter),
+            MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
+
+        rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal4});
 
         return success();
     }
@@ -6358,12 +6411,16 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        // type tag of the capture box, when this value is a closure - see CLOSURE_TYPE_INDEX
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::HybridFunctionType type) {
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        // as above
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
