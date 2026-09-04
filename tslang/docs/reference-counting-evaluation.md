@@ -447,12 +447,19 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    that never retained its fields, and a pushed owned result never marked consumed - so
    `raytrace`'s figure went **up**, 79.3 MB to 114.2: part of §9.30's number was memory freed
    while still referenced.
-5o. **Classify an instance method's callee.** §9.27 reads a callee only through a `ts.SymbolRef`;
-   a method reached through `GetMethod` or a vtable answers empty and is left alone, so its
-   result's +1 is never consumed. That is the whole of what `raytrace` leaks now (§9.31): on its
-   own the shape sits at 31.9 MB under both `rc` and `none`. A non-virtual call names its method
-   directly on the `ts.ThisSymbolRef` feeding `GetMethod`, so it is reachable; a virtual one is
-   not, unless every override agrees, and a wrong "yes" here frees live memory.
+5o. **Classify an instance method's callee.** **Investigated 2026-09-04, mostly NOT done, see
+   §9.32.** `calleeNameOf` now looks through the bound-function chains the dialect's own
+   canonicalizer already resolves, which is safe and worth almost nothing: every non-virtual
+   method reference in `raytrace` is a constructor. The value is all in virtual dispatch, and
+   `private` does not make that single-target here - this compiler accepts a subclass
+   redeclaring a private method and dispatches to the override, where TypeScript rejects the
+   program. Doing it properly needs the callee's override set, which the pass cannot see and
+   MLIRGen cannot close cross-module, and it buys 2.6% of `raytrace`. Left open deliberately.
+5p. **A closure's capture box is never released.** `ownsHeapMemory` excludes function types
+   because the box is heap-allocated but its type does not appear in the function type - the same
+   shape of reason interfaces had before §9.31, and the same answer is available, since a closure
+   value is a pair like an interface. This is what `raytrace` actually leaks: a closure built per
+   call sits at 76.8 MB under `rc` against `none`'s 77.8 and `gc`'s 4.2. **Next slice.**
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2247,3 +2254,65 @@ Full release suite green: 921/921. Ownership verifier unchanged at its two stand
 program ("DISubprogram attached to more than one function") - the generated `tsrel_`/`tsret_`
 routines inherit the debug scope current when they were generated. Pre-existing, reproduces on
 `00owned_temporaries.ts` and `00interface.ts`, and on no test-suite variant.
+
+### 9.32 Step 5o: what a method call names, and what it does not
+
+§9.31 measured an instance method's result reclaiming nothing and filed 5o to fix it. The fix
+that landed is much smaller than the item, and the reason is worth recording, as is the thing
+that turned out to be the actual leak.
+
+**The half that is safe.** `calleeNameOf` resolved a callee only through `ts.SymbolRef`, so it saw
+a plain function and nothing else. A method call is not shaped like that: `obj.m(x)` builds a
+bound function and splits it apart again, `GetMethod` for the code and `GetThis` for the receiver,
+so the callee sits a step further back. It now looks through that, for exactly the chains the
+dialect's own canonicalizer (`SimplifyIndirectCallWithKnownCallee`) already rewrites into direct
+calls — `ts.ThisSymbolRef`, and `GetMethod` over either a `ts.ThisSymbolRef` or a
+`CreateBoundFunctionOp` naming a function. That those chains name one callee is not a new
+judgement; it is the one the canonicalizer has been making all along.
+
+**The half that pays, and does not hold.** That safe half is worth almost nothing here, because
+an ordinary instance method does *not* take it. Of `raytrace`'s method references, 32 are
+`ts.ThisSymbolRef` — every one a constructor, so `void`, so nothing to own — and the 9 that
+return values are all `ts.ThisVirtualSymbolRef`. A method on a class with a vtable is dispatched
+through it whether or not anything overrides it.
+
+A virtual call's identifier names the declaration the call was written against, not what the
+runtime class put in the slot, so reading it as the callee would consume a reference an override
+may never have taken — the one mistake in this arc that frees live memory rather than leaking.
+`private` looks like it settles that: TypeScript forbids overriding a private member, all 9 of
+`raytrace`'s sites are private, and marking them classified took the file from 114.2 MB to
+111.2 MB with the suite green.
+
+**It was reverted, because the guarantee is not true of this compiler.** This program:
+
+```ts
+class Base { private tag(): number { return 1; } public get(): number { return this.tag(); } }
+class Derived extends Base { private tag(): number { return 2; } }
+```
+
+is rejected by TypeScript and accepted here, and `new Derived().get()` prints `2` — the
+redeclared private method takes the base's vtable slot and overrides it. So `private` is not a
+single-target property in tslang, and a rule resting on it would have been sound only by
+accident. Making it sound needs the callee's whole override set, which is a hierarchy question
+the pass cannot see and MLIRGen cannot close cross-module; that is 5o's real cost, and it buys
+2.6% of `raytrace`.
+
+**What is actually left is not method dispatch at all.** With interfaces owning (§9.31) and
+static calls classified (§9.27), the remaining allocation in `raytrace` is the **capture box of a
+closure**. `ownsHeapMemory` names function types among the deliberate exclusions, for a reason as
+true as the interface one was: the box is heap-allocated but its type does not appear in the
+function type, so there is nothing in the type to walk. `getNaturalColor` builds `addLight` per
+ray, and nothing ever gives that box back.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| closure created per call, in a loop | 4.2 | **76.8** | 77.8 |
+| private instance method returning a class | 4.2 | 31.9 | 31.9 |
+| `raytrace.ts`, `-O3` | 4.6 | 113.8 | 114.5 |
+
+That is the same shape of problem §9.31 solved, and the same answer is available: an interface
+could not name what was behind its `this` either, and now carries a tag beside it. A closure
+value is a pair the same way an interface is. Filed as 5p, and it is where the next slice should
+go rather than 5o.
+
+Full release suite green: 921/921.

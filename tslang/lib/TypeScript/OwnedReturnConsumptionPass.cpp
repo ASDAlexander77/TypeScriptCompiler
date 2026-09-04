@@ -225,9 +225,16 @@ class OwnedReturnConsumptionPass
         return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
     }
 
-    // The symbol a call names, when it names one directly. An indirect call through a value -
-    // a callback, a method off an interface - answers empty and is left alone: there is no one
-    // callee to inspect, so the caller keeps its retain and leaks rather than guessing.
+    // The symbol a call names, when it names one. An indirect call through a value - a callback,
+    // a method off an interface, a function-typed field - answers empty and is left alone: there
+    // is no one callee to inspect, so the caller keeps its retain and leaks rather than guessing.
+    //
+    // A method call is not that. `obj.m(x)` builds a bound function and then splits it apart
+    // again - `GetMethod` for the code, `GetThis` for the receiver - so the callee is a step
+    // further back than a plain function's. The shapes below are the ones the dialect's own
+    // canonicalizer (SimplifyIndirectCallWithKnownCallee) already rewrites into direct calls,
+    // which is the argument that they name one callee: it is the same judgement, made here
+    // before canonicalization has run.
     static mlir::StringRef calleeNameOf(mlir_ts::CallIndirectOp callOp)
     {
         if (callOp.getNumOperands() == 0)
@@ -235,13 +242,50 @@ class OwnedReturnConsumptionPass
             return {};
         }
 
-        auto symbolRefOp = callOp.getOperand(0).getDefiningOp<mlir_ts::SymbolRefOp>();
-        if (!symbolRefOp)
+        auto callee = callOp.getOperand(0);
+
+        if (auto symbolRefOp = callee.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            return symbolRefOp.getIdentifier();
+        }
+
+        // a non-virtual method, called without the bound-function detour
+        if (auto thisSymbolRefOp = callee.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return thisSymbolRefOp.getIdentifier();
+        }
+
+        auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>();
+        if (!getMethodOp)
         {
             return {};
         }
 
-        return symbolRefOp.getIdentifier();
+        auto boundFunc = getMethodOp.getBoundFunc();
+
+        if (auto thisSymbolRefOp = boundFunc.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return thisSymbolRefOp.getIdentifier();
+        }
+
+        // A bound function built here from a known function - a trampoline - names it outright.
+        if (auto createBoundFunctionOp = boundFunc.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            if (auto symbolRefOp = createBoundFunctionOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                return symbolRefOp.getIdentifier();
+            }
+
+            return {};
+        }
+
+        // `ts.ThisVirtualSymbolRef` is deliberately absent. It carries an identifier, but that
+        // names the declaration the call was written against, not what the runtime class put in
+        // the slot - so reading it as the callee would consume a reference an override may never
+        // have taken. `private` looks like it would settle this and does not: this compiler
+        // accepts a subclass redeclaring a private method and dispatches to the override, where
+        // TypeScript rejects the program outright. See §9.32.
+        return {};
     }
 
     // Does every return of a heap-owning value in this function retain it first?
