@@ -64,7 +64,7 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
 
         for (auto releaseOp : releases)
         {
-            if (!retainedSlots.contains(releaseOp.getSlot()))
+            if (!retainedSlots.contains(releaseOp.getSlot()) && !isHandOver(releaseOp))
             {
                 releaseOp.emitError("ownership: this slot is released but never retained");
                 signalPassFailure();
@@ -78,6 +78,41 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
     }
 
   private:
+    // Is this release the giving-up half of an overwrite, rather than an unmatched release?
+    //
+    // An assignment into owning storage hands the count over: `ts.Retain` on the value coming
+    // in, `ts.ReleaseSlot` on what the slot still holds, then the store. The two halves are not
+    // expressed on the same thing - the retain names a value, the release names a slot - so the
+    // slot never appears in a `ts.RetainSlot` and the plain "released but never retained" test
+    // reports every field store in the suite. Recognising the store that follows is what tells
+    // the two apart: a release about to be overwritten is a hand-over, and the reference it
+    // gives up was taken by whoever stored the old value.
+    static bool isHandOver(mlir_ts::ReleaseSlotOp releaseOp)
+    {
+        auto slot = releaseOp.getSlot();
+        for (auto it = std::next(releaseOp->getIterator()); it != releaseOp->getBlock()->end(); ++it)
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(*it))
+            {
+                if (storeOp.getReference() == slot)
+                {
+                    return true;
+                }
+            }
+
+            // another release of the same slot first means this one was not the overwrite's
+            if (auto otherRelease = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(*it))
+            {
+                if (otherRelease.getSlot() == slot)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return false;
+    }
+
     // Whether this block gives the slot back - directly, or inside a region of one of its own
     // operations. Nested regions count as releasing rather than as opaque: reporting a leak
     // that the IR does pay, somewhere this walk does not follow, would be the one kind of

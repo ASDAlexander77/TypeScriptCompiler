@@ -381,6 +381,10 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 5a. **Locals own what they hold.** The first slice of step 5 and the one that builds the
    mechanism the rest reuses. Deliberately balanced by construction, so it cannot
    over-release. **Done 2026-09-03, see §9.12.**
+5b. **Owned storage is hoisted out of the `TryOp`, and the unwind leg releases.** **Done
+   2026-09-04, see §9.15.**
+5c. **Fields own what they hold.** The first insertion point beyond locals, and the first the
+   verifier guarded rather than followed. **Done 2026-09-04, see §9.19.**
 6. **Flip the allocator under the flag.** GC stays the default.
 
 **Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
@@ -1398,3 +1402,52 @@ scope as well, the labelled form, and the shape that always worked as a control.
 fail with the fix reverse-applied.
 
 Full release suite green: 875/875.
+
+### 9.19 Step 5c: fields own what they hold
+
+The first piece of step 5 beyond locals, and the one the verifier from §9.18 was built ahead of.
+
+**The gap.** A field store was a bare `ts.Store`. The runtime half had been in place since §9.4 —
+`releaseFields` in `OwnershipRoutineLogic` walks an instance's fields when its release routine
+runs — but nothing ever took the reference that routine was giving up, and overwriting a field
+dropped the outgoing value on the floor without releasing it.
+
+**The fix** is the one already written for locals, applied to a second kind of storage.
+`isOwnedLocalSlot` becomes one arm of `isOwningSlot`; the other is `isOwnedFieldSlot` — a
+`ts.PropertyRef` whose base is a class or object instance, and whose field type owns heap memory.
+Retain the incoming value, release what the slot still holds, then store. Retaining first is what
+makes `h.item = h.item` safe.
+
+**Scoped deliberately.** A field of a record held *inline* — a tuple in a local, a parameter's
+slot — is not covered. Its fields are released by whatever owns the record, which is only tracked
+when that is an owned local, and retaining into a record nothing releases would leak. That is the
+same question arguments and elements ask, and it gets one answer, later, not three.
+
+**The counting stays balanced by construction.** A freshly allocated value's birth reference is
+still unconsumed, so every count sits one above the truth, uniformly, now on fields as well as
+locals. Nothing can reach zero on a live value, which is the property §9.12 chose and this keeps.
+
+**Which means the new tests have no teeth yet, and that was checked rather than assumed.**
+Swapping the store to release-before-retain — the classic way to free the value you are about to
+store back — leaves every case in `00owned_fields.ts` passing, because a release cannot reach
+zero while the slack is there. They are written as aliasing cases anyway, and run in every model,
+because that is exactly what gives them teeth the moment the slack goes.
+
+**One thing this broke in the verifier, worth recording.** The structural half of §9.18 —
+"released but never retained" — went from zero findings to **49 files**. All false. An overwrite
+hands the count over with `ts.Retain` on the *value* coming in and `ts.ReleaseSlot` on the *slot*,
+so the slot never appears in a `ts.RetainSlot` and every field store in the suite looked
+unmatched. The check now recognises the hand-over by the store that follows the release. The
+lesson is about verifiers rather than about fields: a check that pairs acquisitions and releases
+has to know every shape the pairing takes, and adding an insertion point adds a shape.
+
+After that, the verifier reports **two** functions across the whole suite, and both are the same
+throwing-`[Symbol.dispose]()` path §9.18 already documented — the cleanup region's own dispose
+invoke unwinding past the release that follows it. No new findings from this step.
+
+New test: `test/tester/tests/00owned_fields.ts`, all three models
+(`test-compile-00-owned-fields`, `test-jit-00-owned-fields`, `test-jit-rc-owned-fields`,
+`test-jit-none-owned-fields`). Repeated overwrite, an alias that outlives the field's reference,
+self-assignment, one value shared between two holders, and a field assigned from another field.
+
+Full release suite green: 879/879.

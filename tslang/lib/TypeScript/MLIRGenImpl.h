@@ -709,12 +709,48 @@ class MLIRGenImpl
     }
 
     // Does this reference address a local whose scope owns what it holds? Only a variable
-    // declaration marks its storage that way, so a parameter's slot and a field reference both
-    // answer no, and assigning through them neither retains nor releases.
+    // declaration marks its storage that way, so a parameter's slot answers no, and assigning
+    // through it neither retains nor releases.
     bool isOwnedLocalSlot(mlir::Value reference)
     {
         auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>();
         return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
+    }
+
+    // Does this reference address a field of an instance that will release what the field
+    // holds? A class or object instance does: it is a heap block with a release routine, and
+    // that routine releases what each of its fields owns (`releaseFields` in
+    // OwnershipRoutineLogic). So overwriting such a field carries the same debt as overwriting
+    // an owned local - the incoming value gains an owner, the outgoing one loses one.
+    //
+    // A field of a record held *inline* - a tuple in a local, a parameter's slot - is not this.
+    // Its fields are released by whatever owns the record, which is only tracked when that is
+    // an owned local, and retaining into a record nothing releases would leak. Left out until
+    // the slice that takes arguments and elements, which is where the general answer lives.
+    bool isOwnedFieldSlot(mlir::Location location, mlir::Value reference)
+    {
+        auto propertyRefOp = reference.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        if (!isa<mlir_ts::ClassType, mlir_ts::ObjectType>(propertyRefOp.getObjectRef().getType()))
+        {
+            return false;
+        }
+
+        // an `int` field has nothing to hand over; only ask the type helper once past the
+        // structural checks, since it walks the type
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
+    // Storage that hands ownership over when it is overwritten: the incoming value gains an
+    // owner and the outgoing one loses one.
+    bool isOwningSlot(mlir::Location location, mlir::Value reference)
+    {
+        return isOwnedLocalSlot(reference) || isOwnedFieldSlot(location, reference);
     }
 
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
@@ -4411,12 +4447,13 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            // Overwriting an owned local hands the count over: the incoming value gains this
-            // scope as an owner and the outgoing one loses it. Retaining first is what makes
-            // `x = x` safe - releasing first could drop the last reference and free the value
-            // about to be stored back. Without this the scope-exit release below would give up
-            // a reference the assignment never took.
-            if (isOwnedLocalSlot(loadOp.getReference()))
+            // Overwriting owning storage hands the count over: the incoming value gains an
+            // owner and the outgoing one loses it. Retaining first is what makes `x = x` safe -
+            // releasing first could drop the last reference and free the value about to be
+            // stored back. Without this the release that eventually runs for this storage -
+            // scope exit for a local, the instance's release routine for a field - would give
+            // up a reference the assignment never took.
+            if (isOwningSlot(location, loadOp.getReference()))
             {
                 builder.create<mlir_ts::RetainOp>(location, savingValue);
                 builder.create<mlir_ts::ReleaseSlotOp>(location, loadOp.getReference());
