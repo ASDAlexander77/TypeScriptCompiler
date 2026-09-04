@@ -122,6 +122,17 @@
 #define DATA_VALUE_INDEX 0
 #define THIS_VALUE_INDEX 1
 
+// An interface value is { vtable, this, type } - the first two share the indexes above with
+// every other pair-shaped value. The third is the runtime type tag of whatever `this` points
+// at, which an interface needs for the same reason an `any` box does: the interface type
+// carries only a name, so the layout behind `this` is not recoverable from it. With the tag
+// there, an interface can be released and retained like anything else, through the concrete
+// type's own routines (see OwnershipRoutineLogic and section 9.31).
+//
+// Null when `this` owns no heap memory - a null interface, or one made from a value that
+// carries nothing.
+#define INTERFACE_TYPE_INDEX 2
+
 #define ARRAY_DATA_INDEX 0
 #define ARRAY_SIZE_INDEX 1
 

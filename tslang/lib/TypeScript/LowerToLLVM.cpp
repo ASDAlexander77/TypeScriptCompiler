@@ -5150,6 +5150,46 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 {
     using TsLlvmPattern<mlir_ts::NewInterfaceOp>::TsLlvmPattern;
 
+    // The runtime type tag for whatever `this` points at, to go in INTERFACE_TYPE_INDEX.
+    //
+    // Null when that type owns no heap memory - which covers `null` and `undefined` cast to
+    // an interface, where `this` is a null pointer and there would be nothing to release
+    // anyway. A null tag states that positively, the same way a null descriptor slot does.
+    //
+    // The descriptor this returns is keyed by the concrete type, not by the `typeof` name, so
+    // two object literals of different shapes get their own records rather than sharing the
+    // one every "object" would otherwise map to.
+    mlir::Value getTypeTag(mlir_ts::NewInterfaceOp newInterfaceOp, ConversionPatternRewriter &rewriter) const
+    {
+        TypeHelper th(rewriter);
+        auto loc = newInterfaceOp.getLoc();
+        auto thisType = newInterfaceOp.getThisVal().getType();
+
+        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+        if (!mth.ownsHeapMemory(loc, thisType))
+        {
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        TypeOfOpHelper toh(rewriter);
+        auto name = toh.typeOfAsString(thisType);
+        if (name.empty())
+        {
+            // an interface over a type with no `typeof` name: nothing to key a descriptor on,
+            // so it goes untracked and leaks rather than guessing at a record
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        // generated first: the descriptor's initializer takes their addresses
+        OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+
+        LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
+                                                releaseRoutineName, retainRoutineName);
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -5169,7 +5209,14 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
+        // Every interface value in the program is built here - a cast from a class, from an
+        // object literal, and even `null`/`undefined` as an interface all end up at this op
+        // (CastLogicHelper) - which is what makes the type tag safe to rely on: there is no
+        // other way to produce an interface value with the slot left undefined.
+        auto structVal4 = rewriter.create<LLVM::InsertValueOp>(loc, structVal3, getTypeTag(newInterfaceOp, rewriter),
+                                                               MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
+
+        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal4});
 
         return success();
     }
@@ -6387,6 +6434,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         // vtable
         rtInterfaceType.push_back(th.getPtrType());
         // this
+        rtInterfaceType.push_back(th.getPtrType());
+        // runtime type tag of what `this` points at - see INTERFACE_TYPE_INDEX
         rtInterfaceType.push_back(th.getPtrType());
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);

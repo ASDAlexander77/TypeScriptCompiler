@@ -427,11 +427,11 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 5k. **An ordinary call's result** (`let y = f()`) — done via a module pass after MLIRGen that
    inspects each function's returns instead of predicting them. **Done 2026-09-04, see §9.27.**
    469 call sites marked across the suite.
-5m. **Retain the value a return actually returns.** The retain lands on the value the return
-   statement evaluated, but `mlirGenReturnValue` then casts it to the declared return type, so a
-   return needing a cast retains the wrong value. Benign (the extra reference is simply never
-   taken, so it leaks) but it excludes 92 functions from 5k's classification. Fix is to apply the
-   cast before the retain.
+5m. **Retain the value a return actually returns.** The retain landed on the value the return
+   statement evaluated, but `mlirGenReturnValue` then cast it to the declared return type, so a
+   return needing a cast retained the wrong value. **Done 2026-09-04, see §9.31**, where it had
+   to be: with a cast that allocates - a literal returned as an interface - the block the caller
+   receives got no reference at all, so this was not only the leak it looked like.
 5l. **Discarded temporaries** — `f();`, and every call result used as an argument without being
    bound to anything, which is what expression-shaped code is made of. **Done 2026-09-04, see
    §9.30**: consumption is recorded explicitly now, and what nothing consumed is released at the
@@ -439,10 +439,20 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    at all — `return new C()` forwards a reference rather than retaining one, so those functions
    were never classified as returning owned. `raytrace.ts` 129.5 MB → 79.3 MB, below `none` for
    the first time; the nested-call shape on its own is flat.
-5n. **An object literal returned through an interface** reclaims essentially nothing (41.5 MB
-   against `none`'s 42.3), which is where `raytrace`'s remaining leak lives now that arrays,
-   strings and call temporaries all reclaim. Either the boxed literal or the clone an interface
-   cast makes. Next slice.
+5n. **An interface owns what it was made from.** **Done 2026-09-04, see §9.31.** The type
+   carries only a name, so the value now carries the runtime type tag of its `this` and releases
+   through the concrete type's own routines, exactly as an `any` box does. Both interface shapes
+   are flat: a boxed literal bound in a loop, and one passed as an argument and dropped. Making
+   an interface an owner turned two dormant omissions into live over-releases - a boxed literal
+   that never retained its fields, and a pushed owned result never marked consumed - so
+   `raytrace`'s figure went **up**, 79.3 MB to 114.2: part of §9.30's number was memory freed
+   while still referenced.
+5o. **Classify an instance method's callee.** §9.27 reads a callee only through a `ts.SymbolRef`;
+   a method reached through `GetMethod` or a vtable answers empty and is left alone, so its
+   result's +1 is never consumed. That is the whole of what `raytrace` leaks now (§9.31): on its
+   own the shape sits at 31.9 MB under both `rc` and `none`. A non-virtual call names its method
+   directly on the `ts.ThisSymbolRef` feeding `GetMethod`, so it is reachable; a virtual one is
+   not, unless every override agrees, and a wrong "yes" here frees live memory.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -539,7 +549,9 @@ forever, which is the cycle problem of §5 showing up in concrete form rather th
 
 **Deliberately not released**, each for a stated reason: `InterfaceType` carries only a name,
 so the layout behind its `this` pointer is not recoverable from the type and needs an RTTI
-lookup rather than a static walk; function types do not mention their capture box, so there is
+lookup rather than a static walk — *this one changed at §9.31: the value now carries the runtime
+type tag of its `this`, which makes the lookup a tag read, so an interface is an owner*;
+function types do not mention their capture box, so there is
 nothing to walk even though the box is heap-allocated; `RefType`/`ValueRefType` point at
 storage the value does not own; `ConstArrayType` and `ConstTupleType` are static data. A null
 release slot says "nothing to release" positively — it is not an "unknown".
@@ -2124,6 +2136,9 @@ against 27.2), so the remaining leak is specific to the literal/interface path -
 or the clone an interface cast makes - and is the next thing to look at, not another temporaries
 problem.
 
+*Read with §9.31: it was the boxed literal, an interface owned nothing at all - and the 79.3 MB
+above was partly memory freed while still referenced, so it is not a figure to compare against.*
+
 New test `test/tester/tests/00owned_temporaries.ts`, four variants. **Teeth, measured per case
 with two separate probes** rather than assumed:
 
@@ -2140,3 +2155,95 @@ block still held its old value - so `argumentReadAfterCalleeAllocates` was added
 allocates before reading its arguments and a block freed early is overwritten before the read.
 
 Full release suite green: 917/917.
+
+### 9.31 Step 5n: an interface is an owner
+
+`MLIRTypeHelper::ownsHeapMemory` answered no for `InterfaceType`, with a reason that was true as
+far as it went: an interface type carries only a name, so the layout behind its `this` pointer is
+not recoverable from the type. Nothing an interface held was ever released - not the block a
+literal is boxed into, not the class instance behind a cast - which is where `raytrace`'s
+remaining leak sat (§9.30).
+
+The layout does not have to be recoverable from the type, because **an interface has exactly the
+problem an `any` box has, and the same answer was already in the tree**. An interface value grows
+a third word holding the runtime type tag of whatever `this` points at (`INTERFACE_TYPE_INDEX`),
+and its release and retain routines read that tag's descriptor and call the concrete type's own
+routines - `releaseViaDescriptor`/`retainViaDescriptor` unchanged from what §9.6 built for `any`
+and for tagged unions. Two properties make the tag safe to rely on:
+
+- **every interface value in the program is built by one op.** A cast from a class, a cast from
+  an object literal, and even `null`/`undefined` as an interface all reach `ts.NewInterface`
+  (`CastLogicHelper`), so there is no path that leaves the slot undefined. Where `this` owns
+  nothing the tag is null, which states "nothing to release" positively, exactly as a null
+  descriptor slot does.
+- **descriptors are keyed by the concrete type, not by the `typeof` name.** Every object literal
+  reports the name "object"; `getOrCreateTypeDescriptorName` already hashes the type into the
+  symbol, so two literals of different shapes get their own records.
+
+The interface value going from 16 to 24 bytes is why `-mm=none`'s numbers in this section are
+about 8% above §9.30's.
+
+**Two dormant omissions became live over-releases the moment an interface became an owner, and
+both were freeing memory that was still in use.** Neither is a consequence of this slice; both
+were reachable before it and simply had nothing that walked the block.
+
+1. **`castTupleToInterface` allocates a block and fills it from a literal without retaining what
+   the literal holds** - the debt §9.21 describes, which the object-literal boxing path
+   (`MLIRGenExpressions`) pays and this one did not. `{ start: pos, dir: rd }` cast to an
+   interface produced a block holding two `Vector` references it had never taken.
+2. **`retainInsertedElements` skipped its retain for an already-owned value without recording the
+   consumption** - the one receiving site that did not. Once §9.30 began releasing what nothing
+   consumed, `arr.push(new C())` released the instance at the end of the pushing block, freeing
+   an element the array still held.
+
+Both are invisible for as long as the block that builds is also the block that reads, since
+§9.30's release goes at the end of the producing block - which is why §9.30's own tests missed
+them. `function add() { store.push({ v: new Vec(42) }) }` read from `main` prints `999` on the
+commit before this one and `42` after it.
+
+**Item 5m, cast before retain, is done here** because without it this slice does not fire. A
+return retains the value the return expression evaluated, and `mlirGenReturnValue` then casts -
+so `return { start: p, dir: d }` against a declared interface retained the *tuple*, and the heap
+block the cast allocates got no reference at all. The cast now happens first
+(`castToDeclaredReturnType`), before both the retain and the scope exit.
+
+That surfaced a **placement bug in §9.30 that had nothing to do with interfaces**: a discarded
+temporary is released at the end of its block, and in a generator that block can contain a
+`ts.StateLabel` - a resume point the state machine re-enters. The end of the block is then
+reachable on a path that never ran the op producing the value, which appears as a dominance
+failure in the affine lowering (`00iterator_bug.ts`) rather than as anything the pass could see
+while the generator was still one block. `allUsesReleasableInOwnBlock` now refuses a value with a
+state label after its definition.
+
+**Measured, AOT peak working set:**
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| literal boxed as an interface, bound in a loop | 4.2 | **4.2** | 42.6 |
+| interface temporary passed as an argument (`raytrace`'s shape) | 4.6 | **3.8** | 114.6 |
+| instance method returning a class | 4.2 | 31.9 | 31.9 |
+| `raytrace.ts`, `-O3` | 4.6 | 114.2 | 114.5 |
+
+The shapes this slice is about are now flat. **`raytrace` is not, and its number is worse than
+§9.30's 79.3 MB - which was not a real number.** The over-release in (1) above was freeing
+`Vector`s that boxed `Ray` literals still pointed at, and memory that is handed back while still
+referenced counts as reclaimed. Correctness cost 35 MB here, and the honest reading of §9.30's
+figure is that part of it was never earned.
+
+What `raytrace` leaks now is item 5o below: it is built out of **instance-method** calls, and
+§9.27 classifies a callee only when the call names it through a `ts.SymbolRef`. A method reached
+through `GetMethod`/a vtable answers empty and is left alone, so its result's +1 is never
+consumed - visible on its own as `rc` and `none` both at 31.9 MB in the table above.
+
+New test `test/tester/tests/00owned_interfaces.ts`, four variants, eight cases, each building in
+one block and reading in another with `churn()` between - the arrangement §9.30's tests lacked
+and the reason those two over-releases survived it. **Teeth measured per fix**: releasing the
+interface immediately after construction, dropping the boxing retain, and dropping the push
+consumption marking each break the test at both `-O0` and `-O3`.
+
+Full release suite green: 921/921. Ownership verifier unchanged at its two standing findings.
+
+**Found and not fixed:** `--di --opt_level=0` fails to emit LLVM IR for any reference-counted
+program ("DISubprogram attached to more than one function") - the generated `tsrel_`/`tsret_`
+routines inherit the debug scope current when they were generated. Pre-existing, reproduces on
+`00owned_temporaries.ts` and `00interface.ts`, and on no test-suite variant.

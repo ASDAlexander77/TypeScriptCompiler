@@ -536,6 +536,42 @@ class OwnershipRoutineLogic
         });
     }
 
+    // Both directions for an interface value, which differ only in which descriptor slot they
+    // read: load the tag beside `this`, and hand the address of the `this` field to the
+    // concrete type's own routine. That address is what the routine wants either way - a
+    // release or retain routine takes the storage holding a value, and the interface's second
+    // field is exactly the storage holding the class or object reference.
+    //
+    // The tag is checked before anything reads through it: getRecordPtrFromTag walks backwards
+    // from the tag to the record, so a null tag would be dereferenced, not skipped, by the
+    // null check inside releaseViaDescriptor.
+    void releaseViaInterfaceTag(mlir::Type type, mlir::Value slotPtr, bool retaining)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmInterfaceType = tch.convertType(type);
+
+        auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmInterfaceType, slotPtr,
+                                                    ArrayRef<LLVM::GEPArg>{0, INTERFACE_TYPE_INDEX});
+        auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+        auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmInterfaceType, slotPtr,
+                                                     ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
+
+        emitIfNonNull(tagValue, [&]() {
+            if (retaining)
+            {
+                retainViaDescriptor(tagValue, thisSlot);
+            }
+            else
+            {
+                releaseViaDescriptor(tagValue, thisSlot);
+            }
+        });
+    }
+
     void buildBody(mlir::Type type, mlir::Value slotPtr)
     {
         TypeHelper th(rewriter);
@@ -592,6 +628,15 @@ class OwnershipRoutineLogic
                 releaseViaDescriptor(tagValue, dataSlot);
                 emitFreeBlock(boxValue);
             });
+            return;
+        }
+
+        // an interface is { vtable, this, type }: the reference it holds is `this`, and what
+        // that points at is only known through the tag beside it. There is no block of the
+        // interface's own to free - the value is a pair of pointers held wherever it sits.
+        if (isa<mlir_ts::InterfaceType>(type))
+        {
+            releaseViaInterfaceTag(type, slotPtr, /*retaining=*/false);
             return;
         }
 
@@ -726,6 +771,14 @@ class OwnershipRoutineLogic
             auto dataSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmArrayType, slotPtr,
                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
             emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot));
+            return;
+        }
+
+        // an interface holds one reference, to its `this`; copying the pair duplicates that
+        // reference and nothing else, so this stops at the block like the cases above
+        if (isa<mlir_ts::InterfaceType>(type))
+        {
+            releaseViaInterfaceTag(type, slotPtr, /*retaining=*/true);
             return;
         }
 

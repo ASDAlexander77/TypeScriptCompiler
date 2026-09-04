@@ -2655,6 +2655,27 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
+    // Casts `expressionValue` in place to the function's declared return type, if it has one
+    // and the value is not already of it. Nothing to do when the return type is being inferred:
+    // there is no declared type to convert to, and mlirGenReturnValue's own cast below is then
+    // a no-op as well.
+    //
+    // Split out so that the retain a return performs can be placed after the conversion - see
+    // its call sites. Calling it twice is harmless: the second finds the types already equal.
+    mlir::LogicalResult castToDeclaredReturnType(mlir::Location location, mlir::Value &expressionValue,
+                                                 const GenContext &genContext)
+    {
+        auto returnType = getExplicitReturnTypeOfCurrentFunction(genContext);
+        if (!returnType || !expressionValue || returnType == expressionValue.getType())
+        {
+            return mlir::success();
+        }
+
+        CAST_A(castValue, location, returnType, expressionValue, genContext);
+        expressionValue = castValue;
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, bool yieldReturn,
                                            const GenContext &genContext)
     {

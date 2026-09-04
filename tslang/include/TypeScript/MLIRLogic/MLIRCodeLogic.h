@@ -714,10 +714,18 @@ class MLIRCustomMethods
             }
 
             // `arr.push(new C())` arrives already owned (§9.25) - the data block takes that
-            // reference over rather than adding one of its own
+            // reference over rather than adding one of its own.
+            //
+            // Saying so is not optional. This was the one receiving site that skipped its retain
+            // without recording the consumption, and once §9.30 began releasing what nothing
+            // consumed, the pushed value was released at the end of the pushing block - freeing
+            // an element the array still held. Invisible for as long as the block that pushes is
+            // also the block that reads, which is why §9.30's own tests missed it;
+            // `function add() { store.push(new C()) }` reads the freed block.
             auto *definingOp = value.getDefiningOp();
             if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
             {
+                definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
                 continue;
             }
 

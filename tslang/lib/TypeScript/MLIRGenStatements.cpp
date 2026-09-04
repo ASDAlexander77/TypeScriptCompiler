@@ -46,6 +46,10 @@ namespace mlirgen
                 // "calls return owned" while one shape of function quietly returns borrowed.
                 // §9.27's classification checks for exactly this retain, so without it every
                 // arrow function would be excluded.
+                //
+                // Cast first, for the reason spelled out at the return statement below.
+                EXIT_IF_FAILED(castToDeclaredReturnType(loc(body), resultValue, genContext))
+
                 mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue});
 
                 return mlirGenReturnValue(loc(body), resultValue, false, genContext);
@@ -440,6 +444,15 @@ namespace mlirgen
             // this work for `return h.item`, `return arr[0]` and `return cond ? a : b` alike. It
             // hands the caller a reference of its own, which is the same +1 transfer `pop` and
             // `shift` perform (§9.22) - and, like those, one the caller does not yet consume.
+            //
+            // The cast to the declared return type comes first, so that the retain lands on the
+            // value the caller actually receives. mlirGenReturnValue below would otherwise cast
+            // afterwards and the reference would be left on whatever the return expression
+            // happened to evaluate to - a leak wherever the cast is a conversion, and nothing
+            // held at all where it allocates: `return { start: p, dir: d }` against a declared
+            // interface builds a heap block the tuple's own reference says nothing about.
+            EXIT_IF_FAILED(castToDeclaredReturnType(location, expressionValue, genContext))
+
             mlirGenRetainCaptured(location, mlir::ValueRange{expressionValue});
 
             EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));

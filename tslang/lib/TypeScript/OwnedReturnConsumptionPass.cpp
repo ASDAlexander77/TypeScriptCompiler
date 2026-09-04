@@ -144,7 +144,13 @@ class OwnedReturnConsumptionPass
     //  - a user outside the producer's block, so the value outlives the block or is used on a
     //    path this cannot see;
     //  - a user that is a terminator, since a value handed to a successor as a block argument is
-    //    still live after the point this would release it.
+    //    still live after the point this would release it;
+    //  - a `ts.StateLabel` after the definition, which is a generator's resume point: the state
+    //    machine re-enters the block THERE, so the end of the block is reachable on a path that
+    //    never ran the op that produced the value. Nothing about that is visible while the
+    //    generator is still one block - it only becomes a use before definition once the state
+    //    machine is expanded, and it surfaces as a dominance failure in the affine lowering
+    //    rather than as anything this pass could notice.
     //
     // That bias is the same one the rest of this arc takes: an unreleased reference is invisible,
     // a released one that was still owned is a use-after-free.
@@ -196,6 +202,15 @@ class OwnedReturnConsumptionPass
         for (auto *user : op->getResult(0).getUsers())
         {
             if (user->getBlock() != block || user->hasTrait<mlir::OpTrait::IsTerminator>())
+            {
+                return false;
+            }
+        }
+
+        // a resume point between the definition and the end of the block - see above
+        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+        {
+            if (mlir::isa<mlir_ts::StateLabelOp>(*it))
             {
                 return false;
             }

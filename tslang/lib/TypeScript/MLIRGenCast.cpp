@@ -1669,6 +1669,12 @@ namespace mlirgen
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleType);
         auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+
+        // this block releases what its fields hold when it dies, so it has to take a reference
+        // to each of them first - the same debt an array literal's data block carries (§9.21),
+        // and inert until an interface became an owner (§9.31), which is why it went unnoticed
+        mlirGenRetainCaptured(location, mlir::ValueRange{inEffective});
+
         builder.create<mlir_ts::StoreOp>(location, inEffective, valueAddr);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
@@ -1709,6 +1715,10 @@ namespace mlirgen
                 CAST_A(unboxed, location, newInterfaceTupleType, in, genContext);
 
                 auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(newInterfaceTupleType), builder.getBoolAttr(false));
+
+                // as in castTupleToInterface: the clone's block owns what it holds
+                mlirGenRetainCaptured(location, mlir::ValueRange{unboxed});
+
                 builder.create<mlir_ts::StoreOp>(location, unboxed, valueAddr);
                 effectiveObjType = mlir_ts::ObjectType::get(newInterfaceTupleType);
                 inEffective = builder.create<mlir_ts::CastOp>(location, effectiveObjType, valueAddr);
@@ -1724,8 +1734,23 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                 << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
 
-        return V(builder.create<mlir_ts::NewInterfaceOp>(location,
-            mlir::TypeRange{interfaceInfo->interfaceType}, inEffective, createdInterfaceVTableForObject));
+        mlir::Value interfaceValue = builder.create<mlir_ts::NewInterfaceOp>(location,
+            mlir::TypeRange{interfaceInfo->interfaceType}, inEffective, createdInterfaceVTableForObject);
+
+        // An interface made from an object is a reference of its own, and on the paths that
+        // reach here the object is very often a block allocated a few lines above for exactly
+        // this cast - so nothing else holds it, and nothing else will give it back.
+        //
+        // Handing the result a reference is what lets every receiver treat it uniformly: a
+        // local consumes it (§9.25), a return forwards it, and one that goes to an argument and
+        // is then dropped - `trace({ start: pos, dir: rd }, scene)`, which is what this cast is
+        // mostly used for - is released at the end of the block that made it (§9.30). Without
+        // the +1 that last shape has no owner at all and neither retains nor releases, which is
+        // where the whole of raytrace's remaining leak sat.
+        builder.create<mlir_ts::RetainOp>(location, interfaceValue);
+        interfaceValue.getDefiningOp()->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+
+        return V(interfaceValue);
     }
 
     mlir_ts::CreateBoundFunctionOp MLIRGenImpl::createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction)
