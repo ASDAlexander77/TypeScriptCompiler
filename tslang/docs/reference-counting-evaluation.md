@@ -534,17 +534,24 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    null. Closed 5w's whole predicted cluster plus five files nobody had attributed to it, with
    nothing newly broken: bare 115 -> 106, suite flags 102 -> 97, `-O3`-with-library 117 -> 107,
    and the rc-only set across the three configurations **22 -> 12**.
-5x. **`await` frees something twice.** `async function f() { return 1; }` and then `const r =
-   await f()` prints the right answer and dies of heap corruption on the way out, in all four
-   configurations, 10 runs in 10. Calling `f()` without awaiting it is fine. Covers
-   `00async_await` and `00for_await`. The coroutine frame is the obvious suspect, and nothing in
-   this work has ever looked at one. **It also fails under `none`**, which frees nothing at all,
-   so at least part of it is a memory-safety bug this work did not create and does not own.
-   **Next slice** - it is the last remaining fault with a one-line reduction.
-5y. **The `rc` tier of ctest is 39 files of 475.** Every ownership measurement in §9.12-§9.37 was
-   taken inside that 39, and 28 of the 29 known faults are outside it. Once 5v-5x are closed,
-   registering the rest of the corpus under `rc` - as individual tests or as one sweep target -
-   is what stops this recurring.
+5x. **A coroutine frame was allocated on one heap and freed on another.** **Done 2026-09-05, see
+   §9.41.** Not a double free and never reference counting's: `none` frees nothing and failed
+   too. The frame is asked for with `aligned_alloc` and released with plain `free`, which is the
+   C11 pairing; MSVC has no `aligned_alloc`, so the runtime supplied one built on
+   `_aligned_malloc`, whose memory only `_aligned_free` may release. `gc` never showed it because
+   GCPass rewrites the pair to GC_memalign/GC_free. The shim now serves the request from
+   `malloc`, whose 16-byte alignment beats the frame's 8. The same symbol was missing from the
+   static library, so **`-mm=rc` and `-mm=none` could not link an executable that awaited
+   anything** - unnoticed because ctest's AOT tier runs the default model only. rc-only across
+   the three configurations **12 -> 11** (10 real), and **`none` now has no failure `gc` does not
+   share**.
+5y. **The `rc` tier of ctest is 42 files of 478, and its AOT tier is none of them.** Every
+   ownership measurement in §9.12-§9.37 was taken inside that tier, and every fault since §9.38
+   was found outside it - 5x's was invisible twice over, once for the model and once for the
+   build mode, since `test-compile-*` runs the default model only. 5v-5x are closed, so this is
+   what is left: registering the rest of the corpus under `rc` (as individual tests or as one
+   sweep target), and giving `rc` and `none` an ahead-of-time tier at all. **Next slice**, and
+   the one that stops this recurring.
 5z. **A generator that takes a parameter leaks its capture box.** Newly measurable once §9.39
    stopped the crash: 500k iterations at `-O3`, a generator with a local and no parameter costs
    `rc` 2.6-3.7 MB against `gc`'s 2.6-4.1, and the same generator **with a parameter** costs
@@ -559,6 +566,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    which looks more like the allocator's high-water mark than an unbounded leak, but has not
    been explained. Iterating heap-built rows instead is flat at 2.6 MB, equal to `gc`. Cheap to
    settle either way, and worth settling before any claim that `rc` matches `gc` on iteration.
+5ab. **Passing an argument to an awaited async function does not compile.** `async function
+   twice(n: number) { return n + n; }` then `await twice(3)` gives `error: failed to legalize
+   operation 'async.runtime.load'`, in every memory model; so does returning anything but a
+   number from one. Parameterless awaits, default parameters, sequences and loops are all fine.
+   Nothing to do with memory management, but it bounds what any async test can cover.
+5ac. **`gc` faults on a long chain of coroutine frames.** 50k awaits in a loop faults 2 runs in
+   4 under `-mm=gc` at `-O3`, and more often at 200k, in both link configurations - so it
+   predates §9.41 and is not the allocator pairing. `rc` and `none` complete the same loop.
+5ad. **An `-mm=rc` executable that prints a number exits 1.** Deterministic, with correct output,
+   ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
+   reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
+   harness that checks exit codes.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -3244,3 +3263,100 @@ heap-built rows instead is flat at 2.6 MB, equal to `gc`. Filed as 5aa.
 
 941/941. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is
 2.6 MB against `gc`'s 4.2 and `none`'s 99.3.
+
+### 9.41 Step 5x: two allocators for one coroutine frame
+
+```ts
+async function f() { return 1; }
+function main() { const r = await f(); print(r); print("done."); }
+```
+
+prints `1` and `done.` and then dies of heap corruption, under `rc` and under `none`, at every
+optimisation level, with and without the default library. `gc` is clean. That `none` fails is the
+whole diagnosis: `none` frees nothing at all, so nothing here was ever a double free, and nothing
+here was ever reference counting's.
+
+The frame allocation says the rest:
+
+```llvm
+%6 = call ptr @aligned_alloc(i64 8, i64 %5)      ; the coroutine frame
+...
+call void @free(ptr %0)                          ; ... and its destroy path
+```
+
+`aligned_alloc` paired with `free` is the C11 pairing and is right everywhere `aligned_alloc`
+exists. MSVC has no `aligned_alloc`, so the runtime supplied one - built on `_aligned_malloc`,
+whose memory may only go back through `_aligned_free`. Every awaited call allocated a frame on
+one heap and released it on another. Under `gc` it never showed, because `GCPass` rewrites the
+whole pair to `GC_memalign`/`GC_free` and the two agree again.
+
+Windows' own `malloc` is aligned to 16 bytes, which is more than the frame's 8, so the shim now
+serves the request from the ordinary heap and the pairing is honest. Over-alignment is the one
+thing it cannot do and stay `free`-compatible, so it says so on stderr rather than handing back
+something quietly wrong. `AlignedFree` becomes plain `free` to match.
+
+#### The same symbol, one layer out
+
+With that fixed in the JIT, the ahead-of-time path turned out never to have worked at all:
+
+```
+error LNK2019: unresolved external symbol aligned_alloc referenced in function main
+```
+
+`-mm=rc` and `-mm=none` could not link an executable that awaited anything, and `-mm=gc` could
+only because the call had been renamed away. Nothing had noticed because ctest's AOT tier runs
+under the default model only - the same shape of gap as 5y. `TypeScriptAsyncRuntime`, the static
+library the linker is given, now defines `aligned_alloc` itself, with the same body.
+
+#### What it closed
+
+| sweep | before | after | newly fixed |
+| --- | --- | --- | --- |
+| bare, `-O0`, default library | 106 | 104 | `00async_await`, `00for_await` |
+| `--opt --opt_level=3 --no-default-lib` | 97 | 96 | `00async_await`, `00for_await` |
+| `-O3`, default library | 107 | 107 | `00async_await`, `00for_await` |
+
+Two files in each configuration appeared to break and neither did: `44toplevelcode` timed out
+because four sweeps were running at once and passes 6 runs in 6 on its own, and
+`00mixed_type_ops` at `-O3`-with-the-library fails 6 in 6 both before and after - which also
+corrects §9.40, where a single lucky run had it in that slice's fixed column. The rc-only set
+across the three configurations goes **12 -> 11**, and 10 of those are real: the eleventh is
+`44toplevelcode`'s timeout.
+
+And **`none` now has no failure that `gc` does not share** - zero files, under the suite's own
+flags. That is the first time any model other than `gc` has been clean against it.
+
+#### Teeth
+
+`00owned_async.ts`, six cases: an await, an async arrow, an async function with a default
+parameter, three awaits in sequence, an async function awaiting another, and 64 awaits in a loop.
+Reverting the runtime:
+
+| probe | fails |
+| --- | --- |
+| `_aligned_malloc` back in the JIT shim | `rc` 3/3 and `none` 3/3, both levels; `gc` clean |
+| `aligned_alloc` out of the static library | `rc` and `none` do not link; `gc` links |
+
+Every awaited function in the file is parameterless and returns a number, because **passing an
+argument to an awaited async function does not compile**, in any model: `error: failed to
+legalize operation 'async.runtime.load'`. Returning anything but a number does not compile
+either. Filed as 5ab.
+
+#### What it costs
+
+50k awaits at `-O3`: `gc` 7.9 MB, `rc` 7.6, `none` 7.7. The frame is freed by the coroutine's own
+destroy path in every model, so awaiting costs the same in all three and there is nothing here
+for reference counting to own.
+
+Two things came out of measuring it, neither this slice's:
+
+- **`gc` faults on a long chain of coroutine frames**, 2 runs in 4 at 50k awaits and worse at
+  200k, in both the old and the new link configuration, so it predates this change and is not
+  the allocator pairing. Filed as 5ac.
+- **An `-mm=rc` executable that prints a number exits 1**, deterministically, with correct
+  output. It needs no async at all - `function main() { print(1); }` does it - and only the
+  ahead-of-time path, never the JIT. Filed as 5ad.
+
+945/945. Ownership verifier unchanged at its two standing findings - necessarily, since nothing
+in the compiler changed, only the runtime libraries. `raytrace` at `-O3` is 2.6 MB against `gc`'s
+4.2.
