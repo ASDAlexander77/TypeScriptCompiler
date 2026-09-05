@@ -470,14 +470,25 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    captured by value was not retained by the box, and assigning to a captured variable *from
    inside the closure* stored a value nothing had taken, which §9.30 then freed as a discarded
    temporary. `raytrace` 103.4 -> **2.6 MB**, below `gc`'s 4.2.
-5r. **A captured parameter's cell is never given back.** A parameter is borrowed, not owned, so
-   nothing in the frame releases it - and a captured parameter's cell therefore has a frame
-   owner that never lets go. It is a leak and only a leak: the cell outliving everything is what
-   keeps the box from releasing an argument the caller still owns. Measured on the closure
-   benchmark at `-O0`: capturing a local is flat at 2.6 MB against `none`'s 31.9, capturing a
-   parameter grows to 22.6. Closing it means the cell taking a reference to the argument stored
-   into it, and the frame releasing the cell on the way out - which makes a captured parameter
-   an owner, a change to what a parameter *is*. **Next slice.**
+5r. **A cell is given back whether or not the frame owns what is in it.** **Done 2026-09-05, see
+   §9.35.** The frame released a cell only where §9.34's list already held the slot, and that
+   list is the list of locals whose *value* the frame owns - so a captured parameter, whose
+   argument belongs to the caller, and a captured local of a type that owns nothing, such as a
+   `number`, both leaked the cell. Every local and every parameter is now listed, and scope exit
+   asks each what it turned out to be; and a cell takes a reference to the value it is
+   initialised with unless the frame already took one, which is what makes it safe for the
+   cell's release to release its contents whoever put them there. Closure over a parameter at
+   `-O0`: **22.6 -> 3.7 MB**, against `gc`'s 2.6 and `none`'s 22.0; closure over a `number`
+   local, 51.7 -> 3.7 against `none`'s 113.0.
+5s. **A lambda-heavy test hangs under `-mm=rc` about one run in four.** `22lambdas.ts`, and only
+   under `rc` - `gc` and `none` are clean over 15 runs each. Measured at 3 bad runs in 15 on
+   §9.34's commit and 4 in 15 on §9.35's, so it is older than either and neither made it worse.
+   Nondeterministic and model-specific is what a use-after-free looks like: some run frees
+   something still referenced and the reused block happens to be fatal. The file's shape says
+   where to look first - a named nested function declared *after* the statements that call it,
+   and a `for..of` binding captured by a function declared in the loop body. **Next slice**, and
+   the one to take before more ground is covered, since a corpus sweep is how it was found and a
+   flaky sweep is a poor instrument.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2495,7 +2506,8 @@ the frame releases it, and a captured parameter's cell therefore has an owner th
 That is a leak and only a leak — the cell outliving everything is exactly what stops the box from
 releasing an argument the caller still owns — and it is why the `none` column there is the small
 one: with no ownership calls to keep it alive, the whole allocation is optimised away in the other
-two models.
+two models. (§9.35 closes it, and finds that the second row's benchmark was flattering: a
+captured *local* leaks its cell too whenever the local's type owns nothing.)
 
 Five new cases in `00owned_closures.ts`. **Teeth**, each checked by disabling the fix and
 rebuilding: removing the box's retain of the cell, and removing the cell's birth reference, each
@@ -2503,3 +2515,95 @@ abort the test. Disabling the box's *release* of the cells does not and cannot �
 leaking direction.
 
 Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+### 9.35 Step 5r: a cell is given back whether or not the frame owns what is in it
+
+§9.34 gave a cell owners, and released the frame's one at scope exit — but only for the slots
+that were already on the scope's list, and that list is `ownedVars`, the list of locals whose
+*value* the frame owns. Which of a function's cells got a release therefore turned on a question
+that has nothing to do with cells at all. Two shapes fell outside it, and the measurements are
+the whole argument:
+
+| shape, `-O0` | `gc` | `rc` before | `rc` after | `none` |
+| --- | --- | --- | --- | --- |
+| closure over a `Vec` local | 4.1 | 3.7 | 3.7 | 161.3 |
+| closure over a `number` local | 4.1 | **51.7** | **3.7** | 113.0 |
+| closure over a `number` parameter | 4.1 | **51.7** | **3.7** | 122.6 |
+| closure over a `Vec` parameter | 4.1 | **65.6** | **3.7** | 167.3 |
+
+Only the first row worked, and only because a `Vec` local is one the frame owns the value of. A
+captured `number` leaks its cell because a `number` owns no heap memory and so the local was
+never listed; a captured parameter leaks its cell because a parameter is the caller's and is
+never listed either. The cell is the same 24-byte block in all four rows.
+
+So the listing and the ownership question are separated. `trackPossibleCell` lists every local
+that has storage, owned or not, and `mlirGenFunctionBody` lists every parameter; scope exit then
+asks each slot what it turned out to be — a cell gets `ts.ReleaseCell`, a slot the frame owns the
+value of gets `ts.ReleaseSlot`, and a slot that is neither has nothing emitted for it and is on
+the list only because it might have become a cell and did not.
+
+That it can only be asked at scope exit is the reason for the two-step. Whether a variable is
+captured is not known at its declaration: the closure that captures it is written afterwards, and
+marks the storage when it is generated. Scope exit is generated after both.
+
+A parameter's list is the function's rather than the body block's, which is the scope a parameter
+actually has, and wiring it in exposed something that had always been wrong and was merely
+unreachable. A scope exit walks outwards through `parentBlockContext`, and a function's context
+inherits that pointer from whatever context the function was generated under — for a nested
+function, the enclosing function's blocks. The walk used to stop at the first context without a
+list, and a function's context never had one; give it one and a `return` inside a lambda starts
+releasing the *enclosing* frame's locals, which crashes the compiler. `parentBlockContext` is now
+cleared at the function boundary, where the walk always should have ended.
+
+**The other half is what the cell holds.** A cell's release releases its contents, which is right
+when the frame put an owned value there and an over-release when it did not — and a captured
+parameter's cell starts out holding the caller's argument. Rather than teach the release to skip
+those, the cell takes a reference to the value it is initialised with unless the frame already
+took one (`OWNED_LOCAL_ATTR_NAME` says so). Then **a cell owns what it holds**, unconditionally,
+and every reader can rely on it:
+
+- the cell's release gives that reference back;
+- `isCapturedCellSlot` (§9.34) already made a store *through the box* hand the count over;
+- `isOwningSlot` now recognises the cell from the declaring frame's side too, so `v = new Vec(..)`
+  written where the parameter is in scope takes the new value and gives up the old.
+
+Without the last of those, the store takes nothing and §9.30 frees the value as a discarded
+temporary — the same failure §9.34 found on the box side, arriving from the other direction.
+
+Three new cases in `00owned_closures.ts`, each with **teeth** confirmed by disabling one fix and
+rebuilding:
+
+| case | fails without |
+| --- | --- |
+| `capturedParameterEscapes` | the cell's retain of the argument |
+| `mutateCapturedParameter` | the cell's retain of the argument |
+| `capturedParameterReassignedInFrame` | the cell in `isOwningSlot` |
+
+Each fails only for its own fix and passes for the other, and the **release-before-retain swap** —
+emitting the cell's retain ahead of the store rather than after it, so it retains whatever the
+block happened to hold — crashes all three. The release side cannot be given teeth by a test, as
+always: it leaks, and the measurements above are what stand in for it.
+
+`capturedParameterEscapes` is two frames deep on purpose. `new Vec(50)` is a discarded temporary
+of the *middle* frame, released at the end of that block, so a cell that had not taken a reference
+loses the value before the outermost frame ever reads it. Written one frame shallower the release
+lands after the read and the case passes with the bug present — the same trap §9.30 set, and the
+reason an ownership case has to build in one block and read in another.
+
+Two exclusions, both about where a release would land rather than about the variable: a
+declaration directly inside a try body (its release is repeated in the cleanup region, which
+cannot see storage declared in the body — `localTakesOwnership` pairs its answer with hoisting for
+exactly that reason, and hoisting every local of every try body is not a trade this makes), and
+one in a catch or finally clause, excluded on the same terms §9.24 excludes it. A captured
+variable declared in either keeps leaking its cell.
+
+`raytrace` at `-O3` is unchanged at **2.6 MB** against `gc`'s 4.2 and `none`'s 104.8 — §9.34 had
+already taken its cells, which are all captured locals holding objects.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+A corpus sweep under `-mm=rc` — every test file JIT'd, exit codes compared against the same sweep
+on §9.34's commit — turned up one difference, `22lambdas.ts`, and it is **not this slice's**: it
+fails about one run in four under `rc` on both commits (3 bad in 15 before, 4 in 15 after) and
+never under `gc` or `none`. Filed as 5s. The sweep is worth keeping as a tool, and worth fixing
+that flake first, since a flaky instrument is a poor way to measure the next slice.

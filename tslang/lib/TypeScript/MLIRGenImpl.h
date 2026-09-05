@@ -683,17 +683,27 @@ class MLIRGenImpl
     // nested block releases every scope it leaves and a `break` releases up to the loop.
     mlir::LogicalResult mlirGenReleaseOwned(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
+        // the outermost scope of a function has no parent to walk to
+        if (genContext == nullptr)
+        {
+            return mlir::success();
+        }
+
         if (genContext->ownedVars != nullptr)
         {
             // reverse declaration order, the order a scope is unwound in: a later local may
             // hold the only other reference to what an earlier one points at
             for (auto storage : llvm::reverse(*genContext->ownedVars))
             {
+                // Two different debts, and a slot can carry either, both or neither. A cell is
+                // released as a cell whatever its contents are owned by - the block has to go
+                // back regardless. A slot that is neither is here only because it might have
+                // turned into a cell and did not; see trackPossibleCell.
                 if (isCapturedVariableCell(storage))
                 {
                     builder.create<mlir_ts::ReleaseCellOp>(location, storage);
                 }
-                else
+                else if (isOwnedLocalSlot(storage))
                 {
                     builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
                 }
@@ -722,10 +732,28 @@ class MLIRGenImpl
     // capturing, so the answer is settled by then. A `return` written *before* the capture is
     // one where the closure cannot exist on that path: releasing the value there is right, and
     // all that is lost is the cell, which those paths leak.
+    //
+    // A parameter answers yes on the same terms a local does. Being captured is what makes
+    // storage a cell, and a parameter's storage is the same `ts.Variable` by the time the
+    // affine pass has run - ParamOpLowering builds one, carrying the marking across.
     static bool isCapturedVariableCell(mlir::Value reference)
     {
-        auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>();
-        return varOp && varOp.getCaptured().has_value() && varOp.getCaptured().value();
+        if (auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return varOp.getCaptured().value_or(false);
+        }
+
+        if (auto paramOp = reference.getDefiningOp<mlir_ts::ParamOp>())
+        {
+            return paramOp.getCaptured().value_or(false);
+        }
+
+        if (auto paramOptionalOp = reference.getDefiningOp<mlir_ts::ParamOptionalOp>())
+        {
+            return paramOptionalOp.getCaptured().value_or(false);
+        }
+
+        return false;
     }
 
     // Does this reference address a captured variable's cell, reached through a capture box?
@@ -914,14 +942,26 @@ class MLIRGenImpl
 
     // Storage that hands ownership over when it is overwritten: the incoming value gains an
     // owner and the outgoing one loses one.
+    //
+    // A cell is here for the same reason its box-side view isCapturedCellSlot is: the cell owns
+    // what it holds, so a store into one has to hand the count over. This is the view from the
+    // declaring frame - `p = ..` where the closure below captured `p` - and the two must agree,
+    // since they address the very same block.
     bool isOwningSlot(mlir::Location location, mlir::Value reference)
     {
-        return isOwnedLocalSlot(reference) || isCapturedCellSlot(reference) ||
+        return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
+               isCapturedCellSlot(reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
     }
 
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
+        // as in mlirGenReleaseOwned: the walk outwards ends at the function
+        if (genContext == nullptr)
+        {
+            return mlir::success();
+        }
+
         if (genContext->usingVars != nullptr)
         {
             for (auto vi : *genContext->usingVars)
@@ -1772,6 +1812,8 @@ class MLIRGenImpl
     mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo &variableDeclarationInfo, bool showWarnings, const GenContext &genContext);
 
     void takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext);
+
+    void trackPossibleCell(struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext);
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false);

@@ -113,11 +113,16 @@ namespace mlirgen
     //
     // The test itself is localTakesOwnership, shared with the hoisting decision in
     // createLocalVariable so the two cannot disagree about which declarations these are.
+    //
+    // An excluded declaration is not finished with, though: it may still be captured, and a
+    // captured variable's *cell* is the scope's to give back whoever owns the value in it. That
+    // is trackPossibleCell below, and it is a different question with a different answer.
     void MLIRGenImpl::takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
                                            const GenContext &genContext)
     {
         if (!variableDeclarationInfo.storage || !localTakesOwnership(location, variableDeclarationInfo, genContext))
         {
+            trackPossibleCell(variableDeclarationInfo, genContext);
             return;
         }
 
@@ -145,6 +150,38 @@ namespace mlirgen
         else
         {
             builder.create<mlir_ts::RetainSlotOp>(location, variableDeclarationInfo.storage);
+        }
+
+        genContext.ownedVars->push_back(variableDeclarationInfo.storage);
+    }
+
+    // A local that owns nothing still has to be listed, because it may yet become a cell.
+    //
+    // Whether a variable is captured is not known here: the closure that captures it is written
+    // after the declaration, and marks the storage when it is generated. Scope exit is generated
+    // after both, so that is where the question can be answered - all this does is make sure the
+    // slot is there to be asked about. Nothing is emitted for one that never becomes a cell.
+    //
+    // Two exclusions, and both are about where the release would land rather than about the
+    // variable. A declaration directly inside a try body has its release repeated in the
+    // cleanup region, which cannot see storage declared in the body - localTakesOwnership pairs
+    // its own answer with hoisting for exactly that reason, and hoisting every local of every
+    // try body is not a trade this makes. A catch or finally clause is excluded on the same
+    // terms takeOwnershipOfLocal excludes it. A captured variable declared in either keeps
+    // leaking its cell.
+    void MLIRGenImpl::trackPossibleCell(struct VariableDeclarationInfo &variableDeclarationInfo,
+                                        const GenContext &genContext)
+    {
+        if (genContext.ownedVars == nullptr || genContext.allocateScopeOwnedVarsOutsideOfOperation ||
+            variableDeclarationInfo.isGlobal || variableDeclarationInfo.deleted ||
+            variableDeclarationInfo.allocateInContextThis || blockIsInsideCatchOrFinally())
+        {
+            return;
+        }
+
+        if (!variableDeclarationInfo.storage || !variableDeclarationInfo.storage.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return;
         }
 
         genContext.ownedVars->push_back(variableDeclarationInfo.storage);

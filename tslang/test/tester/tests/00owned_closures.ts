@@ -16,9 +16,11 @@
 // box were given back at the end of the block that built it.
 //
 // The cases from `capturedObjectEscapes` down are about the other half: who owns the *cell* a
-// captured variable lives in, which is section 9.34.
+// captured variable lives in, which is section 9.34, and the ones from
+// `capturedParameterEscapes` are about a cell that starts out holding something the frame does
+// not own - a captured parameter - which is section 9.35.
 //
-// See docs/reference-counting-evaluation.md sections 9.33 and 9.34.
+// See docs/reference-counting-evaluation.md sections 9.33 to 9.35.
 
 class Vec {
     x: number;
@@ -210,6 +212,64 @@ function mutateThroughCapture() {
     return cur.x;
 }
 
+// A captured parameter lives in a cell too, and the difference is what the cell starts out
+// holding: an argument, which belongs to the caller. So the cell takes a reference to it, which
+// is what makes a cell the owner of its contents whoever put them there - section 9.35.
+//
+// The escape is two frames deep on purpose. `new Vec(50)` is a discarded temporary of
+// `holdParamReader`, released at the end of that block, so if the cell had not taken a reference
+// the value is gone before `capturedParameterEscapes` ever reads it.
+function makeParamReader(v: Vec): () => number {
+    return () => v.x;
+}
+
+function holdParamReader(): () => number {
+    return makeParamReader(new Vec(50));
+}
+
+function capturedParameterEscapes() {
+    let read = holdParamReader();
+    churn();
+
+    return read();
+}
+
+// Assigning to a captured parameter from inside the closure gives up what the cell held - which
+// is the caller's argument. The caller reads it afterwards, so if the cell were giving up a
+// reference it never took, `held` is freed here while `mutateCapturedParameter` still holds it.
+function bumpThroughCapture(v: Vec): number {
+    let step = () => { v = new Vec(v.x + 1); };
+
+    step();
+
+    return v.x;
+}
+
+function mutateCapturedParameter() {
+    let held = new Vec(1);
+    let bumped = bumpThroughCapture(held);
+    churn();
+
+    return bumped + held.x;
+}
+
+// The same assignment seen from the other side: written in the frame that declared the
+// parameter, after the closure over it exists. The value stored has to be taken by the cell, or
+// nothing holds it and the end of the block gives it back as a discarded temporary.
+function reassignCapturedParameter(v: Vec): () => number {
+    let read = () => v.x;
+    v = new Vec(v.x + 10);
+
+    return read;
+}
+
+function capturedParameterReassignedInFrame() {
+    let read = reassignCapturedParameter(new Vec(5));
+    churn();
+
+    return read();
+}
+
 function main() {
     assert(closureAsArgument() == 10, "a closure used as an argument survives the call");
     assert(closureReadAfterCalleeAllocates() == 12, "a capture box survives a callee that allocates first");
@@ -222,6 +282,9 @@ function main() {
     assert(capturedCellSharedByTwoClosures() == 10, "two closures share one captured variable");
     assert(frameOutlivesTheClosure() == 3, "a captured variable outlives the closures over it");
     assert(mutateThroughCapture() == 3, "the frame and the closure see one variable");
+    assert(capturedParameterEscapes() == 50, "a cell owns the argument a captured parameter arrived with");
+    assert(mutateCapturedParameter() == 3, "assigning through a captured parameter leaves the caller's value alone");
+    assert(capturedParameterReassignedInFrame() == 15, "a captured parameter's cell takes what the frame stores in it");
 
     print("done.");
 }

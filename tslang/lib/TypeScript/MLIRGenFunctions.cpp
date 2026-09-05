@@ -1309,6 +1309,33 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // A parameter a closure captures is stored in a cell of its own, like a captured local,
+        // and the cell has to go back the same way - so the frame is listed as an owner of every
+        // parameter's storage, and scope exit gives back the ones that turned out to be cells.
+        //
+        // This list belongs to the function rather than to the body block, which is the scope a
+        // parameter actually has, and it is wired in only now that the prologue is generated:
+        // while it was null the prologue's own declarations - a destructured parameter's
+        // bindings - were not owned by anything, and this is not the slice that changes that.
+        auto paramCells = std::make_unique<SmallVector<mlir::Value>>();
+        for (auto &prologueOp : entryBlock)
+        {
+            if (isa<mlir_ts::ParamOp, mlir_ts::ParamOptionalOp>(prologueOp))
+            {
+                paramCells->push_back(prologueOp.getResult(0));
+            }
+        }
+
+        funcGenContext.ownedVars = paramCells.get();
+
+        // A scope exit walking outwards stops here. The chain came in from whatever context this
+        // function was generated under - for a nested function, the enclosing function's own
+        // blocks - and a `return` releasing those would be releasing another frame's locals from
+        // inside this one. It has always been wrong; it only became reachable now that this
+        // context has a list of its own, since the walk used to stop at the first context
+        // without one.
+        funcGenContext.parentBlockContext = nullptr;
+
         // if we need params only we do not need to process body
         auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
         if (!discoverParamsOnly)
@@ -1319,6 +1346,14 @@ namespace mlirgen
             {
                 return mlir::failure();
             }
+        }
+
+        // Falling off the end of the body reaches here rather than through a `return`, and the
+        // body block's own exit stops at itself. A `return` inside walks the whole stack outwards
+        // and so has already released these on its own path.
+        if (failed(mlirGenReleaseOwned(location, DisposeDepth::CurrentScope, {}, &funcGenContext)))
+        {
+            return mlir::failure();
         }
 
         // add exit code

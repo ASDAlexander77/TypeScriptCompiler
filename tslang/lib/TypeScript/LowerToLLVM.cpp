@@ -2321,6 +2321,18 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
             }
 #endif            
+
+            // A cell owns the value in it: giving up the last reference to the cell releases
+            // what it holds (`emitReleaseCell`), and every store into one hands the count over
+            // (`isOwningSlot`). So the first value has to be taken too, unless the frame has
+            // already taken it - which is what an owned local's mark says, and what a captured
+            // parameter's storage is precisely missing, the argument being the caller's.
+            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+                !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
+            {
+                OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+                orl.emitRetainSlot(referenceType.getElementType(), allocated);
+            }
         }
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
