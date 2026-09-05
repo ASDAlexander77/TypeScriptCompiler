@@ -40,6 +40,12 @@
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
 
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#include <stdlib.h>
+#include <windows.h>
+#endif
+
 #define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
@@ -263,6 +269,18 @@ int main(int argc, char **argv)
     // a non-interactive/headless run.
     _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );
     _CrtSetReportFile( _CRT_ASSERT, _CRTDBG_FILE_STDERR );
+#endif
+
+#ifdef _MSC_VER
+    // Neither the CRT nor Windows may stop and ask. A modal dialog in an unattended run is not
+    // a failure but a hang - whatever raised it waits forever on a window nobody is there to
+    // close - and the compiler is run unattended far more often than not. `_CrtSetReportMode`
+    // above only covers the debug CRT, so the release build needs `_set_error_mode` to send a
+    // runtime error report to stderr; `SetErrorMode` is the same thought one layer out, for a
+    // program that faults rather than reports: die, and let the caller see the exit code.
+    // (The JIT'd program's own `assert` is handled separately, in jit.cpp.)
+    _set_error_mode(_OUT_TO_STDERR);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
 
     // version printer

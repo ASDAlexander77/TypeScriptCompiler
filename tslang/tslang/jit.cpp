@@ -18,6 +18,7 @@
 #include "llvm/Support/Path.h"
 
 #include <cstdio>
+#include <cstdlib>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -234,6 +235,26 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 #endif
 };
 
+// A failing `assert` in compiled code calls `_assert`, and under --emit=jit that call lands
+// in whichever CRT the process resolver reaches first - ucrtbase.dll, whose report mode is
+// nobody's to set from here, and which puts the failure up as a modal message box. In an
+// unattended run that is not a failure but a hang: the harness waits on a window nobody is
+// there to close, and a whole test tier can stall on one bad assertion. Answer the call here
+// instead. The lowering passes the source position along, so this says more than the box did.
+static void jitAssertFailed(const char *message, const char *file, unsigned line)
+{
+    if (file != nullptr && *file != '\0')
+    {
+        fprintf(stderr, "%s:%u: ", file, line);
+    }
+
+    fprintf(stderr, "assertion failed: %s\n", message != nullptr ? message : "assert");
+    fflush(stderr);
+
+    // not abort(): that has a dialog of its own to put up
+    _exit(3);
+}
+
 #ifdef _WIN64
 // MSVC x64 C++ EH encodes throw-site type information as image-relative offsets.
 // vcruntime's _CxxThrowException recovers the base with RtlPcToFileHeader on the
@@ -381,6 +402,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addSym("calloc", (void*)&calloc);
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
+        // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
+        // unattended run cannot answer
+        addSym("_assert", (void*)&jitAssertFailed);
 #ifdef _WIN64
         // C++ EH: bind the JIT'd module's personality to our static CRT and route
         // throws through the shim that fixes up the throw-site image base (see
@@ -560,6 +584,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addOverride("calloc", (void *)&calloc);
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
+        // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
+        // unattended run cannot answer
+        addOverride("_assert", (void *)&jitAssertFailed);
 #ifdef _WIN64
         // C++ EH: same-CRT personality, and throws routed through the shim that
         // fixes up the throw-site image base (see jitCxxThrowException above)

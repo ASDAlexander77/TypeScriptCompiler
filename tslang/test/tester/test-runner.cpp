@@ -430,7 +430,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 {
     if (gctorsAsMethod)
     {
-        tslang_opt_ext += "--gctors-as-method";
+        // the separator matters: `-mm=` may already have put something here, and without it
+        // the two run together into one unrecognised option
+        tslang_opt_ext += " --gctors-as-method";
     }
 
     auto linker_opt = SHARED_LIB_OPT;

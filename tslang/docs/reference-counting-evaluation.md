@@ -545,13 +545,16 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    anything** - unnoticed because ctest's AOT tier runs the default model only. rc-only across
    the three configurations **12 -> 11** (10 real), and **`none` now has no failure `gc` does not
    share**.
-5y. **The `rc` tier of ctest is 42 files of 478, and its AOT tier is none of them.** Every
-   ownership measurement in §9.12-§9.37 was taken inside that tier, and every fault since §9.38
-   was found outside it - 5x's was invisible twice over, once for the model and once for the
-   build mode, since `test-compile-*` runs the default model only. 5v-5x are closed, so this is
-   what is left: registering the rest of the corpus under `rc` (as individual tests or as one
-   sweep target), and giving `rc` and `none` an ahead-of-time tier at all. **Next slice**, and
-   the one that stops this recurring.
+5y. **The corpus under the models that are not the default.** **Done 2026-09-05, see §9.42.**
+   `rc` ran 42 files of 478 and `none` ran 24, and neither ran one of them ahead of time, which
+   is why every fault since §9.38 was found by an out-of-tree sweep and why 5x's was invisible
+   twice over. Every single-file test the default model runs is now run again in the same tier
+   under both other models, and so is every shared-component pair - as a `foreach` over the
+   entries that already exist, so the two lists cannot drift apart. 945 -> 2,585 tests, 18.8 s
+   -> about 50 s at `-j 12`. The first run named ten files (5ae), and two faults in the harness
+   itself: a failing `assert` under `--emit=jit` was a modal message box and therefore a hang
+   rather than a failure, and the shared-component runner dropped the space between `-mm=` and
+   `--gctors-as-method`.
 5z. **A generator that takes a parameter leaks its capture box.** Newly measurable once §9.39
    stopped the crash: 500k iterations at `-O3`, a generator with a local and no parameter costs
    `rc` 2.6-3.7 MB against `gc`'s 2.6-4.1, and the same generator **with a parameter** costs
@@ -578,6 +581,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
+5ae. **Ten corpus files fault under `rc`.** What §9.42 bought: all ten fail in both tiers and not
+   one of them under `none`, so they are reference counting's rather than latent. Nine corrupt
+   the heap; the tenth gets a wrong answer, which is worse. `00class_static.ts` (private static
+   fields, and a `delete`), `00generator6.ts` (`yield*` of a `number | string`),
+   `00mixed_type_ops.ts` (binary operators across static types), `00safe_cast_field_access.ts`
+   (a narrowed `number | null` field), `00spread.ts` (an array spread into parameters),
+   `01class_new.ts` (an interface with a construct signature), `25lamdacapture.ts` (a lambda
+   inside a lambda - **the wrong answer, no crash**), `44toplevelcode.ts` (about one run in
+   eight), `nbody.ts`, `raytrace.ts`. They are registered and disabled in
+   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build. Unions and
+   captures each turn up more than once and are the two obvious places to start. **Next
+   slice**, and there is enough here for several.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -3360,3 +3375,106 @@ Two things came out of measuring it, neither this slice's:
 945/945. Ownership verifier unchanged at its two standing findings - necessarily, since nothing
 in the compiler changed, only the runtime libraries. `raytrace` at `-O3` is 2.6 MB against `gc`'s
 4.2.
+
+### 9.42 Step 5y: the tier that was 42 files of 478
+
+`-mm=rc` ran 42 files of the corpus and `-mm=none` ran 24, and neither ran one of them ahead of
+time. The ahead-of-time tier is a real one - `test-compile-*` compiles, links with `lld` and runs
+the executable - but it has only ever run the default model, so a fault had to be wrong in the
+default model *and* in the JIT before anything here would say so. §9.41's was neither. Nor was
+§9.39's or §9.40's: all three were found by a sweep script that lived in a scratch directory and
+ran when somebody remembered to run it.
+
+Every single-file test the default model runs is now run again, in the same tier, under `rc` and
+under `none`, and so is every shared-component pair. The corpus is not a second list to keep in
+step with the first: the existing entries *are* the list, and the new tiers are a `foreach` over
+it, so a file added for the default model arrives in all three at once.
+
+| | before | after |
+| --- | --- | --- |
+| `rc`, JIT | 42 files | 384, ten of them disabled |
+| `rc`, ahead of time | none | 385, ten of them disabled |
+| `none`, JIT | 24 files | 384 |
+| `none`, ahead of time | none | 385 |
+| shared-component tests, each of `rc` and `none` | none | 84 |
+| tests in the suite | 945 | 2,585 |
+| `ctest -j 12` | 18.8 s | about 50 s |
+
+#### What the first run said
+
+Ten files, all under `rc`, all in both tiers, and **not one of them under `none`** - which is the
+shape of a reference-counting fault rather than a latent one. Nine corrupt the heap
+(0xC0000374); `25lamdacapture.ts` just gets the wrong answer. Each was run six or eight times per
+tier on its own before being listed:
+
+| file | JIT `rc` | AOT `rc` | what it is |
+| --- | --- | --- | --- |
+| `00class_static.ts` | 6/6 | 6/6 | private static fields, and a `delete` |
+| `00generator6.ts` | 6/6 | 6/6 | `yield*` of a `number \| string` |
+| `00mixed_type_ops.ts` | 6/6 | 6/6 | binary operators across static types |
+| `00safe_cast_field_access.ts` | 6/6 | 6/6 | a `number \| null` field, narrowed |
+| `00spread.ts` | 6/6 | 6/6 | an array spread into parameters |
+| `01class_new.ts` | 6/6 | 6/6 | an interface with a construct signature |
+| `25lamdacapture.ts` | 6/6 | 6/6 | a lambda inside a lambda - **wrong answer, no crash** |
+| `44toplevelcode.ts` | 0/8 | 1/8 | rare, and the correction to §9.41 below |
+| `nbody.ts` | 6/6 | 6/6 | the benchmark |
+| `raytrace.ts` | 3/6 | 6/6 | the benchmark |
+
+Filed together as 5ae. Fixing them is not this slice - the slice is that they are in the suite
+now, instead of in a script nobody runs.
+
+They are registered and **disabled**, rather than left out or marked `WILL_FAIL`. Left out, the
+names would not exist and nothing in the build would say what is broken. `WILL_FAIL` was the
+first attempt and does not hold: a corrupted heap does not always land, and the last two rows of
+that table are not the only ones that wander. `00mixed_type_ops.ts` fails six runs in six on its
+own and came up clean once in three runs of the whole suite, where twelve tests at a time give
+the allocator a different history - and under `WILL_FAIL` a run that passes is a red suite.
+Disabled, the list stays in the build where it can be read, `ctest` counts them out loud, and
+the suite stays a suite.
+
+#### The correction to §9.41
+
+§9.41 put `44toplevelcode`'s sweep timeout down to four sweeps running at once. It was not
+contention. The file is rc-only broken about one run in eight, and when it broke in the JIT it
+did not fail - it stopped on the message box described below, which the sweep could only see as
+a test that never ended. The rep check that cleared it ran it on its own, where it passes eight
+times in eight.
+
+#### Two faults in the harness, on the way in
+
+**A failing `assert` in a JIT run was a hang, not a failure.** Under `--emit=jit` the `assert` in
+compiled code calls `_assert`, and the process resolver binds that to `ucrtbase.dll` - a CRT
+instance whose report mode nothing here sets, and whose answer to a failed assertion is a modal
+message box. The harness then waits on a window nobody is there to close, forever. It had never
+come up, because until now every JIT test in the suite passed; the first thing the corpus did was
+register several hundred that do not. `jit.cpp` already binds `puts`, `malloc` and the C++
+personality away from `ucrtbase` for the same class of reason, and `_assert` now joins them,
+pointed at a shim that writes the message to stderr and exits:
+
+```
+assertion failed: deliberately false
+```
+
+The ahead-of-time path was never affected - the generated executable's own CRT sees a console
+application and writes to stderr already. `tslang.exe` now also asks Windows not to raise the
+error-reporting dialog on a fault, which is worth about twenty seconds a run: nine of the ten
+crash, three times over with the harness's retries, and every one of those was sitting in the
+reporting UI.
+
+**The shared-component runner dropped a space.** `--gctors-as-method` was appended to the
+compiler options with no separator, so the first shared test ever to carry another flag produced
+`--mm=rc--gctors-as-method` and 26 pairs failed to build. Latent since the flag was added,
+because nothing had ever passed a second one.
+
+#### One more, not listed
+
+`13actions.ts` - closures capturing locals, so the same neighbourhood as `25lamdacapture.ts` -
+failed once under `rc` ahead of time, in ten runs of the whole suite. On its own it passes
+sixteen runs in sixteen, in both tiers, under all three models, and the `rc` and `none` tiers on
+their own are clean ten runs in ten: whatever it is needs the whole suite's load to land. One
+sighting is not enough to disable a file on, so it stays registered and is written down here
+instead. If it comes back it joins 5ae.
+
+2,565/2,565, with the ten disabled, over six consecutive runs. The ownership verifier is
+unchanged at its two standing findings - necessarily, since nothing in the compiler changed this
+time, only the harness and the driver.
