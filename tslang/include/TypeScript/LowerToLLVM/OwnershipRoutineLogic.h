@@ -794,7 +794,13 @@ class OwnershipRoutineLogic
                 auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
                                                               ArrayRef<LLVM::GEPArg>{0, UNION_VALUE_INDEX});
 
-                releaseViaDescriptor(tagValue, valueSlot);
+                // A null tag is a union that holds nothing yet, and that is the ordinary case
+                // rather than a corner: a class instance comes out of calloc zeroed, and the
+                // first assignment to a union field releases the old value before storing the
+                // new one. The check has to be here, because getRecordPtrFromTag walks
+                // backwards from the tag to find the descriptor - it would read through the
+                // null long before the null check inside releaseViaDescriptor.
+                emitIfNonNull(tagValue, [&]() { releaseViaDescriptor(tagValue, valueSlot); });
             }
             else
             {
@@ -942,7 +948,9 @@ class OwnershipRoutineLogic
                 auto valueSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmUnionType, slotPtr,
                                                               ArrayRef<LLVM::GEPArg>{0, UNION_VALUE_INDEX});
 
-                retainViaDescriptor(tagValue, valueSlot);
+                // see the release side: a zeroed union holds nothing, and the tag has to be
+                // checked here rather than inside retainViaDescriptor, which reads through it
+                emitIfNonNull(tagValue, [&]() { retainViaDescriptor(tagValue, valueSlot); });
             }
             else
             {

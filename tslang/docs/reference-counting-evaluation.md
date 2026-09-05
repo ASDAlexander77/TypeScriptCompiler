@@ -581,17 +581,17 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Nine corpus files fault under `rc`.** What §9.42 bought; §9.43 has taken the first two
-   off it, `25lamdacapture.ts` and `raytrace.ts`, which were both the missing retain on a
-   nested capture. What is left fails in both tiers and not one of them under `none`, so it is
-   reference counting's rather than latent: `00class_static.ts` (private static fields, and a
-   `delete`), `00generator6.ts` (`yield*` of a `number | string`), `00mixed_type_ops.ts`
-   (binary operators across static types), `00safe_cast_field_access.ts` (a narrowed
-   `number | null` field), `00spread.ts` (an array spread into parameters), `01class_new.ts`
-   (an interface with a construct signature), `nbody.ts`, and - about one run in ten each -
-   `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
-   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build. Unions
-   account for three of them and are the obvious next group. **Next slice.**
+5ae. **Seven corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
+   and `raytrace.ts` off it (a nested capture never retained the cell it inherited) and §9.44
+   took `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has
+   a null tag, and both directions read through it). What is left fails in both tiers and not
+   one of them under `none`, so it is reference counting's rather than latent:
+   `00class_static.ts` (private static fields, and a `delete`), `00mixed_type_ops.ts` (binary
+   operators across static types - grouped with the unions and not one of them),
+   `00spread.ts` (an array spread into parameters), `01class_new.ts` (an interface with a
+   construct signature), `nbody.ts`, and - about one run in ten each - `13actions.ts` and
+   `44toplevelcode.ts`. They are registered and disabled in `test/tester/CMakeLists.txt`, so
+   the list of what is broken lives in the build. **Next slice.**
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
    §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
@@ -3579,3 +3579,81 @@ in `TSLANG_CORPUS`, and the loop supplies the other four.
 2,573/2,573 over three consecutive runs. The ownership verifier is unchanged at its two standing
 findings - it never saw this one and could not: an over-release is invisible to a pass that looks
 for references acquired and not given back.
+
+### 9.44 Step 5ae, second: a union that holds nothing yet
+
+```ts
+class A { data: number | null = 10; }
+function main() { const a = new A(); print("made"); }
+```
+
+That is the whole reduction. It faults under `rc` at every optimisation level, and this time with
+`0xC0000005` rather than a corrupted heap - an access violation is a different family of mistake,
+and says a pointer was followed rather than a count mismanaged.
+
+Not every union field does it:
+
+| field | `rc` |
+| --- | --- |
+| `number \| null` | access violation |
+| `number \| string` | access violation |
+| `number \| undefined` | fine |
+| `string \| null` | fine |
+
+The two that fault are the two that need a runtime tag. The other two are lowered without one -
+an optional behind a flag, and a nullable pointer - so nothing reads a descriptor for them.
+
+A tagged union's release routine reads the routine to call out of the descriptor its tag points
+into:
+
+```llvm
+%3 = load ptr, ptr %2                              ; the tag
+%5 = getelementptr i8, ptr %3, i64 -32             ; the descriptor sits in front of it
+%6 = getelementptr {...}, ptr %5, i32 0, i32 2     ; TYPE_DESCR_RELEASE
+%7 = load ptr, ptr %6
+```
+
+and the constructor assigns the field the way every owning field is assigned - retain the
+incoming value, release the outgoing one, store:
+
+```llvm
+call void @tsretv_14998068(<{ ptr, ptr }> %7)      ; the new value
+call void @tsrel_14998068(ptr %6)                  ; the OLD one
+store <{ ptr, ptr }> %7, ptr %6
+```
+
+The old one is the field as `calloc` left it. Its tag is null, `null - 32` is `0xffff...e0`, and
+the load of the release slot is the fault. A union that holds nothing is not a corner case: it is
+what every union field is between the allocation and the first assignment, and the first
+assignment is the thing that reads it.
+
+The fix is `emitIfNonNull` around both directions, which is what the interface and closure paths
+already do. `releaseViaTagBesideThis` even carries the reason in a comment - "getRecordPtrFromTag
+walks backwards from the tag to the record, so a null tag would be dereferenced, not skipped, by
+the null check inside releaseViaDescriptor". The observation was right and was written down; it
+was applied in one of the two places that needed it.
+
+#### What it closed
+
+| file | JIT `rc` | AOT `rc` |
+| --- | --- | --- |
+| `00generator6.ts` | 6/6 -> **0/6** | 6/6 -> **0/6** |
+| `00safe_cast_field_access.ts` | 6/6 -> **0/6** | 6/6 -> **0/6** |
+
+`00mixed_type_ops.ts` was grouped with these two as "unions" and is not this: it has no union
+field, and it is unchanged. Four of the original ten are closed now; five files fail every run
+and two fail about one in ten.
+
+#### Teeth
+
+`00owned_unions.ts`, six cases, every one of which fails three runs in three with the two guards
+removed: a first assignment, three assignments in a row, a union field holding a freshly built
+string, two hundred instances each written once, a read through a narrowing test, and the
+`yield*` of a `number | string` that `00generator6.ts` is made of.
+
+Two of them had to be written through a method rather than inline, because an un-narrowed
+comparison against a `number | null` field is rejected in strict null mode - correctly, and in
+every model.
+
+2,583/2,583 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings.
