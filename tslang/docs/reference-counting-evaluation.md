@@ -512,12 +512,15 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `{-O0,-O3} x {default library, none}` configurations**, which is what a use-after-free looks
    like from outside: the columns vary the heap layout, not the ownership. Three reductions came
    out of it, and they are the next three slices.
-5v. **A generator that iterates another generator faults at `-O3`.** `function* g() { for (const
-   o of inner()) yield o; }` faults before printing anything, `rc` only, 10 runs in 10, with or
-   without the default library; `yield* inner()` is the same bug, one generator alone is fine,
-   and `-O0` is fine. Covers `00generator4/5/6`, `00funcs_expression_iterator`, `01iterator`,
-   `00iterator_bug`. **Next slice** - the largest cluster, and it fails in the configuration the
-   suite ships.
+5v. **A generator's unwritten local made the whole caller undefined.** **Done 2026-09-05, see
+   §9.39.** It was not the nesting: `function* g() { const a = [1]; yield a[0]; }` faults on its
+   own. A generator's locals are fields of a state object that is retained before the body has
+   ever run, and an unwritten field lowered to `undef`, so the retain read a refcount through it
+   which is undefined behaviour, and at `-O2` and above it folds `main` to one `unreachable`. An
+   unspecified field of an owning type now lowers to zero under `rc`. Closed 9 files across the
+   two swept configurations with nothing newly broken (rc-only 16 -> 14 bare, 22 -> 15 under the
+   suite's flags), including three with no generator in them; the `-O3`-with-default-library cell
+   was swept for the first time and is 16 rc-only. Across the three configurations, **29 -> 22**.
 5w. **A `for...of` loop variable that holds a reference is not retained.** `const a = [[1],[2]];
    for (const v of a) print(v.length)` faults with the default library at either optimisation
    level, `rc` only, 10 runs in 10. A single-level `for...of` is fine and `a.length` on the same
@@ -525,7 +528,8 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    taking a reference to it. `--no-default-lib` hides it by routing array `for...of` through the
    built-in intrinsic loop instead of the library's iterator protocol - which is also why
    nothing has ever caught it. Covers `00array3`, `00for_of`, `19forof`, `01map`,
-   `00tuple_with_array`, `arrayLiterals`.
+   `00tuple_with_array`, `arrayLiterals`. **Next slice** - a fault in the configuration real
+   programs compile in outranks a leak, and it is the largest remaining cluster.
 5x. **`await` frees something twice.** `async function f() { return 1; }` and then `const r =
    await f()` prints the right answer and dies of heap corruption on the way out, in all four
    configurations, 10 runs in 10. Calling `f()` without awaiting it is fine. Covers
@@ -535,6 +539,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    taken inside that 39, and 28 of the 29 known faults are outside it. Once 5v-5x are closed,
    registering the rest of the corpus under `rc` - as individual tests or as one sweep target -
    is what stops this recurring.
+5z. **A generator that takes a parameter leaks its capture box.** Newly measurable once §9.39
+   stopped the crash: 500k iterations at `-O3`, a generator with a local and no parameter costs
+   `rc` 2.6-3.7 MB against `gc`'s 2.6-4.1, and the same generator **with a parameter** costs
+   22.7 MB (array local) or 46.3 (string local). The parameter is the whole variable. It makes
+   the coroutine capture, the box becomes a field of the state object, and the object's release
+   routine does not walk that field - the same `ownsHeapMemory` blind spot that left the field
+   un-zeroed in §9.39. A generator that yields a freshly built string costs 76.8 MB against
+   `none`'s 71.2, so there is a second leak on the yield path.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2970,3 +2982,140 @@ line was the bug - §9.36 lost 43 files to a missing `--shared-libs`.
 reads clean is the wrong one.
 
 Nothing was changed in this slice. 933/933, verifier unchanged at its two standing findings.
+
+### 9.39 Step 5v: a generator's state object, and the field that was never written
+
+§9.38's first reduction was a generator that iterates another generator, faulting at `-O3` and
+printing nothing. Narrowing it took the inner generator out of it entirely:
+
+```ts
+function* g() { const a = [1]; yield a[0]; }
+function main() { for (const x of g()) print(x); print("done."); }
+```
+
+`rc` only, `-O2` and above, no output at all. Take the local away - `function* g() { yield
+mk()[0]; }` - and it passes. So it is not the nesting and not the iterator protocol: it is **a
+generator with one local that holds a reference**.
+
+"No output at all" is a strong hint, and the LLVM dump says exactly what happened:
+
+```llvm
+define void @main() local_unnamed_addr {
+  unreachable
+}
+```
+
+The whole of `main` is gone. LLVM proved the program had undefined behaviour on every path and
+folded it away, which is why `-O0` and `-O1` "work", why `-O2` does not, and why nothing printed.
+
+#### Where the undefined behaviour came from
+
+A generator lowers to a state object holding one field per local, built and returned by the ramp
+function before the body has ever run:
+
+```mlir
+%2 = ts.Constant { value = [0 : si32, unit, @next] }
+      : const_tuple<{".step",si32},{"a",!ts.array<si32>},{"next",...}>
+%4 = ts.Load(%3)
+%5 = ts.New()
+"ts.Retain"(%4)      // walks the tuple's owning fields - including "a"
+"ts.Store"(%4, %5)
+```
+
+`"a"` is the generator's local, and its initial value is `unit`: nothing writes the field until
+the body runs. `getTupleFromArrayAttr` lowered `unit` to `mlir_ts::UndefOp`, so `"a"` was
+`undef`, and the retain walks into it:
+
+```llvm
+%2 = getelementptr i8, ptr undef, i64 -8    ; step back to the block header
+%3 = load i64, ptr %2                       ; read the refcount
+```
+
+Loading through `undef` is undefined behaviour, so the optimizer may conclude that anything
+reaching it is unreachable - and it does, out through `g` and into `main`. The release side is
+worse in principle even though nothing gets that far: tearing the object down would decrement a
+refcount at a garbage address and free whatever block it landed in.
+
+**An unspecified field of an owning type now lowers to zero rather than undef**, under `rc`,
+where `MLIRTypeHelper::ownsHeapMemory` says the field owns something:
+
+```llvm
+store { i32, { ptr, i64 }, ptr } { i32 0, { ptr, i64 } zeroinitializer, ptr @...next }, ptr %1
+```
+
+Null is the value the rest of the model already handles - `__tslang_inc_ref` and
+`__tslang_dec_ref` both test for it - so the retain at construction is a no-op, the release at
+teardown is a no-op, and the first real write to the field takes ownership the way any field
+store does. `gc` and `none` are untouched.
+
+#### What it closed
+
+| sweep | before | after | newly fixed | newly broken |
+| --- | --- | --- | --- | --- |
+| bare, `-O0`, default library | 117 | 115 | `00for_of`, `44toplevelcode` | none |
+| `--opt --opt_level=3 --no-default-lib` | 109 | 102 | `00extension_cond_access`, `00funcs_expression_iterator`, `00generator4`, `00generator5`, `00iterator_bug`, `00map`, `01iterator` | none |
+
+That is 5v's predicted cluster except `00generator6`, plus three files nobody had attributed to
+it - `00extension_cond_access`, `00map` and `44toplevelcode`, none of which contains a generator.
+Any const tuple with an unwritten owning field was hitting this.
+
+§9.38 named `-O3` **with** the default library as a configuration nothing had ever swept, so this
+slice swept it: `rc` 117 non-zero against `gc`'s 101, 16 rc-only. It surfaces one file the other
+two configurations never showed, `00typed_array`, and rebuilding the previous state confirms it
+faulted there before this change too (6 runs in 6, `gc` clean) - newly *found*, not newly broken.
+Across all three configurations the rc-only set is **29 -> 22**.
+
+One file has to be reported rather than counted. `01map` faulted in two of the four cells before
+and faults in two after, but not the same two: `-O0 --no-default-lib` went 6 runs in 6 to 0, and
+`-O3` with the default library went 0 to 6, both measured with repetitions on both sides.
+Turning `undef` into null cannot manufacture an over-release - it removes an undefined read and
+makes two existing null checks fire - but it does change what the optimizer emits and so where
+everything lands, and `01map` still carries 5w's bug. This is the sensitivity §9.38 measured:
+18 of the 29 fault in only some configurations, and the configuration is the heap layout.
+
+#### Teeth
+
+`00owned_generators.ts`, five cases, each keeping a reference-typed local alive across a
+suspension: an array, a string, an iterator over another generator, a `yield*` delegation, and a
+local mutated between two resumptions.
+
+| probe | fails |
+| --- | --- |
+| lower an unspecified owning field to `undef` again | all five, `rc` at `-O3`, 6 runs in 6 |
+| the same probe under `gc`, under `none`, or at `-O0` | nothing |
+
+The `-O0` row is the point rather than a gap: the bug is undefined behaviour, so what it needs to
+become a fault is an optimizer willing to act on it. The tier that has teeth here is the one
+ctest actually runs.
+
+#### What the fix made measurable: a generator with a parameter leaks
+
+These programs could not be measured before, because they crashed. 500k iterations, `-O3`:
+
+| | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| generator with an array local, no parameter | 2.6 | **2.6** | 34.4 |
+| generator with a string local, no parameter | 4.1 | **3.7** | 55.8 |
+| generator with an array local **and a parameter** | 4.1 | **22.7** | 40.2 |
+| generator with a string local **and a parameter** | 4.1 | **46.3** | 127.0 |
+| a generator that yields a freshly built string | 4.1 | **76.8** | 71.2 |
+
+The parameter is the whole variable - the local's type makes no difference either way. A
+parameter makes the coroutine capture, and the capture box becomes a fourth field of the state
+object, which the object's release routine does not walk:
+
+```llvm
+define internal void @tsrel_5704117(ptr %0) {
+  ...
+  %7 = getelementptr { i32, ptr, ptr, ptr }, ptr %2, i32 0, i32 1
+  call void @tsrel_5061303(ptr %7)     ; field 1, the string local
+  call void @__tslang_free_block(ptr %2)
+```
+
+Field 3 is the box, and nothing gives it back. It is the same predicate on both ends: the box
+field is the one field this slice's fix did *not* zero, because `ownsHeapMemory` does not call it
+owning - which is exactly why the release routine skips it too. The last row is worse than
+`none`, so there is a second leak on the yield path as well. Filed as 5z.
+
+937/937. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is 2.6 MB
+against `gc`'s 4.2 and `none`'s 108.9.
