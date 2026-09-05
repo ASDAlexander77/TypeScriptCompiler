@@ -253,6 +253,7 @@ add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURC
 add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-compile-00-owned-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-compile-00-owned-async COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-compile-00-owned-nested-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
 add_test(NAME test-compile-00-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-compile-00-in-method-names COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -648,6 +649,7 @@ add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOUR
 add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-jit-00-owned-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-00-owned-async COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-jit-00-owned-nested-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
 add_test(NAME test-jit-00-try-using-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
@@ -1176,6 +1178,8 @@ add_test(NAME test-jit-rc-owned-iteration COMMAND test-runner -jit -mm=rc "${PRO
 add_test(NAME test-jit-none-owned-iteration COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-rc-owned-async COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
 add_test(NAME test-jit-none-owned-async COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-jit-rc-owned-nested-captures COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
+add_test(NAME test-jit-none-owned-nested-captures COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
 add_test(NAME test-jit-rc-try-using-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-none-try-using-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-rc-disposable-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
@@ -1415,6 +1419,7 @@ set(TSLANG_CORPUS
     00owned_iteration.ts
     00owned_literals.ts
     00owned_locals.ts
+    00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts
     00owned_transfer.ts
@@ -1647,6 +1652,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00owned_iteration.ts
     00owned_literals.ts
     00owned_locals.ts
+    00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts
     00owned_transfer.ts
@@ -1681,6 +1687,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00owned_interfaces.ts
     00owned_iteration.ts
     00owned_literals.ts
+    00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts
     00owned_transfer.ts
@@ -1692,17 +1699,18 @@ set(TSLANG_CORPUS_NONE_NAMED
     04disposable.ts
     )
 
-# Known broken. Ten files, all under `rc`, all in both tiers, and not one of them under
-# `none` - which is the shape of a reference-counting fault rather than a latent one. They are
-# plan item 5ae, and they are what registering the corpus bought. Nine of them corrupt the heap
-# (0xC0000374); `25lamdacapture.ts` just gets the wrong answer.
+# Known broken. Nine files, all under `rc`, all in both tiers, and not one of them under `none`
+# - which is the shape of a reference-counting fault rather than a latent one. They are plan
+# item 5ae, and they are what registering the corpus bought. Seven fail every run; the last two
+# fail about one run in ten, which is what a corrupted heap does when the layout has to line up
+# for the damage to be reachable.
 #
 # They are registered and DISABLED rather than left out or marked WILL_FAIL. Left out, the
 # names would not exist and nothing would say what is broken; WILL_FAIL was tried first and
-# does not hold, because a corrupted heap does not always land - `00mixed_type_ops.ts` fails
-# six runs in six on its own and came up clean once in three runs of the suite, where twelve
-# tests at a time give the allocator a different history. Disabled, the list stays in the
-# build where it can be read, and the suite stays a suite.
+# does not hold, for the same reason the last two wander - `00mixed_type_ops.ts` fails six runs
+# in six on its own and came up clean once in three runs of the suite, where twelve tests at a
+# time give the allocator a different history, and a WILL_FAIL test that passes is a red suite.
+# Disabled, the list stays in the build where it can be read, and the suite stays a suite.
 set(TSLANG_CORPUS_BROKEN_JIT_RC
     00class_static.ts
     00generator6.ts
@@ -1710,10 +1718,10 @@ set(TSLANG_CORPUS_BROKEN_JIT_RC
     00safe_cast_field_access.ts
     00spread.ts
     01class_new.ts
-    25lamdacapture.ts
-    44toplevelcode.ts
     nbody.ts
-    raytrace.ts
+    # about one run in ten, each
+    13actions.ts
+    44toplevelcode.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_JIT_NONE
@@ -1726,10 +1734,10 @@ set(TSLANG_CORPUS_BROKEN_AOT_RC
     00safe_cast_field_access.ts
     00spread.ts
     01class_new.ts
-    25lamdacapture.ts
-    44toplevelcode.ts
     nbody.ts
-    raytrace.ts
+    # about one run in ten, each
+    13actions.ts
+    44toplevelcode.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_NONE

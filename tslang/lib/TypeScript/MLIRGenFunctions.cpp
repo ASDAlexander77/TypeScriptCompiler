@@ -1509,6 +1509,16 @@ namespace mlirgen
                     paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
                     builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
+                else if (isCapturedCellSlot(refValue))
+                {
+                    // A closure inside a closure, capturing the same variable. There is nothing
+                    // to mark here - the frame that declared the variable already made its
+                    // storage a cell, and this function only knows the cell through its own
+                    // capture box - but the box about to be built owns it exactly as that first
+                    // box does, and releases it when the bound function goes. Without the
+                    // matching retain the inner box gives back a count nobody added.
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
+                }
                 else
                 {
                     // no retain here: what makes a variable's storage a cell is being marked

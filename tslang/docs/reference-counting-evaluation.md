@@ -581,18 +581,24 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Ten corpus files fault under `rc`.** What §9.42 bought: all ten fail in both tiers and not
-   one of them under `none`, so they are reference counting's rather than latent. Nine corrupt
-   the heap; the tenth gets a wrong answer, which is worse. `00class_static.ts` (private static
-   fields, and a `delete`), `00generator6.ts` (`yield*` of a `number | string`),
-   `00mixed_type_ops.ts` (binary operators across static types), `00safe_cast_field_access.ts`
-   (a narrowed `number | null` field), `00spread.ts` (an array spread into parameters),
-   `01class_new.ts` (an interface with a construct signature), `25lamdacapture.ts` (a lambda
-   inside a lambda - **the wrong answer, no crash**), `44toplevelcode.ts` (about one run in
-   eight), `nbody.ts`, `raytrace.ts`. They are registered and disabled in
-   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build. Unions and
-   captures each turn up more than once and are the two obvious places to start. **Next
-   slice**, and there is enough here for several.
+5ae. **Nine corpus files fault under `rc`.** What §9.42 bought; §9.43 has taken the first two
+   off it, `25lamdacapture.ts` and `raytrace.ts`, which were both the missing retain on a
+   nested capture. What is left fails in both tiers and not one of them under `none`, so it is
+   reference counting's rather than latent: `00class_static.ts` (private static fields, and a
+   `delete`), `00generator6.ts` (`yield*` of a `number | string`), `00mixed_type_ops.ts`
+   (binary operators across static types), `00safe_cast_field_access.ts` (a narrowed
+   `number | null` field), `00spread.ts` (an array spread into parameters), `01class_new.ts`
+   (an interface with a construct signature), `nbody.ts`, and - about one run in ten each -
+   `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
+   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build. Unions
+   account for three of them and are the obvious next group. **Next slice.**
+5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
+   this document has that was measured on a program that finished - see the correction in
+   §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
+   third of what the program leaks without it, not all of it and then some, as has been claimed
+   here since §9.31. The per-shape results in §9.29-§9.37 stand, because those programs
+   completed; the whole-program case has to be made again from here, and this is where it
+   starts.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2605,6 +2611,12 @@ its own model and wrong about the program.
 cells were: its per-pixel closures (`addLight`, `recenterX`/`recenterY`) declare their captured
 variables inside functions called once per pixel, so the leak was a cell per capture per pixel.
 
+> **Correction, §9.43.** That 2.6 MB is not a measurement of `raytrace`. The program was
+> crashing under `rc` from this step until §9.43 fixed the nested-capture retain, and 2.6 MB is
+> how far it got before it died - the measuring script never printed an exit code, so nobody
+> looked. Every `raytrace` figure in this document from here to §9.42 is that same crash. The
+> first real one is in §9.43, and it is 61-68 MB.
+
 The third row is the remaining hole and is filed as 5r. A parameter is borrowed, so nothing in
 the frame releases it, and a captured parameter's cell therefore has an owner that never lets go.
 That is a leak and only a leak — the cell outliving everything is exactly what stops the box from
@@ -3478,3 +3490,92 @@ instead. If it comes back it joins 5ae.
 2,565/2,565, with the ten disabled, over six consecutive runs. The ownership verifier is
 unchanged at its two standing findings - necessarily, since nothing in the compiler changed this
 time, only the harness and the driver.
+
+### 9.43 Step 5ae, first: a closure inside a closure
+
+```ts
+let a = 7;
+const g = () => {
+    const h = () => { glb = glb + a; };
+    h();
+};
+g();
+```
+
+One level of that is fine. Two corrupts the heap, at `-O3`, under `rc` and nothing else. The
+generated dialect says why. In the frame that declares `a`:
+
+```mlir
+"ts.RetainCell"(%6) : (!ts.ref<si32>) -> ()
+%9  = "ts.Capture"(%6) : (!ts.ref<si32>) -> !ts.ref<!ts.tuple<{"a",!ts.ref<si32>}>>
+%10 = "ts.CreateBoundFunction"(%9, %7) {__owned_result, __owns_capture}
+```
+
+and inside `g`, capturing the same cell to build `h`'s box:
+
+```mlir
+%1 = "ts.Load"(%0)     // `a`, reached through g's own capture box
+%4 = "ts.Capture"(%1) : (!ts.ref<si32>) -> !ts.ref<!ts.tuple<{"a",!ts.ref<si32>}>>
+%5 = "ts.CreateBoundFunction"(%4, %2) {__owned_result, __owns_capture}
+```
+
+There is no retain. `mlirGenResolveCapturedVars` emitted one for a `ts.Variable`, a `ts.Param`
+and a `ts.ParamOptional` - the three shapes it also has to *mark* as captured, since being captured is
+what turns a variable's storage into a cell. An inherited cell is none of those: the frame that
+declared it marked it already, and here it arrives as a load of a capture-box field. The
+fall-through branch's comment read "nothing was marked" and drew the wrong conclusion from a true
+observation. The box being built owns this cell exactly as the first box does, and releases it
+when the bound function goes, so it has to take a reference to it first. `isCapturedCellSlot` -
+the predicate §9.30 already needed to recognise assignment *through* such a reference - is what
+names the shape.
+
+#### What it closed
+
+| file | JIT `rc` | AOT `rc` |
+| --- | --- | --- |
+| `25lamdacapture.ts` | 6/6 -> **0/10** | 6/6 -> **0/10** |
+| `raytrace.ts` | 3/6 -> **0/10** | 6/6 -> **0/10** |
+
+`13actions.ts` and `44toplevelcode.ts`, the two that fail about one run in ten, are unchanged at
+one in ten, and the other seven 5ae files are unchanged outright. Two of ten, then - but one of
+the two is the benchmark this document has been quoting since §9.31, and that turns out to matter
+more than the count.
+
+#### What `raytrace` actually costs
+
+| | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `raytrace.ts`, `-O3`, three runs each | 4.6 / 4.2 / 4.6 | **67.8 / 61.1 / 60.5** | 95.4 / 99.2 / 99.5 |
+
+The `rc` column has never been measured before. Every stored `rc` `raytrace` binary from §9.31,
+§9.32, §9.33, §9.39 and §9.41 is still on disk, and every one of them exits `0xC0000374` with
+**zero lines of output** and a peak of 2.6 MB. That is the number this document has carried as
+"below `gc`'s own 4.2" through five slices. It is how far a crashing program got.
+
+`measure5q.ps1` printed the peak working set and not the exit code. §9.38 wrote down that a
+Windows fault code does not survive bash's eight-bit exit status, so read exit codes in
+PowerShell; the same lesson had to be learned one level up, where the script does read them and
+simply never says so. **A measurement script prints the exit code, or the measurement is of
+nothing in particular.**
+
+What the real numbers say is less flattering and more useful: on the whole program `rc` reclaims
+about a third of what `none` leaks, and sits at fourteen times `gc`. The per-shape numbers in
+§9.29-§9.37 stand - those were measured on programs that completed - but the whole-program claim
+does not, and 5af is now what is left of it.
+
+#### Teeth
+
+`00owned_nested_captures.ts`, six cases; with the retain removed, every one of them fails three
+runs in three. Two had to be rewritten to get there. A nested closure that is called on the spot
+inside a loop is folded away at `-O3` - the inner box never exists, so there is nothing to
+mis-release - and the case sat there passing either way. Handing the inner closure back instead
+makes the box real and the case bites. The lesson is the older one in a new place: **a case that
+passes with the fix reverted is not a case**, and at `-O3` the reason is often that the optimiser
+deleted the thing under test.
+
+The file is registered the way the corpus now allows: two entries for the default model, one line
+in `TSLANG_CORPUS`, and the loop supplies the other four.
+
+2,573/2,573 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings - it never saw this one and could not: an over-release is invisible to a pass that looks
+for references acquired and not given back.
