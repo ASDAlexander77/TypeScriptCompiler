@@ -1017,6 +1017,40 @@ namespace mlirgen
 
         builder.create<mlir_ts::DeleteOp>(location, expr);
 
+        // Under reference counting `delete` gives up the reference the expression named, so the
+        // storage that named it has to stop holding one. Otherwise the release that storage
+        // gets anyway - scope exit for a local, the instance's release routine for a field -
+        // runs a second time against a block this already let go of, and the second one lands
+        // wherever the allocator has since put that memory. Whether that faults depends on what
+        // was allocated in between, which is why `00class_static.ts` needed two `print` calls
+        // between the delete and the end of the function to show it.
+        if (compileOptions.isRefCounted())
+        {
+            // `delete new C()` and `delete c`, where `c` is a `const` the compiler kept as a
+            // value rather than storage: the reference is one nobody has claimed, and §9.30
+            // releases those at the end of the block. This is the claim.
+            if (producesOwnedReference(expr))
+            {
+                consumeOwnedReference(expr);
+            }
+
+            // And the other way the same reference gets released twice: a variable with real
+            // storage is deleted through a load of its slot, and the slot is released again on
+            // the way out. `ts.Delete` then `ts.ReleaseSlot` on the same slot is visible in the
+            // dialect for `let c = new C(); delete c;`. Storing null is what makes the second
+            // one a no-operation - every release routine checks its pointer first. This is a
+            // raw store on purpose: the assignment path would retain and release around it.
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto reference = mcl.GetReferenceFromValue(location, expr);
+            if (reference && isOwningSlot(location, reference))
+            {
+                auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                mlir::Value clearedValue;
+                CAST(clearedValue, location, expr.getType(), nullValue, genContext);
+                builder.create<mlir_ts::StoreOp>(location, clearedValue, reference);
+            }
+        }
+
         return mlir::success();
     }
 

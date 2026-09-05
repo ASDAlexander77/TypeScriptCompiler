@@ -581,13 +581,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Seven corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
-   and `raytrace.ts` off it (a nested capture never retained the cell it inherited) and §9.44
-   took `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has
-   a null tag, and both directions read through it). What is left fails in both tiers and not
-   one of them under `none`, so it is reference counting's rather than latent:
-   `00class_static.ts` (private static fields, and a `delete`), `00mixed_type_ops.ts` (binary
-   operators across static types - grouped with the unions and not one of them),
+5ae. **Six corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
+   and `raytrace.ts` off it (a nested capture never retained the cell it inherited), §9.44 took
+   `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has a
+   null tag, and both directions read through it), and §9.45 took `00class_static.ts` (`delete`
+   dropped a reference without telling the end-of-block release to stop). What is left fails in
+   both tiers and not one of them under `none`, so it is reference counting's rather than
+   latent: `00mixed_type_ops.ts` (binary operators across static types - grouped with the
+   unions and not one of them),
    `00spread.ts` (an array spread into parameters), `01class_new.ts` (an interface with a
    construct signature), `nbody.ts`, and - about one run in ten each - `13actions.ts` and
    `44toplevelcode.ts`. They are registered and disabled in `test/tester/CMakeLists.txt`, so
@@ -3656,4 +3657,64 @@ comparison against a `number | null` field is rejected in strict null mode - cor
 every model.
 
 2,583/2,583 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings.
+
+### 9.45 Step 5ae, third: `delete` and the release that follows it
+
+Under reference counting `delete` already drops a reference rather than freeing outright -
+`DeleteOpLowering` has done that since step 6. What it did not do is tell anything else to stop.
+The dialect for `00class_static.ts`'s static method says it in four lines:
+
+```mlir
+%3 = "ts.CallIndirect"(%2) {__owned_result}    // new c1()
+"ts.Delete"(%3)                                 // delete c
+"ts.Release"(%3)                                // ... and the end of the block, again
+```
+
+`%3` is an owned result nobody claimed, and §9.30 releases those where the producing block ends.
+`delete` is a claim, so it now says so: `consumeOwnedReference`, the same mark an assignment
+makes when a slot takes a reference over.
+
+There is a second way to release the same reference twice, and `let c = new C(); delete c;` has
+it - the variable has real storage, `delete` works from a load of it, and the slot is released
+again on the way out:
+
+```mlir
+"ts.Delete"(%18)
+"ts.ReleaseSlot"(%7)
+```
+
+Storing null into the slot makes the second one a no-operation, since every release routine
+checks its pointer first. It is a raw store on purpose - the assignment path would retain and
+release around it.
+
+#### What it closed
+
+`00class_static.ts`, 6/6 to 0/6 in both tiers. Five of the original ten are closed.
+
+#### Teeth, and four cases that have none
+
+One case in `00owned_delete.ts` fails three runs in three with the fix reverted:
+`deleteFromAStaticMethod`, which is `00class_static.ts`'s shape - a static method that builds an
+instance, prints twice, and deletes it. The other four **double-free and nothing notices**.
+
+That is worth writing down, because the first four cases written were all of that kind, and the
+instinct that produced them was wrong in an interesting way. A freed block keeps its contents
+until something is allocated over it, so the standing rule for an over-release is "delete, then
+allocate hard, then read". For a *double free* that rule is backwards: allocating in between
+hands the block to somebody else, and the second free then quietly corrupts a live object rather
+than tripping the allocator's own check on a block still sitting in its free list. What made the
+static-method case fault is that the two `print` calls each build a string the block releases
+after the second free, on a free list that is already inconsistent.
+
+The four that do not discriminate are kept as shape coverage - a variable with storage, a loop, an
+object owning a string, a delete on one of two branches - and the file says so.
+
+`delete` also means something different in each model, which bounds what a shared test can
+assert: under `gc` and `none` the block is freed outright and a second reference to it dangles,
+while under `rc` it is one owner going away and the object survives. A case that held two
+references failed in all three models for that reason and was removed rather than made
+model-specific.
+
+2,587/2,587 over three consecutive runs. The ownership verifier is unchanged at its two standing
 findings.
