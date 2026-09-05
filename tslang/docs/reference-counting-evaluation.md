@@ -501,11 +501,40 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    older than any of this: **growing an array does not zero the slots it exposes**, and the
    store into one releases what the slot held - which is `Array.map` in the default library, and
    was `arrS.map(e => e + "_")` crashing 6 runs in 20 under `rc`.
-5u. **The `-mm=rc` corpus sweep still has 117 non-zero exits of 475.** Most are tests that are
-   meant to fail, or that need something the bare compiler invocation does not give them, and
-   the number has been stable across the last three slices - but it has never been read through.
-   Doing that once would say what fraction is real, and would turn the sweep from a
-   regression-detector into a to-do list. **Next slice**, and cheap.
+5u. **Read the `-mm=rc` corpus sweep through.** **Done 2026-09-05, see §9.38.** Of the 117
+   non-zero exits, **101 fail identically under `gc`** - 79 are one half of a two-file
+   `export_*`/`import_*` test that cannot be JITed alone, 20 are the default library colliding
+   with a test written for `--no-default-lib`, 2 fail under both models. The sweep had also
+   never run the configuration the suite runs (`--opt --opt_level=3 --no-default-lib`), which is
+   what manufactured those 20 and hid 13 real ones. Sweeping both configurations under both
+   models leaves **29 files that fault under `rc` and pass under `gc`**, of which **exactly one
+   is a file ctest ever runs under `rc`**. **18 of the 29 fault in only some of the four
+   `{-O0,-O3} x {default library, none}` configurations**, which is what a use-after-free looks
+   like from outside: the columns vary the heap layout, not the ownership. Three reductions came
+   out of it, and they are the next three slices.
+5v. **A generator that iterates another generator faults at `-O3`.** `function* g() { for (const
+   o of inner()) yield o; }` faults before printing anything, `rc` only, 10 runs in 10, with or
+   without the default library; `yield* inner()` is the same bug, one generator alone is fine,
+   and `-O0` is fine. Covers `00generator4/5/6`, `00funcs_expression_iterator`, `01iterator`,
+   `00iterator_bug`. **Next slice** - the largest cluster, and it fails in the configuration the
+   suite ships.
+5w. **A `for...of` loop variable that holds a reference is not retained.** `const a = [[1],[2]];
+   for (const v of a) print(v.length)` faults with the default library at either optimisation
+   level, `rc` only, 10 runs in 10. A single-level `for...of` is fine and `a.length` on the same
+   array is fine, so it is the loop variable taking an element that owns something without
+   taking a reference to it. `--no-default-lib` hides it by routing array `for...of` through the
+   built-in intrinsic loop instead of the library's iterator protocol - which is also why
+   nothing has ever caught it. Covers `00array3`, `00for_of`, `19forof`, `01map`,
+   `00tuple_with_array`, `arrayLiterals`.
+5x. **`await` frees something twice.** `async function f() { return 1; }` and then `const r =
+   await f()` prints the right answer and dies of heap corruption on the way out, in all four
+   configurations, 10 runs in 10. Calling `f()` without awaiting it is fine. Covers
+   `00async_await` and `00for_await`. The coroutine frame is the obvious suspect, and nothing in
+   this work has ever looked at one.
+5y. **The `rc` tier of ctest is 39 files of 475.** Every ownership measurement in §9.12-§9.37 was
+   taken inside that 39, and 28 of the 29 known faults are outside it. Once 5v-5x are closed,
+   registering the rest of the corpus under `rc` - as individual tests or as one sweep target -
+   is what stops this recurring.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2807,3 +2836,137 @@ in four where eight gets all of them.
 933/933. Ownership verifier unchanged at its two standing findings. The sweep diff against
 §9.36's commit is one line, the new file. `raytrace` at `-O3` is unchanged at 2.6 MB against
 `gc`'s 4.2 and `none`'s 109.0.
+
+### 9.38 Step 5u: reading the sweep, and the configurations nobody had swept
+
+The `-mm=rc` corpus sweep had sat at 117 non-zero exits of 475 for three slices running. It was
+stable enough to be useful as a regression detector - a diff against the previous commit found
+§9.36, and half of §9.37 - and it had never once been read. Reading it needed one question:
+**what does `gc` do with the same file and the same command line?** Whatever fails under both is
+not the memory model.
+
+| bare `--emit=jit -mm=<model> --shared-libs=...`, 475 files | non-zero |
+| --- | --- |
+| `gc` | 101 |
+| `rc` | 117 |
+| fails under `rc`, passes under `gc` | **16** |
+| fails under `gc`, passes under `rc` | 0 |
+
+So 101 of the 117 have nothing to do with reference counting, and every one of them is the
+sweep's own doing:
+
+- **79 are one half of a two-file test.** Every `export_*`, `import_*`, `decl_*` and `emit_*`
+  file, plus `component`/`service` and `shared`/`use_shared`. The exporting half has no `main`
+  (`Symbols not found: [ main ]`); the importing half needs its partner built into a DLL first
+  (`Symbols not found: [ M.Animal..new, ... ]`). JITing either one standalone cannot work by
+  construction.
+- **20 are the default library colliding with the test.** `redefinition of symbol named
+  'Math.PI'`, `'sqrt'`, `'Number..instanceOf'`, `'Error..instanceOf'` - tests that declare their
+  own and are meant to be compiled without the default library - plus a few type errors
+  (`conditionalTypes1`, `path`, `raytrace-0`) that are compiler limitations, identical under both
+  models.
+- **2 fail identically under both models**: `arrayLiterals2ES5` faults under `gc` too, and
+  `import_object_literal_untyped_multi_method` fails an MLIR verifier in both.
+
+That second group is the interesting one, because it says the sweep had never been running these
+tests the way the suite runs them. `test-runner` compiles with **`--opt --opt_level=3
+--no-default-lib`**; the sweep compiled bare - `-O0`, with the default library. Those are not the
+same program, and neither configuration dominates the other:
+
+| | `gc` | `rc` | rc-only |
+| --- | --- | --- | --- |
+| bare, `-O0`, with the default library | 101 | 117 | 16 |
+| `--opt --opt_level=3 --no-default-lib` - what the suite runs | 87 | 109 | **22** |
+| union of the two | | | **29** |
+
+Only 9 files are in both lists. `gc` stays clean in the other direction in both configurations:
+nothing passes under `rc` that fails under `gc`.
+
+**Exactly one of the 29 is a file ctest ever runs under `rc`.** 39 of the 475 test files are
+registered as `test-jit-rc-*`; the other 436 have never been compiled under `-mm=rc` by anything
+but this sweep, and everything the ownership work has been measured against lives inside that
+39.
+
+The ownership verifier reports nothing for any of the 29, and that is structural rather than a
+gap. It checks that an acquired slot is given back on every path out of a function, which is the
+*leak* direction. All 29 are faults - `0xC0000005`, `0xC0000374`, a breakpoint - which is the
+over-release direction, and it cannot see that at all.
+
+#### The configuration columns are not four bugs
+
+Running all 29 under `rc` in all four combinations of `{-O0, -O3} x {default library, none}`:
+
+| how many configurations fault | files |
+| --- | --- |
+| all four | 11 |
+| some but not all | 18 |
+
+The 18 are the point. A use-after-free that passes is a use-after-free that got away with it, and
+what the columns vary is the heap layout, not the program's ownership. `00array3` faults with the
+default library at both optimisation levels and passes without it; `01map` is the exact opposite
+of `00spread`; `00generator4` faults at `-O3` only, and on one run it faulted, on the next it
+hung, and on a third it came back with a failed `assert` - the same bug wearing three symptoms.
+So the honest count is not 16, or 22, or 29: it is that **29 files break the memory model and 18
+of them only break it sometimes**, which is what this class of bug looks like from outside.
+
+#### Three of them reduce
+
+The 29 are not 29 bugs. Three reductions, each `rc`-only, each 10 runs in 10:
+
+**A generator that iterates another generator**, at `-O3`, with or without the default library:
+
+```ts
+function* inner() { yield 1; yield 2; }
+function* g() { for (const o of inner()) yield o; }
+function main() { for (const x of g()) print(x); print("done."); }
+```
+
+Faults before printing anything. `yield* inner()` and an inline `(function*(){...})()` fault the
+same way; one generator on its own is fine, and `-O0` is fine.
+
+**A `for...of` element that is itself a reference**, with the default library, at either
+optimisation level:
+
+```ts
+const a = [[1], [2]];
+for (const v of a) print(v.length);
+```
+
+Also faults before printing. A single-level `for...of` is fine and `a.length` on the same array
+is fine, so it is the loop variable taking an element that owns something. `--no-default-lib`
+hides it because it routes `for...of` over an array through the built-in intrinsic loop instead
+of the library's iterator protocol.
+
+**`await`**, in all four configurations, and the only one of the three that gets the answer
+right first:
+
+```ts
+async function f() { return 1; }
+function main() { const r = await f(); print(r); print("done."); }
+```
+
+Prints `1` and `done.` and then dies of heap corruption on the way out - a double free at
+teardown. Calling `f()` without awaiting it is fine, so the `await` is what frees something
+twice.
+
+Between them these cover the generator/iterator cluster (`00generator4/5/6`,
+`00funcs_expression_iterator`, `01iterator`, `00iterator_bug`), the array-iteration cluster
+(`00array3`, `00for_of`, `19forof`, `01map`, `00tuple_with_array`, `arrayLiterals`) and the
+coroutine pair (`00async_await`, `00for_await`). The rest - object destructuring, union
+narrowing, class statics, and the two whole programs `nbody` and `raytrace` - has not been
+reduced.
+
+#### Two things about measuring this
+
+**Sweep the configuration the suite uses, not a configuration.** A missing `--no-default-lib`
+manufactured 20 failures; a missing `--opt --opt_level=3` hid 13 real ones. The recipe worth
+keeping is: sweep both configurations under both models, diff, and read only the rc-only column.
+That is what turns the sweep into a to-do list. This is the second time the sweep's own command
+line was the bug - §9.36 lost 43 files to a missing `--shared-libs`.
+
+**Read exit codes in PowerShell, not in bash.** A Windows fault code does not survive bash's
+8-bit exit status. The `await` reduction reported `0/10` failures through a bash `||` and
+`10/10` - every one of them `-1073740940` - through `Start-Process`'s `ExitCode`. The one that
+reads clean is the wrong one.
+
+Nothing was changed in this slice. 933/933, verifier unchanged at its two standing findings.
