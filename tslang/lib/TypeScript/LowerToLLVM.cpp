@@ -614,6 +614,49 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
+        // `arr.length = n` on a grown array exposes slots the allocator has not written, and a
+        // store into one gives up what the slot held first (`isOwnedElementSlot`) - so the
+        // release reads whatever was last in that memory. `result.length = this.length` followed
+        // by `result[i] = ..` is exactly the default library's `Array.map`, which is why
+        // `arrS.map(e => e + "_")` crashed about one run in three (§9.37).
+        //
+        // Only where an element owns something, and only under -mm=rc: nothing reads an
+        // unwritten slot in the other models, and the memset is not free.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+            if (mth.ownsHeapMemory(loc, elementType))
+            {
+                auto oldBytes = rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(),
+                                                                    ValueRange{sizeOfTypeAsIndexType,
+                                                                               rewriter.create<mlir::index::CastUOp>(
+                                                                                   loc, th.getIndexType(), countAsIndexType)});
+                auto grew = rewriter.create<mlir::index::CmpOp>(loc, mlir::index::IndexCmpPredicate::UGT,
+                                                                multSizeOfTypeValue, oldBytes);
+
+                auto *currentBlock = rewriter.getInsertionBlock();
+                auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+                auto *zeroBlock = rewriter.createBlock(continuationBlock);
+
+                rewriter.setInsertionPointToEnd(zeroBlock);
+                auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), allocated,
+                                                              ValueRange{rewriter.create<mlir::index::CastUOp>(
+                                                                  loc, llvmIndexType, oldBytes)});
+                auto tailBytes = rewriter.create<mlir::index::SubOp>(loc, th.getIndexType(),
+                                                                     multSizeOfTypeValue, oldBytes);
+                rewriter.create<LLVM::MemsetOp>(
+                    loc, tailStart,
+                    rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
+                    rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, tailBytes), /*isVolatile=*/false);
+                rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+                rewriter.setInsertionPointToEnd(currentBlock);
+                rewriter.create<LLVM::CondBrOp>(loc, grew, zeroBlock, continuationBlock);
+
+                rewriter.setInsertionPointToStart(continuationBlock);
+            }
+        }
+
         auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
 

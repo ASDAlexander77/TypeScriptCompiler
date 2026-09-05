@@ -940,6 +940,48 @@ class MLIRGenImpl
         }
     }
 
+    // Does building a `string` out of a value of this type allocate a new one?
+    //
+    // Only the printing conversions do: `ConvertLogic`'s itoa and f64ToString, and
+    // `ts.CharToString`, each allocate a buffer and write into it. Everything else that reaches
+    // the plain cast - a boolean, `undefined`, a string literal - hands back a global, which is
+    // immortal and owns nothing. A literal is asked about by its element type, since that is
+    // what the lowering unwraps it to before choosing.
+    static bool castToStringAllocates(mlir::Type valueType)
+    {
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(valueType))
+        {
+            valueType = literalType.getElementType();
+        }
+
+        return isa<mlir_ts::NumberType, mlir_ts::CharType>(valueType) || valueType.isIntOrIndex();
+    }
+
+    // Gives a freshly built string the same standing as every other producer of a new heap
+    // value: the retain makes the reference real, and the mark says a receiver may take it over
+    // rather than adding one of its own - which is also what lets §9.30 give it back where
+    // nothing receives it at all.
+    //
+    // Both halves are needed together, and the retain is what makes this safe to be generous
+    // with: a value wrongly counted as fresh gains a reference and a release for it, which is
+    // balanced, where a mark on its own would hand a receiver a reference nobody took.
+    void markFreshStringOwned(mlir::Location location, mlir::Value value)
+    {
+        if (!value || !isa<mlir_ts::StringType>(value.getType()))
+        {
+            return;
+        }
+
+        auto *definingOp = value.getDefiningOp();
+        if (!definingOp || definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+        {
+            return;
+        }
+
+        builder.create<mlir_ts::RetainOp>(location, value);
+        definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+    }
+
     // Storage that hands ownership over when it is overwritten: the incoming value gains an
     // owner and the outgoing one loses one.
     //
@@ -5506,6 +5548,16 @@ class MLIRGenImpl
             result = builder.create<mlir_ts::ArithmeticBinaryOp>(location, leftExpressionValue.getType(),
                                                                  builder.getI32IntegerAttr((int)opCode),
                                                                  leftExpressionValue, rightExpressionValue);
+
+            // `+` on strings is the one arithmetic operator that allocates: it becomes
+            // `ts.StringConcat`, which builds a new string. A receiver takes that reference
+            // over; `("a" + b).length`, where there is no receiver, gives it back at the end of
+            // the block instead of leaking (§9.37).
+            if (opCode == SyntaxKind::PlusToken)
+            {
+                markFreshStringOwned(location, result);
+            }
+
             break;
         }
 

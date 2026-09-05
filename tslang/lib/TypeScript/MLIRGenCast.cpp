@@ -663,7 +663,19 @@ namespace mlirgen
             mlirGenRetainCaptured(location, mlir::ValueRange{value});
         }
 
-        return V(builder.create<mlir_ts::CastOp>(location, type, value));
+        auto castResult = builder.create<mlir_ts::CastOp>(location, type, value);
+
+        // Printing a number into a string allocates one, and nothing was giving it back: in
+        // `"s" + k` the conversion's result is read by the concatenation and then forgotten -
+        // not received by anything, so not a receiver's to release, and not marked, so not
+        // §9.30's either. It is the plainest allocation in the language and it leaked every
+        // time (§9.37).
+        if (isa<mlir_ts::StringType>(type) && castToStringAllocates(valueType))
+        {
+            markFreshStringOwned(location, castResult);
+        }
+
+        return V(castResult);
     }
 
     mlir::LogicalResult MLIRGenImpl::verifyCastPreconditions(mlir::Location location, mlir::Type type, mlir::Type valueType, bool disableStrictNullCheck)

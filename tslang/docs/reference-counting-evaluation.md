@@ -490,14 +490,22 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    other owning receiver. A second bug fell out of the corpus sweep and belongs to 5r: a captured
    declaration with **no initializer** has a cell holding whatever the allocator last left there,
    and scope exit releases it - cells are now zeroed at birth, as owned locals already were.
-5t. **A concatenated string held by a local leaks.** `let s = "s" + k` in a 500k-iteration loop,
-   `-O0`: `rc` 34.5 MB against `gc`'s 4.1 and `none`'s 42.8. No array and no `any` involved -
-   found while measuring those, and both turned out to be carrying this rather than causing it
-   (`number[]` push is flat at 2.6 in all three models, so the array machinery is fine). The
-   suspect is the temporary a number-to-string conversion allocates on the way to the
-   concatenation, which nothing receives and §9.30 does not appear to release. Strings being
-   Tier C - the narrow first shipping scope this whole evaluation recommends - this is the one
-   to take next. **Next slice.**
+5t. **A freshly built string carries no reference for its receiver.** **Done 2026-09-05, see
+   §9.37.** Printing a number into a string allocates one, and so does concatenating; neither
+   said so, so a receiver added a reference of its own - balanced, and it worked - while an
+   intermediate no receiver ever took was left with none and leaked. `"s" + k` leaks twice over:
+   the conversion's result feeds the concatenation and is then forgotten. Both now hand back a
+   reference the way `new` and a call do. `let s = "s" + k` at `-O0`, 500k iterations:
+   **34.5 -> 3.7 MB**, below `gc`'s 4.1; and the `any`-boxing benchmark, whose remaining leak
+   this turned out to be, 39.9 -> 3.7. A second bug came out of the same measurements and is
+   older than any of this: **growing an array does not zero the slots it exposes**, and the
+   store into one releases what the slot held - which is `Array.map` in the default library, and
+   was `arrS.map(e => e + "_")` crashing 6 runs in 20 under `rc`.
+5u. **The `-mm=rc` corpus sweep still has 117 non-zero exits of 475.** Most are tests that are
+   meant to fail, or that need something the bare compiler invocation does not give them, and
+   the number has been stable across the last three slices - but it has never been read through.
+   Doing that once would say what fraction is real, and would turn the sweep from a
+   regression-detector into a to-do list. **Next slice**, and cheap.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2717,3 +2725,85 @@ findings. The final sweep diff against §9.35's commit is two lines: `22lambdas.
 The array machinery is flat, the `any` box is flat, and a concatenated string held by a local
 leaks on its own. Filed as 5t, and it is the one to take next: strings are Tier C, the narrow
 first shipping scope this evaluation recommends.
+
+### 9.37 Step 5t: a string that nothing owns
+
+The `any`-boxing benchmark from §9.36 still leaked after that fix — 39.9 MB against `gc`'s 4.1 —
+and taking it apart moved the leak out of `any` entirely, then out of arrays:
+
+| 500k iterations, `-O0` | `gc` | `rc` before | `rc` after | `none` |
+| --- | --- | --- | --- | --- |
+| `push(k)` into `number[]` | 2.6 | 2.6 | 2.6 | 2.6 |
+| `push(k)` into `any[]` | 2.6 | 3.7 | 3.7 | 32.3 |
+| `let s = "s" + k`, no array, no `any` | 4.1 | **34.5** | **3.7** | 50.6 |
+| `push("s" + k)` into `string[]` | 4.1 | 32.3 | **3.7** | 72.6 |
+| `push(new Vec(k))` and `push("s" + k)` into `any[]` | 4.1 | 39.9 | **3.7** | 130.1 |
+
+The third row is the whole story and it has no container in it at all. `("s" + k)` allocates
+twice — the conversion prints `k` into a fresh buffer (`ConvertLogic`'s itoa/f64ToString), and
+the concatenation builds another (`ts.StringConcat`) — and neither said it was handing anyone a
+reference:
+
+```mlir
+%5 = "ts.Cast"(%3) : (!ts.number) -> !ts.string       // allocates; unmarked, unreferenced
+%6 = "ts.ArithmeticBinary"(%4, %5) ...                // allocates; the local retains it
+%7 = "ts.Variable"(%6) {__owned}
+```
+
+`%6` was fine by accident: it is born unowned, the local retains it, the local's scope exit
+releases it. `%5` is the leak. Nothing received it — being an operand of a concatenation is not
+receiving — so no receiver retained it, and §9.30 only releases what carries `OWNED_RESULT`, so
+it did not release it either. Every number ever printed into a string leaked.
+
+Both now do what `new` and a call do: **a `ts.Retain` making the reference real, and
+`OWNED_RESULT` saying a receiver may take it over rather than adding one.** The two halves have
+to travel together, and that is the whole design point — the mark alone hands a receiver a
+reference nobody made, and the retain alone is a leak with extra steps. It is also what makes
+this safe to be generous with: a value wrongly counted as fresh gains a reference and a release
+for it, which is balanced.
+
+Marked: the plain cast to `string` where the source is a number, an integer, an index or a char
+(the printing conversions — a boolean, `undefined` and a string literal all hand back a global,
+which is immortal), and `+` where the result is a string, which is the one arithmetic operator
+that allocates. Class, array and tuple `toString` are ordinary calls and were already handled by
+§9.27.
+
+**The second bug, and it is much older.** Measuring the array rows turned up `00map.ts` failing
+under `rc` — 6 runs in 20, and 0 in 20 under `gc` and `none`. It reduces to:
+
+```ts
+arrS.map((e) => e + "_")
+```
+
+and the default library's `map` is `result.length = this.length; for (..) result[i] = func(..)`.
+Growing an array is `MemoryRealloc` and nothing zeroes the tail, so the new slots hold whatever
+was last in that memory — and an element store gives up what the slot held first
+(`isOwnedElementSlot`), so the release reads it. `SetLengthOfOpLowering` now zeroes the exposed
+tail, under `-mm=rc` and only where an element owns something.
+
+It was tempting to read this as §9.37's own regression, because the sweep diff showed `00map.ts`
+newly crashing. Rebuilding §9.36's commit and running it twenty times is what settled it: 6 bad
+there too. **One clean sweep run is not evidence about a file that fails a third of the time** —
+the same trap §9.36 walked into from the other side, where a single lucky run hid it.
+
+Four new cases in `00owned_strings.ts`, and the two halves have separate teeth:
+
+| probe | fails |
+| --- | --- |
+| mark the fresh string without retaining it | the three string cases, 10 of 10 |
+| do not zero a grown array's new slots | `grownArrayHoldsItsStrings`, 12 of 12 |
+
+Neither probe touches the other's cases. The string cases have no teeth against the *leak* —
+nothing can, a leak being invisible — so what they guard is the over-release the fix could
+introduce, which is why "mark without retain" is the probe that matters for them.
+
+Two things were needed to make them read a freed buffer reliably. **Compare the whole string,
+not its length**: a freed buffer keeps its length long after its bytes are written over, and the
+length-comparing versions passed 8 runs in 8 with the bug present. And, for the array case,
+**eight rounds of a same-shape scratch array** rather than a general `churn()`: what makes an
+unwritten slot fatal is holding something that looks like a string, and one round got three runs
+in four where eight gets all of them.
+
+933/933. Ownership verifier unchanged at its two standing findings. The sweep diff against
+§9.36's commit is one line, the new file. `raytrace` at `-O3` is unchanged at 2.6 MB against
+`gc`'s 4.2 and `none`'s 109.0.
