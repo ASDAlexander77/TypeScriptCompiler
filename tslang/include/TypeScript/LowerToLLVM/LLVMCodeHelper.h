@@ -548,6 +548,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto ptrType = th.getPtrType();
         auto arrayType = th.getArrayType(llvmElementType, size);
 
+        // A constant array is a block like any other under reference counting: an element of it
+        // can be bound to a local that takes a reference, so the same header word has to sit in
+        // front of the data, marked immortal - exactly as it does for a string literal. Without
+        // it a retain reads, and a release writes, the word before a read-only global.
+        auto withHeader = compileOptions.isRefCounted();
+        auto headerSize = getHeapBlockHeaderSize();
+
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
         if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
@@ -557,14 +564,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (value.size() > 0 && llvmElementType.isIntOrIndexOrFloat())
+            auto isDense = value.size() > 0 && llvmElementType.isIntOrIndexOrFloat();
+
+            mlir::Type dataType = arrayType;
+            DenseElementsAttr denseAttr;
+            if (isDense)
             {
-                seekLast<DenseElementsAttr>(parentModule.getBody());
+                auto vectorType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
+                dataType = vectorType;
 
-                // end
-                auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-
-                DenseElementsAttr attr;
                 if (llvmElementType.isIntOrIndex())
                 {
                     SmallVector<APInt> values;
@@ -572,7 +580,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::IntegerAttr>(value_).getValue());
                     });
 
-                    attr = DenseElementsAttr::get(dataType, values);
+                    denseAttr = DenseElementsAttr::get(vectorType, values);
                 }
                 else
                 {
@@ -581,10 +589,47 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::FloatAttr>(value_).getValue());
                     });
 
-                    attr = DenseElementsAttr::get(dataType, values);
+                    denseAttr = DenseElementsAttr::get(vectorType, values);
                 }
+            }
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
+            if (withHeader)
+            {
+                seekLast(parentModule.getBody());
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                // packed, because the header has to sit exactly one word in front of the data:
+                // an unpacked struct pads to the data's own alignment, and a vector of three
+                // i32 wants sixteen bytes, which would put the header two words back instead
+                auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, dataType},
+                                                                  /*isPacked=*/true);
+                global = rewriter.create<LLVM::GlobalOp>(loc, blockType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+
+                setStructWritingPoint(global);
+
+                mlir::Value blockVal = rewriter.create<LLVM::UndefOp>(loc, blockType);
+                blockVal = rewriter.create<LLVM::InsertValueOp>(
+                    loc, blockVal,
+                    rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
+                                                      rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                    MLIRHelper::getStructIndex(rewriter, 0));
+
+                mlir::Value dataVal = isDense
+                                          ? (mlir::Value)rewriter.create<LLVM::ConstantOp>(loc, dataType, denseAttr)
+                                          : getArrayValue(originalElementType, llvmElementType, size, arrayAttr);
+                blockVal = rewriter.create<LLVM::InsertValueOp>(loc, blockVal, dataVal, MLIRHelper::getStructIndex(rewriter, 1));
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{blockVal});
+
+                // the header is read as a whole word, so the block base has to be word-aligned
+                global.setAlignment(headerSize);
+            }
+            else if (isDense)
+            {
+                seekLast<DenseElementsAttr>(parentModule.getBody());
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, denseAttr);
             }
             else
             {
@@ -602,9 +647,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             }
         }
 
-        // Get the pointer to the first character in the global string.
+        // Get the pointer to the first element - past the header, when there is one.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        return rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
+        return withHeader ? rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 1})
+                          : rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
     }
 
     mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)

@@ -521,20 +521,26 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    two swept configurations with nothing newly broken (rc-only 16 -> 14 bare, 22 -> 15 under the
    suite's flags), including three with no generator in them; the `-O3`-with-default-library cell
    was swept for the first time and is 16 rc-only. Across the three configurations, **29 -> 22**.
-5w. **A `for...of` loop variable that holds a reference is not retained.** `const a = [[1],[2]];
-   for (const v of a) print(v.length)` faults with the default library at either optimisation
-   level, `rc` only, 10 runs in 10. A single-level `for...of` is fine and `a.length` on the same
-   array is fine, so it is the loop variable taking an element that owns something without
-   taking a reference to it. `--no-default-lib` hides it by routing array `for...of` through the
-   built-in intrinsic loop instead of the library's iterator protocol - which is also why
-   nothing has ever caught it. Covers `00array3`, `00for_of`, `19forof`, `01map`,
-   `00tuple_with_array`, `arrayLiterals`. **Next slice** - a fault in the configuration real
-   programs compile in outranks a leak, and it is the largest remaining cluster.
+5w. **What a `for...of` hands the loop variable.** **Done 2026-09-05, see §9.40.** Three fixes,
+   the first two the same mistake twice. **A literal array had no block header** - a string
+   literal has carried the immortal one since §9.5, an array literal carried nothing, so a
+   retain read and a release wrote the word in front of a read-only global. **And a header is
+   only a header one word in front**: three `i32` want sixteen-byte alignment, so the unpacked
+   block struct padded and put the header two words back, which is why `[1]` and `[2,3]` were
+   fine and `[4,5,6]` was not. Then, from `-O1` up, **the caller retains an iterator's result
+   before it looks at `done`**, and the final result's value is `undefined` coerced to the
+   element type, which was `undef` - §9.39's bug as a runtime phi rather than a constant.
+   `undefined` as an array is now `{null, 0}`, and any `mlir_ts::UndefOp` of an owning type is
+   null. Closed 5w's whole predicted cluster plus five files nobody had attributed to it, with
+   nothing newly broken: bare 115 -> 106, suite flags 102 -> 97, `-O3`-with-library 117 -> 107,
+   and the rc-only set across the three configurations **22 -> 12**.
 5x. **`await` frees something twice.** `async function f() { return 1; }` and then `const r =
    await f()` prints the right answer and dies of heap corruption on the way out, in all four
    configurations, 10 runs in 10. Calling `f()` without awaiting it is fine. Covers
    `00async_await` and `00for_await`. The coroutine frame is the obvious suspect, and nothing in
-   this work has ever looked at one.
+   this work has ever looked at one. **It also fails under `none`**, which frees nothing at all,
+   so at least part of it is a memory-safety bug this work did not create and does not own.
+   **Next slice** - it is the last remaining fault with a one-line reduction.
 5y. **The `rc` tier of ctest is 39 files of 475.** Every ownership measurement in §9.12-§9.37 was
    taken inside that 39, and 28 of the 29 known faults are outside it. Once 5v-5x are closed,
    registering the rest of the corpus under `rc` - as individual tests or as one sweep target -
@@ -547,6 +553,12 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    routine does not walk that field - the same `ownsHeapMemory` blind spot that left the field
    un-zeroed in §9.39. A generator that yields a freshly built string costs 76.8 MB against
    `none`'s 71.2, so there is a second leak on the yield path.
+5aa. **`for...of` over a literal array holds about a tenth of what it allocates.** With the
+   default library, 900k iterations cost `rc` 15.6 MB against `gc`'s 4.1 and `none`'s 155.9, and
+   the gap over `gc` grows sublinearly - nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k -
+   which looks more like the allocator's high-water mark than an unbounded leak, but has not
+   been explained. Iterating heap-built rows instead is flat at 2.6 MB, equal to `gc`. Cheap to
+   settle either way, and worth settling before any claim that `rc` matches `gc` on iteration.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -3119,3 +3131,116 @@ owning - which is exactly why the release routine skips it too. The last row is 
 
 937/937. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is 2.6 MB
 against `gc`'s 4.2 and `none`'s 108.9.
+
+### 9.40 Step 5w: what a `for...of` hands the loop variable
+
+```ts
+const a = [[1], [2]];
+for (const v of a) print(v.length);
+```
+
+`rc` only, with the default library, at every optimisation level. It took three separate fixes,
+and the first two are the same mistake made twice.
+
+#### A literal array is a block with no header
+
+`main` was real code this time, not §9.39's single `unreachable`, and the globals said why:
+
+```llvm
+@s_6682479467004374669 = internal constant [14 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FFdone.\00"
+@a_1171826144013      = internal constant <1 x i32> splat (i32 1)
+```
+
+A string literal carries the eight all-ones bytes that read as `HEAP_BLOCK_IMMORTAL` - §9.5 put
+them there so a pointer to a literal and a pointer to a heap string are the same shape. **An
+array literal carries nothing.** Bind one to a loop variable and the retain reads the word in
+front of a read-only global, and the release writes it.
+
+`getOrCreateGlobalArray` now emits the same header under `rc`, and the pointer it hands back
+points past it - exactly what `getOrCreateGlobalString_` has always done.
+
+That fixed `-O0` and left `-O3` still faulting, for a reason worth keeping:
+
+```llvm
+@a_3733085596457652 = internal constant { i64, <3 x i32> } { i64 -1, <3 x i32> <i32 4, i32 5, i32 6> }
+                                                                    ; ... i64 16), i64 3 }
+```
+
+Three `i32` want sixteen-byte alignment, so an unpacked struct pads and the payload starts at
+offset **16** - the header is two words back, not one, and everything reading `data - 8` reads
+padding. `[1]` and `[2, 3]` were fine and `[4, 5, 6]` was not, which is why the nested case
+printed `1 2 3` and then died. The block struct is packed now. **A header is only a header if it
+is exactly one word in front**, and a payload's own alignment is enough to break that.
+
+#### The value an iterator hands back when it has none
+
+Still faulting from `-O1` up, with the last thing printed lost to an unflushed buffer. The
+generator's exit block:
+
+```llvm
+%.sroa.0.0 = phi ptr [ undef, %1 ], [ %.unpack47, %14 ], [ undef, %10 ]
+```
+
+and its caller:
+
+```llvm
+%.not = icmp eq ptr %.fca.0.0.extract, null
+br i1 %.not, label %..., label %9
+9:  %10 = getelementptr i8, ptr %.fca.0.0.extract, i64 -8
+    %11 = load i64, ptr %10
+```
+
+**The caller retains the result before it looks at `done`.** On the final call the value is
+`undefined` coerced to the element type, which `castToArrayType` materialised as `undef`, and
+reading a refcount through `undef` is §9.39's bug wearing different clothes - this time the
+`undef` is a runtime phi rather than a constant, which is why `-O0` survived it: the value sat
+in an alloca that happened to hold something benign until mem2reg replaced it.
+
+`undefined` as an array is now the empty array `{ null, 0 }`, and `UndefOpLowering` gives the
+same treatment to any `mlir_ts::UndefOp` whose type owns heap memory - which is the path a
+generator yielding object literals takes. Both are `rc`-only.
+
+#### What it closed
+
+| sweep | before | after | newly fixed | newly broken |
+| --- | --- | --- | --- | --- |
+| bare, `-O0`, default library | 115 | 106 | 9 | none |
+| `--opt --opt_level=3 --no-default-lib` | 102 | 97 | 5 | none |
+| `-O3`, default library | 117 | 107 | 10 | none |
+
+Across the three configurations the rc-only set goes **22 -> 12**. That is all of 5w's predicted
+cluster - `00array3`, `00for_of`, `19forof`, `01map`, `00tuple_with_array`, `arrayLiterals` -
+plus `00interface_object4`, `39objectdestructuring`, `typeGuardOfFormThisMember`,
+`00object_global` and `00mixed_type_ops`, none of which was attributed to it. `01map`, the file
+§9.39 had to report rather than count, is clean in all four cells now.
+
+#### Teeth
+
+`00owned_iteration.ts`, seven cases: literal rows iterated and read again afterwards, ragged rows
+(the three-wide one is the alignment case), an empty array that iterates no times, records from
+an array, records from a generator, and strings from a generator. Each change reverted on its
+own, three runs each:
+
+| probe | fails |
+| --- | --- |
+| no header on a constant array | `rc` with the default library, both levels, 3/3 |
+| the header struct unpacked | `rc` with the default library, both levels, 3/3 |
+| `undefined` as an array back to `undef` | `rc`, `-O3`, with the default library, 3/3 |
+| `UndefOpLowering` back to `undef` | `rc`, `-O3`, **with and without** the library, 3/3 |
+
+Nothing fails under `gc` under any probe, which is the expected shape: all three are retains only
+`rc` emits. The last row is the one that matters for coverage - the other three need the default
+library, and ctest compiles with `--no-default-lib`, so without the generator-of-records case
+this file would have had no teeth at all in the tier it is registered in. That is 5y in
+miniature.
+
+#### One residual
+
+With the default library, iterating a literal array 900k times costs `rc` 15.6 MB against `gc`'s
+4.1 and `none`'s 155.9 - so `rc` reclaims about nine tenths of it and holds the rest. The gap
+grows sublinearly (nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k), which looks more like the
+allocator's high-water mark than an unbounded leak, but it has not been explained. Iterating
+heap-built rows instead is flat at 2.6 MB, equal to `gc`. Filed as 5aa.
+
+941/941. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is
+2.6 MB against `gc`'s 4.2 and `none`'s 99.3.

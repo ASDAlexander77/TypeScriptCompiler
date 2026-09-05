@@ -1446,6 +1446,22 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
         }
 
         TypeConverterHelper tch(getTypeConverter());
+
+        // `undefined` materialised as a value of a type that owns heap memory has to be null
+        // rather than undef: under reference counting whoever receives it retains it, and
+        // reaching an undef pointer's block header is undefined behaviour. An iterator's final
+        // `{ value: undefined, done: true }` is built exactly this way, and the caller retains
+        // the result before it looks at `done`.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+            if (mth.ownsHeapMemory(op.getLoc(), op.getType()))
+            {
+                rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, tch.convertType(op.getType()));
+                return success();
+            }
+        }
+
         rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
         return success();
     }
