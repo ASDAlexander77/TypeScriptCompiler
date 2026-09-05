@@ -650,6 +650,19 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // Boxing into `any` makes the box an owner of what it now holds, and it has to take a
+        // reference to say so: an `any` releases its payload through the type tag beside it when
+        // the box dies (`buildBody`, AnyType). Nothing took one. The payload was copied in, and
+        // where it arrived carrying a reference of its own - a closure, whose `__owned_result`
+        // is the box of captured variables it was built over - §9.30 gave that reference back at
+        // the end of the block and left the `any` pointing at freed memory. Reachable wherever
+        // the boxed value outlives the block that boxed it, `fns.push(qux2)` into an `any[]`
+        // being the shape that found it (§9.36).
+        if (isa<mlir_ts::AnyType>(type))
+        {
+            mlirGenRetainCaptured(location, mlir::ValueRange{value});
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 

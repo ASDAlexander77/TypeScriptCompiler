@@ -270,6 +270,56 @@ function capturedParameterReassignedInFrame() {
     return read();
 }
 
+// A captured declaration with no initializer. Its cell is a heap block, so before the first
+// store it holds whatever the allocator last left there, and the scope exit releases the cell -
+// contents included.
+//
+// An owned local can never be in this position: it is only owned when it has an initializer. A
+// cell is listed whether it has one or not, which is the difference (section 9.36).
+//
+// What dirties the block is `writtenCell` running first: it allocates a cell of exactly this
+// shape and frees it, leaving a string pointer behind that is itself already freed. The next
+// cell is handed that block. A general `churn()` is not enough - it caught this about one run
+// in ten, which is not a test - because the block has to be the right size *and* still hold
+// something fatal to release.
+function unwrittenCell(): number {
+    let unwritten: string;
+    let maybe = () => { if (1 > 1) unwritten = "no"; };
+    maybe();
+
+    return 1;
+}
+
+// The same declaration on the path that does write it: the store gives up what the cell held,
+// which is the same unwritten contents read one step earlier.
+function writtenCell(): number {
+    let written: string;
+    let set = () => { written = "ab" + "cd"; };
+    set();
+
+    return written.length;
+}
+
+function capturedNeverAssigned() {
+    let seen = 0;
+    for (let i = 0; i < 64; i++) {
+        writtenCell();
+        seen = seen + unwrittenCell();
+    }
+
+    return seen;
+}
+
+function capturedAssignedLater() {
+    let total = 0;
+    for (let i = 0; i < 64; i++) {
+        unwrittenCell();
+        total = total + writtenCell();
+    }
+
+    return total;
+}
+
 function main() {
     assert(closureAsArgument() == 10, "a closure used as an argument survives the call");
     assert(closureReadAfterCalleeAllocates() == 12, "a capture box survives a callee that allocates first");
@@ -285,6 +335,8 @@ function main() {
     assert(capturedParameterEscapes() == 50, "a cell owns the argument a captured parameter arrived with");
     assert(mutateCapturedParameter() == 3, "assigning through a captured parameter leaves the caller's value alone");
     assert(capturedParameterReassignedInFrame() == 15, "a captured parameter's cell takes what the frame stores in it");
+    assert(capturedNeverAssigned() == 64, "a cell nothing wrote to is still released safely");
+    assert(capturedAssignedLater() == 256, "a store into a cell nothing wrote to gives up nothing");
 
     print("done.");
 }

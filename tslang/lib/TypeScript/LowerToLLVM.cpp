@@ -2298,13 +2298,22 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         }
 
         auto value = transformed.getInitializer();
-        if (!value && tsLlvmContext->compileOptions.isRefCounted() && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
+        auto isUnwrittenCell = isCaptured && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
+        if (!value && tsLlvmContext->compileOptions.isRefCounted() &&
+            (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || isUnwrittenCell))
         {
             // An owned local with no initializer here is one whose storage was hoisted out in
             // front of a TryOp; its initializing store stayed behind at the declaration. The
             // unwind edge can reach the cleanup region before that store runs, and the release
             // waiting there reads whatever the frame happened to hold. Null is the one value
             // the release routines treat as nothing to do, so the slot starts as null.
+            //
+            // A cell needs it for the plainer reason that it is a *heap* block, so what it holds
+            // before its first store is whatever the allocator last had there. `let x: string;`
+            // captured by a closure that only assigns on a path never taken is the case: the
+            // scope exit releases the cell, the cell releases its contents, and the contents were
+            // never written. Not a corner - it is any captured declaration without an
+            // initializer, which an owned local can never be (§9.36).
             //
             // Only under -mm=rc: nothing reads the slot before its store in any other model, and
             // a collected build is meant to come out of this step byte-identical.

@@ -480,15 +480,24 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    cell's release to release its contents whoever put them there. Closure over a parameter at
    `-O0`: **22.6 -> 3.7 MB**, against `gc`'s 2.6 and `none`'s 22.0; closure over a `number`
    local, 51.7 -> 3.7 against `none`'s 113.0.
-5s. **A lambda-heavy test hangs under `-mm=rc` about one run in four.** `22lambdas.ts`, and only
-   under `rc` - `gc` and `none` are clean over 15 runs each. Measured at 3 bad runs in 15 on
-   §9.34's commit and 4 in 15 on §9.35's, so it is older than either and neither made it worse.
-   Nondeterministic and model-specific is what a use-after-free looks like: some run frees
-   something still referenced and the reused block happens to be fatal. The file's shape says
-   where to look first - a named nested function declared *after* the statements that call it,
-   and a `for..of` binding captured by a function declared in the loop body. **Next slice**, and
-   the one to take before more ground is covered, since a corpus sweep is how it was found and a
-   flaky sweep is a poor instrument.
+5s. **Boxing into `any` takes no reference to what the box then owns.** **Done 2026-09-05, see
+   §9.36.** An `any` releases its payload through the type tag when the box dies, and nothing had
+   taken that reference: the payload was copied in and, where it arrived carrying one of its own
+   - a closure, whose reference is the box of captured variables it was built over - §9.30 gave
+   that reference back at the end of the block and left the `any` pointing at freed memory. This
+   was `22lambdas.ts`'s intermittent failure under `rc`, one run in four, which is what a
+   use-after-free looks like from outside. The boxing cast now consumes or retains like every
+   other owning receiver. A second bug fell out of the corpus sweep and belongs to 5r: a captured
+   declaration with **no initializer** has a cell holding whatever the allocator last left there,
+   and scope exit releases it - cells are now zeroed at birth, as owned locals already were.
+5t. **A concatenated string held by a local leaks.** `let s = "s" + k` in a 500k-iteration loop,
+   `-O0`: `rc` 34.5 MB against `gc`'s 4.1 and `none`'s 42.8. No array and no `any` involved -
+   found while measuring those, and both turned out to be carrying this rather than causing it
+   (`number[]` push is flat at 2.6 in all three models, so the array machinery is fine). The
+   suspect is the temporary a number-to-string conversion allocates on the way to the
+   concatenation, which nothing receives and §9.30 does not appear to release. Strings being
+   Tier C - the narrow first shipping scope this whole evaluation recommends - this is the one
+   to take next. **Next slice.**
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -2607,3 +2616,104 @@ on §9.34's commit — turned up one difference, `22lambdas.ts`, and it is **not
 fails about one run in four under `rc` on both commits (3 bad in 15 before, 4 in 15 after) and
 never under `gc` or `none`. Filed as 5s. The sweep is worth keeping as a tool, and worth fixing
 that flake first, since a flaky instrument is a poor way to measure the next slice.
+
+### 9.36 Step 5s: boxing into `any`, and the flake that led there
+
+§9.35 left a corpus sweep behind — every test file JIT'd under `-mm=rc`, exit codes diffed
+against the same sweep on the previous commit — and one file, `22lambdas.ts`, failed about one
+run in four under `rc` and never under `gc` or `none`. Nondeterministic and model-specific is
+what a use-after-free looks like from outside: some run frees something still referenced, and
+whether the reused block is fatal to read depends on what was allocated over it.
+
+Halving the file three times reached this, which fails **5 runs in 5**:
+
+```ts
+function build() {
+    let fns: any[] = [];
+    for (let k = 0; k < 3; k++) {
+        const kk = k;
+        fns.push(qux2);
+        function qux2() { glb1 += kk; }
+    }
+}
+```
+
+with `STATUS_HEAP_CORRUPTION`. Three of the four ingredients turned out to be required and one
+did not. Pushing the *same* closure with no captures is clean; pushing strings is clean; a typed
+`(() => void)[]` instead of `any[]` is clean; the loop is not needed at all. So: a closure, with
+a capture box, boxed into `any`.
+
+The IR says the rest:
+
+```mlir
+%11 = "ts.CreateBoundFunction"(%10, %9) {__owned_result, __owns_capture}
+"ts.Retain"(%11)                            // the closure takes its capture box
+%12 = "ts.Cast"(%11) : (!ts.bound_func<..>) -> !ts.any
+"ts.Retain"(%12)                            // the array takes the box
+"ts.ArrayPush"(%2, %12)
+"ts.Release"(%11)                           // §9.30: nothing received the closure
+```
+
+Boxing allocates a block and copies the value into it, and the box **owns** what it holds: when
+it dies it releases the payload through the type tag beside it (`buildBody`, AnyType). Nothing
+took that reference. The closure arrived carrying one — `__owned_result`, the reference
+`resolveFunctionWithCapture` takes on the capture box — and, no receiver having claimed it,
+§9.30 gave it back at the end of the block. The capture box was freed while the `any` in the
+array still pointed at it, and the array's own release then released it a second time.
+
+The fix is one line in `cast()`: where the destination is `any`, `mlirGenRetainCaptured` — the
+same consume-or-retain every other owning receiver uses. Consume where the payload already
+carries a reference, retain where it does not.
+
+The two halves of that matter separately, and the cases prove it separately. A payload that
+carries a reference and is *not* consumed is the crash above. A payload that carries none and is
+not retained is a plain leak — `out.push(makeName())` where the frame also still holds the
+string — and `stringBoxedAndStillHeld` is the case for it. Four new cases in a new file,
+`00owned_any_boxing.ts`, and **all four abort with the fix disabled**.
+
+They run as `--emit=exe`, or through `test-runner`, but not as a bare `tslang --emit=jit`. That
+is worth writing down because it cost an hour: `___unbox` throws on a type mismatch, which pulls
+in the CRT's `type_info` vftable, and only `--shared-libs=TypeScriptRuntime.dll` makes that
+symbol resolvable — which `test-runner` passes and a hand-written sweep does not. The sweep
+script was wrong in exactly that way, and fixing it dropped its failure count from 161 to 118 of
+473 files. **A sweep that has not loaded the runtime is measuring the harness.**
+
+**A second bug, and it is §9.35's.** With the sweep fixed, the before/after diff showed
+`15references.ts` newly crashing, and it has no `any` in it at all:
+
+```ts
+let x: string;
+const f = () => { if (1 > 1) x = "foo"; };
+f();
+```
+
+A captured declaration with **no initializer**. Its cell is a *heap* block, so what it holds
+before the first store is whatever the allocator last left there — and §9.35 lists every local,
+initialised or not, so scope exit releases the cell and the cell releases its contents. An owned
+local can never be in this position: it is only owned when it has an initializer, which is why
+§9.24's null-store was written for the hoisted-out-of-a-`TryOp` case alone. Cells are now zeroed
+at birth on the same terms.
+
+Its two cases needed care to make deterministic. `churn()` before the declaration caught it about
+one run in ten, because the block has to be the right size *and* still hold something fatal to
+release. Running a *cell of exactly this shape* first — `writtenCell`, which allocates one, frees
+the string in it and then frees the cell — hands the next declaration a block holding an
+already-freed string pointer, and that is 10 runs in 10.
+
+929/929 with the four new tests registered. Ownership verifier unchanged at its two standing
+findings. The final sweep diff against §9.35's commit is two lines: `22lambdas.ts` 3 bad runs →
+0, and the new file.
+
+**What the measurements then said, which is not about `any`.** Boxing in a loop still leaks under
+`rc` — 39.9 MB against `gc`'s 4.1 — and taking it apart puts the leak somewhere else entirely:
+
+| 500k iterations, `-O0` | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `push(k)` into `number[]` | 2.6 | 2.6 | 2.6 |
+| `push(k)` into `any[]` | 2.6 | 3.7 | 32.3 |
+| `let s = "s" + k`, no array at all | 4.1 | **34.5** | 42.8 |
+| `push("s" + k)` into `string[]` | 4.1 | 32.3 | 52.2 |
+
+The array machinery is flat, the `any` box is flat, and a concatenated string held by a local
+leaks on its own. Filed as 5t, and it is the one to take next: strings are Tier C, the narrow
+first shipping scope this evaluation recommends.
