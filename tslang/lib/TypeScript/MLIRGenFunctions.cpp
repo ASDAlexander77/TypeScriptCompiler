@@ -1487,9 +1487,26 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // How the box will store this variable decides which reference has to be taken, and
+            // it is not the same question as whether a reference to the variable can be had.
+            // MLIRCodeLogic::CaptureTypeStorage gives a read-write capture a `ref` field - the
+            // address of the variable's cell - and everything else a field of the variable's own
+            // type, which CaptureOpLowering fills by dereferencing. A by-value field is released
+            // by `releaseCapturedFields` like any other owning field, so the copy needs a
+            // reference of its own; retaining the cell instead leaves the value with one owner
+            // fewer than the releases that will run for it, which is what freed the source array
+            // of a generator out from under the generator (§9.50).
+            auto capturedByRef = item.second && item.second->getReadWriteAccess();
+
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);
-            if (refValue)
+            if (refValue && !capturedByRef)
+            {
+                // the box holds a copy, exactly as it does for a value with no reference at all
+                capturedValues.push_back(refValue);
+                mlirGenRetainCaptured(location, mlir::ValueRange{varValue});
+            }
+            else if (refValue)
             {
                 capturedValues.push_back(refValue);
                 // set var as captures

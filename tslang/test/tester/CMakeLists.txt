@@ -252,6 +252,7 @@ add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SO
 add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-compile-00-owned-generator-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
 add_test(NAME test-compile-00-owned-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-compile-00-owned-async COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
 add_test(NAME test-compile-00-owned-nested-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
@@ -652,6 +653,7 @@ add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_S
 add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-00-owned-generator-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
 add_test(NAME test-jit-00-owned-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-00-owned-async COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
 add_test(NAME test-jit-00-owned-nested-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
@@ -1184,6 +1186,8 @@ add_test(NAME test-jit-rc-owned-generators COMMAND test-runner -jit -mm=rc "${PR
 add_test(NAME test-jit-none-owned-generators COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-jit-rc-owned-globals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 add_test(NAME test-jit-none-owned-globals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-rc-owned-generator-locals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
+add_test(NAME test-jit-none-owned-generator-locals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
 add_test(NAME test-jit-rc-owned-iteration COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-none-owned-iteration COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-rc-owned-async COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
@@ -1430,6 +1434,7 @@ set(TSLANG_CORPUS
     00owned_delete.ts
     00owned_elements.ts
     00owned_fields.ts
+    00owned_generator_locals.ts
     00owned_generators.ts
     00owned_globals.ts
     00owned_inline_records.ts
@@ -1667,6 +1672,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00owned_delete.ts
     00owned_elements.ts
     00owned_fields.ts
+    00owned_generator_locals.ts
     00owned_generators.ts
     00owned_globals.ts
     00owned_inline_records.ts
@@ -1707,6 +1713,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00owned_delete.ts
     00owned_elements.ts
     00owned_fields.ts
+    00owned_generator_locals.ts
     00owned_generators.ts
     00owned_globals.ts
     00owned_inline_records.ts
@@ -1726,32 +1733,30 @@ set(TSLANG_CORPUS_NONE_NAMED
     04disposable.ts
     )
 
-# Known broken. One file, under `rc`, in both tiers, and not under `none` - which is the shape
-# of a reference-counting fault rather than a latent one. It is plan item 5ae, and it is what
-# registering the corpus bought.
+# Nothing is known broken. The lists are kept because they are how a reference-counting fault
+# gets written down while it is being worked on: a file that does not pass yet under a model
+# goes here and is registered but DISABLED, so ctest counts it out loud and the list of what is
+# broken lives in the build rather than in a document somebody has to find.
 #
-# It is registered and DISABLED rather than left out or marked WILL_FAIL. Left out, the name
-# would not exist and nothing would say what is broken; WILL_FAIL was tried first and does not
-# hold, because a corrupted heap does not always land - a file can fail six runs in six on its
-# own and come up clean in a suite run, where twelve tests at a time give the allocator a
-# different history, and a WILL_FAIL test that passes is a red suite.
-# Disabled, the list stays in the build where it can be read, and the suite stays a suite.
+# Not WILL_FAIL, which was tried first and does not hold - a corrupted heap does not always
+# land, so a file can fail six runs in six on its own and come up clean in a suite run, where
+# twelve tests at a time give the allocator a different history, and a WILL_FAIL test that
+# passes is a red suite.
 #
-# Five files have come off this list. Section 9.48 took `00mixed_type_ops.ts`: a boxing cast
-# reported no memory effects, so CSE merged two boxes over the same constant into one and the
-# block was freed twice. Section 9.49 took `nbody.ts` and, with it, the two that wandered -
-# `13actions.ts` and `44toplevelcode.ts` - because a global never took a reference to what was
-# stored into it, and how far a program got before the damage showed was a matter of what the
-# allocator handed back next. All three now pass forty runs in forty ahead of time.
+# Six files came off these lists. Section 9.48 took `00mixed_type_ops.ts` (a boxing cast
+# reported no memory effects, so CSE merged two boxes over one constant and the block was freed
+# twice), section 9.49 took `nbody.ts` and with it the two that wandered, `13actions.ts` and
+# `44toplevelcode.ts` (a global never took a reference to what was stored into it), and section
+# 9.50 took `00spread.ts` (a generator's locals live in its state object, which released what
+# nothing had retained, and a by-value capture took a reference to the cell instead of to the
+# value the box would release).
 set(TSLANG_CORPUS_BROKEN_JIT_RC
-    00spread.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_JIT_NONE
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_RC
-    00spread.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_NONE

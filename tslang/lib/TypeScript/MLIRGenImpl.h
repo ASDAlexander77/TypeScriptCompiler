@@ -1616,6 +1616,26 @@ class MLIRGenImpl
             && variableDeclarationInfo.initial 
             && variableDeclarationInfo.storage)
         {
+            // A generator's locals cannot live in its frame - the state machine has to resume -
+            // so each becomes a field of a heap state object, and that object's release routine
+            // gives back every field that owns memory. localTakesOwnership excludes these for
+            // exactly that reason, the frame is not their owner, and so nothing ever *took* the
+            // reference the object will later give back. The store is where it has to happen:
+            // this is the object's field gaining a value, which is the same debt `obj.f = x`
+            // carries. See docs/reference-counting-evaluation.md section 9.50.
+            if (variableDeclarationInfo.allocateInContextThis && compileOptions.isRefCounted() &&
+                mth.ownsHeapMemory(location, variableDeclarationInfo.type))
+            {
+                if (producesOwnedReference(variableDeclarationInfo.initial))
+                {
+                    consumeOwnedReference(variableDeclarationInfo.initial);
+                }
+                else
+                {
+                    builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial);
+                }
+            }
+
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
             if (variableDeclarationInfo.varClass.atomic)
             {

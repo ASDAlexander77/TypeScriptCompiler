@@ -584,7 +584,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **One corpus file faults under `rc`.** What §9.42 bought. §9.49 took `nbody.ts` and, with
+5ae. **DONE - no corpus file faults under any model.** What §9.42 bought, and it is empty:
+   `TSLANG_CORPUS_BROKEN_*` has no entries, and the suite runs 2,617 tests with nothing disabled.
+   §9.50 took the last one, `00spread.ts`. §9.49 took `nbody.ts` and, with
    it, the two that had been failing about one run in six - `13actions.ts` and
    `44toplevelcode.ts` - because a global never took a reference to what was stored into it, and
    how far a program got before that showed was a matter of what the allocator handed back next.
@@ -596,11 +598,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    null tag, and both directions read through it), §9.45 took `00class_static.ts` (`delete`
    dropped a reference without telling the end-of-block release to stop), and §9.46 took
    `01class_new.ts` (the method the compiler synthesises for a constructor interface's `new`
-   slot has no `return` statement, and so performed none of what a return does). What is left
-   fails in both tiers and not one of them under `none`, so it is reference counting's rather
-   than latent: `00spread.ts` (**diagnosed, see 5ag - a generator's state object, and it cannot
-   be fixed on its own**). It is registered and disabled in `test/tester/CMakeLists.txt`, so
-   what is broken lives in the build.
+   slot has no `return` statement, and so performed none of what a return does). The lists in
+   `test/tester/CMakeLists.txt` are kept empty rather than deleted: they are how the next such
+   fault gets written down in the build while it is being worked on.
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
    §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
@@ -608,7 +608,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    here since §9.31. The per-shape results in §9.29-§9.37 stand, because those programs
    completed; the whole-program case has to be made again from here, and this is where it
    starts.
-5ag. **A generator's state object releases what it never took, and loses its capture box when it
+5ag. **DONE, §9.50 - and the second half turned out to be simpler than the diagnosis below.**
+   The state object does not need ownership of its capture box: what the box loses is the *value*
+   of a by-value capture, which the box already releases and which nothing had retained, because
+   `mlirGenResolveCapturedVars` chose between a cell retain and a value retain by asking whether a
+   reference could be had rather than what the box would store. The diagnosis below stands
+   otherwise, and its ordering was right. What follows is how it read before the fix.
+   **A generator's state object releases what it never took, and loses its capture box when it
    outlives its maker.** Two halves of one bug, and the order matters: the second has to be
    fixed first. A generator's locals cannot live in its frame - the state machine has to resume -
    so each becomes a field of a heap state object, and that object's release routine is
@@ -4074,3 +4080,70 @@ never claimed it, and it leaked rather than dangled - but a release into a globa
 matching retain would free a live array, and these are what would catch that. Reading `.length`
 would fail in neither direction, since an array value is `{ data, length }` and the length
 survives in the copy, so both cases go through an element.
+
+### 9.50 Step 5ag: two releases that had never had a retain
+
+`00spread.ts` is closed, and with it the broken list: **every file in the corpus now passes under
+every memory model, in both tiers.** It took the two halves 5ag named, in the order it named them,
+and both are the same shape - a release that had been running for a long time with nothing on the
+other side of it.
+
+#### A generator's locals belong to its state object
+
+A generator's locals cannot live in its frame, because the state machine has to resume, so each
+becomes a field of a heap state object. That object's release routine is generated from its type
+and gives back every field that owns memory. `localTakesOwnership` excludes these locals for
+exactly that reason - the frame is not their owner - and the exclusion, once again, took the
+retain with it. The store into the object's field is where it belongs: it is a field gaining a
+value, which is the debt `obj.f = x` carries, and `createLocalVariable` is where that store is
+emitted.
+
+That alone fixes `00spread.ts`. It also breaks `00extension_cond_access.ts`, exactly as 5ag
+predicted, which is the whole reason the order matters.
+
+#### What a capture box holds, and which reference that needs
+
+```typescript
+function f(names: string[]) { return names.filter(x => x); }
+function main() { for (const s of f(["asd", "asd1"])) print(s); }
+```
+
+`MLIRCodeLogic::CaptureTypeStorage` gives a read-write capture a `ref` field - the address of the
+variable's cell - and gives everything else a field of the variable's own type, which
+`CaptureOpLowering` fills by **dereferencing**: the box holds a copy of the value. Both kinds are
+released when the box dies: `releaseCapturedFields` releases the cell for a `ref` field and the
+value for any other owning one.
+
+`mlirGenResolveCapturedVars` decided which reference to take from a different question - whether a
+reference to the variable could be *had*. Any obtainable reference got `ts.RetainCell`, so a
+by-value capture retained the variable's cell while the box released the value. One fewer owner
+than releases, and the value went when the box did, which is at the end of the function that built
+the closure. For `f` that value is the source array of the generator it returns.
+
+The fix is to ask the question the box answers: `item.second->getReadWriteAccess()`, the same
+predicate `CaptureTypeStorage` uses. A by-value capture now retains the value, exactly as the
+branch below it already did for a captured value with no reference at all - and that branch's
+comment, *"the box holds a copy, and a copy of a reference is a further owner of what it points
+at"*, had been describing the rule the branch above it was breaking.
+
+#### What it closed
+
+`00spread.ts` and `00extension_cond_access.ts`, twenty runs in twenty each, in both tiers.
+**`TSLANG_CORPUS_BROKEN_*` is empty**, and the suite is 2,617/2,617 with nothing disabled - the
+first time that has been true since the corpus was registered in §9.42. The ownership verifier
+reports nothing on any of the files involved.
+
+Not closed: 5z. A generator with a parameter, 500k iterations at `-O3` in the JIT, costs `rc`
+41.0 MB against `gc`'s 15.9 and `none`'s 85.2 - and about 16 MB of every one of those is the
+compiler itself, so `rc` reclaims roughly half of what the shape leaks without it rather than all.
+The capture box is no longer the whole of that leak, but something still is.
+
+#### Teeth
+
+`00owned_generator_locals.ts`, four cases; the file fails against a build with both halves stashed
+out at `-O0` (a wrong answer from the escaping generator) and at `-O3` (an access violation from
+the spread). The spread case needed three things together to fail, and all three are in the file's
+comment: the suite's own `--opt --opt_level=3`, an interpolated string built inside the callee, and
+printing the result. **A freed block that nothing reuses reads back exactly as it did before** -
+the first version of the escaping-generator case passed against the broken build for that reason
+alone, and only failed once the other cases were allocating around it.
