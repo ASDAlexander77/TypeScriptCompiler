@@ -15,7 +15,6 @@ namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
 extern cl::opt<enum Action> emitAction;
-extern cl::opt<bool> disableGC;
 extern cl::opt<enum MemoryModel> memoryModelOpt;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
@@ -43,8 +42,7 @@ CompileOptions prepareOptions()
 
     CompileOptions compileOptions;
     compileOptions.isJit = emitAction.getValue() == Action::RunJIT;
-    // -nogc predates -mm and stays an alias for its "leak everything" value
-    compileOptions.memoryModel = disableGC.getValue() ? MemoryModelNone : memoryModelOpt.getValue();
+    compileOptions.memoryModel = memoryModelOpt.getValue();
     compileOptions.enableBuiltins = enableBuiltins.getValue();
     compileOptions.noDefaultLib = noDefaultLib.getValue();
     compileOptions.disableWarnings = disableWarnings.getValue();

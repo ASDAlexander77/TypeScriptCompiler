@@ -36,7 +36,7 @@ export class TypeScriptCompiler extends BaseCompiler {
     async handleInterpreting(key, executeParameters) {
         executeParameters.args = [
             '--emit=jit',
-            this.tslangSharedLib ? '--shared-libs=' + this.tslangSharedLib : '-nogc',
+            this.tslangSharedLib ? '--shared-libs=' + this.tslangSharedLib : '-mm=none',
             ...executeParameters.args,
         ];
 
@@ -54,7 +54,7 @@ export class TypeScriptCompiler extends BaseCompiler {
 
         if (!this.tslangSharedLib)
         {
-            newOptions.push('-nogc');
+            newOptions.push('-mm=none');
         }
 
         const output = await this.runCompilerRawOutput(this.tslangJit, newOptions, this.filename(inputFilename), execOptions);
@@ -77,7 +77,7 @@ export class TypeScriptCompiler extends BaseCompiler {
 
         if (!this.tslangSharedLib)
         {
-            newOptions.push('-nogc');
+            newOptions.push('-mm=none');
         }
 
         const execOptions = this.getDefaultExecOptions();

@@ -784,9 +784,14 @@ still inert.
 
 **`-mm={gc,rc,none}` replaces `-nogc`.** The flag cleanup this document has called for since the
 first draft: there were always three models — `-nogc` meant "leak everything", not "collect
-differently" — spelled as a single boolean. `-nogc` stays as a deprecated alias for `-mm=none`,
-and `CompileOptions` grew `needsGCRuntime()` and `isRefCounted()` so no caller reads the model
-enum directly.
+differently" — spelled as a single boolean. `-nogc` stayed on as a deprecated alias for
+`-mm=none`, and `CompileOptions` grew `needsGCRuntime()` and `isRefCounted()` so no caller
+reads the model enum directly.
+
+> **Removed, §9.47.** The alias is gone. An LLVM boolean option accepts an explicit value, and
+> an empty one reads as *true* - so `-nogc= -mm=rc` silently compiled `none`, which is how a
+> whole round of §9.46's reductions came back "already fixed". Every caller in the tree now
+> spells the model outright.
 
 `-mm=rc` at this point means *counts are maintained and the release machinery is generated*; the
 collector still runs and is still what frees. That is deliberately an intermediate: it makes the
@@ -3802,3 +3807,27 @@ says so.
 2,595/2,595 over three consecutive runs, up from 2,587 - the eight are this file in four tiers
 plus `01class_new.ts` coming off the disabled list in two. The ownership verifier is unchanged at
 its two standing findings.
+
+### 9.47 `-nogc` is gone
+
+The alias §9.6 kept for compatibility outlived its usefulness, and it was not inert while it
+waited. An LLVM `cl::opt<bool>` accepts an explicit value, and an empty one parses as **true** -
+so `-nogc= -mm=rc` compiles `none` and says nothing about it. That is not a hypothetical: it is
+how the first round of §9.46's reductions came back reporting that all six of the remaining
+`rc` faults had already been fixed, on a build where nothing had changed. A flag whose two
+spellings disagree silently about which memory model is in force is worse than no alias.
+
+The definition in `tslang.cpp` and its one read in `opts.cpp` are removed, so
+`compileOptions.memoryModel` is now just `memoryModelOpt.getValue()`, and an old `-nogc`
+invocation fails loudly with an unknown-argument error rather than quietly choosing a model.
+Every caller in the tree spells the model out: the README's WASM example, the Visual Studio
+custom tool's property page and switch, the three WASM scripts under `docs/how/wasm`, the
+Compiler Explorer wrapper's three call sites, and three launch configurations. The Compiler
+Explorer *ids* (`tslang_jit_nogc`) are left as they are - they are names in a local instance's
+config, not flags, and renaming them would move permalinks for nothing.
+
+`docs/jit-gc-static-roots.md` is updated too, in all four places: those mentions are a
+reproduction recipe and a diagnostic checklist rather than a record of what the flag once was,
+and a recipe that no longer runs is not a record of anything.
+
+2,595/2,595.

@@ -118,7 +118,7 @@ static uint64_t jitImageBase = 0;
 //    in the JIT an object reachable only from a global (e.g. a static class member)
 //    is collected on the first GC cycle and its memory recycled. Register every RW
 //    data section via GC_add_roots, resolved dynamically from the already-loaded
-//    TypeScriptRuntime library so this stays inert under --nogc.
+//    TypeScriptRuntime library so this stays inert under -mm=none.
 //
 // 2. Win64 unwind info. LLVM's RTDyld never registers .pdata with the OS
 //    (RTDyldMemoryManager::registerEHFramesInProcess only speaks the Itanium
@@ -357,7 +357,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
                 {
                     /*
                     llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-mm=none'\n";
                     return -1;            
                     */
                 }        

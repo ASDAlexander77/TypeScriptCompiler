@@ -125,7 +125,6 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
                                        cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting, no collector (in development; cycles and anything the counts miss leak)")),
                                        cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
-cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection. Deprecated alias for '-mm=none'"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));

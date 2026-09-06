@@ -326,7 +326,7 @@ Hello World!
 Build
 
 ```bat
-tslang.exe --emit=exe --nogc -mtriple=wasm32-unknown-unknown hello.ts
+tslang.exe --emit=exe -mm=none -mtriple=wasm32-unknown-unknown hello.ts
 ```
 
 Run ``run.html``

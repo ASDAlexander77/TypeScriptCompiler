@@ -1212,8 +1212,8 @@ add_test(NAME test-jit-00-nested-catch COMMAND test-runner -jit "${PROJECT_SOURC
 add_test(NAME test-jit-rc-nested-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
 add_test(NAME test-jit-none-nested-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
 
-# `-mm=none` is the old `-nogc` - leak everything - and had no coverage at all before the
-# rename. One test, so a future change to the model plumbing cannot silently break it.
+# `-mm=none` - leak everything - had no coverage at all before the rename that gave it a name
+# of its own. One test, so a future change to the model plumbing cannot silently break it.
 add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
 
 # ============================================================================

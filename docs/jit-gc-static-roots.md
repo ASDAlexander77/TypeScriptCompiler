@@ -18,7 +18,7 @@ Characteristic behaviour that pointed at the garbage collector:
 | AOT (`--emit=exe`) at O0       | passes  |
 | JIT at O0, 1x1 or 16x16 render | passes  |
 | JIT at O0, 48x48 and larger    | crashes |
-| JIT at O0 with `--nogc`        | passes  |
+| JIT at O0 with `-mm=none`      | passes  |
 
 The crash appears exactly when the Boehm heap grows enough to trigger the
 first collection cycle.
@@ -64,7 +64,7 @@ function main() {
 
 Before the fix this printed `2.9751e+006` — i.e. the static's memory had been
 recycled as `Vec(i, i, i)` with `i ≈ 2975100`, an allocation from the last
-collection cycle. With `--nogc` it printed `11`.
+collection cycle. With `-mm=none` it printed `11`.
 
 ### Fix
 
@@ -80,7 +80,7 @@ GC_remove_roots(base, base + size); // on release
 
 `GC_add_roots`/`GC_remove_roots` are resolved at run time with
 `llvm::sys::DynamicLibrary::SearchForAddressOfSymbol` from the already-loaded
-`TypeScriptRuntime` library, so the mapper is inert under `--nogc` or when no
+`TypeScriptRuntime` library, so the mapper is inert under `-mm=none` or when no
 GC runtime is present. The exports were added as thin wrappers
 (`_mlir__GC_add_roots`, `_mlir__GC_remove_roots`) in
 `lib/TypeScriptRuntime/gc.cpp` and re-exported under the plain names in
@@ -125,7 +125,7 @@ copy of the runtime — and therefore one GC — is loaded per JIT process.
 
 ## How to diagnose this class of bug
 
-1. `--nogc` passing while the normal run crashes ⇒ collector involvement.
+1. `-mm=none` passing while the normal run crashes ⇒ collector involvement.
 2. Crash threshold scaling with allocation volume ⇒ first collection cycle.
 3. AOT passing while JIT fails ⇒ suspect JIT-only differences: static roots,
    symbol resolution, unwind info.

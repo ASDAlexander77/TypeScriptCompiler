@@ -1,5 +1,5 @@
 set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\debug\Debug
 set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\debug\Debug\lib
 set TSLANG_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-debug\lib
-C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-debug\bin\tslang.exe --emit=exe --nogc --di -mtriple=wasm32-unknown-unknown C:\temp\1.ts
+C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-debug\bin\tslang.exe --emit=exe -mm=none --di -mtriple=wasm32-unknown-unknown C:\temp\1.ts
 copy 1.wasm C:\temp\webassembly3\hello.wasm

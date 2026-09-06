@@ -24,9 +24,9 @@ enum Exports
     IgnoreAll
 };
 
-// How compiled code reclaims heap memory. There have always been three of these - `-nogc`
-// meant "leak everything", not "collect differently" - but they were spelled as one boolean.
-// See docs/reference-counting-evaluation.md.
+// How compiled code reclaims heap memory. There have always been three of these - the flag
+// this replaced meant "leak everything", not "collect differently" - but they were spelled
+// as one boolean. See docs/reference-counting-evaluation.md.
 enum MemoryModel
 {
     // Boehm-Demers-Weiser collector. The default, and the only model that reclaims today.
