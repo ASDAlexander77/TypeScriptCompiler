@@ -287,18 +287,18 @@ class OwnedReturnConsumptionPass
             // is used from another block is excluded by allUsesReleasableInOwnBlock above, so a
             // nested exit cannot be returning this value or reading it.
             //
-            // Returns only, and the walk itself is the argument. Everything reached here sits
-            // inside an op that is a SIBLING of the definition in this block, so a `break` or
-            // `continue` found this way targets a loop that does not contain the definition:
-            // control comes back into this block and runs the release below as well, and
-            // releasing at both would give the same reference back twice. A return leaves for
-            // good wherever it is written.
+            // A `return` leaves for good wherever it is written. A `break` or `continue` only
+            // sometimes does, and which it is decides between a leak and a double release:
             //
-            // The other side of that is a temporary in a loop BODY whose iteration ends in a
-            // `break` - the release at the end of that body block is skipped and the value is
-            // lost. Telling the two apart needs the break's target loop rather than its position
-            // (a labelled `break` can leave more than the nearest one), so it is left leaking:
-            // see item 5ak.
+            //   - caught by a loop BELOW this block - the definition sits outside that loop - so
+            //     control comes back and runs the end-of-block release as well. Releasing at the
+            //     jump too would give the same reference back twice;
+            //   - caught by a loop ABOVE this block, which is to say this block is that loop's
+            //     body. The end-of-block release is then skipped for the iteration that jumps,
+            //     and without one here the value is lost.
+            //
+            // jumpLeavesBlock answers it by walking from the jump up to this block and asking
+            // whether anything on the way catches it.
             for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
             {
                 if (it->getNumRegions() == 0)
@@ -307,11 +307,23 @@ class OwnedReturnConsumptionPass
                 }
 
                 it->walk([&](mlir::Operation *nested) {
-                    if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested))
+                    // A nested function's `return` returns from that function, and its jumps are
+                    // its own; nothing inside one is on a path out of this block.
+                    if (mlir::isa<mlir_ts::FuncOp>(nested))
+                    {
+                        return mlir::WalkResult::skip();
+                    }
+
+                    auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
+                                       (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
+                                        jumpLeavesBlock(nested, block));
+                    if (leavesBlock)
                     {
                         builder.setInsertionPoint(nested);
                         builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
                     }
+
+                    return mlir::WalkResult::advance();
                 });
             }
 
@@ -330,6 +342,58 @@ class OwnedReturnConsumptionPass
 
             builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
         }
+    }
+
+    // Does `op` catch this jump - is it the loop, switch or labelled statement the jump names?
+    //
+    // An unlabelled `break` is caught by the nearest enclosing loop or `switch`; an unlabelled
+    // `continue` by the nearest enclosing loop. A labelled one is caught by whatever carries that
+    // label, which may be several levels further out - `outer: while (..) { while (..) { break
+    // outer; } }` is the case that makes position alone the wrong question.
+    static bool catchesJump(mlir::Operation *op, bool isBreak, mlir::StringAttr label)
+    {
+        auto isLoop = mlir::isa<mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp>(op);
+        auto isSwitch = mlir::isa<mlir_ts::SwitchOp>(op);
+
+        if (label && !label.getValue().empty())
+        {
+            auto ownLabel = op->getAttrOfType<mlir::StringAttr>(LABEL_ATTR_NAME);
+            return ownLabel && ownLabel.getValue() == label.getValue();
+        }
+
+        return isLoop || (isBreak && isSwitch);
+    }
+
+    // Does this `break` or `continue` leave `block` for good, or does control come back into it?
+    //
+    // Walks outwards from the jump to the op that sits in `block`, asking each level whether it
+    // catches the jump. Nothing on the way - including that outermost op itself - means the jump
+    // is caught further out, so `block` is inside the loop being left and everything after the
+    // jump in it is skipped.
+    //
+    // Answers false when the walk runs out of ancestors without meeting `block`, which cannot
+    // happen for a jump this pass reached but is the safe answer either way: a missing release
+    // leaks, a surplus one frees memory twice.
+    static bool jumpLeavesBlock(mlir::Operation *jump, mlir::Block *block)
+    {
+        auto isBreak = mlir::isa<mlir_ts::BreakOp>(jump);
+        auto label = isBreak ? mlir::cast<mlir_ts::BreakOp>(jump).getLabelAttr()
+                             : mlir::cast<mlir_ts::ContinueOp>(jump).getLabelAttr();
+
+        for (auto *parent = jump->getParentOp(); parent != nullptr; parent = parent->getParentOp())
+        {
+            if (catchesJump(parent, isBreak, label))
+            {
+                return false;
+            }
+
+            if (parent->getBlock() == block)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Can a release at the end of this value's own block give its reference back safely? See

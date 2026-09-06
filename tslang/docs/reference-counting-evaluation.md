@@ -721,12 +721,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
-5ak. **A `break` out of a loop body loses that iteration's discarded temporaries.** The other side
-   of §9.60: the release at the end of a loop body is skipped when the iteration ends in a `break`
-   or `continue`. It is not fixed with the returns because telling it apart from the case where
-   releasing would be a DOUBLE release needs the jump's target loop rather than its position - a
-   labelled `break` can leave more than the nearest one - and the two look identical to the walk
-   that places these releases. Leaks, which is the safe side.
+5ak. **DONE, §9.61 - a jump is asked whether it leaves the block, not where it is written.** The
+   release at the end of a loop body is skipped by an iteration that ends in `break` or
+   `continue`, so that iteration's discarded temporaries were lost. Releasing at every jump would
+   have been wrong in the other direction - a jump caught by a loop BELOW the block comes back and
+   runs the end-of-block release as well - so the pass now walks from the jump out to the block
+   and asks what catches it, which is also what makes a labelled `break` out of two loops come out
+   right. 13.9 MB against `none`'s 53.2, down to 0.6.
 
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
@@ -4686,3 +4687,42 @@ edit, and the difference here was the whole result.
 Suite 2,641/2,641, corpus under all three models in both tiers - which is the guard against the
 new release being a second one. `00owned_early_return.ts` covers the shapes; a leak cannot be
 asserted, so the cases build over the memory they might have freed and read it back.
+
+### 9.61 Which jumps leave the block (5ak)
+
+§9.60 covered `return` and deliberately left `break` and `continue` alone, because whether one of
+them leaves the block holding a temporary decides between a leak and a double release, and
+position alone does not answer it. It is answerable, so here it is answered.
+
+**Both directions are real.** A discarded temporary in a loop *body* whose iteration ends in a
+`break` is lost - the release at the end of that body never runs for that iteration. Measured
+with a maker behind an interface so the optimiser cannot elide it, one iteration in four ending in
+a break: **13.9 MB against `none`'s 53.2**, and 0.6 after. But a temporary in the block that
+*contains* the loop is a different case entirely: the `break` leaves only the loop, control comes
+back, and the end-of-block release runs - a release at the jump as well would give the same
+reference back twice.
+
+**The question, and how it is asked.** Walk from the jump outwards to the op that sits in the
+temporary's block, asking at each level whether it catches the jump: an unlabelled `break` is
+caught by the nearest enclosing loop or `switch`, an unlabelled `continue` by the nearest
+enclosing loop, and a labelled one by whatever carries that label - which may be several levels
+further out. Nothing on the way means the jump is caught beyond the block, so the block is inside
+the loop being left. That last part is why position cannot stand in for it:
+`outer: while (..) { while (..) { break outer; } }` leaves two loops from inside one.
+
+**How it is verified, given that a double release is invisible at run time.** By reading the IR
+rather than the numbers: the count of `ts.Release` in each shape says which way the predicate
+answered.
+
+| shape | releases |
+| --- | --- |
+| temporary in the loop body, `break` | 2 - one at the jump, one at the end of the body |
+| temporary in the loop body, `continue` | 2 |
+| temporary in the inner body, `break outer` | 2 |
+| temporary above the loop, `break` below it | 1 - end of block only |
+| temporary above the loop, `continue` below it | 1 |
+
+Those five are in `00owned_early_return.ts`, and the last two are the ones that matter: a test
+cannot observe the double release they guard against - the second decrement reads a freed block's
+refcount and usually just returns - so the IR count is the evidence, and the corpus under `rc` and
+`none` in both tiers is the backstop. Suite 2,641/2,641.

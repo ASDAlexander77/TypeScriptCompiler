@@ -139,6 +139,93 @@ function readAfterTailReturn(): number {
     return h.x;
 }
 
+// A `break` leaves the loop body for good, so an iteration that ends in one skips the release at
+// the end of that body: the temporary built by the iteration that breaks needs one at the jump.
+// Whether a jump leaves the block holding the temporary is the whole question - see the two cases
+// below it, where it does not - and the answer decides between a leak and a double release.
+function temporaryInALoopBodyWithBreak(stopAt: number): number {
+    let seen = 0.0;
+    for (let i = 0; i < 8; i++) {
+        make(30.0);
+        seen = seen + 1.0;
+        if (i == stopAt) {
+            break;
+        }
+    }
+
+    churn();
+
+    return seen;
+}
+
+function temporaryInALoopBodyWithContinue(skipAt: number): number {
+    let seen = 0.0;
+    for (let i = 0; i < 8; i++) {
+        make(31.0);
+        if (i == skipAt) {
+            continue;
+        }
+
+        seen = seen + 1.0;
+    }
+
+    churn();
+
+    return seen;
+}
+
+// A labelled `break` leaves both loops, so the inner body's temporary is left behind by it too.
+function temporaryLeftByALabelledBreak(): number {
+    let seen = 0.0;
+    outer: for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            make(32.0);
+            seen = seen + 1.0;
+            if (j == 1) {
+                break outer;
+            }
+        }
+    }
+
+    churn();
+
+    return seen;
+}
+
+// The other direction, and the one a release would break: the temporary belongs to THIS block,
+// and the `break` below it leaves only the loop. Control comes back here and the end-of-block
+// release runs, so a release at the jump as well would give the same reference back twice.
+function breakBelowTheTemporary(stopAt: number): number {
+    make(33.0);
+    let seen = 0.0;
+    for (let i = 0; i < 8; i++) {
+        seen = seen + 1.0;
+        if (i == stopAt) {
+            break;
+        }
+    }
+
+    churn();
+
+    return seen;
+}
+
+function continueBelowTheTemporary(skipAt: number): number {
+    make(34.0);
+    let seen = 0.0;
+    for (let i = 0; i < 8; i++) {
+        if (i == skipAt) {
+            continue;
+        }
+
+        seen = seen + 1.0;
+    }
+
+    churn();
+
+    return seen;
+}
+
 function main() {
     assert(earlyReturnFromIf(true) == 10.0, "early return out of an `if`");
     assert(earlyReturnFromIf(false) == 20.0, "the same function's tail return");
@@ -154,6 +241,12 @@ function main() {
 
     assert(readAfterEarlyReturn() == 8.0, "what an early return hands back survives");
     assert(readAfterTailReturn() == 9.0, "what a tail return hands back survives");
+
+    assert(temporaryInALoopBodyWithBreak(3) == 4.0, "a temporary left behind by `break`");
+    assert(temporaryInALoopBodyWithContinue(3) == 7.0, "a temporary left behind by `continue`");
+    assert(temporaryLeftByALabelledBreak() == 2.0, "a labelled `break` leaves both loops");
+    assert(breakBelowTheTemporary(3) == 4.0, "a `break` below the temporary leaves only the loop");
+    assert(continueBelowTheTemporary(3) == 7.0, "a `continue` below the temporary leaves only the iteration");
 
     print("done.");
 }
