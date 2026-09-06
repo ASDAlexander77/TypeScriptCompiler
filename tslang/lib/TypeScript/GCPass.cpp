@@ -316,8 +316,20 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         auto i8PtrTy = th.getPtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
 
+        // The async runtime resumes coroutines on a thread pool, and a resumed coroutine both
+        // allocates and hands its own frame back through the collector. Boehm does not lock its
+        // allocator until it is told there is more than one thread, and it will not let a thread
+        // register itself until the same call has been made - so without this, a worker and the
+        // awaiting thread walked the same free lists with no lock (see AsyncGCThreads.h). It goes
+        // here rather than inside GC_init because an ahead-of-time build links the collector's own
+        // GC_init, which there is no hooking; this pass runs only for `-mm=gc`, which is exactly
+        // when it is wanted.
+        auto gcEnableThreadsFuncOp = ch.getOrInsertFunction(
+            "GC_enable_threads", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
+
         rewriter.setInsertionPointToStart(&*funcOp.getBody().begin());
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
+        rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcEnableThreadsFuncOp, ValueRange{});
     }
 
     // GC_malloc hands back zeroed memory, so zeroing the block it just returned is wasted work.

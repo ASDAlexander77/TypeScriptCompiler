@@ -365,6 +365,7 @@ add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR
 add_test(NAME test-compile-01-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-compile-00-async-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-compile-00-async-result-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_result_types.ts")
+add_test(NAME test-compile-00-async-gc-threading COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_gc_threading.ts")
 add_test(NAME test-compile-00-for-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 
 add_test(NAME test-compile-00-for-await-yield COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
@@ -769,6 +770,7 @@ add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DI
 add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-jit-00-async-result-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_result_types.ts")
+add_test(NAME test-jit-00-async-gc-threading COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_gc_threading.ts")
 add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
@@ -1271,6 +1273,7 @@ set(TSLANG_CORPUS
     00as.ts
     00assert.ts
     00async_await.ts
+    00async_gc_threading.ts
     00async_result_types.ts
     00bool_arith_ops.ts
     00break_continue_scope_exit.ts

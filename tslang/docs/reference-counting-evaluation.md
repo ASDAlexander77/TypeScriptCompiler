@@ -581,9 +581,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `await twice(3)` compiled all along - `withDefault()` returns an `i32`. The result now travels
    through a slot in the awaiting function and the async value carries only a token. Under `rc`
    that slot has to own what it holds, or the awaited region releases the value as it ends.
-5ac. **`gc` faults on a long chain of coroutine frames.** 50k awaits in a loop faults 2 runs in
-   4 under `-mm=gc` at `-O3`, and more often at 200k, in both link configurations - so it
-   predates §9.41 and is not the allocator pairing. `rc` and `none` complete the same loop.
+5ac. **DONE, §9.57 - the collector was allocating without a lock.** A coroutine is resumed on the
+   async runtime's thread pool, and under `gc` it frees its own frame there. Boehm leaves
+   `GC_need_to_lock` FALSE until something tells it there is more than one thread, so a worker and
+   the awaiting thread walked the same free lists with no lock at all. `GC_allow_register_threads`
+   sets that flag; the workers now also register themselves so a collection can suspend them and
+   scan their stacks. 200k awaits went from about 1 failure in 4 to none in 32, and 400k - twice
+   the worst case ever measured - is clean. `rc` and `none` were never affected: their frames go
+   to the CRT heap.
 5ad. **DONE, §9.51 - and it was not an `rc` bug.** A `main` returning nothing lowered to
    `void @main()`, and the C runtime reads an exit code out of the return register whatever the
    signature says. Zero under `gc` and `none` by luck, 1 under `rc`, where the last thing `main`
@@ -4454,3 +4459,58 @@ Worth keeping from this one:
 
 `00async_result_types.ts` covers each result type, both directions of the argument question, an
 await inside an async function, and three results read after a churn loop. Suite 2,629/2,629.
+
+### 9.57 The collector was allocating without a lock (5ac)
+
+`-mm=gc` faulted on a long chain of awaits - about 1 run in 4 at 200k coroutine frames, never at
+50k, never under `rc` or `none`. It had been read as something about collection, and it was not.
+
+**Evidence, in the order it narrowed:**
+
+| probe | result |
+| --- | --- |
+| `rc` and `none`, 200k awaits | 0 failures in 6 each - `gc` only |
+| `GC_INITIAL_HEAP_SIZE=1G` (nothing needs collecting) | unchanged, 2 in 8 |
+| resume the coroutine inline instead of on the pool | 0 in 10 |
+
+A heap large enough that no collection happens changes nothing, so the collector is not reclaiming
+a live frame; taking the pool thread away fixes it, so the second thread is the whole story.
+
+**Root cause.** Boehm does not lock its allocator until it is told the program is multi-threaded.
+From `include/private/gc_locks.h`, `set_need_to_lock()` is `GC_need_to_lock = TRUE`, and until
+that runs `LOCK()`/`UNLOCK()` expand to nothing. Nothing had run it: the worker threads are
+`llvm::DefaultThreadPool`'s plain `std::thread`s, created by neither `GC_CreateThread` nor
+anything else the collector knows about. So a worker freeing a coroutine frame and the awaiting
+thread allocating walked the same free lists at once, unlocked.
+
+`GC_allow_register_threads()` is the call that sets it (`win32_threads.c`: `GC_start_mark_threads()`
+then `set_need_to_lock()`), and it is also the permission a thread needs before it may register
+itself. Both halves are wanted, and they are separate: **adding the call alone took 200k awaits
+from 1 failure in 4 to none in 32, with the workers still unregistered.** Registration is the
+other half - an unknown thread is not suspended during a collection and its stack is not scanned,
+so a frame held only in that worker's registers can be freed underneath it.
+
+**Where the call goes.** In `injectInit`, beside `GC_init`, because an ahead-of-time build links
+the collector's own `GC_init` and there is no hooking that; the GC pass runs only for `-mm=gc`,
+which is exactly when this is wanted. `GC_enable_threads` is the name, defined in both copies of
+the async runtime - the one inside `TypeScriptRuntime.dll` for the JIT and
+`TypeScriptAsyncRuntime.lib` for AOT - over the shared `AsyncGCThreads.h`.
+
+Two things this cost, and both are worth keeping:
+
+- **A first attempt broke every `rc` and `none` await.** The workers registered themselves guarded
+  by `GC_is_init_called()`, which looks like "is this a `gc` program" and is not: the collector
+  initializes itself on first use, so it answers yes in a program that never meant to collect
+  anything - and `GC_register_my_thread` then aborts, because `GC_allow_register_threads` had not
+  run. The guard has to be **our own flag, set by the call we make**, never the collector's idea of
+  whether it woke up. Caught because the new test runs under all three models; a `gc`-only test
+  would have shipped it.
+- **The runtime is two files, not one.** `lib/TypeScriptRuntime/AsyncRuntime.cpp` and
+  `lib/TypeScriptAsyncRuntime/AsyncRuntime.cpp` are near-duplicates, JIT and AOT respectively.
+  Fixing one leaves the other, and the suite says so - the JIT tier passed while `test-compile-*`
+  failed with `0xC0000005`.
+
+`00async_gc_threading.ts` is 250k awaits that allocate on both sides, so the two threads are in
+the allocator together rather than taking turns. Against the unfixed runtime it faults 7 runs in
+20 at `-O3` and 6 in 10 at `-O0`; smaller shapes are much weaker (60k iterations: 2 in 20). It is
+a race, so it is a rate - but it is a rate that two tiers sample on every run. Suite 2,635/2,635.

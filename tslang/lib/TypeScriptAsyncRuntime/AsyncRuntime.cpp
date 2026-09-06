@@ -31,6 +31,15 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/ThreadPool.h"
 
+#include "TypeScript/AsyncGCThreads.h"
+
+// Called once from the entry point: the GC pass injects the call beside GC_init, so it
+// happens only in a `gc` build.
+extern "C" void GC_enable_threads()
+{
+    typescript::asyncgc::enableThreads();
+}
+
 using namespace mlir::runtime;
 
 //===----------------------------------------------------------------------===//
@@ -479,7 +488,7 @@ extern "C" void mlirAsyncRuntimeExecute(CoroHandle handle, CoroResume resume)
 {
     auto *runtime = getDefaultAsyncRuntime();
     runtime->getThreadPool().async([handle, resume]()
-                                    { (*resume)(handle); });
+                                    { typescript::asyncgc::ThreadRegistration gcThread; (*resume)(handle); });
 }
 
 extern "C" void mlirAsyncRuntimeAwaitTokenAndExecute(AsyncToken *token, CoroHandle handle, CoroResume resume)
