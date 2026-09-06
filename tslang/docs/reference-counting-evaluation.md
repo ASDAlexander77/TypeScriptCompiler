@@ -593,10 +593,10 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    slot has no `return` statement, and so performed none of what a return does). What is left
    fails in both tiers and not one of them under `none`, so it is reference counting's rather
    than latent: `00mixed_type_ops.ts` (binary operators across static types - grouped with the
-   unions and not one of them), `00spread.ts` (an array spread into parameters), `nbody.ts`,
-   and - about one run in ten each - `13actions.ts` and `44toplevelcode.ts`. They are
-   registered and disabled in `test/tester/CMakeLists.txt`, so the list of what is broken lives
-   in the build. **Next slice.**
+   unions and not one of them), `00spread.ts` (**diagnosed, see 5ag - it is a generator's
+   state object, and it cannot be fixed on its own**), `nbody.ts`, and - about one run in ten
+   each - `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
+   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build.
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
    §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
@@ -604,6 +604,46 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    here since §9.31. The per-shape results in §9.29-§9.37 stand, because those programs
    completed; the whole-program case has to be made again from here, and this is where it
    starts.
+5ag. **A generator's state object releases what it never took, and loses its capture box when it
+   outlives its maker.** Two halves of one bug, and the order matters: the second has to be
+   fixed first. A generator's locals cannot live in its frame - the state machine has to resume -
+   so each becomes a field of a heap state object, and that object's release routine is
+   generated from its type and gives back every field that owns memory. The frame declines
+   ownership of those locals for exactly that reason (`localTakesOwnership`,
+   `trackPossibleCell` both exclude `allocateInContextThis`), and **nothing takes the reference
+   the object will later give back**. `[1, 2, 3].map(f)` compiles to a synthesised
+   `function*` running `for (const v of .src_array) yield f(v)`, so the `for...of` lowering
+   stores the array into a generator local, and the capture box and the state object each free
+   it. Invisible until `-O3`, where the optimiser proves the two pointers equal:
+
+   ```llvm
+   %0 = tail call ptr @malloc(i64 20)      ; [1, 2, 3] copied to the heap
+   ...
+   tail call void @free(ptr nonnull %0)
+   tail call void @free(ptr nonnull %0)
+   ```
+
+   That is all of `00spread.ts`, and the retain that fixes it - in `createLocalVariable`, where
+   the `allocateInContextThis` store is emitted - fixes the whole file and every reduction of
+   it. **It also breaks `00extension_cond_access.ts`, and correctly.** A generator returned
+   from the function that built it keeps a `.captured` pointer into a capture box that function
+   owned and released on the way out, so the cells behind it are freed while the generator is
+   still reading them. Today that is a silent read of a block nobody has reused; a retain makes
+   it a *write* of a refcount into a freed block, which corrupts the free list at once. The
+   whole reduction:
+
+   ```typescript
+   function f(names: string[]) { return names.filter(x => x); }
+   function main() { for (const s of f(["asd", "asd1"])) print(s); }
+   ```
+
+   So: give the state object ownership of its capture box first - the same question §9.33
+   answered for a closure, where a bound function carries the tag of its `this` - and only then
+   let a generator local take the reference its object gives back. `mlirGenResolveCapturedVars`
+   is where a box takes its cells, and its final `else` (a ref that is neither a `VariableOp`,
+   a `ParamOp`, nor a captured cell slot) is where the factory's re-capture from an incoming
+   capture tuple falls through, retaining nothing. Test written and not committed:
+   `00owned_generator_locals.ts`, seven cases, six of which the local retain alone turns green.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
