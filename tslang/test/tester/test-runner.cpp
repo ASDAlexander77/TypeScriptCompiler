@@ -1,4 +1,5 @@
 #include "helper.h"
+#include <stdexcept>
 #ifndef WIN32
 #include <unistd.h> // for usleep
 #endif
@@ -184,6 +185,7 @@ void createCompileBatchFile()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo %ERRORLEVEL% > %FILENAME%.code" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
     batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;        
@@ -208,6 +210,7 @@ void createCompileBatchFile()
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "echo $? > $FILENAME.code" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
     batFile << "rm -f $FILENAME" << std::endl;
     batFile.close();    
@@ -259,9 +262,9 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 {
     std::stringstream mask;
 #if WIN32
-    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
+    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".code " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
 #else
-    mask << "rm -f " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
+    mask << "rm -f " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".code " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
 #endif
 
     auto delCmd = mask.str();
@@ -272,11 +275,33 @@ std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
 {
     auto txtFile = tempOutputFileNameNoExt + ".txt";
     auto errFile = tempOutputFileNameNoExt + ".err";
+    auto codeFile = tempOutputFileNameNoExt + ".code";
 
     auto output = readOutput(txtFile);
     auto errors = readOutput(errFile);
+    // written by the compile scripts only; a JIT run has no separate program to ask
+    auto exitCode = readOutput(codeFile);
 
     if (!getenv("TSLANG_TEST_KEEP_TEMP")) deleteFiles(tempOutputFileNameNoExt);
+
+    // A program that prints everything it was asked to and then tells the shell it failed is a
+    // failing program, and until this was checked nothing in the suite would say so: an
+    // ahead-of-time `-mm=rc` build exited 1 from a `main` returning nothing for as long as `rc`
+    // has existed, and every one of these tests passed.
+    if (!exitCode.empty())
+    {
+        // `echo %ERRORLEVEL% > file` writes a trailing space before the newline, so this has to
+        // trim whitespace at both ends rather than just cut at the line break
+        auto first = exitCode.find_first_not_of(" \t\r\n");
+        auto last = exitCode.find_last_not_of(" \t\r\n");
+        auto trimmed = first == std::string::npos ? std::string() : exitCode.substr(first, last - first + 1);
+        if (!trimmed.empty() && trimmed != "0")
+        {
+            return "exit code " + trimmed + (output.find("done.") != std::string::npos
+                                                 ? " from a run that printed 'done.'"
+                                                 : "");
+        }
+    }
 
     if (output.find("done.") != std::string::npos)
     {
@@ -312,18 +337,25 @@ std::string getTempOutputFileNameNoExt(std::string file)
     return fileNameNoExtWithMs;
 }
 
+// Every throw here and below is a std::runtime_error rather than a string literal, and that is
+// not a style choice: the only handlers in this file catch `const std::exception &`, so a
+// `throw "..."` was never caught anywhere. It reached std::terminate, which on Windows is a
+// __fastfail - the runner died with 0xC0000409 and printed nothing at all. That happened for an
+// ordinary failing test (checkedExecCommand means to swallow this and let the missing "done."
+// be the report) and for every misuse of the command line, where the message says exactly what
+// is wrong and was never seen.
 void checkExecOutput(std::string compileResult)
 {
     auto index = compileResult.find("error:");
     if (index != std::string::npos)
     {
-        throw "compile error";
+        throw std::runtime_error("compile error");
     }
 
     index = compileResult.find("failed");
     if (index != std::string::npos)
     {
-        throw "run error";
+        throw std::runtime_error("run error");
     }
 }
 
@@ -389,6 +421,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << "del " << objs.str() << std::endl;
     batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo %ERRORLEVEL% > %FILENAME%.code" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
     batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
@@ -418,6 +451,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "echo $? > $FILENAME.code" << std::endl;
     
     batFile << "rm -f " << objs.str() << std::endl;
     batFile << "rm -f $FILENAME" << std::endl;
@@ -647,7 +681,7 @@ void testMutliFiles(std::vector<std::string> &files)
     {
         if (jitRun)
         {
-            throw "not supported";
+            throw std::runtime_error("-jit with several files needs -shared");
         }
 
         createMultiCompileBatchFile(tempOutputFileNameNoExt, files);
@@ -692,7 +726,12 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
             fastMath = true;
             tslang_opt_ext += " --fast-math";
         }
-        else if (std::string(argv[index]) == "-mm=rc" || std::string(argv[index]) == "-mm=none")
+        // `-mm=gc` is accepted as well as the two that change behaviour, and it is not a no-op:
+        // it names the default explicitly, which is what anyone comparing the three models types.
+        // It gets its own cached script like the others - the suffix is what keeps two runners
+        // with different flags from sharing one - so passing it costs a script and nothing else.
+        else if (std::string(argv[index]) == "-mm=gc" || std::string(argv[index]) == "-mm=rc" ||
+                 std::string(argv[index]) == "-mm=none")
         {
             memoryModel = std::string(argv[index]).substr(4);
             tslang_opt_ext += " ";
@@ -706,18 +745,18 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             std::string msg = "unknown param or file does not exist: ";
             msg.append(argv[index]);
-            throw msg.c_str();
+            throw std::runtime_error(msg);
         }
     }
 
     if (sharedLibCompileTime && !sharedLib)
     {
-        throw "-compile-time can be used with -shared";
+        throw std::runtime_error("-compile-time can be used with -shared");
     }
 
     if (sharedLibCompileTime && jitRun)
     {
-        throw "-compile-time can't be used with -jit";
+        throw std::runtime_error("-compile-time can't be used with -jit");
     }
 }
 
@@ -738,7 +777,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            throw "no file provided";
+            throw std::runtime_error("no file provided");
         }
     }
     catch (const std::exception &e)

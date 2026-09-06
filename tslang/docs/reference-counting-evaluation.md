@@ -580,10 +580,11 @@ path 1 first and alone; treat path 2 as its own change with its own verification
 5ac. **`gc` faults on a long chain of coroutine frames.** 50k awaits in a loop faults 2 runs in
    4 under `-mm=gc` at `-O3`, and more often at 200k, in both link configurations - so it
    predates §9.41 and is not the allocator pairing. `rc` and `none` complete the same loop.
-5ad. **An `-mm=rc` executable that prints a number exits 1.** Deterministic, with correct output,
-   ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
-   reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
-   harness that checks exit codes.
+5ad. **DONE, §9.51 - and it was not an `rc` bug.** A `main` returning nothing lowered to
+   `void @main()`, and the C runtime reads an exit code out of the return register whatever the
+   signature says. Zero under `gc` and `none` by luck, 1 under `rc`, where the last thing `main`
+   does is give back a reference. The entry point is now `i32 @main()` returning 0, and the test
+   runner checks the exit code of what it ran - which it never had.
 5ae. **DONE - no corpus file faults under any model.** What §9.42 bought, and it is empty:
    `TSLANG_CORPUS_BROKEN_*` has no entries, and the suite runs 2,617 tests with nothing disabled.
    §9.50 took the last one, `00spread.ts`. §9.49 took `nbody.ts` and, with
@@ -4147,3 +4148,50 @@ comment: the suite's own `--opt --opt_level=3`, an interpolated string built ins
 printing the result. **A freed block that nothing reuses reads back exactly as it did before** -
 the first version of the escaping-generator case passed against the broken build for that reason
 alone, and only failed once the other cases were allocating around it.
+
+### 9.51 Step 5ad: the exit code nobody returned
+
+An ahead-of-time build of
+
+```typescript
+function main() { print(1); }
+```
+
+printed `1` and told the shell it had failed, under `-mm=rc` only. Recorded as an `rc` bug for
+that reason, and it is not one.
+
+A TypeScript `main` that returns nothing lowers to `void @main()`. The C runtime that calls it
+reads an exit code out of the return register regardless of what the signature says, so the
+process's exit code was whatever the last instruction happened to leave there - zero under `gc`
+and `none` by luck, and 1 under `rc`, where the last thing `main` does is give back a
+reference. The entry point now lowers to `i32 @main()` returning 0, in every model, for anything
+that is not a JIT run or a DLL.
+
+A `main` that returns a value is deliberately left alone and is still wrong in the same way:
+`function main(): number { return 3; }` lowers to `double @main()`, which puts its result in
+XMM0 and leaves the exit code exactly as undefined as before. That is a language question - whether
+`main`'s result *is* the exit code - rather than a lowering one.
+
+#### The test that could not have caught it
+
+The suite has run ahead-of-time programs since long before any of this, and **it never looked at
+what they returned**: the generated script ran the executable, captured stdout and stderr, and the
+runner asked only whether `done.` appeared. So every `test-compile-rc-*` test passed against a
+program that was telling the shell it had failed. The scripts now record `%ERRORLEVEL%` and the
+runner fails a test whose program exited non-zero, saying so even when the output was right.
+
+Two more faults in the runner, both found by walking into them:
+
+- **Every `throw` of a string literal was uncaught.** The handlers catch `const std::exception &`,
+  so `throw "compile error"` reached `std::terminate` - a `__fastfail`, exit `0xC0000409`,
+  no message. That is what an ordinary failing test did (`checkedExecCommand` means to swallow it
+  and let the missing `done.` be the report) and what every command-line mistake did, including
+  a mistyped path. All of them are `std::runtime_error` now.
+- **`-mm=gc` was not accepted**, so naming the default explicitly hit that same silent
+  `__fastfail`. It is accepted now, and gets its own cached script like the other two.
+
+**The cached scripts are why this needed two runs to verify.** `compile.bat` and its variants are
+written once and reused, so a change to what they contain has no effect until they are deleted -
+the first suite run after adding the exit-code line had 21 failures, all of them tests whose script
+happened to be regenerated, and all of them reporting `exit code 0`, because `echo %ERRORLEVEL%`
+writes a trailing space.

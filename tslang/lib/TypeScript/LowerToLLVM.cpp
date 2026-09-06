@@ -7103,6 +7103,79 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
     return success();
 }
 
+// A TypeScript `main` returning nothing lowers to `void @main()`, and the C runtime that calls it
+// reads an exit code out of the return register regardless. Whatever the last instruction happened
+// to leave there became the process's exit code: zero under `gc` and `none` by luck, and 1 under
+// `rc`, where the last thing `main` does is give back a reference. So an ahead-of-time `rc` build
+// of `function main() { print(1); }` printed the right answer and told the shell it had failed.
+//
+// Give the entry point the signature its caller assumes: `i32 @main()` returning 0. Only for a
+// `main` that returns nothing and takes nothing - a `main` returning a value is left alone here,
+// and is a separate question (today it lowers to `double @main()`, which is wrong in the same way
+// and for the same reason).
+//
+// The test for "will be linked into an executable" is not `isExecutable`: that is only true for
+// `--emit=exe`, and everything that links a program here compiles with `--emit=obj` and calls the
+// linker itself, which is how this went unnoticed once already. A JIT run has no C runtime reading
+// a return register, and a DLL's `main` is not an entry point and may be something an importer
+// resolves, so those two are the exclusions.
+static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOptions)
+{
+    if (compileOptions.isJit || compileOptions.isDLL)
+    {
+        return;
+    }
+
+    auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(m.lookupSymbol(MAIN_ENTRY_NAME));
+    if (!funcOp || funcOp.getBody().empty())
+    {
+        return;
+    }
+
+    auto funcType = funcOp.getFunctionType();
+    if (funcType.getNumParams() != 0 || !isa<LLVM::LLVMVoidType>(funcType.getReturnType()))
+    {
+        return;
+    }
+
+    // A call inside the module would be left calling a signature that no longer matches. Nothing
+    // generates one today - `main` is the entry point, and top-level code that needs to run before
+    // it becomes a global constructor - but a silent type mismatch is not the failure to risk.
+    auto hasInternalCaller = false;
+    m.walk([&](LLVM::CallOp callOp) {
+        if (callOp.getCallee() && callOp.getCallee().value() == MAIN_ENTRY_NAME)
+        {
+            hasInternalCaller = true;
+        }
+    });
+
+    if (hasInternalCaller)
+    {
+        return;
+    }
+
+    mlir::OpBuilder builder(funcOp);
+    auto i32Type = builder.getI32Type();
+    funcOp.setFunctionType(LLVM::LLVMFunctionType::get(i32Type, {}, false));
+
+    SmallVector<LLVM::ReturnOp> returns;
+    funcOp.walk([&](LLVM::ReturnOp returnOp) {
+        if (returnOp.getNumOperands() == 0)
+        {
+            returns.push_back(returnOp);
+        }
+    });
+
+    for (auto returnOp : returns)
+    {
+        mlir::OpBuilder returnBuilder(returnOp);
+        auto zero = returnBuilder.create<LLVM::ConstantOp>(returnOp.getLoc(), i32Type,
+                                                           returnBuilder.getI32IntegerAttr(0));
+        returnBuilder.create<LLVM::ReturnOp>(returnOp.getLoc(), mlir::ValueRange{zero});
+        returnOp.erase();
+    }
+}
+
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
     auto m = getOperation();
@@ -7230,6 +7303,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << m << "\n";);
 
     cleanupUnrealizedConversionCast(m);
+
+    giveEntryPointAnExitCode(m, tsContext.compileOptions);
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << m << "\n";);
 
