@@ -558,14 +558,15 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    itself: a failing `assert` under `--emit=jit` was a modal message box and therefore a hang
    rather than a failure, and the shared-component runner dropped the space between `-mm=` and
    `--gctors-as-method`.
-5z. **A generator that takes a parameter leaks its capture box.** Newly measurable once §9.39
-   stopped the crash: 500k iterations at `-O3`, a generator with a local and no parameter costs
-   `rc` 2.6-3.7 MB against `gc`'s 2.6-4.1, and the same generator **with a parameter** costs
-   22.7 MB (array local) or 46.3 (string local). The parameter is the whole variable. It makes
-   the coroutine capture, the box becomes a field of the state object, and the object's release
-   routine does not walk that field - the same `ownsHeapMemory` blind spot that left the field
-   un-zeroed in §9.39. A generator that yields a freshly built string costs 76.8 MB against
-   `none`'s 71.2, so there is a second leak on the yield path.
+5z. **DONE, §9.52 - and its own diagnosis was right.** A generator that takes a parameter leaked
+   its capture box, because `.captured` is a `ref<tuple<..>>` and a reference into storage owns
+   nothing anywhere else in the compiler, so `releaseFields` skipped the one field of the state
+   object that owns memory. `releaseFields` now routes that shape through the capture-box release
+   routine closures already had, and the object takes the one reference that pays for it.
+   `function* gen(n) { yield n; }` at 500k iterations went from 33 MB to 3.3 MB, below `gc`'s 3.7.
+   The shapes 5z originally named - a parameter *and* a local - had already been closed by §9.50
+   without being measured. Every number it quoted was taken in the JIT and should be read as
+   gone; see §9.52 for the harness that replaced that method.
 5aa. **`for...of` over a literal array holds about a tenth of what it allocates.** With the
    default library, 900k iterations cost `rc` 15.6 MB against `gc`'s 4.1 and `none`'s 155.9, and
    the gap over `gc` grows sublinearly - nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k -
@@ -602,13 +603,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    slot has no `return` statement, and so performed none of what a return does). The lists in
    `test/tester/CMakeLists.txt` are kept empty rather than deleted: they are how the next such
    fault gets written down in the build while it is being worked on.
-5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
-   this document has that was measured on a program that finished - see the correction in
-   §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
-   third of what the program leaks without it, not all of it and then some, as has been claimed
-   here since §9.31. The per-shape results in §9.29-§9.37 stand, because those programs
-   completed; the whole-program case has to be made again from here, and this is where it
-   starts.
+5af. **`raytrace` costs `rc` 81.8 MB against `gc`'s 4.2.** Re-measured 2026-09-06 on the
+   ahead-of-time harness §9.52 describes, which is the first number here not taken through the
+   JIT; `none` is 114.5, so reference counting reclaims **about a quarter** of what the program
+   leaks without it. The 63/4.4/98 recorded before this was a JIT figure and is withdrawn, but
+   the shape of the answer did not change and this is now the largest thing open: every leak
+   §9.43 through §9.52 closed was measured on a loop of one shape, and `raytrace` is what says
+   how much of the whole program those add up to. **It is the next thing to take.**
 5ag. **DONE, §9.50 - and the second half turned out to be simpler than the diagnosis below.**
    The state object does not need ownership of its capture box: what the box loses is the *value*
    of a by-value capture, which the box already releases and which nothing had retained, because
@@ -4195,3 +4196,56 @@ written once and reused, so a change to what they contain has no effect until th
 the first suite run after adding the exit-code line had 21 failures, all of them tests whose script
 happened to be regenerated, and all of them reporting `exit code 0`, because `echo %ERRORLEVEL%`
 writes a trailing space.
+
+### 9.52 Step 5z: the box an object owns and could not release
+
+A generator that takes a parameter leaked, and the reduction is three lines:
+
+```typescript
+function* gen(n: number) { yield n; }
+function main() { for (let i = 0; i < 500000; i++) for (const v of gen(i)) {} }
+```
+
+Ahead of time at `-O3`: `rc` 33 MB against `gc`'s 3.7 and `none`'s 57.6. Three blocks are
+allocated per iteration and the loop frees one - the state object. The other two are the capture
+box and the cell holding the parameter, and the LLVM IR says plainly that the free for the cell is
+guarded by `icmp ne ptr %3, null` on a pointer that is never null, so it never runs.
+
+**An object's release routine could not see the one field of it that owns memory.** `.captured`
+has type `ref<tuple<..>>`, and a reference into storage is not ownership anywhere else in the
+compiler - `getOrCreateReleaseRoutine` returns nothing for a `RefType`, so `releaseFields`
+skipped it. The box, and every cell under it, outlived the object that was their only owner.
+
+`releaseFields` now routes a `ref<tuple<..>>` field through the capture-box release routine
+that already existed for closures - give back the cells, then free the box - and
+`mlirGenObjectLiteralCaptures` takes the one reference that pays for it. Nothing else in the
+language produces a field of that shape: `ref` is not spellable, so it is always the compiler's
+own capture box.
+
+This is 5ag's original prescription, arriving one section late and for the reason 5ag did not give.
+It was never needed to stop the double free - §9.50 was - and it is exactly what stops the leak.
+
+#### What it closed
+
+`function* gen(n) { yield n; }` at 500k iterations: **33 MB to 3.3 MB**, flat, below `gc`'s 3.7,
+with `none` at 57.6 to show the allocation is real. The two shapes 5z originally named - a
+generator with a parameter and a local, with an array local or a string local - were already flat
+at 3.3 MB before this, closed by §9.50 without being measured. Suite 2,617/2,617.
+
+**No test holds this.** A leak is not an assertion, and the suite has nothing that fails on one.
+The evidence is the measurement, and the guard against getting the pairing backwards is the corpus:
+a retain without its release leaks silently, but a release without its retain frees the box while
+the generator is still reading it, and that is what 2,617 tests would say.
+
+#### A measuring harness, at last
+
+Every memory number before this was taken from the JIT, where ~13-16 MB of the measurement is
+`tslang.exe` itself and the optimiser elides different things in different models - which is why
+the same shape read 41 MB one hour and 12.6 MB the next, and why §9.31's numbers had to be
+withdrawn in §9.43. `scratchpad/measure.ps1` builds a native executable per model, runs it, and
+samples peak working set: about 3.3 MB of floor instead of 16, no compiler in the process, and the
+exit code checked - which means something as of §9.51.
+
+Sampling `PeakWorkingSet64` must not sleep between reads: the counter reads **zero** once the
+process has exited, so a run that finishes between two samples is reported as 0 MB rather than as
+small.

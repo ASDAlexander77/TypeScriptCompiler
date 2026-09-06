@@ -8708,6 +8708,19 @@ class MLIRGenImpl
             MLIRCodeLogic mcl(builder, compileOptions);
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
+
+            // The object is the box's only owner - nothing else holds it, and the box is born
+            // unowned like every other block - so it takes the one reference here and gives it
+            // back in its release routine, where `releaseFields` treats a `ref<tuple<..>>` field
+            // as the capture box it is. A closure's box is owned the same way, through the tag on
+            // the bound function (§9.33); this is the object-shaped half of that, and the half a
+            // generator's state object needs, since a generator is an object literal the compiler
+            // wrote. See docs/reference-counting-evaluation.md section 9.52.
+            if (compileOptions.isRefCounted() && capturedValue)
+            {
+                builder.create<mlir_ts::RetainCellOp>(location, capturedValue);
+            }
+
             if (mlir::failed(addObjectFieldInfo(location, oli, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type(), genContext))) {
                 return mlir::failure();
             }

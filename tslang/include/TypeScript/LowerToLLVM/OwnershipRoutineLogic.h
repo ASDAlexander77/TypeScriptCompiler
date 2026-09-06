@@ -540,7 +540,29 @@ class OwnershipRoutineLogic
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
         {
-            auto routineName = getOrCreateReleaseRoutine(fieldType);
+            // A field holding a `ref` to a tuple is a capture box - the `.captured` field of an
+            // object literal with methods, or of the state object a generator becomes - and it is
+            // the one field an object owns that the generic routines cannot see, because a
+            // reference into storage is not ownership anywhere else in the compiler. It gets the
+            // same treatment a closure's `this` gets (§9.33): give back the cells it holds, then
+            // free the box. Without it the box and every cell under it outlive the object that was
+            // their only owner, which is a generator's parameter leaking once per call (§9.52).
+            //
+            // Nothing else produces a `ref<tuple<..>>` field: `ref` is not spellable in the
+            // language, so this shape is the compiler's own and always means a capture box.
+            auto routineName = std::string();
+            if (auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType))
+            {
+                if (isa<mlir_ts::TupleType>(refFieldType.getElementType()))
+                {
+                    routineName = getOrCreateCaptureBoxReleaseRoutine(refFieldType);
+                }
+            }
+            else
+            {
+                routineName = getOrCreateReleaseRoutine(fieldType);
+            }
+
             if (routineName.empty())
             {
                 continue;
