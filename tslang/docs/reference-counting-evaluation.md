@@ -4355,3 +4355,47 @@ function f(a: Color): Color {
 variable inside the arguments of a `new` expression fails MLIR's region isolation; hoisting the
 same expression into a local first compiles. Nothing to do with reference counting - it is what
 stopped two of the benchmarks above from being written the obvious way.
+
+### 9.55 Discovery has to walk `new`'s arguments (the bug above, fixed)
+
+A lambda captures what its body reads, and what its body reads is established by the discovery
+pass - the `dummyRun` in `mlirGenFunctionLikeDeclaration`, whose `resolveIdentifierAsVariable`
+fills `passResult->outerVariables` every time it resolves a name that lives outside the function
+being discovered. Anything that pass never visits contributes no captures.
+
+`NewClassInstance` had a shortcut for exactly that pass:
+
+```cpp
+if (genContext.dummyRun)
+{
+    // just to cut a lot of calls
+    newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(false));
+    return newOp;
+}
+```
+
+It returns before `evaluateProperty(CONSTRUCTOR_NAME, ...)` - which is the expensive part it means
+to cut - but it also returns before `mlirGenOperands(arguments, ...)`, so **the constructor
+arguments were never walked at all**. A variable read only inside them was never registered as
+captured, the lambda's real body then read the enclosing function's own value, and `ts.Func` is
+`IsolatedFromAbove`, so the module failed to verify.
+
+The fix keeps the shortcut and walks the arguments anyway, discarding both the values and any
+errors (the errors are the shortcut's own - no constructor resolved, no receiver types - and
+discovery is best-effort by construction). The ops the walk creates land in the throwaway dummy
+function.
+
+Two things this says beyond itself:
+
+- **A "just to cut calls" shortcut in the discovery pass is a semantic decision, not a
+  performance one.** Discovery is the only place captures are found, so anything skipped there is
+  not slower, it is missing. The sibling paths were checked: `NewClassInstanceByCallingNewCtor`
+  (interface and construct-signature `new`) and `NewArray` both walk their arguments
+  unconditionally; the class path was the only one with the gap.
+- **The control case is what makes the test a test.** Reading the captured variable anywhere else
+  in the same lambda - one extra `let seen = a;` - registers the capture and the `new` arguments
+  then compile fine. So a test whose lambda touches the variable twice proves nothing, and
+  `00capture_in_new_arguments.ts` reads each captured thing *only* inside the `new`. Against the
+  unfixed compiler 8 of its 9 cases fail; the 9th is that control.
+
+Verified across `gc`, `rc` and `none`, at `-O0` and `-O3`. Suite 2,623/2,623.

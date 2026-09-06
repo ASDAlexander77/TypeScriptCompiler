@@ -1751,7 +1751,22 @@ namespace mlirgen
 
             if (genContext.dummyRun)
             {
-                // just to cut a lot of calls
+                // The discovery pass doesn't resolve the constructor - that is the "cut a lot of
+                // calls" shortcut below - but it still has to WALK the constructor arguments.
+                // Discovery is what registers a lambda's outer variables (see
+                // resolveIdentifierAsVariable, which fills passResult->outerVariables), so an
+                // expression it never visits contributes no captures. A variable read only inside
+                // `new C(...)`'s arguments was therefore missed, and the real pass then emitted the
+                // read against the enclosing function's own value from inside the lambda's body -
+                // "'ts.Load' op using value defined outside the region", since ts.Func is
+                // IsolatedFromAbove. Errors here are the shortcut's own (no constructor, no
+                // receiver types); discovery is best-effort, so ignore them and keep the ops that
+                // the walk produced - they land in the throwaway dummy function.
+                for (auto argument : arguments)
+                {
+                    mlirGen(argument, genContext);
+                }
+
                 newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(false));
                 return newOp;
             }

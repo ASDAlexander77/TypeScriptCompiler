@@ -266,6 +266,7 @@ add_test(NAME test-compile-00-class-structural-extends COMMAND test-runner "${PR
 add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 add_test(NAME test-compile-01-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 add_test(NAME test-compile-00-class-stack COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 add_test(NAME test-compile-00-class-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -668,6 +669,7 @@ add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -jit "${P
 add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 add_test(NAME test-jit-01-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 add_test(NAME test-jit-00-class-stack COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 add_test(NAME test-jit-00-class-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -1270,6 +1272,7 @@ set(TSLANG_CORPUS
     00bool_arith_ops.ts
     00break_continue_scope_exit.ts
     00break_continue.ts
+    00capture_in_new_arguments.ts
     00class_abstract.ts
     00class_access_control.ts
     00class_accessor_super.ts
