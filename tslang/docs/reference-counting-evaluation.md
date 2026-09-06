@@ -567,12 +567,10 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    The shapes 5z originally named - a parameter *and* a local - had already been closed by §9.50
    without being measured. Every number it quoted was taken in the JIT and should be read as
    gone; see §9.52 for the harness that replaced that method.
-5aa. **`for...of` over a literal array holds about a tenth of what it allocates.** With the
-   default library, 900k iterations cost `rc` 15.6 MB against `gc`'s 4.1 and `none`'s 155.9, and
-   the gap over `gc` grows sublinearly - nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k -
-   which looks more like the allocator's high-water mark than an unbounded leak, but has not
-   been explained. Iterating heap-built rows instead is flat at 2.6 MB, equal to `gc`. Cheap to
-   settle either way, and worth settling before any claim that `rc` matches `gc` on iteration.
+5aa. **DONE, §9.58 - it does not reproduce, and `rc` wins this one.** Measured on the harness that
+   replaced the method the 15.6 MB came from: iterating a literal array is **flat at 0.7 MB** from
+   300k to 3M iterations, against `gc`'s 2.8 and a `none` that climbs to 482. Numbers, strings,
+   both. The old figure is withdrawn with the rest of the JIT ones (§9.52).
 5ab. **DONE, §9.56 - and it was never about arguments.** What decided it was the awaited
    function's **result type**: the value travelled through `!async.value<T>`, and MLIR's
    async-to-LLVM conversion runs before this compiler's own types are lowered, so a payload of
@@ -3403,11 +3401,11 @@ miniature.
 
 #### One residual
 
-With the default library, iterating a literal array 900k times costs `rc` 15.6 MB against `gc`'s
-4.1 and `none`'s 155.9 - so `rc` reclaims about nine tenths of it and holds the rest. The gap
-grows sublinearly (nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k), which looks more like the
-allocator's high-water mark than an unbounded leak, but it has not been explained. Iterating
-heap-built rows instead is flat at 2.6 MB, equal to `gc`. Filed as 5aa.
+With the default library, iterating a literal array 900k times cost `rc` 15.6 MB against `gc`'s
+4.1 and `none`'s 155.9 - so `rc` reclaimed about nine tenths of it and held the rest. The gap grew
+sublinearly (nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k), which looked more like the
+allocator's high-water mark than an unbounded leak. Filed as 5aa - and **it does not reproduce**,
+see §9.58.
 
 941/941. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is
 2.6 MB against `gc`'s 4.2 and `none`'s 99.3.
@@ -4514,3 +4512,30 @@ Two things this cost, and both are worth keeping:
 the allocator together rather than taking turns. Against the unfixed runtime it faults 7 runs in
 20 at `-O3` and 6 in 10 at `-O0`; smaller shapes are much weaker (60k iterations: 2 in 20). It is
 a race, so it is a rate - but it is a rate that two tiers sample on every run. Suite 2,635/2,635.
+
+### 9.58 `for...of` over a literal array does not leak (5aa)
+
+5aa said `rc` held about a tenth of what iterating a literal array allocates: 15.6 MB at 900k
+iterations against `gc`'s 4.1 and `none`'s 155.9. Re-measured on the AOT harness (§9.52), with the
+default library, at `-O3`:
+
+| iterations | rc | gc | none |
+| --- | --- | --- | --- |
+| 300k | 0.7 | 2.8 | 49.0 |
+| 900k | 0.6 | 2.6 | 145.2 |
+| 3M | 0.7 | 2.8 | 482.3 |
+| 900k, strings | 0.7 | 2.7 | 145.2 |
+
+Flat across a tenfold range while `none` climbs to 482 MB, and **below `gc`** at every size, which
+is what a reference count should look like on a value nothing outlives. Whether some later slice
+closed it or the 15.6 MB was an artifact of the JIT method cannot be told apart now; either way
+the figure goes with the rest of the withdrawn ones.
+
+Two notes for whoever measures next:
+
+- **`--no-default-lib` makes this shape measure nothing.** Without the library the optimiser
+  elides the whole loop and `none` reports 0.7 MB - the same as `rc`, and equally meaningless. The
+  harness now takes `-WithDefaultLib` for cases like this. It is the standing rule in its
+  sharpest form: **if `none` is flat, there is no benchmark here.**
+- The same rule kills the object version - `for (const p of [new P(1), new P(2)])` elides under
+  every model, `none` included, so it says nothing about ownership.
