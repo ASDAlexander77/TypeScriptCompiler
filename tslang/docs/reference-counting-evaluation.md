@@ -713,6 +713,21 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    gave one back, so the value was released at the end of the function that built it and the
    global addressed a freed block. A global is a root: it holds a reference for as long as the
    program runs, and nothing gives the last one back. New `isOwnedGlobalSlot`.
+5aj. **The compiler segfaults, silently, if `raytrace.ts`'s `Intersection` is a class.** Not a
+   memory-model bug - it happens under `gc` too, and at `--emit=mlir`, so it is in MLIRGen, before
+   any lowering. Reproduce from the repo with a two-line edit: turn `interface Intersection {
+   thing; ray; dist }` into a class with those three constructor fields, and return
+   `new Intersection(this, ray, dist)` from `Sphere.intersect` and `Plane.intersect` instead of the
+   object literal. Exit 139, no diagnostic. Delta-debugged down to ~110 lines, and every reduction
+   was checked BOTH ways (crashes as a class, compiles clean as an interface), so the class
+   conversion is the cause and not some unrelated ill-formedness the reducer wandered into. What
+   survives reduction: `intersections`' `let closestInter: Intersection = undefined;` over a loop
+   calling `scene.things[i].intersect(ray)`, `testRay` returning `isect.dist` on one path and
+   nothing on the other, and the `addLight` closure comparing `neatIsect === undefined`. Small
+   hand-written versions of that chain do NOT reproduce it. Found while trying to measure whether
+   returning an object literal as an interface is what `raytrace` leaks - which that edit would
+   have answered, and cannot until this is fixed.
+
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -4553,3 +4568,32 @@ Two notes for whoever measures next:
   sharpest form: **if `none` is flat, there is no benchmark here.**
 - The same rule kills the object version - `for (const p of [new P(1), new P(2)])` elides under
   every model, `none` included, so it says nothing about ownership.
+
+### 9.59 What raytrace's remaining 43.5 MB is, measured rather than guessed (5af)
+
+Two things measured on the AOT harness, both of which narrow 5af without closing it.
+
+**It is a constant fraction, not a fixed set.** Rendering the same scene at four sizes:
+
+| pixels | rc | gc | none | rc / none |
+| --- | --- | --- | --- | --- |
+| 64x64 | 3.4 | 2.7 | 8.0 | 0.43 |
+| 128x128 | 11.5 | 2.8 | 29.9 | 0.38 |
+| 256x256 | 43.5 | 1.3 | 117.0 | 0.37 |
+| 512x512 | 172.4 | 2.9 | 465.8 | 0.37 |
+
+`rc` grows exactly with the pixel count and holds a flat **37% of everything the program
+allocates**. So this is not a set of objects retained once; it is a share of every pixel's work -
+some allocation site, or class of them, that is never released at all.
+
+**It is not the closure.** §9.54 recorded that a hand-written loop over the same closure is worse
+(79.1 MB) and left the closure itself under suspicion. Replacing `addLight` with an ordinary
+method taking its six captures as parameters - no closure, no capture box, no cells, same
+arithmetic - gives **`rc` 43.5 MB, unchanged to the decimal**, while `none` falls 117 → 88.2. So
+the closure accounted for a quarter of what the program allocates and **none** of what it holds.
+Reference counting reclaims closures here exactly as it should.
+
+That leaves the per-pixel object traffic: `Vector` and `Color` results, the `{ start, dir }` ray
+literals, and the `Intersection` object literals that `intersect` returns through an interface.
+The obvious next measurement - make `Intersection` a class and see what moves - **cannot be taken
+yet**: that two-line edit segfaults the compiler (5aj).
