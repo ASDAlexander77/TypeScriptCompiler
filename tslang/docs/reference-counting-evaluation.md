@@ -455,6 +455,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    redeclaring a private method and dispatches to the override, where TypeScript rejects the
    program. Doing it properly needs the callee's override set, which the pass cannot see and
    MLIRGen cannot close cross-module, and it buys 2.6% of `raytrace`. Left open deliberately.
+   §9.46 adds one more shape to the same set: a constructor interface's `new` slot now
+   classifies as returning owned, but the call reaching it goes through `ts.InterfaceSymbolRef`
+   and so is left alone, and every `new C(...)` through such an interface leaks one instance.
 5p. **A closure owns its capture box.** **Done 2026-09-04, see §9.33.** A bound or hybrid
    function value carries the tag of its `this` beside the pointer, as an interface does, and
    only a closure over captured variables is marked as owning it - a bound method must not take
@@ -581,18 +584,19 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Six corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
+5ae. **Four corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
    and `raytrace.ts` off it (a nested capture never retained the cell it inherited), §9.44 took
    `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has a
-   null tag, and both directions read through it), and §9.45 took `00class_static.ts` (`delete`
-   dropped a reference without telling the end-of-block release to stop). What is left fails in
-   both tiers and not one of them under `none`, so it is reference counting's rather than
-   latent: `00mixed_type_ops.ts` (binary operators across static types - grouped with the
-   unions and not one of them),
-   `00spread.ts` (an array spread into parameters), `01class_new.ts` (an interface with a
-   construct signature), `nbody.ts`, and - about one run in ten each - `13actions.ts` and
-   `44toplevelcode.ts`. They are registered and disabled in `test/tester/CMakeLists.txt`, so
-   the list of what is broken lives in the build. **Next slice.**
+   null tag, and both directions read through it), §9.45 took `00class_static.ts` (`delete`
+   dropped a reference without telling the end-of-block release to stop), and §9.46 took
+   `01class_new.ts` (the method the compiler synthesises for a constructor interface's `new`
+   slot has no `return` statement, and so performed none of what a return does). What is left
+   fails in both tiers and not one of them under `none`, so it is reference counting's rather
+   than latent: `00mixed_type_ops.ts` (binary operators across static types - grouped with the
+   unions and not one of them), `00spread.ts` (an array spread into parameters), `nbody.ts`,
+   and - about one run in ten each - `13actions.ts` and `44toplevelcode.ts`. They are
+   registered and disabled in `test/tester/CMakeLists.txt`, so the list of what is broken lives
+   in the build. **Next slice.**
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
    §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
@@ -3718,3 +3722,83 @@ model-specific.
 
 2,587/2,587 over three consecutive runs. The ownership verifier is unchanged at its two standing
 findings.
+
+### 9.46 Step 5ae, fourth: the method nobody wrote
+
+`new C(...)` where `C` is not a class but a value of a **constructor interface** - an interface
+whose only member is a `new` signature - is `01class_new.ts`, and it is how a program hands the
+choice of what to construct to whoever supplied the constructor. The call goes through that
+interface's vtable slot, and the slot is filled by a method the compiler synthesises for the
+implementing class (`generateSynthMethodToCallNewCtor`): build the instance, run the constructor,
+cast the result to the interface the signature returns, hand it back.
+
+That method has no source, and so it has no `return` statement - it is built op by op, and the
+`ReturnValOp` at the end of it was created directly rather than through the path a `return` takes.
+Everything a return does for ownership therefore did not happen:
+
+```mlir
+%6  = "ts.CallIndirect"(%5) {__owned_result}     // Impl..new
+      "ts.CallIndirect"(%9, %8, %arg1)            // Impl.constructor
+%13 = "ts.NewInterface"(%6, %12)                  // cast to the declared return type
+      "ts.Release"(%6)                            // §9.30: an owned result nobody claimed
+      "ts.ReturnVal"(%13, %2)
+```
+
+`%6` is an instance nobody took over, so §9.30 gives it back where its block ends - and its block
+is the one that returns an interface over it. Every caller of `new C(...)` through a constructor
+interface was handed a block that had already been freed. `b6.ts`, the reduction, prints `0`
+where it should print `42`: freshly zeroed memory rather than garbage, because the allocator hands
+the block straight back.
+
+The fix is the retain the ReturnStatement path performs (`mlirGenRetainCaptured`, §9.24), applied
+to the value after the cast to the declared return type. `%13` is an interface, an interface owns
+what its `this` points at (§9.31), so retaining it is what gives the instance the reference the
+caller needs; `%6`'s own is then correctly given back.
+
+#### The half that was wrong, and how that showed
+
+The first fix was somewhere else, and it looked more fundamental. `castToInterfaceSpecialCases`
+builds the class-to-interface `ts.NewInterface` and marks nothing - no `ts.Retain`, no
+`__owned_result` - while the object-literal path a hundred lines below it does both, with a
+comment explaining why (§9.37: a fresh-value producer emits the retain **and** the marker, never
+one alone). An interface that owns its `this` and takes no reference to it reads as the same
+omission, so it was fixed the same way, and `01class_new.ts` went on failing.
+
+The return retain fixed it on its own. Reverting the cast-site retain and keeping only the return
+retain leaves all seven cases of the new test passing and `01class_new.ts` clean in both tiers,
+and each of the four cases that discriminate still corrupts the heap in three runs out of three
+with the return retain removed. **So the cast-site change was dropped**, and not only because it
+was redundant: a retain that balances only where §9.30 agrees to release is a leak everywhere
+§9.30 declines - a use outside the producing block, a terminator user, a generator - and it would
+have been an invisible one, spread across every class-to-interface cast in the program.
+
+The method that caught it is the one this arc keeps returning to, applied a step finer than usual:
+**teeth measured per fix, not per slice.** Two changes were in the tree, the tests passed, and the
+tests would have gone on passing with the wrong one alone.
+
+#### What is left, deliberately
+
+The caller of `new C(...)` still leaks one instance. `Impl.Ctor..new_ctor#1` now classifies as
+returning owned, but the call that reaches it goes through `ts.InterfaceSymbolRef`, and
+`calleeNameOf` answers empty for an interface slot on purpose (§9.32): the slot is filled by
+whichever class implements the interface, so reading the declaration as the callee would consume
+a reference some other implementation never took. Leaking is the side of that line this arc keeps
+everything uncertain on, and it is item 5o rather than this one.
+
+#### What it closed
+
+`01class_new.ts`, 6/6 to 0/6 in both tiers. Six of the original ten are closed; four remain -
+`00mixed_type_ops.ts`, `00spread.ts`, `nbody.ts`, and the one-run-in-ten pair `13actions.ts` and
+`44toplevelcode.ts`.
+
+New test `test/tester/tests/00owned_construct_interface.ts`, seven cases, each building in one
+block and reading in another with `churn()` between. The first four - an instance built through a
+constructor interface, two from one constructor value, an instance holding a string, and the one a
+loop carries out - each corrupt the heap in three runs out of three with the retain removed, at
+`-O0` and `-O3` alike. The last three are the plain class-to-interface cast with no constructor
+interface in it; they discriminate nothing, because that path was already correct, and the file
+says so.
+
+2,595/2,595 over three consecutive runs, up from 2,587 - the eight are this file in four tiers
+plus `01class_new.ts` coming off the disabled list in two. The ownership verifier is unchanged at
+its two standing findings.

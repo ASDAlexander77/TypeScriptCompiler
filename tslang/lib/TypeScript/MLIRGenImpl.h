@@ -9544,7 +9544,15 @@ class MLIRGenImpl
                     auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
                     if (retVarInfo.second)
                     {
-                        builder.create<mlir_ts::ReturnValOp>(location, castToRet, retVarInfo.first);
+                        // This body is built op by op rather than from a `return` statement, so
+                        // the retain a return performs has to be repeated here - see the
+                        // ReturnStatement path in MLIRGenStatements. Without it the instance is
+                        // released on the way out and the caller of `new I(...)` through a
+                        // constructor interface is handed a block that has already been given
+                        // back.
+                        auto returnValue = V(castToRet);
+                        mlirGenRetainCaptured(location, mlir::ValueRange{returnValue});
+                        builder.create<mlir_ts::ReturnValOp>(location, returnValue, retVarInfo.first);
                     }
                     else
                     {
