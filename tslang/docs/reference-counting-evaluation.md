@@ -584,7 +584,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Four corpus files fault under `rc`.** What §9.42 bought. §9.43 took `25lamdacapture.ts`
+5ae. **Four corpus files fault under `rc`.** What §9.42 bought. §9.48 took `00mixed_type_ops.ts`
+   off it (a boxing cast reported no memory effects, so CSE merged two boxes over one constant
+   into a block that was then freed twice). §9.43 took `25lamdacapture.ts`
    and `raytrace.ts` off it (a nested capture never retained the cell it inherited), §9.44 took
    `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has a
    null tag, and both directions read through it), §9.45 took `00class_static.ts` (`delete`
@@ -592,10 +594,9 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `01class_new.ts` (the method the compiler synthesises for a constructor interface's `new`
    slot has no `return` statement, and so performed none of what a return does). What is left
    fails in both tiers and not one of them under `none`, so it is reference counting's rather
-   than latent: `00mixed_type_ops.ts` (**diagnosed, see 5ah - two `any` boxes holding the same
-   constant, and the optimiser**), `00spread.ts` (**diagnosed, see 5ag - a generator's state
-   object, and it cannot be fixed on its own**), `nbody.ts`, and - about one run in ten each -
-   `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
+   than latent: `00spread.ts` (**diagnosed, see 5ag - a generator's state object, and it cannot
+   be fixed on its own**), `nbody.ts`, and - about one run in six, ahead of time only, since
+   §9.48 - `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
    `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build.
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
@@ -615,7 +616,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `function*` running `for (const v of .src_array) yield f(v)`, so the `for...of` lowering
    stores the array into a generator local, and the capture box and the state object each free
    it. Invisible until `-O3`, where the optimiser proves the two pointers equal:
-5ah. **The optimiser removes an `any` box's allocation and keeps its `free`.** `00mixed_type_ops.ts`,
+5ah. **DONE, §9.48 - and the diagnosis below is wrong, which is why it is kept.** The optimiser
+   was not the cause. The second box is gone before LLVM sees the module: generic CSE merges two
+   structurally identical boxing casts on our own dialect, because `CastOp::getEffects` reported
+   an allocation for `ConstArrayType` to `ArrayType` and not for a cast to `any`. Reporting it
+   is the fix; neither way out proposed below was taken, and the preferred one - interning
+   constant boxes - would have hidden every case that exists rather than fixing any. What
+   follows is what the `-O1`/`-O3` counts looked like from the wrong end.
+   **The optimiser removes an `any` box's allocation and keeps its `free`.** `00mixed_type_ops.ts`,
    and five lines are the whole reduction:
 
    ```typescript
@@ -3907,3 +3915,83 @@ reproduction recipe and a diagnostic checklist rather than a record of what the 
 and a recipe that no longer runs is not a record of anything.
 
 2,595/2,595.
+
+### 9.48 Step 5ah: the boxing cast that said it allocated nothing
+
+`00mixed_type_ops.ts` is closed, and **not by what 5ah proposed.** The plan item blamed the
+optimiser - the allocations go, the frees stay - and named two ways out, both of them about
+denying LLVM something. Neither was needed. The double free is ours, it is in the IR before
+LLVM ever sees it, and the fix is four lines.
+
+#### Where the second box went
+
+The five-line reduction stands:
+
+```typescript
+function main() {
+    let a: any = "abc";
+    a = true;
+    a = false;
+    a = true;
+}
+```
+
+Counting boxes down the pipeline is the whole investigation, and it takes four commands.
+`--emit=mlir-llvm` with no `--opt` has four `llvm.call @malloc` in `main`, four `tsret_` and
+four `tsrel_` - correct and balanced. The raw LLVM translation has four `malloc`s too. But
+`--emit=mlir-affine --opt` has **three** boxing casts where the `ts` dialect had four, and from
+there the LLVM module has three `malloc`s at every optimisation level, including `-O0` where
+LLVM does essentially nothing. The box was gone before the optimiser was asked.
+
+What merged them was generic CSE, on our own dialect. `a = true` appears twice with `a = false`
+between, the constant is CSE'd into one op first, and the two casts over it are then
+structurally identical - so CSE keeps one. The third assignment therefore stores a pointer to
+the box the *second* assignment had already released:
+
+- box A (`"abc"`) is retained by the slot;
+- box B (`true`) is retained, A is released and freed, B is stored;
+- box C (`false`) is retained, B is released and **freed**, C is stored;
+- the fourth assignment is box B again - retained through freed memory, C released and freed,
+  and the freed block stored back into the slot;
+- the end of the block releases it, and B is freed a second time.
+
+So it is a double free with a use-after-free in front of it, and the `-O1` and `-O3` counts
+5ah recorded - three `malloc`s and four `free`s, then one and two - are LLVM working correctly
+on IR that already had one block freed twice.
+
+#### The fix, and the one it repeats
+
+`mlir_ts::CastOp::getEffects` reported an allocation for exactly one shape: `ConstArrayType`
+to `ArrayType`. That case was found the same way and for the same reason - CSE merging two
+casts and aliasing what must be two distinct backing arrays - and the comment above it says so.
+Casting to `AnyType` is the second allocating shape and was missed: `CastLogicHelper::cast`
+routes every cast whose result is `any` into `castToAny`, which always calls `MemoryAlloc`.
+Reporting `Allocate` and `Write` for it is the whole change.
+
+It is worth being clear about what this does *not* fix. Only a constant reaches the shape: two
+reads of a runtime value are two `ts.Load`s, so the casts over them differ and CSE never had
+anything to merge. Interning constant boxes into immortal globals - 5ah's preferred way out -
+would therefore have hidden every case that exists today, which is exactly why it was the wrong
+fix. The defect is an allocating op reporting itself as pure; who currently exploits that is a
+detail. And it was inert under `gc` only by luck: a box is immutable and `any` equality unboxes
+rather than comparing box pointers, so an alias is unobservable when nothing frees it.
+
+#### What it closed
+
+`00mixed_type_ops.ts` passes six runs in six in both tiers under `rc`, and is off the broken
+list in `test/tester/CMakeLists.txt`. Suite 2,597/2,597.
+
+The other four are unmoved, and the two that wandered have moved in a way worth recording:
+`13actions.ts` and `44toplevelcode.ts` now pass 30 runs in 30 in the JIT and still fail about
+one run in six ahead of time. That is a narrower target than "one run in ten in both tiers",
+but it is not a fix, so both stay disabled in both tiers until the cause is understood.
+`00spread.ts` (5ag) and `nbody.ts` fail every run.
+
+#### Teeth
+
+Two cases in `00owned_any_boxing.ts`, one boxing the same string twice and one the same number,
+each with a different value in between and a loop that allocates over whatever was freed before
+the value is read back. Both were checked **individually** against a build with the fix stashed
+out: 0 of 3 runs each, in both tiers. A third case, boxing one runtime value twice, was written
+and then deleted - it passes without the fix, because two loads are not one value, and a test
+that cannot fail is worse than no test.

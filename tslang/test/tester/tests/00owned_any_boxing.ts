@@ -112,7 +112,50 @@ function stringBoxedAndStillHeld() {
     return (<string>boxed[0]).length;
 }
 
+// Two boxes over the same constant are two blocks. Boxing is an allocation, so two structurally
+// identical boxing casts are not one value: CSE merged them, and the second assignment then stored
+// a pointer to the block the first had already released. The read below is what that costs - the
+// box is freed once at the assignment that replaced it and again at the end of the block, and in
+// between something else is allocated over it.
+//
+// Only a constant reaches this shape: two reads of a runtime value are two `ts.Load`s, so the
+// casts over them are not identical and CSE leaves them alone. A constant is CSE'd into one op
+// first, which is what makes the casts over it identical.
+//
+// See docs/reference-counting-evaluation.md section 9.48.
+function refillStrings() {
+    for (let i = 0; i < 64; i++) {
+        let filler: any = "xy";
+    }
+}
+
+function refillNumbers() {
+    for (let i = 0; i < 64; i++) {
+        let filler: any = 9.5;
+    }
+}
+
+function sameStringBoxedTwice(): number {
+    let a: any = "abcd";
+    a = 5;
+    a = "abcd";
+    refillStrings();
+
+    return (<string>a).length;
+}
+
+function sameNumberBoxedTwice(): number {
+    let a: any = 4.5;
+    a = "x";
+    a = 4.5;
+    refillNumbers();
+
+    return <number>a;
+}
+
 function main() {
+    assert(sameStringBoxedTwice() == 4, "boxing the same string twice makes two boxes");
+    assert(sameNumberBoxedTwice() == 4.5, "boxing the same number twice makes two boxes");
     assert(callResultBoxedAsAny() == 4, "an `any` owns what a call handed it");
     assert(closureBoxedAsAny() == 22, "an `any` owns the closure boxed into it");
     assert(closureBoxedIntoField() == 33, "an `any` field owns what was boxed into it");

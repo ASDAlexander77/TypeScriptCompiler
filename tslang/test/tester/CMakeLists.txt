@@ -1719,23 +1719,28 @@ set(TSLANG_CORPUS_NONE_NAMED
     04disposable.ts
     )
 
-# Known broken. Six files, all under `rc`, all in both tiers, and not one of them under `none`
+# Known broken. Four files, all under `rc`, all in both tiers, and not one of them under `none`
 # - which is the shape of a reference-counting fault rather than a latent one. They are plan
-# item 5ae, and they are what registering the corpus bought. Four fail every run; the last two
-# fail about one run in ten, which is what a corrupted heap does when the layout has to line up
-# for the damage to be reachable.
+# item 5ae, and they are what registering the corpus bought. Two fail every run; the last two
+# fail about one run in six ahead of time, which is what a corrupted heap does when the layout
+# has to line up for the damage to be reachable.
 #
 # They are registered and DISABLED rather than left out or marked WILL_FAIL. Left out, the
 # names would not exist and nothing would say what is broken; WILL_FAIL was tried first and
-# does not hold, for the same reason the last two wander - `00mixed_type_ops.ts` fails six runs
-# in six on its own and came up clean once in three runs of the suite, where twelve tests at a
-# time give the allocator a different history, and a WILL_FAIL test that passes is a red suite.
+# does not hold, for the same reason the last two wander - a file can fail six runs in six on
+# its own and come up clean in a suite run, where twelve tests at a time give the allocator a
+# different history, and a WILL_FAIL test that passes is a red suite.
 # Disabled, the list stays in the build where it can be read, and the suite stays a suite.
+#
+# `00mixed_type_ops.ts` came off this list in section 9.48: a boxing cast reported no memory
+# effects, so CSE merged two boxes over the same constant into one and the block was freed
+# twice. It now passes six runs in six in both tiers. The wandering pair have stopped failing
+# in the JIT and still fail ahead of time, so they stay.
 set(TSLANG_CORPUS_BROKEN_JIT_RC
-    00mixed_type_ops.ts
     00spread.ts
     nbody.ts
-    # about one run in ten, each
+    # about one run in six, each, and ahead of time only - but the JIT tier is where they were
+    # first seen, so they stay disabled in both until one cause is understood
     13actions.ts
     44toplevelcode.ts
     )
@@ -1744,10 +1749,9 @@ set(TSLANG_CORPUS_BROKEN_JIT_NONE
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_RC
-    00mixed_type_ops.ts
     00spread.ts
     nbody.ts
-    # about one run in ten, each
+    # about one run in six, each
     13actions.ts
     44toplevelcode.ts
     )
