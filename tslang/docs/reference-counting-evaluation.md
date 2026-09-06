@@ -4669,6 +4669,20 @@ which then pointed at a second gap of §9.55's kind - a call whose callee cannot
 discovery returned a placeholder **without walking its arguments**, so `scene`, read nowhere else
 in that closure, was never captured. Same shortcut, same fix, second place: `new` was the first.
 
+**One change in that commit is defensive and did not earn its place by measurement, which is worth
+saying rather than leaving implied.** `mlirGenReleaseOwned` and `mlirGenDisposable` ended their
+outward walk at the first scope with no list of its own; that guard is the wrong shape - a scope
+that owns nothing still stands between a `return` and the scopes that do - so it was hoisted out.
+No program has been found that needs it. Every block scope is given a list when it is created, so
+the walk was reaching the enclosing scopes anyway: an owned local plus a `return` out of an `if`
+measures 0.6 MB against `none`'s 13.9 either way, and `raytrace` is 6.2 either way.
+
+The first control run said otherwise - 13.9, reclaiming nothing - and it was wrong: it disabled the
+outward walk **entirely** rather than restoring the original nesting, which is a strictly worse
+build than the bug. Restoring the actual original is what gave the identical numbers. **A control
+has to be the thing it claims to be**; "turn the fix off" and "put the bug back" are not the same
+edit, and the difference here was the whole result.
+
 Suite 2,641/2,641, corpus under all three models in both tiers - which is the guard against the
 new release being a second one. `00owned_early_return.ts` covers the shapes; a leak cannot be
 asserted, so the cases build over the memory they might have freed and read it back.

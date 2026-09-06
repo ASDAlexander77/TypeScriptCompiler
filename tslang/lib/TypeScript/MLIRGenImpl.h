@@ -717,16 +717,17 @@ class MLIRGenImpl
             }
         }
 
-        // Outside the test above. A scope that owns nothing itself still stands between a `return`
-        // and the scopes that do, and an `if` block is exactly where a `return` is usually
-        // written: its context has an empty list, so keeping this inside the test ended the walk
-        // there and released nothing at all. That is what leaked `raytrace`'s per-light ray -
-        // `let neatIsect = this.testRay({ start: pos, dir: livec }, scene); if (...) { return
-        // col; }` retained the ray on the way in and gave it back only on the path that falls
-        // through. Section 9.60.
+        // Outside the test above: a scope that owns nothing itself still stands between a `return`
+        // and the scopes that do, so having no list of its own is not a reason to stop walking.
         //
-        // It is the same shape §9.18's break/continue bug had, one level down: that one stopped
-        // the walk at the first scope, this one stopped it at the first EMPTY scope.
+        // DEFENSIVE, and honestly labelled as such - no program has been found that needs it.
+        // Every block scope is given a list when it is created, so in practice the walk was
+        // reaching the enclosing scopes anyway; the shapes that looked like they would prove this
+        // (an owned local plus a `return` out of an `if`, measured both ways) come back identical.
+        // It is kept because the guard is the wrong shape for what it guards, not because it was
+        // measured. Section 9.60 records the measurement, and records that what actually leaked
+        // `raytrace`'s per-light ray was the discarded-temporary placement in
+        // OwnedReturnConsumptionPass, not this.
         if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
         {
             EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
@@ -1060,11 +1061,10 @@ class MLIRGenImpl
             }
         }
 
-        // Outside the test above, and that is the point: a scope that declared no `using` of its
-        // own is not the end of the walk. An `if` block is the ordinary place to write a `return`
-        // or a `break`, and its context has an empty list, so nesting this inside the test stopped
-        // the walk at the first such block and left every enclosing scope undisposed. Same defect
-        // and same fix as mlirGenReleaseOwned below.
+        // Outside the test above: a scope that declared no `using` of its own is not the end of
+        // the walk. Same shape, and the same honest caveat, as mlirGenReleaseOwned below - every
+        // block scope is given a list when it is created, so this is defensive rather than
+        // something a program was found to need.
         if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
         {
             EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
