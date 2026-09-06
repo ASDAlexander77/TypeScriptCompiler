@@ -584,7 +584,11 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    ahead-of-time only - the JIT exits 0. `function main() { print(1); }` is the whole
    reduction; no async needed. Cheap, and it makes every AOT `rc` run look like a failure to any
    harness that checks exit codes.
-5ae. **Four corpus files fault under `rc`.** What §9.42 bought. §9.48 took `00mixed_type_ops.ts`
+5ae. **One corpus file faults under `rc`.** What §9.42 bought. §9.49 took `nbody.ts` and, with
+   it, the two that had been failing about one run in six - `13actions.ts` and
+   `44toplevelcode.ts` - because a global never took a reference to what was stored into it, and
+   how far a program got before that showed was a matter of what the allocator handed back next.
+   §9.48 took `00mixed_type_ops.ts`
    off it (a boxing cast reported no memory effects, so CSE merged two boxes over one constant
    into a block that was then freed twice). §9.43 took `25lamdacapture.ts`
    and `raytrace.ts` off it (a nested capture never retained the cell it inherited), §9.44 took
@@ -595,9 +599,8 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    slot has no `return` statement, and so performed none of what a return does). What is left
    fails in both tiers and not one of them under `none`, so it is reference counting's rather
    than latent: `00spread.ts` (**diagnosed, see 5ag - a generator's state object, and it cannot
-   be fixed on its own**), `nbody.ts`, and - about one run in six, ahead of time only, since
-   §9.48 - `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
-   `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build.
+   be fixed on its own**). It is registered and disabled in `test/tester/CMakeLists.txt`, so
+   what is broken lives in the build.
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
    §9.31 and the table in §9.43. `none` is about 98, so reference counting reclaims roughly a
@@ -688,6 +691,13 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    a `ParamOp`, nor a captured cell slot) is where the factory's re-capture from an incoming
    capture tuple falls through, retaining nothing. Test written and not committed:
    `00owned_generator_locals.ts`, seven cases, six of which the local retain alone turns green.
+5ai. **DONE, §9.49 - a global never took a reference to what was stored into it.** `nbody.ts`,
+   `13actions.ts` and `44toplevelcode.ts`, all three the same bug. Ownership skipped globals
+   because a global outlives every scope and so has no scope exit to release from, and skipping
+   the release dropped the retain with it - a store into a global neither took a reference nor
+   gave one back, so the value was released at the end of the function that built it and the
+   global addressed a freed block. A global is a root: it holds a reference for as long as the
+   program runs, and nothing gives the last one back. New `isOwnedGlobalSlot`.
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
    memory measurement under it finally means something — a million-iteration allocation loop stays
@@ -3995,3 +4005,72 @@ the value is read back. Both were checked **individually** against a build with 
 out: 0 of 3 runs each, in both tiers. A third case, boxing one runtime value twice, was written
 and then deleted - it passes without the fix, because two loads are not one value, and a test
 that cannot fail is worse than no test.
+
+### 9.49 Step 5ai: the slot with no release, and therefore no retain
+
+`nbody.ts` is closed, and it took the two wandering files with it. One statement is the whole
+bug:
+
+```typescript
+let g: Holder;
+function init(): void { g = new Holder(5.0); }
+function main() { init(); churn(); assert(g.x == 5.0); }   // fails under -mm=rc
+```
+
+Under `gc` and `none` that program is correct. Under `rc` the assert fails, because the
+generated `init` is exactly this:
+
+```mlir
+%5 = "ts.CallIndirect"(@Holder..new) {__owned_result}   // +1
+     "ts.Store"(%5, %0)                                  // into the global - nothing taken
+     "ts.Release"(%5)                                    // §9.30, end of the producer's block
+```
+
+The instance is stored into the global and then released, so the global is left addressing a
+freed block. `main` reads a field out of it after something else has been allocated over it.
+
+#### Why it was missing
+
+`takeOwnershipOfLocal` excludes globals, and the reason it gives is true: *a global outlives
+every scope*, so there is no scope exit to release from. But that answers only half the
+question. Having no release does not mean having no retain - a global is a **root**, and a root
+holds a reference for as long as the program runs. The exclusion dropped both halves, so a
+store into a global neither took a reference nor gave one back, and `isOwningSlot` - the single
+predicate the assignment path asks - did not name a global among the slots that hand the count
+over.
+
+`isOwnedGlobalSlot` is the fix: a reference produced by `ts.AddressOf` whose element type owns
+heap memory. The assignment path then behaves exactly as it does for an owned local - consume
+an already-owned incoming value or retain it, and release what the slot held - with one
+difference that is the point of the whole section: **nothing releases the last value, and that
+is correct.** A global root's reference is given up when the process ends. Releasing the
+outgoing value on an overwrite is safe from the very first assignment because a global with no
+initializer is zero rather than undef (`ts.Default` lowers to `LLVM::ZeroOp`), and null is what
+every release routine treats as nothing to do.
+
+#### What it closed
+
+`nbody.ts`, and both files that had been failing about one run in six: `13actions.ts` and
+`44toplevelcode.ts`. All three now pass **forty runs in forty** ahead of time. That the two
+wanderers were the same bug is what the wandering was: how far a program got before a dead
+global showed depended on what the allocator handed back next, which is why they looked
+intermittent while `nbody` failed every time. **An intermittent failure and a deterministic one
+in the same list are worth trying against one fix before treating them as two.**
+
+`5ae` is down to `00spread.ts` alone. Suite 2,609/2,609, and the ownership verifier reports
+nothing on any of the four files.
+
+#### Teeth
+
+`00owned_globals.ts`, five cases, each building the global in one function and reading it in
+another with a churn between - a global written and read in `main` survives the bug, since
+nothing releases until main ends, and that is what made the first hand-written reductions pass.
+Checked individually against a build with the fix stashed out: the class instance and the
+string fail, the two array cases and the reassignment pass.
+
+The array cases are kept deliberately even so. Without the fix nothing frees the array at all -
+the heap copy a literal array is cast into is not a call result, so §9.30's end-of-block release
+never claimed it, and it leaked rather than dangled - but a release into a global *without* a
+matching retain would free a live array, and these are what would catch that. Reading `.length`
+would fail in neither direction, since an array value is `{ data, length }` and the length
+survives in the copy, so both cases go through an element.

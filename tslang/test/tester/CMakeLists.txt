@@ -251,6 +251,7 @@ add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 add_test(NAME test-compile-00-owned-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-compile-00-owned-async COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
 add_test(NAME test-compile-00-owned-nested-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
@@ -650,6 +651,7 @@ add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 add_test(NAME test-jit-00-owned-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-00-owned-async COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
 add_test(NAME test-jit-00-owned-nested-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
@@ -1180,6 +1182,8 @@ add_test(NAME test-jit-rc-owned-strings COMMAND test-runner -jit -mm=rc "${PROJE
 add_test(NAME test-jit-none-owned-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 add_test(NAME test-jit-rc-owned-generators COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 add_test(NAME test-jit-none-owned-generators COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-jit-rc-owned-globals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-none-owned-globals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 add_test(NAME test-jit-rc-owned-iteration COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-none-owned-iteration COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
 add_test(NAME test-jit-rc-owned-async COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
@@ -1427,6 +1431,7 @@ set(TSLANG_CORPUS
     00owned_elements.ts
     00owned_fields.ts
     00owned_generators.ts
+    00owned_globals.ts
     00owned_inline_records.ts
     00owned_interfaces.ts
     00owned_iteration.ts
@@ -1663,6 +1668,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00owned_elements.ts
     00owned_fields.ts
     00owned_generators.ts
+    00owned_globals.ts
     00owned_inline_records.ts
     00owned_interfaces.ts
     00owned_iteration.ts
@@ -1702,6 +1708,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00owned_elements.ts
     00owned_fields.ts
     00owned_generators.ts
+    00owned_globals.ts
     00owned_inline_records.ts
     00owned_interfaces.ts
     00owned_iteration.ts
@@ -1719,30 +1726,25 @@ set(TSLANG_CORPUS_NONE_NAMED
     04disposable.ts
     )
 
-# Known broken. Four files, all under `rc`, all in both tiers, and not one of them under `none`
-# - which is the shape of a reference-counting fault rather than a latent one. They are plan
-# item 5ae, and they are what registering the corpus bought. Two fail every run; the last two
-# fail about one run in six ahead of time, which is what a corrupted heap does when the layout
-# has to line up for the damage to be reachable.
+# Known broken. One file, under `rc`, in both tiers, and not under `none` - which is the shape
+# of a reference-counting fault rather than a latent one. It is plan item 5ae, and it is what
+# registering the corpus bought.
 #
-# They are registered and DISABLED rather than left out or marked WILL_FAIL. Left out, the
-# names would not exist and nothing would say what is broken; WILL_FAIL was tried first and
-# does not hold, for the same reason the last two wander - a file can fail six runs in six on
-# its own and come up clean in a suite run, where twelve tests at a time give the allocator a
+# It is registered and DISABLED rather than left out or marked WILL_FAIL. Left out, the name
+# would not exist and nothing would say what is broken; WILL_FAIL was tried first and does not
+# hold, because a corrupted heap does not always land - a file can fail six runs in six on its
+# own and come up clean in a suite run, where twelve tests at a time give the allocator a
 # different history, and a WILL_FAIL test that passes is a red suite.
 # Disabled, the list stays in the build where it can be read, and the suite stays a suite.
 #
-# `00mixed_type_ops.ts` came off this list in section 9.48: a boxing cast reported no memory
-# effects, so CSE merged two boxes over the same constant into one and the block was freed
-# twice. It now passes six runs in six in both tiers. The wandering pair have stopped failing
-# in the JIT and still fail ahead of time, so they stay.
+# Five files have come off this list. Section 9.48 took `00mixed_type_ops.ts`: a boxing cast
+# reported no memory effects, so CSE merged two boxes over the same constant into one and the
+# block was freed twice. Section 9.49 took `nbody.ts` and, with it, the two that wandered -
+# `13actions.ts` and `44toplevelcode.ts` - because a global never took a reference to what was
+# stored into it, and how far a program got before the damage showed was a matter of what the
+# allocator handed back next. All three now pass forty runs in forty ahead of time.
 set(TSLANG_CORPUS_BROKEN_JIT_RC
     00spread.ts
-    nbody.ts
-    # about one run in six, each, and ahead of time only - but the JIT tier is where they were
-    # first seen, so they stay disabled in both until one cause is understood
-    13actions.ts
-    44toplevelcode.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_JIT_NONE
@@ -1750,10 +1752,6 @@ set(TSLANG_CORPUS_BROKEN_JIT_NONE
 
 set(TSLANG_CORPUS_BROKEN_AOT_RC
     00spread.ts
-    nbody.ts
-    # about one run in six, each
-    13actions.ts
-    44toplevelcode.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_NONE

@@ -796,6 +796,30 @@ class MLIRGenImpl
         return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
     }
 
+    // Does this reference address a global that owns what it holds? It does, and this is the
+    // one slot with no matching release: a global is a root, it outlives every scope, and the
+    // value in it at exit is never given back. That is why takeOwnershipOfLocal excludes
+    // globals - there is no scope to release from - and it is also why the retain was missing
+    // entirely, which is the whole of the bug: `g = new C()` stored the instance and then gave
+    // its reference back at the end of the function that built it (§9.30), leaving the global
+    // pointing at freed memory. `nbody.ts` is that program - `init()` builds the system, and
+    // the first method call that reads a field out of it writes a refcount into a freed block.
+    //
+    // Overwriting one still hands the count over, so the release on the outgoing value runs as
+    // for any other owning slot. That is safe from the first assignment onwards because a
+    // global with no initializer is zero, not undef (`ts.Default` lowers to `LLVM::ZeroOp`),
+    // and null is what every release routine treats as nothing to do.
+    bool isOwnedGlobalSlot(mlir::Location location, mlir::Value reference)
+    {
+        if (!reference.getDefiningOp<mlir_ts::AddressOfOp>())
+        {
+            return false;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
     // Does this reference address a field of an instance that will release what the field
     // holds? A class or object instance does: it is a heap block with a release routine, and
     // that routine releases what each of its fields owns (`releaseFields` in
@@ -992,7 +1016,7 @@ class MLIRGenImpl
     bool isOwningSlot(mlir::Location location, mlir::Value reference)
     {
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
-               isCapturedCellSlot(reference) ||
+               isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
     }
 
