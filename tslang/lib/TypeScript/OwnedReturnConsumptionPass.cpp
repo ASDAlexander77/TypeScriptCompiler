@@ -61,11 +61,26 @@ class OwnedReturnConsumptionPass
         // Every method in the module, grouped by the name after the last dot: the candidate set
         // for a virtual call, see virtualCallReturnsOwned.
         llvm::StringMap<llvm::SmallVector<mlir::StringRef>> methodsByMemberName;
+        // Is there any function here at all that hands back a heap value without retaining it?
+        // See callThroughValueReturnsOwned.
+        auto anyUnclassifiedOwningReturn = false;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getName();
-            if (functionReturnsOwned(mth, funcOp))
+            auto classified = functionReturnsOwned(mth, funcOp);
+            if (classified)
             {
                 returnsOwned.insert(name);
+            }
+
+            if (!classified)
+            {
+                for (auto resultType : funcOp.getFunctionType().getResults())
+                {
+                    if (mth.ownsHeapMemory(funcOp.getLoc(), resultType))
+                    {
+                        anyUnclassifiedOwningReturn = true;
+                    }
+                }
             }
 
             auto dot = name.rfind('.');
@@ -124,7 +139,23 @@ class OwnedReturnConsumptionPass
 
             auto callee = calleeNameOf(callOp);
             auto calleeReturnsOwned = !callee.empty() && returnsOwned.contains(callee);
-            if (!calleeReturnsOwned && !virtualCallReturnsOwned(callOp, returnsOwned, methodsByMemberName) &&
+
+            // A call through a plain value - a callback handed to `reduce`, a function-typed
+            // field - names nothing at all, and neither vtables nor member names help. What does
+            // help is that the question has a whole-module answer: if every function here that
+            // hands back a heap value retains it first, then every call that returns one hands
+            // back a reference, whatever it dispatched to. That is the +1 convention (§9.24)
+            // stated over the module rather than over one callee.
+            //
+            // One unclassified function anywhere turns this off for every indirect call, which is
+            // the conservative direction and the reason it is worth so little on its own and so
+            // much here: `reduce` calls its argument, and `raytrace.ts` builds its colours through
+            // `reduce`. An external function that returns a heap value counts as unclassified,
+            // so linking against anything whose returns cannot be seen switches it off too.
+            auto closedWorld = !anyUnclassifiedOwningReturn;
+
+            if (!calleeReturnsOwned && !closedWorld &&
+                !virtualCallReturnsOwned(callOp, returnsOwned, methodsByMemberName) &&
                 !interfaceCallReturnsOwned(callOp, returnsOwned, vtableSlots))
             {
                 return;

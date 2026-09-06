@@ -4299,3 +4299,59 @@ The remaining 43.9 MB is still the largest thing open, and it is spread rather t
 cutting the reflection recursion out of `shade` leaves 42 against `none`'s 65, and cutting the
 natural-colour closure instead leaves 27 against 40. Both keep about a third, which is the shape of
 something every path does rather than one site.
+
+### 9.54 A call through a value, and the question the module answers
+
+The shape §9.53 left is the one `calleeNameOf` calls unanswerable outright: a call through a
+plain value - a callback handed to `reduce`, a function-typed field, a callee chosen by a
+condition. There is no identifier, no vtable, and no member name to ask about.
+
+There is still an answer, and it is about the module rather than the call: **if every function here
+that hands back a heap value retains it first, then every call that returns one hands back a
+reference, whatever it dispatched to.** That is the +1 convention of §9.24 stated over the whole
+module. One unclassified function anywhere - including an external one, whose returns cannot be
+seen at all - switches it off for every indirect call, which is the conservative direction.
+
+```typescript
+function makeA(k: number): Box { return new Box(k); }
+function makeB(k: number): Box { return new Box(k + 1.0); }
+
+for (let i = 0; i < 300000; i++) {
+    let f = (i % 2 == 0) ? makeA : makeB;   // no callee to name
+    let b = f(1.0);
+    sink += b.v;
+}
+```
+
+`rc` 10.6 MB before, 0.7 after, against `none`'s 10.6 - checked against a build with the rule
+stashed out, which is the only way to attribute it. Suite 2,617/2,617.
+
+**It is worth almost nothing on `raytrace`**: 43.9 MB to 43.5. The rule fires there - `reduce`
+and `getNaturalColor` both consume their results afterwards - and the memory does not move, which
+says those particular references were not what that program is holding. It is kept for the class it
+closes rather than for the number, and the number is recorded here so the next reader does not
+re-run the experiment.
+
+#### Where raytrace's remaining 43 MB is not
+
+Enough has been ruled out to be worth writing down. Replacing `reduce` with a hand-written loop
+over the same closure makes it **worse** (79.1 MB), so `reduce` is not it. Cutting
+`getNaturalColor` out entirely leaves 5.7 against `none`'s 40 - 86% reclaimed, against 63% for
+the whole program - so what is left is inside that function, which per call builds a closure over
+six captured parameters, six heap cells to hold them, a capture box, and a colour per light. The
+per-shape benchmarks for each of those pieces come back flat under `rc`, so it is their
+combination, or their sheer number, rather than any one of them.
+
+#### A compiler bug found on the way, unrelated to any of this
+
+```typescript
+function f(a: Color): Color {
+    const g = (k: number) => { return new Color(a.r + k); };   // error
+    return g(1.0);
+}
+```
+
+*'ts.Load' op using value defined outside the region*, in every memory model. Reading a captured
+variable inside the arguments of a `new` expression fails MLIR's region isolation; hoisting the
+same expression into a local first compiles. Nothing to do with reference counting - it is what
+stopped two of the benchmarks above from being written the obvious way.
