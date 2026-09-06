@@ -592,10 +592,10 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `01class_new.ts` (the method the compiler synthesises for a constructor interface's `new`
    slot has no `return` statement, and so performed none of what a return does). What is left
    fails in both tiers and not one of them under `none`, so it is reference counting's rather
-   than latent: `00mixed_type_ops.ts` (binary operators across static types - grouped with the
-   unions and not one of them), `00spread.ts` (**diagnosed, see 5ag - it is a generator's
-   state object, and it cannot be fixed on its own**), `nbody.ts`, and - about one run in ten
-   each - `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
+   than latent: `00mixed_type_ops.ts` (**diagnosed, see 5ah - two `any` boxes holding the same
+   constant, and the optimiser**), `00spread.ts` (**diagnosed, see 5ag - a generator's state
+   object, and it cannot be fixed on its own**), `nbody.ts`, and - about one run in ten each -
+   `13actions.ts` and `44toplevelcode.ts`. They are registered and disabled in
    `test/tester/CMakeLists.txt`, so the list of what is broken lives in the build.
 5af. **`raytrace` costs `rc` about 63 MB against `gc`'s 4.4.** The first whole-program number
    this document has that was measured on a program that finished - see the correction in
@@ -615,6 +615,42 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    `function*` running `for (const v of .src_array) yield f(v)`, so the `for...of` lowering
    stores the array into a generator local, and the capture box and the state object each free
    it. Invisible until `-O3`, where the optimiser proves the two pointers equal:
+5ah. **The optimiser removes an `any` box's allocation and keeps its `free`.** `00mixed_type_ops.ts`,
+   and five lines are the whole reduction:
+
+   ```typescript
+   function main() {
+       let a: any = "abc";
+       a = true;
+       a = false;
+       a = true;
+   }
+   ```
+
+   MLIRGen is right and so is the LLVM dialect: four boxes, each allocated by `castToAny`, each
+   retained once by the assignment and released once by the slot - `--emit=mlir-llvm` shows four
+   `llvm.call @malloc` and four `tsrel_` in `main`. At `-O1` LLVM has three `malloc`s and four
+   `free`s; at `-O3`, one `malloc` and two `free`s of it. **The allocations go and the frees
+   stay.** A box looks to LLVM exactly like a removable allocation - a `malloc` whose pointer is
+   stored to a slot SROA has promoted away, read back, and freed - and where two boxes hold the
+   same constant the analysis conflates them, so what is left frees one block twice.
+
+   It is `rc`-only for a plain reason: `GCPass` rewrites `malloc` to `GC_malloc` and drops the
+   `free` entirely, so under `gc` there is nothing to double, and under `none` there are no frees
+   at all. Only `-mm=rc` hands LLVM a matched `malloc`/`free` pair to reason about, and step 6 is
+   what started doing that.
+
+   Two ways out, and the second is better. **Stop LLVM reasoning about these blocks** - allocate
+   and free through runtime entry points that carry no `alloc-family` attribute, so a refcounted
+   block is never a candidate for allocation removal. It is a small change and it costs the
+   optimiser every legitimate elision of a short-lived box, which is not a small price for a
+   memory model whose case rests on not paying for what it does not use. Or **give a constant its
+   box once**: `castToAny` of a compile-time constant can address a module-level global carrying
+   the immortal header (4a's trick for a static string, 5w's for a literal array) instead of
+   allocating. Then there is genuinely one box, nothing to free, nothing to conflate, and four
+   allocations disappear from this reduction rather than three. The general case - a box over a
+   runtime value - still hands LLVM a `malloc`/`free` pair, so this does not close the class; it
+   closes what the corpus actually hits.
 
    ```llvm
    %0 = tail call ptr @malloc(i64 20)      ; [1, 2, 3] copied to the heap
