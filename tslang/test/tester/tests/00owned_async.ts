@@ -4,8 +4,10 @@
 // completes at least one frame, and the loop completes many, so a heap that has been corrupted
 // has somewhere to say so.
 //
-// Every awaited function here is parameterless and returns a number, because passing an argument
-// to one, or returning anything else from one, does not compile in any model yet.
+// The awaited functions here return `i32`, which is what this file was written around back when
+// that was the only kind of result an `await` could carry (see section 9.56 - the payload type,
+// not the argument, was what decided it). They are left as they are: this file is about the frame
+// allocator, and `00async_result_types.ts` is where the result types are covered.
 
 let step = 3;
 

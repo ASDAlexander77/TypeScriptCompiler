@@ -573,11 +573,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    which looks more like the allocator's high-water mark than an unbounded leak, but has not
    been explained. Iterating heap-built rows instead is flat at 2.6 MB, equal to `gc`. Cheap to
    settle either way, and worth settling before any claim that `rc` matches `gc` on iteration.
-5ab. **Passing an argument to an awaited async function does not compile.** `async function
-   twice(n: number) { return n + n; }` then `await twice(3)` gives `error: failed to legalize
-   operation 'async.runtime.load'`, in every memory model; so does returning anything but a
-   number from one. Parameterless awaits, default parameters, sequences and loops are all fine.
-   Nothing to do with memory management, but it bounds what any async test can cover.
+5ab. **DONE, §9.56 - and it was never about arguments.** What decided it was the awaited
+   function's **result type**: the value travelled through `!async.value<T>`, and MLIR's
+   async-to-LLVM conversion runs before this compiler's own types are lowered, so a payload of
+   any TypeScript type had nothing to convert it. `i32`, `i64` and `f32` compiled because they
+   are builtin MLIR types; `number`, `string`, `boolean`, a class and an array did not.
+   `await twice(3)` compiled all along - `withDefault()` returns an `i32`. The result now travels
+   through a slot in the awaiting function and the async value carries only a token. Under `rc`
+   that slot has to own what it holds, or the awaited region releases the value as it ends.
 5ac. **`gc` faults on a long chain of coroutine frames.** 50k awaits in a loop faults 2 runs in
    4 under `-mm=gc` at `-O3`, and more often at 200k, in both link configurations - so it
    predates §9.41 and is not the allocator pairing. `rc` and `none` complete the same loop.
@@ -3477,10 +3480,10 @@ Reverting the runtime:
 | `_aligned_malloc` back in the JIT shim | `rc` 3/3 and `none` 3/3, both levels; `gc` clean |
 | `aligned_alloc` out of the static library | `rc` and `none` do not link; `gc` links |
 
-Every awaited function in the file is parameterless and returns a number, because **passing an
-argument to an awaited async function does not compile**, in any model: `error: failed to
-legalize operation 'async.runtime.load'`. Returning anything but a number does not compile
-either. Filed as 5ab.
+Every awaited function in the file is parameterless and returns an `i32`, because at the time
+anything else failed with `error: failed to legalize operation 'async.runtime.load'`, in any
+model. That was filed as 5ab and read as being about arguments; it was not - see §9.56, where the
+real condition turned out to be the **result type** and both halves are now fixed.
 
 #### What it costs
 
@@ -4399,3 +4402,55 @@ Two things this says beyond itself:
   unfixed compiler 8 of its 9 cases fail; the 9th is that control.
 
 Verified across `gc`, `rc` and `none`, at `-O0` and `-O3`. Suite 2,623/2,623.
+
+### 9.56 An awaited result travels through a slot, not through `async.value` (5ab)
+
+5ab said "passing an argument to an awaited async function does not compile". That was wrong about
+the cause, and wrong about which programs it stops. The condition is the awaited function's
+**result type**:
+
+| result | before |
+| --- | --- |
+| `i32`, `i64`, `f32` | compiles |
+| `number`, `string`, `boolean`, a class, an array | `failed to legalize operation 'async.runtime.load'` |
+
+Arguments never mattered. `await withDefault()` compiled and `await twice(3.0)` did not, and what
+separates them is that one returns an `i32` and the other a `number` - `00async_await.ts`'s
+`f(a = 1)` happens to return the literal's `i32`, which is the only reason the suite had a passing
+async test at all.
+
+**Root cause.** `await` built an `async.execute` whose result was the awaited expression's type,
+so the value travelled as `!async.value<!ts.number>`. In `transform.cpp` the pass order is
+`createConvertAsyncToLLVMPass()` **then** `createLowerToLLVMPass(compileOptions)` - MLIR's async
+conversion runs first, and it converts an async value's payload with its own `LLVMTypeConverter`,
+which has none of the TypeScript conversions that `populateTypeScriptConversionPatterns` adds to
+the later pass. A builtin payload passed straight through; anything from this dialect had no
+conversion and `RuntimeLoadOpLowering` refused it.
+
+**The fix.** A token carries no payload, so give the async value nothing to convert: the awaiting
+function allocates a slot, the region stores into it, and `async.await` on the token is what orders
+that write before the read. Outlining already passes values the region uses from above in as
+arguments, so the slot needs no special handling. `!async.value<T>` no longer appears in anything
+this compiler emits.
+
+**And under `rc` the slot has to own what it holds.** Everything the awaited expression produced is
+a temporary of the region's block, so §9.50's end-of-block release frees it as the region ends -
+before the awaiting function loads the slot. Same two cases as a local's declaration: a value that
+already carries a reference hands it over (`__owned_consumed`), anything else is retained, and the
+awaiting scope gives that reference back. The attributes go on only if the store actually
+happened, because an owned slot is released whatever is in it and a slot nothing wrote holds
+whatever the frame held before.
+
+Worth keeping from this one:
+
+- **The reported condition of a bug is a hypothesis, not a datum.** "Passing an argument" was
+  recorded from two programs that differed in more than one way. Ten minutes of a type-by-type
+  table said the argument had nothing to do with it - and the fix for what it actually was is
+  unrelated to arguments entirely.
+- **`-O0` correct and `-O3` garbage is not an optimiser bug, it is a lifetime bug.** The class case
+  printed the right answer at `-O0` with the release already in the wrong place; nothing had
+  reused the block yet. The test allocates over it on purpose - the standing rule that a freed
+  block keeps its contents until something else takes it, applied to an await.
+
+`00async_result_types.ts` covers each result type, both directions of the argument question, an
+await inside an async function, and three results read after a churn loop. Suite 2,629/2,629.

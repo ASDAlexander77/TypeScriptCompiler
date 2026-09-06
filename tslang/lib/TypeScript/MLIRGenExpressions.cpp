@@ -415,10 +415,36 @@ namespace mlirgen
         auto location = stripMetadata(loc(awaitExpressionAST));
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
+        if (resultType && isa<mlir_ts::VoidType>(resultType))
+        {
+            resultType = mlir::Type();
+        }
+
+        // The result travels through a slot in the awaiting function rather than through
+        // `!async.value<T>`. MLIR's async-to-LLVM conversion runs before the TypeScript types are
+        // lowered (see transform.cpp - createConvertAsyncToLLVMPass, then createLowerToLLVMPass),
+        // and it converts an async value's payload with its own LLVMTypeConverter, which knows
+        // nothing about this dialect. So a payload of any TypeScript type - `number`, `string`,
+        // `boolean`, a class, an array - failed with "failed to legalize operation
+        // 'async.runtime.load'", and only awaits whose payload happened to be a builtin type
+        // (`i32`, `i64`, `f32`) ever compiled. Section 9.56.
+        //
+        // A token carries no payload, so nothing has to convert. The awaited body writes into the
+        // slot, `async.await` on the token is what orders that write before the read, and the
+        // outlining pass passes the slot in as an argument like any other value the region uses
+        // from above.
+        mlir::Value resultSlot;
+        if (resultType)
+        {
+            resultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(resultType),
+                                                             mlir::Value(), builder.getBoolAttr(false),
+                                                             builder.getIndexAttr(0));
+        }
 
         ValueOrLogicalResult result(mlir::failure());
+        auto slotOwnsResult = false;
         auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
-            location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{},
+            location, mlir::TypeRange(), mlir::ValueRange{},
             mlir::ValueRange{}, [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                 DITableScopeT debugAsyncCodeScope(debugScope);
                 MLIRDebugInfoHelper mdi(builder, debugScope);
@@ -431,26 +457,60 @@ namespace mlirgen
                 if (result)
                 {
                     auto value = V(result);
-                    if (value)
+                    // No cast: `resultType` is what `evaluate` said this same expression produces,
+                    // and the yield that used to carry it had to match the execute's result type
+                    // for the op to verify at all.
+                    if (value && resultSlot)
                     {
-                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
+                        // Under reference counting the slot is what keeps the result alive across
+                        // the await. Everything the awaited expression produced is a temporary of
+                        // the region's own block, so without this the value is released the moment
+                        // the region ends - before the awaiting function has read the slot. It read
+                        // correctly at -O0 and garbage at -O3, which is only ever a matter of what
+                        // reused the block first.
+                        //
+                        // Same two cases as a local's declaration: a value that already carries a
+                        // reference hands it over, anything else is retained. Either way the slot
+                        // is the owner from here, and the awaiting scope gives that reference back.
+                        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, resultType))
+                        {
+                            if (producesOwnedReference(value))
+                            {
+                                consumeOwnedReference(value);
+                            }
+                            else
+                            {
+                                builder.create<mlir_ts::RetainOp>(location, value);
+                            }
+
+                            slotOwnsResult = true;
+                        }
+
+                        builder.create<mlir_ts::StoreOp>(location, value, resultSlot);
                     }
-                    else
-                    {
-                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
-                    }
+
+                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 }
             });
         EXIT_IF_FAILED_OR_NO_VALUE(result)
 
-        if (resultType)
+        // Registered only now, and only if the store above actually happened: an owned slot is
+        // released at scope exit whatever is in it, and a slot nothing wrote holds whatever the
+        // frame held before. The attributes say the retain is elsewhere - inside the region, beside
+        // the store - so the verifier does not go looking for one at the declaration.
+        if (slotOwnsResult && genContext.ownedVars != nullptr)
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getResults().back());
-            return asyncAwaitOp.getResult();
+            auto varOp = resultSlot.getDefiningOp<mlir_ts::VariableOp>();
+            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            genContext.ownedVars->push_back(resultSlot);
         }
-        else
+
+        builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
+
+        if (resultSlot)
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
+            return V(builder.create<mlir_ts::LoadOp>(location, resultType, resultSlot));
         }
 
         return mlir::success();
