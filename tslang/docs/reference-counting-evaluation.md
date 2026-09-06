@@ -603,13 +603,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    slot has no `return` statement, and so performed none of what a return does). The lists in
    `test/tester/CMakeLists.txt` are kept empty rather than deleted: they are how the next such
    fault gets written down in the build while it is being worked on.
-5af. **`raytrace` costs `rc` 81.8 MB against `gc`'s 4.2.** Re-measured 2026-09-06 on the
-   ahead-of-time harness §9.52 describes, which is the first number here not taken through the
-   JIT; `none` is 114.5, so reference counting reclaims **about a quarter** of what the program
-   leaks without it. The 63/4.4/98 recorded before this was a JIT figure and is withdrawn, but
-   the shape of the answer did not change and this is now the largest thing open: every leak
-   §9.43 through §9.52 closed was measured on a loop of one shape, and `raytrace` is what says
-   how much of the whole program those add up to. **It is the next thing to take.**
+5af. **`raytrace` costs `rc` 43.9 MB against `gc`'s 1.2, and is still the largest thing open.**
+   Measured on the ahead-of-time harness §9.52 describes; `none` is 117, so reference counting
+   reclaims about **62%** of what the program leaks without it. §9.53 took it from 82.9 by letting
+   a call with no single callee ask about all of them - `raytrace` is method and interface
+   dispatch throughout, and none of it was being consumed. The JIT-era 63/4.4/98 is withdrawn.
+   What is left is spread rather than concentrated: dropping the reflection recursion leaves 42
+   against `none`'s 65, dropping the natural-colour closure leaves 27 against 40, and both keep
+   about a third - the shape of something every path does rather than one site.
 5ag. **DONE, §9.50 - and the second half turned out to be simpler than the diagnosis below.**
    The state object does not need ownership of its capture box: what the box loses is the *value*
    of a by-value capture, which the box already releases and which nothing had retained, because
@@ -4249,3 +4250,52 @@ exit code checked - which means something as of §9.51.
 Sampling `PeakWorkingSet64` must not sleep between reads: the counter reads **zero** once the
 process has exited, so a run that finishes between two samples is reported as 0 MB rather than as
 small.
+
+### 9.53 Step 5af, first half: a call with no single callee still has an answer
+
+`raytrace.ts` reclaimed a quarter of what it allocated, and the reason is one line of §9.32's
+reasoning taken further than it goes.
+
+`OwnedReturnConsumptionPass` consumes the reference a callee's return added, and to do that it
+has to know that *this* callee retains. `calleeNameOf` therefore refuses a virtual call: the
+identifier on `ts.ThisVirtualSymbolRef` names the declaration the call was written against, not
+what the runtime class put in the slot, and consuming a reference an override never took frees
+live memory. The same refusal covered interface dispatch, which does not even reach that code.
+
+**But the question is answerable for a set.** A virtual call has no single callee and it does have
+a set of possible ones, and "does every candidate return owned" is exactly as safe as "does this
+callee return owned". Two candidate sets, one per dispatch shape:
+
+- **A class vtable slot:** every method in the module whose name after the last dot matches the
+  call's. An override is `<Subclass>.<same member>` by construction, so this is a superset, and a
+  superset is the safe direction - it costs precision only where two unrelated classes share a
+  method name and disagree, and the cost there is a leak.
+- **An interface slot:** the member name is *not* enough, because an interface method can be
+  implemented by an object literal, whose function is named for where it was written
+  (`Surfaces..feL166C18FH19436811`) rather than for the member it fills. Matching on the name
+  would miss it, and a missed candidate is the direction that frees memory nobody retained. The
+  vtables say it exactly: a class implementing `Thing` gets `Sphere.Thing..vtbl`, an object
+  literal gets `Thing.<hash>..vtbl`, and the interface's name is a whole dot-separated component
+  of both. The candidates are that slot in every vtable global naming the interface, and a slot
+  that is absent - not initialised from a symbol - makes the call unclassifiable rather than being
+  skipped.
+
+#### What it closed
+
+| shape | before | after | `none` |
+| --- | --- | --- | --- |
+| a method returning a new instance, 300k calls | 10.7 MB | 0.6 MB | 10.6 MB |
+| a method returning an object literal as an interface | 10.7 | 0.6 | 10.6 |
+| the same through an interface-typed variable | 10.6 | 0.6 | 10.6 |
+| `raytrace`'s `intersections` loop alone | 11.5 | 0.6 | 12.1 |
+| **`raytrace.ts`** | **82.9** | **43.9** | **117** |
+
+Reference counting now reclaims about **62%** of what `raytrace` leaks without it, against 29%
+before. Suite 2,617/2,617, and an ownership-verifier sweep over 200 corpus files reports what it
+reported before the change - two findings in `00break_continue_scope_exit.ts`, confirmed
+pre-existing by rebuilding with this pass stashed out.
+
+The remaining 43.9 MB is still the largest thing open, and it is spread rather than concentrated:
+cutting the reflection recursion out of `shade` leaves 42 against `none`'s 65, and cutting the
+natural-colour closure instead leaves 27 against 40. Both keep about a third, which is the shape of
+something every path does rather than one site.

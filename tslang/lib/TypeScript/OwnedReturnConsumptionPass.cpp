@@ -58,11 +58,47 @@ class OwnedReturnConsumptionPass
         MLIRTypeHelper mth(module->getContext(), compileOptions);
 
         llvm::DenseSet<mlir::StringRef> returnsOwned;
+        // Every method in the module, grouped by the name after the last dot: the candidate set
+        // for a virtual call, see virtualCallReturnsOwned.
+        llvm::StringMap<llvm::SmallVector<mlir::StringRef>> methodsByMemberName;
         module.walk([&](mlir_ts::FuncOp funcOp) {
+            auto name = funcOp.getName();
             if (functionReturnsOwned(mth, funcOp))
             {
-                returnsOwned.insert(funcOp.getName());
+                returnsOwned.insert(name);
             }
+
+            auto dot = name.rfind('.');
+            if (dot != mlir::StringRef::npos && dot + 1 < name.size())
+            {
+                methodsByMemberName[name.substr(dot + 1)].push_back(name);
+            }
+        });
+
+        // What each vtable global puts in each of its slots, for the interface half of
+        // virtualCallReturnsOwned. Only slots initialised from a symbol are recorded; a slot that
+        // holds anything else - a field's offset, say - is simply absent, and absent means
+        // unclassifiable there rather than ignorable.
+        llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> vtableSlots;
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            if (!globalOp.getSymName().ends_with(VTABLE_NAME))
+            {
+                return;
+            }
+
+            auto &slots = vtableSlots[globalOp.getSymName()];
+            globalOp.walk([&](mlir_ts::InsertPropertyOp insertOp) {
+                auto position = insertOp.getPosition();
+                if (position.size() != 1)
+                {
+                    return;
+                }
+
+                if (auto symbolRefOp = insertOp.getValue().getDefiningOp<mlir_ts::SymbolRefOp>())
+                {
+                    slots[position[0]] = symbolRefOp.getIdentifier();
+                }
+            });
         });
 
         // `new C()` is marked where it is built, so there can be discarded temporaries to give
@@ -87,7 +123,9 @@ class OwnedReturnConsumptionPass
             }
 
             auto callee = calleeNameOf(callOp);
-            if (callee.empty() || !returnsOwned.contains(callee))
+            auto calleeReturnsOwned = !callee.empty() && returnsOwned.contains(callee);
+            if (!calleeReturnsOwned && !virtualCallReturnsOwned(callOp, returnsOwned, methodsByMemberName) &&
+                !interfaceCallReturnsOwned(callOp, returnsOwned, vtableSlots))
             {
                 return;
             }
@@ -336,13 +374,157 @@ class OwnedReturnConsumptionPass
             return {};
         }
 
-        // `ts.ThisVirtualSymbolRef` is deliberately absent. It carries an identifier, but that
-        // names the declaration the call was written against, not what the runtime class put in
-        // the slot - so reading it as the callee would consume a reference an override may never
-        // have taken. `private` looks like it would settle this and does not: this compiler
+        // `ts.ThisVirtualSymbolRef` is deliberately absent here. It carries an identifier, but
+        // that names the declaration the call was written against, not what the runtime class put
+        // in the slot - so reading it as *the* callee would consume a reference an override may
+        // never have taken. `private` looks like it would settle this and does not: this compiler
         // accepts a subclass redeclaring a private method and dispatches to the override, where
         // TypeScript rejects the program outright. See §9.32.
+        //
+        // Asking about every method that could be in the slot answers it instead -
+        // virtualCallReturnsOwned.
         return {};
+    }
+
+    // A virtual call has no single callee, but it does have a set of possible ones, and the
+    // question this pass asks is answerable for a set: consume only if *every* candidate returns
+    // owned. One that does not leaves the call retaining, exactly as an unclassified callee does.
+    //
+    // The candidate set used here is every method in the module whose name after the last dot
+    // matches the call's - a superset of the overrides, since an override is `<Subclass>.<same
+    // member>` by construction, and a superset is the safe direction. It costs precision only
+    // where two unrelated classes share a method name and disagree about ownership, and the cost
+    // there is a leak rather than a free.
+    //
+    // Without this, `raytrace.ts` reclaimed about a quarter of what it allocated: nearly every
+    // call in it is a method call, so nearly every allocation it made kept the reference its
+    // callee's return had added. See section 9.53.
+    static bool virtualCallReturnsOwned(mlir_ts::CallIndirectOp callOp,
+                                        const llvm::DenseSet<mlir::StringRef> &returnsOwned,
+                                        const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName)
+    {
+        if (callOp.getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto getMethodOp = callOp.getOperand(0).getDefiningOp<mlir_ts::GetMethodOp>();
+        if (!getMethodOp)
+        {
+            return false;
+        }
+
+        auto virtualRefOp = getMethodOp.getBoundFunc().getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>();
+        if (!virtualRefOp)
+        {
+            return false;
+        }
+
+        auto identifier = virtualRefOp.getIdentifier();
+        auto dot = identifier.rfind('.');
+        if (dot == mlir::StringRef::npos || dot + 1 >= identifier.size())
+        {
+            return false;
+        }
+
+        auto candidates = methodsByMemberName.find(identifier.substr(dot + 1));
+        if (candidates == methodsByMemberName.end() || candidates->second.empty())
+        {
+            return false;
+        }
+
+        for (auto candidate : candidates->second)
+        {
+            if (!returnsOwned.contains(candidate))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // The same question for a call through an interface, where the member name is not enough to
+    // name the candidates: an interface method can be implemented by an object literal, whose
+    // function is named for where it was written (`Surfaces..feL166C18FH19436811`) rather than for
+    // the member it fills. Matching on the member name would miss it entirely, and missing a
+    // candidate is the direction that frees memory nobody retained.
+    //
+    // The vtables say it exactly. An interface value is built by `ts.NewInterface` over one of
+    // them, and every vtable in the module is a global: a class implementing `Thing` gets
+    // `Sphere.Thing..vtbl`, an object literal gets `Thing.<hash>..vtbl`, and the interface's own
+    // name is a component of both. So the candidates for slot `index` of interface `I` are that
+    // slot in every vtable global naming `I`, and a slot that is absent - not initialised from a
+    // symbol - makes the whole call unclassifiable rather than being skipped.
+    static bool interfaceCallReturnsOwned(mlir_ts::CallIndirectOp callOp,
+                                          const llvm::DenseSet<mlir::StringRef> &returnsOwned,
+                                          const llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> &vtableSlots)
+    {
+        if (callOp.getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto getMethodOp = callOp.getOperand(0).getDefiningOp<mlir_ts::GetMethodOp>();
+        if (!getMethodOp)
+        {
+            return false;
+        }
+
+        auto interfaceRefOp = getMethodOp.getBoundFunc().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        if (!interfaceRefOp)
+        {
+            return false;
+        }
+
+        auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(interfaceRefOp.getInterfaceVal().getType());
+        if (!interfaceType)
+        {
+            return false;
+        }
+
+        auto interfaceName = interfaceType.getName().getValue();
+        auto index = (int64_t)interfaceRefOp.getIndex();
+
+        auto sawCandidate = false;
+        for (auto &vtable : vtableSlots)
+        {
+            if (!namesInterface(vtable.getKey(), interfaceName))
+            {
+                continue;
+            }
+
+            auto slot = vtable.getValue().find(index);
+            if (slot == vtable.getValue().end() || !returnsOwned.contains(slot->second))
+            {
+                return false;
+            }
+
+            sawCandidate = true;
+        }
+
+        return sawCandidate;
+    }
+
+    // Is `vtableName` a vtable for `interfaceName`? Both shapes spell the interface as a whole
+    // dot-separated component: `Sphere.Thing..vtbl` for a class that implements it,
+    // `Thing.19585545..vtbl` for an object literal that satisfies it. A class's own vtable,
+    // `Sphere..vtbl`, names no interface and is left out.
+    static bool namesInterface(mlir::StringRef vtableName, mlir::StringRef interfaceName)
+    {
+        auto rest = vtableName;
+        while (!rest.empty())
+        {
+            auto split = rest.split('.');
+            if (split.first == interfaceName)
+            {
+                return true;
+            }
+
+            rest = split.second;
+        }
+
+        return false;
     }
 
     // Does every return of a heap-owning value in this function retain it first?
