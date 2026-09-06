@@ -4508,6 +4508,20 @@ Two things this cost, and both are worth keeping:
   Fixing one leaves the other, and the suite says so - the JIT tier passed while `test-compile-*`
   failed with `0xC0000005`.
 
+**One more thing the injected call cost, and it is worth stating plainly.** A JIT run resolves
+external symbols from the export tables of what is loaded, and `GC_enable_threads` lives in
+TypeScriptRuntime.dll - which a JIT run only has if it was passed with `--shared-libs`. The call
+is in `main`, so for one build **every** bare `tslang --emit=jit` under `gc` failed to
+materialize, async or not. The suite never saw it: its runner passes the DLL. `runJit` now stands
+the symbol in when nothing else provides it - and the stand-in only lets the program run, it does
+not carry the fix, so a bare JIT is still exposed to the race exactly as it was before. Two
+mechanisms had to be told apart to place it: `DynamicLibrary::AddSymbol` is found by
+`SearchForAddressOfSymbol` but **not** by the process generator the JIT resolves through, so the
+obvious placement compiles, looks right, and changes nothing; the definition has to go into the
+JITDylib's `absoluteSymbols` map beside the CRT overrides. And it must be conditional, because a
+JITDylib definition beats a generator - an unconditional one would shadow the real
+`GC_enable_threads` whenever the DLL *is* present.
+
 `00async_gc_threading.ts` is 250k awaits that allocate on both sides, so the two threads are in
 the allocator together rather than taking turns. Against the unfixed runtime it faults 7 runs in
 20 at `-O3` and 6 in 10 at `-O0`; smaller shapes are much weaker (60k iterations: 2 in 20). It is

@@ -137,6 +137,7 @@ static uint64_t jitImageBase = 0;
 class JitSectionMemoryManager : public llvm::SectionMemoryManager
 {
     using GCRootsFn = void (*)(void *, void *);
+    // (see jitEnableGCThreads below for the matching stand-in)
 
   public:
     uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment, unsigned sectionID,
@@ -234,6 +235,26 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     mlir::SmallVector<PRUNTIME_FUNCTION> functionTables;
 #endif
 };
+
+// Stands in for the async runtime's GC_enable_threads when a JIT run has no TypeScriptRuntime.dll
+// to provide it - see the site in runJit that decides whether to install it. Its job is to let the
+// program RUN: the GC pass puts that call in every `gc` entry point, so without a definition the
+// module does not materialize at all, whether or not it has an await in it.
+//
+// It is a stand-in, not the fix. It forwards to the collector's own GC_allow_register_threads if
+// the process exports one, and does nothing if not; and it cannot do the other half at all -
+// registering the pool's worker threads needs the runtime that owns those threads. A `gc` program
+// awaiting in a long loop is therefore still exposed to §9.57's race in this configuration, as it
+// was before any of this. Pass `--shared-libs=TypeScriptRuntime.dll` to get the real one.
+//
+// Resolved dynamically rather than called directly because tslang.exe does not link the collector.
+static void jitEnableGCThreads()
+{
+    if (auto *allowRegisterThreads = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_allow_register_threads"))
+    {
+        reinterpret_cast<void (*)()>(allowRegisterThreads)();
+    }
+}
 
 // A failing `assert` in compiled code calls `_assert`, and under --emit=jit that call lands
 // in whichever CRT the process resolver reaches first - ucrtbase.dll, whose report mode is
@@ -480,6 +501,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         }
     }
 
+    // Under `-mm=gc` the GC pass puts a `GC_enable_threads` call in the entry point, next to
+    // GC_init: the async runtime resumes coroutines on a thread pool, and the collector must be
+    // told it is multi-threaded before that (see AsyncGCThreads.h). The runtime that defines it is
+    // TypeScriptRuntime.dll, which a JIT run only has if it was passed with `--shared-libs` - and
+    // without it EVERY `gc` program fails to materialize, async or not, because the call is in
+    // main. So stand the symbol in when nothing else provides it.
+    //
+    // Asked here, after the shared libraries are loaded and before anything is defined, because
+    // the answer decides whether to shadow a real definition: SearchForAddressOfSymbol sees the
+    // export tables of everything loaded so far, which is exactly what the JIT's process generator
+    // will see.
+    auto needsGCEnableThreadsStandIn =
+        llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_enable_threads") == nullptr;
+
     auto llvmContext = std::make_unique<llvm::LLVMContext>();
     auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
     if (!llvmModule)
@@ -593,6 +628,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addOverride("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
         addOverride("_CxxThrowException", (void *)&jitCxxThrowException);
 #endif
+        // The stand-in decided above. It goes here rather than through
+        // DynamicLibrary::AddSymbol because the process generator resolves from export tables
+        // only - an explicitly added symbol is found by SearchForAddressOfSymbol but not by the
+        // generator, which is why adding it there looked right and changed nothing.
+        if (needsGCEnableThreadsStandIn)
+        {
+            addOverride("GC_enable_threads", (void *)&jitEnableGCThreads);
+        }
+
         if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(crtOverrides))))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << std::move(err) << "\n";
