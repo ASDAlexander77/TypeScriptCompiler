@@ -426,12 +426,23 @@ namespace mlirgen
             auto expressionValue = V(result);
             if (!expressionValue)
             {
-                emitError(location, "No return value");
-            }
+                // Nothing below can run without a value: the cast to the declared return type and
+                // the retain the return performs both read its type, and reading a null Value's
+                // type faults - silently, with no diagnostic, in MLIRGen (item 5aj).
+                //
+                // Reaching here during a discovery pass is ordinary rather than an error. A return
+                // expression can depend on something not registered yet - a sibling method's
+                // prototype, a class whose members are still being generated - and the statement
+                // loop comes back for it. That is why the report is conditional and the failure is
+                // not: the previous shape had them the other way round, reporting every time and
+                // returning only when the run was final, so a discovery pass carried the null
+                // forward instead of asking again.
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location, "No return value");
+                }
 
-            if (!genContext.allowPartialResolve)
-            {
-                VALIDATE(expressionValue, location)
+                return mlir::failure();
             }
 
             // The scope exit below releases every owned local in the frame, and the value being

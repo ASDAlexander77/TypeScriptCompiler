@@ -715,11 +715,21 @@ class MLIRGenImpl
             {
                 const_cast<GenContext *>(genContext)->ownedVars = nullptr;
             }
+        }
 
-            if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
-            {
-                EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
-            }
+        // Outside the test above. A scope that owns nothing itself still stands between a `return`
+        // and the scopes that do, and an `if` block is exactly where a `return` is usually
+        // written: its context has an empty list, so keeping this inside the test ended the walk
+        // there and released nothing at all. That is what leaked `raytrace`'s per-light ray -
+        // `let neatIsect = this.testRay({ start: pos, dir: livec }, scene); if (...) { return
+        // col; }` retained the ray on the way in and gave it back only on the path that falls
+        // through. Section 9.60.
+        //
+        // It is the same shape §9.18's break/continue bug had, one level down: that one stopped
+        // the walk at the first scope, this one stopped it at the first EMPTY scope.
+        if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
+        {
+            EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
         }
 
         return mlir::success();
@@ -1048,11 +1058,16 @@ class MLIRGenImpl
                 // NOTE: upward mailbox into caller context (process-once) - see docs/MLIRGen-refactoring-review.md A7
                 const_cast<GenContext *>(genContext)->usingVars = nullptr;
             }
+        }
 
-            if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
-            {
-                EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
-            }
+        // Outside the test above, and that is the point: a scope that declared no `using` of its
+        // own is not the end of the walk. An `if` block is the ordinary place to write a `return`
+        // or a `break`, and its context has an empty list, so nesting this inside the test stopped
+        // the walk at the first such block and left every enclosing scope undisposed. Same defect
+        // and same fix as mlirGenReleaseOwned below.
+        if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
+        {
+            EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
         }
 
         return mlir::success();

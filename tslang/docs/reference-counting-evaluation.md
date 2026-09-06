@@ -609,14 +609,16 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    slot has no `return` statement, and so performed none of what a return does). The lists in
    `test/tester/CMakeLists.txt` are kept empty rather than deleted: they are how the next such
    fault gets written down in the build while it is being worked on.
-5af. **`raytrace` costs `rc` 43.9 MB against `gc`'s 1.2, and is still the largest thing open.**
-   Measured on the ahead-of-time harness §9.52 describes; `none` is 117, so reference counting
-   reclaims about **62%** of what the program leaks without it. §9.53 took it from 82.9 by letting
-   a call with no single callee ask about all of them - `raytrace` is method and interface
-   dispatch throughout, and none of it was being consumed. The JIT-era 63/4.4/98 is withdrawn.
-   What is left is spread rather than concentrated: dropping the reflection recursion leaves 42
-   against `none`'s 65, dropping the natural-colour closure leaves 27 against 40, and both keep
-   about a third - the shape of something every path does rather than one site.
+5af. **DONE, §9.60 - `raytrace` costs `rc` 6.2 MB against `gc`'s 2.8.** `none` is 117, so
+   reference counting now reclaims **95%** of what the program leaks without it, up from 62%. The
+   whole of the remainder was one shape: a value nothing receives is released at the end of the
+   block that produced it, and a `return` written inside an `if` leaves from a nested region and
+   never reaches that release. `raytrace` builds a ray for each shadow test in a function that
+   returns early when the light is blocked, so the ray came back only on the path that fell
+   through. Everything this item previously suspected was measured and cleared first: not the
+   closure, not the `Intersection` object literal through an interface, not the rays as such, not
+   the vector arithmetic (§9.59, §9.60).
+
 5ag. **DONE, §9.50 - and the second half turned out to be simpler than the diagnosis below.**
    The state object does not need ownership of its capture box: what the box loses is the *value*
    of a by-value capture, which the box already releases and which nothing had retained, because
@@ -713,20 +715,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    gave one back, so the value was released at the end of the function that built it and the
    global addressed a freed block. A global is a root: it holds a reference for as long as the
    program runs, and nothing gives the last one back. New `isOwnedGlobalSlot`.
-5aj. **The compiler segfaults, silently, if `raytrace.ts`'s `Intersection` is a class.** Not a
-   memory-model bug - it happens under `gc` too, and at `--emit=mlir`, so it is in MLIRGen, before
-   any lowering. Reproduce from the repo with a two-line edit: turn `interface Intersection {
-   thing; ray; dist }` into a class with those three constructor fields, and return
-   `new Intersection(this, ray, dist)` from `Sphere.intersect` and `Plane.intersect` instead of the
-   object literal. Exit 139, no diagnostic. Delta-debugged down to ~110 lines, and every reduction
-   was checked BOTH ways (crashes as a class, compiles clean as an interface), so the class
-   conversion is the cause and not some unrelated ill-formedness the reducer wandered into. What
-   survives reduction: `intersections`' `let closestInter: Intersection = undefined;` over a loop
-   calling `scene.things[i].intersect(ray)`, `testRay` returning `isect.dist` on one path and
-   nothing on the other, and the `addLight` closure comparing `neatIsect === undefined`. Small
-   hand-written versions of that chain do NOT reproduce it. Found while trying to measure whether
-   returning an object literal as an interface is what `raytrace` leaks - which that edit would
-   have answered, and cannot until this is fixed.
+5aj. **DONE, §9.60 - a null value carried past the check that was supposed to stop it.** The
+   return statement reported "No return value" and then went on to cast and retain it. A discovery
+   pass reaching there is ordinary rather than an error - a return expression can depend on
+   something not registered yet - so the report was conditional and the failure was not; it needed
+   to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
+   diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
+5ak. **A `break` out of a loop body loses that iteration's discarded temporaries.** The other side
+   of §9.60: the release at the end of a loop body is skipped when the iteration ends in a `break`
+   or `continue`. It is not fixed with the returns because telling it apart from the case where
+   releasing would be a DOUBLE release needs the jump's target loop rather than its position - a
+   labelled `break` can leave more than the nearest one - and the two look identical to the walk
+   that places these releases. Leaks, which is the safe side.
 
 6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
    names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
@@ -4597,3 +4597,78 @@ That leaves the per-pixel object traffic: `Vector` and `Color` results, the `{ s
 literals, and the `Intersection` object literals that `intersect` returns through an interface.
 The obvious next measurement - make `Intersection` a class and see what moves - **cannot be taken
 yet**: that two-line edit segfaults the compiler (5aj).
+
+### 9.60 A return written inside an `if` (5af, 5aj)
+
+`raytrace` held 43.5 MB against `gc`'s 2.8 and had done for the whole arc. It is **6.2 MB** now -
+95% of what `none` leaks, reclaimed - and the whole of the difference was one shape.
+
+**The bug.** §9.30 releases a value nothing receives at the end of the block that produced it.
+The end of the block is not the only way out of it: a `return` written inside an `if` leaves from
+a nested region and never reaches that release. `releaseDiscardedTemporaries` scanned only the
+value's own block for an exiting op, found the tail `ts.ReturnVal`, and put the release there -
+correct for the path that falls through and nothing at all for the path that returns.
+
+`getNaturalColor`'s inner function is exactly that shape, and it runs per light per pixel:
+
+```typescript
+let neatIsect = this.testRay({ start: pos, dir: livec }, scene);   // a ray, nothing receives it
+let isInShadow = (neatIsect === undefined) ? false : (neatIsect <= Vector.mag(ldis));
+if (isInShadow) {
+    return col;                                                    // ray lost here
+}
+```
+
+The fix walks the ops that follow the definition in its block and puts a release before every
+`return` nested inside them. Returns only, and the walk is its own argument: everything it reaches
+is inside a **sibling** of the definition, so a `break` or `continue` found that way targets a
+loop that does not contain the definition - control comes back into the block and runs the
+end-of-block release too, and releasing at both would give the same reference back twice. A
+return leaves for good wherever it is written. (The reverse case - a temporary in a loop *body*
+whose iteration ends in a `break` - still leaks; distinguishing the two needs the jump's target
+loop rather than its position, and a labelled `break` can leave more than the nearest one. Filed
+as 5ak.)
+
+**How it was found, which is the part worth keeping.** By measuring, one cut at a time, on the
+program itself rather than in miniature. Every synthetic version of these shapes came back flat -
+the optimiser elides an allocation whose escape it can see, so `none` reported the same 0.7 MB as
+`rc` and the benchmark measured nothing. Cutting the real program does not have that problem:
+
+| variant | rc | none |
+| --- | --- | --- |
+| whole program | 43.5 | 117.0 |
+| the `addLight` closure replaced by a plain method | 43.5 | 88.2 |
+| `Intersection` a class instead of a literal through an interface | 43.5 | 117.0 |
+| `Ray` a class instead of a literal | 50.0 | 121.4 |
+| shading math removed, shadow test kept | 42.3 | 87.2 |
+| shadow test removed, shading math kept | 5.7 | 40.1 |
+| the shadow test's result bound but never used | 5.7 | 73.5 |
+| the shadow test's result used inline, not bound | 5.7 | 73.5 |
+| bound, used, and an early `return` under it | 23.5 | 73.5 |
+
+The first three rows are what the item had been suspecting for three sections, and each of them
+moved `none` without moving `rc` at all - which is the signature of "allocates, but not what
+leaks". The last three isolate it to one line, and to the `return` rather than the value: the
+same call with the same binding leaks only when something returns out of the block afterwards.
+
+Two general things:
+
+- **`rc` holding a constant FRACTION of what a program allocates, flat across problem sizes, is
+  what a missing release on a common path looks like.** §9.59 measured 37% at every image size and
+  read it as "a share of every pixel's work"; that was right, and it was one line.
+- **When `none` does not move, the change is not about allocation.** Three of the rows above are
+  perfectly good programs that answer a question nobody asked.
+
+**5aj, found on the way and fixed first, because it blocked the third row.** The return statement
+reported "No return value" and then carried on to cast and retain it - and reading a null
+`mlir::Value`'s type faults with no diagnostic at all (exit `0xC0000005`, silence). A discovery
+pass reaching there is ordinary: a return expression can depend on something not registered yet,
+and the statement loop comes back for it. So the report has to be conditional and the failure
+unconditional; it was the other way round. Fixing that turned the crash into a proper diagnostic,
+which then pointed at a second gap of §9.55's kind - a call whose callee cannot be resolved during
+discovery returned a placeholder **without walking its arguments**, so `scene`, read nowhere else
+in that closure, was never captured. Same shortcut, same fix, second place: `new` was the first.
+
+Suite 2,641/2,641, corpus under all three models in both tiers - which is the guard against the
+new release being a second one. `00owned_early_return.ts` covers the shapes; a leak cannot be
+asserted, so the cases build over the memory they might have freed and read it back.

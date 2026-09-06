@@ -932,9 +932,25 @@ namespace mlirgen
         // in case of detecting value for recursive calls we need to ignore failed calls
         // last condition we need to reduce posobilities to ignore legitimate failure
         // TODO: register dummy function declaration at the begginnning of detecting function output
-        if (result.failed_or_no_value() && genContext.allowPartialResolve && 
+        if (result.failed_or_no_value() && genContext.allowPartialResolve &&
             (callExpr == SyntaxKind::Identifier || callExpr == SyntaxKind::PropertyAccessExpression))
-        {            
+        {
+            // The callee is not resolvable yet, but the arguments still have to be walked - this
+            // is the same gap section 9.55 closed on `new`, in the other place a discovery pass
+            // gives up early. Discovery is where a lambda's captures are found, so an expression
+            // it never visits contributes none: `this.testRay({ start: pos, dir: livec }, scene)`
+            // inside a closure, with `scene` read nowhere else in it, left `scene` uncaptured and
+            // the real pass then read the enclosing function's own value from inside the lambda -
+            // "'ts.Load' op using value defined outside the region".
+            //
+            // Errors are ignored for the same reason they are ignored there: the callee failing is
+            // this branch's own premise, so its arguments can fail with it, and discovery is
+            // best-effort by construction.
+            for (auto argument : callExpression->arguments)
+            {
+                mlirGen(argument, genContext);
+            }
+
             // we need to return success to continue code traversing
             return V(builder.create<mlir_ts::UndefOp>(location, builder.getNoneType()));
         }

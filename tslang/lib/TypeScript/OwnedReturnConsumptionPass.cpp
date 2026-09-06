@@ -274,6 +274,47 @@ class OwnedReturnConsumptionPass
             }
 
             auto *block = op->getBlock();
+
+            // The end of the block is not the only way out of it. A `return` written inside an
+            // `if` - which is where returns are usually written - leaves from a nested region and
+            // never reaches the release placed below, so the temporary was simply lost on that
+            // path. That is what `raytrace` was leaking: `addLightAt` builds a ray, tests it, and
+            // returns early when the light is blocked, so the ray's reference came back only on
+            // the path that falls through (section 9.60).
+            //
+            // Only exits that come after the definition in this block are covered, because only
+            // those are dominated by it. Nothing else has to be checked: a temporary whose value
+            // is used from another block is excluded by allUsesReleasableInOwnBlock above, so a
+            // nested exit cannot be returning this value or reading it.
+            //
+            // Returns only, and the walk itself is the argument. Everything reached here sits
+            // inside an op that is a SIBLING of the definition in this block, so a `break` or
+            // `continue` found this way targets a loop that does not contain the definition:
+            // control comes back into this block and runs the release below as well, and
+            // releasing at both would give the same reference back twice. A return leaves for
+            // good wherever it is written.
+            //
+            // The other side of that is a temporary in a loop BODY whose iteration ends in a
+            // `break` - the release at the end of that body block is skipped and the value is
+            // lost. Telling the two apart needs the break's target loop rather than its position
+            // (a labelled `break` can leave more than the nearest one), so it is left leaking:
+            // see item 5ak.
+            for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+            {
+                if (it->getNumRegions() == 0)
+                {
+                    continue;
+                }
+
+                it->walk([&](mlir::Operation *nested) {
+                    if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested))
+                    {
+                        builder.setInsertionPoint(nested);
+                        builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
+                    }
+                });
+            }
+
             if (auto *exiting = firstExitingOpAfter(op))
             {
                 builder.setInsertionPoint(exiting);

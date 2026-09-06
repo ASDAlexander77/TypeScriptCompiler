@@ -258,6 +258,7 @@ add_test(NAME test-compile-00-owned-async COMMAND test-runner "${PROJECT_SOURCE_
 add_test(NAME test-compile-00-owned-nested-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
 add_test(NAME test-compile-00-owned-unions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
 add_test(NAME test-compile-00-owned-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-compile-00-owned-early-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
 add_test(NAME test-compile-00-owned-construct-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
 add_test(NAME test-compile-00-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
@@ -662,6 +663,7 @@ add_test(NAME test-jit-00-owned-async COMMAND test-runner -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-00-owned-nested-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
 add_test(NAME test-jit-00-owned-unions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
 add_test(NAME test-jit-00-owned-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-jit-00-owned-early-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
 add_test(NAME test-jit-00-owned-construct-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
 add_test(NAME test-jit-00-try-using-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
@@ -1204,6 +1206,8 @@ add_test(NAME test-jit-rc-owned-unions COMMAND test-runner -jit -mm=rc "${PROJEC
 add_test(NAME test-jit-none-owned-unions COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
 add_test(NAME test-jit-rc-owned-delete COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
 add_test(NAME test-jit-none-owned-delete COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-jit-rc-owned-early-return COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
+add_test(NAME test-jit-none-owned-early-return COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
 add_test(NAME test-jit-rc-owned-construct-interface COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
 add_test(NAME test-jit-none-owned-construct-interface COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
 add_test(NAME test-jit-rc-try-using-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
@@ -1441,6 +1445,7 @@ set(TSLANG_CORPUS
     00owned_closures.ts
     00owned_construct_interface.ts
     00owned_delete.ts
+    00owned_early_return.ts
     00owned_elements.ts
     00owned_fields.ts
     00owned_generator_locals.ts
@@ -1679,6 +1684,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00owned_closures.ts
     00owned_construct_interface.ts
     00owned_delete.ts
+    00owned_early_return.ts
     00owned_elements.ts
     00owned_fields.ts
     00owned_generator_locals.ts
@@ -1720,6 +1726,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00owned_closures.ts
     00owned_construct_interface.ts
     00owned_delete.ts
+    00owned_early_return.ts
     00owned_elements.ts
     00owned_fields.ts
     00owned_generator_locals.ts
