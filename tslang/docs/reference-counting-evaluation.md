@@ -760,8 +760,8 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    born-at-zero design. Checked across all nine exporter/importer model combinations. The
    default-lib case is unchanged and still leaks, for the same reason it always did.
 
-5ao. **A shared library built `gc` and linked ahead of time frees strings the importing module
-   still holds.** Found by §9.71's new test and pre-existing - it fails with 5al's fix reverted
+5ao. **DONE, §9.76 - the executable and the shared library each linked a collector of their
+   own.** Originally filed as: Found by §9.71's new test and pre-existing - it fails with 5al's fix reverted
    too. Only shared + `gc` + AOT; shared `rc`, shared `none`, static `gc` and shared `gc`
    through the JIT all pass. Points at Boehm not tracing the importing module's roots into a
    dynamically linked module's heap, which is the same family as the JIT-globals problem.
@@ -5763,3 +5763,71 @@ free of this entire question.
 `WeakRef<T>` therefore stays unimplemented and unblocking. §9.8 settled its ABI so that
 `strong` sits at `payload - wordSize` in every model and `weak` exists only under `-mm=rc`, so
 it can land later without a break.
+
+### 9.76 Two collectors in one process (5ao)
+
+Fixed. The suite is **2,689 of 2,689 with nothing disabled**, which it has not been at any point
+in this arc.
+
+5ao was filed by §9.71 as "a `gc` shared library linked ahead of time frees strings the importing
+module still holds", with the shape of the evidence pointing at Boehm and the cause unknown. It
+is simpler and worse than that.
+
+**The executable and the shared library each link `gc.lib` statically, so each has its own
+collector** - its own heap, its own roots. The library allocates the strings; the executable
+holds them in an array the library's collector has no reason to scan, and frees them.
+
+Proving it took three measurements, and the first two said the opposite of the answer:
+
+| test | result |
+| --- | --- |
+| a DLL that allocates a string the exe holds, 200k churn | **passes** |
+| each of the five call shapes in the failing test, alone, 100k churn | **all five pass** |
+| the five together | fails at four |
+
+That looked like a combination effect and was not. Dumping the held values rather than counting
+mismatches is what turned it round:
+
+```
+0 [0] Generic makes a noise. | [1] Mitzie barks. | [2] Mitzie barks. | [3] Generic makes a noise.
+...
+11 [0] Generic makes a noise. | [1] Mitzie barks. | [2] Mitzie barks. | [3] animal Generic
+```
+
+Slot 3 is `asIface.describe()`, which should read `animal Generic` every time. It reads what the
+*churn loop* allocates - `a.speak()`'s result - in every entry but the last. The strings were
+freed and their memory reused.
+
+**So every entry was being freed, and only one was detectable.** The earlier tests churned with
+the *same* call they were holding, so a freed slot was reallocated with identical content and
+read back correct. They did not pass; they could not fail. The bug was invisible for exactly the
+reason it is dangerous, and this is the third time in this arc that a test which "passed" was
+measuring nothing (§9.21, §9.22 - and here the flaw was that the churn and the held value came
+from the same producer).
+
+Confirmed independently before any fix: with `GC_INITIAL_HEAP_SIZE=536870912`, so that Boehm
+never needs to collect, slot 3 reads correctly. A collection issue, not dispatch.
+
+**The fix is one collector.** Boehm built with `BUILD_SHARED_LIBS=ON` - it was explicitly `OFF` -
+and both binaries linked against the import library, with `gc.dll` beside the executable. Slot 3
+then reads `animal Generic` on every iteration, and the disabled test passes.
+
+Scoped to shared builds only, which is where the problem is: a statically linked program has one
+binary and therefore already one collector, and keeps the static `gc.lib`. `scripts/build_gc_release_shared_vs.bat`
+builds it; `test-runner`'s shared path links it and copies the DLL into the per-test working
+directory; the test CMakeLists reports it clearly if it has not been built rather than linking
+the wrong thing silently.
+
+**The cost, which is real and worth stating: a program that loads a tslang shared library now
+ships `gc.dll`.** There is no way round it - two static collectors in one process cannot be made
+correct - but it is a change to how such programs are deployed, and it is written down in
+`docs/memory-models.md` rather than left in this file.
+
+**What this says about the rest of the shared tests.** They pass, and they were never exercising
+this: they are small enough that no collection happens at all. Nothing in the suite churned
+across a shared boundary until §9.71's test did. That is worth remembering when the next
+shared-library feature is called covered.
+
+5ao. **DONE, §9.76** - two statically linked collectors, one per binary. Not an ownership bug and
+   not reference counting's: `rc` and `none` were always correct here, because neither has a
+   collector to get this wrong.

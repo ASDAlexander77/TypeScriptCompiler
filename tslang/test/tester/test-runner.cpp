@@ -496,7 +496,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
-    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
+    // The SHARED collector, and only here. Two binaries that each link gc.lib statically get a
+    // collector each: the library's frees objects the executable is still holding, because the
+    // executable's roots are not its to scan. Item 5ao - it produced silently wrong strings
+    // rather than a crash, and only where the value differed from whatever was allocated over
+    // it, which is why every other shared test passed. Statically linked programs keep the
+    // static collector; one binary already means one collector.
+    batFile << "set GC_LIB_PATH=" << TEST_GC_SHARED_LIBPATH << std::endl;
 
     // run everything inside a unique per-test working directory: the shared lib must keep its
     // real name (<stem>.dll) for `import './<stem>'` to resolve, but that name is not unique
@@ -506,6 +512,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
     batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
     batFile << "mkdir %WORKDIR%" << std::endl;
+    batFile << "copy \"" << TEST_GC_SHARED_BINPATH << "\\gc.dll\" %WORKDIR% >nul" << std::endl;
     batFile << "cd %WORKDIR%" << std::endl;
 
     auto first = true;

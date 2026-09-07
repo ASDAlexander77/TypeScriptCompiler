@@ -99,6 +99,22 @@ the fourth option here, and it does not change anything above.
   same `-mm=` avoids it.
 - **Counts are not atomic.** `-mm=rc` is single-threaded today.
 
+## Shared libraries and `-mm=gc`
+
+**A program that loads a tslang shared library must link Boehm as a DLL, not statically.**
+
+If the executable and the library each link `gc.lib` statically, each gets its own collector,
+with its own heap and its own idea of what the roots are. The library's collector does not scan
+the executable's roots, so it frees objects the executable is still holding. The symptom is not
+a crash: the freed memory is reallocated and the program reads a plausible wrong value, which
+only shows up when what was written over it differs from what was there.
+
+Build the shared collector with `scripts/build_gc_release_shared_vs.bat`, link against
+`3rdParty/gcdll/x64/release/lib/gc.lib`, and ship `gc.dll` beside the executable.
+
+Statically linked programs are unaffected and keep the static `gc.lib` — one binary already
+means one collector. `-mm=rc` and `-mm=none` are unaffected either way: neither has a collector.
+
 ## Mixing modules
 
 A shared library records the model it was built under, and the compiler warns when you import

@@ -78,7 +78,21 @@ target_link_libraries(test-runner PRIVATE ${LIBS})
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
 # GC lib dir derived from the BDWgc package (BDWgc_DIR=<prefix>/lib/cmake/bdwgc)
 get_filename_component(TEST_GC_LIBDIR "${BDWgc_DIR}/../.." ABSOLUTE)
+# A shared Boehm, for the shared-library tests only. Two binaries that each link gc.lib
+# statically get two collectors, and the one inside the library then frees objects the
+# executable is still holding - item 5ao. Built by scripts/build_gc_release_shared_vs.bat;
+# when it is absent the shared-library tests are skipped rather than run wrong.
+set(TEST_GC_SHARED_PREFIX "${PROJECT_SOURCE_DIR}/../3rdParty/gcdll/x64/${CMAKE_BUILD_TYPE_LOWERCASE}")
+if (EXISTS "${TEST_GC_SHARED_PREFIX}/lib/gc.lib" OR EXISTS "${TEST_GC_SHARED_PREFIX}/lib/libgc.so")
+    set(TSLANG_HAVE_SHARED_GC TRUE)
+else()
+    set(TSLANG_HAVE_SHARED_GC FALSE)
+    message(STATUS "shared Boehm not found at ${TEST_GC_SHARED_PREFIX} - shared-library tests will be skipped (see scripts/build_gc_release_shared_vs.bat)")
+endif()
+
 if (WIN32)
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"${WINDOWS_KITS_DIR_LIB}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH=\"${WINDOWS_KITS_DIR_UCRT_LIB}\"")
@@ -89,6 +103,8 @@ if (WIN32)
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
 else()
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
@@ -1028,16 +1044,7 @@ add_test(NAME test-compile-shared-export-import-object-literal-with-class-types 
 # DeclarationPrinter no longer prints a wrong extends target (own name instead of
 # the base's) nor the synthetic base-class storage field (which shifted every
 # subsequent field's offset in the importer).
-# Registered and DISABLED: this one configuration - shared library, ahead of time, `gc` - frees
-# strings the importing module is still holding, and it does so with item 5al's fix reverted as
-# well, so it is not that fix's doing. Every neighbouring configuration passes: the same test
-# under `-shared` with `rc` and with `none`, under `gc` statically linked, and under `gc` shared
-# through the JIT. That points at Boehm not tracing the importing module's roots into a
-# dynamically linked module's heap rather than at anything about ownership. Filed as 5ao.
-# DISABLED rather than WILL_FAIL because what it produces is corrupted memory, not a clean
-# failure, and a WILL_FAIL cannot hold that safely.
 add_test(NAME test-compile-shared-export-import-owned-returns COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
-set_tests_properties(test-compile-shared-export-import-owned-returns PROPERTIES DISABLED TRUE)
 add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
