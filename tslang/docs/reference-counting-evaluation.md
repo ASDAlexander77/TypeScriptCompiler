@@ -4326,6 +4326,14 @@ the generator is still reading it, and that is what 2,617 tests would say.
 
 #### A measuring harness, at last
 
+> **The numbers from here to §9.61 are sampled, and understated - see §9.72.** This section
+> replaced the JIT with a native-executable harness, but that first harness read the peak by
+> spinning on `PeakWorkingSet64` while the process ran, which on `raytrace` reports less than
+> half the true figure and varies by 20% between runs of one binary. The non-sampling script
+> this section recommends did not reach the tree until `299eed65`, after §9.61. Conclusions in
+> that range stand; magnitudes in it do not, and none of them can be compared with a number
+> measured since.
+
 Every memory number before this was taken from the JIT, where ~13-16 MB of the measurement is
 `tslang.exe` itself and the optimiser elides different things in different models - which is why
 the same shape read 41 MB one hour and 12.6 MB the next, and why §9.31's numbers had to be
@@ -4672,6 +4680,12 @@ The obvious next measurement - make `Intersection` a class and see what moves - 
 yet**: that two-line edit segfaults the compiler (5aj).
 
 ### 9.60 A return written inside an `if` (5af, 5aj)
+
+> **Both numbers below are sampled ones - see §9.72.** Every figure in §9.52 through §9.61 was
+> taken with the spin-on-`PeakWorkingSet64` harness, which reports less than half the real peak
+> on `raytrace` and wanders between runs. The fix here is real and the shape of the improvement
+> is real; the magnitudes are not. Measured with the in-tree script, `raytrace` at this commit is
+> **9.2 MB**, and 8.9 today. Do not use 6.2 or 43.5 as a baseline without re-measuring.
 
 `raytrace` held 43.5 MB against `gc`'s 2.8 and had done for the whole arc. It is **6.2 MB** now -
 95% of what `none` leaks, reclaimed - and the whole of the difference was one shape.
@@ -5431,7 +5445,76 @@ and shared. The teeth are not hypothetical: this test's assertion fires for real
 **Suite 2,680 of 2,680**, one disabled (5ao). Cross-module `rc` 4.1 MB against `gc`'s 5.7 and
 `none`'s 18.0.
 
-**One stale number, unrelated to either fix.** Section 9.60 records `raytrace` at 6.2 MB. It
-measures **8.9 MB at HEAD with both fixes stashed**, and 9.2 with them applied - so the 0.3 is
-this work and the 2.7 is not. Something between section 9.60 and here moved it and the section
-was never re-measured; worth a look, and worth not quoting 6.2 in the meantime.
+**One number that looked stale and was not.** Section 9.60 records `raytrace` at 6.2 MB; it
+measures 8.9 today. Chased in section 9.72 - it is the measuring harness that changed, not the
+compiler, and neither fix here moves `raytrace` at all.
+
+### 9.72 The harness changed, not the compiler - and the old one halved `raytrace`
+
+Section 9.71 ended by flagging section 9.60's `raytrace` figure of 6.2 MB as stale, on the
+strength of measuring 8.9 today, and suggested something between the two had moved it. That was
+worth checking rather than filing, and checking it says the suggestion was wrong.
+
+**Checked at the commit that wrote the number.** Building `3d8bddf6` - the commit whose diff
+introduces the string "6.2 MB" - and measuring `raytrace` there with the current script gives
+**9.2 MB**, not 6.2. There is no regression to find between then and now, because the number was
+never 6.2 on this harness at that commit either.
+
+**What differs is how the peak is read.** Section 9.52 describes two generations of harness: an
+original that spun on `PeakWorkingSet64` while the process ran, and the present
+`scripts/measure_memory_model.ps1`, which does not sample at all - it calls
+`GetProcessMemoryInfo` after `WaitForExit`, since the kernel keeps the peak for as long as a
+handle stays open. That script was added in `299eed65`, *after* section 9.61. Every memory number
+in sections 9.52 to 9.61 was therefore taken by sampling.
+
+Running one already-built `raytrace-rc.exe` both ways, six times:
+
+| run | sampled | after exit |
+| --- | --- | --- |
+| 1 | 4.9 | 8.9 |
+| 2 | 4.1 | 8.9 |
+| 3 | 4.0 | 8.9 |
+| 4 | 4.0 | 8.9 |
+| 5 | 4.1 | 8.9 |
+| 6 | 4.2 | 8.9 |
+
+The sampling technique reports **less than half** the real peak, and wanders by 20% between runs
+of the same binary; reading the counter after exit gives the same figure every time. Section
+9.52 predicted exactly this failure - "a program that finishes before the *first* sample defeats
+the no-sleep rule as thoroughly as sleeping does" - and then the sections after it went on
+quoting sampled numbers, because the replacement script did not arrive until `299eed65`.
+
+**What this invalidates.** Not the conclusions - `raytrace` really did fall from tens of MB to
+single digits, and every one of those fixes was a real fix. What it invalidates is *comparing a
+number from sections 9.52-9.61 against one measured since*, and the precise magnitudes in that
+range, which are understated by something like the factor above. Anything quoted from there
+should be re-measured before it is used as a baseline rather than trusted to the decimal. The
+in-tree script has been the only harness since `299eed65`, so numbers from section 9.62 onwards
+are on the stable footing.
+
+**A current baseline, so the next section has something sound to compare against.** All taken
+with `scripts/measure_memory_model.ps1` at `c3f629e4`, AOT, `--opt --opt_level=3
+--no-default-lib`:
+
+| program | gc | rc | none |
+| --- | --- | --- | --- |
+| `raytrace.ts` | 5.8 | **8.9** | 114.5 |
+| `nbody.ts` | 5.6 | **4.1** | 4.1 |
+| cross-module, 300k imported calls (§9.71) | 5.7 | **4.1** | 18.0 |
+
+`raytrace` reclaims 92% of what `none` leaks and remains the one program where `rc` is behind
+`gc` rather than ahead of it - which is the honest headline, and a less flattering one than the
+6.2 that was being quoted. `nbody` allocates almost nothing per step, so `rc` and `none` agree
+and `gc` pays for its runtime. Quote these rather than anything from §9.52-§9.61.
+
+**And the 0.3 MB that section 9.71 attributed to this work is not real either.** Measuring
+`20dfb37f` - the commit before 5an and 5al - gives **8.9 MB**, the same figure as HEAD with both
+fixes applied, stable across four runs each. The 9.2 readings were first-run noise on a
+freshly built binary. Both fixes move `raytrace` by nothing measurable, which is what one would
+expect: it is a single-module program, so it imports nothing, and its arithmetic is `number`
+throughout, so nothing in it was being narrowed.
+
+The lesson worth keeping is smaller than the finding: **a number and the tool that produced it
+travel together.** Three sections' worth of memory figures went into this document without
+recording which harness took them, and the one line that would have prevented an hour of
+bisecting is the harness name beside the number.
