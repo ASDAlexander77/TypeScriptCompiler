@@ -1031,6 +1031,56 @@ class MLIRGenImpl
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
     }
 
+    // One `using` declaration's `[Symbol.dispose]()`, at one scope exit.
+    //
+    // A declaration whose storage was hoisted out in front of a TryOp is disposed from two
+    // places that cannot see each other's progress: the scope exit written in the try body, and
+    // the cleanup region reached by the unwind edge. Neither knows how far the other got, and
+    // both were wrong about it in opposite directions - the two defects section 9.62 records
+    // and leaves open:
+    //
+    //   - the body's own disposal is a call in the try body, so it unwinds to that same
+    //     cleanup. A `[Symbol.dispose]()` that throws was therefore followed by the cleanup
+    //     disposing the very same variable a second time - and the second throw, arriving
+    //     while the first was still unwinding, terminates the process.
+    //   - the `using` initializer's `new` is in the try body too. A constructor that throws
+    //     left the cleanup disposing a slot nothing had ever been stored into, reading a
+    //     vtable out of whatever the frame happened to hold. That one is an access violation,
+    //     not a subtlety.
+    //
+    // The guard is what the cleanup was missing: a boolean beside the slot, false until the
+    // initializing store has run, and cleared before each disposal rather than after it. Read
+    // and cleared in that order, the second visitor to a variable always finds it false -
+    // whether it arrives because the first one threw, or because the first one never ran.
+    //
+    // A `using` in a plain block has no guard and takes the direct path: with no cleanup
+    // region there is no second visitor, and nothing to be wrong about.
+    mlir::LogicalResult mlirGenDisposeOne(mlir::Location location, ts::VariableDeclarationDOM::TypePtr varDecl,
+                                          mlir::Value varValue, const GenContext &genContext)
+    {
+        auto disposeGuard = varDecl->getDisposeGuard();
+        if (!disposeGuard)
+        {
+            auto callResult = mlirGenCallThisMethod(location, varValue, SYMBOL_DISPOSE, undefined, {}, genContext);
+            EXIT_IF_FAILED(callResult);
+            return mlir::success();
+        }
+
+        auto isLive = builder.create<mlir_ts::LoadOp>(location, getBooleanType(), disposeGuard);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, isLive, /*withElseRegion=*/false);
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+        auto notLive = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, notLive, disposeGuard);
+
+        auto callResult = mlirGenCallThisMethod(location, varValue, SYMBOL_DISPOSE, undefined, {}, genContext);
+        EXIT_IF_FAILED(callResult);
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
         // as in mlirGenReleaseOwned: the walk outwards ends at the function
@@ -1049,8 +1099,7 @@ class MLIRGenImpl
                     llvm_unreachable("can't find local variable");
                 }
 
-                auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, *genContext);
-                EXIT_IF_FAILED(callResult);            
+                EXIT_IF_FAILED(mlirGenDisposeOne(location, vi, varInTable.first, *genContext));
             }
 
             // remove when used
@@ -1226,7 +1275,7 @@ class MLIRGenImpl
         VariableDeclarationInfo(CompileOptions& compileOptions) : compileOptions(compileOptions), variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
             isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false},
-            needsIdentityStorage{false}, typeAndInitResolved{false}
+            needsIdentityStorage{false}, typeAndInitResolved{false}, disposeGuard()
         {
         };
 
@@ -1490,6 +1539,10 @@ class MLIRGenImpl
         bool isUsed;
         bool needsIdentityStorage;
         bool typeAndInitResolved;
+
+        // See createLocalVariable: set only for a `using` declaration hoisted out in front of a
+        // TryOp, and carried onto the VariableDeclarationDOM that mlirGenDisposable walks.
+        mlir::Value disposeGuard;
     };
 
     // Will this declaration make its scope the owner of what it holds - a retain now, a release
@@ -1624,6 +1677,19 @@ class MLIRGenImpl
 
                 variableDeclarationInfo.setStorage(varOpValue);
             }
+
+            // The dispose guard goes beside the storage, and for the same reason: it is read
+            // from the cleanup region, so it has to be declared where that region can see it.
+            // Its initial value is what makes it useful - the slot is not disposable until the
+            // initializer's own store has run, and that store is back in the try body.
+            if (variableDeclarationInfo.allocateOutsideOfOperation && variableDeclarationInfo.varClass.isUsing)
+            {
+                auto notYetLive =
+                    builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+                variableDeclarationInfo.disposeGuard = builder.create<mlir_ts::VariableOp>(
+                    location, mlir_ts::RefType::get(getBooleanType()), notYetLive,
+                    builder.getBoolAttr(false), builder.getIndexAttr(0));
+            }
         }
 
         // init must be in its normal place
@@ -1673,6 +1739,17 @@ class MLIRGenImpl
             // {
             //     storeOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
             // }
+
+            // Armed after the store, never before it: everything between the guard's own
+            // declaration and this point is the initializer, and an exception thrown there -
+            // out of the constructor, most of all - has to reach a cleanup that disposes
+            // nothing.
+            if (variableDeclarationInfo.disposeGuard)
+            {
+                auto live =
+                    builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
+                builder.create<mlir_ts::StoreOp>(location, live, variableDeclarationInfo.disposeGuard);
+            }
         }
 
         return mlir::success();

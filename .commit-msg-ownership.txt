@@ -1,0 +1,29 @@
+Let a cleanup keep its releases when a disposal throws
+
+A scope's cleanup region runs while an exception is already unwinding, and
+TryOpLowering marks every call in a scope's body with that scope's landing
+pad - which reaches into the cleanup regions of the scopes nested inside it.
+The inner cleanup's [Symbol.dispose]() therefore became an invoke unwinding
+to the outer cleanup, and the ts.ReleaseSlot written after it was stepped
+over: the reference that scope took was never given back. This is what the
+ownership verifier had been reporting on the two nested `using` scopes of
+00break_continue_scope_exit.ts.
+
+The fix removes the edge rather than adding a release. A function's outermost
+cleanup has always used a plain call, because nothing encloses it and there
+was no landing pad to mark it with; skipping calls written inside a nested
+cleanup region makes every cleanup agree with the one that was already right.
+The price is the C++ rule - a disposal that throws while unwinding terminates
+instead of continuing outwards - and only in principle, since a throwing
+[Symbol.dispose]() fails to JIT today in every model, un-nested included.
+
+Wrapping the cleanup's disposals in a TryOp of their own was tried first and
+failed 24 tests: a TryOp inside a TryOp is the construct section 9.11 already
+records as broken.
+
+The verifier now runs in ctest as well. Both of its real findings came from a
+hand-run sweep that nothing repeated, which is why this pair stayed open;
+verify-ownership.cmake is that sweep over every corpus file, in eight shards
+of about four seconds. Suite 2,641 -> 2,649, all green.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

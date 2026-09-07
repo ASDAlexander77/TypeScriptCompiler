@@ -237,6 +237,7 @@ add_test(NAME test-compile-00-try-using-catch COMMAND test-runner "${PROJECT_SOU
 add_test(NAME test-compile-00-throw-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 add_test(NAME test-compile-00-throw-inlined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
 add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 add_test(NAME test-compile-00-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
 add_test(NAME test-compile-00-owned-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
@@ -642,6 +643,7 @@ add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURC
 add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
 add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 add_test(NAME test-jit-00-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
 add_test(NAME test-jit-00-owned-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
@@ -1164,6 +1166,8 @@ add_test(NAME test-jit-rc-throw-inlined COMMAND test-runner -jit -mm=rc "${PROJE
 add_test(NAME test-jit-none-throw-inlined COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
 add_test(NAME test-jit-rc-using-nested-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 add_test(NAME test-jit-none-using-nested-scopes COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-jit-rc-using-unwind-progress COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+add_test(NAME test-jit-none-using-unwind-progress COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 add_test(NAME test-jit-rc-break-continue-scope-exit COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 add_test(NAME test-jit-none-break-continue-scope-exit COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
 add_test(NAME test-jit-rc-owned-fields COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
@@ -1519,6 +1523,7 @@ set(TSLANG_CORPUS
     00union_to_any.ts
     00union_type.ts
     00using_nested_scopes.ts
+    00using_unwind_progress.ts
     00var_bindings.ts
     00vars.ts
     00void.ts
@@ -1710,6 +1715,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00tuple.ts
     00union_type.ts
     00using_nested_scopes.ts
+    00using_unwind_progress.ts
     03disposable.ts
     04disposable.ts
     )
@@ -1745,6 +1751,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00throw_inlined.ts
     00try_using_catch.ts
     00using_nested_scopes.ts
+    00using_unwind_progress.ts
     03disposable.ts
     04disposable.ts
     )

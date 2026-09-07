@@ -4781,6 +4781,9 @@ refcount question:
 - It is the unwind target of the `using` initializer's own `new` as well, so a constructor that
   throws leaves the cleanup disposing a slot nothing was ever stored into.
 
+Both are fixed in section 9.63, and both turned out to be testable - the "no test could be
+written" above is about the path *this* section fixes, not about those two.
+
 **The verifier now runs in `ctest`.** Both of its real findings - the break/continue scope-exit bug
 of section 9.18 and this pair - came from a sweep run by hand that nothing repeated, which is why
 this pair sat open as long as it did. `verify-ownership.cmake` is that sweep, over every corpus
@@ -4788,3 +4791,78 @@ file, in eight shards of about four seconds: `test-ownership-verifier-0..7`. It 
 in the suite that reads the IR rather than the program's output, and that is exactly why it earns
 its place - a reference nobody gives back changes no answer, so nothing else here can see one.
 Suite 2,641 -> 2,649, all green.
+
+### 9.63 How far the block got (the two defects 9.62 left open)
+
+Section 9.62 read both of these off the IR, named them, and left them: a cleanup region standing
+in for a scope exit whose progress it cannot see. Both are now fixed, and both turn out to be
+observable, which 9.62 did not expect.
+
+**They are not the path 9.62 could not test.** That section closed with "no test could be written
+for the path this fixes", because a `[Symbol.dispose]()` that throws while unwinding fails to JIT
+on a missing `??_7type_info@@6B@`. That is true of the path *9.62* fixed - a disposal inside a
+nested cleanup region. Neither of these two is that path. One needs a constructor that throws and
+the other a disposal that throws on the **normal** exit, and both of those work today:
+
+| | before | after |
+| --- | --- | --- |
+| `using r = new Boom(true)`, constructor throws | `0xC0000005` | disposes nothing, throw reaches the caller |
+| `[Symbol.dispose]()` throws on normal exit | `0x80000003` | disposes once, throw reaches the caller |
+
+The first reads a vtable out of whatever the frame happened to hold, because the cleanup disposes
+a slot the initializing store never reached. The second is the double disposal: the body's own
+disposal is a call in the try body, so it unwinds to that same cleanup, and the cleanup disposes
+the very same variable again - the second throw arriving while the first is still unwinding, which
+terminates.
+
+**One guard answers both, because they are one question asked twice.** A boolean beside the
+hoisted slot, declared in front of the `TryOp` with the slot so the cleanup can see it, set false
+there and true only after the initializing store; every disposal reads it, clears it, and disposes
+only if it was set. Cleared **before** the call rather than after it, which is the whole of the
+first defect - after the call is never reached when the call is what threw. `mlirGenDisposeOne` is
+the change; a `using` in a plain block has no `TryOp`, no cleanup, no second visitor, and so no
+guard.
+
+```
+%5 = ts.Variable()                    // the using slot, hoisted
+%7 = ts.Variable(false)                // its guard, hoisted beside it
+ts.Try {
+  %11 = call @Boom..new; call @Boom.constructor  // throws here -> cleanup, guard still false
+  ts.Store(%11, %5)
+  ts.Store(true, %7)                   // armed only now
+  ...
+  ts.If(load %7) { store false, %7; call dispose }   // throws here -> cleanup, guard now false
+  ts.ReleaseSlot(%5)
+} cleanup {
+  ts.If(load %7) { store false, %7; call dispose }
+  ts.ReleaseSlot(%5)
+}
+```
+
+`ts.ReleaseSlot` needs no guard and gets none: the reference is owed exactly once whichever way
+the block is left, and an owned local hoisted in front of a `TryOp` already starts as null under
+`rc` (`VariableOpLowering`), which the release routines treat as nothing to do. The two debts are
+different debts - a disposal is a call the program wrote, a release is a count - and only one of
+them is idempotent in the wrong direction.
+
+**`00using_unwind_progress.ts` is the test, and every case in it was checked against a build with
+the fix taken back out** - not with the fix switched off, which 9.60 records as a different and
+worse build, but with the three files restored to their committed state. Six cases, three models:
+
+| case | control build | with the fix |
+| --- | --- | --- |
+| normal exit disposes once | passes | passes |
+| throw after the declaration, cleanup disposes | passes | passes |
+| constructor throws | `0xE06D7363` / assert | passes |
+| second of two constructors throws | `0x80000003` / assert | passes |
+| disposal throws | `0x80000003` | passes |
+| the same in a hand-written `try` body | `0xE06D7363` / assert | passes |
+
+The first two are controls in the strict sense: they are what a fix that simply skipped the
+cleanup would break, and they pass on both builds. The fourth is why "skip everything" is not the
+fix - one declaration completed and owes a disposal, the next never existed. And the `none` column
+is the reason to run all three models rather than one: where `gc` and `rc` crash, `none` reaches
+the assertion and names the case, because an uninitialised slot holds something different under
+each allocator. Same bug, three faces - the pattern of section 9.55.
+
+Suite 2,649 -> 2,659, all green, ownership verifier included.

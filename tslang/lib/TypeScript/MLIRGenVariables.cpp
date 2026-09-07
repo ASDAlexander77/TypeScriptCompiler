@@ -241,6 +241,7 @@ namespace mlirgen
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
         if (genContext.usingVars != nullptr && varDecl->getUsing())
         {
+            varDecl->setDisposeGuard(variableDeclarationInfo.disposeGuard);
             genContext.usingVars->push_back(varDecl);
         }
 
