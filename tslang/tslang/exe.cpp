@@ -396,13 +396,33 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // default lib path (per-build subfolder: debug/release must match how
         // this program is being compiled so the CRT and default-lib binaries agree).
         // Keyed on --di (generate debug info): with debug info use the debug lib.
-        auto defaultLibBuildDir = compileOptions.generateDebugInfo ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE;
-        auto defaultLibSubDir = std::string(shared ? DEFAULT_LIB_DIR "/dll/" : DEFAULT_LIB_DIR "/lib/") + defaultLibBuildDir;
-        defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir));
+        // ...and per memory model: the default lib allocates the way the model it was built for
+        // allocates, so a `gc` build linked into an `-mm=rc` program would drag Boehm in and hand
+        // back objects this program's ownership rules do not describe. See getDefaultLibSubDir.
+        auto defaultLibSubDir = getDefaultLibSubDir(shared, compileOptions.generateDebugInfo,
+                                                    memoryModelName(compileOptions.memoryModel));
+        auto defaultLibDir = mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir);
+
+        // Checked here rather than left to the linker. mergeWithDefaultLibPath only joins the
+        // path, so a model that has not been built reaches lld as a `-L` to nowhere and comes
+        // back as "cannot open input file 'TypeScriptDefaultLib.lib'", which says nothing about
+        // which model is missing or how to get it. Deliberately not a fallback to another
+        // model's build either: the wrong one links and then misbehaves at run time, which is
+        // far harder to diagnose than a directory that is not there.
+        if (!defaultLibDir.empty() && !llvm::sys::fs::is_directory(defaultLibDir))
+        {
+            llvm::errs() << "error: no default library built for -mm="
+                         << memoryModelName(compileOptions.memoryModel) << ": " << defaultLibDir
+                         << " does not exist. Build it (see the default-lib build scripts), "
+                         << "or compile with --no-default-lib.\n";
+            return 1;
+        }
+
+        defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
         if (!defaultLibPathOpt.empty())
         {
-            args.push_back(defaultLibPathOpt.c_str());    
-        }        
+            args.push_back(defaultLibPathOpt.c_str());
+        }
     }    
 
     if (compileOptions.needsGCRuntime())

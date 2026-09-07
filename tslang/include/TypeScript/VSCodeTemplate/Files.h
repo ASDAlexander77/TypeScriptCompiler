@@ -316,16 +316,22 @@ enable_language(TSLANG)
 # Include folders
 include_directories(${CMAKE_TSLANG_DIR}/defaultlib)
 
-# The compiled default lib is split into per-build subfolders (debug/release);
-# pick the one matching this build so the CRT and default-lib binaries agree.
+# The compiled default lib is split into per-build subfolders (debug/release) and then per
+# memory model (gc/rc/none); pick the pair matching this build, so that the CRT, the allocator
+# and the default-lib binaries all agree. A library built for one model cannot be linked into
+# a program built for another.
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
 	set(TSLANG_DEFAULTLIB_BUILD "release")
 else()
 	set(TSLANG_DEFAULTLIB_BUILD "debug")
 endif()
 
+if (NOT DEFINED TSLANG_MEMORY_MODEL)
+	set(TSLANG_MEMORY_MODEL "gc")
+endif()
+
 # Lib folders
-link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD})
+link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD}/${TSLANG_MEMORY_MODEL})
 
 # set options
 if (CMAKE_BUILD_TYPE STREQUAL "Release")

@@ -356,12 +356,16 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     {
         // per-build subfolder (debug/release) must match the JIT compilation mode.
         // Keyed on --di (generate debug info): with debug info use the debug lib.
-        auto defaultLibBuildDir = compileOptions.generateDebugInfo ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE;
+        // ...and per memory model, for the same reason the linker path is: the default lib
+        // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
+        auto defaultLibSubDir =
+            getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
+                                memoryModelName(compileOptions.memoryModel));
         clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(),
 #ifdef WIN32
-            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/" DEFAULT_LIB_NAME ".dll"
+            defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"
 #else
-            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/lib" DEFAULT_LIB_NAME ".so"
+            defaultLibSubDir + "/lib" DEFAULT_LIB_NAME ".so"
 #endif
         ));
     }      

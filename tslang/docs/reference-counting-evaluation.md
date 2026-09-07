@@ -1040,6 +1040,9 @@ same way, and giving the runner a per-side model would be more plumbing than the
 worth. The marker's *presence* is covered by all of them, which is the part that could break
 something.
 
+> **Closed by §9.77**: the default lib is now built per memory model, and a program links the
+> one matching its own `-mm=`.
+
 **The consequence to keep in view:** the default lib is GC-built. Under `-mm=rc` everything it
 allocates crosses a boundary and therefore leaks. Avoiding a per-model default lib is what the
 allow-and-leak policy bought — this is the price of it, and it means `-mm=rc` will not be
@@ -5831,3 +5834,60 @@ shared-library feature is called covered.
 5ao. **DONE, §9.76** - two statically linked collectors, one per binary. Not an ownership bug and
    not reference counting's: `rc` and `none` were always correct here, because neither has a
    collector to get this wrong.
+
+### 9.77 A default library per memory model
+
+The largest instance of §9.7's cross-model leak is closed. It was never a subtle one: **every
+program that does not pass `--no-default-lib` linked a garbage-collected standard library**, so
+under `-mm=rc` everything the standard library allocated crossed a model boundary and was never
+reclaimed. The whole corpus runs with `--no-default-lib`, which is why the arc got this far
+without tripping over it.
+
+Measured on 2 million string concatenations through the default library:
+
+| | before | after |
+| --- | --- | --- |
+| `-mm=gc` | 5.7 MB | 5.7 MB |
+| `-mm=rc` | *(a gc library, leaking)* | **4.1 MB** |
+| `-mm=none` | 218.8 MB | 218.8 MB |
+
+`rc` is at the allocator's floor and below `gc`, on a program made entirely of standard-library
+allocation. `none` is the largest column, so nothing was elided.
+
+**The library is not model-neutral, which is why one build could never have served.** Under `gc`
+it allocates through Boehm and pulls `libgc` in with it; under `rc` it initialises the block
+header's reference count and follows the +1 return convention (§9.24); under `none` it does
+neither. The difference is visible in the artifacts: the `gc` build of
+`TypeScriptDefaultLib.lib` carries `GC_malloc` references and the `rc` and `none` builds carry
+none, and a hello-world linked against them comes out 335 KB under `gc` against 145 KB under
+`rc` - the collector is simply not there any more.
+
+**Layout.** `defaultlib/{lib,dll}/{debug,release}/{gc,rc,none}/`, one directory per (kind, build,
+model). The model directory is named by `memoryModelName()`, the same function that spells the
+`-mm=` flag and the shared-library marker symbol, so the three cannot drift apart.
+`getDefaultLibSubDir` in `Defines.h` composes it and both consumers - the linker path in
+`exe.cpp` and the JIT's shared-library list in `jit.cpp` - go through it.
+
+**No fallback, and a diagnostic rather than a linker error.** Asking for a model that has not
+been built now says so:
+
+```
+error: no default library built for -mm=rc: ...\defaultlib\lib\release\rc does not exist.
+Build it (see the default-lib build scripts), or compile with --no-default-lib.
+```
+
+Without the check it reached lld as a `-L` to nowhere and came back as `cannot open input file
+'TypeScriptDefaultLib.lib'`, which names neither the model nor the remedy. Falling back to
+another model's build would be worse than either: it links, and then misbehaves at run time.
+
+**Building it.** `build.bat` builds all three models for both configurations (twelve artifacts);
+`build.bat release rc` builds one. The install step needed no change - its `xcopy /e` already
+copies whatever subdirectories are there.
+
+One leftover worth knowing: the artifacts at the *old* paths (`lib/release/TypeScriptDefaultLib.lib`
+and friends, with no model directory) are now dead, since nothing looks there any more. The build
+script clears only the model directory it is writing, so they survive until deleted by hand.
+
+> **§9.7's larger case is closed by §9.77.** The default lib is now built per model and a
+> program links the one matching its own `-mm=`. What remains of §9.7 is the general mixed-link
+> question for *user* libraries, where the policy is unchanged: allow, warn, and leak.

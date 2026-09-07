@@ -1,6 +1,8 @@
 #ifndef DEFINES_H_
 #define DEFINES_H_
 
+#include <string>
+
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define BUILTIN_FUNC_ATTR_NAME "__builtin"
 #define GENERIC_ATTR_NAME "__generic"
@@ -242,6 +244,24 @@
 // the defaultlib root.
 #define DEFAULT_LIB_BUILD_DIR_RELEASE "release"
 #define DEFAULT_LIB_BUILD_DIR_DEBUG "debug"
+
+// ...and then per memory model, because a default lib is not model-neutral. Under `-mm=gc` it
+// allocates through Boehm and drags libgc in with it; under `-mm=rc` it initialises the block
+// header's reference count and follows the +1 return convention (§9.24); under `-mm=none` it
+// does neither. Linking one model's library into another model's program is the case §9.7
+// warns about, and it is the largest instance of it, since every program that does not pass
+// `--no-default-lib` links this one.
+//
+// Layout: defaultlib/{lib,dll}/{debug,release}/{gc,rc,none}/. The model name is exactly
+// `memoryModelName()`, so the directory and the `-mm=` flag cannot drift apart.
+#define DEFAULT_LIB_KIND_STATIC "lib"
+#define DEFAULT_LIB_KIND_SHARED "dll"
+
+inline std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel)
+{
+    return std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC) + "/" +
+           (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
+}
 
 #define DEBUG_SCOPE "current"
 #define CU_DEBUG_SCOPE "compileUnit"

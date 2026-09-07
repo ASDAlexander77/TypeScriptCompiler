@@ -90,13 +90,27 @@ A `WeakRef<T>` that lets you declare a back-reference as non-owning is designed 
 implemented; see `tslang/docs/reference-counting-evaluation.md` §9.8. When it lands it will be
 the fourth option here, and it does not change anything above.
 
+## The standard library
+
+The standard library is built once per memory model, and your program links the build matching
+its own `-mm=`. Nothing to configure — the compiler picks it.
+
+It has to work that way: the library allocates the way the model it was built for allocates.
+The `-mm=gc` build calls into Boehm and brings `libgc` with it; the `-mm=rc` build maintains
+reference counts and brings no collector at all. A hello-world is 335 KB under `-mm=gc` and
+145 KB under `-mm=rc` for exactly that reason.
+
+If the build for your model is missing, the compiler says so and names the directory rather
+than falling back to another model's copy — that would link and then misbehave at run time.
+Build them with the default library's `build.bat`, which produces all three.
+
 ## Other limits of `-mm=rc`
 
 - **Objects crossing between differently-managed modules are never freed.** If you link a
-  module built `-mm=rc` against one built `-mm=gc` — including the standard library, which is
-  built with garbage collection — anything allocated on the other side leaks rather than being
-  freed twice. The compiler warns when it can see the mismatch. Building everything with the
-  same `-mm=` avoids it.
+  module built `-mm=rc` against one built `-mm=gc`, anything allocated on the other side leaks
+  rather than being freed twice. The compiler warns when it can see the mismatch. Building
+  everything with the same `-mm=` avoids it. (The standard library is not affected — see
+  above.)
 - **Counts are not atomic.** `-mm=rc` is single-threaded today.
 
 ## Shared libraries and `-mm=gc`
