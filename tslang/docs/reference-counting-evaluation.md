@@ -5504,7 +5504,8 @@ with `scripts/measure_memory_model.ps1` at `c3f629e4`, AOT, `--opt --opt_level=3
 
 `raytrace` reclaims 92% of what `none` leaks and remains the one program where `rc` is behind
 `gc` rather than ahead of it - which is the honest headline, and a less flattering one than the
-6.2 that was being quoted. `nbody` allocates almost nothing per step, so `rc` and `none` agree
+6.2 that was being quoted. **Superseded within the hour: §9.73 found what that gap was, and
+`raytrace` is now 4.1 MB, flat at every image size and below `gc`.** `nbody` allocates almost nothing per step, so `rc` and `none` agree
 and `gc` pays for its runtime. Quote these rather than anything from §9.52-§9.61.
 
 **And the 0.3 MB that section 9.71 attributed to this work is not real either.** Measuring
@@ -5518,3 +5519,123 @@ The lesson worth keeping is smaller than the finding: **a number and the tool th
 travel together.** Three sections' worth of memory figures went into this document without
 recording which harness took them, and the one line that would have prevented an hour of
 bisecting is the harness name beside the number.
+
+### 9.73 The branches of a conditional disagreed about ownership (5ap)
+
+`raytrace` under `rc` is **3.8 MB at every image size**, flat, against `gc`'s 5.5 and `none`'s
+10.8 to 445.0. It was 81 bytes per pixel above that floor an hour ago, and the whole of it was
+one line of TypeScript.
+
+**Finding it started from the corrected baseline.** §9.72 left `raytrace` as the one program
+where `rc` (8.9 MB) was behind `gc` (5.8). Rendering at four sizes says what kind of cost that
+is - a fixed floor, or something per pixel:
+
+| pixels | rc | none |
+| --- | --- | --- |
+| 64x64 | 4.5 | 11.1 |
+| 128x128 | 5.4 | 31.8 |
+| 256x256 | 9.2 | 114.5 |
+| 512x512 | 24.5 | 445.3 |
+
+A two-point fit on the extremes predicts the two middle rows to within 0.06 MB in both columns:
+`rc` = 4.18 MB + **81.3 bytes/pixel**, `none` = 4.21 MB + 1764 bytes/pixel. So a floor both
+share, and a real per-pixel retention of 4.6% of everything allocated. §9.59 had found a *flat
+37%* by the same method, so that leak was gone; this was a smaller, different one.
+
+**Four hypotheses died before the right one.** Worth recording, because each was plausible and
+each cost only one measurement:
+
+| hypothesis | test | result |
+| --- | --- | --- |
+| the two arrows built per pixel inside `getPoint` | hoist them, then delete them | 24.2 to 24.5 - nothing, and `none` does not move either, so at `-O3` they never allocated |
+| `Intersection` object literals through an interface (§9.59's own suspect) | make `Intersection` a class - **the measurement §9.59 said could not be taken until 5aj was fixed** | 24.2 to 24.6 - nothing |
+| the `{ start, dir }` ray literal in the reflection path | hoist it into a local | 24.6 - nothing |
+| `traceRay` returning the borrowed global `Color.background` | return a fresh `Color` instead | 24.6 - nothing |
+
+Splitting `shade` into its two halves is what localised it. With the 4.1 MB floor subtracted:
+
+| variant | rc excess | none excess | reclaimed |
+| --- | --- | --- | --- |
+| baseline | 20.1 | 440.9 | 95.4% |
+| no natural colour, reflection kept | 18.2 | 149.0 | 87.8% |
+| **no reflection, natural colour kept** | **1.2** | 243.9 | **99.5%** |
+
+All of it was in the reflection path, and stepping `maxDepth` 0,1,2,3,5 showed the leak appear
+the moment reflection is enabled at all and then decay geometrically like the work itself - a
+fixed *share* of that path, not something accumulating with depth. What distinguishes that path
+is one line in `shade`:
+
+```typescript
+let reflectedColor = (depth >= this.maxDepth) ? Color.grey : this.getReflectionColor(...);
+```
+
+Rewriting **just that ternary** as an `if`/`else` with an assignment: `rc` 24.6 to **6.4 MB**,
+`none` unchanged at 445.3.
+
+**The bug.** A conditional expression builds a `ts.If` with a result, and its branches hand back
+references on different terms. Reduced to 14 lines, `cond ? aGlobal : make(n)` in a loop:
+
+| | rc | none |
+| --- | --- | --- |
+| ternary | **56.9** | 56.9 |
+| the same thing as `if`/`else` | **4.1** | 56.9 |
+
+Identical allocation, and reference counting reclaimed *nothing at all* through the ternary. The
+IR says why in one attribute:
+
+```mlir
+// ternary                                   // if / else
+%9 = "ts.CallIndirect"(...) {__owned_result} %12 = "ts.CallIndirect"(...) {__owned_result,
+                                                                          __owned_result_consumed}
+"ts.Result"(%9)                              "ts.ReleaseSlot"(%5)
+...                                          "ts.Store"(%12, %5)
+%5 = "ts.Variable"(%4) {__owned}
+"ts.RetainSlot"(%5)      // a SECOND owner
+```
+
+The call's +1 escapes the region through `ts.Result` and nobody takes it over, while the
+receiver outside retains as well: two owners, one release. §9.30 cannot reach it and says so in
+its own terms - the value's only user is a terminator, and releasing a value handed to a
+successor would free it while it is still live.
+
+**The fix makes the branches agree before anything outside looks.** Whichever branch borrows
+takes a reference of its own, so that every branch yields +1; the `ts.If` result then carries a
+reference exactly as a call's result does, and the ordinary machinery applies - a receiver takes
+it over, or §9.30 gives it back at the end of the block. `consumeConditionalResults` in
+`OwnedReturnConsumptionPass`.
+
+**Retaining the borrowed side, rather than releasing the owned one, is the whole of the care
+here.** There is no point inside the region at which the owned value could safely be released:
+the receiver's retain has not happened yet, so releasing there frees a live value. That is not
+a theoretical preference - building exactly that mistake (mark the result owned, consume the
+receiver's retain, skip the retain on the borrowing branch) makes
+`00conditional_owned_result.ts` fail at both optimisation levels with "a conditional's result
+was freed while still referenced". The test has teeth in the dangerous direction, which is the
+only direction that matters, and it holds results from both branches and allocates over them
+before reading them back, because a freed block keeps its contents until something reuses it.
+
+**Result.** `raytrace` is flat at 3.8 MB from 64x64 to 512x512 - the per-pixel retention is not
+reduced but *gone* - and `rc` is now below `gc` at every size. Suite 2,684 of 2,684, one
+disabled (5ao). The ownership verifier is clean across all 496 corpus files.
+
+| program | gc | rc | none |
+| --- | --- | --- | --- |
+| `raytrace.ts` (256x256) | 5.8 | **4.1** | 114.5 |
+| `nbody.ts` | 5.6 | **4.1** | 4.1 |
+| cross-module, 300k imported calls (§9.71) | 5.7 | **4.1** | 18.0 |
+
+Every one of those is at the allocator's floor. Supersedes the table in §9.72, which was
+measured before this.
+
+5ap. **DONE, §9.73 - a conditional expression whose branches disagree about ownership.** The
+   allocating branch's +1 escaped through `ts.Result` unclaimed while the receiver retained
+   separately. `cond ? borrowed : f()` is not a corner of the language, and one such line held
+   18 of `raytrace`'s remaining 20 MB.
+
+**What this says about the method.** §9.59 named three suspects for `raytrace`'s residue and the
+real cause was none of them - it was not any *kind of value*, it was a *control-flow shape* that
+no amount of staring at allocation sites would have suggested. What found it was bisecting the
+program by deleting halves of the work and watching which half took the leak with it. Four
+one-measurement hypotheses cost less than any one of them would have cost to reason about, and
+the §9.59 suspect that had been waiting on 5aj since it was filed turned out, once finally
+measurable, to be innocent.

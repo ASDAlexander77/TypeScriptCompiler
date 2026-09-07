@@ -1278,6 +1278,7 @@ add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
     00add_promotes_both_operands.ts
+    00conditional_owned_result.ts
     00alloc_in_catch.ts
     00any_compare.ts
     00any_generic_equals.ts

@@ -186,7 +186,121 @@ class OwnedReturnConsumptionPass
             op->erase();
         }
 
+        consumeConditionalResults(mth, module);
+
         releaseDiscardedTemporaries(mth, module);
+    }
+
+    // A conditional expression whose branches disagree about ownership.
+    //
+    // `cond ? a : f()` builds a `ts.If` with a result, and the two branches hand back references
+    // on different terms: `f()` produces a +1 that somebody must take over, while `a` is
+    // borrowed from wherever it already lives. The receiver outside can only do one thing, and
+    // what it does is retain - so the +1 from the call side is left with no owner at all.
+    //
+    // §9.30 cannot reach it, and says so in its own terms: the value's only user is `ts.Result`,
+    // a terminator, and releasing a value handed to a successor would free it while it is still
+    // live. So the call escapes the region unconsumed and the branch that allocates leaks every
+    // time it is taken. This is not a corner of the language - it is `x = cond ? y : f()` - and
+    // in `raytrace.ts` one such line held **18 of the 20 MB** reference counting had left on the
+    // table. Written as `if`/`else` with an assignment the same program reclaims everything,
+    // because then each branch stores into the slot and the store consumes.
+    //
+    // The fix is to make the branches agree before anyone outside looks: whichever branch
+    // borrows takes a reference of its own, so that every branch yields +1, and the `ts.If`
+    // result then carries a reference exactly the way a call's result does. From there the
+    // ordinary machinery applies - a receiver takes it over, or §9.30 gives it back at the end
+    // of the block. Retaining the borrowed side rather than releasing the owned one is what
+    // keeps this safe: there is no point inside the region at which the owned value could be
+    // released, because the receiver's retain has not happened yet.
+    void consumeConditionalResults(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        llvm::SmallVector<mlir::Operation *> toErase;
+
+        module.walk([&](mlir_ts::IfOp ifOp) {
+            if (ifOp.getNumResults() != 1)
+            {
+                return;
+            }
+
+            auto result = ifOp.getResult(0);
+            if (!mth.ownsHeapMemory(ifOp.getLoc(), result.getType()))
+            {
+                return;
+            }
+
+            // Already settled, either by this pass on an earlier op or where it was built.
+            if (ifOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+            {
+                return;
+            }
+
+            // What each branch hands back. Every region has to yield exactly one value, or this
+            // is a shape that is not understood and is left alone.
+            llvm::SmallVector<mlir_ts::ResultOp> yields;
+            for (auto &region : ifOp->getRegions())
+            {
+                if (region.empty())
+                {
+                    return;
+                }
+
+                auto resultOp = mlir::dyn_cast_or_null<mlir_ts::ResultOp>(region.back().getTerminator());
+                if (!resultOp || resultOp->getNumOperands() != 1)
+                {
+                    return;
+                }
+
+                yields.push_back(resultOp);
+            }
+
+            if (yields.size() < 2)
+            {
+                return;
+            }
+
+            // Only worth doing when some branch actually carries an unclaimed +1. Where every
+            // branch borrows, the receiver's retain is already the right and only answer.
+            auto carriesOwned = [&](mlir_ts::ResultOp resultOp) {
+                auto *definingOp = resultOp->getOperand(0).getDefiningOp();
+                return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                       !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
+                       definingOp->getParentRegion() == resultOp->getParentRegion();
+            };
+
+            if (llvm::none_of(yields, carriesOwned))
+            {
+                return;
+            }
+
+            for (auto resultOp : yields)
+            {
+                if (carriesOwned(resultOp))
+                {
+                    // The `ts.If` result now stands for this reference, so the producer's +1 has
+                    // an owner and must not also be released as a discarded temporary.
+                    resultOp->getOperand(0).getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME,
+                                                                    mlir::UnitAttr::get(&getContext()));
+                    continue;
+                }
+
+                mlir::OpBuilder builder(resultOp);
+                builder.create<mlir_ts::RetainOp>(resultOp->getLoc(), resultOp->getOperand(0));
+            }
+
+            ifOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+
+            if (auto *retain = findReceiverRetain(result))
+            {
+                ifOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                toErase.push_back(retain);
+            }
+        });
+
+        for (auto *op : toErase)
+        {
+            op->erase();
+        }
     }
 
   private:
