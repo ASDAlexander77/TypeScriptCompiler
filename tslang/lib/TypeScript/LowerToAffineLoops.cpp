@@ -1226,6 +1226,46 @@ struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundInd
 };
 
 
+// Does this operation sit in the cleanup region of a scope nested inside the one being lowered?
+//
+// It matters because everything in a cleanup region runs while an exception is already on its
+// way out. Giving a call written there an unwind edge to the enclosing scope's landing pad means
+// that if it throws, whatever the inner cleanup had left to do is stepped over - and what it has
+// left to do is give back the references its own locals took. The ownership verifier reports
+// exactly that on the nested `using` scopes of `00break_continue_scope_exit.ts`; see section 9.62.
+//
+// The outermost cleanup of a function has never had such an edge, because nothing encloses it,
+// so leaving these calls alone is what makes every cleanup agree with the one that was already
+// right. The price is the C++ rule: a `[Symbol.dispose]()` that throws while unwinding
+// terminates rather than continuing outwards.
+//
+// The walk goes all the way up rather than stopping at the scope being lowered - by this point
+// that scope's blocks have been inlined into the enclosing region, so it is no longer an
+// ancestor. That would misread a `TryOp` written *inside* a cleanup region, which nothing
+// generates: cleanup regions hold scope exits only, and a `TryOp` in one is the construct
+// section 9.11 records as already broken.
+static bool isInsideNestedCleanupRegion(mlir::Operation *op)
+{
+    for (auto *region = op->getParentRegion(); region != nullptr; region = region->getParentRegion())
+    {
+        auto *owner = region->getParentOp();
+        if (owner == nullptr)
+        {
+            break;
+        }
+
+        if (auto tryOp = dyn_cast<mlir_ts::TryOp>(owner))
+        {
+            if (region == &tryOp.getCleanup())
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
@@ -1548,6 +1588,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         {
             // TODO: check for nested ops for example in if block
             auto visitorCallOpContinue = [&](Operation *op) {
+                if (isInsideNestedCleanupRegion(op))
+                {
+                    return;
+                }
+
                 if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
                 {
                     tsContext->unwind[op] = landingBlock;

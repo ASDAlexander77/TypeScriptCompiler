@@ -11,6 +11,14 @@
 // Found by the ownership verifier (--verify-ownership) on its first run over the suite.
 // 00owned_locals.ts already had the shape and asserted only counts, which a missed dispose
 // does not change. See docs/reference-counting-evaluation.md section 9.18.
+//
+// The two scopes below that nest one `using` inside another - `bothScopes` and
+// `labelledContinue` - were the verifier's other two findings, and stayed open far longer:
+// the disposal in a scope's cleanup region used to unwind into the ENCLOSING scope's cleanup,
+// stepping over the release written after it. Nothing here asserts that, because nothing can:
+// the path is taken only when a disposal throws, and a throwing `[Symbol.dispose]()` does not
+// work at all today. The verifier is the test, and it now runs over the whole corpus in ctest
+// (test-ownership-verifier-*). See section 9.62.
 
 let disposed = 0;
 

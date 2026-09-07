@@ -4726,3 +4726,65 @@ Those five are in `00owned_early_return.ts`, and the last two are the ones that 
 cannot observe the double release they guard against - the second decrement reads a freed block's
 refcount and usually just returns - so the IR count is the evidence, and the corpus under `rc` and
 `none` in both tiers is the backstop. Suite 2,641/2,641.
+
+### 9.62 The two findings the verifier had been reporting all along
+
+`--verify-ownership` had two standing findings, both in `00break_continue_scope_exit.ts`,
+confirmed pre-existing when they first appeared (section 9.53) and left open since. They are the
+two nested `using` scopes - `bothScopes`, and the labelled `labelledContinue`:
+
+```
+00break_continue_scope_exit.ts:68:19: error: ownership: this slot takes a reference that some
+path out of the function never gives back
+```
+
+**What the path is.** A scope's cleanup region runs while an exception is already unwinding. The
+disposal in it is a call, and `TryOpLowering` marks every call in a scope's body with that scope's
+landing pad - which reaches into the cleanup regions of the scopes nested inside it, because those
+sit in its body. The inner cleanup's `[Symbol.dispose]()` therefore became an invoke unwinding to
+the *outer* cleanup, and the `ts.ReleaseSlot` written after it was stepped over. The outer cleanup
+releases its own slot and knows nothing of the inner one, so the reference is gone:
+
+```
+^bb8:                                    // the inner scope's cleanup
+  ts.Invoke(dispose, inner)[^bb9, ^bb12] // ^bb12 is the OUTER cleanup
+^bb9:
+  ts.ReleaseSlot(inner)                  // not on the ^bb12 edge
+^bb12:
+  ts.CallInternal(dispose, outer)
+  ts.ReleaseSlot(outer)                  // and never inner
+```
+
+**The fix is to remove the edge, not to add a release.** `^bb12` above is the function's outermost
+cleanup, and it has always used a plain call - nothing encloses it, so there was no landing pad to
+mark it with. Every cleanup now agrees with the one that was already right: a call written inside
+a nested cleanup region is skipped when a scope marks its body, so it stays a plain call.
+`isInsideNestedCleanupRegion` in `LowerToAffineLoops.cpp` is the whole change. The price is the
+C++ rule - a disposal that throws while unwinding terminates instead of continuing outwards - and
+it is a price only in principle: throwing from a `[Symbol.dispose]()` does not work at all today.
+A single, un-nested `using` whose disposal throws fails to JIT on a missing `??_7type_info@@6B@`
+in every model, which is why no test could be written for the path this fixes.
+
+**The first attempt was the obvious one and it was wrong.** Wrap the cleanup's disposals in a
+catch-less `TryOp` of their own whose cleanup gives the references back - correct by construction,
+and it silenced the verifier. It also failed 24 tests. A `TryOp` nested inside a `TryOp` is the
+construct section 9.11 records as already broken, and `00try_using_catch.ts`'s own comment says
+so in as many words. **The machinery a fix wants to reuse may be the machinery a known bug is
+about**; the test that fails will say so, but only after the change is built.
+
+**Two adjacent defects, read off the same IR and deliberately not fixed here.** Both are about the
+cleanup region standing in for a scope exit it cannot see the progress of, and neither is a
+refcount question:
+
+- The cleanup's landing pad is also the unwind target of the *body's* disposal, so a disposal that
+  throws in the body is followed by the cleanup disposing the same variable a second time.
+- It is the unwind target of the `using` initializer's own `new` as well, so a constructor that
+  throws leaves the cleanup disposing a slot nothing was ever stored into.
+
+**The verifier now runs in `ctest`.** Both of its real findings - the break/continue scope-exit bug
+of section 9.18 and this pair - came from a sweep run by hand that nothing repeated, which is why
+this pair sat open as long as it did. `verify-ownership.cmake` is that sweep, over every corpus
+file, in eight shards of about four seconds: `test-ownership-verifier-0..7`. It is the only check
+in the suite that reads the IR rather than the program's output, and that is exactly why it earns
+its place - a reference nobody gives back changes no answer, so nothing else here can see one.
+Suite 2,641 -> 2,649, all green.

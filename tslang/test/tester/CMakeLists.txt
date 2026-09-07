@@ -1812,6 +1812,22 @@ endforeach()
 # their compile and debug variants) for a test about floating point, where the memory model
 # has nothing to do with the answer.
 
+# The ownership verifier over every corpus file. It is the only check here that reads the IR
+# rather than the program's output, which is what makes it worth running: a reference nobody
+# gives back changes no answer, so nothing else in this suite can see one. See
+# verify-ownership.cmake for what it asks and why it is sharded.
+set(TSLANG_OWNERSHIP_SHARDS 8)
+math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
+foreach(ownership_shard RANGE ${ownership_last})
+    add_test(NAME test-ownership-verifier-${ownership_shard}
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DSHARD=${ownership_shard}"
+                     "-DSHARDS=${TSLANG_OWNERSHIP_SHARDS}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
+endforeach()
+
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
 # these run. The file pairs are the default model's, verbatim.
