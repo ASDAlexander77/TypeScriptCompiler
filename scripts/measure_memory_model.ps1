@@ -13,6 +13,7 @@
 # What section 9.52 insists on and is kept: the exit code is printed. A crashed process reports a
 # small number and looks like a win - section 9.43's famous 2.6 MB was a process that had died.
 param(
+    [string]$Second = "",
     [Parameter(Mandatory=$true)][string]$Source,
     [string[]]$Models = @("gc","rc","none"),
     [string]$Opt = "--opt --opt_level=3"
@@ -72,7 +73,17 @@ foreach ($m in $Models) {
     $compile = & "$bin/tslang.exe" --emit=obj $Opt.Split(' ') --no-default-lib "-mm=$m" $Source "-o=$obj" 2>&1
     if ($LASTEXITCODE -ne 0) { "{0,-5} COMPILE FAILED ({1})" -f $m, $LASTEXITCODE; $compile | Select-Object -Last 3; continue }
 
-    $link = & "$lld/lld.exe" -flavor link $obj "/out:$exe" $libs.Split(' ') `
+    # A second module is compiled to its own object and linked in, which is what test-runner
+    # does for the `import_*`/`export_*` pairs: same flags, same -mm, one link.
+    $objs = @($obj)
+    if ($Second -ne "") {
+        $obj2 = Join-Path $work ([System.IO.Path]::GetFileNameWithoutExtension($Second) + "-$m.obj")
+        $c2 = & "$bin/tslang.exe" --emit=obj $Opt.Split(' ') --no-default-lib "-mm=$m" $Second "-o=$obj2" 2>&1
+        if ($LASTEXITCODE -ne 0) { "{0,-5} COMPILE2 FAILED ({1})" -f $m, $LASTEXITCODE; $c2 | Select-Object -Last 3; continue }
+        $objs += $obj2
+    }
+
+    $link = & "$lld/lld.exe" -flavor link $objs "/out:$exe" $libs.Split(' ') `
         "/libpath:$gclib" "/libpath:$llvmlib" "/libpath:$lib" "/libpath:$vclib" "/libpath:$sdk" "/libpath:$ucrt" 2>&1
     if ($LASTEXITCODE -ne 0) { "{0,-5} LINK FAILED ({1})" -f $m, $LASTEXITCODE; $link | Select-Object -Last 3; continue }
 

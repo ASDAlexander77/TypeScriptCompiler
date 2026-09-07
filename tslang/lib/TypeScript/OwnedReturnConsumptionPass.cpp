@@ -666,13 +666,56 @@ class OwnedReturnConsumptionPass
     // Does every return of a heap-owning value in this function retain it first?
     //
     // Looked up rather than assumed, and answered "no" for anything unclear: a function with no
+    // A function this module only holds a declaration of: the definition is in another module,
+    // so there are no returns here to read and the body test above can never say yes. Refusing
+    // them all is what item 5al was - and it is not a small refusal. One imported method with a
+    // heap-returning signature also poisons the candidate set for its whole member name, so
+    // local classes' calls stop being consumed too. Measured on a two-module program whose work
+    // is an imported method returning a string, `rc` held 18.0 MB against `none`'s 18.0 and
+    // `gc`'s 5.7: reference counting reclaimed nothing whatsoever across a module boundary.
+    //
+    // Two things have to be true to say yes here, and both now are.
+    //
+    // First, it must be a tslang function rather than a foreign one. A `declare`d C function
+    // returning a `string` has no convention at all and must never be consumed; an imported
+    // tslang declaration carries `export`, re-printed from the exporting module's source, and a
+    // foreign one carries nothing. That is the whole test.
+    //
+    // Second, the defining module must return +1 (§9.24). If it was built `-mm=rc` it does:
+    // swept over the corpus, every one of the 36 exported functions with a body classifies as
+    // returning owned, and the only functions that fail the classification are `.next` methods
+    // of generator state objects, which are anonymous and internal and cannot be exported. If
+    // it was built `gc` or `none` it does not - but its blocks are now born
+    // HEAP_BLOCK_IMMORTAL, so the release this consumption adds is a no-op and the object
+    // leaks rather than being freed twice. That is section 4's agreed policy for a mixed link,
+    // and moving it into the object is what lets this say yes without asking which model the
+    // other module was built under - a question a static link cannot answer, because the import
+    // is resolved by re-parsing source before any artifact of it exists.
+    static bool importedFunctionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp)
+    {
+        if (!funcOp->hasAttr("export"))
+        {
+            return false;
+        }
+
+        for (auto resultType : funcOp.getFunctionType().getResults())
+        {
+            if (mth.ownsHeapMemory(funcOp.getLoc(), resultType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // body, a return whose retain is not in the same block, a return with no retain at all. A
     // false "no" costs a leak; a false "yes" frees a value the callee never retained.
     static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp)
     {
         if (funcOp.isExternal() || funcOp.getBody().empty())
         {
-            return false;
+            return importedFunctionReturnsOwned(mth, funcOp);
         }
 
         // A generator's returns are not the value its caller receives - the caller gets the

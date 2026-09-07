@@ -403,6 +403,17 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
+    // Same isolation the shared multi-file path uses, and for the same reason: the object files
+    // are named after the SOURCE stems, so two tests built from the same pair of sources - the
+    // gc, rc and none variants of one import/export pair, say - write and then delete each
+    // other's .obj under `ctest -j`. That only stayed hidden while every such pair was
+    // registered exactly once. The .txt/.err/.code output goes to the parent, where the runner
+    // reads it from.
+    batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
+    batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
+    batFile << "mkdir %WORKDIR%" << std::endl;
+    batFile << "cd %WORKDIR%" << std::endl;
+
     std::stringstream objs;
     auto isFirst = true;
     for (auto &file : files)
@@ -420,11 +431,14 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << std::endl;
 
     batFile << "del " << objs.str() << std::endl;
-    batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
-    batFile << "echo %ERRORLEVEL% > %FILENAME%.code" << std::endl;
+    batFile << "call " RUN_CMD "%FILENAME%.exe 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err" << std::endl;
+    batFile << "echo %ERRORLEVEL% > ..\\%FILENAME%.code" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
-    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
+    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;
+    batFile << "echo off" << std::endl;
+    batFile << "cd .." << std::endl;
+    batFile << "rmdir /s /q %WORKDIR%" << std::endl;
     batFile << "echo on" << std::endl;
     batFile.close();
 #else

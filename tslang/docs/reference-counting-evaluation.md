@@ -726,12 +726,12 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
-5an. **`+` coerces its right operand to the left operand's type instead of promoting both.**
-   Filed by §9.67, and not an ownership bug: every model, both tiers, both optimisation levels,
-   and constant operands too - `2 + 3.5` reads 5. `-`, `*` and `/` promote correctly, which points
-   at `+` being the operator that is also string concatenation and so fixes its result type before
-   looking at both operands. It is the right operand that is converted, not the result:
-   `1 + (-0.5)` reads 1.
+5an. **DONE, §9.70 - `+` uses the same promotion as every other arithmetic operator, once both
+   operands are unambiguously numeric.** Filed by §9.67, and not an ownership bug. §9.67 had seen
+   one of its three shapes: a control binary showed `+` narrowing its right operand to the left
+   one's type in *any* direction, so `true + 2.5` read 2 and `i8(100) + i32(1000)` read 76, as
+   well as `2 + 3.5` reading 5. Strings, `any` and unions keep the left-preferring rule that
+   string concatenation depends on.
 
 5am. **DONE, §9.68 - one flag, after §9.66 estimated it as an allocator rewrite.**
    `SectionMemoryManager(nullptr, /*ReserveAlloc=*/true)` reserves one contiguous block laid out
@@ -748,17 +748,24 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    bases match. Fix: place code below read-only data via `reserveAllocationSpace`, so the RVA-0
    sentinel can only fall on code, where nothing reads 0 as "none".
 
-5al. **A virtual or interface call on an imported class is never consumed.** Filed by §9.64 out
-   of what was left of 5o. An imported method has no body here, so `functionReturnsOwned`
-   declines it and one such candidate poisons its whole member name; every virtual and interface
-   refusal in the corpus is in an `import_*` file, and there are sixteen of them. The
-   classification is easy - an imported tslang function carries `export` where a `declare`d C
-   function carries nothing. The soundness is not: consuming its result is only right if the
-   defining module was built reference-counted, and a statically linked one carries no marker at
-   all, because the import is resolved by re-parsing its source before any artifact exists.
-   §9.7's agreed policy is to allow a mixed link and leak rather than double-free, so this is a
-   question about that policy rather than a task. Dominated by the same section's larger case:
-   the default lib is GC-built, so under `-mm=rc` everything it allocates crosses and leaks.
+5al. **DONE, §9.71 - an imported function's returned reference is taken over, and the soundness
+   the item stalled on was already provided.** Filed by §9.64 as a precision refinement worth a
+   couple of calls; it was worth all of it. `rc` and `none` agreed *to the decimal* on a
+   two-module program (18.0 MB each, `gc` 5.7), so reference counting reclaimed nothing at all
+   across a boundary. Now 3.8 MB - better than `gc`. The classification was easy as predicted
+   (`export` distinguishes an imported tslang function from a `declare`d C one). The soundness
+   was not a policy question after all: consumption *removes a receiver's retain* rather than
+   adding a release, so a foreign block's count goes to -1, which is `HEAP_BLOCK_IMMORTAL`, and
+   it leaks rather than being freed twice - §9.7's agreed answer, delivered by §9.24's
+   born-at-zero design. Checked across all nine exporter/importer model combinations. The
+   default-lib case is unchanged and still leaks, for the same reason it always did.
+
+5ao. **A shared library built `gc` and linked ahead of time frees strings the importing module
+   still holds.** Found by §9.71's new test and pre-existing - it fails with 5al's fix reverted
+   too. Only shared + `gc` + AOT; shared `rc`, shared `none`, static `gc` and shared `gc`
+   through the JIT all pass. Points at Boehm not tracing the importing module's roots into a
+   dynamically linked module's heap, which is the same family as the JIT-globals problem.
+   `test-compile-shared-export-import-owned-returns` is registered and DISABLED.
 
 5ak. **DONE, §9.61 - a jump is asked whether it leaves the block, not where it is written.** The
    release at the end of a loop body is skipped by an iteration that ends in `break` or
@@ -5289,3 +5296,142 @@ fine before this, where `let x = 1; print(x)` did not, because printing a number
 is the whole of what worked. Suite 2,668/2,668. `00owned_debug_info.ts` is registered as `test-compile-rc-debug-info`
 and is the only test in the suite that passes `--di` with `-mm=rc`, which is why the gap lasted
 as long as it did - nothing ran the combination.
+
+### 9.70 `+` promotes both operands (5an), and it was not only floats
+
+Fixed. `adjustTypesForBinaryOp`'s `PlusToken` case took the left operand's type and cast the
+right one to it. Every other arithmetic operator shares a promotion path that picks the *wider*
+of the two - a widest-first list, `syncTypes` casting both sides to the first type either of
+them already has - and `+` was the one operator not using it, because it is also string
+concatenation and so has to keep `x + 1` as concat when `x` is a string.
+
+The one-line shape of it, on `let i = 2; let f = 3.5; i + f`:
+
+```mlir
+%9 = "ts.Cast"(%8) : (!ts.number) -> si32          // 3.5 truncated to 3, before the add
+%10 = "ts.ArithmeticBinary"(%7, %9) : (si32, si32) -> si32
+```
+
+`+` now uses the shared promotion whenever **both** operands are unambiguously numeric, and
+keeps the old left-preferring behaviour for every other shape - strings, `any`, unions, objects
+with `[Symbol.toPrimitive]`, `undefined`, `null`. That boundary is the whole of the care needed
+here: `any` is not promotable, so `let x: any = "a"; x + 1` still takes the path it took before.
+
+**Three observable defects, not one.** Section 9.67 recorded the int-plus-float case. Measuring a
+control binary - the compiler rebuilt with the fix stashed - found the same truncation in two
+more shapes it had not looked at, and both are silent wrong answers rather than crashes:
+
+| expression | before | after |
+| --- | --- | --- |
+| `i + f`, `2 + 3.5` | 5 | 5.5 |
+| `1 + (-0.5)` | 1 | 0.5 |
+| `true + 2.5` | **2** | 3.5 |
+| `i8(100) + i32(1000)` | **76** | 1100 |
+
+76 is 1100 truncated into an `i8`. So this was never about floats: it was `+` narrowing its
+right operand to the left one's type in *any* direction, and a float fraction was simply the
+easiest way to notice. `f + i`, `2.5 + true` and `i32 + i8` were all correct already, because
+there the left operand was the wider one - which is exactly why a test written from one
+direction only would have passed.
+
+The control also settled a case that looked like a regression and was not: `any + number` fails
+to compile ("Binary operation is not supported for type: '!llvm.ptr'"), before this change and
+after it, identically.
+
+`00add_promotes_both_operands.ts` covers all of it, in the corpus so it runs under all three
+memory models and both optimisation levels. Five of its cases fail on the control and the rest
+are guards, which is the composition to want - the guards are the string-concatenation cases the
+left-preferring rule exists for.
+
+### 9.71 An imported function's result is taken over (5al)
+
+Fixed, and it was worth much more than the item said.
+
+5al was filed as a classification refusal with a soundness question attached:
+`functionReturnsOwned` reads a function's returns to decide whether it hands back a reference,
+an imported function has no body here to read, so every one of them was refused. The item then
+stalled on whether consuming such a result is sound at all, since a statically linked module
+carries no memory-model marker.
+
+**First, the size of it, which nobody had measured.** A two-module program whose work is an
+imported method returning a string, 300k calls, AOT, `--opt --opt_level=3`:
+
+| | before | after |
+| --- | --- | --- |
+| `rc` | **18.0 MB** | **3.8 MB** |
+| `gc` | 5.7 | 5.4 |
+| `none` | 18.0 | 17.6 |
+
+`rc` and `none` agreed *to the decimal* before this. Across a module boundary, reference
+counting was reclaiming nothing whatsoever - not "less than it could", nothing - and it now
+reclaims more than GC does on the same program. That is a different item from the one filed,
+which read as a precision refinement worth a couple of calls.
+
+It is also not confined to imported functions. The candidate set for a virtual call is every
+method in the module sharing the member name, so a single bodyless imported `M.Animal.speak`
+made `Dog.speak()` unclassifiable too, on a class defined entirely in this module.
+
+**Second, the soundness, which turned out to be already provided.** Two things have to hold.
+
+That the callee is a tslang function rather than a foreign one is easy and was always easy: an
+imported tslang declaration carries `export`, re-printed from the exporting module's source; a
+`declare`d C function returning a `string` carries nothing and must never be consumed.
+
+That the defining module returns +1 (section 9.24) is the part the item stalled on. Two
+measurements answer it. Sweeping the corpus with a counter on the classifier: of the functions
+that return a heap value, **36 of 36 exported ones with a body classify as returning owned**,
+and the only 16 that fail are `.next` methods of generator state objects - anonymous, internal,
+and not exportable. And for the mixed link the item was actually worried about, consumption
+*removes a receiver's retain* rather than adding a release, so a foreign block's count goes to
+-1, which is `HEAP_BLOCK_IMMORTAL`, and it leaks instead of being freed. That is section 4's
+agreed policy, and the born-at-zero design of section 9.24 was already delivering it.
+
+All nine exporter/importer model combinations were run to check that, and all nine produce the
+right answer and exit 0. The two mixed rows that matter hold their memory - `none` into `rc` at
+18.0 MB - rather than crashing.
+
+**A change I made and then took back out.** Believing the mixed link needed protecting, I had
+`_MemoryAlloc` write `HEAP_BLOCK_IMMORTAL` under `gc` and `none` instead of leaving the header
+word as `malloc` found it, so that a counting importer could never read an uninitialised count.
+The argument is still sound on paper, and the code carries a deliberate decision the other way
+("a store per allocation on the hot path is not worth paying for dead code"). But across eleven
+measured configurations - the nine-way matrix plus two tests built to detect a premature free,
+one of them deliberately filling the allocator's free lists with the value 1 first - **it made
+no observable difference to anything**, so it was reverted rather than shipped on reasoning.
+Reversing a deliberate hot-path decision needs a failing case, and three attempts did not
+produce one.
+
+**Coverage.** `import_owned_returns.ts` / `export_owned_returns.ts`: an imported method, a local
+override of one, virtual dispatch to that override, a method through an imported interface, and
+a plain imported function - results held, allocated over, then read back, because a freed block
+keeps its contents until something reuses it. Registered under all three models both statically
+and shared. The teeth are not hypothetical: this test's assertion fires for real, on 5ao below.
+
+**Two things found on the way, both pre-existing.**
+
+5ao. **A shared library built `gc` and linked ahead of time frees strings the importing module
+   still holds.** `test-compile-shared-export-import-owned-returns`, registered and DISABLED.
+   It fails with 5al's fix reverted as well, so it is not that fix's doing, and every
+   neighbouring configuration passes: the same test shared under `rc` and under `none`,
+   statically linked under `gc`, and shared under `gc` through the JIT. Only shared plus `gc`
+   plus AOT. That shape points at Boehm not tracing the importing module's roots into a
+   dynamically linked module's heap. DISABLED rather than WILL_FAIL because it produces
+   corrupted memory rather than a clean failure.
+
+- **The plain multi-file test path had no working-directory isolation.** Object files are named
+  after the source stems, so two tests built from the same pair of sources - the `gc`, `rc` and
+  `none` variants of one import/export pair - delete each other's `.obj` under `ctest -j`. This
+  stayed hidden only because every such pair had been registered exactly once, which is also why
+  **the statically linked two-module form had no `rc` or `none` coverage at all** - the exact
+  configuration whose leak went unmeasured until now. `createMultiCompileBatchFile` now creates
+  the same per-test directory the shared path has created for this reason all along. It showed
+  up as a single failure in a full parallel run that passed when run alone; four consecutive
+  full runs are clean since.
+
+**Suite 2,680 of 2,680**, one disabled (5ao). Cross-module `rc` 4.1 MB against `gc`'s 5.7 and
+`none`'s 18.0.
+
+**One stale number, unrelated to either fix.** Section 9.60 records `raytrace` at 6.2 MB. It
+measures **8.9 MB at HEAD with both fixes stashed**, and 9.2 with them applied - so the 0.3 is
+this work and the 2.7 is not. Something between section 9.60 and here moved it and the section
+was never re-measured; worth a look, and worth not quoting 6.2 in the meantime.

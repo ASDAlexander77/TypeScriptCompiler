@@ -5378,6 +5378,36 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // The order the arithmetic operators promote in, widest first: the first type either
+    // operand already has is the one both are cast to. Shared by `+` and by the general
+    // arithmetic/comparison path below, which is the point -- they disagreed, and `+` was
+    // the one that was wrong (§9.67).
+    SmallVector<mlir::Type> numericPromotionOrder()
+    {
+        return {
+            builder.getF128Type(),
+            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
+            builder.getF32Type(), SInt(32), builder.getI32Type(),
+            builder.getF16Type(), SInt(16), builder.getI16Type(),
+            SInt(8), builder.getI8Type()
+        };
+    }
+
+    // "Numeric enough that promoting it is unambiguous." `!ts.number` is a dialect type
+    // rather than a builtin float, so `isIntOrIndexOrFloat()` alone does not see it -- the
+    // same pairing appears wherever this question is asked (see getIndexType usage below).
+    // `boolean` is deliberately excluded: it is numeric under arithmetic, but it needs
+    // widening to `number` first rather than promotion against the other operand.
+    bool isPromotableNumeric(mlir::Type type)
+    {
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            return false;
+        }
+
+        return isa<mlir_ts::NumberType>(type) || type.isIntOrIndexOrFloat();
+    }
+
     bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         auto hasType = leftExpressionValue.getType() == type ||
@@ -5528,6 +5558,55 @@ class MLIRGenImpl
             break;
         case SyntaxKind::PlusToken:
         {
+            // `+` is the one arithmetic operator that is also string concatenation, so it
+            // cannot simply promote its operands the way `-`, `*` and `/` promote theirs:
+            // `x + 1` where x is a string has to stay concat. That is why the code below
+            // syncs the right operand TO the left one rather than promoting both.
+            //
+            // When both operands are unambiguously numeric there is no concat to protect,
+            // and syncing right-to-left is then just wrong: it truncated the wider side
+            // before the addition rather than after it, so `2 + 3.5` read 5 and
+            // `1 + (-0.5)` read 1 (§9.67). Promote those exactly like every other
+            // arithmetic operator, and leave every other shape -- `any`, unions, objects
+            // with `[Symbol.toPrimitive]`, `undefined`, `null` -- on the path it was on.
+            {
+                auto leftIsString = isa<mlir_ts::StringType>(leftExpressionValue.getType());
+                auto rightIsString = isa<mlir_ts::StringType>(rightExpressionValue.getType());
+
+                auto promotable = [&](mlir::Value value) {
+                    return isPromotableNumeric(value.getType()) || isa<mlir_ts::BooleanType>(value.getType());
+                };
+
+                if (!leftIsString && !rightIsString && promotable(leftExpressionValue) && promotable(rightExpressionValue))
+                {
+                    // Booleans widen to `number` before anything else, so that `true + true`
+                    // is 2 rather than wrapping in i1, and so that `true + 2.5` promotes
+                    // against a number instead of dragging 2.5 down to a boolean.
+                    if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                    {
+                        CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                    }
+
+                    if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+                    {
+                        CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                    }
+
+                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                    {
+                        for (auto type : numericPromotionOrder())
+                        {
+                            if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    break;
+                }
+            }
+
             // this is exactly the untyped default: case below (left/right type sync,
             // string-preferring) -- PlusToken used to fall through to it unconditionally.
             // Preserved as-is so string concat (`"fo" + 1`) and ordinary numeric-literal
@@ -5601,13 +5680,7 @@ class MLIRGenImpl
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
                 // TODO: do we need to sync type for all Ops?
-                static SmallVector<mlir::Type> types = {
-                    builder.getF128Type(), 
-                    getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
-                    builder.getF32Type(), SInt(32), builder.getI32Type(), 
-                    builder.getF16Type(), SInt(16), builder.getI16Type(), 
-                    SInt(8), builder.getI8Type()
-                };
+                auto types = numericPromotionOrder();
 
                 auto r = syncUnionTypes(location, leftExpressionValue, rightExpressionValue, genContext);
                 if (r.value)

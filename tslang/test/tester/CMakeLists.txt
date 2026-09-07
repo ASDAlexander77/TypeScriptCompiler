@@ -946,6 +946,13 @@ add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOU
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
 add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# Item 5al: an imported function's returned reference is taken over rather than retained
+# again. Registered statically as well as shared, and under every memory model - the
+# static two-module form had no rc/none coverage at all, which is why the leak it fixes
+# went unmeasured for so long.
+add_test(NAME test-compile-export-import-owned-returns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-rc-export-import-owned-returns COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-none-export-import-owned-returns COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-export-import-class-extends-implements-diamond COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
@@ -1021,6 +1028,16 @@ add_test(NAME test-compile-shared-export-import-object-literal-with-class-types 
 # DeclarationPrinter no longer prints a wrong extends target (own name instead of
 # the base's) nor the synthetic base-class storage field (which shifted every
 # subsequent field's offset in the importer).
+# Registered and DISABLED: this one configuration - shared library, ahead of time, `gc` - frees
+# strings the importing module is still holding, and it does so with item 5al's fix reverted as
+# well, so it is not that fix's doing. Every neighbouring configuration passes: the same test
+# under `-shared` with `rc` and with `none`, under `gc` statically linked, and under `gc` shared
+# through the JIT. That points at Boehm not tracing the importing module's roots into a
+# dynamically linked module's heap rather than at anything about ownership. Filed as 5ao.
+# DISABLED rather than WILL_FAIL because what it produces is corrupted memory, not a clean
+# failure, and a WILL_FAIL cannot hold that safely.
+add_test(NAME test-compile-shared-export-import-owned-returns COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+set_tests_properties(test-compile-shared-export-import-owned-returns PROPERTIES DISABLED TRUE)
 add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
@@ -1101,6 +1118,7 @@ add_test(NAME test-jit-shared-decl-emit-class COMMAND test-runner -jit -shared "
 # shared libs tests (exports/imports)
 add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-jit-shared-export-import-owned-returns COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
@@ -1259,6 +1277,7 @@ add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00add_promotes_both_operands.ts
     00alloc_in_catch.ts
     00any_compare.ts
     00any_generic_equals.ts
@@ -1870,6 +1889,8 @@ add_test(NAME test-compile-rc-shared-export-import-class-interface COMMAND test-
 add_test(NAME test-compile-none-shared-export-import-class-interface COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-compile-rc-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
 add_test(NAME test-compile-none-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-compile-rc-shared-export-import-owned-returns COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-none-shared-export-import-owned-returns COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-compile-rc-shared-export-import-class-extends COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-none-shared-export-import-class-extends COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-rc-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
@@ -1952,6 +1973,8 @@ add_test(NAME test-jit-rc-shared-export-import-class-interface COMMAND test-runn
 add_test(NAME test-jit-none-shared-export-import-class-interface COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-jit-rc-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
 add_test(NAME test-jit-none-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-jit-rc-shared-export-import-owned-returns COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-jit-none-shared-export-import-owned-returns COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-jit-rc-shared-export-import-class-extends COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-none-shared-export-import-class-extends COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-rc-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
