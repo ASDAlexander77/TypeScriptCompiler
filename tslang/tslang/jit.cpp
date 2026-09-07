@@ -140,6 +140,26 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     // (see jitEnableGCThreads below for the matching stand-in)
 
   public:
+    // 4. One contiguous reservation, laid out code first (item 5am).
+    //
+    // RTDyld resolves every IMAGE_REL_AMD64_ADDR32NB relocation against an "image base" it
+    // defines as the LOWEST section load address, so whatever datum lands there has RVA 0 - and
+    // RVA 0 is what the MSVC C++ EH encoding uses as its "none" sentinel. A catch clause whose
+    // `??_R0*@8` type descriptor landed at the base therefore read `dispType == 0`, which is
+    // `catch(...)`: the clause still caught, so nothing looked wrong, but a catch-all has no
+    // catch object, so the value was never copied and the variable read uninitialised stack.
+    // Ahead of time this cannot happen - RVA 0 of a PE is the DOS header, never a datum.
+    //
+    // `reserveAllocationSpace` takes one block and lays it out code, then read-only, then
+    // read-write, so the lowest section is always code. No field in the MSVC EH encoding reads a
+    // *code* RVA of 0 as "none", so the collision has nowhere left to land. Section 9.66.
+    //
+    // The cost of the flag is that all memory is pre-allocated from the sizes RTDyld computes up
+    // front, and an allocation beyond them fails rather than growing.
+    JitSectionMemoryManager() : llvm::SectionMemoryManager(nullptr, /*ReserveAlloc=*/true)
+    {
+    }
+
     uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment, unsigned sectionID,
                                  llvm::StringRef sectionName) override
     {

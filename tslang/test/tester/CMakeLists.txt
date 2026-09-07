@@ -374,7 +374,6 @@ add_test(NAME test-compile-00-for-await-yield COMMAND test-runner "${PROJECT_SOU
 add_test(NAME test-compile-00-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 add_test(NAME test-compile-00-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-compile-00-catch-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
-# Ahead of time only in practice: the JIT entry below is registered and disabled, see item 5am.
 add_test(NAME test-compile-00-catch-value-minimal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
 add_test(NAME test-compile-01-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-compile-00-try-catch-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
@@ -783,7 +782,6 @@ add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SO
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-jit-00-catch-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
 add_test(NAME test-jit-00-catch-value-minimal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
-set_tests_properties(test-jit-00-catch-value-minimal PROPERTIES DISABLED TRUE)
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-jit-00-try-catch-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
 add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
@@ -1782,13 +1780,9 @@ set(TSLANG_CORPUS_NONE_NAMED
 # nothing had retained, and a by-value capture took a reference to the cell instead of to the
 # value the box would release).
 set(TSLANG_CORPUS_BROKEN_JIT_RC
-    # item 5am: a catch variable reads uninitialised memory under the JIT
-    00catch_value_minimal.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_JIT_NONE
-    # item 5am: a catch variable reads uninitialised memory under the JIT
-    00catch_value_minimal.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_RC
@@ -1835,6 +1829,14 @@ endforeach()
 # rather than the program's output, which is what makes it worth running: a reference nobody
 # gives back changes no answer, so nothing else in this suite can see one. See
 # verify-ownership.cmake for what it asks and why it is sharded.
+# Reference-counted programs built WITH debug info - see debug-info-rc.cmake for why this needs
+# a test of its own rather than a `test-runner` registration.
+add_test(NAME test-compile-rc-debug-info
+         COMMAND ${CMAKE_COMMAND}
+                 -DTSLANG=$<TARGET_FILE:tslang>
+                 -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
+
 set(TSLANG_OWNERSHIP_SHARDS 8)
 math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
 foreach(ownership_shard RANGE ${ownership_last})

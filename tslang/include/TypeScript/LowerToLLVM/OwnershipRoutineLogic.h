@@ -52,6 +52,75 @@ class OwnershipRoutineLogic
     // Symbol name of the routine for `type`, generating it if needed. Empty when the type
     // owns no heap memory, in which case the descriptor's release slot stays null - a null
     // slot means "nothing to release", not "unknown".
+    // A generated ownership routine belongs to no user function, so it must not carry that
+    // function's DISubprogram - but it must still carry a location.
+    //
+    // Every op in one of these routines is built with `op->getLoc()`, the location of whatever
+    // op triggered the generation, because that is the only location in scope. Under `--di` that
+    // is a FusedLoc carrying the *enclosing* function's DISubprogram, and the translation
+    // attaches it to whatever function it lands on - so `main`'s subprogram was attached to
+    // `tsrel_...`, `tsret_...`, `__tslang_inc_ref` and `__tslang_free_block` as well, and
+    // "DISubprogram attached to more than one function" failed the module. No reference-counted
+    // program could be built with debug info at all, in any tier.
+    //
+    // Dropping the location entirely does not work, and the way it fails is worth recording:
+    // `DIScopeForLLVMFuncOpPass` then *gives* the routine a fresh subprogram of its own, and its
+    // body ops - now at unknown locations - trip the opposite check, "inlinable function call in
+    // a function with a DISubprogram location must have a debug location".
+    //
+    // So the subprogram is peeled off and the file/line underneath it kept. The routine reaches
+    // that pass with no subprogram and a real location, gets one of its own, and every op in it
+    // still has somewhere to hang. Section 9.69.
+    // Reduces a location to its plain file/line, discarding every layer of debug scope wrapped
+    // around it - the fused DISubprogram, a fused DILocalVariable, a call-site chain.
+    //
+    // Peeling only the subprogram is not enough, and how that fails is worth recording: an op
+    // whose location is fused with a DILocalVariable still names a scope inside the *user*
+    // function, so the routine gets "!dbg attachment points at wrong subprogram for function"
+    // instead. These routines have no source variables and no call sites of their own, so
+    // there is nothing here worth keeping above the file and line.
+    static mlir::Location plainLocation(mlir::Location loc)
+    {
+        if (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc))
+        {
+            auto nested = fused.getLocations();
+            return nested.empty() ? mlir::UnknownLoc::get(loc.getContext()) : plainLocation(nested.front());
+        }
+
+        if (auto callSite = mlir::dyn_cast<mlir::CallSiteLoc>(loc))
+        {
+            return plainLocation(callSite.getCallee());
+        }
+
+        // A NameLoc wraps the location it names rather than replacing it, so a scope can hide
+        // one layer further in: `loc("sAny"(fused<#di_subprogram<main>>[...]))` is what a block
+        // argument of a generated routine carries, and unwrapping only the fused and call-site
+        // forms walks straight past it.
+        if (auto named = mlir::dyn_cast<mlir::NameLoc>(loc))
+        {
+            return plainLocation(named.getChildLoc());
+        }
+
+        return loc;
+    }
+
+    static void dropDebugLocations(mlir::LLVM::LLVMFuncOp funcOp)
+    {
+        funcOp->setLoc(plainLocation(funcOp->getLoc()));
+        funcOp->walk([](mlir::Operation *nested) { nested->setLoc(plainLocation(nested->getLoc())); });
+
+        // Block arguments carry locations of their own, and walking operations does not reach
+        // them. They become phis, so leaving them alone leaves the routine with
+        // `%11 = phi i64 ..., !dbg !39` naming the user function's scope - the same "wrong
+        // subprogram" complaint, arriving from the one place the operation walk cannot see.
+        funcOp->walk([](mlir::Block *block) {
+            for (auto arg : block->getArguments())
+            {
+                arg.setLoc(plainLocation(arg.getLoc()));
+            }
+        });
+    }
+
     std::string getOrCreateReleaseRoutine(mlir::Type type)
     {
         if (!ownsHeapMemory(type))
@@ -84,6 +153,7 @@ class OwnershipRoutineLogic
 
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
+        dropDebugLocations(funcOp);
         return name;
     }
 
@@ -123,6 +193,7 @@ class OwnershipRoutineLogic
 
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
+        dropDebugLocations(funcOp);
         return name;
     }
 
@@ -309,6 +380,7 @@ class OwnershipRoutineLogic
                                       ValueRange{slot});
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
+        dropDebugLocations(funcOp);
         return name;
     }
 
@@ -339,6 +411,8 @@ class OwnershipRoutineLogic
             ch.MemoryFree(entryBlock->getArgument(0));
 
             rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+            dropDebugLocations(helper);
         }
 
         rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
@@ -397,6 +471,8 @@ class OwnershipRoutineLogic
             rewriter.create<LLVM::ReturnOp>(
                 loc, ValueRange{rewriter.create<LLVM::ConstantOp>(loc, th.getLLVMBoolType(),
                                                                   rewriter.getIntegerAttr(th.getLLVMBoolType(), 0))});
+
+            dropDebugLocations(helper);
         }
 
         auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{th.getLLVMBoolType()},
@@ -459,6 +535,8 @@ class OwnershipRoutineLogic
 
             rewriter.setInsertionPointToStart(returnBlock);
             rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+            dropDebugLocations(helper);
         }
 
         rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), helperName),
@@ -689,6 +767,7 @@ class OwnershipRoutineLogic
 
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
+        dropDebugLocations(funcOp);
         return name;
     }
 

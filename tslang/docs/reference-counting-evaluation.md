@@ -726,7 +726,17 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
-5am. **A catch clause whose type descriptor lands at the JIT image base becomes `catch(...)`.**
+5an. **`+` coerces its right operand to the left operand's type instead of promoting both.**
+   Filed by §9.67, and not an ownership bug: every model, both tiers, both optimisation levels,
+   and constant operands too - `2 + 3.5` reads 5. `-`, `*` and `/` promote correctly, which points
+   at `+` being the operator that is also string concatenation and so fixes its result type before
+   looking at both operands. It is the right operand that is converted, not the result:
+   `1 + (-0.5)` reads 1.
+
+5am. **DONE, §9.68 - one flag, after §9.66 estimated it as an allocator rewrite.**
+   `SectionMemoryManager(nullptr, /*ReserveAlloc=*/true)` reserves one contiguous block laid out
+   code-first, so the lowest section is always code and the RVA-0 sentinel has nowhere harmful to
+   land. Suite 2,667/2,667 with nothing disabled.
    Filed by §9.65, diagnosed in §9.66. RTDyld's image base is the lowest section load address, so
    a descriptor allocated there has RVA 0 - and `dispType == 0` is the MSVC encoding's
    `catch(...)`. The clause still catches, so the only visible symptom is that the catch object
@@ -2575,6 +2585,12 @@ Full release suite green: 921/921. Ownership verifier unchanged at its two stand
 program ("DISubprogram attached to more than one function") - the generated `tsrel_`/`tsret_`
 routines inherit the debug scope current when they were generated. Pre-existing, reproduces on
 `00owned_temporaries.ts` and `00interface.ts`, and on no test-suite variant.
+
+> **Fixed in §9.69.** The diagnosis above is right as far as it goes; the scope is also
+> inherited by block arguments and hidden inside `NameLoc`s, which is what made it four attempts
+> rather than one. 453 of 453 corpus files now emit IR under `-mm=rc --di`. "Any reference-counted
+> program" above is very slightly too strong - one that allocates nothing generates no ownership
+> routine and always built.
 
 ### 9.32 Step 5o: what a method call names, and what it does not
 
@@ -5158,3 +5174,118 @@ an image base explicitly, and which is a much larger change.
    fix is to place code below read-only data via `reserveAllocationSpace`, so that the RVA-0
    sentinel can only ever fall on code, where nothing reads 0 as "none". Proven in §9.66; the
    image-base shim of §9.13, which the item previously accused, is measured working.
+
+### 9.67 `+` does not promote its right operand (5an)
+
+Found while writing §9.65's catch-value tests, where `t + u` over a caught `int` and a caught
+`number` read 5 rather than 5.5. It was kept out of that file - a test about catch values should
+not also be a test about arithmetic - and is filed here rather than left in a comment.
+
+**`+` takes the type of its left operand and coerces the right one to it.** Every other
+arithmetic operator promotes correctly:
+
+| expression | reads | should be |
+| --- | --- | --- |
+| `i + f` | **5** | 5.5 |
+| `f + i` | 5.5 | 5.5 |
+| `2 + 3.5` | **5** | 5.5 |
+| `i * f` | 7 | 7 |
+| `f - i` | 1.5 | 1.5 |
+| `i / f` | 0.571429 | 0.571429 |
+
+with `i = 2`, `f = 3.5`. Both tiers, all three memory models, both optimisation levels, and
+literals are not spared - `2 + 3.5` is wrong on its own.
+
+**It is the right operand that is converted, not the result.** `1 + (-0.5)` reads `1`, which is
+`1 + trunc(-0.5)`; truncating the sum would give `0`. So the addition happens in integer, after
+discarding the fraction, rather than in double and then narrowing.
+
+`+` is the one arithmetic operator that is also string concatenation, so it is the one with a
+result type chosen ahead of the operands rather than from them; that is the obvious place to
+look. Nothing here is reference counting, and nothing in the corpus caught it, which is its own
+result: 2,664 tests and none of them adds an integer variable to a float one.
+
+5an. **`+` coerces its right operand to the left operand's type instead of promoting both.**
+   Not an ownership bug and not `rc`-specific - every model, both tiers, both optimisation
+   levels, and constant operands too (`2 + 3.5` reads 5). `-`, `*` and `/` are all correct, which
+   points at `+` being overloaded for string concatenation and so choosing its result type before
+   looking at both operands. See §9.67.
+
+### 9.68 5am fixed, and the fix was one flag
+
+§9.66 proved the cause and then estimated the fix as taking section allocation over from
+`SectionMemoryManager`, W^X handling included, and deferred it on that basis. **That estimate was
+wrong, and it was made without reading the header.** LLVM already implements exactly the layout
+required, for the ARM ABI, behind a constructor argument that defaults to false:
+
+```cpp
+JitSectionMemoryManager() : llvm::SectionMemoryManager(nullptr, /*ReserveAlloc=*/true) {}
+```
+
+`reserveAllocationSpace` takes one contiguous block and fills it code, then read-only, then
+read-write. Code is therefore always the lowest section, so the RVA-0 collision can only ever
+land on code - and no field in the MSVC EH encoding reads a code RVA of 0 as "none", where
+`dispType == 0` on a *data* RVA meant `catch(...)`.
+
+| shape | before | after |
+| --- | --- | --- |
+| `catch (v: int)`, three runs of one binary | 134, 131, 184 | **2, 2, 2** |
+| `catch (v: number)` | denormal garbage | **2.5** |
+| three `int` catches in a row | 425, -1765822016, 425 | **7, 8, 9** |
+| two payload types in one function | `t=0 u=3.5` | **`t=2 u=3.5`** |
+| an `int` clause declining a `string` throw | correct | correct |
+
+The three JIT registrations of `00catch_value_minimal.ts` are re-enabled and both
+`TSLANG_CORPUS_BROKEN_JIT_*` lists are empty again. Suite **2,667/2,667 with nothing disabled**,
+up from 2,664 run with three disabled.
+
+**The price the flag names.** All memory is pre-allocated from the sizes RTDyld computes up
+front, and an allocation beyond them fails rather than growing. That is the trade the ARM users
+of this path already make, and the corpus - 2,667 tests, every one of them JIT or AOT across
+three memory models - exercises it without a failure. It is worth knowing about if a future
+module is much larger than anything here.
+
+**The lesson is the same one this document keeps producing, one level up.** §9.64 found an item
+whose text described a compiler that had moved; this is an item whose *fix estimate* described a
+library that already did the work. The estimate cost a session of deferral. Read the header
+before costing the change.
+
+### 9.69 Debug info under `-mm=rc` (item from §9.31, open since 2026-09-04)
+
+§9.31 recorded it in one line - "`--di --opt_level=0` fails to emit LLVM IR for any
+reference-counted program" - and left it. §9.65's audit confirmed it was the one open claim of
+seven that still held. It is fixed, and it was a standing tax the whole time: every RC
+investigation in this document was carried out in release builds because a debug build of an
+`rc` program did not exist.
+
+**The cause.** Every op in a generated ownership routine is built with `op->getLoc()`, because
+that is the only location in scope - the routine is synthesised from a type, not from source.
+Under `--di` that location is the *enclosing user function's*, complete with its `DISubprogram`,
+and the translation attaches it to whatever function it lands on. So `main`'s subprogram was
+attached to `tsrel_...`, `tsret_...`, `__tslang_inc_ref`, `__tslang_dec_ref` and
+`__tslang_free_block` as well, and one `DISubprogram` cannot belong to two functions. The
+routines are `rc`-only, which is exactly why `gc` and `none` never saw it.
+
+**Four attempts, and each failure named the next one.** Worth keeping in that order, because the
+last two are not things one would predict:
+
+| attempt | what it hit |
+| --- | --- |
+| drop the locations entirely | `DIScopeForLLVMFuncOpPass` then *gives* each routine a subprogram of its own, and its now-unlocated body trips the opposite check - "inlinable function call in a function with a DISubprogram location must have a debug location" |
+| peel off the `DISubprogram` only | an op fused with a `DILocalVariable` still names a scope inside the user function: "!dbg attachment points at wrong subprogram" |
+| reduce to plain file/line | 7 of 15 files build, the rest die on a `phi` - **block arguments carry locations, and an operation walk never visits them** |
+| unwrap `NameLoc` too | 453 of 453 - `loc("sAny"(fused<#di_subprogram<main>>[...]))` hides the scope one layer further in than `FusedLoc` and `CallSiteLoc` |
+
+So the routine keeps a real location and borrows no scope: reduced through `FusedLoc`,
+`CallSiteLoc` and `NameLoc` to the file and line underneath, across block arguments as well as
+ops. It reaches the scope pass with no subprogram, is given one of its own, and every op and
+argument in it still has somewhere to hang. `gc` and `none` are untouched, because these
+routines do not exist there.
+
+**Every corpus file that compiles alone now emits IR under `-mm=rc --di`: 453 of 453.** "Up
+from none" would overstate it, and the exception is worth knowing: a program that allocates
+nothing generates no ownership routine and so had nothing to collide - `print("literal")` built
+fine before this, where `let x = 1; print(x)` did not, because printing a number allocates. That
+is the whole of what worked. Suite 2,668/2,668. `00owned_debug_info.ts` is registered as `test-compile-rc-debug-info`
+and is the only test in the suite that passes `--di` with `-mm=rc`, which is why the gap lasted
+as long as it did - nothing ran the combination.
