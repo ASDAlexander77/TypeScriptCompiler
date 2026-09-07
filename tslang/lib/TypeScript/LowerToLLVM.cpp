@@ -3125,9 +3125,39 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto decSizeAsIndexType = spliceOp.getDeleteCount();
 
         auto startIndexAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, startIndexAsIndexType);
-        auto decSizeAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, decSizeAsIndexType);            
+        mlir::Value decSizeAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, decSizeAsIndexType);
 
         auto incSizeAsLLVMType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
+
+        // Give back what the removed elements were holding, before anything moves or frees them.
+        //
+        // `splice` memmoves the tail over the deleted range and reallocs; the references those
+        // slots held are simply overwritten, so under `-mm=rc` every element it removes leaked.
+        // Measured on a loop that splices two of three boxed strings away: 16.4 MB against 4.1
+        // for the same program without the splice. See §9.74.
+        //
+        // This runs on `currentPtr` and before `conditionalExpressionLowering` below, which is
+        // the only correct place: the growing branch reallocs *first*, and a realloc may move the
+        // block, so releasing afterwards would read the deleted elements through a stale pointer.
+        //
+        // The delete count is first clamped to what is actually in the array, which JavaScript's
+        // `splice` also does ("if greater than the number of elements after start, then all of
+        // the elements from start onwards will be deleted"). It was not clamped here, and the
+        // subtraction below then underflowed an unsigned index: `["p","q"].splice(1, 10)` asked
+        // `memmove` for about 2^64 bytes and faulted. That reproduces under every memory model
+        // and long predates any of this - it simply had to be settled before releasing anything,
+        // since a release loop walking off the end reads freed memory rather than merely
+        // computing a wrong size.
+        auto availableAsLLVMType =
+            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
+        auto deleteFits =
+            rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, decSizeAsLLVMType, availableAsLLVMType);
+        decSizeAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, deleteFits, decSizeAsLLVMType, availableAsLLVMType);
+
+        {
+            OwnershipRoutineLogic orl(spliceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseArrayElements(elementType, currentPtr, startIndexAsLLVMType, decSizeAsLLVMType);
+        }
 
         // Keep all arithmetic in the already-LLVM-converted domain (llvmIndexType), matching
         // every sibling array-mutation lowering (ArrayPushOp/ArrayUnshiftOp/ArrayShiftOp) --

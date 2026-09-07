@@ -1999,6 +1999,9 @@ and §5h removes wholesale. Pairing a release here instead would free a value th
 to use. So the question §9.20 flagged — what a `pop` and a `return` owe each other — turns out to
 be already answered by the existing convention, and needs nothing of its own until the slack goes.
 
+> **Closed by §9.74**, from `LowerToLLVM` as predicted here, and the clamp it needed turned up a
+> pre-existing crash plus an unrelated over-release (5aq).
+
 **Still open, and bounded.** What `splice` *deletes* is memmoved over and its references dropped
 without a release. That leaks rather than over-releases, so it is inert; and it cannot be fixed at
 this level anyway, because the number of elements to release is only known inside the lowering.
@@ -5639,3 +5642,124 @@ program by deleting halves of the work and watching which half took the leak wit
 one-measurement hypotheses cost less than any one of them would have cost to reason about, and
 the §9.59 suspect that had been waiting on 5aj since it was filed turned out, once finally
 measurable, to be innocent.
+
+### 9.74 What `splice` deletes is given back (5f's remainder), and two bugs beside it
+
+`splice` is the last leaking insertion point, open since §9.22 filed it and left it deliberately:
+what it removes is memmoved over and the array realloc'd, so the references in those slots were
+overwritten rather than released. Measured before the fix, a loop splicing two of three boxed
+strings away held **16.4 MB against 4.1 MB** for the same program without the splice, `none` at
+28.7 so nothing was elided. It is **3.8 either way** now.
+
+**Why this one is in the lowering.** Every other insertion point in this arc sits in MLIRGen,
+where how many elements are involved is a compile-time matter. Here the count is a runtime
+value that only exists after conversion, so this is the first - and so far only - release
+emitted from `LowerToLLVM`. `OwnershipRoutineLogic::emitReleaseArrayElements` walks the deleted
+range with the existing counted-loop helper and calls the element's release routine, which
+already existed for the case where a whole array is released.
+
+Two things had to be checked before emitting it, and both could have made it an over-release:
+
+- **The release routines exist in every memory model.** They are reference-counting shaped
+  everywhere and dead weight under `gc` (§9.4); what keeps them dead is that `ts.Release` erases
+  on the way to LLVM (§9.10). A call planted directly by a lowering has no such eraser in front
+  of it, so it has to test `isRefCounted()` itself, or `gc` would start freeing objects it is
+  still tracing.
+- **`splice` must not hand the removed elements back to anyone.** JavaScript's returns them as
+  an array; if tslang's did, releasing them would free values the caller still held. It returns
+  a **count** - `["aa","bb","cc","dd"].splice(1, 2)` prints `2` - so nothing outside can reach
+  them. Checked before the release was written rather than assumed.
+
+The release runs on the original data pointer and before the grow/shrink branch, which is the
+only correct placement: the growing branch reallocs *first*, and a realloc may move the block.
+
+**A pre-existing crash, found by the test and fixed here because it had to be.** `deleteCount`
+was never clamped to what the array holds, so `["p","q"].splice(1, 10)` computed `2 - 1 - 10` in
+an unsigned index and asked `memmove` for about 2^64 bytes:
+
+```
+Exception Code: 0xC0000005 ... GC_realloc
+```
+
+Every memory model, and nothing to do with reference counting - but it had to be settled first,
+because a release loop walking off the end reads freed memory rather than merely computing a
+wrong size. Clamping `deleteCount` to `length - start` fixes both and is what JavaScript
+specifies anyway.
+
+5aq. **DONE, below - pushing one owned value into two arrays consumed it twice.**
+
+**The second bug, and the more serious one.** The new test failed its own over-release
+assertion, and the cause was not `splice` at all:
+
+```typescript
+const keep = new Box("kept");
+victim.push(keep);        // consumes the +1
+survivors.push(keep);     // must retain - and did not
+```
+
+A `const` initialised from `new` gets no storage of its own, so both pushes see the *same*
+`ts.CallIndirect` and `retainInsertedElements` asked only whether it carried `OWNED_RESULT`,
+never whether that reference had already been taken. Both consumed it. One reference, two
+holders, and whichever array died first freed an element the other still held. **It reproduces
+with no splice anywhere in the program** - the surviving array reads back the churn value - so
+it long predates this section; what made it visible is that until now an array outliving its
+elements never gave them back, so the second holder was never exercised. One condition:
+consume only when the reference has not already been consumed, otherwise retain.
+
+That is the failure mode this arc has treated as the one that matters, and it took a fix in a
+neighbouring area to expose it. Worth remembering next to §9.25's note that this was already
+"the one receiving site that skipped its retain without recording the consumption" - it was
+also skipping the *check*.
+
+**Coverage.** `00owned_array_splice.ts`: an element spliced out of one array while another still
+holds it (both objects and strings), splice that inserts as well as removes, an over-long delete
+count, a zero delete count, and a non-owning element type. Its teeth are in the over-release
+direction and are not hypothetical - it fails on the compiler as it stood, twice over: the
+double-push assertion, and the over-long delete count crashing outright in all three models.
+
+Suite **2,688 of 2,688**, one disabled (5ao). Ownership verifier clean across all 497 corpus
+files.
+
+### 9.75 Cycles, written down for users
+
+The other half of "what is left" was never code. §4 settled the policy - leak cycles, document
+it, keep `gc` the default - and nothing in the repository told a user any of it. `-mm=` appeared
+in no user-facing document at all.
+
+`docs/memory-models.md` now covers the three models, what `-mm=rc` buys, and cycles: the shapes
+that leak, the shapes that do not, and what to do. Every claim in it is measured rather than
+reasoned:
+
+| shape | rc | none |
+| --- | --- | --- |
+| `a.parent = b; b.parent = a` | 22.6 | 22.6 |
+| doubly linked (`next`/`prev`) | 22.6 | 22.6 |
+| an object holding a closure that captures it | 22.6 | 22.6 |
+| the same loop with the back-reference removed | **4.1** | - |
+
+`rc` equals `none` to the decimal in all three: reference counting reclaims **none** of a cycle.
+Removing one assignment takes the same loop to the floor.
+
+Two claims on the "does not leak" side were checked rather than assumed, and one of them
+corrected a statement in §4. **A self-recursive function is not a cycle** - a named recursive
+function holds no reference to itself at run time, and §4's "recursive closures are a
+compiler-generated cycle" does not currently apply, because a self-referential *arrow* function
+does not compile at all:
+
+```
+error: can't resolve name: fact
+    const fact = (k: number): number => k <= 1 ? 1 : k * fact(k - 1);
+```
+
+That matters for the shipping decision more than it looks. §4's argument for needing weak
+references leaned on the compiler emitting cycles behind the user's back; it does not. Cycles
+under `-mm=rc` are only what a user writes deliberately, which is exactly the position Swift
+ships ARC in - and here `gc` is still the default and one flag away.
+
+The other check: **strings cannot participate in a cycle at all**, since a string never points
+at another heap object. That is the property that makes §2's "Tier C, strings only" scope
+free of this entire question.
+
+`WeakRef<T>` therefore stays unimplemented and unblocking. §9.8 settled its ABI so that
+`strong` sits at `payload - wordSize` in every model and `weak` exists only under `-mm=rc`, so
+it can land later without a break.

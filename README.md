@@ -27,6 +27,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
   - [Debugging JIT code with GDB (Linux)](#debugging-jit-code-with-gdb-linux)
   - [As a native executable](#compile-as-binary-executable)
   - [As WebAssembly](#compiling-as-wasm)
+- [Memory models](#memory-models)
 - [Building from source](#build)
 - [Community](#chat-room)
 - [License](#license)
@@ -473,6 +474,24 @@ Run ``run.html``
 ```
 
 </details>
+
+## Memory models
+
+How heap memory is managed is selected with `-mm=`:
+
+| flag | | |
+| --- | --- | --- |
+| `-mm=gc` | garbage collection (Boehm) | the default |
+| `-mm=rc` | reference counting - freed as soon as the last reference goes, no collector, no `libgc` | **does not collect reference cycles** |
+| `-mm=none` | nothing is ever freed | short-lived programs |
+
+`-mm=gc` is the default and needs no thought. `-mm=rc` reclaims memory deterministically and
+holds close to the working set - a ray tracer that reaches 114 MB under `-mm=none` holds 4.1 MB,
+against garbage collection's 5.8 - but **objects that refer to each other in a cycle are never
+freed under it**, which is the same trade Swift makes with ARC.
+
+See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
+what to do about it.
 
 ## Build
 

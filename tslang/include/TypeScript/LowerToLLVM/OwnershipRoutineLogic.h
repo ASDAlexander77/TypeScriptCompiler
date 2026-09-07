@@ -305,6 +305,51 @@ class OwnershipRoutineLogic
         return mth.ownsHeapMemory(op->getLoc(), type);
     }
 
+    // Gives back the references held by `count` elements starting at `startIndex`, in an array
+    // whose data begins at `dataPtr`.
+    //
+    // `splice` is what needs this: the elements it removes are memmoved over, so the references
+    // in those slots are dropped on the floor rather than released. Every other insertion point
+    // in this arc sits in MLIRGen, where the number of elements involved is a compile-time
+    // matter; here it is a runtime value known only at this level, which is why this one release
+    // is emitted from the lowering. See §9.74.
+    //
+    // Emitted **only under `-mm=rc`**, and that check cannot be skipped. The release routines are
+    // reference-counting shaped in every memory model and are dead weight under `gc` (§9.4); what
+    // keeps them dead there is that `ts.Release` erases on the way to LLVM (§9.10). A direct call
+    // planted by a lowering has no such eraser in front of it, so without this guard `gc` would
+    // start freeing objects it is still tracing.
+    void emitReleaseArrayElements(mlir::Type elementType, mlir::Value dataPtr, mlir::Value startIndex,
+                                  mlir::Value count)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        auto routineName = getOrCreateReleaseRoutine(elementType);
+        if (routineName.empty())
+        {
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmElementType = tch.convertType(elementType);
+
+        emitCountedLoop(count, [&](mlir::Value index) {
+            auto offset = rewriter.create<LLVM::AddOp>(loc, index.getType(), index, startIndex);
+            auto elementPtr =
+                rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataPtr, ValueRange{offset});
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{},
+                                          FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
+                                          ValueRange{elementPtr});
+        });
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)

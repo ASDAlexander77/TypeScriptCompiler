@@ -722,8 +722,22 @@ class MLIRCustomMethods
             // an element the array still held. Invisible for as long as the block that pushes is
             // also the block that reads, which is why §9.30's own tests missed it;
             // `function add() { store.push(new C()) }` reads the freed block.
+            //
+            // There is only ever ONE reference to take over, so the second array to receive the
+            // same value has to retain like any other holder. Reading `OWNED_RESULT` without also
+            // asking whether it had already been consumed made both of these consume it:
+            //
+            //     const keep = new Box("kept");   // a const with no storage of its own, so both
+            //     victim.push(keep);              // pushes see the `new` itself
+            //     survivors.push(keep);
+            //
+            // and the value ended up with two holders and one reference, so whichever array died
+            // first freed an element the other still held. Nothing to do with `splice` - it
+            // reproduces with no splice anywhere - but §9.74's release is what made it visible,
+            // because until then an array that outlived its elements never gave them back.
             auto *definingOp = value.getDefiningOp();
-            if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+            if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
             {
                 definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
                 continue;
