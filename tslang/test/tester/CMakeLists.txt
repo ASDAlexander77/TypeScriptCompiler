@@ -373,6 +373,9 @@ add_test(NAME test-compile-00-for-await COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-compile-00-for-await-yield COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-compile-00-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 add_test(NAME test-compile-00-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-compile-00-catch-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
+# Ahead of time only in practice: the JIT entry below is registered and disabled, see item 5am.
+add_test(NAME test-compile-00-catch-value-minimal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
 add_test(NAME test-compile-01-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-compile-00-try-catch-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
 add_test(NAME test-compile-00-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
@@ -778,6 +781,9 @@ add_test(NAME test-jit-00-async-gc-threading COMMAND test-runner -jit "${PROJECT
 add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-jit-00-catch-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
+add_test(NAME test-jit-00-catch-value-minimal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
+set_tests_properties(test-jit-00-catch-value-minimal PROPERTIES DISABLED TRUE)
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-jit-00-try-catch-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
 add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
@@ -1287,6 +1293,8 @@ set(TSLANG_CORPUS
     00break_continue_scope_exit.ts
     00break_continue.ts
     00capture_in_new_arguments.ts
+    00catch_value.ts
+    00catch_value_minimal.ts
     00class_abstract.ts
     00class_access_control.ts
     00class_accessor_super.ts
@@ -1774,9 +1782,13 @@ set(TSLANG_CORPUS_NONE_NAMED
 # nothing had retained, and a by-value capture took a reference to the cell instead of to the
 # value the box would release).
 set(TSLANG_CORPUS_BROKEN_JIT_RC
+    # item 5am: a catch variable reads uninitialised memory under the JIT
+    00catch_value_minimal.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_JIT_NONE
+    # item 5am: a catch variable reads uninitialised memory under the JIT
+    00catch_value_minimal.ts
     )
 
 set(TSLANG_CORPUS_BROKEN_AOT_RC

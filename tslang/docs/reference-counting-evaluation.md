@@ -726,6 +726,14 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
+5am. **A catch variable's value is uninitialised under the JIT.** Filed by §9.65, and not an
+   ownership bug: all three models, both opt levels, every payload type, and correct ahead of
+   time in every case tried. Supersedes §9.29's "reads 0" and its "depends on what else the
+   module throws" - the same binary run three times reads 134, 131, 184. The suspect is the
+   image-base-relative RVAs in the MSVC EH descriptors, read under the JIT's `__ImageBase` shim
+   (§9.13): the handler is found and the clause runs, but the exception object never reaches the
+   slot the catchpad names.
+
 5al. **A virtual or interface call on an imported class is never consumed.** Filed by §9.64 out
    of what was left of 5o. An imported method has no body here, so `functionReturnsOwned`
    declines it and one such candidate poisons its whole member name; every virtual and interface
@@ -1690,11 +1698,17 @@ needed?" into a one-line experiment rather than an argument.
   Res(); }` still crashes. A different cause, still open. It is worth naming its second cost:
   `localTakesOwnership` consults the same predicate, so a heap local declared in a catch or
   finally clause is not owned and leaks under `-mm=rc`.
+  > **Both halves re-measured false in §9.65.** That shape now runs in all three models, and the
+  > local does not leak: measured behind an interface it reclaims exactly as well as the same
+  > allocation one scope out, because §9.30's discarded-temporary pass consumes the reference
+  > whether or not MLIRGen made the local an owner. Whether the predicate can now go is untested.
 - `blockUsingInitializersAreAllNewExpr` — stays, re-checked, unchanged.
 
 **Also still open, and confirmed independent:** throwing from a `finally` still crashes the
 compiler, in both memory models. That is the `ts.BeginCleanup`-with-no-`ts.EndCleanup` shape
 §9.14 describes, and this fix does not touch it.
+
+> **Stale as of §9.65.** It compiles and runs in all three models now, and the throw is caught.
 
 New test: `test/tester/tests/00using_nested_scopes.ts`, run under all three models
 (`test-compile-00-using-nested-scopes`, `test-jit-00-using-nested-scopes`,
@@ -2386,6 +2400,12 @@ went unnoticed. Reproduced in every model, and at `-O3` a separate variant of th
 0 where `-O0` reads 3. `00nested_catch.ts` therefore checks which clause runs and in what order and
 never reads a catch value; nothing there should be made to depend on a broken feature. A third bug,
 in the same subsystem, still open.
+
+> **Open, and re-diagnosed in §9.65 as 5am.** Neither half of the description above survives. It
+> does not read 0 - it reads uninitialised memory, three runs of one binary giving 134, 131, 184 -
+> and it has nothing to do with how many types the module throws. It is **JIT-only**: every case
+> tried is correct ahead of time. So the rule this paragraph sets is too strong; a catch-value
+> assertion in the AOT tier is a real test, and the tier already runs every corpus file.
 
 Full release suite green: 913/913.
 
@@ -4790,6 +4810,12 @@ it is a price only in principle: throwing from a `[Symbol.dispose]()` does not w
 A single, un-nested `using` whose disposal throws fails to JIT on a missing `??_7type_info@@6B@`
 in every model, which is why no test could be written for the path this fixes.
 
+> **The premise is false — see §9.65.** A throwing disposal with something to catch it runs fine;
+> the case that produced this claim had nothing to catch it, and a plain `throw 1` with no `using`
+> gives the identical exit. `??_7type_info@@6B@` appears nowhere. So the price above is real and
+> observable — the disposal terminates the process at `0x80000003` — and it diverges from TC39's
+> `SuppressedError` semantics. Still a defensible choice; it was just not a free one.
+
 **The first attempt was the obvious one and it was wrong.** Wrap the cleanup's disposals in a
 catch-less `TryOp` of their own whose cleanup gives the references back - correct by construction,
 and it silenced the verifier. It also failed 24 tests. A `TryOp` nested inside a `TryOp` is the
@@ -4961,3 +4987,95 @@ So the residue is filed where it belongs rather than left under 5o:
 What this section adds is the evidence, and the lesson that an item's own text is a claim about
 the compiler as it was, not as it is: three sessions of work went past it without re-reading it.
 No code changed here.
+
+### 9.65 Re-reading the open claims (the audit 9.64 asked for)
+
+§9.64 closed 5o by discovering its text described a compiler that no longer existed, and ended
+with the obvious follow-up: the other open items assert things too, and nothing re-checks them.
+This is that sweep. Seven claims, each turned back into the one-line experiment that produced it.
+**Five were stale. One was mischaracterised in a way that matters. One holds.**
+
+| claim | where | verdict |
+| --- | --- | --- |
+| `catch (e: int) { using r = new Res(); }` still crashes | §9.17 | **stale** - runs in all three models |
+| throwing from a `finally` still crashes the compiler | §9.17 | **stale** - runs, and the throw is caught |
+| a heap local in a `catch`/`finally` is not owned, and leaks under `rc` | §9.17 | **stale** - reclaims identically |
+| throwing from a `[Symbol.dispose]()` "does not work at all today" | §9.62 | **false** - it works |
+| ...so the terminate price is "only in principle" | §9.62 | **false** - it is real and observable |
+| reading a catch variable reads 0 | §9.29 | **open, and worse than that** |
+| `--di --opt_level=0` emits no LLVM IR for an `rc` program | §9.31 | **holds** |
+
+**The leak that was not there.** §9.17 kept `blockIsInsideCatchOrFinally` and named its second
+cost: `localTakesOwnership` consults the same predicate, so a heap local declared in a catch
+clause is unowned and leaks. Measured behind an interface so nothing elides it, 300k iterations:
+the local declared *inside* the catch reads **4.2 MB against `none`'s 13.4**, and so does the
+same allocation one scope out. There is no leak to close, because §9.30's discarded-temporary
+pass consumes the call's reference whether or not MLIRGen made the local an owner. Two
+mechanisms, one debt, and the later one covers the case the earlier one declines.
+
+**§9.62's price is real, which changes what it cost.** That section accepted "a disposal that
+throws while unwinding terminates instead of continuing outwards" on the stated grounds that
+throwing from a `[Symbol.dispose]()` does not work at all, so the price was theoretical. It is
+not: a `using` whose disposal throws, with something to catch it, prints `body / caught / done.`
+and exits 0. The failing case that produced the original claim was a throwing disposal with
+*nothing* to catch it - and a plain `throw 1` with no `using` anywhere gives the identical
+`0xE06D7363` and exit 127, because an uncaught exception terminates a process. `??_7type_info@@6B@`
+appears nowhere. So the price is now measurable, and it is paid: an inner `using` whose disposal
+throws while an exception is already unwinding terminates at `0x80000003` in every model. Worth
+saying plainly, because TC39's explicit-resource-management proposal specifies `SuppressedError`
+there - the original error preserved, the disposal's error attached - and terminating is not that.
+The C++ rule §9.62 cited is a defensible choice; it is a choice, and it was made on a premise that
+was not true.
+
+**The catch-variable bug is JIT-only, and that is the whole diagnosis.** §9.29 recorded it as
+reading 0 rather than 2, "only in a module that throws just that one type". Both halves mislead.
+It is not 0 and it is not a constant: the same binary run three times reads 134, 131, 184. It is
+uninitialised memory, and every payload type has it - `int`, `number` and `string` alike, the
+last printing a garbage pointer's bytes. It is not about how many types the module throws either;
+three `int` catches in a row read 425, -1765822016, 425.
+
+What it *is* about is which back end runs. Ahead of time every one of those cases is right, three
+runs each:
+
+| | JIT (gc / rc / none) | AOT |
+| --- | --- | --- |
+| `try { throw 2 } catch (v: int) { t = v }` | 134, 131, 184 / 0, 0, 0 / 73, 135, 15 | **2, 2, 2** |
+| a `number` catch | denormal garbage | **2.5** |
+| three `int` catches | 425, -1765822016, 425 | **7, 8, 9** |
+
+The LLVM IR is not where it goes wrong. The catchpad names the slot and the load reads that slot,
+`_CT??_R0H@84` carries `sizeOrOffset` 4 - §9.15's fix intact - and the ThrowInfo chain is
+well-formed. What differs between the two runs of that same IR is the image base: every RVA in
+those descriptors is a 32-bit truncation of `x - __ImageBase`, and the JIT reaches
+`_CxxThrowException` through the image-base shim §9.13 built. The handler is found, so the clause
+runs; the object is not copied into the slot, so the read is whatever the frame held.
+
+**Two consequences worth acting on.** §9.29's rule - "never write a test that reads a catch
+value" - is too strong: ahead of time it is correct, and the AOT tier already runs every corpus
+file, so a catch-value assertion there is a real test that nothing else provides. And the JIT
+tier cannot be trusted on this at all, which is a much sharper thing to know than "it depends on
+what else the module throws". Filed:
+
+5am. **A catch variable's value is uninitialised under the JIT.** Not an ownership bug and not
+   `rc`-specific - all three models, both opt levels, every payload type, and correct ahead of
+   time in every case tried. The suspect is the image-base-relative RVAs the MSVC EH descriptors
+   are built from, read under the JIT's `__ImageBase` shim (§9.13): the handler is found and the
+   clause runs, but the exception object never reaches the slot the catchpad names. Supersedes
+   §9.29's "reads 0" and its "depends on what else the module throws".
+
+**Two new tests, and the suite says what is broken.** `00catch_value.ts` is the coverage §9.29
+declined to write - three clauses of one type in a row, two payload types in one function, a value
+read after its clause has ended - and it passes in both tiers, because six catch values is enough
+to land in the working regime. `00catch_value_minimal.ts` is the same feature cut to one clause;
+it passes ahead of time and fails under the JIT, so its three JIT registrations are **disabled**
+rather than omitted, and ctest names them on every run. That is the convention the `BROKEN` lists
+exist for: what is broken lives in the build, not only here.
+
+Suite 2,655 -> 2,667, of which 2,664 run and 3 are disabled and counted out loud. All green.
+
+**The first draft of `00catch_value.ts` asserted in its own comment that it was ahead-of-time
+only, because it failed under the JIT.** It does not - it passes in both tiers, and the comment
+was written from the reasoning rather than from a run. Checking it is what turned "one type in the
+module" into "size decides the regime", which is the more useful statement and the one that made
+the minimal file worth writing separately. **A comment claiming a measurement is a measurement**,
+and this section is entirely about what happens when nobody re-reads one.
