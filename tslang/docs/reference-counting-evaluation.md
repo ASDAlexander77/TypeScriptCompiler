@@ -726,13 +726,17 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
-5am. **A catch variable's value is uninitialised under the JIT.** Filed by §9.65, and not an
-   ownership bug: all three models, both opt levels, every payload type, and correct ahead of
-   time in every case tried. Supersedes §9.29's "reads 0" and its "depends on what else the
-   module throws" - the same binary run three times reads 134, 131, 184. The suspect is the
-   image-base-relative RVAs in the MSVC EH descriptors, read under the JIT's `__ImageBase` shim
-   (§9.13): the handler is found and the clause runs, but the exception object never reaches the
-   slot the catchpad names.
+5am. **A catch clause whose type descriptor lands at the JIT image base becomes `catch(...)`.**
+   Filed by §9.65, diagnosed in §9.66. RTDyld's image base is the lowest section load address, so
+   a descriptor allocated there has RVA 0 - and `dispType == 0` is the MSVC encoding's
+   `catch(...)`. The clause still catches, so the only visible symptom is that the catch object
+   is never copied and the variable reads uninitialised memory. Not an ownership bug and not
+   `rc`-specific: all three models, both opt levels, every payload type, and correct ahead of
+   time in every case tried, where RVA 0 is a PE's DOS header and never a datum. Supersedes
+   §9.29's "reads 0" and its "depends on what else the module throws". **The image-base shim of
+   §9.13, which this item first accused, is measured working** - the throw-side and handler-side
+   bases match. Fix: place code below read-only data via `reserveAllocationSpace`, so the RVA-0
+   sentinel can only fall on code, where nothing reads 0 as "none".
 
 5al. **A virtual or interface call on an imported class is never consumed.** Filed by §9.64 out
    of what was left of 5o. An imported method has no body here, so `functionReturnsOwned`
@@ -5019,8 +5023,13 @@ throwing from a `[Symbol.dispose]()` does not work at all, so the price was theo
 not: a `using` whose disposal throws, with something to catch it, prints `body / caught / done.`
 and exits 0. The failing case that produced the original claim was a throwing disposal with
 *nothing* to catch it - and a plain `throw 1` with no `using` anywhere gives the identical
-`0xE06D7363` and exit 127, because an uncaught exception terminates a process. `??_7type_info@@6B@`
-appears nowhere. So the price is now measurable, and it is paid: an inner `using` whose disposal
+`0xE06D7363` and exit 127, because an uncaught exception terminates a process.
+
+> **One correction to this paragraph, from §9.66's work.** "`??_7type_info@@6B@` appears nowhere"
+> was measured with `--shared-libs=TypeScriptRuntime.dll`, and is too strong. Without that
+> library *every* throwing program fails to JIT on that symbol, throwing disposal or not - which
+> is almost certainly what §9.62 hit. The correction that stands is the attribution: the symbol
+> has nothing to do with disposals. So the price is now measurable, and it is paid: an inner `using` whose disposal
 throws while an exception is already unwinding terminates at `0x80000003` in every model. Worth
 saying plainly, because TC39's explicit-resource-management proposal specifies `SuppressedError`
 there - the original error preserved, the disposal's error attached - and terminating is not that.
@@ -5079,3 +5088,73 @@ was written from the reasoning rather than from a run. Checking it is what turne
 module" into "size decides the regime", which is the more useful statement and the one that made
 the minimal file worth writing separately. **A comment claiming a measurement is a measurement**,
 and this section is entirely about what happens when nobody re-reads one.
+
+### 9.66 Item 5am: a type descriptor at RVA 0 is a `catch(...)` (and 9.65's suspect was innocent)
+
+§9.65 found the catch-variable bug to be JIT-only and filed 5am naming the image-base shim of
+§9.13 as the suspect. **That suspect is innocent, and the real cause is one line of arithmetic.**
+
+**What the personality is actually handed.** Wrapping `__CxxFrameHandler3` under the JIT and
+printing its inputs settles the throw side immediately: magic `0x19930520`, four parameters, and
+
+```
+[eh] jitImageBase=000002842c3d0000 dcImageBase=000002842c3d0000 (match)
+[eh] EstablisherFrame=000000b08c78e740   thrown value=2 at ...e76c
+```
+
+The two image bases **match**, so the shim works. The addresses reconcile with the disassembly
+exactly - the thrown object at frame+0x2c is `rbp-0x14`, the catch slot at frame+0x3c is
+`rbp-0x4` - and the slot reads the same garbage before the search call and again at the
+consolidate, so the copy simply never happens.
+
+**Resolving the tables the way the handler does gives the answer in one line.** Walking
+`HandlerData -> FuncInfo -> TryBlockMap -> HandlerType` against `pDC->ImageBase`:
+
+```
+handler[0] adj=00000001 dispType=0 dispCatchObj=60 dispOfHandler=327952 dispFrame=56
+bytes at ImageBase+16: '.H'
+```
+
+`dispCatchObj` (0x3c) and `dispFrame` (0x38) are right. **`dispType` is 0** - and in the MSVC
+encoding a zero type RVA means `catch(...)`. The clause is silently a catch-all. It still
+catches, which is why nothing looks wrong; but a catch-all has no catch object, so
+`BuildCatchObject` copies nothing and the clause reads whatever the frame held.
+
+And `dispType` is 0 because it is **correct**. `'.H'` at the image base is `??_R0H@8`'s own name
+field: the `int` type descriptor is sitting *at* the image base, so its image-relative offset
+really is zero. RTDyld defines the image base as the lowest section load address, so whatever
+datum lands lowest gets RVA 0 - and RVA 0 is the encoding's sentinel for "no type". Ahead of
+time this cannot happen: RVA 0 of a PE is the DOS header, and no datum is ever there.
+
+**Everything §9.29 and §9.65 saw follows from that, including the parts that looked contradictory.**
+
+| observation | why |
+| --- | --- |
+| garbage, different every run | an uninitialised frame slot, never written |
+| "only in a module that throws just that one type" (§9.29) | which descriptor lands lowest depends on what the module contains |
+| "size decides the regime" (§9.65) | more content, and the descriptor is no longer at the lowest address |
+| an `int` clause still declines a `string` throw | that program's `char*` descriptor is at the base; the `int` one has a real RVA and filters correctly |
+| `00catch_value.ts` passes, `00catch_value_minimal.ts` does not | measured: the passing file's handlers read `dispType=65536, 65584, 65632`, and nothing meaningful sits at its image base |
+
+That last row is a prediction made before it was run, which is what makes it evidence rather than
+a story: the file was known to pass, so its descriptors had to be off the base, and they are.
+
+**The fix is not in the shim, and not a one-liner.** The datum at RVA 0 is always the first byte
+of the lowest section, so "nothing at RVA 0" cannot be arranged by padding an allocation - the
+base moves with it. What can be arranged is *which* section is lowest: no field in the MSVC EH
+encoding treats a **code** RVA of 0 as a sentinel, so a layout that puts code below all read-only
+data removes the ambiguity. `SectionMemoryManager` supports exactly that through
+`needsToReserveAllocationSpace`/`reserveAllocationSpace` - reserve one region and lay out code,
+then read-only, then read-write. The alternative is JITLink's `ObjectLinkingLayer`, which models
+an image base explicitly, and which is a much larger change.
+
+5am is therefore re-stated rather than closed, with the diagnosis it was missing:
+
+5am. **A catch clause whose type descriptor lands at the JIT image base becomes `catch(...)`.**
+   RTDyld's image base is the lowest section load address, so a descriptor allocated there has
+   RVA 0, and `dispType == 0` is the MSVC encoding's `catch(...)`. The clause still catches, so
+   only the missing catch-object copy is visible - the value reads as uninitialised memory.
+   Not `rc`-specific, not an ownership bug, and correct ahead of time in every case tried. The
+   fix is to place code below read-only data via `reserveAllocationSpace`, so that the RVA-0
+   sentinel can only ever fall on code, where nothing reads 0 as "none". Proven in §9.66; the
+   image-base shim of §9.13, which the item previously accused, is measured working.
