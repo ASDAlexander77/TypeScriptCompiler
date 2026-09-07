@@ -447,17 +447,22 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    that never retained its fields, and a pushed owned result never marked consumed - so
    `raytrace`'s figure went **up**, 79.3 MB to 114.2: part of §9.30's number was memory freed
    while still referenced.
-5o. **Classify an instance method's callee.** **Investigated 2026-09-04, mostly NOT done, see
-   §9.32.** `calleeNameOf` now looks through the bound-function chains the dialect's own
-   canonicalizer already resolves, which is safe and worth almost nothing: every non-virtual
-   method reference in `raytrace` is a constructor. The value is all in virtual dispatch, and
-   `private` does not make that single-target here - this compiler accepts a subclass
-   redeclaring a private method and dispatches to the override, where TypeScript rejects the
-   program. Doing it properly needs the callee's override set, which the pass cannot see and
-   MLIRGen cannot close cross-module, and it buys 2.6% of `raytrace`. Left open deliberately.
-   §9.46 adds one more shape to the same set: a constructor interface's `new` slot now
-   classifies as returning owned, but the call reaching it goes through `ts.InterfaceSymbolRef`
-   and so is left alone, and every `new C(...)` through such an interface leaks one instance.
+5o. **Classify an instance method's callee.** **DONE - by §9.46, §9.53 and §9.54, and measured
+   closed in §9.64.** The item was written on 2026-09-04 and its text describes the compiler of
+   that day; each of its three claims has since become false, and none of them was re-read.
+   `raytrace` now refuses **0 of its 80** owning calls, where the item says virtual dispatch
+   costs it 2.6%. A precise override set - the thing the item calls the proper fix - would change
+   **two** decisions across all 261 corpus files, both cross-module. And `new C(...)` through a
+   constructor interface, which the item says leaks one instance every time, measures 4.1 MB
+   against `none`'s 13.4, because §9.53's interface half covers the shape §9.46 could not.
+   What survives is cross-module only and is re-filed as 5al, because it is an ABI question
+   rather than a classification one.
+   The half of the original investigation that still reads true: `calleeNameOf` looks through the
+   bound-function chains the dialect's own canonicalizer already resolves, and that is worth
+   almost nothing on its own, because every non-virtual method reference in `raytrace` is a
+   constructor. `private` does not make a call single-target here either - this compiler accepts a
+   subclass redeclaring a private method and dispatches to the override, where TypeScript rejects
+   the program.
 5p. **A closure owns its capture box.** **Done 2026-09-04, see §9.33.** A bound or hybrid
    function value carries the tag of its `this` beside the pointer, as an interface does, and
    only a closure over captured variables is marked as owning it - a bound method must not take
@@ -721,6 +726,18 @@ path 1 first and alone; treat path 2 as its own change with its own verification
    something not registered yet - so the report was conditional and the failure was not; it needed
    to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
    diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
+5al. **A virtual or interface call on an imported class is never consumed.** Filed by §9.64 out
+   of what was left of 5o. An imported method has no body here, so `functionReturnsOwned`
+   declines it and one such candidate poisons its whole member name; every virtual and interface
+   refusal in the corpus is in an `import_*` file, and there are sixteen of them. The
+   classification is easy - an imported tslang function carries `export` where a `declare`d C
+   function carries nothing. The soundness is not: consuming its result is only right if the
+   defining module was built reference-counted, and a statically linked one carries no marker at
+   all, because the import is resolved by re-parsing its source before any artifact exists.
+   §9.7's agreed policy is to allow a mixed link and leak rather than double-free, so this is a
+   question about that policy rather than a task. Dominated by the same section's larger case:
+   the default lib is GC-built, so under `-mm=rc` everything it allocates crosses and leaks.
+
 5ak. **DONE, §9.61 - a jump is asked whether it leaves the block, not where it is written.** The
    release at the end of a loop body is skipped by an iteration that ends in `break` or
    `continue`, so that iteration's discarded temporaries were lost. Releasing at every jump would
@@ -4265,13 +4282,21 @@ the generator is still reading it, and that is what 2,617 tests would say.
 Every memory number before this was taken from the JIT, where ~13-16 MB of the measurement is
 `tslang.exe` itself and the optimiser elides different things in different models - which is why
 the same shape read 41 MB one hour and 12.6 MB the next, and why §9.31's numbers had to be
-withdrawn in §9.43. `scratchpad/measure.ps1` builds a native executable per model, runs it, and
-samples peak working set: about 3.3 MB of floor instead of 16, no compiler in the process, and the
+withdrawn in §9.43. `scripts/measure_memory_model.ps1` builds a native executable per model, runs it, and
+reports peak working set: about 3.3 MB of floor instead of 16, no compiler in the process, and the
 exit code checked - which means something as of §9.51.
 
 Sampling `PeakWorkingSet64` must not sleep between reads: the counter reads **zero** once the
 process has exited, so a run that finishes between two samples is reported as 0 MB rather than as
 small.
+
+**And do not sample at all.** The script above lived in a session scratchpad and was gone by
+§9.64, which had to rebuild it - and the rebuild read 0.0 MB for every model on its first run,
+because a program that finishes before the *first* sample defeats the no-sleep rule as
+thoroughly as sleeping does. The kernel keeps the peak for as long as a handle to the process is
+open, exited or not, so `GetProcessMemoryInfo` answers after `WaitForExit` with no loop and no
+race. That is what `scripts/measure_memory_model.ps1` does now, and it is in the tree rather
+than in a scratchpad for the reason this paragraph exists.
 
 ### 9.53 Step 5af, first half: a call with no single callee still has an answer
 
@@ -4865,4 +4890,74 @@ is the reason to run all three models rather than one: where `gc` and `rc` crash
 the assertion and names the case, because an uninitialised slot holds something different under
 each allocator. Same bug, three faces - the pattern of section 9.55.
 
-Suite 2,649 -> 2,659, all green, ownership verifier included.
+Suite 2,649 -> 2,655, all green, ownership verifier included. Six tests: the file's four named
+entries, plus the two ahead-of-time corpus entries the loop generates for it under `rc` and
+`none` - its JIT entries under those models are named already, so the loop skips them.
+
+### 9.64 Closing 5o by measuring it rather than by writing more of it (5o)
+
+5o was left open on 2026-09-04 with three specific claims. All three are now false, two of them
+because §9.46 and §9.53 closed them the day after the item was written and nobody went back to
+its text. This section is the measurement that retires it.
+
+**The instrument.** A counter in `OwnedReturnConsumptionPass` over every call whose result owns
+heap memory: how many are refused, and which of the four answers refused them - a named callee,
+the closed-world rule, the virtual candidate set, the interface candidate set. Plus an upper
+bound, `virt_exact_would_pass`: would this virtual call pass if the candidate set were exactly
+the declaration named on the ref? That is what a *perfect* override set could buy, and it is
+deliberately not sound - it is a ceiling, not a proposal. Swept over all 261 corpus files that
+compile alone at `--opt --opt_level=3 -mm=rc`.
+
+| 5o's claim | measured |
+| --- | --- |
+| "it buys 2.6% of `raytrace`" | **0%.** `raytrace` refuses 0 of its 80 owning calls |
+| "doing it properly needs the callee's override set" | worth **2 calls in the whole corpus**, both cross-module |
+| "every `new C(...)` through such an interface leaks one instance" | does not reproduce; §9.53's interface half covers it |
+
+The third was checked on the harness rather than on the text: a virtual method returning a new
+instance, an interface method returning one, and `new C(...)` through a constructor interface all
+measure **4.1 MB against `none`'s 13.4** at 300k iterations, which is `gc`'s 5.7 beaten rather
+than matched.
+
+**The candidate-set worry was the wrong worry.** §9.53 chose a superset - every method in the
+module sharing the call's member name - and recorded the precision cost as "two unrelated classes
+share a method name and disagree". Three attempts to build that case all failed to leak, each for
+its own reason worth knowing: a call with no override is not virtual at all and never consults the
+set; a method returning a field still retains on the way out, so it *does* return owned; and a
+generator method's wrapper returns `new <state object>`, so it classifies as owning too and the
+generator exclusion never reaches it. The ceiling column then said why - across 261 files a
+precise override set would change **two** decisions.
+
+**What is actually left is cross-module, and it is not a classification problem.** Every virtual
+and interface refusal in the corpus is in an `import_*` file - eleven virtual, five interface,
+zero anywhere else:
+
+```
+ts.Func @M.Animal.speak !ts.func<...> {
+} {export, sym_visibility = "private"}     // imported: no body to read
+```
+
+`functionReturnsOwned` declines an empty body, so one imported method poisons the candidate set
+for its whole member name and every `.speak()` in `import_class_extends.ts` keeps its string.
+An imported tslang function is distinguishable from a foreign one - it carries `export` where a
+`declare`d C function carries nothing - so the *classification* is easy. What is not easy is that
+consuming its result is only sound if the module that defines it was built reference-counted, and
+that is §4's question, not this one. §9.7 settled the policy for the case it can see: a DLL
+carries `__tsmm_<model>_...`, a mismatch warns, and the agreed answer is to allow the link and
+leak rather than double-free. A statically linked second module carries no marker at all, because
+the import is resolved by re-parsing that module's *source* before any artifact of it exists.
+
+So the residue is filed where it belongs rather than left under 5o:
+
+5al. **A virtual or interface call on an imported class is never consumed.** Sound to fix only
+   once a link can guarantee both sides were built reference-counted; today it cannot, and §9.7's
+   agreed policy is to leak across a mixed link rather than risk a double free. Making a mixed
+   static link *fail* would make it sound, and that reverses a recorded decision, so it is a
+   question rather than a task. Dominated in any case by the same section's larger instance: the
+   default lib is GC-built, so under `-mm=rc` everything the standard library allocates crosses a
+   boundary and leaks.
+
+**5o is done.** Not by this section - by §9.46, §9.53 and §9.54, on 2026-09-04 and 2026-09-05.
+What this section adds is the evidence, and the lesson that an item's own text is a claim about
+the compiler as it was, not as it is: three sessions of work went past it without re-reading it.
+No code changed here.
