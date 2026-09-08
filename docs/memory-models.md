@@ -102,7 +102,8 @@ reference counts and brings no collector at all. A hello-world is 335 KB under `
 
 If the build for your model is missing, the compiler says so and names the directory rather
 than falling back to another model's copy — that would link and then misbehave at run time.
-Build them with the default library's `build.bat`, which produces all three.
+Build them with the default library's `build.bat` (`build.sh` on Linux), which produces all
+three.
 
 ## Other limits of `-mm=rc`
 

@@ -5881,8 +5881,11 @@ Without the check it reached lld as a `-L` to nowhere and came back as `cannot o
 another model's build would be worse than either: it links, and then misbehaves at run time.
 
 **Building it.** `build.bat` builds all three models for both configurations (twelve artifacts);
-`build.bat release rc` builds one. The install step needed no change - its `xcopy /e` already
-copies whatever subdirectories are there.
+`build.bat release rc` builds one. `build.sh` on Linux takes the same two arguments and does the
+same thing, passing the model down to `scripts/build.sh` as its fourth argument (after the
+compiler and `pic`, so the existing three keep their positions). The install step needed no
+change on either platform - `xcopy /e` and `cp -r` already copy whatever subdirectories are
+there.
 
 One leftover worth knowing: the artifacts at the *old* paths (`lib/release/TypeScriptDefaultLib.lib`
 and friends, with no model directory) are now dead, since nothing looks there any more. The build
