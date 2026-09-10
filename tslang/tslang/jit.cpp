@@ -479,7 +479,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
         if (!maybeEngine)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+            auto err = maybeEngine.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
         auto &engine = maybeEngine.get();
@@ -487,7 +489,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto expectedFPtr = engine->lookup(mainFuncName);
         if (!expectedFPtr)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << expectedFPtr.takeError();
+            auto err = expectedFPtr.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << err;
+            llvm::consumeError(std::move(err));
             return -1;
         }
 
@@ -550,7 +554,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
     if (!tmBuilderOrError)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << tmBuilderOrError.takeError() << "\n";
+        auto err = tmBuilderOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -562,7 +568,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto tmOrError = tmBuilderOrError->createTargetMachine();
     if (!tmOrError)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << tmOrError.takeError() << "\n";
+        auto err = tmOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -571,7 +579,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (auto err = optPipeline(llvmModule.get()))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -606,7 +615,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             .create();
     if (!maybeJit)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << maybeJit.takeError() << "\n";
+        auto err = maybeJit.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -617,7 +628,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(jit->getDataLayout().getGlobalPrefix());
     if (!generator)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << generator.takeError() << "\n";
+        auto err = generator.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -663,7 +676,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
         if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(crtOverrides))))
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << std::move(err) << "\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
     }
@@ -671,14 +685,16 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(llvmContext))))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
     // run platform initializers (llvm.global_ctors etc.)
     if (auto err = jit->initialize(jit->getMainJITDylib()))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -686,7 +702,13 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto sym = jit->lookup(name);
         if (!sym)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << sym.takeError() << "\n";
+            // Streaming an Error only logs it - the payload survives, and ~Error then trips
+            // fatalUncheckedError, turning a plain "no such symbol" into an abort with a crash
+            // backtrace wherever LLVM_ENABLE_ABI_BREAKING_CHECKS is on (i.e. debug builds).
+            // consumeError takes the payload; the message itself is unchanged.
+            auto err = sym.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
 
