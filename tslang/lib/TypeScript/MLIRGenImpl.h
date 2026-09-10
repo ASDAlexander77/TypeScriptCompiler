@@ -3892,6 +3892,16 @@ class MLIRGenImpl
         // condition
         auto isDefaultCase = SyntaxKind::DefaultClause == (SyntaxKind)caseBlock;
         auto isDefaultAsFirstCase = index == 0 && clauses.size() > 1;
+
+        // The narrowing a `case` introduces is emitted into the case BODY, below - never here.
+        // A condition only ever reads the discriminant, and that is already loaded once before
+        // the first case and shared by all of them. Narrowing here instead would reinterpret the
+        // union payload as this case's member before knowing the discriminant matches it, and a
+        // member holding references is then retained through whatever the payload happens to
+        // hold: where the union carries a smaller member, everything above it is uninitialized,
+        // and under `-mm=rc` those bytes get walked as pointers.
+        Expression caseExpr;
+        mlir::Value caseValue;
         if (SyntaxKind::CaseClause == (SyntaxKind)caseBlock)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -3901,12 +3911,10 @@ class MLIRGenImpl
                 setPreviousCondOrJumpOp(previousConditionOrFirstBranchOp, caseConditionBlock);
             }
 
-            auto caseExpr = caseBlock.as<CaseClause>()->expression;
+            caseExpr = caseBlock.as<CaseClause>()->expression;
             auto result = mlirGen(caseExpr, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto caseValue = V(result);
-
-            extraCode(caseExpr, caseValue);
+            caseValue = V(result);
 
             auto switchValueEffective = switchValue;
             auto actualCaseType = mth.stripLiteralType(caseValue.getType());
@@ -3969,6 +3977,14 @@ class MLIRGenImpl
             }
 
             pendingConditions.clear();
+
+            // the narrowed binding, now that this block is only reached when the case matched.
+            // It has to precede both the generated statements it may add and the body's own,
+            // which are what resolve the name it registers.
+            if (caseValue)
+            {
+                extraCode(caseExpr, caseValue);
+            }
 
             // process body case
             if (genContext.generatedStatements.size() > 0)

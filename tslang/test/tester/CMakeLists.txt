@@ -228,6 +228,7 @@ add_test(NAME test-compile-00-union-type COMMAND test-runner "${PROJECT_SOURCE_D
 add_test(NAME test-compile-01-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01union_type.ts")
 add_test(NAME test-compile-02-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02union_type.ts")
 add_test(NAME test-compile-03-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type.ts")
+add_test(NAME test-compile-03-union-type-case-order COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type_case_order.ts")
 add_test(NAME test-compile-04-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
 add_test(NAME test-compile-05-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05union_type.ts")
 add_test(NAME test-compile-00-union-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_ops.ts")
@@ -641,6 +642,7 @@ add_test(NAME test-jit-00-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_
 add_test(NAME test-jit-01-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01union_type.ts")
 add_test(NAME test-jit-02-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02union_type.ts")
 add_test(NAME test-jit-03-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type.ts")
+add_test(NAME test-jit-03-union-type-case-order COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type_case_order.ts")
 add_test(NAME test-jit-04-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
 add_test(NAME test-jit-05-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/05union_type.ts")
 add_test(NAME test-jit-00-union-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_ops.ts")
@@ -1607,6 +1609,7 @@ set(TSLANG_CORPUS
     03disposable.ts
     03iterator.ts
     03union_type.ts
+    03union_type_case_order.ts
     04disposable.ts
     04union_type.ts
     05strings.ts
