@@ -245,7 +245,7 @@ namespace mlirgen
 
             MLIRDebugInfoHelper mdi(builder, debugScope);
             mdi.setFile(mainSourceFileName);
-            location = mdi.getCompileUnit(location, "TypeScript Native Compiler", isOptimized);
+            location = mdi.getCompileUnit(location, "TypeScript Compiler", isOptimized);
         }
 
         // We create an empty MLIR module and codegen functions one at a time and

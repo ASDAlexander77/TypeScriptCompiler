@@ -158,8 +158,17 @@ cl::opt<bool> newCMakeFolder("cmake", cl::desc("New CMake Project"), cl::cat(Typ
 cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
 
 static void TslangPrintVersion(llvm::raw_ostream &OS) {
-  OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
-  OS << "  TySC version " << TSLANG_PACKAGE_VERSION << '\n' << '\n';
+  OS << "TypeScript Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
+
+  llvm::StringRef packageVersion = TSLANG_PACKAGE_VERSION;
+  if (packageVersion.empty() || packageVersion == "0.0.0-not-set")
+  {
+    OS << "  tslang version (commit " << TSLANG_GIT_COMMIT_HASH << ")" << '\n' << '\n';
+  }
+  else
+  {
+    OS << "  tslang version " << packageVersion << '\n' << '\n';
+  }
 
   cl::PrintVersionMessage();
 }
