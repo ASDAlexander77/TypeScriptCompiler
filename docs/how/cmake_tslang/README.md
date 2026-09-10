@@ -43,6 +43,19 @@ set_source_files_properties(mycode.ts PROPERTIES
     COMPILE_OPTIONS "--define;TSLANG=1")                      # per-file
 ```
 
+## Memory model
+
+The default library is compiled separately for each memory model, and a program has to link
+the build matching the model it was compiled with. One variable drives both:
+
+```
+cmake --preset default -DTSLANG_MEMORY_MODEL=rc
+```
+
+It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
+`none`; only `gc` links Boehm.
+
 ## Minimal alternative
 
 If you don't need a first-class language, either:

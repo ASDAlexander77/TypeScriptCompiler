@@ -53,13 +53,13 @@ std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
 
-bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string sub1, std::string sub2, std::string sub3, std::string fileName)
+bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string subPath, std::string fileName)
 {
     llvm::SmallVector<char> destPath(0);
     destPath.reserve(256);
     destPath.append(path);
 
-    llvm::sys::path::append(destPath, sub1, sub2, sub3, fileName);
+    llvm::sys::path::append(destPath, subPath, fileName);
     if (!llvm::sys::fs::exists(destPath))
     {
         return false;
@@ -137,13 +137,13 @@ int installDefaultLib(int argc, char **argv)
         return -1;
     }
 
-    // The release build is always produced; verify its static lib landed in the
-    // per-build subfolder (defaultlib/lib/release/...).
+    // The release build of the default memory model is always produced; verify its static lib
+    // landed in the subfolder the compiler will later look in. Built from getDefaultLibSubDir
+    // rather than spelled out here, so this check cannot drift away from what exe.cpp and
+    // jit.cpp resolve (defaultlib/lib/release/gc/...).
     auto result = checkFileExistsAtPath(
         builtPath,
-        DEFAULT_LIB_DIR,
-        "lib",
-        DEFAULT_LIB_BUILD_DIR_RELEASE,
+        getDefaultLibSubDir(/*shared=*/false, /*debugBuild=*/false, memoryModelName(MemoryModelGC)),
 #ifdef WIN32
         DEFAULT_LIB_NAME ".lib"
 #else

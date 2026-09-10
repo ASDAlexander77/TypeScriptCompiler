@@ -326,9 +326,8 @@ else()
 	set(TSLANG_DEFAULTLIB_BUILD "debug")
 endif()
 
-if (NOT DEFINED TSLANG_MEMORY_MODEL)
-	set(TSLANG_MEMORY_MODEL "gc")
-endif()
+set(TSLANG_MEMORY_MODEL "gc" CACHE STRING "Memory model of compiled code: gc, rc or none")
+set_property(CACHE TSLANG_MEMORY_MODEL PROPERTY STRINGS gc rc none)
 
 # Lib folders
 link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD}/${TSLANG_MEMORY_MODEL})
@@ -339,6 +338,10 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
 else()
 	set(CMAKE_TSLANG_FLAGS "--di --opt_level=0") # global
 endif()
+
+# The same variable that picked the link directory has to reach the compiler as well, or the
+# program is compiled for one model and linked against another model's default lib.
+set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -mm=${TSLANG_MEMORY_MODEL}") # global
 
 if(WIN32)
 else()
@@ -353,7 +356,13 @@ add_executable(${PROJECT_NAME}
 )
 
 # required libs
-set(TSLANG_LINK_LIBS "TypeScriptDefaultLib" "TypeScriptAsyncRuntime" "gc" "LLVMSupport")
+set(TSLANG_LINK_LIBS "TypeScriptDefaultLib" "TypeScriptAsyncRuntime" "LLVMSupport")
+
+# Boehm is only referenced by the gc default lib; the rc and none builds allocate through the
+# CRT and must not drag a collector in.
+if (TSLANG_MEMORY_MODEL STREQUAL "gc")
+    list(APPEND TSLANG_LINK_LIBS "gc")
+endif()
 
 # ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
 if(WIN32)
@@ -482,6 +491,19 @@ set(CMAKE_TSLANG_FLAGS "--opt_level=3")                       # global
 set_source_files_properties(mycode.ts PROPERTIES
     COMPILE_OPTIONS "--define;TSLANG=1")                      # per-file
 ```
+
+## Memory model
+
+The default library is compiled separately for each memory model, and a program has to link
+the build matching the model it was compiled with. One variable drives both:
+
+```
+cmake --preset default -DTSLANG_MEMORY_MODEL=rc
+```
+
+It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
+`none`; only `gc` links Boehm.
 
 ## Minimal alternative
 

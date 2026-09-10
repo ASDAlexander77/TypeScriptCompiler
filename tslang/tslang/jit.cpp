@@ -14,6 +14,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Path.h"
 
@@ -361,13 +362,29 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto defaultLibSubDir =
             getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
                                 memoryModelName(compileOptions.memoryModel));
-        clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(),
+        auto defaultLibFile = mergeWithDefaultLibPath(getDefaultLibPath(),
 #ifdef WIN32
             defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"
 #else
             defaultLibSubDir + "/lib" DEFAULT_LIB_NAME ".so"
 #endif
-        ));
+        );
+
+        // Named here rather than left to the loader, for the reason exe.cpp checks the link
+        // directory: a model that has not been built otherwise surfaces as the platform's
+        // "module could not be found", which says nothing about which model is missing. No
+        // fallback to another model's build - the wrong one loads and then misbehaves at run
+        // time, which is far harder to diagnose than a file that is not there.
+        if (!defaultLibFile.empty() && !llvm::sys::fs::exists(defaultLibFile))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << "no default library built for -mm=" << memoryModelName(compileOptions.memoryModel)
+                << ": " << defaultLibFile << " does not exist. Build it (see the default-lib build "
+                << "scripts), or compile with --no-default-lib.\n";
+            return -1;
+        }
+
+        clSharedLibs.push_back(defaultLibFile);
     }      
 
     // add default libs in case they are not part of options

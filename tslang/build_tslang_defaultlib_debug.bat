@@ -3,7 +3,8 @@ cd ../../TypeScriptCompilerDefaultLib/
 call build.bat
 
 rem Copy the whole staged defaultlib tree so per-build subfolders are preserved:
-rem defaultlib\dll\{debug,release}, defaultlib\lib\{debug,release}, *.d.ts, generics\
+rem defaultlib\dll\{debug,release}\{gc,rc,none}, defaultlib\lib\{debug,release}\{gc,rc,none},
+rem *.d.ts, generics\
 xcopy __build\defaultlib\*.* "../TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/defaultlib/" /i /e /y
 
 popd
