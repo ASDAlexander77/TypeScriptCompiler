@@ -230,11 +230,13 @@ class MLIRGenImpl
 
     bool hasGlobalCode(NodeArray<Statement> statements);
 
+    bool hasGlobalInitialization(NodeArray<Statement> statements);
+
     // appends GlobalConstructorOp after the last one in the module; LAST priority so it runs after CRT init
     void addGlobalConstructor(mlir::Location location, StringRef funcName);
 
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
-                          const GenContext &genContext);
+                          bool hasDeferredStatements, const GenContext &genContext);
 
     mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                                           int notResolved);

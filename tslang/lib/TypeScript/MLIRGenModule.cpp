@@ -521,6 +521,23 @@ namespace mlirgen
         return anyCode;        
     }
 
+    // Whether anything at the root runs when the program starts - code, or a variable whose
+    // initializer does. Deliberately a wider question than hasGlobalCode: that one asks only
+    // whether an entry function has to be built to hold statements held back from the module
+    // level, and answering it "yes" for variables moves them out of the module scope where the
+    // file's own functions have to be able to see them.
+    bool MLIRGenImpl::hasGlobalInitialization(NodeArray<Statement> statements) {
+        for (auto &statement : statements)
+        {
+            if (isCodeStatment(statement) || statement == SyntaxKind::VariableStatement)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     void MLIRGenImpl::addGlobalConstructor(mlir::Location location, StringRef funcName)
     {
         mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -535,7 +552,7 @@ namespace mlirgen
     }
 
     mlir::LogicalResult MLIRGenImpl::generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
-                          const GenContext &genContext)
+                          bool hasDeferredStatements, const GenContext &genContext)
     {
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
@@ -545,6 +562,13 @@ namespace mlirgen
 
         if (theModule.lookupSymbol(fullGlobalFuncName))
         {
+            // a user-written `main` already is the entry point, so with nothing deferred to run
+            // ahead of it there is nothing left to generate
+            if (!hasDeferredStatements)
+            {
+                return mlir::success();
+            }
+
             // create global ctor
             name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
             fullGlobalFuncName = getFullNamespaceName(name);
@@ -558,6 +582,13 @@ namespace mlirgen
 
         if (mlir::failed(mlirGenFunctionBody(location, name, fullGlobalFuncName, funcType,
             [&](mlir::Location location, const GenContext &genContext) {
+                // nothing was held back from the module level, so this is an empty entry point
+                // that exists only to be the program's entry (see the call site)
+                if (!hasDeferredStatements)
+                {
+                    return mlir::success();
+                }
+
                 for (auto &statement : statements)
                 {
                     auto isVariableStatement = statement == SyntaxKind::VariableStatement;
@@ -716,9 +747,22 @@ namespace mlirgen
        
         if (isMain && notResolved == 0)
         {
-            // generate code to run at global entry
-            if (anyGlobalCode && mlir::failed(
-                generateGlobalEntryCode(loc(module), module->statements, genContext)))
+            // generate code to run at global entry.
+            //
+            // A program still needs `main` when the root holds no code to defer into it: root-level
+            // variables initialize from the global constructors either way, but with no `main` there
+            // is nothing for the JIT to call and nothing for the CRT to link against, which is how
+            // `class S {} const s = new S();` used to fail with "Symbols not found: [ main ]".
+            //
+            // A root that only declares things gets no entry point, because that is what a library
+            // looks like and its object is linked next to a program that has a `main` of its own -
+            // emitting one here is a duplicate symbol at link time. A DLL is excluded outright.
+            // `isExecutable` is deliberately not the test: it is set only by `--emit=exe`, while
+            // everything that links a program compiles with `--emit=obj` and drives the linker
+            // itself (same trap as giveEntryPointAnExitCode in LowerToLLVM.cpp).
+            auto needsEntryPoint = !compileOptions.isDLL && hasGlobalInitialization(module->statements);
+            if ((anyGlobalCode || needsEntryPoint) && mlir::failed(
+                generateGlobalEntryCode(loc(module), module->statements, anyGlobalCode, genContext)))
             {
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
