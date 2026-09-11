@@ -1,12 +1,11 @@
-#define NODE_MODULE_TSLANG_PATH "node_modules/tslang"
+#define TYPES_TSLANG_PATH "types/tslang"
 #define DOT_VSCODE_PATH ".vscode"
 
 const auto TSCONFIG_JSON_DATA = R"raw(
 {
     "compilerOptions": {
-      "target": "es2017",
-      "lib": ["dom", "dom.iterable", "esnext"],
-      "allowJs": true,
+      "target": "esnext",
+      "allowJs": false,
       "skipLibCheck": true,
       "strict": true,
       "noEmit": true,
@@ -17,9 +16,9 @@ const auto TSCONFIG_JSON_DATA = R"raw(
       "isolatedModules": true,
       "jsx": "preserve",
       "incremental": true,
-      "types": ["tslang"]
+      "types": ["./types/tslang", "<<DEFAULT_LIB_PATH>>/lib.d.ts"]
     },
-    "include": ["<<PROJECT>>.ts"],
+    "include": ["mycode.ts", "adder.ts"],
     "exclude": ["node_modules"]
 }
 )raw";
@@ -109,7 +108,6 @@ const auto TASKS_JSON_DATA = R"raw(
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
-                "--no-default-lib",
                 "--opt",
                 "--opt_level=3",
                 "--emit=exe",
@@ -133,10 +131,9 @@ const auto TASKS_JSON_DATA = R"raw(
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
-                "--no-default-lib",
                 "--di",
                 "--opt_level=0",
-                "--emit=exe",
+                "--emit=dll",
                 "${file}"
             ],
             "group": {
@@ -157,10 +154,9 @@ const auto TASKS_JSON_DATA = R"raw(
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
-                "--no-default-lib",
                 "--opt",
                 "--opt_level=3",
-                "--emit=exe",
+                "--emit=dll",
                 "${file}"
             ],
             "group": {
@@ -286,7 +282,6 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
-                "--no-default-lib",
                 "--opt",
                 "--opt_level=3",                
                 "--emit=jit",

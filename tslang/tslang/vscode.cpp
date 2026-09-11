@@ -74,6 +74,26 @@ int createVSCodeFolder(int argc, char **argv)
     StringMap<StringRef> vals;
     vals["PROJECT"] = projectName;
 
+    // set common params
+    SmallVector<const char *, 256> args(argv, argv + 1);    
+    auto driverPath = getExecutablePath(args[0]);
+
+    SmallVector<char> appPath{};
+    appPath.append(driverPath.begin(), driverPath.end());
+    path::remove_filename(appPath);
+
+    auto tslangCmd = fixpath(driverPath, appPath);
+    auto gcLibPath = fixpath(getGCLibPath(), appPath);
+    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
+    auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
+    auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
+
+    vals["TSLANG_CMD"] = tslangCmd;
+    vals["GC_LIB_PATH"] = gcLibPath;
+    vals["LLVM_LIB_PATH"] = llvmLibPath;
+    vals["TSLANG_LIB_PATH"] = tslangLibPath;
+    vals["DEFAULT_LIB_PATH"] = defaultLibPath;
+
     StringRef tsconfig(TSCONFIG_JSON_DATA);
     SmallString<128> result;
     substitute(tsconfig, vals, result);
@@ -90,16 +110,16 @@ int createVSCodeFolder(int argc, char **argv)
         return -1;
     }
 
-    // node_modules
-    if (auto error_code = fs::create_directories(NODE_MODULE_TSLANG_PATH))
+    // types folder
+    if (auto error_code = fs::create_directories(TYPES_TSLANG_PATH))
     {
-        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << TYPES_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
-    if (auto error_code = fs::set_current_path(NODE_MODULE_TSLANG_PATH))
+    if (auto error_code = fs::set_current_path(TYPES_TSLANG_PATH))
     {
-        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << TYPES_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }
 
@@ -131,27 +151,6 @@ int createVSCodeFolder(int argc, char **argv)
     {
         return -1;
     }    
-
-    // set params
-
-    SmallVector<const char *, 256> args(argv, argv + 1);    
-    auto driverPath = getExecutablePath(args[0]);
-
-    SmallVector<char> appPath{};
-    appPath.append(driverPath.begin(), driverPath.end());
-    path::remove_filename(appPath);
-
-    auto tslangCmd = fixpath(driverPath, appPath);
-    auto gcLibPath = fixpath(getGCLibPath(), appPath);
-    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
-    auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
-    auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
-
-    vals["TSLANG_CMD"] = tslangCmd;
-    vals["GC_LIB_PATH"] = gcLibPath;
-    vals["LLVM_LIB_PATH"] = llvmLibPath;
-    vals["TSLANG_LIB_PATH"] = tslangLibPath;
-    vals["DEFAULT_LIB_PATH"] = defaultLibPath;
 
     StringRef tasks(TASKS_JSON_DATA);
     SmallString<128> resultTasks;

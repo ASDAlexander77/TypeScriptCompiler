@@ -21,6 +21,10 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
 
 string getExecutablePath(const char *);
 string fixpath(string, const SmallVectorImpl<char>&);
+string getGCLibPath();
+string getLLVMLibPath();
+string getTslangLibPath();
+string getDefaultLibPath();
 
 int createCMakeFolder(int argc, char **argv)
 {
@@ -48,9 +52,29 @@ int createCMakeFolder(int argc, char **argv)
         WithColor::error(errs(), "tslang") << "Can't get info about current folder: " << error_code.message() << "\n";
         return -1;
     }
-
+        
     StringMap<StringRef> vals;
     vals["PROJECT"] = projectName;
+
+    // add common params
+    SmallVector<const char *, 256> args(argv, argv + 1);    
+    auto driverPath = getExecutablePath(args[0]);
+
+    SmallVector<char> appPath{};
+    appPath.append(driverPath.begin(), driverPath.end());
+    path::remove_filename(appPath);
+
+    auto tslangCmd = fixpath(driverPath, appPath);
+    auto gcLibPath = fixpath(getGCLibPath(), appPath);
+    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
+    auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
+    auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
+
+    vals["TSLANG_CMD"] = tslangCmd;
+    vals["GC_LIB_PATH"] = gcLibPath;
+    vals["LLVM_LIB_PATH"] = llvmLibPath;
+    vals["TSLANG_LIB_PATH"] = tslangLibPath;
+    vals["DEFAULT_LIB_PATH"] = defaultLibPath;
 
     StringRef cmakeLists(CMAKE_LISTS_TXT_DATA);
     SmallString<128> resultCMakeLists;
@@ -85,6 +109,20 @@ int createCMakeFolder(int argc, char **argv)
     {
         return -1;
     }
+
+    StringRef tsconfig(TSCONFIG_JSON_DATA);
+    SmallString<128> result;
+    substitute(tsconfig, vals, result);    
+
+    if (auto error_code = create_file_base("tsconfig.json", result.str()))
+    {
+        return -1;
+    }
+
+    if (auto error_code = create_file_base("tslang.natvis", TSLANG_NATVIS))
+    {
+        return -1;
+    }        
 
     // cmake folder
     if (auto error_code = fs::create_directory(CMAKE_FOLDER_PATH))
