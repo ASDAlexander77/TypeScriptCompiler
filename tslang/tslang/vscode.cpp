@@ -99,6 +99,13 @@ int createVSCodeFolder(int argc, char **argv)
     
     StringRef tsconfig(TSCONFIG_JSON_DATA);
     SmallString<128> result;
+
+    SmallString<128> projectFileName;
+    projectFileName.append("[\"");
+    projectFileName.append(projectName);
+    projectFileName.append(".ts\"]");
+    vals["INCLUDE"] = projectFileName; // default include
+
     substitute(tsconfig, vals, result);
 
     if (auto error_code = create_file_base("tsconfig.json", result.str()))

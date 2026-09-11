@@ -115,6 +115,9 @@ int createCMakeFolder(int argc, char **argv)
 
     StringRef tsconfig(TSCONFIG_JSON_DATA);
     SmallString<128> result;
+
+    vals["INCLUDE"] = "[\"mycode.ts\", \"adder.ts\"]"; // default include
+
     substitute(tsconfig, vals, result);    
 
     if (auto error_code = create_file_base("tsconfig.json", result.str()))
