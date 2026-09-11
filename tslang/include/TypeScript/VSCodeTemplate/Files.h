@@ -84,7 +84,6 @@ const auto TASKS_JSON_DATA = R"raw(
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
-                "--no-default-lib",
                 "--di",
                 "--opt_level=0",
                 "--emit=exe",
@@ -413,7 +412,7 @@ const auto CMAKE_MYCODE_TS_DATA = R"raw(// Example source in TypeScript language
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
-import './adder'
+import { Adder } from './adder'
 
 export function foo_add(a: int, b: int): int {
     const adder = new Adder(a, b);
