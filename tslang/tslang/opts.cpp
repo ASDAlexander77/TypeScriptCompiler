@@ -25,6 +25,7 @@ extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> appendGCtorsToMethod;
+extern cl::opt<bool> entryPoint;
 extern cl::opt<bool> strictNullChecks;
 extern cl::opt<bool> embedExportDeclarationsAction;
 extern cl::opt<bool> enableFastMath;
@@ -56,6 +57,10 @@ CompileOptions prepareOptions()
     compileOptions.sizeBits = 32;
     compileOptions.isExecutable = emitAction == Action::BuildExe;
     compileOptions.isDLL = emitAction == Action::BuildDll;
+    // A DLL never gets one, whatever was asked for: its root initialization runs from the
+    // global constructors and there is no program here to enter.
+    compileOptions.generateEntryPoint = !compileOptions.isDLL &&
+        (compileOptions.isJit || compileOptions.isExecutable || entryPoint.getValue());
     compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     compileOptions.strictNullChecks = strictNullChecks.getValue();
     compileOptions.enableFastMath = enableFastMath.getValue();

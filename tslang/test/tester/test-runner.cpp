@@ -177,7 +177,7 @@ void createCompileBatchFile()
     batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
+    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
@@ -206,7 +206,7 @@ void createCompileBatchFile()
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << "$TSLANGEXEPATH/tslang --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -420,7 +420,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".obj ";
-        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << (isFirst ? "--entry-point " : "") << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
         isFirst = false;
     }
 
@@ -457,7 +457,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
         // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
         auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
-        batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        batFile << "$TSLANGEXEPATH/tslang --emit=obj " << (isFirst ? "--entry-point " : "") << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
     }
 
@@ -539,7 +539,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        (first ? execBat : sharedBat) << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << (first ? "--entry-point " : "") << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
 
         first = false;
     }
@@ -634,7 +634,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSLANGEXEPATH/tslang --emit=obj " << (first ? "--entry-point " : "") << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }

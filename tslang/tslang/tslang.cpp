@@ -146,6 +146,7 @@ cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (us
 
 cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> entryPoint("entry-point", cl::desc("This file holds the program's entry point, so give it a 'main' even when its root only declares and initializes variables. Implied by --emit=jit and --emit=exe; pass it for the program's own file when building with --emit=obj and linking yourself, and leave it off for the libraries linked beside it"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method (" MLIR_GCTORS ") to initialize Static Objects instead of Global Constructors (gctors)"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory));

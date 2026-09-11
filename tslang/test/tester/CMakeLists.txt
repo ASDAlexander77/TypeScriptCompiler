@@ -965,6 +965,10 @@ add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOU
 
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
+# A library whose root only declares and initializes a variable must not get an entry point of
+# its own: it is compiled with the same --emit=obj as the program linked beside it, and a `main`
+# in both fails to link. Only the program half is given --entry-point.
+add_test(NAME test-compile-export-import-root-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_root_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_root_var.ts")
 add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 # Item 5al: an imported function's returned reference is taken over rather than retained
 # again. Registered statically as well as shared, and under every memory model - the

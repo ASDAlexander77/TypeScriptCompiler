@@ -756,11 +756,16 @@ namespace mlirgen
             //
             // A root that only declares things gets no entry point, because that is what a library
             // looks like and its object is linked next to a program that has a `main` of its own -
-            // emitting one here is a duplicate symbol at link time. A DLL is excluded outright.
-            // `isExecutable` is deliberately not the test: it is set only by `--emit=exe`, while
-            // everything that links a program compiles with `--emit=obj` and drives the linker
-            // itself (same trap as giveEntryPointAnExitCode in LowerToLLVM.cpp).
-            auto needsEntryPoint = !compileOptions.isDLL && hasGlobalInitialization(module->statements);
+            // emitting one here is a duplicate symbol at link time.
+            //
+            // `isExecutable` alone is not the test: it is set only by `--emit=exe`, while everything
+            // that links a program compiles with `--emit=obj` and drives the linker itself (same trap
+            // as giveEntryPointAnExitCode in LowerToLLVM.cpp). But `--emit=obj` compiles the libraries
+            // too, and a library root initializing a variable looks exactly like a program root doing
+            // the same, so the object path has to be told which file is the program - that is what
+            // generateEntryPoint carries. Guessing it from the emit action instead put a `main` in
+            // every library object, and two of those failed to link.
+            auto needsEntryPoint = compileOptions.generateEntryPoint && hasGlobalInitialization(module->statements);
             if ((anyGlobalCode || needsEntryPoint) && mlir::failed(
                 generateGlobalEntryCode(loc(module), module->statements, anyGlobalCode, genContext)))
             {

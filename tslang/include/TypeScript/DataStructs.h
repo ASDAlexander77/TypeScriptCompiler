@@ -21,6 +21,14 @@ struct CompileOptions
     bool isWindows;
     bool isExecutable;
     bool isDLL;
+
+    // Whether this compilation is building the module that holds the program's entry point, and
+    // so has to have a `main` even when the root holds no code to put in one. `--emit=jit` and
+    // `--emit=exe` answer that by themselves. `--emit=obj` cannot: the same action compiles the
+    // program and every library linked beside it, so a program built that way says so with
+    // `--entry-point`. Without that, a library whose root merely initializes a variable would
+    // define `main` too, and two of them fail to link with "duplicate symbol: main".
+    bool generateEntryPoint;
     enum Exports exportOpt;
     bool embedExportDeclarations;
     std::string outputFolder;
