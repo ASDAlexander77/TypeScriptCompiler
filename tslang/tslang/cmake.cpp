@@ -127,6 +127,24 @@ int createCMakeFolder(int argc, char **argv)
         return -1;
     }        
 
+    // types folder
+    if (auto error_code = fs::create_directories(TYPES_TSLANG_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << TYPES_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        return -1;            
+    }    
+
+    if (auto error_code = fs::set_current_path(TYPES_TSLANG_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << TYPES_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        return -1;
+    }
+
+    if (auto error_code = create_file_base("index.d.ts", TSLANG_INDEX_D_TS))
+    {
+        return -1;
+    }    
+
     // cmake folder
     if (auto error_code = fs::create_directory(CMAKE_FOLDER_PATH))
     {

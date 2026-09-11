@@ -16,7 +16,7 @@ const auto TSCONFIG_JSON_DATA = R"raw(
       "isolatedModules": true,
       "jsx": "preserve",
       "incremental": true,
-      "types": ["./types/tslang", "<<DEFAULT_LIB_PATH>>/lib.d.ts"]
+      "types": ["./types/tslang", "<<DEFAULT_LIB_PATH>>/defaultlib/lib.d.ts"]
     },
     "include": ["mycode.ts", "adder.ts"],
     "exclude": ["node_modules"]
