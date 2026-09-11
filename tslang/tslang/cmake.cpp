@@ -69,12 +69,15 @@ int createCMakeFolder(int argc, char **argv)
     auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
     auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
     auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
+    // hint for finding tslang app (same logic as in createVSCodeFolder)
+    auto tslangAppPath = fixpath(string(appPath.begin(), appPath.end()), appPath);
 
     vals["TSLANG_CMD"] = tslangCmd;
     vals["GC_LIB_PATH"] = gcLibPath;
     vals["LLVM_LIB_PATH"] = llvmLibPath;
     vals["TSLANG_LIB_PATH"] = tslangLibPath;
     vals["DEFAULT_LIB_PATH"] = defaultLibPath;
+    vals["TSLANG_APP_PATH"] = tslangAppPath;
 
     StringRef cmakeLists(CMAKE_LISTS_TXT_DATA);
     SmallString<128> resultCMakeLists;
@@ -136,17 +139,6 @@ int createCMakeFolder(int argc, char **argv)
         WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << CMAKE_FOLDER_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }
-
-    // hint for finding tslang app (same logic as in createVSCodeFolder)
-    SmallVector<const char *, 256> args(argv, argv + 1);
-    auto driverPath = getExecutablePath(args[0]);
-
-    SmallVector<char> appPath{};
-    appPath.append(driverPath.begin(), driverPath.end());
-    path::remove_filename(appPath);
-
-    auto tslangAppPath = fixpath(string(appPath.begin(), appPath.end()), appPath);
-    vals["TSLANG_APP_PATH"] = tslangAppPath;
 
     StringRef determineCompiler(CMAKE_DETERMINE_TSLANG_COMPILER_DATA);
     SmallString<128> resultDetermineCompiler;

@@ -87,13 +87,16 @@ int createVSCodeFolder(int argc, char **argv)
     auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
     auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
     auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
-
+    // hint for finding tslang app (same logic as in createVSCodeFolder)
+    auto tslangAppPath = fixpath(string(appPath.begin(), appPath.end()), appPath);
+    
     vals["TSLANG_CMD"] = tslangCmd;
     vals["GC_LIB_PATH"] = gcLibPath;
     vals["LLVM_LIB_PATH"] = llvmLibPath;
     vals["TSLANG_LIB_PATH"] = tslangLibPath;
     vals["DEFAULT_LIB_PATH"] = defaultLibPath;
-
+    vals["TSLANG_APP_PATH"] = tslangAppPath;
+    
     StringRef tsconfig(TSCONFIG_JSON_DATA);
     SmallString<128> result;
     substitute(tsconfig, vals, result);
