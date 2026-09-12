@@ -124,8 +124,13 @@ the executable's roots, so it frees objects the executable is still holding. The
 a crash: the freed memory is reallocated and the program reads a plausible wrong value, which
 only shows up when what was written over it differs from what was there.
 
-Build the shared collector with `scripts/build_gc_release_shared_vs.bat`, link against
-`3rdParty/gcdll/x64/release/lib/gc.lib`, and ship `gc.dll` beside the executable.
+The Windows release package ships the shared collector in its `gcdll` folder, beside the static
+`gc.lib` at its root — both files are named `gc.lib`, so the folder is what tells them apart.
+Compile the executable **and** every shared library with `--gc-lib-path=<package>/gcdll`, and
+ship `gcdll/gc.dll` beside the executable.
+
+From a source build, the same files come from `scripts/build_gc_release_shared_vs.bat`: link
+against `3rdParty/gcdll/x64/release/lib/gc.lib` and ship `3rdParty/gcdll/x64/release/bin/gc.dll`.
 
 Statically linked programs are unaffected and keep the static `gc.lib` — one binary already
 means one collector. `-mm=rc` and `-mm=none` are unaffected either way: neither has a collector.
