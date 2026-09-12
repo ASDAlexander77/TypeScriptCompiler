@@ -2062,3 +2062,15 @@ add_test(NAME test-jit-rc-shared-export-import-vars-2 COMMAND test-runner -jit -
 add_test(NAME test-jit-none-shared-export-import-vars-2 COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 add_test(NAME test-jit-rc-shared-export-import-enum COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
 add_test(NAME test-jit-none-shared-export-import-enum COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+
+# Without the shared Boehm (see TSLANG_HAVE_SHARED_GC above) every -shared test fails to link
+# with "could not open 'gc.lib'", so disable them instead. Only Windows links the shared
+# collector. Every test named "-shared-" passes -shared and no other test does.
+if (WIN32 AND NOT TSLANG_HAVE_SHARED_GC)
+    get_property(tslang_all_tests DIRECTORY PROPERTY TESTS)
+    foreach(tslang_test ${tslang_all_tests})
+        if (tslang_test MATCHES "-shared-")
+            set_tests_properties(${tslang_test} PROPERTIES DISABLED TRUE)
+        endif()
+    endforeach()
+endif()
