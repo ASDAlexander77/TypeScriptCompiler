@@ -5062,6 +5062,12 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 
         CodeLogicHelper clh(endCleanupOp, rewriter);
 
+        // getUnwindDest() is deliberately not read here, unlike the windows lowering above. A
+        // landingpad is only reachable as an invoke's unwind destination, so there is no way to
+        // hand the exception to another pad from here - resume is the only exit. TryOpLowering
+        // knows this and never gives an EndCleanupOp an unwind destination on this path: a
+        // cleanup that does have an enclosing pad to reach is lowered to a catch-all pad and a
+        // rethrow instead (linuxCleanupOnlyChainsToParent).
         rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(endCleanupOp, transformed.getLandingPad());
 
         auto terminator = rewriter.getInsertionBlock()->getTerminator();

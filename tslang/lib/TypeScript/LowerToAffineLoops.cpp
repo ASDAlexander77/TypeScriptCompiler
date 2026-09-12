@@ -1624,8 +1624,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
+        // A cleanup-only try (a `using` scope) nested inside another try in the same function
+        // has to hand the exception on to that enclosing landing pad once it has disposed, and
+        // on the Itanium path that is done by rethrowing rather than resuming - see the
+        // linuxHasCleanups block at the end of this method. That rethrow needs a catch-all pad,
+        // same as the nested-finally case beside it.
+        auto linuxCleanupOnlyChainsToParent =
+            linuxHasCleanups && !catchHasOps && !finallyHasOps && parentTryOpLandingPad;
+
         mlir::Value catchAll;
-        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType())
+        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
+            linuxCleanupOnlyChainsToParent)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
@@ -1898,12 +1907,45 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     rewriter.mergeBlocks(finallyBlock, cleanupBlockLast);
                 }
             }
+            else if (linuxCleanupOnlyChainsToParent)
+            {
+                // cleanup-only try (a `using` scope) with another try around it in the same
+                // function. Resuming here would unwind straight past that enclosing try - its
+                // landing pad would be left with no predecessors at all and an exception the
+                // function does mean to catch would leave it instead, which is what
+                // 00using_nested_scopes.ts caught.
+                //
+                // The funclet path repairs this shape in Win32ExceptionPass by redirecting the
+                // unwind edge, but there is no equivalent on the Itanium path: a landingpad is
+                // only ever reachable as an invoke's unwind destination, so this cleanup cannot
+                // simply branch into the enclosing pad. What it can do is catch the exception,
+                // dispose, and throw it again with the enclosing pad as the unwind edge. That is
+                // exactly the shape the nested-finally case above already lowers to - catch-all
+                // pad, __cxa_begin_catch, the cleanup body, then a rethrow that unwinds to the
+                // parent - so this reuses it rather than inventing a second one.
+                //
+                // No EndCatchOp: the rethrow leaves through the unwind edge, so control never
+                // reaches an instruction after it.
+                rewriter.setInsertionPointToStart(cleanupBlock);
+
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
+                tsContext->unwind[throwOp] = parentTryOpLandingPad;
+            }
             else
             {
-                // cleanup-only try (e.g. lowered from a `using` declaration with no explicit
-                // catch/finally): the Windows path already sets up its own landing pad for this
-                // case unconditionally at cleanupHasOps&&isWindows above; mirror that here for
-                // Linux so cleanupBlockLast keeps a valid terminator instead of losing it.
+                // cleanup-only try at the top of its function: nothing encloses it, so once the
+                // cleanup has run the exception carries on out of the function. The Windows path
+                // sets up its own landing pad for this case unconditionally at
+                // cleanupHasOps&&isWindows above; mirror that here so cleanupBlockLast keeps a
+                // valid terminator instead of losing it.
                 rewriter.setInsertionPointToStart(cleanupBlock);
 
                 auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
@@ -1911,14 +1953,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
                 rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
-                mlir::SmallVector<mlir::Block *> unwindDests;
-                if (parentTryOpLandingPad)
-                {
-                    unwindDests.push_back(parentTryOpLandingPad);
-                }
-
                 auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
-                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp,
+                                                                   mlir::SmallVector<mlir::Block *>{});
             }
         }
 

@@ -13,6 +13,10 @@
 #
 # Sharded purely so ctest can spread the cost; the shards are one sweep, not one test each.
 
+# Run with `cmake -P`, so no policy version is inherited from the project. Without this,
+# CMP0057 defaults to OLD and `IN_LIST` below is not an operator.
+cmake_minimum_required(VERSION 3.17.3)
+
 if(NOT DEFINED TSLANG OR NOT DEFINED TESTS_DIR OR NOT DEFINED SHARD OR NOT DEFINED SHARDS)
     message(FATAL_ERROR "TSLANG, TESTS_DIR, SHARD and SHARDS are all required")
 endif()
