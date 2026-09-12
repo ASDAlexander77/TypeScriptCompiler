@@ -237,7 +237,7 @@ Merged as #309 (compiler) and TypeScriptCompilerDefaultLib #6.
   beside it or in `../bin` (so the default library's `build_core.bat` keeps working). Nothing found
   is an **error**, not a fallback to the static `gc.lib`.
 - A lone program is unchanged: static `gc.lib`, no `gc.dll` copied.
-- `test-compile-gc-shared-auto` (`gc-shared-auto.cmake`) drives `tslang --emit=dll/exe` itself -
+- `test-compile-gc-shared-auto` (`shared-collector-auto.cmake`) drives `tslang --emit=dll/exe` itself -
   `test-runner` links with lld directly and never exercised the compiler's choice. Five cases: the
   library gets `gc.dll`; its importer runs clean; `--gc-lib-path` at a shared build alone is
   enough; a lone exe runs with no `gc.dll` near it and gets none copied; a library with only a

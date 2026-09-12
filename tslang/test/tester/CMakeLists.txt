@@ -1881,7 +1881,7 @@ add_test(NAME test-compile-rc-debug-info
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
 
-# tslang choosing the collector's linkage itself under -mm=gc - see gc-shared-auto.cmake.
+# tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
 if (WIN32)
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
         set(gc_shared_auto_opt "--opt;--opt_level=3")
@@ -1898,7 +1898,7 @@ if (WIN32)
                      "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      "-DOPT=${gc_shared_auto_opt}"
-                     -P "${CMAKE_CURRENT_SOURCE_DIR}/gc-shared-auto.cmake")
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
 endif()
 
 set(TSLANG_OWNERSHIP_SHARDS 8)
