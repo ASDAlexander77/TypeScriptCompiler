@@ -415,10 +415,36 @@ namespace mlirgen
         auto location = stripMetadata(loc(awaitExpressionAST));
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
+        if (resultType && isa<mlir_ts::VoidType>(resultType))
+        {
+            resultType = mlir::Type();
+        }
+
+        // The result travels through a slot in the awaiting function rather than through
+        // `!async.value<T>`. MLIR's async-to-LLVM conversion runs before the TypeScript types are
+        // lowered (see transform.cpp - createConvertAsyncToLLVMPass, then createLowerToLLVMPass),
+        // and it converts an async value's payload with its own LLVMTypeConverter, which knows
+        // nothing about this dialect. So a payload of any TypeScript type - `number`, `string`,
+        // `boolean`, a class, an array - failed with "failed to legalize operation
+        // 'async.runtime.load'", and only awaits whose payload happened to be a builtin type
+        // (`i32`, `i64`, `f32`) ever compiled. Section 9.56.
+        //
+        // A token carries no payload, so nothing has to convert. The awaited body writes into the
+        // slot, `async.await` on the token is what orders that write before the read, and the
+        // outlining pass passes the slot in as an argument like any other value the region uses
+        // from above.
+        mlir::Value resultSlot;
+        if (resultType)
+        {
+            resultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(resultType),
+                                                             mlir::Value(), builder.getBoolAttr(false),
+                                                             builder.getIndexAttr(0));
+        }
 
         ValueOrLogicalResult result(mlir::failure());
+        auto slotOwnsResult = false;
         auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
-            location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{},
+            location, mlir::TypeRange(), mlir::ValueRange{},
             mlir::ValueRange{}, [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                 DITableScopeT debugAsyncCodeScope(debugScope);
                 MLIRDebugInfoHelper mdi(builder, debugScope);
@@ -431,26 +457,60 @@ namespace mlirgen
                 if (result)
                 {
                     auto value = V(result);
-                    if (value)
+                    // No cast: `resultType` is what `evaluate` said this same expression produces,
+                    // and the yield that used to carry it had to match the execute's result type
+                    // for the op to verify at all.
+                    if (value && resultSlot)
                     {
-                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
+                        // Under reference counting the slot is what keeps the result alive across
+                        // the await. Everything the awaited expression produced is a temporary of
+                        // the region's own block, so without this the value is released the moment
+                        // the region ends - before the awaiting function has read the slot. It read
+                        // correctly at -O0 and garbage at -O3, which is only ever a matter of what
+                        // reused the block first.
+                        //
+                        // Same two cases as a local's declaration: a value that already carries a
+                        // reference hands it over, anything else is retained. Either way the slot
+                        // is the owner from here, and the awaiting scope gives that reference back.
+                        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, resultType))
+                        {
+                            if (producesOwnedReference(value))
+                            {
+                                consumeOwnedReference(value);
+                            }
+                            else
+                            {
+                                builder.create<mlir_ts::RetainOp>(location, value);
+                            }
+
+                            slotOwnsResult = true;
+                        }
+
+                        builder.create<mlir_ts::StoreOp>(location, value, resultSlot);
                     }
-                    else
-                    {
-                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
-                    }
+
+                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 }
             });
         EXIT_IF_FAILED_OR_NO_VALUE(result)
 
-        if (resultType)
+        // Registered only now, and only if the store above actually happened: an owned slot is
+        // released at scope exit whatever is in it, and a slot nothing wrote holds whatever the
+        // frame held before. The attributes say the retain is elsewhere - inside the region, beside
+        // the store - so the verifier does not go looking for one at the declaration.
+        if (slotOwnsResult && genContext.ownedVars != nullptr)
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getResults().back());
-            return asyncAwaitOp.getResult();
+            auto varOp = resultSlot.getDefiningOp<mlir_ts::VariableOp>();
+            varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            genContext.ownedVars->push_back(resultSlot);
         }
-        else
+
+        builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
+
+        if (resultSlot)
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
+            return V(builder.create<mlir_ts::LoadOp>(location, resultType, resultSlot));
         }
 
         return mlir::success();
@@ -872,9 +932,25 @@ namespace mlirgen
         // in case of detecting value for recursive calls we need to ignore failed calls
         // last condition we need to reduce posobilities to ignore legitimate failure
         // TODO: register dummy function declaration at the begginnning of detecting function output
-        if (result.failed_or_no_value() && genContext.allowPartialResolve && 
+        if (result.failed_or_no_value() && genContext.allowPartialResolve &&
             (callExpr == SyntaxKind::Identifier || callExpr == SyntaxKind::PropertyAccessExpression))
-        {            
+        {
+            // The callee is not resolvable yet, but the arguments still have to be walked - this
+            // is the same gap section 9.55 closed on `new`, in the other place a discovery pass
+            // gives up early. Discovery is where a lambda's captures are found, so an expression
+            // it never visits contributes none: `this.testRay({ start: pos, dir: livec }, scene)`
+            // inside a closure, with `scene` read nowhere else in it, left `scene` uncaptured and
+            // the real pass then read the enclosing function's own value from inside the lambda -
+            // "'ts.Load' op using value defined outside the region".
+            //
+            // Errors are ignored for the same reason they are ignored there: the callee failing is
+            // this branch's own premise, so its arguments can fail with it, and discovery is
+            // best-effort by construction.
+            for (auto argument : callExpression->arguments)
+            {
+                mlirGen(argument, genContext);
+            }
+
             // we need to return success to continue code traversing
             return V(builder.create<mlir_ts::UndefOp>(location, builder.getNoneType()));
         }
@@ -1016,6 +1092,40 @@ namespace mlirgen
         }
 
         builder.create<mlir_ts::DeleteOp>(location, expr);
+
+        // Under reference counting `delete` gives up the reference the expression named, so the
+        // storage that named it has to stop holding one. Otherwise the release that storage
+        // gets anyway - scope exit for a local, the instance's release routine for a field -
+        // runs a second time against a block this already let go of, and the second one lands
+        // wherever the allocator has since put that memory. Whether that faults depends on what
+        // was allocated in between, which is why `00class_static.ts` needed two `print` calls
+        // between the delete and the end of the function to show it.
+        if (compileOptions.isRefCounted())
+        {
+            // `delete new C()` and `delete c`, where `c` is a `const` the compiler kept as a
+            // value rather than storage: the reference is one nobody has claimed, and §9.30
+            // releases those at the end of the block. This is the claim.
+            if (producesOwnedReference(expr))
+            {
+                consumeOwnedReference(expr);
+            }
+
+            // And the other way the same reference gets released twice: a variable with real
+            // storage is deleted through a load of its slot, and the slot is released again on
+            // the way out. `ts.Delete` then `ts.ReleaseSlot` on the same slot is visible in the
+            // dialect for `let c = new C(); delete c;`. Storing null is what makes the second
+            // one a no-operation - every release routine checks its pointer first. This is a
+            // raw store on purpose: the assignment path would retain and release around it.
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto reference = mcl.GetReferenceFromValue(location, expr);
+            if (reference && isOwningSlot(location, reference))
+            {
+                auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                mlir::Value clearedValue;
+                CAST(clearedValue, location, expr.getType(), nullValue, genContext);
+                builder.create<mlir_ts::StoreOp>(location, clearedValue, reference);
+            }
+        }
 
         return mlir::success();
     }
@@ -1458,6 +1568,12 @@ namespace mlirgen
         auto objType = mlir_ts::ObjectType::get(tupleType);
         auto valueAddr =
             builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+
+        // this block releases what its fields hold when it dies, so it has to take a reference
+        // to each of them - the same debt an array literal's data block carries, and for the
+        // same reason there is no assignment on this path to carry it (§9.21)
+        mlirGenRetainCaptured(location, mlir::ValueRange{tupleValue});
+
         builder.create<mlir_ts::StoreOp>(location, tupleValue, valueAddr);
         auto objValue = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
         return V(objValue);

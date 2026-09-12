@@ -1,0 +1,5896 @@
+# Reference Counting as a Memory-Model Option
+
+Status: **evaluation only, nothing implemented.** Written 2026-09-02 against `main`,
+revised the same day after the framing correction below.
+
+> **Framing.** RC is evaluated here as a **selectable memory model alongside GC**
+> (`-mm=rc`), not as a replacement for it. GC stays the default. This is the right
+> framing, and it changes the conclusion: the cycle problem stops being a blocker and
+> becomes an opt-in tradeoff, and delivery can be incremental. It also introduces one
+> problem a replacement never had — two models must coexist in one compiler and, worse,
+> in one link.
+
+## Verdict
+
+**Viable as an option, and the option framing is what makes it viable.** Three things
+follow, in priority order:
+
+1. **The ABI decision must be made before any code is written.** It is the only decision
+   here that cannot be retrofitted. See §4 — this is the new central risk and it did not
+   exist under the replacement framing.
+2. **The per-gap engineering cost does not go down.** Everything in §3 is still required
+   in full for `-mm=rc` to work at all. What changes is who bears the risk, and that the
+   work can ship in stages behind a flag instead of landing complete.
+3. **The permanent cost is two memory models in MLIRGen forever.** Not a one-time build
+   cost — a standing tax on every future language feature. That is the real thing to
+   weigh, and it is a judgment about project capacity, not a technical blocker.
+
+---
+
+## 1. What the GC integration actually is today
+
+This matters because the current design is what makes the option look cheap when it is not.
+
+GC is wired in by **name substitution at the very end of the pipeline**. Nothing in
+the IR, the type system, or MLIRGen knows a collector exists.
+
+| Piece | Location | Role |
+| --- | --- | --- |
+| `GCPass` | `lib/TypeScript/GCPass.cpp` (274 lines) | Runs *after* `LowerToLLVMPass`. Renames `malloc`/`calloc`/`realloc`/`free`/`aligned_alloc` to `GC_malloc`/`GC_malloc_atomic`/`GC_realloc`/`GC_free`/`GC_memalign`; injects `GC_init()`; attaches `allockind("alloc")` so `-O3` GVN does not CSE two allocations into one; drops the `memset` after `GC_malloc`. |
+| Allocation funnel | `LLVMCodeHelperBase.h:253` `_MemoryAlloc` | Every heap allocation in the compiler goes through here and emits a plain `malloc` call. **Twelve** call sites total. |
+| Typed heap | `MLIRGenClasses.cpp:1322` `mlirGenClassTypeBitmap` | Emits a per-class pointer/non-pointer bitmap, cached in a global, fed to `GC_make_descriptor` / `GC_malloc_explicitly_typed`. |
+| Pipeline order | `tslang/transform.cpp:161` | `GCPass` is the last pass, gated on `!disableGC`. |
+
+The consequence for an *option*: GC's selectability is nearly free because GC needs no
+program knowledge, so its entire branch point is one late pass. RC needs the most program
+knowledge of anything in the compiler and must branch in MLIRGen, before lowering discards
+type and ownership information. **The two models cannot be made selectable at the same
+place in the pipeline.** That asymmetry is what the rest of this document is about.
+
+### 1.1 The option mechanism already exists
+
+`CompileOptions` (`include/TypeScript/DataStructs.h`) is a plain struct threaded through
+MLIRGen, both lowering passes, and `GCPass`. `disableGC` already rides it end to end
+(`opts.cpp:45` → `transform.cpp:161`). Adding `memoryModel` is mechanically identical.
+
+One cleanup this should force: `-nogc` today means *leak everything* — `malloc` with no
+`free`. With RC added there are three models, so the flag should become
+`-mm={gc,rc,none}` with `-nogc` kept as an alias, rather than two independent booleans
+that can contradict each other. **Done 2026-09-03 — see §9.6.**
+
+## 2. What already exists to build on
+
+Four assets. They are why a staged approach is viable rather than a standing start.
+
+- **Pointer-layout metadata per class.** `mlirGenClassTypeBitmap` already computes which
+  fields of a class are pointers, by generating code that takes field addresses off a null
+  base. Today it produces a Boehm descriptor word; the same data is exactly what a
+  recursive release routine needs.
+- **A scope-exit walker.** `mlirGenDisposable` (`MLIRGenImpl.h:511`) already walks out of
+  scopes calling `Symbol.dispose` on `using` variables, with `CurrentScope` / `LoopScope` /
+  `FullStack` depth semantics for `break`/`continue`/`return`. That is the shape release
+  calls need.
+- **RC precedent in-pipeline.** `transform.cpp:142` already runs MLIR's
+  `createAsyncRuntimeRefCountingPass()` (plus its `Opt` variant under `-O`). Liveness-based
+  automatic RC on async values runs in this compiler today. The technique is proven here.
+- **A test-runner pattern for option variants.** `-fast-math` tests already get their own
+  cached script names (`jitfm` / `compilefm`) because the plain `jit`/`compile` scripts are
+  shared across parallel single-file tests and embed the flag string at creation time
+  (`test-runner.cpp:85-108`). `-mm=rc` reuses that pattern directly.
+
+## 3. What RC requires that does not exist
+
+Six gaps. **The option framing reduces none of them** — each is still required in full
+before `-mm=rc` produces a correct program. Ordered roughly by cost.
+
+### 3.1 Object headers (the ABI decision, see §4)
+
+Nothing on the heap has a header. There is nowhere to put a count.
+
+- `string` lowers to a bare pointer (`LowerToLLVM.cpp:6101`) and is handed **straight to
+  libc**: `strlen` (`:485`, `:572`), `strcpy`/`strcat` (`:573`, `:574`), `strcmp`
+  (`:635`, `:849`, `:895`, `:1004`), `puts` (`:164`). A header can live *before* the
+  returned pointer so libc still works, but every release site must then recover
+  `ptr - sizeof(header)`, and every pointer from elsewhere must not.
+- `array` lowers to a by-value `{dataPtr, length}` struct (`LowerToLLVM.cpp:6115`).
+- A class instance is a raw pointer to its storage struct, field 0 being the vtable.
+
+### 3.2 Literal-versus-heap discrimination
+
+String literals and const arrays are LLVM globals, not heap blocks, but they flow into the
+same SSA values as heap results:
+
+```ts
+let s = cond ? "literal" : a + b;   // sometimes a global, sometimes heap
+```
+
+Releasing a global is a crash. Needs a saturating "immortal" count the globals also carry,
+or a pointer tag. Boehm needs neither — it ignores addresses outside its heap.
+
+### 3.3 An ownership model in MLIRGen
+
+The bulk of the work, with no shortcut. Values are plain `mlir::Value` with no
+owned/borrowed distinction. Retain and release decisions are needed at every assignment,
+field store, element store, argument pass, return, capture, and box-into-`any`, across the
+largest and most intricate part of the codebase.
+
+**This is also where the two models permanently diverge.** GC mode needs none of it. Every
+future language feature has to be correct under both.
+
+> **Started 2026-09-03 (§9.12).** Locals now own what they hold. The "correct under both"
+> tax turned out smaller than written here: ownership is stated once, in ops that erase under
+> a collector, so MLIRGen carries no second model - only a second lowering does.
+
+### 3.4 Type-erased release
+
+`any` boxes as `{size, typeNamePtr, payload}` (`AnyLogic.h:48`) where the type tag is a
+**type-name string**, under a standing `// TODO: add type id to track data type`. To
+release an `any`'s payload you must know whether it holds a pointer and which routine
+frees it. There is no id-to-release-function table. Tagged unions have the same problem.
+
+> **Addressed 2026-09-03 (§9.3).** Every tag now points into a per-concrete-type descriptor
+> carrying a kind id and a reserved release slot. The table step 4 needs has somewhere to
+> live; nothing fills it in yet.
+
+### 3.5 Cleanup landing pads
+
+`ENABLE_EXCEPTIONS` is on. Every throw path must release the live owned values in each
+frame it unwinds. Existing landing pads (`LowerToLLVM.cpp:4402`) do catch dispatch only.
+This is the classic source of RC bugs that surface only under exceptions.
+
+### 3.6 Interior references
+
+`BoundRefType` lowers to `{ptr, ptr}` and `GetReferenceFromValue` hands out references to
+object *fields*. An interior reference must keep its owner alive. Boehm handles this free
+via interior-pointer scanning; RC would need those values widened to carry and retain the
+owner.
+
+## 4. The new central problem: two models in one link
+
+> **Decided 2026-09-03: allow mixed links, treating what crosses as immortal** — leak rather
+> than double-free, chosen over a hard error because an error forces a per-model default lib.
+> The marker this needs landed in §9.7; the marking itself lands with ownership insertion.
+
+This risk **does not exist under the replacement framing** and is the single most important
+finding of the revision.
+
+There are 72 cross-module tests (`import_*` / `export_*`), and heap objects cross module
+boundaries in both directions: a consumer allocates instances of an imported class through
+its own synthesized `.new`, while an exporting module's own code allocates objects the
+consumer then holds and mutates. The declaration mechanism is source-text re-print and
+re-parse (`declExports`, `MLIRGenImpl.h:11304`), so **each side compiles its own view under
+its own `CompileOptions`.**
+
+Nothing today prevents a GC-built shared library from being linked against an RC-built
+consumer. If RC adds a header and GC does not, then:
+
+- RC-side code computes `ptr - sizeof(header)` on an object a GC-built module allocated
+  without one, and decrements whatever precedes it in the heap.
+- GC-side code hands out objects that RC-side scope exits will release and free.
+
+Both are **silent memory corruption**, not a link error. Given how much of this project's
+recent history is cross-module work, this would be a persistent, hard-to-diagnose class of
+bug.
+
+There are exactly two acceptable answers, and the choice must be made before any code is
+written because it is not retrofittable:
+
+**(a) Emit the header in both modes — recommended.** GC builds pay one word per heap object
+and ignore it. The ABI becomes uniform, mixed linking is safe, and the ABI change lands and
+is tested *under GC*, where a wrong count is harmless. This also makes §3.1 a mode-neutral
+change that can ship long before any RC semantics exist.
+
+**(b) Forbid mixed linking and fail loudly.** Emit a memory-model marker into `declExports`
+(it is text and re-parsed, so this is cheap) and additionally reference a mode-specific
+sentinel symbol so a mismatch fails at link time rather than at runtime.
+
+Doing neither is the worst outcome. (a) and (b) are not exclusive; (a) plus the marker from
+(b) is the strongest position.
+
+## 5. Cycles: a blocker under replacement, a documented tradeoff as an option
+
+> **Decided 2026-09-03: weak references in the language, spelled `WeakRef<T>`.** Not
+> leak-and-document. Representation settled in §9.8 — a weak count in front of the strong one,
+> so `-mm=gc` builds keep their single header word.
+
+Plain RC leaks cycles, and here the cycles are not exotic:
+
+- **Recursive closures are a compiler-generated cycle.** Capture records are heap allocated
+  (`LowerToAffineLoops.cpp:2106`, `ALLOC_CAPTURE_IN_HEAP`) and hold the captured values. A
+  self-referential arrow function stores its own `HybridFunction` `{funcPtr, captureBoxPtr}`
+  *into the very box that pointer names*. The compiler emits this, not an unusual program.
+- Ordinary user cycles: `class Node { parent: Node; children: Node[] }`, a generator holding
+  `this` while `this` holds the generator, mutually referencing objects.
+
+Of the 453 tests in `test/tester/tests`: 159 use classes, 86 use arrow functions, 22 use
+generators.
+
+**As an option this is acceptable and has direct precedent.** Swift ships ARC as its only
+model and leaks cycles by design, mitigated by `weak`/`unowned` and documentation. Here GC
+remains the default, so a user selecting `-mm=rc` is making the same informed trade Swift
+users make, and the safe model is one flag away. What this requires is honesty rather than
+a solution:
+
+- Document cycle leakage as a defined property of the mode, not a bug.
+- Decide whether to add a weak-reference annotation. TypeScript has no surface syntax for
+  it, so this is a language extension and should be a separate decision, not a prerequisite.
+- A trial-deletion cycle collector (Bacon-Rajan) remains available later and is a second
+  collector. As an *option* that is at least coherent, where under replacement it defeated
+  the purpose.
+
+*Not* a cycle, worth recording because it looks like one: object-literal method fields
+store an **unbound** function pointer. `getEffectiveFunctionTypeForTupleField`
+(`MLIRCodeLogic.h:158`) strips the bound-ness for storage, and `this` is re-bound at load
+time (`LowerToLLVM.cpp:5157`). A method-bearing object does not hold a pointer to itself.
+
+## 6. Standing costs of carrying two models
+
+Distinct from build cost. These do not end when the feature ships.
+
+| Cost | Detail |
+| --- | --- |
+| **MLIRGen carries two models** | Every future language feature must be correct under both, or explicitly unsupported under RC. Given this project's cadence of interface/generator/cross-module fixes, this compounds indefinitely. |
+| **Test matrix roughly doubles** | 453 tests, for whatever subset RC claims to support. The `jitfm`/`compilefm` pattern (`test-runner.cpp:85-108`) extends to `jitrc`/`compilerc`, so the mechanism exists; the CI time is the cost. |
+| **Mixed-link surface** | Permanent, per §4, unless the uniform-header answer is taken. |
+| **Flag surface** | `-mm={gc,rc,none}` must be coherent across JIT, executable, DLL and shared-import paths, all of which read `CompileOptions` independently. |
+
+## 7. Performance is not the argument
+
+The honest case for RC is **determinism and memory footprint**, not throughput. A naive
+implementation puts a retain/release on every array fat-pointer copy and every string
+assignment — and strings are the highest-churn allocation in the compiler, since every
+concat and every number-to-string allocates. Non-atomic counts are cheap, but
+`ENABLE_ASYNC` is on, so any value crossing a coroutine suspension point needs atomics or a
+thread-confinement proof that does not exist today.
+
+## 8. Cost by tier
+
+Tiers A and B are mode-neutral and improve the GC default immediately. C and D are the RC
+option proper.
+
+| Tier | Scope | Size | Effect |
+| --- | --- | --- | --- |
+| A | Escape analysis: promote non-escaping `MemoryAlloc` to `alloca` | small | Pure win, both modes |
+| H | Uniform object header in both modes (§4a) | medium | Mode-neutral; unblocks everything below |
+| B | Extend `mlirGenDisposable` to free provably scope-bound temporaries | small | Pure win |
+| C | `-mm=rc` supporting `string` only, other types still GC-allocated | medium | Shippable increment |
+| D | `-mm=rc` across the heap | multi-month | Leaks cycles, by documented design |
+| D+ | D plus a cycle collector | D plus a second collector | Parity with GC |
+
+Tier A is worth more under RC than under GC: every heap object elided is retain/release
+traffic elided, not merely collector pressure.
+
+## 9. Recommended order
+
+The ordering point: **steps 1-4 are useful on their own, land under GC where mistakes are
+harmless, and commit to nothing.** Step 5 is the commitment.
+
+1. **Settle the ABI question (§4)** and write it down. Nothing else should start first.
+2. **Uniform object header in both modes**, GC still running. A wrong count is inert here,
+   which makes the widest-blast-radius change the safest to land and the easiest to test.
+   Add the memory-model marker to `declExports` at the same time. **Split this in two — see
+   §9.1, the halves are not equally hard.**
+
+### 9.1 The header has two allocation paths, and only one is easy
+
+This is the detail that decides how big step 2 is.
+
+> **Status: path 1 landed 2026-09-02 and the full release suite passes.** The header is
+> reserved in `_MemoryAlloc` / `_MemoryRealloc` / `_MemoryFree` and the word is never read.
+> All three helpers were genuinely exercised: 19 tests drive array `push`/`splice`/`unshift`
+> through realloc, 37 exercise string allocation and `SetStringLength`, and 9 use `delete`
+> (including `00new_delete.ts`) through free. **The provenance worry did not materialise** —
+> nothing reaches realloc or free holding a pointer that did not come from the allocator, so
+> the base adjustment is safe in practice, not merely in principle. The 72 cross-module tests
+> pass, which is the result that matters most for §4.
+>
+> Still unvalidated by this run: the WASM allocator path (`ts_malloc`/`ts_realloc`/`ts_free`),
+> which is built and tested separately.
+>
+> **Status: path 2 resolved 2026-09-03 by removing it, not by shifting it.** Investigating the
+> descriptor shift showed the bitmap it would shift was never correct, so `ENABLE_TYPED_GC` is
+> now `false` and class instances take the generic path like everything else. See §9.2.
+
+### 9.2 The typed path was retired rather than adapted
+
+The plan in §9.1 was to shift every descriptor bit by the header size. Reading
+`mlirGenClassTypeBitmap` (`MLIRGenClasses.cpp:1322`) first showed there was nothing sound to
+shift. Three defects, each confirmed against the code:
+
+1. **Shift direction inverted.** Line 1427 passes `GreaterThanGreaterThanToken`, which maps to
+   `rightShift` (`MLIRGenImpl.h:4996`), sitting directly under a comment reading
+   `// 1 << index_mod`. `1 >> bitIndex` is zero for every bit position but zero, so no bit
+   above position zero could ever be set.
+2. **Wrong array index.** Line 1412 indexes the bitmap with `calcIndex`, the field's word index
+   *within the object*, where it needs `calcIndex / bitsPerWord`. The array holds only
+   `ceil(N/64)` elements, so any class with pointer fields past word zero also read and wrote
+   past the end of the stack allocation.
+3. **Never zeroed.** `AllocaOpLowering` emits a bare alloca under an explicit
+   `// TODO: call MemSet` (`LowerToLLVM.cpp:2223`), and the generator only ORs bits in. The
+   descriptor was therefore derived from uninitialized stack memory.
+
+Net effect: `GC_make_descriptor` received a garbage bitmap, and any pointer field whose bit
+read as zero went untraced, so a reachable object could be collected. Latent because short
+tests seldom trigger a collection cycle.
+
+Since the precision was fictitious, the cheaper and safer resolution was to stop using the
+typed path rather than repair and then shift it. Class instances now lower through
+`NewOp` → `NewOpLowering` → `MemoryAlloc` (`LowerToLLVM.cpp:2261`), which means they are
+conservatively scanned — what they effectively got anyway — and they pick up the block header
+uniformly, which is what §4 needed. The `#else` branches for this already existed; only the
+`Config.h` flag changed.
+
+This closes the ABI question: **every heap allocation now carries the header.** The bitmap
+generator's three defects remain in the tree, unused and documented, and are worth their own
+fix if precise class scanning is ever wanted back.
+
+**Path 1 — the generic helpers (easy).** `_MemoryAlloc`, `_MemoryRealloc` and `_MemoryFree`
+all live in `LLVMCodeHelperBase.h:253/300/330`. Eleven of the twelve allocation sites route
+through them, and so does the single `free` site (`DeleteOpLowering`, `LowerToLLVM.cpp:3022`,
+the `delete` operator). Prepending a word means: allocate `size + H` and return `ptr + H`;
+pass `ptr - H` on realloc and free. **Everything else is unaffected**, because every other
+consumer — `strlen`, `strcpy`, `strcat`, `strcmp`, GEPs, the array `{ptr,len}` pair — operates
+on the payload pointer and never sees the block base. Under GC the word is never read, so the
+change is inert and the existing suite is a complete oracle. This is one file and three
+functions.
+
+**Path 2 — the typed-GC class path (the hard half).** `GCNewExplicitlyTypedOpLowering`
+(`LowerToLLVM.cpp:5879`) does **not** go through those helpers. It calls
+`GC_malloc_explicitly_typed(sizeof(storageType), typeDescr)` directly. And the descriptor
+collides with a header: `mlirGenClassTypeBitmap` computes each bit index as *field address off
+a null base, divided by word size* (`MLIRGenClasses.cpp:1400-1420`), so bit positions are
+**object-base-relative**. Prepend a header and the object base no longer coincides with the
+block base Boehm scans, so every bit in the descriptor is off by `H/wordsize`. Boehm then
+traces the wrong words — silent false retention or, worse, premature collection of live
+objects, under the *default* configuration.
+
+So path 2 requires shifting every bitmap bit by the header size and reserving the leading
+word as non-pointer, and it perturbs machinery that is live and load-bearing today. Land
+path 1 first and alone; treat path 2 as its own change with its own verification.
+3. **Real type ids in `any`/union boxes**, replacing the type-name string (§3.4).
+   Independently useful — `any` comparison already pays for stringly-typed tags.
+   **Done 2026-09-03, see §9.3.**
+4. **Generate per-type release routines** from the existing bitmap machinery, initially
+   unreferenced and verifiable in isolation. **Done 2026-09-03, see §9.4** — built fresh
+   rather than from the bitmap machinery, which §9.2 had already retired as unsound.
+4a. **Give static string literals the block header, with an immortal marker.** Inserted by
+   §9.4's finding: a `string` field can hold a pointer into a read-only global, so releasing
+   strings is impossible until heap and static strings are distinguishable.
+   **Done 2026-09-03, see §9.5** — which also closed a second hole, `typeof` results pointing
+   into descriptors.
+4b. **`-mm={gc,rc,none}`, and maintain the count.** The flag step 5 hangs off, plus
+   initialising the header at allocation and turning §9.4 destroy routines into real
+   reference drops. Still inert. **Done 2026-09-03, see §9.6.**
+4c. **Memory-model marker in `declExports`.** §4's last outstanding piece, and a prerequisite
+   for marking foreign objects immortal. **Done 2026-09-03, see §9.7.**
+4d. **`WeakRef<T>` representation.** Settled on paper before any code, because the header
+   layout it implies is ABI. **Designed 2026-09-03, see §9.8; not implemented.**
+4e. **`ts.Retain` / `ts.Release` in the dialect**, with retain routines to match the release
+   ones, so that ownership can be *stated* before deciding where. Still inert — nothing emits
+   them. **Done 2026-09-03, see §9.10.**
+4f. **`using` disposes on the unwind path, for the case ownership tracking will lean on.**
+   A prerequisite for step 5, not step 5 itself: confirms the scope-exit machinery ownership
+   insertion will reuse actually runs on `throw`, for at least one real shape. Narrowly scoped
+   after surfacing several independent pre-existing gaps in the same machinery. **Done
+   2026-09-03, see §9.11.**
+5. **Ownership tracking in MLIRGen behind `-mm=rc`**, checked by a verifier that flags any
+   owned value without a matching release on every path, unwind paths included. **Verifier done
+   2026-09-04, see §9.18.** *Point of
+   no return* — and the first step where a mistake is not inert: a missing retain frees live
+   memory, an extra one leaks. Narrowed by §9.10: the mistake can only reach `-mm=rc`.
+5a. **Locals own what they hold.** The first slice of step 5 and the one that builds the
+   mechanism the rest reuses. Deliberately balanced by construction, so it cannot
+   over-release. **Done 2026-09-03, see §9.12.**
+5b. **Owned storage is hoisted out of the `TryOp`, and the unwind leg releases.** **Done
+   2026-09-04, see §9.15.**
+5c. **Fields own what they hold.** The first insertion point beyond locals, and the first the
+   verifier guarded rather than followed. **Done 2026-09-04, see §9.19.**
+5d. **Elements own what they hold.** `arr[i] = x`, the direct sibling of 5c. Exposed the first
+   *over*-release: an array literal stores its elements without retaining them.
+   **Done 2026-09-04, see §9.20.**
+5e. **Literal construction retains what it captures.** Array literals and boxed object literals,
+   which fill an owning block in one go rather than through an assignment. Taken ahead of the
+   rest because it turned out not to be latent at all — two holders and two overwrites freed a
+   live value on the compiler as it stood. **Done 2026-09-04, see §9.21.** The spread form
+   (`[...xs, y]`) goes through `ts.ArrayPush` and waits for 5f; the unboxed object literal is the
+   inline-record case and waits for 5g.
+5f. **The array-mutating ops.** `push`/`unshift`/`splice` now take a reference; `pop`/`shift`
+   correctly need none — the block transfers its reference to the result rather than releasing
+   it, which is the existing "+1 nobody consumed" convention. Also closes 5e's spread-literal
+   hole, since `[...xs]` is built out of `push`. **Done 2026-09-04, see §9.22.** What `splice`
+   *deletes* still drops references without releasing them (a leak, and the first item needing
+   emission from `LowerToLLVM` rather than MLIRGen).
+5g. **Inline records** — an assignment through a field of a record held inline now retains and
+   releases, conditionally on the storage under it owning. Arguments turned out to need nothing
+   (a parameter's slot is not owned, so they are already borrowed at +0) and returns likewise
+   (the scope-exit release balances the declaration's retain, and the caller receives the birth
+   reference). 5e's unboxed object literal was never broken either — construction balances
+   through the owned local's `RetainSlot`. **Done 2026-09-04, see §9.23.**
+5h. **Remove 5a's slack**: consume a freshly allocated value's birth reference. The point where a
+   mistake stops being an inert leak, and where every test written since 5a gains teeth.
+   **First half done 2026-09-04, see §9.24**: allocations are born unowned, and a `return`
+   retains its value so the scope exit cannot free it on the way out — which makes the
+   convention uniform at *every function returns +1*. A real removal for arrays, strings and
+   boxed object literals; still neutral for class instances, because `new C()` is a call to
+   `C..new` and that return retain hands back the same +1 the birth reference did (verified by
+   the release-before-retain swap, not assumed).
+5i. **Consume the +1 at the receiving sites** — all four (declaration, store, literal capture,
+   push) now take an already-owned value over instead of retaining it again. **Done 2026-09-04,
+   see §9.25.** Only `new C()` is marked as producing one, at the site that knows the callee is
+   the generated `C..new`; nothing is inferred from an operation being a call, because a runtime
+   helper or a pre-convention import returns a heap value with no retain behind it and consuming
+   one of those frees live memory. **`let x = new C()` is now genuinely freed, and the
+   release-before-retain swap finally fails three of the ownership tests** — the experiment
+   §9.19 asked to be re-run once the slack went.
+5j. **`pop`/`shift` transfers consumed** — the compiler's own operations, so nothing to
+   classify. **Done 2026-09-04, see §9.26.**
+5k. **An ordinary call's result** (`let y = f()`) — done via a module pass after MLIRGen that
+   inspects each function's returns instead of predicting them. **Done 2026-09-04, see §9.27.**
+   469 call sites marked across the suite.
+5m. **Retain the value a return actually returns.** The retain landed on the value the return
+   statement evaluated, but `mlirGenReturnValue` then cast it to the declared return type, so a
+   return needing a cast retained the wrong value. **Done 2026-09-04, see §9.31**, where it had
+   to be: with a cast that allocates - a literal returned as an interface - the block the caller
+   receives got no reference at all, so this was not only the leak it looked like.
+5l. **Discarded temporaries** — `f();`, and every call result used as an argument without being
+   bound to anything, which is what expression-shaped code is made of. **Done 2026-09-04, see
+   §9.30**: consumption is recorded explicitly now, and what nothing consumed is released at the
+   end of the block that produced it. Closing it also closed a §9.27 gap that kept it from firing
+   at all — `return new C()` forwards a reference rather than retaining one, so those functions
+   were never classified as returning owned. `raytrace.ts` 129.5 MB → 79.3 MB, below `none` for
+   the first time; the nested-call shape on its own is flat.
+5n. **An interface owns what it was made from.** **Done 2026-09-04, see §9.31.** The type
+   carries only a name, so the value now carries the runtime type tag of its `this` and releases
+   through the concrete type's own routines, exactly as an `any` box does. Both interface shapes
+   are flat: a boxed literal bound in a loop, and one passed as an argument and dropped. Making
+   an interface an owner turned two dormant omissions into live over-releases - a boxed literal
+   that never retained its fields, and a pushed owned result never marked consumed - so
+   `raytrace`'s figure went **up**, 79.3 MB to 114.2: part of §9.30's number was memory freed
+   while still referenced.
+5o. **Classify an instance method's callee.** **DONE - by §9.46, §9.53 and §9.54, and measured
+   closed in §9.64.** The item was written on 2026-09-04 and its text describes the compiler of
+   that day; each of its three claims has since become false, and none of them was re-read.
+   `raytrace` now refuses **0 of its 80** owning calls, where the item says virtual dispatch
+   costs it 2.6%. A precise override set - the thing the item calls the proper fix - would change
+   **two** decisions across all 261 corpus files, both cross-module. And `new C(...)` through a
+   constructor interface, which the item says leaks one instance every time, measures 4.1 MB
+   against `none`'s 13.4, because §9.53's interface half covers the shape §9.46 could not.
+   What survives is cross-module only and is re-filed as 5al, because it is an ABI question
+   rather than a classification one.
+   The half of the original investigation that still reads true: `calleeNameOf` looks through the
+   bound-function chains the dialect's own canonicalizer already resolves, and that is worth
+   almost nothing on its own, because every non-virtual method reference in `raytrace` is a
+   constructor. `private` does not make a call single-target here either - this compiler accepts a
+   subclass redeclaring a private method and dispatches to the override, where TypeScript rejects
+   the program.
+5p. **A closure owns its capture box.** **Done 2026-09-04, see §9.33.** A bound or hybrid
+   function value carries the tag of its `this` beside the pointer, as an interface does, and
+   only a closure over captured variables is marked as owning it - a bound method must not take
+   ownership of its receiver. Measuring it turned up the larger of the two: **§9.30's releases
+   were being placed after `ts.ReturnVal`, which is not a terminator, and the affine lowering was
+   dropping them** - 36 of `raytrace`'s 47. `raytrace` 113.8 -> 103.4 MB.
+5q. **A captured variable's cell is owned, not borrowed.** **Done 2026-09-04, see §9.34.** A
+   variable a closure captures by reference gets a heap block of its own - a *cell* - and it had
+   no owner at all: the frame released the *value* at scope exit while the box still pointed at
+   the cell, and the cell itself was never freed. The cell now has owners - the frame that
+   declared the variable, and each box that captured it - and the box has routines of its own
+   that give the cells back. Two further over-releases fell out of writing the cases: a `const`
+   captured by value was not retained by the box, and assigning to a captured variable *from
+   inside the closure* stored a value nothing had taken, which §9.30 then freed as a discarded
+   temporary. `raytrace` 103.4 -> **2.6 MB**, below `gc`'s 4.2.
+5r. **A cell is given back whether or not the frame owns what is in it.** **Done 2026-09-05, see
+   §9.35.** The frame released a cell only where §9.34's list already held the slot, and that
+   list is the list of locals whose *value* the frame owns - so a captured parameter, whose
+   argument belongs to the caller, and a captured local of a type that owns nothing, such as a
+   `number`, both leaked the cell. Every local and every parameter is now listed, and scope exit
+   asks each what it turned out to be; and a cell takes a reference to the value it is
+   initialised with unless the frame already took one, which is what makes it safe for the
+   cell's release to release its contents whoever put them there. Closure over a parameter at
+   `-O0`: **22.6 -> 3.7 MB**, against `gc`'s 2.6 and `none`'s 22.0; closure over a `number`
+   local, 51.7 -> 3.7 against `none`'s 113.0.
+5s. **Boxing into `any` takes no reference to what the box then owns.** **Done 2026-09-05, see
+   §9.36.** An `any` releases its payload through the type tag when the box dies, and nothing had
+   taken that reference: the payload was copied in and, where it arrived carrying one of its own
+   - a closure, whose reference is the box of captured variables it was built over - §9.30 gave
+   that reference back at the end of the block and left the `any` pointing at freed memory. This
+   was `22lambdas.ts`'s intermittent failure under `rc`, one run in four, which is what a
+   use-after-free looks like from outside. The boxing cast now consumes or retains like every
+   other owning receiver. A second bug fell out of the corpus sweep and belongs to 5r: a captured
+   declaration with **no initializer** has a cell holding whatever the allocator last left there,
+   and scope exit releases it - cells are now zeroed at birth, as owned locals already were.
+5t. **A freshly built string carries no reference for its receiver.** **Done 2026-09-05, see
+   §9.37.** Printing a number into a string allocates one, and so does concatenating; neither
+   said so, so a receiver added a reference of its own - balanced, and it worked - while an
+   intermediate no receiver ever took was left with none and leaked. `"s" + k` leaks twice over:
+   the conversion's result feeds the concatenation and is then forgotten. Both now hand back a
+   reference the way `new` and a call do. `let s = "s" + k` at `-O0`, 500k iterations:
+   **34.5 -> 3.7 MB**, below `gc`'s 4.1; and the `any`-boxing benchmark, whose remaining leak
+   this turned out to be, 39.9 -> 3.7. A second bug came out of the same measurements and is
+   older than any of this: **growing an array does not zero the slots it exposes**, and the
+   store into one releases what the slot held - which is `Array.map` in the default library, and
+   was `arrS.map(e => e + "_")` crashing 6 runs in 20 under `rc`.
+5u. **Read the `-mm=rc` corpus sweep through.** **Done 2026-09-05, see §9.38.** Of the 117
+   non-zero exits, **101 fail identically under `gc`** - 79 are one half of a two-file
+   `export_*`/`import_*` test that cannot be JITed alone, 20 are the default library colliding
+   with a test written for `--no-default-lib`, 2 fail under both models. The sweep had also
+   never run the configuration the suite runs (`--opt --opt_level=3 --no-default-lib`), which is
+   what manufactured those 20 and hid 13 real ones. Sweeping both configurations under both
+   models leaves **29 files that fault under `rc` and pass under `gc`**, of which **exactly one
+   is a file ctest ever runs under `rc`**. **18 of the 29 fault in only some of the four
+   `{-O0,-O3} x {default library, none}` configurations**, which is what a use-after-free looks
+   like from outside: the columns vary the heap layout, not the ownership. Three reductions came
+   out of it, and they are the next three slices.
+5v. **A generator's unwritten local made the whole caller undefined.** **Done 2026-09-05, see
+   §9.39.** It was not the nesting: `function* g() { const a = [1]; yield a[0]; }` faults on its
+   own. A generator's locals are fields of a state object that is retained before the body has
+   ever run, and an unwritten field lowered to `undef`, so the retain read a refcount through it
+   which is undefined behaviour, and at `-O2` and above it folds `main` to one `unreachable`. An
+   unspecified field of an owning type now lowers to zero under `rc`. Closed 9 files across the
+   two swept configurations with nothing newly broken (rc-only 16 -> 14 bare, 22 -> 15 under the
+   suite's flags), including three with no generator in them; the `-O3`-with-default-library cell
+   was swept for the first time and is 16 rc-only. Across the three configurations, **29 -> 22**.
+5w. **What a `for...of` hands the loop variable.** **Done 2026-09-05, see §9.40.** Three fixes,
+   the first two the same mistake twice. **A literal array had no block header** - a string
+   literal has carried the immortal one since §9.5, an array literal carried nothing, so a
+   retain read and a release wrote the word in front of a read-only global. **And a header is
+   only a header one word in front**: three `i32` want sixteen-byte alignment, so the unpacked
+   block struct padded and put the header two words back, which is why `[1]` and `[2,3]` were
+   fine and `[4,5,6]` was not. Then, from `-O1` up, **the caller retains an iterator's result
+   before it looks at `done`**, and the final result's value is `undefined` coerced to the
+   element type, which was `undef` - §9.39's bug as a runtime phi rather than a constant.
+   `undefined` as an array is now `{null, 0}`, and any `mlir_ts::UndefOp` of an owning type is
+   null. Closed 5w's whole predicted cluster plus five files nobody had attributed to it, with
+   nothing newly broken: bare 115 -> 106, suite flags 102 -> 97, `-O3`-with-library 117 -> 107,
+   and the rc-only set across the three configurations **22 -> 12**.
+5x. **A coroutine frame was allocated on one heap and freed on another.** **Done 2026-09-05, see
+   §9.41.** Not a double free and never reference counting's: `none` frees nothing and failed
+   too. The frame is asked for with `aligned_alloc` and released with plain `free`, which is the
+   C11 pairing; MSVC has no `aligned_alloc`, so the runtime supplied one built on
+   `_aligned_malloc`, whose memory only `_aligned_free` may release. `gc` never showed it because
+   GCPass rewrites the pair to GC_memalign/GC_free. The shim now serves the request from
+   `malloc`, whose 16-byte alignment beats the frame's 8. The same symbol was missing from the
+   static library, so **`-mm=rc` and `-mm=none` could not link an executable that awaited
+   anything** - unnoticed because ctest's AOT tier runs the default model only. rc-only across
+   the three configurations **12 -> 11** (10 real), and **`none` now has no failure `gc` does not
+   share**.
+5y. **The corpus under the models that are not the default.** **Done 2026-09-05, see §9.42.**
+   `rc` ran 42 files of 478 and `none` ran 24, and neither ran one of them ahead of time, which
+   is why every fault since §9.38 was found by an out-of-tree sweep and why 5x's was invisible
+   twice over. Every single-file test the default model runs is now run again in the same tier
+   under both other models, and so is every shared-component pair - as a `foreach` over the
+   entries that already exist, so the two lists cannot drift apart. 945 -> 2,585 tests, 18.8 s
+   -> about 50 s at `-j 12`. The first run named ten files (5ae), and two faults in the harness
+   itself: a failing `assert` under `--emit=jit` was a modal message box and therefore a hang
+   rather than a failure, and the shared-component runner dropped the space between `-mm=` and
+   `--gctors-as-method`.
+5z. **DONE, §9.52 - and its own diagnosis was right.** A generator that takes a parameter leaked
+   its capture box, because `.captured` is a `ref<tuple<..>>` and a reference into storage owns
+   nothing anywhere else in the compiler, so `releaseFields` skipped the one field of the state
+   object that owns memory. `releaseFields` now routes that shape through the capture-box release
+   routine closures already had, and the object takes the one reference that pays for it.
+   `function* gen(n) { yield n; }` at 500k iterations went from 33 MB to 3.3 MB, below `gc`'s 3.7.
+   The shapes 5z originally named - a parameter *and* a local - had already been closed by §9.50
+   without being measured. Every number it quoted was taken in the JIT and should be read as
+   gone; see §9.52 for the harness that replaced that method.
+5aa. **DONE, §9.58 - it does not reproduce, and `rc` wins this one.** Measured on the harness that
+   replaced the method the 15.6 MB came from: iterating a literal array is **flat at 0.7 MB** from
+   300k to 3M iterations, against `gc`'s 2.8 and a `none` that climbs to 482. Numbers, strings,
+   both. The old figure is withdrawn with the rest of the JIT ones (§9.52).
+5ab. **DONE, §9.56 - and it was never about arguments.** What decided it was the awaited
+   function's **result type**: the value travelled through `!async.value<T>`, and MLIR's
+   async-to-LLVM conversion runs before this compiler's own types are lowered, so a payload of
+   any TypeScript type had nothing to convert it. `i32`, `i64` and `f32` compiled because they
+   are builtin MLIR types; `number`, `string`, `boolean`, a class and an array did not.
+   `await twice(3)` compiled all along - `withDefault()` returns an `i32`. The result now travels
+   through a slot in the awaiting function and the async value carries only a token. Under `rc`
+   that slot has to own what it holds, or the awaited region releases the value as it ends.
+5ac. **DONE, §9.57 - the collector was allocating without a lock.** A coroutine is resumed on the
+   async runtime's thread pool, and under `gc` it frees its own frame there. Boehm leaves
+   `GC_need_to_lock` FALSE until something tells it there is more than one thread, so a worker and
+   the awaiting thread walked the same free lists with no lock at all. `GC_allow_register_threads`
+   sets that flag; the workers now also register themselves so a collection can suspend them and
+   scan their stacks. 200k awaits went from about 1 failure in 4 to none in 32, and 400k - twice
+   the worst case ever measured - is clean. `rc` and `none` were never affected: their frames go
+   to the CRT heap.
+5ad. **DONE, §9.51 - and it was not an `rc` bug.** A `main` returning nothing lowered to
+   `void @main()`, and the C runtime reads an exit code out of the return register whatever the
+   signature says. Zero under `gc` and `none` by luck, 1 under `rc`, where the last thing `main`
+   does is give back a reference. The entry point is now `i32 @main()` returning 0, and the test
+   runner checks the exit code of what it ran - which it never had.
+5ae. **DONE - no corpus file faults under any model.** What §9.42 bought, and it is empty:
+   `TSLANG_CORPUS_BROKEN_*` has no entries, and the suite runs 2,617 tests with nothing disabled.
+   §9.50 took the last one, `00spread.ts`. §9.49 took `nbody.ts` and, with
+   it, the two that had been failing about one run in six - `13actions.ts` and
+   `44toplevelcode.ts` - because a global never took a reference to what was stored into it, and
+   how far a program got before that showed was a matter of what the allocator handed back next.
+   §9.48 took `00mixed_type_ops.ts`
+   off it (a boxing cast reported no memory effects, so CSE merged two boxes over one constant
+   into a block that was then freed twice). §9.43 took `25lamdacapture.ts`
+   and `raytrace.ts` off it (a nested capture never retained the cell it inherited), §9.44 took
+   `00generator6.ts` and `00safe_cast_field_access.ts` (a union that holds nothing yet has a
+   null tag, and both directions read through it), §9.45 took `00class_static.ts` (`delete`
+   dropped a reference without telling the end-of-block release to stop), and §9.46 took
+   `01class_new.ts` (the method the compiler synthesises for a constructor interface's `new`
+   slot has no `return` statement, and so performed none of what a return does). The lists in
+   `test/tester/CMakeLists.txt` are kept empty rather than deleted: they are how the next such
+   fault gets written down in the build while it is being worked on.
+5af. **DONE, §9.60 - `raytrace` costs `rc` 6.2 MB against `gc`'s 2.8.** `none` is 117, so
+   reference counting now reclaims **95%** of what the program leaks without it, up from 62%. The
+   whole of the remainder was one shape: a value nothing receives is released at the end of the
+   block that produced it, and a `return` written inside an `if` leaves from a nested region and
+   never reaches that release. `raytrace` builds a ray for each shadow test in a function that
+   returns early when the light is blocked, so the ray came back only on the path that fell
+   through. Everything this item previously suspected was measured and cleared first: not the
+   closure, not the `Intersection` object literal through an interface, not the rays as such, not
+   the vector arithmetic (§9.59, §9.60).
+
+5ag. **DONE, §9.50 - and the second half turned out to be simpler than the diagnosis below.**
+   The state object does not need ownership of its capture box: what the box loses is the *value*
+   of a by-value capture, which the box already releases and which nothing had retained, because
+   `mlirGenResolveCapturedVars` chose between a cell retain and a value retain by asking whether a
+   reference could be had rather than what the box would store. The diagnosis below stands
+   otherwise, and its ordering was right. What follows is how it read before the fix.
+   **A generator's state object releases what it never took, and loses its capture box when it
+   outlives its maker.** Two halves of one bug, and the order matters: the second has to be
+   fixed first. A generator's locals cannot live in its frame - the state machine has to resume -
+   so each becomes a field of a heap state object, and that object's release routine is
+   generated from its type and gives back every field that owns memory. The frame declines
+   ownership of those locals for exactly that reason (`localTakesOwnership`,
+   `trackPossibleCell` both exclude `allocateInContextThis`), and **nothing takes the reference
+   the object will later give back**. `[1, 2, 3].map(f)` compiles to a synthesised
+   `function*` running `for (const v of .src_array) yield f(v)`, so the `for...of` lowering
+   stores the array into a generator local, and the capture box and the state object each free
+   it. Invisible until `-O3`, where the optimiser proves the two pointers equal:
+5ah. **DONE, §9.48 - and the diagnosis below is wrong, which is why it is kept.** The optimiser
+   was not the cause. The second box is gone before LLVM sees the module: generic CSE merges two
+   structurally identical boxing casts on our own dialect, because `CastOp::getEffects` reported
+   an allocation for `ConstArrayType` to `ArrayType` and not for a cast to `any`. Reporting it
+   is the fix; neither way out proposed below was taken, and the preferred one - interning
+   constant boxes - would have hidden every case that exists rather than fixing any. What
+   follows is what the `-O1`/`-O3` counts looked like from the wrong end.
+   **The optimiser removes an `any` box's allocation and keeps its `free`.** `00mixed_type_ops.ts`,
+   and five lines are the whole reduction:
+
+   ```typescript
+   function main() {
+       let a: any = "abc";
+       a = true;
+       a = false;
+       a = true;
+   }
+   ```
+
+   MLIRGen is right and so is the LLVM dialect: four boxes, each allocated by `castToAny`, each
+   retained once by the assignment and released once by the slot - `--emit=mlir-llvm` shows four
+   `llvm.call @malloc` and four `tsrel_` in `main`. At `-O1` LLVM has three `malloc`s and four
+   `free`s; at `-O3`, one `malloc` and two `free`s of it. **The allocations go and the frees
+   stay.** A box looks to LLVM exactly like a removable allocation - a `malloc` whose pointer is
+   stored to a slot SROA has promoted away, read back, and freed - and where two boxes hold the
+   same constant the analysis conflates them, so what is left frees one block twice.
+
+   It is `rc`-only for a plain reason: `GCPass` rewrites `malloc` to `GC_malloc` and drops the
+   `free` entirely, so under `gc` there is nothing to double, and under `none` there are no frees
+   at all. Only `-mm=rc` hands LLVM a matched `malloc`/`free` pair to reason about, and step 6 is
+   what started doing that.
+
+   Two ways out, and the second is better. **Stop LLVM reasoning about these blocks** - allocate
+   and free through runtime entry points that carry no `alloc-family` attribute, so a refcounted
+   block is never a candidate for allocation removal. It is a small change and it costs the
+   optimiser every legitimate elision of a short-lived box, which is not a small price for a
+   memory model whose case rests on not paying for what it does not use. Or **give a constant its
+   box once**: `castToAny` of a compile-time constant can address a module-level global carrying
+   the immortal header (4a's trick for a static string, 5w's for a literal array) instead of
+   allocating. Then there is genuinely one box, nothing to free, nothing to conflate, and four
+   allocations disappear from this reduction rather than three. The general case - a box over a
+   runtime value - still hands LLVM a `malloc`/`free` pair, so this does not close the class; it
+   closes what the corpus actually hits.
+
+   ```llvm
+   %0 = tail call ptr @malloc(i64 20)      ; [1, 2, 3] copied to the heap
+   ...
+   tail call void @free(ptr nonnull %0)
+   tail call void @free(ptr nonnull %0)
+   ```
+
+   That is all of `00spread.ts`, and the retain that fixes it - in `createLocalVariable`, where
+   the `allocateInContextThis` store is emitted - fixes the whole file and every reduction of
+   it. **It also breaks `00extension_cond_access.ts`, and correctly.** A generator returned
+   from the function that built it keeps a `.captured` pointer into a capture box that function
+   owned and released on the way out, so the cells behind it are freed while the generator is
+   still reading them. Today that is a silent read of a block nobody has reused; a retain makes
+   it a *write* of a refcount into a freed block, which corrupts the free list at once. The
+   whole reduction:
+
+   ```typescript
+   function f(names: string[]) { return names.filter(x => x); }
+   function main() { for (const s of f(["asd", "asd1"])) print(s); }
+   ```
+
+   So: give the state object ownership of its capture box first - the same question §9.33
+   answered for a closure, where a bound function carries the tag of its `this` - and only then
+   let a generator local take the reference its object gives back. `mlirGenResolveCapturedVars`
+   is where a box takes its cells, and its final `else` (a ref that is neither a `VariableOp`,
+   a `ParamOp`, nor a captured cell slot) is where the factory's re-capture from an incoming
+   capture tuple falls through, retaining nothing. Test written and not committed:
+   `00owned_generator_locals.ts`, seven cases, six of which the local retain alone turns green.
+5ai. **DONE, §9.49 - a global never took a reference to what was stored into it.** `nbody.ts`,
+   `13actions.ts` and `44toplevelcode.ts`, all three the same bug. Ownership skipped globals
+   because a global outlives every scope and so has no scope exit to release from, and skipping
+   the release dropped the retain with it - a store into a global neither took a reference nor
+   gave one back, so the value was released at the end of the function that built it and the
+   global addressed a freed block. A global is a root: it holds a reference for as long as the
+   program runs, and nothing gives the last one back. New `isOwnedGlobalSlot`.
+5aj. **DONE, §9.60 - a null value carried past the check that was supposed to stop it.** The
+   return statement reported "No return value" and then went on to cast and retain it. A discovery
+   pass reaching there is ordinary rather than an error - a return expression can depend on
+   something not registered yet - so the report was conditional and the failure was not; it needed
+   to be the other way round. Reading a null `mlir::Value`'s type faults, which is why there was no
+   diagnostic. Turning `raytrace.ts`'s `Intersection` into a class is what reached it.
+5an. **DONE, §9.70 - `+` uses the same promotion as every other arithmetic operator, once both
+   operands are unambiguously numeric.** Filed by §9.67, and not an ownership bug. §9.67 had seen
+   one of its three shapes: a control binary showed `+` narrowing its right operand to the left
+   one's type in *any* direction, so `true + 2.5` read 2 and `i8(100) + i32(1000)` read 76, as
+   well as `2 + 3.5` reading 5. Strings, `any` and unions keep the left-preferring rule that
+   string concatenation depends on.
+
+5am. **DONE, §9.68 - one flag, after §9.66 estimated it as an allocator rewrite.**
+   `SectionMemoryManager(nullptr, /*ReserveAlloc=*/true)` reserves one contiguous block laid out
+   code-first, so the lowest section is always code and the RVA-0 sentinel has nowhere harmful to
+   land. Suite 2,667/2,667 with nothing disabled.
+   Filed by §9.65, diagnosed in §9.66. RTDyld's image base is the lowest section load address, so
+   a descriptor allocated there has RVA 0 - and `dispType == 0` is the MSVC encoding's
+   `catch(...)`. The clause still catches, so the only visible symptom is that the catch object
+   is never copied and the variable reads uninitialised memory. Not an ownership bug and not
+   `rc`-specific: all three models, both opt levels, every payload type, and correct ahead of
+   time in every case tried, where RVA 0 is a PE's DOS header and never a datum. Supersedes
+   §9.29's "reads 0" and its "depends on what else the module throws". **The image-base shim of
+   §9.13, which this item first accused, is measured working** - the throw-side and handler-side
+   bases match. Fix: place code below read-only data via `reserveAllocationSpace`, so the RVA-0
+   sentinel can only fall on code, where nothing reads 0 as "none".
+
+5al. **DONE, §9.71 - an imported function's returned reference is taken over, and the soundness
+   the item stalled on was already provided.** Filed by §9.64 as a precision refinement worth a
+   couple of calls; it was worth all of it. `rc` and `none` agreed *to the decimal* on a
+   two-module program (18.0 MB each, `gc` 5.7), so reference counting reclaimed nothing at all
+   across a boundary. Now 3.8 MB - better than `gc`. The classification was easy as predicted
+   (`export` distinguishes an imported tslang function from a `declare`d C one). The soundness
+   was not a policy question after all: consumption *removes a receiver's retain* rather than
+   adding a release, so a foreign block's count goes to -1, which is `HEAP_BLOCK_IMMORTAL`, and
+   it leaks rather than being freed twice - §9.7's agreed answer, delivered by §9.24's
+   born-at-zero design. Checked across all nine exporter/importer model combinations. The
+   default-lib case is unchanged and still leaks, for the same reason it always did.
+
+5ao. **DONE, §9.76 - the executable and the shared library each linked a collector of their
+   own.** Originally filed as: Found by §9.71's new test and pre-existing - it fails with 5al's fix reverted
+   too. Only shared + `gc` + AOT; shared `rc`, shared `none`, static `gc` and shared `gc`
+   through the JIT all pass. Points at Boehm not tracing the importing module's roots into a
+   dynamically linked module's heap, which is the same family as the JIT-globals problem.
+   `test-compile-shared-export-import-owned-returns` is registered and DISABLED.
+
+5ak. **DONE, §9.61 - a jump is asked whether it leaves the block, not where it is written.** The
+   release at the end of a loop body is skipped by an iteration that ends in `break` or
+   `continue`, so that iteration's discarded temporaries were lost. Releasing at every jump would
+   have been wrong in the other direction - a jump caught by a loop BELOW the block comes back and
+   runs the end-of-block release as well - so the pass now walks from the jump out to the block
+   and asks what catches it, which is also what makes a labelled `break` out of two loops come out
+   right. 13.9 MB against `none`'s 53.2, down to 0.6.
+
+6. **Flip the allocator under the flag.** **Done 2026-09-04, see §9.28.** `needsGCRuntime()` now
+   names only `gc`; `rc` allocates from `malloc`, frees through `free` and links no libgc, so a
+   memory measurement under it finally means something — a million-iteration allocation loop stays
+   flat at 3.8 MB where `none` reaches 172.8 MB. Flushed out a Win64 crash that was never RC's:
+   allocating inside a catch funclet, latent under `-mm=none` since long before this work.
+
+**Scope the first shipping mode narrowly.** Two candidates, and they are compatible:
+
+- **`string` only (Tier C).** Strings are leaves — a string never points to another heap
+  object, so release is a single free with no recursive traversal and **no cycle is
+  representable**. Strings are also the highest allocation-rate type. Highest benefit, zero
+  cycle risk, bounded blast radius. Step 4a (§9.5) cleared the static-string blocker; what is
+  left before this scope is reachable is maintaining the count itself.
+- **WASM target.** The strongest driver for RC existing at all. WASM is the one environment
+  where conservative native-stack scanning is unavailable, which is the assumption Boehm
+  rests on (`docs/llvm-gc-integration.md`), and the compiler already forks its allocation
+  path there (`ts_malloc`/`ts_realloc`/`ts_free`, `LLVMCodeHelperBase.h:265/312/340`, patched
+  back by `MemAllocFixPass.cpp`). Scoping the first RC mode to WASM rides a split that
+  already exists.
+
+The other drivers that would justify Tier D: hard real-time latency budgets, and shipping
+without a runtime dependency on libgc.
+
+### 9.3 Step 3: the tag now points into a per-type descriptor
+
+Landed 2026-09-03, full release suite green (829/829, 106 of them cross-module).
+
+The obstacle was that the tag is not merely *a* string, it is the **`typeof` result itself**:
+`GetTypeInfoFromUnionOp` returns it straight to `typeof`, `MLIRGenImpl.h:3895` `strcmp`s it
+against `"class"` to implement `instanceof` over `any`, and the generated union operator
+helpers compare `typeof(r) == "class"` in source text. Anything that stops the tag being a
+readable `char*` breaks all three.
+
+So the tag stays a `char*` and the record moves in front of it. Each distinct type gets one
+static global `{ { i32 kind, i32 reserved, ptr release }, [N x i8] name }`, and the tag is
+the address of `name`. Every existing consumer keeps reading a NUL-terminated type name and
+is untouched; anything wanting the record takes `tag - sizeof(record)`, which the emitted IR
+constant-folds to `getelementptr i8, ptr @td_..., i64 -16`. The trailing name is a byte
+array, so nothing is padded in front of it and that offset equals the record size on every
+target. This is the same header-in-front-of-payload shape as step 2, deliberately.
+
+Three consequences worth recording:
+
+- **The descriptor is keyed by the concrete type, not by the name.** Two classes both report
+  `"class"` and now get two records — which is the entire point, since step 4 needs somewhere
+  per-class to hang a release routine, and the name erases exactly that distinction.
+  `typeOfBaseType` strips the wrappers `typeOfAsString` already sees through, so all the
+  string literal types still share one `"string"` record rather than minting their own.
+- **`TYPE_DESCR_*` is a cross-module contract**, even though every record has internal
+  linkage. A tag produced by one module is read back by another, so the reader applies *its*
+  idea of the record size to *the producer's* record. Same §4 hazard as the heap header, same
+  answer: pin the layout once. The release slot is reserved now for that reason, not because
+  anything calls it.
+- **`any` comparison stopped paying for stringly-typed tags.** Asking "is this operand
+  numeric" ran nine `strcmp`s per operand, because `typeOfAsString` reports `"s32"`/`"f64"`
+  and not `"number"` for anything but a float. It is now one load and one compare against
+  `TYPE_KIND_NUMBER`, and it covers every numeric width instead of the nine that happened to
+  be listed. The width dispatch in `unboxNumericAsF64` stays name-based on purpose: the kind
+  says *numeric*, and it is the width that decides how many bytes to read back.
+
+### 9.4 Step 4: per-type release routines
+
+Landed 2026-09-03, full release suite green (829/829). Nothing calls them; the only reference
+is the descriptor slot from §9.3, which is also what keeps them from being dead-stripped.
+
+The doc originally said "from the existing bitmap machinery". That machinery turned out to be
+the unsound generator §9.2 retired, so this is built fresh — and built the other way round.
+The old bitmap was *computed at run time*, with shifts and ORs into a stack array, which is
+the root of all three of its defects. The pointer layout of a type is knowable at compile
+time, so the routines are emitted as straight-line code with the offsets baked in.
+
+**Calling convention:** a routine takes a pointer to the *storage holding* a value, not the
+value. That is uniform across value categories — a class field, an `any` payload slot and a
+local all address the same way — and it makes releasing a field a plain GEP plus a call.
+
+**What each shape does:**
+
+| type | owns | routine |
+| --- | --- | --- |
+| `string` | its own block | null check, free |
+| `array<E>` | data block + elements | loop `0..length` calling E's routine, then free data |
+| class / object | the instance block | release storage fields, free instance |
+| `any` | its own box | read the tag's descriptor, call *its* release on the payload slot, free box |
+| tagged union | nothing (payload inline) | same descriptor dispatch, no free |
+| `optional<T>` | nothing | release the value slot when the flag is set |
+| tuple, class storage | nothing | release the fields, free nothing |
+
+The `any` and union rows are the payoff of §9.3: a value whose type is known only at run time
+still resolves to a release routine, through the tag.
+
+Recursion works because the symbol is created before its body: `class Node { next: Node }`
+emits a routine that calls itself. That also means a cyclic *object* graph would recurse
+forever, which is the cycle problem of §5 showing up in concrete form rather than a new one.
+
+**Deliberately not released**, each for a stated reason: `InterfaceType` carries only a name,
+so the layout behind its `this` pointer is not recoverable from the type and needs an RTTI
+lookup rather than a static walk — *this one changed at §9.31: the value now carries the runtime
+type tag of its `this`, which makes the lookup a tag read, so an interface is an owner*;
+function types do not mention their capture box, so there is
+nothing to walk even though the box is heap-allocated; `RefType`/`ValueRefType` point at
+storage the value does not own; `ConstArrayType` and `ConstTupleType` are static data. A null
+release slot says "nothing to release" positively — it is not an "unknown".
+
+#### The finding: static strings block releasing strings
+
+Writing the string routine surfaced a prerequisite that reorders the plan. A string literal
+compiles to `store ptr @s_..., ...` — a `string` field can hold a pointer directly into a
+read-only global that no allocator produced. `free(@s_... - headerSize)` corrupts the heap.
+
+This lands squarely on §9's recommended first shipping scope, which is **strings only**,
+chosen because strings are leaves with no representable cycle. That scope is not reachable
+until heap strings and static strings are distinguishable at run time.
+
+The consistent answer is the same one used twice already: give static string globals the same
+block header, with an immortal marker in the count, so `__tslang_free_block` can test it and
+skip. Every heap string already has that header from step 1, and every string pointer is
+already `&bytes` of something — this only changes what precedes those bytes. It is deliberately
+*not* part of this change: it touches every string literal in every module, on a hot path, and
+deserves its own verification.
+
+So the order from here is: **static-string immortality first, then ownership tracking (step 5)** —
+not straight to step 5 as originally written.
+
+**Cost note.** These routines are emitted under GC, where they are pure dead weight, so that
+their construction and module verification are exercised by every test. That is the "verifiable
+in isolation" the plan asked for, paid for in a few small internal functions per module.
+
+### 9.5 Step 4a: static blocks carry the header too
+
+Landed 2026-09-03, full release suite green (829/829). This is the prerequisite §9.4 turned up,
+done straight away because it changes the layout of globals and so cannot be retrofitted.
+
+A string literal compiles to `store ptr @s_..., ...`. Before this, a `string` value was two
+different shapes depending on where it came from — a heap payload with a header in front, or a
+raw pointer into a read-only global — and nothing at run time could tell them apart. Every
+global string now carries the same header word as a heap block, set to `HEAP_BLOCK_IMMORTAL`,
+and `__tslang_free_block` skips a block that says it is immortal.
+
+The encoding is all-ones bytes, so the marker reads as `-1` whatever the word size or
+endianness, and it stays a plain `[N x i8]` global with a `StringAttr` initializer — no
+initializer region, and the existing `seekLast<StringAttr>` placement still works. The global
+is aligned to the header size so the word can be read as a word. Deliberately not zero: a
+zeroed word is what a fresh heap block reads.
+
+**Every global string gets it, not just the ones that could be released.** Deciding
+per-call-site which `getOrCreateGlobalString` produces a TypeScript string — as opposed to a
+printf format or a symbol name — would be an audit whose failure mode is silent corruption in
+exchange for saving eight bytes per constant. Uniformity is the same call made in step 2, for
+the same reason. The `"true"`/`"false"` globals from a boolean cast are a good example of a
+site that is not obviously a string value but is one.
+
+#### The tag was the second hole
+
+`typeof x` returns a pointer into a type descriptor, and `let s: string = typeof x` is ordinary
+TypeScript — so a tag is a string value that can be released like any other. The descriptor's
+name had nothing in front of it but the `release` field, which would have read as a very
+mortal-looking count.
+
+The record therefore ends with the block header, immediately before the name:
+`{ i32 kind, i32 reserved, ptr release, index blockHeader }`. Both reads now work off the same
+pointer — `tag - sizeof(header)` is the immortal marker, `tag - sizeof(record)` the record —
+and a tag is simultaneously a descriptor's name and a well-formed immortal payload.
+
+#### What this does not do
+
+Nothing writes the header on allocation, because nothing maintains a count yet. So the immortal
+test is meaningful for static blocks, where the marker is baked into the initializer, and says
+nothing useful about a heap block, whose word is whatever the allocator left. That half belongs
+with maintaining the count, in steps 5 and 6 — the static half is separated out here only
+because it is the half that changes an ABI.
+
+### 9.6 Step 5, part one: the flag exists and the count is maintained
+
+Landed 2026-09-03, 847/847 green — the suite plus 17 new `-mm=rc` variants and one `-mm=none`.
+**This is not step 5.** Step 5 is ownership tracking in MLIRGen, and it is still the point of no
+return; what this does is build the two things step 5 needs to exist first, both of which are
+still inert.
+
+**`-mm={gc,rc,none}` replaces `-nogc`.** The flag cleanup this document has called for since the
+first draft: there were always three models — `-nogc` meant "leak everything", not "collect
+differently" — spelled as a single boolean. `-nogc` stayed on as a deprecated alias for
+`-mm=none`, and `CompileOptions` grew `needsGCRuntime()` and `isRefCounted()` so no caller
+reads the model enum directly.
+
+> **Removed, §9.47.** The alias is gone. An LLVM boolean option accepts an explicit value, and
+> an empty one reads as *true* - so `-nogc= -mm=rc` silently compiled `none`, which is how a
+> whole round of §9.46's reductions came back "already fixed". Every caller in the tree now
+> spells the model outright.
+
+`-mm=rc` at this point means *counts are maintained and the release machinery is generated*; the
+collector still runs and is still what frees. That is deliberately an intermediate: it makes the
+header word real without anything depending on it being right. It held until step 6 (§9.28), which
+took the collector out from under `rc` entirely.
+
+**Allocation initialises the count.** `_MemoryAlloc` stores 1 into the block header, after any
+memset, so a block starts owned by exactly the reference being returned. **Only under
+`-mm=rc`** — under `gc` nothing reads the word, and a store per allocation on the hot path is not
+worth paying for dead code. Confirmed in the emitted IR: zero such stores under `gc`, one per
+allocation site under `rc`.
+
+**The generated routines became real releases.** §9.4's routines destroyed unconditionally,
+which is a destructor, not a release. Each one now drops a reference and only destroys when it
+was the last:
+
+```
+if (p != null && __tslang_dec_ref(p)) { release fields; __tslang_free_block(p); }
+```
+
+`__tslang_dec_ref` is where the immortal marker from §9.5 does its work: an immortal block is
+neither decremented nor ever the last, so a string literal and a `typeof` result survive being
+released like any other string, without a write to read-only memory. `__tslang_free_block` is
+now a plain free, since it is only reachable behind that test.
+
+The routines are reference-counting shaped in *every* model, because they are dead code in all
+but `rc` and one shape is simpler than two. Only `rc` initialises the count they read.
+
+**Coverage.** The test runner gained the `-mm=` variant alongside `-fast-math`, using the same
+per-variant cached-script trick, and 17 tests now run under `-mm=rc`: strings, arrays and their
+elements, `any`, tagged unions, tuples, classes, interfaces, generators, closures, `delete`, and
+unwind paths. These prove the model compiles and runs correctly across the shapes the routines
+walk — **not** that counting is correct, which nothing yet exercises. `-mm=none` also picked up
+its first test ever, since the old `-nogc` had none and the rename would otherwise have been
+unguarded.
+
+**What is still ahead of step 5 proper.** Nothing calls a release, and nothing retains. Adding
+those is the ownership tracking, and it is where a mistake stops being inert: a missing retain
+frees live memory, an extra one leaks. That still wants the verifier the plan describes — every
+owned value with a matching release on every path, unwind paths included — built alongside it
+rather than after.
+
+> **Superseded in part 2026-09-03 (§9.12).** Locals retain and release. The verifier is still
+> outstanding, and so is everything that is not a local: fields, elements, arguments, returns
+> and temporaries.
+
+### 9.7 The memory-model marker
+
+Landed 2026-09-03, 847/847 green. The last outstanding piece of §4.
+
+A shared library records the model it was built under as an exported data symbol
+`__tsmm_<model>_<file>_<hash>`. The model is in the **name**, so an importer reads it during the
+symbol enumeration it already performs and never loads the data. Deliberately *not*
+`__decls`-prefixed, so it can never reach the declaration re-parser — see
+`decls-cross-module-declaration-mechanism` for why that enumeration is prefix-driven. A library
+with no marker predates this, and everything collected back then, so a missing marker reads as
+`gc`.
+
+Both spellings come from one `memoryModelName()`, so the `-mm=` flag and the marker cannot
+disagree about what a model is called.
+
+Verified end to end: a DLL built `-mm=gc` carries `__tsmm_gc_export_vars_<hash>`; importing it
+`-mm=gc` is silent, importing it `-mm=rc` reports
+
+> shared library './export_vars.dll' was built with -mm=gc, this module with -mm=rc. Objects
+> crossing between them are never reclaimed.
+
+and still runs, which is the agreed policy: allow the link, treat what crosses as immortal, leak
+rather than double-free.
+
+**Two things this does not yet do.** Nothing marks crossing objects immortal — that lands with
+ownership insertion, and until a release actually frees, a mixed link is harmless anyway. And
+the mismatch path has no automated test: the 106 cross-module tests all build both sides the
+same way, and giving the runner a per-side model would be more plumbing than the one warning is
+worth. The marker's *presence* is covered by all of them, which is the part that could break
+something.
+
+> **Closed by §9.77**: the default lib is now built per memory model, and a program links the
+> one matching its own `-mm=`.
+
+**The consequence to keep in view:** the default lib is GC-built. Under `-mm=rc` everything it
+allocates crosses a boundary and therefore leaks. Avoiding a per-model default lib is what the
+allow-and-leak policy bought — this is the price of it, and it means `-mm=rc` will not be
+leak-free for real programs until the default lib can be built per model.
+
+### 9.8 Weak references: `WeakRef<T>`
+
+The decision on cycles is **weak references in the language**, rather than leak-and-document.
+This section settles their representation, because it is ABI-shaped and this arc has been
+sequenced around making those decisions before writing code.
+
+#### Surface: `WeakRef<T>`, not a `weak` keyword
+
+JavaScript already has `WeakRef<T>` with `.deref(): T | undefined` (lib.es2021.weakref). Using
+that spelling costs no change to the vendored `ts-new-parser`, rides the generics machinery that
+is already cross-module-complete, and is a shape TypeScript programmers know.
+
+The semantics come out *stronger* than JavaScript's, compatibly: `deref()` returns undefined
+exactly when the last strong reference went, deterministically, rather than "whenever the
+collector felt like it". Under `-mm=gc` it can be backed by a plain strong reference that never
+returns undefined — a legal implementation of the JS contract, and one that keeps both models
+working. `WeakMap`/`WeakSet` are out of scope.
+
+#### Representation: a weak count, and where to put it
+
+Something has to outlive the object to answer "is it dead". Three ways: a weak count beside the
+strong one, a side table keyed by address, or a per-object indirection cell (which needs a
+header slot or a table to be found, so it collapses into one of the other two).
+
+The objection to a weak count was that §9.5's uniform-header requirement would force it on
+`-mm=gc` builds too — doubling a header that is already dead weight there. **That objection
+dissolves once the header grows downwards.** Put the strong count immediately before the
+payload and the weak count before *that*:
+
+```
+    [ weak ] [ strong ] | payload
+                        ^ the pointer everything holds
+```
+
+`strong` is at `payload - wordSize` in **every** model. That is the only field a cross-model
+write touches — marking a foreign object immortal — so the uniformity §9.7 needs is preserved
+while `weak` exists only under `-mm=rc`. GC builds keep the single word they have today.
+
+This does split one constant in two: the *block* size, used for allocation and free, and the
+*strong offset*, used by the count operations. `getBlockPtrFromPayloadPtr` currently serves
+both, and the count paths would move to the strong offset.
+
+Taking a weak reference to an immortal object — a string literal, or anything from a
+differently-managed module — never touches the weak word: immortal means never dies, so the
+reference is trivially always valid. That keeps a `-mm=rc` module from reading a second header
+word that a `-mm=gc` module never wrote.
+
+#### Lifecycle
+
+Strong zero destroys, weak zero frees. When the last strong reference goes, the fields are
+released as they are today, but the block itself survives while any weak reference remains — a
+tombstone, distinguished by `strong == 0 && weak > 0`. `deref()` checks `strong > 0`, and if so
+increments it and returns the object, so the referent cannot die between the check and the use.
+
+`WeakRef<T>` is itself an owned type with its own release routine — decrement `weak`, free the
+block if both counts are zero — which makes it one more shape for `ReleaseRoutineLogic` rather
+than anything new.
+
+None of the count operations are atomic. That matches the rest of the compiler today and should
+be revisited with threading, not before.
+
+#### What this does not solve
+
+An accidental cycle still leaks silently; weak references let a programmer break one they know
+about. The natural follow-on is a debug-mode leak report at exit — every block whose strong
+count never reached zero — which is cheap once counts are maintained, and is a far better answer
+than a cycle collector for a language whose users can switch to `-mm=gc` with one flag.
+
+### 9.9 The first real caller: `delete`
+
+Landed 2026-09-03, 847/847 green.
+
+Everything before this generated release machinery that nothing called. `delete` is the one
+place a reference is dropped that the language already spells out, so it makes the natural first
+caller — and unlike ownership tracking it is a single lowering site, not a whole-program
+analysis.
+
+Under `-mm=rc`, `DeleteOp` now drops a reference instead of freeing outright: the object goes
+only if this was the last reference, and what it owns is released with it. Under `gc` and
+`none` it still frees directly, so the default is untouched. Two things fall out that a bare
+free did not give: an object's fields are released rather than leaked to the collector, and
+`delete` can no longer free an immortal block.
+
+`ReleaseRoutineLogic::emitReleaseValue` is the entry point ownership tracking will reuse. The
+per-type routines address storage rather than values, so it goes through a small value-taking
+wrapper whose alloca sits in the wrapper own entry block — which keeps every caller from having
+to find a safe place for one, since a release inside a loop must not grow the frame, and LLVM
+inlines and promotes it away.
+
+Verified under both models: a class owning a string and an array of strings releases correctly,
+and `delete` on a string literal leaves the static block untouched, which is the immortal marker
+doing its job. `delete` on a plain string local emits no `DeleteOp` in either model —
+pre-existing behaviour, unchanged here.
+
+**This is the first change that is not inert.** It only affects `-mm=rc`, and only `delete`, but
+a release now actually frees. With no retains inserted yet every block still has a count of one,
+so a released object is always the last reference — which is exactly the case ownership tracking
+will complicate.
+
+
+### 9.10 Step 4e: `ts.Retain` and `ts.Release`
+
+Ownership is now sayable in the dialect. `ts.Retain` records that a further owner holds a
+value; `ts.Release` gives one owner's claim up, destroying the value and freeing its block when
+it was the last. Nothing emits either yet, so this step is still inert.
+
+**The ops erase under any model that is not reference counting.** This is the design decision
+the rest of the step follows from, and it is what makes "RC is an option" hold at the level of
+the code rather than as an aspiration. MLIRGen can state ownership once, unconditionally, with
+no `isRefCounted()` branching through it; the ops carry the intent and the lowering decides
+whether it costs anything.
+
+It also reshapes the risk of step 5 considerably. Ownership insertion is where a mistake stops
+being inert — a missing retain frees live memory, an extra one leaks — but a misplaced op is
+*erased* in a collected build. The ~830 GC tests are therefore structurally immune to
+insertion bugs, not merely expected to pass. Only the 17 `-mm=rc` tests can break, which is a
+blast radius small enough to reason about.
+
+**Retain is not the mirror image of release, and the asymmetry is the whole difficulty.**
+Retaining a *reference* stops at the block it names: a second reference to an object does not
+duplicate that object's own references to its fields. Release does walk the fields, but only
+inside `emitIfLastReference` — that is, only when the block is about to die and its fields'
+references die with it. What does propagate a retain inwards is a value held *inline* — a
+tuple, an optional, a tagged union — because copying one really does duplicate every reference
+it holds. Getting this backwards leaks (retaining fields that were never released) or
+double-frees (releasing fields that were never retained), and neither shows up until a count
+is wrong much later, so the two builders sit next to each other in one file with the reasoning
+written between them. `ReleaseRoutineLogic` became `OwnershipRoutineLogic` for that reason.
+
+`__tslang_inc_ref` skips a block marked `HEAP_BLOCK_IMMORTAL`, which is not an optimisation:
+incrementing all-ones gives zero, and the next release would read that as "last reference" and
+free a string literal.
+
+The descriptor record grew a retain slot beside the release one (`TYPE_DESCR_RETAIN`), for the
+same reason the release slot exists — a tagged union carries its payload inline, so copying one
+has to retain a value whose type is only known at run time, and the tag is what knows it. The
+block header stays last, immediately in front of the name bytes, so a tag still reads as an
+immortal string payload; the name simply moved from offset 24 to 32.
+
+Verified by reading the emitted IR under both models. A retain routine loads the reference and
+calls `__tslang_inc_ref`, with no field walk, confirming the asymmetry holds in the generated
+code and not just in intent. Temporarily emitting both ops at the `delete` site showed
+`tsretv_`/`tsrelv_` calls under `-mm=rc` and *nothing at all* under `-mm=gc`, where only the
+collector's `GC_free` remains; the hook was then reverted. Full release suite green: 847/847.
+
+### 9.11 Step 4f: `using` disposes when an exception unwinds with no enclosing `try`
+
+The reported gap: `using r = new Res(); throw 1;` at a function's top level, with no `try`
+anywhere in that function, never ran `[Symbol.dispose]()` on the way out — confirmed at both
+`-O0` and `-O3` before any fix. `mlirGen(Block)` disposed a `using` only on the block's *normal*
+exit path; nothing gave it a landing pad to run from on `throw`.
+
+**The fix synthesizes a catch-less `TryOp` around a block that declares `using`.** Mirrors
+`mlirGen(TryStatement)`'s own try-body/cleanup handling almost exactly - a real
+`try { using x = ...; } finally {}` already goes through that path and already disposes
+correctly on throw, so the synthetic version reuses it rather than inventing a second mechanism.
+Catches and finally stay empty; `TryOpLowering` erases an empty catches region and wires the
+cleanup block as a plain cleanup landing pad, so the exception is never caught, only cleaned up
+after.
+
+**Building this surfaced four independent pre-existing bugs in the `TryOp`/dispose machinery,
+none caused by this session's other changes.** Each was confirmed with 100% hand-written source
+- an explicit `try`/`catch`/`finally`, no synthesis involved - before being treated as
+out-of-scope for this step:
+
+1. **A `TryOp` with cleanup but no catch and no finally crashed the lowering.** Every TypeScript
+   `try` statement had always had at least one of catch/finally, so
+   `unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock)` in
+   `LowerToAffineLoops.cpp`'s `TryOpLowering` had never had to handle both being null. The
+   synthetic wrapper is the first thing to build a cleanup-only `TryOp` at all, so it's the
+   first thing to hit this. **This one is fixed, not just avoided** - a null `Block*` doesn't
+   belong in `unwindDests` in the first place, and the Linux side of the same function already
+   had the correct three-way fallback (`catchesBlock -> finallyBlock -> parentTryOpLandingPad ->
+   empty (resume)`) sitting right next to the broken Windows one, comment already anticipating
+   exactly this case. The Windows site now matches it.
+2. **`TryOp` nested inside another `TryOp`'s body crashes the LLVM translation** with an LLVM
+   assertion (`Cannot assign a name to void values!`), reproduced by hand:
+   `try { try { using x=...; throw; } finally {} } catch {}`. Not fixed - guarded against:
+   `blockIsFunctionRootBody` restricts synthesis to a function's own top-level body, which by
+   construction can never be nested inside anything.
+
+   > **Update (§9.17).** Fixed. `blockIsFunctionRootBody` was already gone by §9.13; what was
+   > left of this was a `using` one scope deeper than a hand-written `try`'s body, and it was
+   > `Win32ExceptionPass::ToInvoke` mangling an operation that was already an invoke. A
+   > `using` in a catch or finally *clause* is still guarded, by
+   > `blockIsInsideCatchOrFinally`, and was re-checked against the fix: a different cause.
+3. **A block with its own `using` nested inside a `TryOp` that already has other `using`s
+   breaks MLIR verification** (`ts.PropertyRef` gets the wrong ref type for the inner
+   `using`'s dispose method), reproduced by hand:
+   `try { using a=...; { using c=...; } } finally {}`. Not fixed - guarded against:
+   `blockHasNestedUsing` scans (skipping into neither a nested function nor class) for a
+   `using` anywhere below the block's own top level.
+
+   > **Update (§9.17).** Fixed, and `blockHasNestedUsing` is deleted. Same `ToInvoke` cause as
+   > item 2. The guard's cost was that the *outer* `using` stood down from being wrapped so
+   > the inner one could be, so it never disposed on unwind at all - the row in §9.13's table
+   > reading "outer skipped" in both columns.
+4. **`using` plus `return` inside a `try` body is broken independent of throw entirely**,
+   reproduced by hand with the simplest possible shape: `try { using a=...; return; } finally
+   {}`. `mlirGenDisposable`'s `FullStack` walk at the return site and the try-body's own tail
+   dispose both try to dispose the same var. Not fixed - guarded against: `blockHasReturn` scans
+   the whole function body for any `return`.
+5. **A separate, still-unexplained hang** (not a compile failure) turned up disposing an
+   *object-literal* `using` (`{ [Symbol.dispose]() {...} }`, as opposed to a class instance)
+   across an unwind with no enclosing try - reproduced with the exact same shape as the fixed
+   case, swapping only `new Res()` for a `loggy()`-style object literal, and confirmed the
+   synthesis correctly declined to wrap it (no `ts.Try` in the emitted MLIR) before the hang was
+   traced to the untouched pre-existing plain-dispose path. Guarded against the same way as the
+   others: `blockUsingInitializersAreAllNewExpr` restricts synthesis to `using x = new
+   SomeClass(...)` - every case actually verified working is written exactly this way.
+
+Since none of these four are cheaply detectable from a resolved *type* before generation (the
+type isn't known yet - see `blockDeclaresUsing`'s own comment on why the check has to be
+syntactic), each guard is a syntactic proxy for "would this hit the known-broken shape,"
+checked before deciding whether to wrap: `blockDeclaresUsing`, `blockIsFunctionRootBody`,
+`blockUsingInitializersAreAllNewExpr`, `!blockHasNestedUsing`, `!blockHasReturn`. Failing any
+of them falls back to the exact pre-existing plain-dispose path, byte-for-byte - a function that
+doesn't qualify is no worse off than before this step, just not newly fixed either. The net
+result is narrow: `using x = new SomeClass(...)` declared directly in a function's own
+top-level body, with no other `using`-bearing scope and no `return` anywhere in that function,
+now disposes correctly on `throw` with no enclosing `try`. Everything else - object-literal
+disposables, `using` plus `return`, nested `using` scopes - is exactly as before: not fixed,
+not worse.
+
+New test: `test/tester/tests/03disposable.ts` (`test-compile-03-disposable`,
+`test-jit-03-disposable`) - the originally reported shape, now asserting dispose actually ran.
+Full release suite green: 849/849 (847 existing + the 2 new).
+
+> **Re-audited 2026-09-03 (§9.13). Two of the four guards were already stale when written and
+> have been deleted; two of the "pre-existing bugs" above do not reproduce.** Read §9.13 rather
+> than this list for the current state.
+
+### 9.12 Step 5a: locals own what they hold
+
+The first slice of step 5, and the first time anything in the compiler calls a retain or a
+release on its own account rather than because the program said `delete`. Full release suite
+green: 852/852 (849 existing plus 3 new).
+
+**The rule.** A local variable declaration whose type owns heap memory takes a reference when
+it is declared and gives it back at every exit from its scope — the block's end, a `return`
+from anywhere inside it, a `break` or `continue` that leaves it. Assigning through such a local
+hands the count over: the incoming value gains this scope as an owner and the outgoing one
+loses it.
+
+**Stated unconditionally, and the collected build shows no trace of it.** MLIRGen never asks
+which memory model is in force; it emits `ts.RetainSlot` / `ts.ReleaseSlot`, and the lowering
+decides. Confirmed by reading the emitted LLVM for the same file under both models: under `rc`
+the retain sits immediately after the initialising store and the releases sit in reverse
+declaration order at each exit; under `gc` the two functions are **instruction-for-instruction
+what they were before this step** — not a dead load left for a later pass to remove, because
+the slot-addressed ops erase whole and take the access with them. That is what the new
+`ts.RetainSlot`/`ts.ReleaseSlot` pair buys over the value-addressed `ts.Retain`/`ts.Release`
+from §9.10, which would have needed a load kept alive under a collector to have an operand.
+
+**Balanced by construction, which is the property that makes this safe to land first.** The
+reference an allocation is born with (§9.6) is never given up here. Every release this step
+emits is therefore paired with a retain this step emitted, so no release can outnumber its
+retains and nothing can be freed early. What it can do is leak — and under `-mm=rc` the
+collector is still what reclaims, so the leak is inert. That direction is deliberate: an
+over-release is a use-after-free that surfaces far from its cause, and a leak is not. Removing
+the slack is later work, and each piece of it is a separate decision: consuming the +1 when the
+initialiser is a fresh allocation, retaining on field and element stores, and releasing
+temporaries.
+
+**Where a local is *not* made an owner**, each because the frame borrows the reference rather
+than owning it, and releasing one would drop a count nobody took:
+
+- globals, which outlive every scope;
+- parameters — only variable declarations reach the hook, so a parameter's slot is never
+  marked, and assigning to a parameter neither retains nor releases;
+- captured variables held in the `this` context, whose slot belongs to the context;
+- `const` bindings with no storage, which have no slot to release from;
+- **declarations with no initialiser.** This one was found the hard way and is the single bug
+  this step produced: a `catch (v: string)` variable is declared like any other `let` but
+  written by the landing pad, not by an initialiser, so retaining at the declaration read an
+  uninitialised slot as a live reference and trapped. `00try_catch.ts` under `-mm=rc` was the
+  only test in 849 that failed, which is exactly the blast radius §9.10 predicted. The
+  consequence is that a `let s: string;` assigned later never becomes an owner either —
+  correct rather than merely safe, since the assignment path only fires on a slot the
+  declaration marked, so that stays balanced too.
+
+**The unwind leg is skipped, on purpose.** An owned local's storage is allocated inside the
+`TryOp` body region, which does not dominate the cleanup region, so a release emitted there
+would not verify. Disposal still runs on that leg (§9.11); the release does not, which leaks
+the reference when an exception passes through. Fixing it means hoisting owned storage out of
+the operation the way `using` variables already are (`allocateUsingVarsOutsideOfOperation`) —
+tractable, and left for the step that also brings the verifier.
+
+> **Update (§9.15).** Done. The hoisting landed, the dominance problem is gone, and the
+> release now runs on the unwind leg too, so the leak described here no longer happens.
+
+**Where it hooks in.** Three points, all of them ones that already existed:
+
+- `takeOwnershipOfLocal` (`MLIRGenVariables.cpp`), called from `registerVariable` right where
+  `usingVars` is collected, marks the storage with `__owned` and emits the retain.
+- `mlirGenScopeExit` (`MLIRGenImpl.h`) wraps `mlirGenDisposable` and the new
+  `mlirGenReleaseOwned`, so all eleven existing scope-exit call sites — block end, `return`,
+  `break`, `continue`, try body — got the releases for free. Disposal runs first: a disposable
+  is still usable while its `[Symbol.dispose]()` runs, and dropping the last reference first
+  could have freed it.
+- `mlirGenSaveLogicOneItem` (`MLIRGenImpl.h`) is the single choke point every assignment form
+  passes through — plain, compound and destructuring alike. Retain-then-release, in that
+  order, is what makes `x = x` safe: releasing first could drop the last reference and free the
+  value about to be stored back.
+
+`ownsHeapMemory` moved from `OwnershipRoutineLogic` to `MLIRTypeHelper` so that both sides ask
+one function. The two disagreeing about which types own memory would place retains that never
+pair with a release, which is the failure mode with no local symptom.
+
+**Coverage.** `test/tester/tests/00owned_locals.ts`, run under all three models
+(`test-compile-00-owned-locals`, `test-jit-00-owned-locals`, `test-jit-rc-owned-locals`).
+Beyond one local of each owning shape, it covers the paths that reach a slot *without* going
+through an assignment expression, since that is where a missing retain would turn into a
+release of a reference nobody took: `for…of` bindings, destructured declarations and
+destructured assignment (`[a, b] = [b, a]`), a captured local, `break`/`continue` out of a
+loop, a `return` out of a nested block, and returning a value the caller is about to own. A
+2000-iteration churn loop makes an early free likely to be handed straight back out rather than
+silently tolerated.
+
+### 9.13 Re-auditing the `using` guards: half of them were already unnecessary
+
+§9.11 added four conditions, each meant to keep the synthesized `TryOp` away from a shape that
+crashed. Each was real when observed. But they were all observed *before* §9.11's own
+`unwindDests` fix landed, and that fix — the cleanup-only `TryOp` that pushed a null `Block *`
+— turned out to be the cause of more of them than the notes credited. Re-running every guarded
+shape against the current build:
+
+| shape | before | after |
+|---|---|---|
+| `using` in an `if` block, throw | dispose skipped | **disposes** |
+| `using` in a loop body, throw | dispose skipped | **disposes** |
+| `using` two scopes deep, throw | dispose skipped | **disposes** |
+| `using` sharing a function with `return`, throw | dispose skipped | **disposes** |
+| `using` inside a hand-written `try` | worked | works |
+| object-literal `using`, throw | dispose skipped | dispose skipped |
+| outer `using` with a nested `using` scope, throw | outer skipped | outer skipped (**both dispose since §9.17**) |
+
+**`blockIsFunctionRootBody` and `blockHasReturn` are deleted.** Both were guarding shapes that
+now work. Dropping the root-body condition is the one that matters: synthesis is no longer
+confined to a function's own top-level body, so a `using` in an `if` branch, a loop body, or a
+block nested inside a hand-written `try` all dispose on the way out. Nested `TryOp`s, which
+§9.11 recorded as crashing LLVM translation, compose correctly — `try/catch` inside
+`try/catch`, and a synthesized cleanup inside a hand-written `try`, both verified.
+
+**`blockUsingInitializersAreAllNewExpr` and `blockHasNestedUsing` stay, and each was confirmed
+individually necessary** by dropping it alone and rebuilding: without the first, an
+object-literal disposable fails the build; without the second, an outer `using` whose block
+also contains a nested `using` scope segfaults the compiler. Those are the two genuinely open
+bugs, and they are now stated in terms of what was actually reproduced rather than what was
+inferred.
+
+> **Update (§9.17).** `blockHasNestedUsing` is now deleted too — the segfault it was standing
+> in front of was `Win32ExceptionPass::ToInvoke`, not anything about nesting. The method here
+> is what made that possible to check: confirming a guard is *individually* necessary is what
+> turns it from folklore into a one-line experiment to redo after any fix in the area.
+> `blockUsingInitializersAreAllNewExpr` was re-checked and stays.
+
+Method worth repeating: the gate was made maskable by an environment variable for the duration
+of the experiment, so one build could test all sixteen combinations. Four rebuilds' worth of
+bisection in a single compile, and the mask made "necessary individually" a question that could
+be asked directly instead of argued from a combined result.
+
+**Separately, a genuinely new pre-existing bug, unrelated to any of this.** Throwing from
+inside a `catch` clause crashes the LLVM backend (`X86 Assembly Printer`, access violation) —
+reduced to `try { throw 1; } catch (e: int) { throw 2; }` with no `using`, no locals and no
+heap types anywhere in it, so neither ownership insertion nor the `using` machinery can be
+involved. Recorded here because it surfaced while building the matrix above; not fixed, and no
+test asserts it, which is why nothing caught it before.
+
+> **Fixed 2026-09-03, see §9.14.**
+
+New test: `test/tester/tests/04disposable.ts` (`test-compile-04-disposable`,
+`test-jit-04-disposable`), covering the four newly-working shapes plus the two exact-count
+cases that would catch a double dispose — a function that throws past a `using` on one path and
+returns past it on the other, and a synthesized cleanup nested inside a hand-written `try`.
+Full release suite green: 854/854.
+
+### 9.14 Throwing out of a `catch` clause
+
+`try { throw 1; } catch (e: int) { throw 2; }` crashed the compiler. The cause is one missing
+line, and the shape of it is worth keeping.
+
+`ThrowOpLowering` ends with `clh.CutBlock()`, which drops everything after the throw in its
+block — including the `EndCatchOp` that `TryOpLowering` had placed just before the region's
+terminator. `Win32ExceptionPass` then finds a catch region with no end marker, picks one for
+itself by splitting the block *ahead* of the throw, and emits the `catchret` there. The result
+is a `catchret` followed by a call that still carries `"funclet"(token %catchpad)` — a bundle
+naming a funclet it has already returned from. That reaches the backend and crashes it.
+
+`ReturnOpLowering`, `BreakOpLowering` and `ContinueOpLowering` all emit an `EndCatchOp` before
+leaving a catch. `ThrowOpLowering` was the only abrupt exit that did not.
+
+**It needed a new side table rather than the existing one.** The other three record "I am
+leaving a catch" by having `tsContext->unwind[op]` set. A throw cannot: for a throw that map
+already means its invoke destination, and the finally handling writes exactly that into it. So
+`leavesCatch` is its own set, populated by the same walk over the catches region that already
+marks returns.
+
+**And only when there is no `finally`.** With one, the throw becomes an invoke into the finally
+block and *the finally* ends the catch; ending it at the throw as well runs it twice and breaks
+the unwind. `51exceptions.ts` — `catch (e: number) { … if (k >= 10) throw e } finally { … }` —
+is the case that proves it, and it caught the first version of this fix.
+
+**Still open, and each confirmed independent of this fix:**
+
+- **An exception escaping a catch clause is lost under AOT**, and always was. A *call* in a
+  catch that throws (`catch (e) { thrower(); }`) loses it too, with no `throw` statement
+  involved anywhere and nothing in this change able to affect it. The IR is well-formed at
+  both `-O0` and `-O3`; the gap is in the AOT exception tables. `00throw_in_catch.ts` is
+  therefore registered JIT-only.
+
+  > **Update.** Both wrong, and differently wrong. The first was the
+  > `CatchableType::sizeOrOffset` miscompile (§9.15) and went away with it; this file's tests
+  > now run under AOT as well, as `test-compile-00-throw-in-catch`. The second was neither
+  > AOT-specific nor in the exception tables: the MLIR inliner was **erasing the throw**
+  > (§9.16). "The IR is well-formed" was checked on the callee, which is exactly the function
+  > that survives intact — the deletion happens at the call site.
+
+- **A call inside a catch followed by a throw out of it** (`catch (e) { new Res(); throw 2; }`)
+  crashes at run time, AOT and JIT alike, at every optimisation level and memory model. Its IR
+  is well-formed too. Unrelated to ending the catch.
+
+  > **Update.** Also the `CatchableType::sizeOrOffset` miscompile (§9.15); fixed there, and
+  > covered now by `00try_using_catch.ts`. Correctly identified as unrelated to ending the
+  > catch — it just wasn't an EH bug at all. Three of these entries had one cause between
+  > them, and the thing they had in common was a *call in a catch*: that is the shape whose
+  > frame layout the overflow reached.
+
+- **Throwing from a `finally`** (`try { throw 1; } finally { throw 2; }`) segfaults, from the
+  same `CutBlock` cause — `ts.BeginCleanup` with no `ts.EndCleanup`. Not fixed here because
+  `EndCleanupOp` is a terminator taking a landing pad and unwind destinations rather than a
+  marker, and the finally region is cloned once per exit path, so each copy would need its own.
+
+**A regression in §9.13 turned up while testing this, and is fixed here too.** Dropping
+`blockIsFunctionRootBody` also stopped excluding *catch and finally regions*, and synthesizing
+a cleanup `TryOp` in one crashes the compiler — `catch (e: int) { using r = new Res(); }`
+segfaults with the wrapping and compiles without it. §9.13's matrix checked nesting inside a
+try *body* and never inside a catch region. `blockIsInsideCatchOrFinally` restores exactly that
+half; the four shapes §9.13 fixed all still work.
+
+The same predicate also excludes those clauses from ownership (§9.12): under `-mm=rc` a release
+in a catch clause is a call inside a funclet, which is the fragile construct above, and
+`catch (e: int) { let r = new Res(); }` segfaulted. Locals there are simply not owned now — they
+leak, the trade every other exclusion in §9.12 makes. (That leak was covered by the collector when
+this was written; since step 6 (§9.28) it is a real one under `-mm=rc`.)
+Both holes existed because no test had a `using` or a heap local inside a catch clause;
+`04disposable.ts` now has both, and `03disposable.ts`/`04disposable.ts` gained `-mm=rc`
+variants, which is what would have caught the ownership half.
+
+New test: `test/tester/tests/00throw_in_catch.ts` (`test-jit-00-throw-in-catch`,
+`test-jit-rc-throw-in-catch`). Full release suite green: 858/858.
+
+### 9.15 Step 5b: owned storage is hoisted out of the `TryOp`, and the unwind leg releases
+
+§9.12 left one hole on purpose: an owned local's storage was allocated inside the `TryOp` body
+region, which does not dominate the cleanup region, so the release could not be emitted on the
+unwind leg and the reference leaked when an exception passed through. This step closes it — and
+turned up a miscompile of our own on the way, which is the more valuable half of the result.
+
+**What landed.** Owned storage is hoisted out in front of the `TryOp`, exactly the way `using`
+storage already was. `allocateUsingVarsOutsideOfOperation` is renamed
+`allocateScopeOwnedVarsOutsideOfOperation` because it now serves both, and the hoist decision
+for an owning local cannot be made in `detectFlags` with the rest — it needs the variable's
+type, which is not known until `createLocalVariable`. Verified in the emitted LLVM: the
+`alloca` moves to the function entry and the initialising store stays at the declaration, in
+both memory models. Nothing else about a collected build changes.
+
+**One predicate, two callers.** `localTakesOwnership` is the single test for "does this
+declaration make its scope the owner", shared by the hoisting decision and by
+`takeOwnershipOfLocal`. They must agree: a local that is hoisted but not owned only wastes a
+move, but one that is owned and *not* hoisted puts a release in a region its slot does not
+dominate and the module stops verifying. This is the same lesson as moving `ownsHeapMemory`
+into `MLIRTypeHelper` in §9.12 — two sides asking the same question separately is the failure
+mode with no local symptom.
+
+**Hoisted storage starts null, under `-mm=rc` only.** A hoisted slot's initialising store stays
+behind at the declaration, and the unwind edge can reach the cleanup region before that store
+runs — the allocation in `let r = new Res()` is itself an `invoke` whose unwind destination is
+that region. A release there would read whatever the frame happened to hold, which is precisely
+how the catch-variable bug in §9.12 trapped. Null is the one value every release routine treats
+as nothing to do (`emitIfLastReference` null-checks first), so `VariableOpLowering` zero-fills a
+hoisted owned slot. Gated on `isRefCounted()` in the *lowering*, not in MLIRGen: no other model
+reads the slot before its store, and a collected build is meant to come out of this step
+byte-identical.
+
+
+**The unwind leg releases.** The cleanup region now calls `mlirGenScopeExit` rather than only
+`mlirGenDisposable`, so an exception passing through a scope gives back the references that
+scope took. Confirmed in the emitted LLVM: under `rc` the cleanup funclet holds one `tsrel_` per
+owned local, in reverse declaration order, each carrying the funclet bundle; under `gc` the same
+region is empty, because the slot-addressed ops erase whole. Step 5's local half is now complete
+on every path.
+
+#### The detour: a miscompile of our own, found because this step tripped it
+
+Turning the release on broke exactly one test, and chasing it turned up a bug that had nothing
+to do with reference counting and had been in the tree the whole time.
+
+The shape, which needs no ownership at all and fails under `-mm=gc`:
+
+```ts
+function f() {
+    try { using r = new Res(); throw 1; }
+    catch (e: TypeOf<1>) { print("a"); print("b"); }
+}
+```
+
+`main` keeps a pointer in `rsi` across the call to `f` — legal, `rsi` is callee-saved — and gets
+it back with its **low 32 bits zeroed**.
+
+**Root cause: `CatchableType::sizeOrOffset` said a caught `int` was 8 bytes.** Both RTTI helpers
+(`MLIRRTTIHelperVCWin32.h` and `LLVMRTTIHelperVCWin32.h`) hardcoded `8` for every catchable
+type. The CRT copies exactly that many bytes into the catch variable's frame slot, so catching a
+4-byte `int` wrote 8 and clobbered whatever sat above the slot. The symbol name we emit had been
+saying so all along: `_CT??_R0H@8` **4** — the trailing digit is the size, and it disagreed with
+the record it named.
+
+**Why it hid for so long.** What sits above the catch slot is a question of frame layout. Ahead
+of time it was padding, so the overflow was invisible. The JIT compiles with the **large code
+model**, where every call materialises a 64-bit address into a register; that pressure makes a
+catch funclet use a callee-saved register, which makes the parent save it, which puts a saved
+register exactly where the overflow lands. Hence: JIT-only in practice, sensitive to unrelated
+code changes, and not reproducible with clang — clang emits `4`.
+
+**How it was found**, because the route generalises. `llc -code-model=large` on the same IR
+reproduced it ahead of time, which exonerated the JIT's unwind-table registration and turned a
+compiler-rebuild loop into a seconds-long one. clang's C++ equivalent at `-mcmodel=large` did
+*not* reproduce, which said the defect was in our IR rather than the backend. Deleting the
+cleanup funclet still reproduced, which said the `using` was a red herring. A hardware
+write-breakpoint on the saved-register slot then named the writer: an 8-byte store from inside
+the CRT's EH machinery, of the value `1`, at establisher+52 — the catch object, one word wide
+for a four-byte `int`.
+
+**The fix** gives each catchable type its real size: `int` is 4 and `double` is 8 on every
+target, while the pointer-shaped ones (string, opaque pointer, class reference) take
+`compileOptions.sizeBits / 8`, since those genuinely do follow the architecture flag. Both
+helpers were wrong identically and both are fixed; leaving one behind is the classic trap with a
+duplicated table. Worth recording while in there: the whole name table in
+`LLVMRTTIHelperVCWin32Const.h` is 64-bit MSVC mangling (`PEA` is a `__ptr64` pointer, and
+pointer entries bake `@88` into the symbol), so a 32-bit target needs its own table, not just a
+different size.
+
+New test: `test/tester/tests/00try_using_catch.ts`, run under all three models
+(`test-compile-00-try-using-catch`, `test-jit-00-try-using-catch`,
+`test-jit-rc-try-using-catch`, `test-jit-none-try-using-catch`). It covers the caught-`int` case
+that was broken and a caught `number`, which is genuinely eight bytes and has to keep working
+now that `int` narrowed. Writing it turned up one more thing worth recording: moving the `using`
+one scope deeper, into an `if` inside the try body, crashes the *compiler* in every memory
+model. That is §9.11's second item — a synthesized cleanup `TryOp` nested inside a real
+`TryOp`'s body — still open, and it is why the test covers only the flat shape.
+
+> **Update (§9.17).** Fixed, and `00using_nested_scopes.ts` now covers the deeper shape.
+
+Full release suite green: 862/862.
+
+### 9.16 The inliner was deleting throws
+
+Not an RC bug at all, and not an EH bug either — a silent wrong-code bug in the ordinary
+optimised build, found by re-testing §9.14's open list after the §9.15 fix and asking why one
+entry survived. Two defects, one behind the other.
+
+**A function whose body ends in a throw inlined down to nothing.** This:
+
+```ts
+function thrower() { throw 5; }
+function callsIt() { thrower(); }
+```
+
+compiled, under `--opt`, to a `callsIt` that does nothing but return:
+
+```mlir
+ts.Func @callsIt !ts.func<, , false> {
+    "ts.ReturnInternal"() : () -> ()
+}
+```
+
+MLIR's inliner has a fast path for a single-block callee (`inlineRegionImpl`, the
+`singleBlockFastPath` branch): it offers the block's terminator to the dialect's
+`handleTerminator` hook and then calls `firstBlockTerminator->erase()` **unconditionally**. The
+assumption is that a terminator is return-like and its operands are all the block had left to
+say. `ts.ThrowCall` is a terminator too, and `TypeScriptInlinerInterface::handleTerminator` only
+ever did anything for `ReturnInternalOp` — so the throw was handed over, ignored, and erased.
+The multi-block path has no such erase, which is why a *conditional* throw was always fine and
+only the throw-only helper was hit.
+
+The fix is the hook MLIR provides for exactly this, `allowSingleBlockOptimization`: decline the
+fast path unless the terminator is a return. The multi-block path then leaves the throw in place
+as the block's terminator and puts the code after the call site in an unreachable block, which
+is what it should have been all along.
+
+**Then the same throw inlined into a `catch` clause crashed the backend** — the case that had
+been recorded as "lost under AOT, so the gap is in the AOT exception tables". It was neither.
+`Win32ExceptionPass` ends a catch region at a `_CxxThrowException` call by splitting the block
+*ahead* of it and emitting the `catchret` there, which leaves the throw outside the funclet; but
+it also collected that same call into `catchRegion.calls`, which is what stamps
+`"funclet"(token %catchpad)` on. So the throw named a pad it had already returned from — the
+identical malformed shape §9.14 describes, reached by a different route. An `__cxa_end_catch`
+marker is what normally keeps the two apart, by closing the region before the throw is reached,
+and a throw the inliner brought in has no marker: the `EndCatchOp` that followed the call it
+replaced went with the rest of the now-unreachable code after it.
+
+**The first attempt at that overreached, and 00try_catch.ts caught it.** Closing the region on
+the throw, the way the marker does, broke three tests. That scan walks `instructions(F)` in
+order rather than by region, so once inlining has merged several functions into one, a throw
+belonging to one catch turns up while another is still open — and closing there strands the rest
+of that catch's calls with no bundle at all. Skipping the call is all that is needed; the region
+stays open. The `isCatch()` guard matters too: a cleanup region gets no `catchret`, so its throw
+stays inside the funclet and does still need the bundle.
+
+**What this says about the earlier diagnosis.** Three entries on §9.14's open list had two
+causes between them, and both diagnoses pointed at the runtime — "the AOT exception tables", "it
+is the runtime side that drops it" — on the strength of the IR being well-formed. It was: the IR
+of the *callee*, which is the one function the bug leaves intact. The deletion happens at the
+call site, and the call site was never looked at. The cheap check that would have settled it in
+minutes is the one that eventually did — dump `--emit=mlir-affine` with and without `--opt` and
+diff, which is a much smaller step than reasoning about exception tables.
+
+New test: `test/tester/tests/00throw_inlined.ts`, run under all three models
+(`test-compile-00-throw-inlined`, `test-jit-00-throw-inlined`, `test-jit-rc-throw-inlined`,
+`test-jit-none-throw-inlined`). It covers the plain call, the call from inside a catch clause,
+and a conditional throw as the control that always worked. `00throw_in_catch.ts` picks up its
+AOT variant here as well, now that nothing on its header's list is true any more.
+
+Full release suite green: 867/867.
+
+### 9.17 A nested `using` scope, and the guards that were standing in for one bug
+
+Two of §9.11's guards turned out to be avoiding the same defect, in a place neither of them
+named. Fixing it retires one guard outright and closes the last two `using`-on-unwind gaps.
+
+**The shapes.** Both crashed the compiler, in every memory model:
+
+```ts
+try { if (flag) { using r = new Res(); throw 1; } } catch (e: int) { }   // one scope deeper
+using a = new Res(); { using c = new Res(); } throw 1;                   // outer plus inner
+```
+
+The first was §9.11's item 2, guarded by `blockIsFunctionRootBody` and, once that went in
+§9.13, by nothing — it simply crashed. The second was item 3, guarded by
+`blockHasNestedUsing`, whose cost was that the *outer* `using` stood down from being wrapped so
+that the inner one could be, and therefore never disposed on unwind at all.
+
+**One cause: `Win32ExceptionPass::ToInvoke`.** The helper exists to turn a call into an invoke
+with a given unwind destination, so it splits the block at the call to make room for the new
+terminator. But two of its callers hand it an operation that is *already* an invoke — the
+"fix incorrect landing pad" loop that redirects an invoke whose unwind destination is wrong. An
+invoke already ends its block, so splitting at it puts it alone in the new continuation block,
+and every caller erases it immediately afterwards. What is left is an empty block with no
+terminator, and the real continuation stranded with no predecessors:
+
+```llvm
+  %invoke = invoke void %24(ptr %23) [ "funclet"(token %cleanuppad) ]
+          to label %invoke.cont unwind label %26
+invoke.cont:                                      ; preds = %15
+                                                  ; <- empty, no terminator
+25:                                               ; No predecessors!
+  cleanupret from %cleanuppad unwind label %26
+```
+
+That reaches `AlwaysInlinerPass`, which walks the empty block and dies. An invoke needs its
+unwind edge redirected and the bundle added, not a block of its own; cloning it in place with
+`CallBase::Create` and calling `setUnwindDest` is what the funclet-bundle loop a few hundred
+lines above already does.
+
+**Then the guards were re-tested, one at a time.** This is the payoff and the reason §9.13 was
+careful to establish that each guard was *individually* necessary — that turns "is this still
+needed?" into a one-line experiment rather than an argument.
+
+- `blockHasNestedUsing` — **deleted.** The outer and inner `using` now both dispose on unwind,
+  innermost first.
+- `blockIsInsideCatchOrFinally` — **stays.** Dropped alone, `catch (e: int) { using r = new
+  Res(); }` still crashes. A different cause, still open. It is worth naming its second cost:
+  `localTakesOwnership` consults the same predicate, so a heap local declared in a catch or
+  finally clause is not owned and leaks under `-mm=rc`.
+  > **Both halves re-measured false in §9.65.** That shape now runs in all three models, and the
+  > local does not leak: measured behind an interface it reclaims exactly as well as the same
+  > allocation one scope out, because §9.30's discarded-temporary pass consumes the reference
+  > whether or not MLIRGen made the local an owner. Whether the predicate can now go is untested.
+- `blockUsingInitializersAreAllNewExpr` — stays, re-checked, unchanged.
+
+**Also still open, and confirmed independent:** throwing from a `finally` still crashes the
+compiler, in both memory models. That is the `ts.BeginCleanup`-with-no-`ts.EndCleanup` shape
+§9.14 describes, and this fix does not touch it.
+
+> **Stale as of §9.65.** It compiles and runs in all three models now, and the throw is caught.
+
+New test: `test/tester/tests/00using_nested_scopes.ts`, run under all three models
+(`test-compile-00-using-nested-scopes`, `test-jit-00-using-nested-scopes`,
+`test-jit-rc-using-nested-scopes`, `test-jit-none-using-nested-scopes`). It covers a `using` in
+an `if` and in a bare block inside a try body, and the outer/inner pair both with the inner
+scope already closed and with both still live, asserting disposal *order* rather than just that
+it happened.
+
+Full release suite green: 871/871.
+
+### 9.18 The verifier, and the first thing it found
+
+Step 5's plan named a verifier from the start — "every owned value with a matching release on
+every path, unwind paths included" — and said to build it alongside the insertion rather than
+after. This is that, one step ahead of the work it exists to guard.
+
+**Where it runs, and in which model.** `OwnershipVerifierPass`, at the affine level, behind
+`--verify-ownership`. Affine because that is the first point where the unwind paths are ordinary
+CFG edges and can be walked like any other; before `TryOpLowering` they are regions, and after
+`LowerToLLVM` the ops are gone. And in **every** memory model, not just `-mm=rc`:
+`ts.RetainSlot` and `ts.ReleaseSlot` survive to there regardless of model and are only erased on
+the way to LLVM, so a collected build checks the same invariant a counted one does. That matters
+more than it sounds — most of the suite, and most of CI, is collected.
+
+**What it checks.** For each `ts.RetainSlot`, a backward must-analysis over the function's
+blocks: is there a path from the retain to a function exit that passes no `ts.ReleaseSlot` on
+the same slot? A block releases if it does so directly or inside a region of one of its own
+operations — counting nested regions as releasing rather than as opaque, because a verifier that
+reports a leak the IR does pay somewhere the walk does not follow is a verifier that gets
+switched off. Being a must-analysis it starts optimistic and is driven down to a fixed point,
+which leaves a loop with no exit reading as satisfied — correctly, as it has no path to an exit
+to leak on. The cheap structural half of the other direction is there too: a release naming a
+slot that is never retained.
+
+It checks the direction that leaks rather than the direction that frees live memory, on purpose.
+Step 5a's insertion is balanced by construction, so an unmatched release cannot currently be
+generated; what an extension to fields, elements, arguments or returns will get wrong first is a
+path out that nobody released on.
+
+**Confirmed to fire before being trusted.** A verifier that has never failed is a verifier that
+might not work. The unwind-leg release from §9.15 was reverse-applied, and it reported the leak
+at the right declaration, in all three memory models; restored, it went quiet again.
+
+**What it found on its first run.** 460 test files, two with findings, both real.
+
+1. **A `break` or `continue` written inside another block skipped every scope between itself and
+   the loop** — the disposals a `using` declared *and* the references those scopes' locals took.
+   Not an RC bug: `using` had it too, and that half is user-visible. Three iterations of
+   `for (…) { using r = new Res(); if (i == 1) continue; }` disposed twice.
+
+   The walk outwards stopped at the first scope that was not itself a loop. `isLoop` is set by a
+   loop on the context it hands its body and then inherited by every context copied from it, so
+   it answers "somewhere inside a loop", not "is the loop" — and the very first step of the walk
+   thought it had already arrived. Written directly in the loop body it happened to be right,
+   which is why that shape always worked and hid this one. Fixed by splitting the two meanings:
+   `isLoopBodyScope` is taken by the block that becomes the loop's body and cleared for anything
+   nested further in.
+
+   Two attempts either side of it were wrong and are worth recording. Carrying the target label
+   into the recursion instead of the empty one looks obviously right and breaks
+   `02disposable.ts`: the loop sites clear `label` before storing it, so a labelled loop's
+   context holds an empty label too, and `continue cont1` relies on the outer loop matching the
+   empty label the recursion passes down. And moving the recursion out of the
+   `ownedVars != nullptr` guard — on the reasonable theory that a scope owning nothing says
+   nothing about its parents — broke `Path.ts`. The `isLoop` fix made it unnecessary anyway.
+
+2. **A `[Symbol.dispose]()` that itself throws during unwind skips the release that follows it.**
+   The cleanup region invokes dispose, and its unwind edge goes to the enclosing catch without
+   passing the `ts.ReleaseSlot` on the far side. Real, and left alone: releasing before disposing
+   would fix the path and break the ordering §9.12 chose deliberately — a disposable is still
+   usable while its `[Symbol.dispose]()` runs, and dropping the last reference first could have
+   freed it. `00using_nested_scopes.ts` is the one file that still reports.
+
+New tests: `test/tester/tests/00break_continue_scope_exit.ts`, all three models
+(`test-compile-00-break-continue-scope-exit`, `test-jit-00-break-continue-scope-exit`,
+`test-jit-rc-break-continue-scope-exit`, `test-jit-none-break-continue-scope-exit`). It covers
+`continue` and `break` from inside an `if`, two levels of nesting, a `using` in the intermediate
+scope as well, the labelled form, and the shape that always worked as a control. Confirmed to
+fail with the fix reverse-applied.
+
+Full release suite green: 875/875.
+
+### 9.19 Step 5c: fields own what they hold
+
+The first piece of step 5 beyond locals, and the one the verifier from §9.18 was built ahead of.
+
+**The gap.** A field store was a bare `ts.Store`. The runtime half had been in place since §9.4 —
+`releaseFields` in `OwnershipRoutineLogic` walks an instance's fields when its release routine
+runs — but nothing ever took the reference that routine was giving up, and overwriting a field
+dropped the outgoing value on the floor without releasing it.
+
+**The fix** is the one already written for locals, applied to a second kind of storage.
+`isOwnedLocalSlot` becomes one arm of `isOwningSlot`; the other is `isOwnedFieldSlot` — a
+`ts.PropertyRef` whose base is a class or object instance, and whose field type owns heap memory.
+Retain the incoming value, release what the slot still holds, then store. Retaining first is what
+makes `h.item = h.item` safe.
+
+**Scoped deliberately.** A field of a record held *inline* — a tuple in a local, a parameter's
+slot — is not covered. Its fields are released by whatever owns the record, which is only tracked
+when that is an owned local, and retaining into a record nothing releases would leak. That is the
+same question arguments and elements ask, and it gets one answer, later, not three.
+
+**The counting stays balanced by construction.** A freshly allocated value's birth reference is
+still unconsumed, so every count sits one above the truth, uniformly, now on fields as well as
+locals. Nothing can reach zero on a live value, which is the property §9.12 chose and this keeps.
+
+**Which means the new tests have no teeth yet, and that was checked rather than assumed.**
+Swapping the store to release-before-retain — the classic way to free the value you are about to
+store back — leaves every case in `00owned_fields.ts` passing, because a release cannot reach
+zero while the slack is there. They are written as aliasing cases anyway, and run in every model,
+because that is exactly what gives them teeth the moment the slack goes.
+
+**One thing this broke in the verifier, worth recording.** The structural half of §9.18 —
+"released but never retained" — went from zero findings to **49 files**. All false. An overwrite
+hands the count over with `ts.Retain` on the *value* coming in and `ts.ReleaseSlot` on the *slot*,
+so the slot never appears in a `ts.RetainSlot` and every field store in the suite looked
+unmatched. The check now recognises the hand-over by the store that follows the release. The
+lesson is about verifiers rather than about fields: a check that pairs acquisitions and releases
+has to know every shape the pairing takes, and adding an insertion point adds a shape.
+
+After that, the verifier reports **two** functions across the whole suite, and both are the same
+throwing-`[Symbol.dispose]()` path §9.18 already documented — the cleanup region's own dispose
+invoke unwinding past the release that follows it. No new findings from this step.
+
+New test: `test/tester/tests/00owned_fields.ts`, all three models
+(`test-compile-00-owned-fields`, `test-jit-00-owned-fields`, `test-jit-rc-owned-fields`,
+`test-jit-none-owned-fields`). Repeated overwrite, an alias that outlives the field's reference,
+self-assignment, one value shared between two holders, and a field assigned from another field.
+
+Full release suite green: 879/879.
+
+### 9.20 Step 5d: elements own what they hold — and the literal that does not
+
+The direct sibling of §9.19. A `T[]` value is `{ data, length }`, and its release routine walks
+the elements of the data block before freeing it (`buildArrayBody` in `OwnershipRoutineLogic`) —
+the exact mirror of what `releaseFields` does for an instance. So `arr[i] = x` carried the same
+debt `obj.f = x` did, and was likewise a bare `ts.Store`.
+
+**The fix** is a third arm on `isOwningSlot`: `isOwnedElementSlot` — a `ts.ElementRef` whose base
+is an `ArrayType` and whose element type owns heap memory. Only `ArrayType`; `ts.ElementRef` also
+addresses a `ConstArrayType`, whose data is a static literal nothing releases, and a `StringType`,
+whose characters are not references at all. Element access already produces `ts.Load` on a
+`ts.ElementRef`, so the store flows through the same assignment path fields do and needed no new
+emission code — only the predicate.
+
+**Scoped deliberately.** `push`, `unshift` and `splice` put a value into that same data block
+through their own ops rather than through an assignment, and `pop` and `shift` take one back out.
+The taking-out half asks the same question a `return` does — give up a reference to a value the
+caller is about to hold — so those belong together in one later slice rather than half here.
+
+**These tests do have teeth, unlike §9.19's, and that is the interesting part.** The same
+release-before-retain swap that left every field case passing makes `test-jit-rc-owned-elements`
+fail outright: the element self-assignment reads back `0` where the field self-assignment still
+reads `5`. Reduced to two five-line programs, that asymmetry is not about elements at all.
+
+**What it exposes: an array literal stores its elements without retaining them.** The IR for
+`let arr = [kept];` is a `ts.CreateArray(%kept)` with no `ts.Retain` anywhere near it, while the
+`ts.ReleaseSlot` at scope exit runs the array's release routine, which releases every element.
+The array gives up a reference it never took. A field filled through the assignment path holds
+birth + field = 2 and survives a stray release; an element seeded by a literal holds only its
+birth reference, so releasing first drops it to zero and frees a live value.
+
+Object literals construct the same way and have the same hole. That makes literal construction,
+not arguments or returns, the next thing to take.
+
+> **Correction, made while implementing §9.21.** This section originally called the gap an
+> over-release *in waiting*, masked entirely by the slack, and illustrated it with an array going
+> out of scope and releasing an element it never retained. That mechanism is wrong: the data
+> block has an unconsumed birth reference of its own, so it does not die at scope exit and never
+> reaches its elements at all. The real mechanism is that the element is simply one count below
+> an equivalent field, and it is *each explicit overwrite* that spends the missing reference —
+> the first cancelled by the birth slack, the second going past zero. Which means it was never
+> latent: it frees live memory today. §9.21 has the reduced case.
+
+The verifier is unchanged by this step: still the same two files and six retain sites, all the
+known throwing-`[Symbol.dispose]()` path, and no new "released but never retained" — the
+hand-over recognition added in §9.19 generalised to elements without modification.
+
+New test: `test/tester/tests/00owned_elements.ts`, all three models. Repeated overwrite, an alias
+outliving the element's reference, self-assignment, one leaf shared between two arrays, an element
+assigned from another array's element, one value reaching two slots of the same array, and
+overwriting a single slot inside a loop.
+
+Full release suite green: 883/883.
+
+### 9.21 Step 5e: literal construction, and the first over-release that was already live
+
+§9.20 ended by predicting that array and object literals capture without retaining, and filed it
+as a latent problem for after the slack came out. Writing the fix meant reducing the case
+properly, and the reduction said something different: it frees live memory now.
+
+**The reduced case.** Two array literals holding one value, each overwritten once:
+
+```ts
+let kept = new Leaf(7);
+let a = [kept];
+let b = [kept];
+print("A", kept.n);   // 7
+a[0] = new Leaf(1);
+print("C", kept.n);   // 7
+b[0] = new Leaf(2);
+print("D", kept.n);   // 0   <- freed while `kept` still holds it
+```
+
+**Why §9.20's account of it was wrong.** That section said the array dies at scope exit and
+releases an element it never retained. It does not: the data block carries an unconsumed birth
+reference of its own, so its count never reaches zero and its release routine never runs. The
+elements are not reached that way at all.
+
+What actually happens is quieter and worse. An element seeded by a literal sits at **one** —
+its birth reference only — where a field filled through the assignment path sits at two. Every
+`arr[i] = x` releases what the slot held. The first such release is exactly cancelled by the
+birth slack, which is why one overwrite looks fine and why §9.19's and §9.20's tests pass. The
+**second** release of the same value, through a different literal, has nothing left to spend and
+takes it past zero. Two holders and two overwrites is the whole recipe, and it needs no future
+change to become reachable.
+
+So the slack was never masking this. It was masking exactly one release of it.
+
+**The fix** is one helper, `mlirGenRetainCaptured`, used at the two places that fill an owning
+block in one go instead of through an assignment: the array literal's `ts.CreateArray`, and the
+boxed object literal's `ts.New` + `ts.Store`. Both blocks release what they hold when they die,
+so both must take a reference to it. A record-shaped value retains through its own routine, which
+walks its owning fields, so the boxed case needs one `ts.Retain` on the whole tuple rather than
+one per field.
+
+**Still open, and now precisely bounded.** The spread form of an array literal (`[...xs, y]`)
+builds its array through `ts.ArrayPush` rather than `ts.CreateArray`, so it keeps the same hole
+until §5f takes the mutating ops. An unboxed object literal — one with no methods — stays an
+inline const-tuple or tuple, which is the inline-record case §9.19 deferred and §5g will answer.
+
+**The test does have teeth, and each case was checked rather than the file as a whole.** Against
+the compiler as it stood, `00owned_literals.ts` returns 3 where 10 is due, 1 where 7 is, 7 where 8
+is — six of its seven cases wrong, the seventh being a deliberate control that must pass either
+way. A single overwrite is not enough to bite; what bites is one value reaching two slots that are
+both later overwritten, whether that is two literals sharing it or one literal holding it twice.
+
+The verifier is again unchanged — same two files, same six sites. It tracks `ts.RetainSlot` and
+`ts.ReleaseSlot`, and this step adds neither; the value-form `ts.Retain` is outside what it pairs.
+That is a real limit rather than a clean bill of health, and it is worth saying plainly: the check
+that would have caught this bug is not the one that exists. A verifier that pairs a construction
+site's retain against the owning block's eventual release needs to reason about the block, not
+about a slot in a frame, and nothing here does that yet.
+
+Full release suite green: 887/887.
+
+### 9.22 Step 5f: the array-mutating ops
+
+The last of the insertion points that fill an array's data block. `push`, `unshift` and `splice`
+put a value in through their own ops rather than through an assignment, so like the literal in
+§9.21 none of them took a reference to what they inserted, while the block goes on releasing
+every element it holds when it dies. Same bug, same recipe to expose it — one value reaching two
+slots that are both later overwritten — and the same fix: retain each inserted value, in
+`MLIRCustomMethods` where the three ops are built.
+
+**This also closes the spread literal §9.21 left open.** `[...xs, y]` is not built by
+`ts.CreateArray` at all: `mlirGenAppendArrayByEachElement` synthesises a `for..of` calling
+`push`, so it inherits push's retain rather than needing one of its own. That is the whole of
+what §9.21 deferred on the array side.
+
+**`pop` and `shift` get no counterpart, and that is a decision rather than an omission.** The
+block does not release the element it gives up — the size shrinks past the slot, so the release
+routine (`buildArrayBody`, which loops to `size`) never reaches it. The reference the block held
+simply transfers to the returned value. That leaves the result carrying the same "+1 nobody has
+consumed" that every freshly produced value already carries, which is the convention §9.12 chose
+and §5h removes wholesale. Pairing a release here instead would free a value the caller is about
+to use. So the question §9.20 flagged — what a `pop` and a `return` owe each other — turns out to
+be already answered by the existing convention, and needs nothing of its own until the slack goes.
+
+> **Closed by §9.74**, from `LowerToLLVM` as predicted here, and the clamp it needed turned up a
+> pre-existing crash plus an unrelated over-release (5aq).
+
+**Still open, and bounded.** What `splice` *deletes* is memmoved over and its references dropped
+without a release. That leaks rather than over-releases, so it is inert; and it cannot be fixed at
+this level anyway, because the number of elements to release is only known inside the lowering.
+It is the first item in this arc that will need a retain or release emitted from `LowerToLLVM`
+rather than from MLIRGen, which also puts it outside what the verifier can see.
+
+**One test case had to be strengthened, and only running each case separately found it.**
+`spreadLiteralSharesValue` passed on the unfixed compiler with two overwrites: the source array is
+itself a literal, so under §9.21 it already holds a legitimate retained reference, and that one
+extra absorbed the second release. The case was worthless as written and looked fine. Overwriting
+the source as well spends the literal's own reference and puts the two spread copies back on the
+hook for theirs — 6 where 13 is due, on the compiler as it stood. The habit that caught it is the
+one from §9.21: check each case against the unfixed compiler, not the file as a whole.
+
+The verifier is unchanged again — same two files, same six sites — and for the same structural
+reason as §9.21: these are value-form `ts.Retain`s against a block's eventual release, which is
+not the pairing it tracks.
+
+New test: `test/tester/tests/00owned_array_ops.ts`, all three models. push, unshift and
+splice-insert each sharing a value between two arrays; one array pushed twice with the same value;
+the spread literal; `pop` and `shift` as run-path coverage of the transfer; and a single overwrite
+after a push as a control.
+
+Full release suite green: 891/891.
+
+### 9.23 Step 5g: inline records — and why arguments and returns needed nothing
+
+Three things were queued for this step: arguments, returns, and the inline-record cases §9.19 and
+§9.21 deferred. Checking each before writing anything turned two of the three into no-ops, and
+the third into a live over-release.
+
+**Arguments are already borrowed, and that is the right convention.** A parameter's slot is not
+marked owned, so passing a heap value neither retains nor releases: the callee borrows for the
+duration of the call and the caller's own reference keeps it alive. The hazard worth testing is a
+callee that drops every holder of what it was handed, so the sharpest available case was written —
+a function passed a value plus the class field, the second holder and the array that all point at
+it, dropping all three before reading it. It reads correctly. It has to: every holder that drops
+also retained when it took, so the count cannot fall below the number of live holders. Nothing to
+do here now; the convention becomes load-bearing at 5h.
+
+**Returns already work, for a reason worth naming.** `return x` releases `x`'s owned slot on the
+way out, which balances the retain at its declaration — and what the caller receives is the birth
+reference, unconsumed. That is exactly the +1 transfer `pop` and `shift` perform in §9.22, arrived
+at from the other direction. Verified through two frames. This is also precisely what 5h has to be
+careful about: once the birth reference is consumed by the local's retain, that scope-exit release
+becomes the last one and would free the value before it is returned.
+
+**The inline-record case, however, was an over-release, and the reasoning that deferred it was
+half wrong.** §9.19 excluded a field of a record held inline because "retaining into a record
+nothing releases would leak". The half that does not hold is that an owned local holding a record
+*does* release its fields: `ts.RetainSlot` and `ts.ReleaseSlot` on a record-shaped slot go through
+the type's own routines, and those walk the fields. So the local retained the field's original
+value and released whatever the field held at scope exit, while an assignment in between swapped
+that value taking and giving nothing:
+
+```ts
+let x = new Leaf(1);
+{
+    let a = { item: new Leaf(9) };
+    let b = { item: new Leaf(9) };
+    a.item = x;     // no retain
+    b.item = x;     // no retain
+}                   // both locals release x at scope exit: 2 -> 1 -> 0, freed
+print(x.n);         // 0
+```
+
+**The rule is conditional, unlike the class one.** A class or object field always owns, because
+the instance is a heap block whose release routine always runs over its fields. An inline record's
+field owns exactly when the storage under it owns — so `isOwnedFieldSlot` now recurses through a
+`RefType` base into `isOwningSlot`. A parameter's slot answers no, and so does the scratch storage
+a literal is built in, which is what keeps construction from leaking.
+
+**Construction needed nothing, and that too was checked rather than assumed.** A literal is built
+in scratch storage nobody owns and then copied into the owned local, whose `RetainSlot` retains
+the fields on the way in. That balances, which also closes the unboxed-object-literal item §9.21
+left open — it was never broken, only unexamined.
+
+**Two of the six test cases had to be reshaped after failing to bite**, the same way §9.22's
+spread case did. `recordsInsideAnArray` cannot bite yet at all: the releases would come from the
+array's own release routine, and that never runs while its data block still carries an unconsumed
+birth reference. It is kept, labelled as coverage of the predicate's element/record recursion
+rather than as a counting test. The other needed a third record, because an array holding the same
+value retains it legitimately and that reference has to be spent first. Both were found by running
+each case against the unfixed compiler individually — three slices running, three times this has
+caught a case that passed either way.
+
+The verifier is unchanged once more, same two files and six sites.
+
+New test: `test/tester/tests/00owned_inline_records.ts`, all three models.
+
+Full release suite green: 895/895.
+
+### 9.24 Step 5h, first half: allocations are born unowned, and every function returns +1
+
+Two things happened here. One is the change; the other is that two comments in the tree were
+wrong and cost real time before the change could even be designed, which is worth recording
+because both were the kind of stale note that reads as authoritative.
+
+**The wrong comments.** `Defines.h` said of the header word "the word is not yet initialized on
+allocation - nothing maintains a count". That stopped being true at §9.6. Reading it, and the
+sibling note in `getHeapBlockHeaderSize` claiming class instances bypass the header through
+`GC_malloc_explicitly_typed`, led to an hour of reasoning from a model in which blocks were born
+at zero and none of §9.12-§9.23's arithmetic held. `_MemoryAlloc` settles it in one line — it
+stored `1`, with the comment "the block starts owned by exactly one reference" — and the typed
+path that would have bypassed the header sits behind `ENABLE_TYPED_GC` and was retired in §9.2.
+Both comments are now corrected. The lesson is narrow and practical: in this area, read the
+emitting code, not the note describing it.
+
+**The change.** `_MemoryAlloc` now writes **0**. A block starts unowned; whoever first takes it -
+a local's declaration, a field or element store, a literal capturing it, a push - is what brings
+the count to one, and that owner's release is what takes it back to zero and frees it. That is
+the slack §9.12 deliberately left, and every insertion point that had to exist before it could
+come out now does (§9.19-§9.23).
+
+Being born at zero also gives the remaining mistakes a benign shape at the boundary: a release of
+a block nobody ever took underflows to all-ones, which is `HEAP_BLOCK_IMMORTAL`, so the block
+leaks instead of being freed out from under a live reference.
+
+**The companion change, which is not optional.** The scope exit at a `return` releases every
+owned local in the frame, and the returned value is very often held by one of them. Once
+allocations are born unowned that release is the last one, so `return x` after `let x = new C()`
+would free the value on the way out. The value is therefore retained before the scope exit.
+Retaining the value rather than trying to identify which local holds it is what makes this work
+for `return h.item`, `return arr[0]` and `return cond ? a : b` alike — and it establishes a
+uniform convention: **every function returns +1**, the same transfer `pop` and `shift` perform.
+
+**What this does and does not achieve, stated exactly.** For arrays, strings and boxed object
+literals it is a real removal of the slack: `let a = [1, 2, 3]` now takes its data block to one
+and back to zero, and the block is freed. For **class instances it is currently neutral**, and
+that was verified rather than assumed. `new C()` is a call to a compiler-generated `C..new`, so
+the return retain applies to it too and hands back exactly the +1 the birth reference used to
+provide. The check was the release-before-retain swap from §9.20: if class instances had lost
+their slack, that swap would now free live memory and the owned-* tests would fail. All 35 still
+pass, so they have not gained teeth yet.
+
+**Which names the second half precisely.** The convention is now uniform - calls hand out +1 - so
+what remains is for the receiving sites to *consume* it: a local declaration, a field or element
+store, a literal capture or a push whose incoming value is already +1 should not retain again.
+The classification fails safe in the direction of not knowing: an unrecognised producer is treated
+as +0, retained, and leaks.
+
+> **Correction, made while implementing §9.25.** This paragraph originally listed
+> `ts.CreateArray`, `ts.New`, `ts.ArrayPop` and `ts.ArrayShift` as +1 producers alongside calls.
+> That was carried over from the model in which allocations were born at one. They are not:
+> once a block starts unowned, `ts.CreateArray` and `ts.New` hand back a value at **zero**, and
+> their receiver's retain is exactly right. Only a call that retained on the way out, and
+> `pop`/`shift` transferring a reference the data block held, are genuinely +1.
+
+The dangerous direction is the opposite one, and it has a specific name: a call that returns a
+heap value **without** passing through the return path patched here - a runtime or builtin helper
+such as string concatenation, or a function imported from a module built before this convention.
+Treating those as +1 would skip a retain that was never performed and free live memory. So the
+second half cannot simply say "calls are +1"; it has to distinguish a user function with a
+generated return from an external one. That is the next slice, and it is the first in this arc
+where the failure mode is a premature free rather than a leak.
+
+Full release suite green: 895/895.
+
+### 9.25 Step 5i: consuming the transferred reference, and the tests finally bite
+
+§9.24 left the convention uniform - every function returns +1 - and the leak that came with it:
+a receiver that retains an already-owned value is one owner above the truth. This closes that for
+the case that was still leaking on every program, and in doing so it is the first slice where the
+counting is load-bearing rather than slack.
+
+**First, a correction to §9.24's own list of producers.** That section named `ts.CreateArray`,
+`ts.New`, `ts.ArrayPop` and `ts.ArrayShift` as +1 alongside calls. That was written from the old
+model. Once allocations are born unowned, a freshly allocated block is at **zero**, so
+`ts.CreateArray` and `ts.New` produce +0 and their receiver's retain is exactly right. What is
+genuinely +1 is narrower: a call that retained its result on the way out, and `pop`/`shift`, which
+hand over a reference the data block was holding.
+
+**What is marked, and what deliberately is not.** Only `new C()` is marked here, at the one place
+that builds the call and therefore knows the callee is the generated `C..new` - which goes through
+the retaining return path. Nothing infers ownership from an operation merely being a call. That
+restraint is the whole safety argument: a runtime or builtin helper, or a function imported from a
+module built before this convention, hands back a heap value with no retain behind it, and
+consuming one of those would skip a retain nobody performed and free live memory. Answering "not
+owned" for something that was in fact owned only leaks, so the unknown case falls the safe way.
+
+**The four receivers all consume**: a local declaration, a field or element store, a literal
+capturing a value, and `push`/`unshift`/`splice`. The release side is untouched in every case -
+what a slot was holding still has to be given up, whoever the incoming reference came from.
+
+**The declaration case needed the verifier extended, and the first attempt silenced it instead.**
+A consumed local has no `ts.RetainSlot`; the declaration itself is the acquisition. Adding the
+slot to the "was it ever retained" set stopped the false "released but never retained" reports -
+but the every-path check iterated the `ts.RetainSlot` list, so it quietly stopped running for
+exactly the locals whose release now matters most. The sweep went from two findings to zero, which
+looked like an improvement and was a regression. The pass now collects *acquisitions* - a slot
+paired with the operation to blame - from both shapes, and the two known
+throwing-`[Symbol.dispose]()` findings are back. Third time this arc that a new insertion point
+taught the verifier a new shape, and the first time the symptom was silence rather than noise.
+
+**The tests have teeth now, and this is the milestone §9.19 was waiting for.** Re-running the
+release-before-retain swap: before this slice it failed nothing; now it fails
+`test-jit-rc-owned-locals`, `test-jit-rc-owned-fields` and `test-jit-rc-owned-elements`.
+`00owned_fields.ts` was written at §9.19 with a header explaining that it guarded shape and run
+path but not counting, and asking for exactly this experiment to be re-run once the slack went.
+It now catches the bug it was written for.
+
+**Still leaking, and now the whole of what is left.** Every +1 that is not consumed: the result of
+an ordinary function call assigned anywhere (`let y = f()` retains a value `f` already retained),
+a discarded `pop`, and a returned value the caller drops. Closing those needs the producer
+classification to extend past `new`, which is the risky work this slice deliberately did not do.
+
+Full release suite green: 895/895. Verifier: two files, six sites, unchanged.
+
+### 9.26 Step 5j: the transfers that can be settled, and the call that cannot
+
+5j was meant to extend the producer classification past `new` to ordinary calls. Half of it is
+here; the other half turned out to need a different shape than "one more marking site", and this
+section records why rather than shipping a heuristic for it.
+
+**What landed: `pop` and `shift`.** These are the compiler's own operations with known semantics,
+so there is nothing to classify. The data block gives up the element without releasing it - the
+size shrinks past the slot, so its release routine never reaches it again - which hands the
+block's reference to whoever receives the result. Marking those two results owned lets a receiver
+take that reference over instead of adding one, so `let x = arr.pop()` is now one owner rather
+than two.
+
+**What did not, and the specific reason.** Every function retains its result on the way out
+(§9.24), so `let y = f()` is one owner above the truth as well - and that is the dominant
+remaining leak. Marking it needs to know that *this* callee retains, and three separate things
+stop that being answerable where the call is generated:
+
+- **Not every return path retains.** The retain sits in the return *statement*, but a concise
+  arrow body (`() => expr`) reaches `mlirGenReturnValue` down a different path, and so does
+  `yield`. Marking a function whose body takes one of those would consume a reference nobody
+  took.
+- **The callee may not exist yet.** MLIRGen emits `ts.CallIndirect` on a symbol reference; the
+  callee's `FuncOp` need not have been created when the call site is generated, so a lookup would
+  answer differently depending on declaration order. Always-safe, since the unknown case falls to
+  +0 and leaks — but silently order-dependent, which is worse than not doing it.
+- **External callees look identical.** A `declare`d function, one imported through `__decls`, or
+  a runtime helper has no retaining return at all. These are the cases where being wrong frees
+  live memory.
+
+The shape that answers all three is a pass after MLIRGen, when every `FuncOp` is present and each
+one's return paths can be inspected rather than predicted. That is a different piece of work from
+the marking sites of §9.25, and it is the right place to stop this slice.
+
+**A test that was worthless, caught by the habit rather than by luck.** The first version of
+`00owned_transfer.ts` passed with a deliberate over-release injected into `pop` — because a freed
+block keeps its contents until something else claims them, so reading through the receiver read
+the right answer out of freed memory. It caught nothing the existing tests did not already catch.
+Each case now calls a `churn()` helper between the transfer and the read, allocating enough
+same-shaped blocks to land on the freed one, and it then fails against that injection as it
+should. This is the same trap as §9.24's memory measurement: an experiment that confirms what you
+expected is worth less than one you tried to break.
+
+Worth recording separately: injecting the *opposite* mistake - treating every `ts.Load` result as
+already-owned, so receivers stop retaining - fails six of the ownership tests. The suite does
+detect premature frees broadly now, which is the property that matters most from here on.
+
+Full release suite green: 899/899. Verifier: two files, unchanged.
+
+### 9.27 Step 5k: consuming an ordinary call's result
+
+The dominant remaining leak, and the first piece of this arc that is a pass rather than a marking
+site. §9.26 gave the reason: deciding whether *this* callee retains its result cannot be settled
+where MLIRGen builds the call. All three obstacles it named dissolve once every function exists,
+so the work moves to a module pass that runs straight after MLIRGen.
+
+**It looks rather than predicts.** A function counts as returning owned only when every
+`ts.ReturnVal` of a heap-owning value in it is preceded by a `ts.Retain` of *that same value* in
+the same block. Anything else is left alone: a callee with no body, a call through a function
+value with no single callee to inspect, a generator (vetoed outright, since what its caller
+receives is the generator object rather than anything those returns produce). Those callers keep
+retaining, which leaks rather than freeing something live. The whole design puts the uncertain
+case on the leaking side.
+
+Each exclusion was checked on emitted IR rather than assumed: a `declare`d callee keeps its
+`ts.RetainSlot`, an indirect call through a parameter keeps its own, and a local function's call
+is marked and its receiver's retain removed - with the declaration marked as the acquisition so
+the verifier can still pair the release that follows.
+
+**A prerequisite that had to land first.** A concise arrow body (`() => expr`) returns without
+going through the return statement, so it never got §9.24's retain and would have been excluded
+from the convention entirely. It has one now. This is not fixing a dangling read - there is no
+scope exit there to free anything - it is the convention itself: callers cannot be told "calls
+return owned" while one shape of function quietly returns borrowed.
+
+**What the check actually excludes, measured rather than guessed.** Removing it raises the number
+of marked call sites across the suite from **469 to 497**, so it is not a formality - it excludes
+28 real calls, reaching 92 distinct functions. Following one of them to its IR explains all of
+them: the retain is emitted on the value the return statement *evaluated*, while
+`mlirGenReturnValue` then casts that value to the declared return type, and it is the cast result
+that `ts.ReturnVal` carries. So a return needing a cast retains the wrong value. It is benign -
+the reference lands on a value nobody releases, which leaks - and the pass is right to exclude
+those functions, but the fix is to apply the return-type cast before the retain rather than
+inside the return. That is a separate slice.
+
+**An honest coverage note.** Disabling the retain check entirely - marking every function with an
+owning return, sound or not - still leaves the suite at 903/903. The guard is reasoned rather than
+test-validated, because no test currently exercises a callee that returns a heap value without
+retaining it. The *other* direction is covered: over-consuming a call result, by removing every
+receiver retain instead of one, segfaults `00owned_call_results.ts` outright.
+
+New test: `test/tester/tests/00owned_call_results.ts`, all three models - a result outliving the
+local that received it, shared between two locals, stored into a field, captured by an array
+literal and by `push`, forwarded through two frames, returned from a method, and returned from an
+arrow function. Each calls `churn()` between the last release and the read, for the reason §9.26
+learned the hard way.
+
+Full release suite green: 903/903. Verifier: two files, unchanged.
+
+### 9.28 Step 6: the allocator flips, and the first measurement that means anything
+
+`needsGCRuntime()` returned true for `rc` from §9.6 onward, so under `-mm=rc` Boehm was still
+allocating and still collecting behind the counts. That was the right call while the insertion
+points were being built one at a time - a missing release stayed an inert leak - but it meant no
+memory number taken under `rc` said anything about reference counting. The predicate now names
+exactly one model, `gc`. Under `rc` the program allocates from `malloc`, frees through `free`, and
+links no libgc; what the counts miss now leaks, and shows.
+
+**What the flip cost: one crash, and it was not RC's.** `test-jit-rc-disposable-scopes` failed
+immediately - and the same file failed under `-mm=none` too, on a build with none of this work in
+it. A `using` inside a `catch` clause, at `-O3`, on Win64. Narrowed to a bare `new` inside a
+handler whose result is used there.
+
+The chain: a handler is its own funclet, and every call inside one has to carry a `funclet`
+operand bundle naming its pad. `Win32ExceptionPass` stamps them correctly - verified on emitted IR
+at `--opt --opt_level=0`, where the allocation and its zero-fill both carry the bundle. LLVM then
+rewrites `malloc` + `memset(0)` into `calloc`, and builds the replacement **without carrying the
+operand bundles over**. WinEHPrepare stops seeing the instructions after it as part of the
+funclet, and the handler is emitted as a bare prologue: no body, no `catchret`. It faults the
+moment it runs.
+
+Each step was checked rather than reasoned about. Stock `opt -O3` on our own pre-optimisation IR
+reproduces the dropped bundle, so the defect is LLVM's, not the pass's. `llc` on that output shows
+the empty funclet directly; hand-adding the bundle back to the `calloc` restores the full handler
+body and its `catchret`. `-print-after-all` names the pass: **DSE's `tryFoldIntoCalloc`**, not
+SimplifyLibCalls, which is why emitting the zero-fill as `llvm.memset` rather than a `memset` call
+fixed `none` but left `rc` still crashing.
+
+**The fix is to ask for what we mean.** A zeroed block is now requested as `calloc` outright, so
+there is no pair left for that fold to rewrite; GCPass maps it onto `GC_malloc` - rewritten rather
+than renamed, since the arity differs - and drops the now-unreferenced declaration. The wasm fork
+has no `ts_calloc` and no Win64 funclets, so it keeps the two-step form, as the intrinsic.
+
+Only `gc` was ever safe here, and by accident: GCPass deletes the zero-fill, so the pattern the
+fold looks for never survived to LLVM. That is why the new test needs its non-`gc` variants to be
+worth anything, and the teeth were confirmed the usual way - with the fix disabled and rebuilt,
+`00alloc_in_catch.ts` faults under `-mm=rc`.
+
+**Found and left alone:** a try/catch nested *inside* a catch clause crashes with no allocation in
+it at all, in every memory model and at every optimisation level. Unrelated to this, and older
+than it; the case is called out in `00alloc_in_catch.ts` rather than covered by it.
+
+**The measurement, at last.** Peak working set, AOT executables:
+
+| program | gc | rc | none |
+|---|---|---|---|
+| allocation churn, 1M iterations, `-O0` | 4.2 MB | **3.8 MB** | 172.8 MB |
+| `raytrace.ts`, `-O3` | 4.1 MB | **129.5 MB** | 106.3 MB |
+
+The first line is what this whole arc was for: a value bound to an owned local is allocated,
+released and reclaimed a million times over, flat, without a collector - marginally below Boehm.
+(At `-O3` that loop vanishes in all three models, allocations and release calls together, which is
+its own small piece of good news about the generated code.)
+
+The second line is the honest other half. `raytrace.ts` reclaims **nothing**: it is built almost
+entirely out of `return new Vector(...)` used inline - `Vector.plus(Vector.times(k, a), b)` - so
+every intermediate is a call result passed straight as an argument and never bound to any slot.
+Each carries the +1 its return retained (§9.24) with no owner to give it back. That is item 5l,
+discarded temporaries, and this measurement reclassifies it: not a nicety at the end of the list
+but the dominant leak in ordinary expression-shaped code. `rc` sitting *above* `none` is the same
+story seen from the other side - the release calls are uses, so fewer dead allocations get
+optimised away, and nothing is reclaimed to pay for it.
+
+New tests: `00alloc_in_catch.ts` in all four variants, plus `-mm=none` variants of `03disposable.ts`
+and `04disposable.ts` - the file that caught this had no non-`gc` coverage of its own.
+
+Full release suite green: 909/909. Verifier: two files, unchanged.
+
+### 9.29 A `try`/`catch` inside a `catch` clause
+
+Not RC's, and older than any of this - §9.28 only found it because a test written for that step
+tried to allocate inside a nested handler. It crashed in every memory model, at every optimisation
+level, with nothing allocated in it at all. A try nested in a try *body* or in a `finally` always
+worked; only the catch clause was affected, which is why nothing had caught it.
+
+Two independent bugs, the second visible only once the first was fixed. Both are confirmed
+individually load-bearing by disabling each alone and rebuilding.
+
+**1. The catch-variable search descended into the nested try.** `TryOpLowering` finds its clause's
+`ts.CatchOp` by walking the catches region, and the walk went straight through a nested `ts.TryOp`
+into that try's own catches. It picked up the *inner* clause's catch, so the outer try's landing
+pad got its RTTI type filter from the wrong clause. The debug build says this outright - the
+`assert(!catchOpPtr)` on the second catch found - which is worth remembering: the release build
+faulted with no diagnostic at all and no usable stack, and the debug build named the line in one
+run without a debugger. The walk is now pre-order and skips a nested try, because `skip()` only
+prunes regions still to come and the default post-order has already visited them.
+
+**2. A catch clause can be ended twice over.** §9.14 has a `throw` leaving a catch clause end that
+catch ahead of itself. A nested `try`'s throw is such a throw, so the enclosing clause is already
+ended by the time the outer try emits its own end-of-catch marker - and the surplus marker became
+the region's `end` instruction, which is where the catchret goes, so it survived into the emitted
+code. `__cxa_end_catch` is an Itanium marker with no Win64 counterpart, so it failed to link
+(`Symbols not found: [ __cxa_end_catch ]`). Win32ExceptionPass now skips past end-of-catch markers
+while looking for a region's end and removes them, which handles any number of them, and removes
+an unclaimed one found with no region open at all.
+
+New test `test/tester/tests/00nested_catch.ts`, four variants: a catch in a catch, three levels
+deep, an inner clause that is never taken, a nested try with a `finally` of its own, the whole
+thing inside a loop, an inner clause that throws past the outer one, and the try-in-body and
+try-in-finally shapes that always worked, kept alongside so a fix here cannot quietly break them.
+`00alloc_in_catch.ts` regained the nested case it had to leave out.
+
+**The direct test of bug 1 is a type test, not a value test.** `outerFilterIsItsOwn` throws a
+string caught by the outer clause and an int caught by the inner, so an outer pad carrying the
+inner clause's filter would not catch the string at all.
+
+**Found while writing these, and deliberately NOT fixed: reading a catch variable's value is
+broken on its own.** No nesting involved. `try { throw 2 } catch (v: int) { t = v }` reads 0 rather
+than 2 - but only in a module that throws just that one type; adding the other clauses of
+`00try_catch.ts` to the same file makes it read correctly, which is why that test passes and this
+went unnoticed. Reproduced in every model, and at `-O3` a separate variant of the same shape reads
+0 where `-O0` reads 3. `00nested_catch.ts` therefore checks which clause runs and in what order and
+never reads a catch value; nothing there should be made to depend on a broken feature. A third bug,
+in the same subsystem, still open.
+
+> **Open, and re-diagnosed in §9.65 as 5am.** Neither half of the description above survives. It
+> does not read 0 - it reads uninitialised memory, three runs of one binary giving 134, 131, 184 -
+> and it has nothing to do with how many types the module throws. It is **JIT-only**: every case
+> tried is correct ahead of time. So the rule this paragraph sets is too strong; a catch-value
+> assertion in the AOT tier is a real test, and the tier already runs every corpus file.
+
+Full release suite green: 913/913.
+
+### 9.30 Step 5l: giving back the temporaries
+
+§9.28's measurement made this the priority: `raytrace.ts` reclaimed **nothing** under `-mm=rc`.
+It is built almost entirely out of `Vector.plus(Vector.times(k, a), b)`, so nearly every
+allocation it makes is an intermediate passed straight as an argument and never bound to
+anything - carrying the +1 its return retained (§9.24) with no owner to give it back.
+
+**Consumption is now recorded rather than implied.** Every receiving site (§9.25) answered
+`producesOwnedReference` by *not* emitting a retain, which left no trace: after §9.27 erased a
+receiver's retain, a consumed call and a call nobody received looked identical. A second
+attribute, `OWNED_RESULT_CONSUMED_ATTR_NAME`, is set wherever a receiver takes a reference over,
+and its absence is what identifies a discarded temporary.
+
+**The release goes at the end of the producer's own block.** That is a temporary's natural
+lifetime - the enclosing statement, or one iteration of a loop body - and, more to the point, it
+is unconditionally after every use in that block. Placing it after the last *user* looks tighter
+and is wrong: the receiver of `let x = <T>f()` retains the result of the **cast**, not of the
+call, so the call's last user is the cast and a release put there runs before that retain and
+frees the value out from under it. Two shapes are refused and left leaking as before: a user
+outside the producer's block, and a user that is a terminator (a value handed to a successor as a
+block argument is still live past the release point).
+
+*Amended at §9.33: "the end of the block" was taken literally, and `ts.ReturnVal` is not a
+terminator - so in any function ending with a `return` the release landed after it, and the
+affine lowering dropped it as unreachable. 36 of `raytrace`'s 47 releases never ran. The rule is
+now "before the first op that ends the block's execution", which is what MLIRGen's own scope exit
+had been doing all along.*
+
+**A second gap had to close before any of this fired.** §9.27 classified a function as returning
+owned only when every return was preceded by a `ts.Retain`. But there are two ways to hand back a
+reference: retain one, or forward one already held - and `return new C()` consumes the instance's
+own +1 rather than adding a second (§9.25), so there is no retain to find. Every
+`static times(...) { return new Vector(...) }` was therefore unclassified, which is most of what
+expression-shaped code is built from. A return whose value comes from an `OWNED_RESULT` operation
+now counts too.
+
+**What it reclaims**, peak working set, AOT:
+
+| program | gc | rc before | rc after | none |
+|---|---|---|---|---|
+| `raytrace.ts`, `-O3` | 4.1 MB | 129.5 MB | **79.3 MB** | 106.7 MB |
+| nested call temporaries, 500k iterations, `-O0` | 4.2 MB | — | **3.8 MB** | 188.0 MB |
+| object literal returned as an interface, `-O0` | 4.2 MB | — | 41.5 MB | 42.3 MB |
+
+The second line is the shape this step is about, and it is now flat. The third is what `raytrace`
+still leaks: an **object literal returned through an interface** reclaims essentially nothing.
+Arrays and strings were checked the same way and both reclaim (3.9 MB against 42.6, and 3.8 MB
+against 27.2), so the remaining leak is specific to the literal/interface path - the boxed literal
+or the clone an interface cast makes - and is the next thing to look at, not another temporaries
+problem.
+
+*Read with §9.31: it was the boxed literal, an interface owned nothing at all - and the 79.3 MB
+above was partly memory freed while still referenced, so it is not a figure to compare against.*
+
+New test `test/tester/tests/00owned_temporaries.ts`, four variants. **Teeth, measured per case
+with two separate probes** rather than assumed:
+
+- releasing consumed results as well as discarded ones is caught only by the loop case, because
+  an end-of-block release lands after every read in that block - a useful reminder that this
+  particular perturbation cannot reach most of the file;
+- releasing immediately after the producer instead of at end of block - the ordering the whole
+  design rests on - is caught by 4 of the 8 cases at `-O3` and by 6 of 8 at `-O0`.
+
+Two cases cannot fail loudly and are kept knowingly: `discardedResult` has nothing that reads the
+discarded values, and `temporaryKeptByCallee` is balanced by push's own retain either way. The
+first version of `usedAsArgumentAndBound` passed under both probes for the wrong reason - a freed
+block still held its old value - so `argumentReadAfterCalleeAllocates` was added, where the callee
+allocates before reading its arguments and a block freed early is overwritten before the read.
+
+Full release suite green: 917/917.
+
+### 9.31 Step 5n: an interface is an owner
+
+`MLIRTypeHelper::ownsHeapMemory` answered no for `InterfaceType`, with a reason that was true as
+far as it went: an interface type carries only a name, so the layout behind its `this` pointer is
+not recoverable from the type. Nothing an interface held was ever released - not the block a
+literal is boxed into, not the class instance behind a cast - which is where `raytrace`'s
+remaining leak sat (§9.30).
+
+The layout does not have to be recoverable from the type, because **an interface has exactly the
+problem an `any` box has, and the same answer was already in the tree**. An interface value grows
+a third word holding the runtime type tag of whatever `this` points at (`INTERFACE_TYPE_INDEX`),
+and its release and retain routines read that tag's descriptor and call the concrete type's own
+routines - `releaseViaDescriptor`/`retainViaDescriptor` unchanged from what §9.6 built for `any`
+and for tagged unions. Two properties make the tag safe to rely on:
+
+- **every interface value in the program is built by one op.** A cast from a class, a cast from
+  an object literal, and even `null`/`undefined` as an interface all reach `ts.NewInterface`
+  (`CastLogicHelper`), so there is no path that leaves the slot undefined. Where `this` owns
+  nothing the tag is null, which states "nothing to release" positively, exactly as a null
+  descriptor slot does.
+- **descriptors are keyed by the concrete type, not by the `typeof` name.** Every object literal
+  reports the name "object"; `getOrCreateTypeDescriptorName` already hashes the type into the
+  symbol, so two literals of different shapes get their own records.
+
+The interface value going from 16 to 24 bytes is why `-mm=none`'s numbers in this section are
+about 8% above §9.30's.
+
+**Two dormant omissions became live over-releases the moment an interface became an owner, and
+both were freeing memory that was still in use.** Neither is a consequence of this slice; both
+were reachable before it and simply had nothing that walked the block.
+
+1. **`castTupleToInterface` allocates a block and fills it from a literal without retaining what
+   the literal holds** - the debt §9.21 describes, which the object-literal boxing path
+   (`MLIRGenExpressions`) pays and this one did not. `{ start: pos, dir: rd }` cast to an
+   interface produced a block holding two `Vector` references it had never taken.
+2. **`retainInsertedElements` skipped its retain for an already-owned value without recording the
+   consumption** - the one receiving site that did not. Once §9.30 began releasing what nothing
+   consumed, `arr.push(new C())` released the instance at the end of the pushing block, freeing
+   an element the array still held.
+
+Both are invisible for as long as the block that builds is also the block that reads, since
+§9.30's release goes at the end of the producing block - which is why §9.30's own tests missed
+them. `function add() { store.push({ v: new Vec(42) }) }` read from `main` prints `999` on the
+commit before this one and `42` after it.
+
+**Item 5m, cast before retain, is done here** because without it this slice does not fire. A
+return retains the value the return expression evaluated, and `mlirGenReturnValue` then casts -
+so `return { start: p, dir: d }` against a declared interface retained the *tuple*, and the heap
+block the cast allocates got no reference at all. The cast now happens first
+(`castToDeclaredReturnType`), before both the retain and the scope exit.
+
+That surfaced a **placement bug in §9.30 that had nothing to do with interfaces**: a discarded
+temporary is released at the end of its block, and in a generator that block can contain a
+`ts.StateLabel` - a resume point the state machine re-enters. The end of the block is then
+reachable on a path that never ran the op producing the value, which appears as a dominance
+failure in the affine lowering (`00iterator_bug.ts`) rather than as anything the pass could see
+while the generator was still one block. `allUsesReleasableInOwnBlock` now refuses a value with a
+state label after its definition.
+
+**Measured, AOT peak working set:**
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| literal boxed as an interface, bound in a loop | 4.2 | **4.2** | 42.6 |
+| interface temporary passed as an argument (`raytrace`'s shape) | 4.6 | **3.8** | 114.6 |
+| instance method returning a class | 4.2 | 31.9 | 31.9 |
+| `raytrace.ts`, `-O3` | 4.6 | 114.2 | 114.5 |
+
+The shapes this slice is about are now flat. **`raytrace` is not, and its number is worse than
+§9.30's 79.3 MB - which was not a real number.** The over-release in (1) above was freeing
+`Vector`s that boxed `Ray` literals still pointed at, and memory that is handed back while still
+referenced counts as reclaimed. Correctness cost 35 MB here, and the honest reading of §9.30's
+figure is that part of it was never earned.
+
+What `raytrace` leaks now is item 5o below: it is built out of **instance-method** calls, and
+§9.27 classifies a callee only when the call names it through a `ts.SymbolRef`. A method reached
+through `GetMethod`/a vtable answers empty and is left alone, so its result's +1 is never
+consumed - visible on its own as `rc` and `none` both at 31.9 MB in the table above.
+
+New test `test/tester/tests/00owned_interfaces.ts`, four variants, eight cases, each building in
+one block and reading in another with `churn()` between - the arrangement §9.30's tests lacked
+and the reason those two over-releases survived it. **Teeth measured per fix**: releasing the
+interface immediately after construction, dropping the boxing retain, and dropping the push
+consumption marking each break the test at both `-O0` and `-O3`.
+
+Full release suite green: 921/921. Ownership verifier unchanged at its two standing findings.
+
+**Found and not fixed:** `--di --opt_level=0` fails to emit LLVM IR for any reference-counted
+program ("DISubprogram attached to more than one function") - the generated `tsrel_`/`tsret_`
+routines inherit the debug scope current when they were generated. Pre-existing, reproduces on
+`00owned_temporaries.ts` and `00interface.ts`, and on no test-suite variant.
+
+> **Fixed in §9.69.** The diagnosis above is right as far as it goes; the scope is also
+> inherited by block arguments and hidden inside `NameLoc`s, which is what made it four attempts
+> rather than one. 453 of 453 corpus files now emit IR under `-mm=rc --di`. "Any reference-counted
+> program" above is very slightly too strong - one that allocates nothing generates no ownership
+> routine and always built.
+
+### 9.32 Step 5o: what a method call names, and what it does not
+
+§9.31 measured an instance method's result reclaiming nothing and filed 5o to fix it. The fix
+that landed is much smaller than the item, and the reason is worth recording, as is the thing
+that turned out to be the actual leak.
+
+**The half that is safe.** `calleeNameOf` resolved a callee only through `ts.SymbolRef`, so it saw
+a plain function and nothing else. A method call is not shaped like that: `obj.m(x)` builds a
+bound function and splits it apart again, `GetMethod` for the code and `GetThis` for the receiver,
+so the callee sits a step further back. It now looks through that, for exactly the chains the
+dialect's own canonicalizer (`SimplifyIndirectCallWithKnownCallee`) already rewrites into direct
+calls — `ts.ThisSymbolRef`, and `GetMethod` over either a `ts.ThisSymbolRef` or a
+`CreateBoundFunctionOp` naming a function. That those chains name one callee is not a new
+judgement; it is the one the canonicalizer has been making all along.
+
+**The half that pays, and does not hold.** That safe half is worth almost nothing here, because
+an ordinary instance method does *not* take it. Of `raytrace`'s method references, 32 are
+`ts.ThisSymbolRef` — every one a constructor, so `void`, so nothing to own — and the 9 that
+return values are all `ts.ThisVirtualSymbolRef`. A method on a class with a vtable is dispatched
+through it whether or not anything overrides it.
+
+A virtual call's identifier names the declaration the call was written against, not what the
+runtime class put in the slot, so reading it as the callee would consume a reference an override
+may never have taken — the one mistake in this arc that frees live memory rather than leaking.
+`private` looks like it settles that: TypeScript forbids overriding a private member, all 9 of
+`raytrace`'s sites are private, and marking them classified took the file from 114.2 MB to
+111.2 MB with the suite green.
+
+**It was reverted, because the guarantee is not true of this compiler.** This program:
+
+```ts
+class Base { private tag(): number { return 1; } public get(): number { return this.tag(); } }
+class Derived extends Base { private tag(): number { return 2; } }
+```
+
+is rejected by TypeScript and accepted here, and `new Derived().get()` prints `2` — the
+redeclared private method takes the base's vtable slot and overrides it. So `private` is not a
+single-target property in tslang, and a rule resting on it would have been sound only by
+accident. Making it sound needs the callee's whole override set, which is a hierarchy question
+the pass cannot see and MLIRGen cannot close cross-module; that is 5o's real cost, and it buys
+2.6% of `raytrace`.
+
+**What is actually left is not method dispatch at all.** With interfaces owning (§9.31) and
+static calls classified (§9.27), the remaining allocation in `raytrace` is the **capture box of a
+closure**. `ownsHeapMemory` names function types among the deliberate exclusions, for a reason as
+true as the interface one was: the box is heap-allocated but its type does not appear in the
+function type, so there is nothing in the type to walk. `getNaturalColor` builds `addLight` per
+ray, and nothing ever gives that box back.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| closure created per call, in a loop | 4.2 | **76.8** | 77.8 |
+| private instance method returning a class | 4.2 | 31.9 | 31.9 |
+| `raytrace.ts`, `-O3` | 4.6 | 113.8 | 114.5 |
+
+That is the same shape of problem §9.31 solved, and the same answer is available: an interface
+could not name what was behind its `this` either, and now carries a tag beside it. A closure
+value is a pair the same way an interface is. Filed as 5p, and it is where the next slice should
+go rather than 5o.
+
+Full release suite green: 921/921.
+
+### 9.33 Step 5p: a closure owns its capture box — and the release that never ran
+
+Two things landed together here. The second was found while measuring the first, is much larger
+than it, and is not about closures at all.
+
+**A closure's capture box.** `ownsHeapMemory` excluded function types for a reason with exactly
+the shape the interface exclusion had (§9.31): the box is heap-allocated but its type appears
+nowhere in the function type. So the same answer applies. A bound or hybrid function value grows
+a third word carrying the runtime type tag of its `this` (`CLOSURE_TYPE_INDEX`), and release and
+retain go through it — `releaseViaTagBesideThis` is now shared by both cases, which differ only
+in which slot the tag sits in.
+
+The tag is what separates the two kinds of value that share this representation. **A closure owns
+its capture box; a bound method's `this` is an object that belongs to somebody else**, and
+`obj.m` must not take a reference to `obj`. Only the closure built over captured variables is
+marked (`OWNS_CAPTURE_ATTR_NAME`, set where MLIRGen knows the difference); everything else carries
+a null tag and its release costs a call that does nothing. As with `NewInterface`, one op builds
+every such value, so no path leaves the slot undefined.
+
+**The release that never ran.** Measuring that change showed no movement at all, and the reason
+was not in the closure work:
+
+> **`ts.ReturnVal` is not a terminator.** The scope-exit releases and `ts.Exit` follow it in the
+> same block. But the affine lowering turns it into a branch to the exit block, so anything
+> appended *after* it is dropped as unreachable — and §9.30 appends its releases at the end of the
+> block.
+
+Any function whose block ends with a `return` has that shape, which is most of them. **In
+`raytrace.ts`, 36 of 47 releases were being discarded on the way to affine**: §9.30 had been
+largely inert for exactly the code it was written for, and the tests never saw it because a
+release that vanishes only leaks. MLIRGen's own scope-exit releases never had the problem — it
+emits them before building the return, which is the model the pass now follows: insert before the
+first `ts.ReturnVal`/`ts.Return`/`ts.Exit` after the definition, else at end of block. 46 of 47
+survive now.
+
+Releasing before the return is right for a discarded temporary by definition — what is being
+returned was consumed by the return's own retain, so it is not in this set.
+
+That fix also had to be paid for: it made releases survive in **generators**, where a position
+plainly after a definition may not be on the path that reaches it once the state machine cuts the
+block at every resume point. Three generator tests failed with dominance errors. §9.30's narrower
+`ts.StateLabel` guard is not enough, so whole generators are now excluded from the discarded
+release, the same way `functionReturnsOwned` already excludes them and for the same reason. Their
+temporaries leak.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| closure created per call, in a loop | 4.2 | **46.9** | 75.1 |
+| interface temporary as an argument | 4.2 | 3.8 | 114.6 |
+| `raytrace.ts`, `-O3` | 4.2 | **103.4** | 114.5 |
+
+`raytrace` 113.8 → 103.4, of which the release placement is 4.3 MB and the capture box 6.1 MB.
+
+**What the closure benchmark still holds is not the box.** It is down from 77.8 MB but not flat,
+and the rest is the *captured variables themselves*: a parameter or local that a closure captures
+is given a heap cell of its own so the box can point at it, and nothing frees those. Two cells per
+call in that benchmark against one box, which is the ratio the number shows.
+
+The same allocation is behind a **use-after-free that predates all of this**: a captured object
+carried out of its frame is released by that frame's own scope exit.
+
+```ts
+function makeAdder(k: number) { let bump = new Vec(k); return (v: Vec) => v.x + bump.x; }
+```
+
+`makeAdder`'s scope exit releases `bump`, and the returned closure's box still points at it —
+`ts.ReleaseSlot` on the captured local, emitted by MLIRGen, nothing to do with this slice. Filed
+as 5q. `00owned_closures.ts` deliberately captures a number in its two escaping cases so that this
+older bug does not mask what they are there to check. (Closed in §9.34, which also revised what
+the cells cost: measured against a benchmark that survives `-O3`, they were the whole of
+`raytrace`'s remaining leak, not a share of it.)
+
+New test `test/tester/tests/00owned_closures.ts`, four variants, six cases. **Teeth**: releasing
+the closure immediately after construction breaks it at both `-O0` and `-O3`. Note that
+*disabling* the tag does not break it and cannot — that is the leaking direction, which no test
+can see.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+### 9.34 Step 5q: a captured variable's cell is owned
+
+A variable a closure captures by reference does not live in its frame. Its storage is a heap
+block of its own — call it a **cell** — so that the frame and every closure over it read and
+write the one variable (`ALLOC_CAPTURE_IN_HEAP`, `VariableOpLowering`). The box holds the cell's
+address; the frame holds the same address in the slot the variable's name resolves to.
+
+Nothing owned that cell. The frame's scope exit released the *value in it* and the cell itself
+was never freed, which is two failures in one:
+
+```ts
+function makeAdder(k: number) { let bump = new Vec(k); return (v: Vec) => v.x + bump.x; }
+```
+
+`makeAdder`'s exit freed the `Vec` while the returned closure still pointed at the cell holding
+it — a use-after-free older than any of this work — and leaked the cell on the way out.
+
+**The cell has owners now**, and there are exactly two kinds: the frame that declared the
+variable, and each capture box that captured it. So:
+
+- A cell is **born owned** (`VariableOpLowering`, under `-mm=rc`). That is the opposite of a
+  value block, which is born unowned because a receiver is about to take it (§9.24) — a cell has
+  no receiver, and its creator is its first owner. The one heap variable this must *not* apply to
+  is the box itself, whose `captured = true` means only "allocate in the heap"; `CaptureOpLowering`
+  marks it `CAPTURE_BOX_ATTR_NAME` so the two cannot be confused.
+- **The box takes one too**, at the capture site — and only where a `ts.Variable`/`ts.Param` was
+  actually marked captured, because that marking is what makes storage a cell. Retaining a stack
+  slot would write a count into the frame word in front of it.
+- **A scope exit releasing a captured local emits `ts.ReleaseCell`**, not `ts.ReleaseSlot`. The
+  frame is giving up the cell; the value inside it goes when the last owner does.
+
+`ts.RetainCell` / `ts.ReleaseCell` are new ops for that difference — the existing pair addresses
+storage in order to reach the value in it, these address the block *as* the value. Both erase
+under a model that is not reference counting, like every other ownership op.
+
+**The box needed routines of its own.** Its release had been the generic `object<tuple<..>>` one,
+and that skips a `RefType` field — correctly, everywhere else in the compiler, since a reference
+field points at storage its holder does not own. A capture-by-reference field is the exception:
+it holds a cell address, and the box co-owns that cell. `getOrCreateCaptureBoxReleaseRoutine`
+walks the fields itself, releasing a cell through the field and anything else in place, and is
+keyed by the capture's own `ref<tuple<..>>` type rather than the box's `object<tuple<..>>` so
+that neither the routines nor the descriptor can be shared with a plain object of the same shape.
+
+Writing the cases turned up two more over-releases, both older than this slice and both confirmed
+against a rebuilt baseline rather than assumed:
+
+- **A `const` captured by value** goes into the box as a copy of the reference, and a copy of a
+  reference is a further owner. Nothing retained it, so `const held = new Vec(15); return () =>
+  held.x` read freed memory. `mlirGenRetainCaptured` at the capture site.
+- **Assigning to a captured variable from inside the closure.** Inside the closure the variable
+  is a load of the box's field, which none of `isOwningSlot`'s cases recognised, so `cur = new
+  Vec(..)` stored a value nothing had taken — and §9.30 then released it at the end of the block
+  as a discarded temporary, freeing what the assignment had just set. `isCapturedCellSlot`
+  recognises the shape: a tuple field whose type is a reference is what a capture by reference
+  is, and nothing else builds one.
+
+The ownership verifier had to be told that `ts.ReleaseCell` discharges a slot too — without that
+it reported every captured local in the suite as a leak, which is the verifier being right about
+its own model and wrong about the program.
+
+| shape | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `raytrace.ts`, `-O3` | 4.2 | **2.6** | 114.5 |
+| closure over a local, per call, `-O0` | 2.6 | **2.6** | 31.9 |
+| closure over a parameter, per call, `-O0` | 2.6 | **22.6** | 2.6 |
+
+`raytrace` 103.4 → **2.6 MB**, below `gc`'s own 4.2, and the size of that step says what the
+cells were: its per-pixel closures (`addLight`, `recenterX`/`recenterY`) declare their captured
+variables inside functions called once per pixel, so the leak was a cell per capture per pixel.
+
+> **Correction, §9.43.** That 2.6 MB is not a measurement of `raytrace`. The program was
+> crashing under `rc` from this step until §9.43 fixed the nested-capture retain, and 2.6 MB is
+> how far it got before it died - the measuring script never printed an exit code, so nobody
+> looked. Every `raytrace` figure in this document from here to §9.42 is that same crash. The
+> first real one is in §9.43, and it is 61-68 MB.
+
+The third row is the remaining hole and is filed as 5r. A parameter is borrowed, so nothing in
+the frame releases it, and a captured parameter's cell therefore has an owner that never lets go.
+That is a leak and only a leak — the cell outliving everything is exactly what stops the box from
+releasing an argument the caller still owns — and it is why the `none` column there is the small
+one: with no ownership calls to keep it alive, the whole allocation is optimised away in the other
+two models. (§9.35 closes it, and finds that the second row's benchmark was flattering: a
+captured *local* leaks its cell too whenever the local's type owns nothing.)
+
+Five new cases in `00owned_closures.ts`. **Teeth**, each checked by disabling the fix and
+rebuilding: removing the box's retain of the cell, and removing the cell's birth reference, each
+abort the test. Disabling the box's *release* of the cells does not and cannot — that is the
+leaking direction.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+### 9.35 Step 5r: a cell is given back whether or not the frame owns what is in it
+
+§9.34 gave a cell owners, and released the frame's one at scope exit — but only for the slots
+that were already on the scope's list, and that list is `ownedVars`, the list of locals whose
+*value* the frame owns. Which of a function's cells got a release therefore turned on a question
+that has nothing to do with cells at all. Two shapes fell outside it, and the measurements are
+the whole argument:
+
+| shape, `-O0` | `gc` | `rc` before | `rc` after | `none` |
+| --- | --- | --- | --- | --- |
+| closure over a `Vec` local | 4.1 | 3.7 | 3.7 | 161.3 |
+| closure over a `number` local | 4.1 | **51.7** | **3.7** | 113.0 |
+| closure over a `number` parameter | 4.1 | **51.7** | **3.7** | 122.6 |
+| closure over a `Vec` parameter | 4.1 | **65.6** | **3.7** | 167.3 |
+
+Only the first row worked, and only because a `Vec` local is one the frame owns the value of. A
+captured `number` leaks its cell because a `number` owns no heap memory and so the local was
+never listed; a captured parameter leaks its cell because a parameter is the caller's and is
+never listed either. The cell is the same 24-byte block in all four rows.
+
+So the listing and the ownership question are separated. `trackPossibleCell` lists every local
+that has storage, owned or not, and `mlirGenFunctionBody` lists every parameter; scope exit then
+asks each slot what it turned out to be — a cell gets `ts.ReleaseCell`, a slot the frame owns the
+value of gets `ts.ReleaseSlot`, and a slot that is neither has nothing emitted for it and is on
+the list only because it might have become a cell and did not.
+
+That it can only be asked at scope exit is the reason for the two-step. Whether a variable is
+captured is not known at its declaration: the closure that captures it is written afterwards, and
+marks the storage when it is generated. Scope exit is generated after both.
+
+A parameter's list is the function's rather than the body block's, which is the scope a parameter
+actually has, and wiring it in exposed something that had always been wrong and was merely
+unreachable. A scope exit walks outwards through `parentBlockContext`, and a function's context
+inherits that pointer from whatever context the function was generated under — for a nested
+function, the enclosing function's blocks. The walk used to stop at the first context without a
+list, and a function's context never had one; give it one and a `return` inside a lambda starts
+releasing the *enclosing* frame's locals, which crashes the compiler. `parentBlockContext` is now
+cleared at the function boundary, where the walk always should have ended.
+
+**The other half is what the cell holds.** A cell's release releases its contents, which is right
+when the frame put an owned value there and an over-release when it did not — and a captured
+parameter's cell starts out holding the caller's argument. Rather than teach the release to skip
+those, the cell takes a reference to the value it is initialised with unless the frame already
+took one (`OWNED_LOCAL_ATTR_NAME` says so). Then **a cell owns what it holds**, unconditionally,
+and every reader can rely on it:
+
+- the cell's release gives that reference back;
+- `isCapturedCellSlot` (§9.34) already made a store *through the box* hand the count over;
+- `isOwningSlot` now recognises the cell from the declaring frame's side too, so `v = new Vec(..)`
+  written where the parameter is in scope takes the new value and gives up the old.
+
+Without the last of those, the store takes nothing and §9.30 frees the value as a discarded
+temporary — the same failure §9.34 found on the box side, arriving from the other direction.
+
+Three new cases in `00owned_closures.ts`, each with **teeth** confirmed by disabling one fix and
+rebuilding:
+
+| case | fails without |
+| --- | --- |
+| `capturedParameterEscapes` | the cell's retain of the argument |
+| `mutateCapturedParameter` | the cell's retain of the argument |
+| `capturedParameterReassignedInFrame` | the cell in `isOwningSlot` |
+
+Each fails only for its own fix and passes for the other, and the **release-before-retain swap** —
+emitting the cell's retain ahead of the store rather than after it, so it retains whatever the
+block happened to hold — crashes all three. The release side cannot be given teeth by a test, as
+always: it leaks, and the measurements above are what stand in for it.
+
+`capturedParameterEscapes` is two frames deep on purpose. `new Vec(50)` is a discarded temporary
+of the *middle* frame, released at the end of that block, so a cell that had not taken a reference
+loses the value before the outermost frame ever reads it. Written one frame shallower the release
+lands after the read and the case passes with the bug present — the same trap §9.30 set, and the
+reason an ownership case has to build in one block and read in another.
+
+Two exclusions, both about where a release would land rather than about the variable: a
+declaration directly inside a try body (its release is repeated in the cleanup region, which
+cannot see storage declared in the body — `localTakesOwnership` pairs its answer with hoisting for
+exactly that reason, and hoisting every local of every try body is not a trade this makes), and
+one in a catch or finally clause, excluded on the same terms §9.24 excludes it. A captured
+variable declared in either keeps leaking its cell.
+
+`raytrace` at `-O3` is unchanged at **2.6 MB** against `gc`'s 4.2 and `none`'s 104.8 — §9.34 had
+already taken its cells, which are all captured locals holding objects.
+
+Full release suite green: 925/925. Ownership verifier unchanged at its two standing findings.
+
+A corpus sweep under `-mm=rc` — every test file JIT'd, exit codes compared against the same sweep
+on §9.34's commit — turned up one difference, `22lambdas.ts`, and it is **not this slice's**: it
+fails about one run in four under `rc` on both commits (3 bad in 15 before, 4 in 15 after) and
+never under `gc` or `none`. Filed as 5s. The sweep is worth keeping as a tool, and worth fixing
+that flake first, since a flaky instrument is a poor way to measure the next slice.
+
+### 9.36 Step 5s: boxing into `any`, and the flake that led there
+
+§9.35 left a corpus sweep behind — every test file JIT'd under `-mm=rc`, exit codes diffed
+against the same sweep on the previous commit — and one file, `22lambdas.ts`, failed about one
+run in four under `rc` and never under `gc` or `none`. Nondeterministic and model-specific is
+what a use-after-free looks like from outside: some run frees something still referenced, and
+whether the reused block is fatal to read depends on what was allocated over it.
+
+Halving the file three times reached this, which fails **5 runs in 5**:
+
+```ts
+function build() {
+    let fns: any[] = [];
+    for (let k = 0; k < 3; k++) {
+        const kk = k;
+        fns.push(qux2);
+        function qux2() { glb1 += kk; }
+    }
+}
+```
+
+with `STATUS_HEAP_CORRUPTION`. Three of the four ingredients turned out to be required and one
+did not. Pushing the *same* closure with no captures is clean; pushing strings is clean; a typed
+`(() => void)[]` instead of `any[]` is clean; the loop is not needed at all. So: a closure, with
+a capture box, boxed into `any`.
+
+The IR says the rest:
+
+```mlir
+%11 = "ts.CreateBoundFunction"(%10, %9) {__owned_result, __owns_capture}
+"ts.Retain"(%11)                            // the closure takes its capture box
+%12 = "ts.Cast"(%11) : (!ts.bound_func<..>) -> !ts.any
+"ts.Retain"(%12)                            // the array takes the box
+"ts.ArrayPush"(%2, %12)
+"ts.Release"(%11)                           // §9.30: nothing received the closure
+```
+
+Boxing allocates a block and copies the value into it, and the box **owns** what it holds: when
+it dies it releases the payload through the type tag beside it (`buildBody`, AnyType). Nothing
+took that reference. The closure arrived carrying one — `__owned_result`, the reference
+`resolveFunctionWithCapture` takes on the capture box — and, no receiver having claimed it,
+§9.30 gave it back at the end of the block. The capture box was freed while the `any` in the
+array still pointed at it, and the array's own release then released it a second time.
+
+The fix is one line in `cast()`: where the destination is `any`, `mlirGenRetainCaptured` — the
+same consume-or-retain every other owning receiver uses. Consume where the payload already
+carries a reference, retain where it does not.
+
+The two halves of that matter separately, and the cases prove it separately. A payload that
+carries a reference and is *not* consumed is the crash above. A payload that carries none and is
+not retained is a plain leak — `out.push(makeName())` where the frame also still holds the
+string — and `stringBoxedAndStillHeld` is the case for it. Four new cases in a new file,
+`00owned_any_boxing.ts`, and **all four abort with the fix disabled**.
+
+They run as `--emit=exe`, or through `test-runner`, but not as a bare `tslang --emit=jit`. That
+is worth writing down because it cost an hour: `___unbox` throws on a type mismatch, which pulls
+in the CRT's `type_info` vftable, and only `--shared-libs=TypeScriptRuntime.dll` makes that
+symbol resolvable — which `test-runner` passes and a hand-written sweep does not. The sweep
+script was wrong in exactly that way, and fixing it dropped its failure count from 161 to 118 of
+473 files. **A sweep that has not loaded the runtime is measuring the harness.**
+
+**A second bug, and it is §9.35's.** With the sweep fixed, the before/after diff showed
+`15references.ts` newly crashing, and it has no `any` in it at all:
+
+```ts
+let x: string;
+const f = () => { if (1 > 1) x = "foo"; };
+f();
+```
+
+A captured declaration with **no initializer**. Its cell is a *heap* block, so what it holds
+before the first store is whatever the allocator last left there — and §9.35 lists every local,
+initialised or not, so scope exit releases the cell and the cell releases its contents. An owned
+local can never be in this position: it is only owned when it has an initializer, which is why
+§9.24's null-store was written for the hoisted-out-of-a-`TryOp` case alone. Cells are now zeroed
+at birth on the same terms.
+
+Its two cases needed care to make deterministic. `churn()` before the declaration caught it about
+one run in ten, because the block has to be the right size *and* still hold something fatal to
+release. Running a *cell of exactly this shape* first — `writtenCell`, which allocates one, frees
+the string in it and then frees the cell — hands the next declaration a block holding an
+already-freed string pointer, and that is 10 runs in 10.
+
+929/929 with the four new tests registered. Ownership verifier unchanged at its two standing
+findings. The final sweep diff against §9.35's commit is two lines: `22lambdas.ts` 3 bad runs →
+0, and the new file.
+
+**What the measurements then said, which is not about `any`.** Boxing in a loop still leaks under
+`rc` — 39.9 MB against `gc`'s 4.1 — and taking it apart puts the leak somewhere else entirely:
+
+| 500k iterations, `-O0` | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `push(k)` into `number[]` | 2.6 | 2.6 | 2.6 |
+| `push(k)` into `any[]` | 2.6 | 3.7 | 32.3 |
+| `let s = "s" + k`, no array at all | 4.1 | **34.5** | 42.8 |
+| `push("s" + k)` into `string[]` | 4.1 | 32.3 | 52.2 |
+
+The array machinery is flat, the `any` box is flat, and a concatenated string held by a local
+leaks on its own. Filed as 5t, and it is the one to take next: strings are Tier C, the narrow
+first shipping scope this evaluation recommends.
+
+### 9.37 Step 5t: a string that nothing owns
+
+The `any`-boxing benchmark from §9.36 still leaked after that fix — 39.9 MB against `gc`'s 4.1 —
+and taking it apart moved the leak out of `any` entirely, then out of arrays:
+
+| 500k iterations, `-O0` | `gc` | `rc` before | `rc` after | `none` |
+| --- | --- | --- | --- | --- |
+| `push(k)` into `number[]` | 2.6 | 2.6 | 2.6 | 2.6 |
+| `push(k)` into `any[]` | 2.6 | 3.7 | 3.7 | 32.3 |
+| `let s = "s" + k`, no array, no `any` | 4.1 | **34.5** | **3.7** | 50.6 |
+| `push("s" + k)` into `string[]` | 4.1 | 32.3 | **3.7** | 72.6 |
+| `push(new Vec(k))` and `push("s" + k)` into `any[]` | 4.1 | 39.9 | **3.7** | 130.1 |
+
+The third row is the whole story and it has no container in it at all. `("s" + k)` allocates
+twice — the conversion prints `k` into a fresh buffer (`ConvertLogic`'s itoa/f64ToString), and
+the concatenation builds another (`ts.StringConcat`) — and neither said it was handing anyone a
+reference:
+
+```mlir
+%5 = "ts.Cast"(%3) : (!ts.number) -> !ts.string       // allocates; unmarked, unreferenced
+%6 = "ts.ArithmeticBinary"(%4, %5) ...                // allocates; the local retains it
+%7 = "ts.Variable"(%6) {__owned}
+```
+
+`%6` was fine by accident: it is born unowned, the local retains it, the local's scope exit
+releases it. `%5` is the leak. Nothing received it — being an operand of a concatenation is not
+receiving — so no receiver retained it, and §9.30 only releases what carries `OWNED_RESULT`, so
+it did not release it either. Every number ever printed into a string leaked.
+
+Both now do what `new` and a call do: **a `ts.Retain` making the reference real, and
+`OWNED_RESULT` saying a receiver may take it over rather than adding one.** The two halves have
+to travel together, and that is the whole design point — the mark alone hands a receiver a
+reference nobody made, and the retain alone is a leak with extra steps. It is also what makes
+this safe to be generous with: a value wrongly counted as fresh gains a reference and a release
+for it, which is balanced.
+
+Marked: the plain cast to `string` where the source is a number, an integer, an index or a char
+(the printing conversions — a boolean, `undefined` and a string literal all hand back a global,
+which is immortal), and `+` where the result is a string, which is the one arithmetic operator
+that allocates. Class, array and tuple `toString` are ordinary calls and were already handled by
+§9.27.
+
+**The second bug, and it is much older.** Measuring the array rows turned up `00map.ts` failing
+under `rc` — 6 runs in 20, and 0 in 20 under `gc` and `none`. It reduces to:
+
+```ts
+arrS.map((e) => e + "_")
+```
+
+and the default library's `map` is `result.length = this.length; for (..) result[i] = func(..)`.
+Growing an array is `MemoryRealloc` and nothing zeroes the tail, so the new slots hold whatever
+was last in that memory — and an element store gives up what the slot held first
+(`isOwnedElementSlot`), so the release reads it. `SetLengthOfOpLowering` now zeroes the exposed
+tail, under `-mm=rc` and only where an element owns something.
+
+It was tempting to read this as §9.37's own regression, because the sweep diff showed `00map.ts`
+newly crashing. Rebuilding §9.36's commit and running it twenty times is what settled it: 6 bad
+there too. **One clean sweep run is not evidence about a file that fails a third of the time** —
+the same trap §9.36 walked into from the other side, where a single lucky run hid it.
+
+Four new cases in `00owned_strings.ts`, and the two halves have separate teeth:
+
+| probe | fails |
+| --- | --- |
+| mark the fresh string without retaining it | the three string cases, 10 of 10 |
+| do not zero a grown array's new slots | `grownArrayHoldsItsStrings`, 12 of 12 |
+
+Neither probe touches the other's cases. The string cases have no teeth against the *leak* —
+nothing can, a leak being invisible — so what they guard is the over-release the fix could
+introduce, which is why "mark without retain" is the probe that matters for them.
+
+Two things were needed to make them read a freed buffer reliably. **Compare the whole string,
+not its length**: a freed buffer keeps its length long after its bytes are written over, and the
+length-comparing versions passed 8 runs in 8 with the bug present. And, for the array case,
+**eight rounds of a same-shape scratch array** rather than a general `churn()`: what makes an
+unwritten slot fatal is holding something that looks like a string, and one round got three runs
+in four where eight gets all of them.
+
+933/933. Ownership verifier unchanged at its two standing findings. The sweep diff against
+§9.36's commit is one line, the new file. `raytrace` at `-O3` is unchanged at 2.6 MB against
+`gc`'s 4.2 and `none`'s 109.0.
+
+### 9.38 Step 5u: reading the sweep, and the configurations nobody had swept
+
+The `-mm=rc` corpus sweep had sat at 117 non-zero exits of 475 for three slices running. It was
+stable enough to be useful as a regression detector - a diff against the previous commit found
+§9.36, and half of §9.37 - and it had never once been read. Reading it needed one question:
+**what does `gc` do with the same file and the same command line?** Whatever fails under both is
+not the memory model.
+
+| bare `--emit=jit -mm=<model> --shared-libs=...`, 475 files | non-zero |
+| --- | --- |
+| `gc` | 101 |
+| `rc` | 117 |
+| fails under `rc`, passes under `gc` | **16** |
+| fails under `gc`, passes under `rc` | 0 |
+
+So 101 of the 117 have nothing to do with reference counting, and every one of them is the
+sweep's own doing:
+
+- **79 are one half of a two-file test.** Every `export_*`, `import_*`, `decl_*` and `emit_*`
+  file, plus `component`/`service` and `shared`/`use_shared`. The exporting half has no `main`
+  (`Symbols not found: [ main ]`); the importing half needs its partner built into a DLL first
+  (`Symbols not found: [ M.Animal..new, ... ]`). JITing either one standalone cannot work by
+  construction.
+- **20 are the default library colliding with the test.** `redefinition of symbol named
+  'Math.PI'`, `'sqrt'`, `'Number..instanceOf'`, `'Error..instanceOf'` - tests that declare their
+  own and are meant to be compiled without the default library - plus a few type errors
+  (`conditionalTypes1`, `path`, `raytrace-0`) that are compiler limitations, identical under both
+  models.
+- **2 fail identically under both models**: `arrayLiterals2ES5` faults under `gc` too, and
+  `import_object_literal_untyped_multi_method` fails an MLIR verifier in both.
+
+That second group is the interesting one, because it says the sweep had never been running these
+tests the way the suite runs them. `test-runner` compiles with **`--opt --opt_level=3
+--no-default-lib`**; the sweep compiled bare - `-O0`, with the default library. Those are not the
+same program, and neither configuration dominates the other:
+
+| | `gc` | `rc` | rc-only |
+| --- | --- | --- | --- |
+| bare, `-O0`, with the default library | 101 | 117 | 16 |
+| `--opt --opt_level=3 --no-default-lib` - what the suite runs | 87 | 109 | **22** |
+| union of the two | | | **29** |
+
+Only 9 files are in both lists. `gc` stays clean in the other direction in both configurations:
+nothing passes under `rc` that fails under `gc`.
+
+**Exactly one of the 29 is a file ctest ever runs under `rc`.** 39 of the 475 test files are
+registered as `test-jit-rc-*`; the other 436 have never been compiled under `-mm=rc` by anything
+but this sweep, and everything the ownership work has been measured against lives inside that
+39.
+
+The ownership verifier reports nothing for any of the 29, and that is structural rather than a
+gap. It checks that an acquired slot is given back on every path out of a function, which is the
+*leak* direction. All 29 are faults - `0xC0000005`, `0xC0000374`, a breakpoint - which is the
+over-release direction, and it cannot see that at all.
+
+#### The configuration columns are not four bugs
+
+Running all 29 under `rc` in all four combinations of `{-O0, -O3} x {default library, none}`:
+
+| how many configurations fault | files |
+| --- | --- |
+| all four | 11 |
+| some but not all | 18 |
+
+The 18 are the point. A use-after-free that passes is a use-after-free that got away with it, and
+what the columns vary is the heap layout, not the program's ownership. `00array3` faults with the
+default library at both optimisation levels and passes without it; `01map` is the exact opposite
+of `00spread`; `00generator4` faults at `-O3` only, and on one run it faulted, on the next it
+hung, and on a third it came back with a failed `assert` - the same bug wearing three symptoms.
+So the honest count is not 16, or 22, or 29: it is that **29 files break the memory model and 18
+of them only break it sometimes**, which is what this class of bug looks like from outside.
+
+#### Three of them reduce
+
+The 29 are not 29 bugs. Three reductions, each `rc`-only, each 10 runs in 10:
+
+**A generator that iterates another generator**, at `-O3`, with or without the default library:
+
+```ts
+function* inner() { yield 1; yield 2; }
+function* g() { for (const o of inner()) yield o; }
+function main() { for (const x of g()) print(x); print("done."); }
+```
+
+Faults before printing anything. `yield* inner()` and an inline `(function*(){...})()` fault the
+same way; one generator on its own is fine, and `-O0` is fine.
+
+**A `for...of` element that is itself a reference**, with the default library, at either
+optimisation level:
+
+```ts
+const a = [[1], [2]];
+for (const v of a) print(v.length);
+```
+
+Also faults before printing. A single-level `for...of` is fine and `a.length` on the same array
+is fine, so it is the loop variable taking an element that owns something. `--no-default-lib`
+hides it because it routes `for...of` over an array through the built-in intrinsic loop instead
+of the library's iterator protocol.
+
+**`await`**, in all four configurations, and the only one of the three that gets the answer
+right first:
+
+```ts
+async function f() { return 1; }
+function main() { const r = await f(); print(r); print("done."); }
+```
+
+Prints `1` and `done.` and then dies of heap corruption on the way out - a double free at
+teardown. Calling `f()` without awaiting it is fine, so the `await` is what frees something
+twice.
+
+Between them these cover the generator/iterator cluster (`00generator4/5/6`,
+`00funcs_expression_iterator`, `01iterator`, `00iterator_bug`), the array-iteration cluster
+(`00array3`, `00for_of`, `19forof`, `01map`, `00tuple_with_array`, `arrayLiterals`) and the
+coroutine pair (`00async_await`, `00for_await`). The rest - object destructuring, union
+narrowing, class statics, and the two whole programs `nbody` and `raytrace` - has not been
+reduced.
+
+#### Two things about measuring this
+
+**Sweep the configuration the suite uses, not a configuration.** A missing `--no-default-lib`
+manufactured 20 failures; a missing `--opt --opt_level=3` hid 13 real ones. The recipe worth
+keeping is: sweep both configurations under both models, diff, and read only the rc-only column.
+That is what turns the sweep into a to-do list. This is the second time the sweep's own command
+line was the bug - §9.36 lost 43 files to a missing `--shared-libs`.
+
+**Read exit codes in PowerShell, not in bash.** A Windows fault code does not survive bash's
+8-bit exit status. The `await` reduction reported `0/10` failures through a bash `||` and
+`10/10` - every one of them `-1073740940` - through `Start-Process`'s `ExitCode`. The one that
+reads clean is the wrong one.
+
+Nothing was changed in this slice. 933/933, verifier unchanged at its two standing findings.
+
+### 9.39 Step 5v: a generator's state object, and the field that was never written
+
+§9.38's first reduction was a generator that iterates another generator, faulting at `-O3` and
+printing nothing. Narrowing it took the inner generator out of it entirely:
+
+```ts
+function* g() { const a = [1]; yield a[0]; }
+function main() { for (const x of g()) print(x); print("done."); }
+```
+
+`rc` only, `-O2` and above, no output at all. Take the local away - `function* g() { yield
+mk()[0]; }` - and it passes. So it is not the nesting and not the iterator protocol: it is **a
+generator with one local that holds a reference**.
+
+"No output at all" is a strong hint, and the LLVM dump says exactly what happened:
+
+```llvm
+define void @main() local_unnamed_addr {
+  unreachable
+}
+```
+
+The whole of `main` is gone. LLVM proved the program had undefined behaviour on every path and
+folded it away, which is why `-O0` and `-O1` "work", why `-O2` does not, and why nothing printed.
+
+#### Where the undefined behaviour came from
+
+A generator lowers to a state object holding one field per local, built and returned by the ramp
+function before the body has ever run:
+
+```mlir
+%2 = ts.Constant { value = [0 : si32, unit, @next] }
+      : const_tuple<{".step",si32},{"a",!ts.array<si32>},{"next",...}>
+%4 = ts.Load(%3)
+%5 = ts.New()
+"ts.Retain"(%4)      // walks the tuple's owning fields - including "a"
+"ts.Store"(%4, %5)
+```
+
+`"a"` is the generator's local, and its initial value is `unit`: nothing writes the field until
+the body runs. `getTupleFromArrayAttr` lowered `unit` to `mlir_ts::UndefOp`, so `"a"` was
+`undef`, and the retain walks into it:
+
+```llvm
+%2 = getelementptr i8, ptr undef, i64 -8    ; step back to the block header
+%3 = load i64, ptr %2                       ; read the refcount
+```
+
+Loading through `undef` is undefined behaviour, so the optimizer may conclude that anything
+reaching it is unreachable - and it does, out through `g` and into `main`. The release side is
+worse in principle even though nothing gets that far: tearing the object down would decrement a
+refcount at a garbage address and free whatever block it landed in.
+
+**An unspecified field of an owning type now lowers to zero rather than undef**, under `rc`,
+where `MLIRTypeHelper::ownsHeapMemory` says the field owns something:
+
+```llvm
+store { i32, { ptr, i64 }, ptr } { i32 0, { ptr, i64 } zeroinitializer, ptr @...next }, ptr %1
+```
+
+Null is the value the rest of the model already handles - `__tslang_inc_ref` and
+`__tslang_dec_ref` both test for it - so the retain at construction is a no-op, the release at
+teardown is a no-op, and the first real write to the field takes ownership the way any field
+store does. `gc` and `none` are untouched.
+
+#### What it closed
+
+| sweep | before | after | newly fixed | newly broken |
+| --- | --- | --- | --- | --- |
+| bare, `-O0`, default library | 117 | 115 | `00for_of`, `44toplevelcode` | none |
+| `--opt --opt_level=3 --no-default-lib` | 109 | 102 | `00extension_cond_access`, `00funcs_expression_iterator`, `00generator4`, `00generator5`, `00iterator_bug`, `00map`, `01iterator` | none |
+
+That is 5v's predicted cluster except `00generator6`, plus three files nobody had attributed to
+it - `00extension_cond_access`, `00map` and `44toplevelcode`, none of which contains a generator.
+Any const tuple with an unwritten owning field was hitting this.
+
+§9.38 named `-O3` **with** the default library as a configuration nothing had ever swept, so this
+slice swept it: `rc` 117 non-zero against `gc`'s 101, 16 rc-only. It surfaces one file the other
+two configurations never showed, `00typed_array`, and rebuilding the previous state confirms it
+faulted there before this change too (6 runs in 6, `gc` clean) - newly *found*, not newly broken.
+Across all three configurations the rc-only set is **29 -> 22**.
+
+One file has to be reported rather than counted. `01map` faulted in two of the four cells before
+and faults in two after, but not the same two: `-O0 --no-default-lib` went 6 runs in 6 to 0, and
+`-O3` with the default library went 0 to 6, both measured with repetitions on both sides.
+Turning `undef` into null cannot manufacture an over-release - it removes an undefined read and
+makes two existing null checks fire - but it does change what the optimizer emits and so where
+everything lands, and `01map` still carries 5w's bug. This is the sensitivity §9.38 measured:
+18 of the 29 fault in only some configurations, and the configuration is the heap layout.
+
+#### Teeth
+
+`00owned_generators.ts`, five cases, each keeping a reference-typed local alive across a
+suspension: an array, a string, an iterator over another generator, a `yield*` delegation, and a
+local mutated between two resumptions.
+
+| probe | fails |
+| --- | --- |
+| lower an unspecified owning field to `undef` again | all five, `rc` at `-O3`, 6 runs in 6 |
+| the same probe under `gc`, under `none`, or at `-O0` | nothing |
+
+The `-O0` row is the point rather than a gap: the bug is undefined behaviour, so what it needs to
+become a fault is an optimizer willing to act on it. The tier that has teeth here is the one
+ctest actually runs.
+
+#### What the fix made measurable: a generator with a parameter leaks
+
+These programs could not be measured before, because they crashed. 500k iterations, `-O3`:
+
+| | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| generator with an array local, no parameter | 2.6 | **2.6** | 34.4 |
+| generator with a string local, no parameter | 4.1 | **3.7** | 55.8 |
+| generator with an array local **and a parameter** | 4.1 | **22.7** | 40.2 |
+| generator with a string local **and a parameter** | 4.1 | **46.3** | 127.0 |
+| a generator that yields a freshly built string | 4.1 | **76.8** | 71.2 |
+
+The parameter is the whole variable - the local's type makes no difference either way. A
+parameter makes the coroutine capture, and the capture box becomes a fourth field of the state
+object, which the object's release routine does not walk:
+
+```llvm
+define internal void @tsrel_5704117(ptr %0) {
+  ...
+  %7 = getelementptr { i32, ptr, ptr, ptr }, ptr %2, i32 0, i32 1
+  call void @tsrel_5061303(ptr %7)     ; field 1, the string local
+  call void @__tslang_free_block(ptr %2)
+```
+
+Field 3 is the box, and nothing gives it back. It is the same predicate on both ends: the box
+field is the one field this slice's fix did *not* zero, because `ownsHeapMemory` does not call it
+owning - which is exactly why the release routine skips it too. The last row is worse than
+`none`, so there is a second leak on the yield path as well. Filed as 5z.
+
+937/937. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is 2.6 MB
+against `gc`'s 4.2 and `none`'s 108.9.
+
+### 9.40 Step 5w: what a `for...of` hands the loop variable
+
+```ts
+const a = [[1], [2]];
+for (const v of a) print(v.length);
+```
+
+`rc` only, with the default library, at every optimisation level. It took three separate fixes,
+and the first two are the same mistake made twice.
+
+#### A literal array is a block with no header
+
+`main` was real code this time, not §9.39's single `unreachable`, and the globals said why:
+
+```llvm
+@s_6682479467004374669 = internal constant [14 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FFdone.\00"
+@a_1171826144013      = internal constant <1 x i32> splat (i32 1)
+```
+
+A string literal carries the eight all-ones bytes that read as `HEAP_BLOCK_IMMORTAL` - §9.5 put
+them there so a pointer to a literal and a pointer to a heap string are the same shape. **An
+array literal carries nothing.** Bind one to a loop variable and the retain reads the word in
+front of a read-only global, and the release writes it.
+
+`getOrCreateGlobalArray` now emits the same header under `rc`, and the pointer it hands back
+points past it - exactly what `getOrCreateGlobalString_` has always done.
+
+That fixed `-O0` and left `-O3` still faulting, for a reason worth keeping:
+
+```llvm
+@a_3733085596457652 = internal constant { i64, <3 x i32> } { i64 -1, <3 x i32> <i32 4, i32 5, i32 6> }
+                                                                    ; ... i64 16), i64 3 }
+```
+
+Three `i32` want sixteen-byte alignment, so an unpacked struct pads and the payload starts at
+offset **16** - the header is two words back, not one, and everything reading `data - 8` reads
+padding. `[1]` and `[2, 3]` were fine and `[4, 5, 6]` was not, which is why the nested case
+printed `1 2 3` and then died. The block struct is packed now. **A header is only a header if it
+is exactly one word in front**, and a payload's own alignment is enough to break that.
+
+#### The value an iterator hands back when it has none
+
+Still faulting from `-O1` up, with the last thing printed lost to an unflushed buffer. The
+generator's exit block:
+
+```llvm
+%.sroa.0.0 = phi ptr [ undef, %1 ], [ %.unpack47, %14 ], [ undef, %10 ]
+```
+
+and its caller:
+
+```llvm
+%.not = icmp eq ptr %.fca.0.0.extract, null
+br i1 %.not, label %..., label %9
+9:  %10 = getelementptr i8, ptr %.fca.0.0.extract, i64 -8
+    %11 = load i64, ptr %10
+```
+
+**The caller retains the result before it looks at `done`.** On the final call the value is
+`undefined` coerced to the element type, which `castToArrayType` materialised as `undef`, and
+reading a refcount through `undef` is §9.39's bug wearing different clothes - this time the
+`undef` is a runtime phi rather than a constant, which is why `-O0` survived it: the value sat
+in an alloca that happened to hold something benign until mem2reg replaced it.
+
+`undefined` as an array is now the empty array `{ null, 0 }`, and `UndefOpLowering` gives the
+same treatment to any `mlir_ts::UndefOp` whose type owns heap memory - which is the path a
+generator yielding object literals takes. Both are `rc`-only.
+
+#### What it closed
+
+| sweep | before | after | newly fixed | newly broken |
+| --- | --- | --- | --- | --- |
+| bare, `-O0`, default library | 115 | 106 | 9 | none |
+| `--opt --opt_level=3 --no-default-lib` | 102 | 97 | 5 | none |
+| `-O3`, default library | 117 | 107 | 10 | none |
+
+Across the three configurations the rc-only set goes **22 -> 12**. That is all of 5w's predicted
+cluster - `00array3`, `00for_of`, `19forof`, `01map`, `00tuple_with_array`, `arrayLiterals` -
+plus `00interface_object4`, `39objectdestructuring`, `typeGuardOfFormThisMember`,
+`00object_global` and `00mixed_type_ops`, none of which was attributed to it. `01map`, the file
+§9.39 had to report rather than count, is clean in all four cells now.
+
+#### Teeth
+
+`00owned_iteration.ts`, seven cases: literal rows iterated and read again afterwards, ragged rows
+(the three-wide one is the alignment case), an empty array that iterates no times, records from
+an array, records from a generator, and strings from a generator. Each change reverted on its
+own, three runs each:
+
+| probe | fails |
+| --- | --- |
+| no header on a constant array | `rc` with the default library, both levels, 3/3 |
+| the header struct unpacked | `rc` with the default library, both levels, 3/3 |
+| `undefined` as an array back to `undef` | `rc`, `-O3`, with the default library, 3/3 |
+| `UndefOpLowering` back to `undef` | `rc`, `-O3`, **with and without** the library, 3/3 |
+
+Nothing fails under `gc` under any probe, which is the expected shape: all three are retains only
+`rc` emits. The last row is the one that matters for coverage - the other three need the default
+library, and ctest compiles with `--no-default-lib`, so without the generator-of-records case
+this file would have had no teeth at all in the tier it is registered in. That is 5y in
+miniature.
+
+#### One residual
+
+With the default library, iterating a literal array 900k times cost `rc` 15.6 MB against `gc`'s
+4.1 and `none`'s 155.9 - so `rc` reclaimed about nine tenths of it and held the rest. The gap grew
+sublinearly (nothing at 100k, 7.4 MB at 300k, 11.5 MB at 900k), which looked more like the
+allocator's high-water mark than an unbounded leak. Filed as 5aa - and **it does not reproduce**,
+see §9.58.
+
+941/941. Ownership verifier unchanged at its two standing findings. `raytrace` at `-O3` is
+2.6 MB against `gc`'s 4.2 and `none`'s 99.3.
+
+### 9.41 Step 5x: two allocators for one coroutine frame
+
+```ts
+async function f() { return 1; }
+function main() { const r = await f(); print(r); print("done."); }
+```
+
+prints `1` and `done.` and then dies of heap corruption, under `rc` and under `none`, at every
+optimisation level, with and without the default library. `gc` is clean. That `none` fails is the
+whole diagnosis: `none` frees nothing at all, so nothing here was ever a double free, and nothing
+here was ever reference counting's.
+
+The frame allocation says the rest:
+
+```llvm
+%6 = call ptr @aligned_alloc(i64 8, i64 %5)      ; the coroutine frame
+...
+call void @free(ptr %0)                          ; ... and its destroy path
+```
+
+`aligned_alloc` paired with `free` is the C11 pairing and is right everywhere `aligned_alloc`
+exists. MSVC has no `aligned_alloc`, so the runtime supplied one - built on `_aligned_malloc`,
+whose memory may only go back through `_aligned_free`. Every awaited call allocated a frame on
+one heap and released it on another. Under `gc` it never showed, because `GCPass` rewrites the
+whole pair to `GC_memalign`/`GC_free` and the two agree again.
+
+Windows' own `malloc` is aligned to 16 bytes, which is more than the frame's 8, so the shim now
+serves the request from the ordinary heap and the pairing is honest. Over-alignment is the one
+thing it cannot do and stay `free`-compatible, so it says so on stderr rather than handing back
+something quietly wrong. `AlignedFree` becomes plain `free` to match.
+
+#### The same symbol, one layer out
+
+With that fixed in the JIT, the ahead-of-time path turned out never to have worked at all:
+
+```
+error LNK2019: unresolved external symbol aligned_alloc referenced in function main
+```
+
+`-mm=rc` and `-mm=none` could not link an executable that awaited anything, and `-mm=gc` could
+only because the call had been renamed away. Nothing had noticed because ctest's AOT tier runs
+under the default model only - the same shape of gap as 5y. `TypeScriptAsyncRuntime`, the static
+library the linker is given, now defines `aligned_alloc` itself, with the same body.
+
+#### What it closed
+
+| sweep | before | after | newly fixed |
+| --- | --- | --- | --- |
+| bare, `-O0`, default library | 106 | 104 | `00async_await`, `00for_await` |
+| `--opt --opt_level=3 --no-default-lib` | 97 | 96 | `00async_await`, `00for_await` |
+| `-O3`, default library | 107 | 107 | `00async_await`, `00for_await` |
+
+Two files in each configuration appeared to break and neither did: `44toplevelcode` timed out
+because four sweeps were running at once and passes 6 runs in 6 on its own, and
+`00mixed_type_ops` at `-O3`-with-the-library fails 6 in 6 both before and after - which also
+corrects §9.40, where a single lucky run had it in that slice's fixed column. The rc-only set
+across the three configurations goes **12 -> 11**, and 10 of those are real: the eleventh is
+`44toplevelcode`'s timeout.
+
+And **`none` now has no failure that `gc` does not share** - zero files, under the suite's own
+flags. That is the first time any model other than `gc` has been clean against it.
+
+#### Teeth
+
+`00owned_async.ts`, six cases: an await, an async arrow, an async function with a default
+parameter, three awaits in sequence, an async function awaiting another, and 64 awaits in a loop.
+Reverting the runtime:
+
+| probe | fails |
+| --- | --- |
+| `_aligned_malloc` back in the JIT shim | `rc` 3/3 and `none` 3/3, both levels; `gc` clean |
+| `aligned_alloc` out of the static library | `rc` and `none` do not link; `gc` links |
+
+Every awaited function in the file is parameterless and returns an `i32`, because at the time
+anything else failed with `error: failed to legalize operation 'async.runtime.load'`, in any
+model. That was filed as 5ab and read as being about arguments; it was not - see §9.56, where the
+real condition turned out to be the **result type** and both halves are now fixed.
+
+#### What it costs
+
+50k awaits at `-O3`: `gc` 7.9 MB, `rc` 7.6, `none` 7.7. The frame is freed by the coroutine's own
+destroy path in every model, so awaiting costs the same in all three and there is nothing here
+for reference counting to own.
+
+Two things came out of measuring it, neither this slice's:
+
+- **`gc` faults on a long chain of coroutine frames**, 2 runs in 4 at 50k awaits and worse at
+  200k, in both the old and the new link configuration, so it predates this change and is not
+  the allocator pairing. Filed as 5ac.
+- **An `-mm=rc` executable that prints a number exits 1**, deterministically, with correct
+  output. It needs no async at all - `function main() { print(1); }` does it - and only the
+  ahead-of-time path, never the JIT. Filed as 5ad.
+
+945/945. Ownership verifier unchanged at its two standing findings - necessarily, since nothing
+in the compiler changed, only the runtime libraries. `raytrace` at `-O3` is 2.6 MB against `gc`'s
+4.2.
+
+### 9.42 Step 5y: the tier that was 42 files of 478
+
+`-mm=rc` ran 42 files of the corpus and `-mm=none` ran 24, and neither ran one of them ahead of
+time. The ahead-of-time tier is a real one - `test-compile-*` compiles, links with `lld` and runs
+the executable - but it has only ever run the default model, so a fault had to be wrong in the
+default model *and* in the JIT before anything here would say so. §9.41's was neither. Nor was
+§9.39's or §9.40's: all three were found by a sweep script that lived in a scratch directory and
+ran when somebody remembered to run it.
+
+Every single-file test the default model runs is now run again, in the same tier, under `rc` and
+under `none`, and so is every shared-component pair. The corpus is not a second list to keep in
+step with the first: the existing entries *are* the list, and the new tiers are a `foreach` over
+it, so a file added for the default model arrives in all three at once.
+
+| | before | after |
+| --- | --- | --- |
+| `rc`, JIT | 42 files | 384, ten of them disabled |
+| `rc`, ahead of time | none | 385, ten of them disabled |
+| `none`, JIT | 24 files | 384 |
+| `none`, ahead of time | none | 385 |
+| shared-component tests, each of `rc` and `none` | none | 84 |
+| tests in the suite | 945 | 2,585 |
+| `ctest -j 12` | 18.8 s | about 50 s |
+
+#### What the first run said
+
+Ten files, all under `rc`, all in both tiers, and **not one of them under `none`** - which is the
+shape of a reference-counting fault rather than a latent one. Nine corrupt the heap
+(0xC0000374); `25lamdacapture.ts` just gets the wrong answer. Each was run six or eight times per
+tier on its own before being listed:
+
+| file | JIT `rc` | AOT `rc` | what it is |
+| --- | --- | --- | --- |
+| `00class_static.ts` | 6/6 | 6/6 | private static fields, and a `delete` |
+| `00generator6.ts` | 6/6 | 6/6 | `yield*` of a `number \| string` |
+| `00mixed_type_ops.ts` | 6/6 | 6/6 | binary operators across static types |
+| `00safe_cast_field_access.ts` | 6/6 | 6/6 | a `number \| null` field, narrowed |
+| `00spread.ts` | 6/6 | 6/6 | an array spread into parameters |
+| `01class_new.ts` | 6/6 | 6/6 | an interface with a construct signature |
+| `25lamdacapture.ts` | 6/6 | 6/6 | a lambda inside a lambda - **wrong answer, no crash** |
+| `44toplevelcode.ts` | 0/8 | 1/8 | rare, and the correction to §9.41 below |
+| `nbody.ts` | 6/6 | 6/6 | the benchmark |
+| `raytrace.ts` | 3/6 | 6/6 | the benchmark |
+
+Filed together as 5ae. Fixing them is not this slice - the slice is that they are in the suite
+now, instead of in a script nobody runs.
+
+They are registered and **disabled**, rather than left out or marked `WILL_FAIL`. Left out, the
+names would not exist and nothing in the build would say what is broken. `WILL_FAIL` was the
+first attempt and does not hold: a corrupted heap does not always land, and the last two rows of
+that table are not the only ones that wander. `00mixed_type_ops.ts` fails six runs in six on its
+own and came up clean once in three runs of the whole suite, where twelve tests at a time give
+the allocator a different history - and under `WILL_FAIL` a run that passes is a red suite.
+Disabled, the list stays in the build where it can be read, `ctest` counts them out loud, and
+the suite stays a suite.
+
+#### The correction to §9.41
+
+§9.41 put `44toplevelcode`'s sweep timeout down to four sweeps running at once. It was not
+contention. The file is rc-only broken about one run in eight, and when it broke in the JIT it
+did not fail - it stopped on the message box described below, which the sweep could only see as
+a test that never ended. The rep check that cleared it ran it on its own, where it passes eight
+times in eight.
+
+#### Two faults in the harness, on the way in
+
+**A failing `assert` in a JIT run was a hang, not a failure.** Under `--emit=jit` the `assert` in
+compiled code calls `_assert`, and the process resolver binds that to `ucrtbase.dll` - a CRT
+instance whose report mode nothing here sets, and whose answer to a failed assertion is a modal
+message box. The harness then waits on a window nobody is there to close, forever. It had never
+come up, because until now every JIT test in the suite passed; the first thing the corpus did was
+register several hundred that do not. `jit.cpp` already binds `puts`, `malloc` and the C++
+personality away from `ucrtbase` for the same class of reason, and `_assert` now joins them,
+pointed at a shim that writes the message to stderr and exits:
+
+```
+assertion failed: deliberately false
+```
+
+The ahead-of-time path was never affected - the generated executable's own CRT sees a console
+application and writes to stderr already. `tslang.exe` now also asks Windows not to raise the
+error-reporting dialog on a fault, which is worth about twenty seconds a run: nine of the ten
+crash, three times over with the harness's retries, and every one of those was sitting in the
+reporting UI.
+
+**The shared-component runner dropped a space.** `--gctors-as-method` was appended to the
+compiler options with no separator, so the first shared test ever to carry another flag produced
+`--mm=rc--gctors-as-method` and 26 pairs failed to build. Latent since the flag was added,
+because nothing had ever passed a second one.
+
+#### One more, not listed
+
+`13actions.ts` - closures capturing locals, so the same neighbourhood as `25lamdacapture.ts` -
+failed once under `rc` ahead of time, in ten runs of the whole suite. On its own it passes
+sixteen runs in sixteen, in both tiers, under all three models, and the `rc` and `none` tiers on
+their own are clean ten runs in ten: whatever it is needs the whole suite's load to land. One
+sighting is not enough to disable a file on, so it stays registered and is written down here
+instead. If it comes back it joins 5ae.
+
+2,565/2,565, with the ten disabled, over six consecutive runs. The ownership verifier is
+unchanged at its two standing findings - necessarily, since nothing in the compiler changed this
+time, only the harness and the driver.
+
+### 9.43 Step 5ae, first: a closure inside a closure
+
+```ts
+let a = 7;
+const g = () => {
+    const h = () => { glb = glb + a; };
+    h();
+};
+g();
+```
+
+One level of that is fine. Two corrupts the heap, at `-O3`, under `rc` and nothing else. The
+generated dialect says why. In the frame that declares `a`:
+
+```mlir
+"ts.RetainCell"(%6) : (!ts.ref<si32>) -> ()
+%9  = "ts.Capture"(%6) : (!ts.ref<si32>) -> !ts.ref<!ts.tuple<{"a",!ts.ref<si32>}>>
+%10 = "ts.CreateBoundFunction"(%9, %7) {__owned_result, __owns_capture}
+```
+
+and inside `g`, capturing the same cell to build `h`'s box:
+
+```mlir
+%1 = "ts.Load"(%0)     // `a`, reached through g's own capture box
+%4 = "ts.Capture"(%1) : (!ts.ref<si32>) -> !ts.ref<!ts.tuple<{"a",!ts.ref<si32>}>>
+%5 = "ts.CreateBoundFunction"(%4, %2) {__owned_result, __owns_capture}
+```
+
+There is no retain. `mlirGenResolveCapturedVars` emitted one for a `ts.Variable`, a `ts.Param`
+and a `ts.ParamOptional` - the three shapes it also has to *mark* as captured, since being captured is
+what turns a variable's storage into a cell. An inherited cell is none of those: the frame that
+declared it marked it already, and here it arrives as a load of a capture-box field. The
+fall-through branch's comment read "nothing was marked" and drew the wrong conclusion from a true
+observation. The box being built owns this cell exactly as the first box does, and releases it
+when the bound function goes, so it has to take a reference to it first. `isCapturedCellSlot` -
+the predicate §9.30 already needed to recognise assignment *through* such a reference - is what
+names the shape.
+
+#### What it closed
+
+| file | JIT `rc` | AOT `rc` |
+| --- | --- | --- |
+| `25lamdacapture.ts` | 6/6 -> **0/10** | 6/6 -> **0/10** |
+| `raytrace.ts` | 3/6 -> **0/10** | 6/6 -> **0/10** |
+
+`13actions.ts` and `44toplevelcode.ts`, the two that fail about one run in ten, are unchanged at
+one in ten, and the other seven 5ae files are unchanged outright. Two of ten, then - but one of
+the two is the benchmark this document has been quoting since §9.31, and that turns out to matter
+more than the count.
+
+#### What `raytrace` actually costs
+
+| | `gc` | `rc` | `none` |
+| --- | --- | --- | --- |
+| `raytrace.ts`, `-O3`, three runs each | 4.6 / 4.2 / 4.6 | **67.8 / 61.1 / 60.5** | 95.4 / 99.2 / 99.5 |
+
+The `rc` column has never been measured before. Every stored `rc` `raytrace` binary from §9.31,
+§9.32, §9.33, §9.39 and §9.41 is still on disk, and every one of them exits `0xC0000374` with
+**zero lines of output** and a peak of 2.6 MB. That is the number this document has carried as
+"below `gc`'s own 4.2" through five slices. It is how far a crashing program got.
+
+`measure5q.ps1` printed the peak working set and not the exit code. §9.38 wrote down that a
+Windows fault code does not survive bash's eight-bit exit status, so read exit codes in
+PowerShell; the same lesson had to be learned one level up, where the script does read them and
+simply never says so. **A measurement script prints the exit code, or the measurement is of
+nothing in particular.**
+
+What the real numbers say is less flattering and more useful: on the whole program `rc` reclaims
+about a third of what `none` leaks, and sits at fourteen times `gc`. The per-shape numbers in
+§9.29-§9.37 stand - those were measured on programs that completed - but the whole-program claim
+does not, and 5af is now what is left of it.
+
+#### Teeth
+
+`00owned_nested_captures.ts`, six cases; with the retain removed, every one of them fails three
+runs in three. Two had to be rewritten to get there. A nested closure that is called on the spot
+inside a loop is folded away at `-O3` - the inner box never exists, so there is nothing to
+mis-release - and the case sat there passing either way. Handing the inner closure back instead
+makes the box real and the case bites. The lesson is the older one in a new place: **a case that
+passes with the fix reverted is not a case**, and at `-O3` the reason is often that the optimiser
+deleted the thing under test.
+
+The file is registered the way the corpus now allows: two entries for the default model, one line
+in `TSLANG_CORPUS`, and the loop supplies the other four.
+
+2,573/2,573 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings - it never saw this one and could not: an over-release is invisible to a pass that looks
+for references acquired and not given back.
+
+### 9.44 Step 5ae, second: a union that holds nothing yet
+
+```ts
+class A { data: number | null = 10; }
+function main() { const a = new A(); print("made"); }
+```
+
+That is the whole reduction. It faults under `rc` at every optimisation level, and this time with
+`0xC0000005` rather than a corrupted heap - an access violation is a different family of mistake,
+and says a pointer was followed rather than a count mismanaged.
+
+Not every union field does it:
+
+| field | `rc` |
+| --- | --- |
+| `number \| null` | access violation |
+| `number \| string` | access violation |
+| `number \| undefined` | fine |
+| `string \| null` | fine |
+
+The two that fault are the two that need a runtime tag. The other two are lowered without one -
+an optional behind a flag, and a nullable pointer - so nothing reads a descriptor for them.
+
+A tagged union's release routine reads the routine to call out of the descriptor its tag points
+into:
+
+```llvm
+%3 = load ptr, ptr %2                              ; the tag
+%5 = getelementptr i8, ptr %3, i64 -32             ; the descriptor sits in front of it
+%6 = getelementptr {...}, ptr %5, i32 0, i32 2     ; TYPE_DESCR_RELEASE
+%7 = load ptr, ptr %6
+```
+
+and the constructor assigns the field the way every owning field is assigned - retain the
+incoming value, release the outgoing one, store:
+
+```llvm
+call void @tsretv_14998068(<{ ptr, ptr }> %7)      ; the new value
+call void @tsrel_14998068(ptr %6)                  ; the OLD one
+store <{ ptr, ptr }> %7, ptr %6
+```
+
+The old one is the field as `calloc` left it. Its tag is null, `null - 32` is `0xffff...e0`, and
+the load of the release slot is the fault. A union that holds nothing is not a corner case: it is
+what every union field is between the allocation and the first assignment, and the first
+assignment is the thing that reads it.
+
+The fix is `emitIfNonNull` around both directions, which is what the interface and closure paths
+already do. `releaseViaTagBesideThis` even carries the reason in a comment - "getRecordPtrFromTag
+walks backwards from the tag to the record, so a null tag would be dereferenced, not skipped, by
+the null check inside releaseViaDescriptor". The observation was right and was written down; it
+was applied in one of the two places that needed it.
+
+#### What it closed
+
+| file | JIT `rc` | AOT `rc` |
+| --- | --- | --- |
+| `00generator6.ts` | 6/6 -> **0/6** | 6/6 -> **0/6** |
+| `00safe_cast_field_access.ts` | 6/6 -> **0/6** | 6/6 -> **0/6** |
+
+`00mixed_type_ops.ts` was grouped with these two as "unions" and is not this: it has no union
+field, and it is unchanged. Four of the original ten are closed now; five files fail every run
+and two fail about one in ten.
+
+#### Teeth
+
+`00owned_unions.ts`, six cases, every one of which fails three runs in three with the two guards
+removed: a first assignment, three assignments in a row, a union field holding a freshly built
+string, two hundred instances each written once, a read through a narrowing test, and the
+`yield*` of a `number | string` that `00generator6.ts` is made of.
+
+Two of them had to be written through a method rather than inline, because an un-narrowed
+comparison against a `number | null` field is rejected in strict null mode - correctly, and in
+every model.
+
+2,583/2,583 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings.
+
+### 9.45 Step 5ae, third: `delete` and the release that follows it
+
+Under reference counting `delete` already drops a reference rather than freeing outright -
+`DeleteOpLowering` has done that since step 6. What it did not do is tell anything else to stop.
+The dialect for `00class_static.ts`'s static method says it in four lines:
+
+```mlir
+%3 = "ts.CallIndirect"(%2) {__owned_result}    // new c1()
+"ts.Delete"(%3)                                 // delete c
+"ts.Release"(%3)                                // ... and the end of the block, again
+```
+
+`%3` is an owned result nobody claimed, and §9.30 releases those where the producing block ends.
+`delete` is a claim, so it now says so: `consumeOwnedReference`, the same mark an assignment
+makes when a slot takes a reference over.
+
+There is a second way to release the same reference twice, and `let c = new C(); delete c;` has
+it - the variable has real storage, `delete` works from a load of it, and the slot is released
+again on the way out:
+
+```mlir
+"ts.Delete"(%18)
+"ts.ReleaseSlot"(%7)
+```
+
+Storing null into the slot makes the second one a no-operation, since every release routine
+checks its pointer first. It is a raw store on purpose - the assignment path would retain and
+release around it.
+
+#### What it closed
+
+`00class_static.ts`, 6/6 to 0/6 in both tiers. Five of the original ten are closed.
+
+#### Teeth, and four cases that have none
+
+One case in `00owned_delete.ts` fails three runs in three with the fix reverted:
+`deleteFromAStaticMethod`, which is `00class_static.ts`'s shape - a static method that builds an
+instance, prints twice, and deletes it. The other four **double-free and nothing notices**.
+
+That is worth writing down, because the first four cases written were all of that kind, and the
+instinct that produced them was wrong in an interesting way. A freed block keeps its contents
+until something is allocated over it, so the standing rule for an over-release is "delete, then
+allocate hard, then read". For a *double free* that rule is backwards: allocating in between
+hands the block to somebody else, and the second free then quietly corrupts a live object rather
+than tripping the allocator's own check on a block still sitting in its free list. What made the
+static-method case fault is that the two `print` calls each build a string the block releases
+after the second free, on a free list that is already inconsistent.
+
+The four that do not discriminate are kept as shape coverage - a variable with storage, a loop, an
+object owning a string, a delete on one of two branches - and the file says so.
+
+`delete` also means something different in each model, which bounds what a shared test can
+assert: under `gc` and `none` the block is freed outright and a second reference to it dangles,
+while under `rc` it is one owner going away and the object survives. A case that held two
+references failed in all three models for that reason and was removed rather than made
+model-specific.
+
+2,587/2,587 over three consecutive runs. The ownership verifier is unchanged at its two standing
+findings.
+
+### 9.46 Step 5ae, fourth: the method nobody wrote
+
+`new C(...)` where `C` is not a class but a value of a **constructor interface** - an interface
+whose only member is a `new` signature - is `01class_new.ts`, and it is how a program hands the
+choice of what to construct to whoever supplied the constructor. The call goes through that
+interface's vtable slot, and the slot is filled by a method the compiler synthesises for the
+implementing class (`generateSynthMethodToCallNewCtor`): build the instance, run the constructor,
+cast the result to the interface the signature returns, hand it back.
+
+That method has no source, and so it has no `return` statement - it is built op by op, and the
+`ReturnValOp` at the end of it was created directly rather than through the path a `return` takes.
+Everything a return does for ownership therefore did not happen:
+
+```mlir
+%6  = "ts.CallIndirect"(%5) {__owned_result}     // Impl..new
+      "ts.CallIndirect"(%9, %8, %arg1)            // Impl.constructor
+%13 = "ts.NewInterface"(%6, %12)                  // cast to the declared return type
+      "ts.Release"(%6)                            // §9.30: an owned result nobody claimed
+      "ts.ReturnVal"(%13, %2)
+```
+
+`%6` is an instance nobody took over, so §9.30 gives it back where its block ends - and its block
+is the one that returns an interface over it. Every caller of `new C(...)` through a constructor
+interface was handed a block that had already been freed. `b6.ts`, the reduction, prints `0`
+where it should print `42`: freshly zeroed memory rather than garbage, because the allocator hands
+the block straight back.
+
+The fix is the retain the ReturnStatement path performs (`mlirGenRetainCaptured`, §9.24), applied
+to the value after the cast to the declared return type. `%13` is an interface, an interface owns
+what its `this` points at (§9.31), so retaining it is what gives the instance the reference the
+caller needs; `%6`'s own is then correctly given back.
+
+#### The half that was wrong, and how that showed
+
+The first fix was somewhere else, and it looked more fundamental. `castToInterfaceSpecialCases`
+builds the class-to-interface `ts.NewInterface` and marks nothing - no `ts.Retain`, no
+`__owned_result` - while the object-literal path a hundred lines below it does both, with a
+comment explaining why (§9.37: a fresh-value producer emits the retain **and** the marker, never
+one alone). An interface that owns its `this` and takes no reference to it reads as the same
+omission, so it was fixed the same way, and `01class_new.ts` went on failing.
+
+The return retain fixed it on its own. Reverting the cast-site retain and keeping only the return
+retain leaves all seven cases of the new test passing and `01class_new.ts` clean in both tiers,
+and each of the four cases that discriminate still corrupts the heap in three runs out of three
+with the return retain removed. **So the cast-site change was dropped**, and not only because it
+was redundant: a retain that balances only where §9.30 agrees to release is a leak everywhere
+§9.30 declines - a use outside the producing block, a terminator user, a generator - and it would
+have been an invisible one, spread across every class-to-interface cast in the program.
+
+The method that caught it is the one this arc keeps returning to, applied a step finer than usual:
+**teeth measured per fix, not per slice.** Two changes were in the tree, the tests passed, and the
+tests would have gone on passing with the wrong one alone.
+
+#### What is left, deliberately
+
+The caller of `new C(...)` still leaks one instance. `Impl.Ctor..new_ctor#1` now classifies as
+returning owned, but the call that reaches it goes through `ts.InterfaceSymbolRef`, and
+`calleeNameOf` answers empty for an interface slot on purpose (§9.32): the slot is filled by
+whichever class implements the interface, so reading the declaration as the callee would consume
+a reference some other implementation never took. Leaking is the side of that line this arc keeps
+everything uncertain on, and it is item 5o rather than this one.
+
+#### What it closed
+
+`01class_new.ts`, 6/6 to 0/6 in both tiers. Six of the original ten are closed; four remain -
+`00mixed_type_ops.ts`, `00spread.ts`, `nbody.ts`, and the one-run-in-ten pair `13actions.ts` and
+`44toplevelcode.ts`.
+
+New test `test/tester/tests/00owned_construct_interface.ts`, seven cases, each building in one
+block and reading in another with `churn()` between. The first four - an instance built through a
+constructor interface, two from one constructor value, an instance holding a string, and the one a
+loop carries out - each corrupt the heap in three runs out of three with the retain removed, at
+`-O0` and `-O3` alike. The last three are the plain class-to-interface cast with no constructor
+interface in it; they discriminate nothing, because that path was already correct, and the file
+says so.
+
+2,595/2,595 over three consecutive runs, up from 2,587 - the eight are this file in four tiers
+plus `01class_new.ts` coming off the disabled list in two. The ownership verifier is unchanged at
+its two standing findings.
+
+### 9.47 `-nogc` is gone
+
+The alias §9.6 kept for compatibility outlived its usefulness, and it was not inert while it
+waited. An LLVM `cl::opt<bool>` accepts an explicit value, and an empty one parses as **true** -
+so `-nogc= -mm=rc` compiles `none` and says nothing about it. That is not a hypothetical: it is
+how the first round of §9.46's reductions came back reporting that all six of the remaining
+`rc` faults had already been fixed, on a build where nothing had changed. A flag whose two
+spellings disagree silently about which memory model is in force is worse than no alias.
+
+The definition in `tslang.cpp` and its one read in `opts.cpp` are removed, so
+`compileOptions.memoryModel` is now just `memoryModelOpt.getValue()`, and an old `-nogc`
+invocation fails loudly with an unknown-argument error rather than quietly choosing a model.
+Every caller in the tree spells the model out: the README's WASM example, the Visual Studio
+custom tool's property page and switch, the three WASM scripts under `docs/how/wasm`, the
+Compiler Explorer wrapper's three call sites, and three launch configurations. The Compiler
+Explorer *ids* (`tslang_jit_nogc`) are left as they are - they are names in a local instance's
+config, not flags, and renaming them would move permalinks for nothing.
+
+`docs/jit-gc-static-roots.md` is updated too, in all four places: those mentions are a
+reproduction recipe and a diagnostic checklist rather than a record of what the flag once was,
+and a recipe that no longer runs is not a record of anything.
+
+2,595/2,595.
+
+### 9.48 Step 5ah: the boxing cast that said it allocated nothing
+
+`00mixed_type_ops.ts` is closed, and **not by what 5ah proposed.** The plan item blamed the
+optimiser - the allocations go, the frees stay - and named two ways out, both of them about
+denying LLVM something. Neither was needed. The double free is ours, it is in the IR before
+LLVM ever sees it, and the fix is four lines.
+
+#### Where the second box went
+
+The five-line reduction stands:
+
+```typescript
+function main() {
+    let a: any = "abc";
+    a = true;
+    a = false;
+    a = true;
+}
+```
+
+Counting boxes down the pipeline is the whole investigation, and it takes four commands.
+`--emit=mlir-llvm` with no `--opt` has four `llvm.call @malloc` in `main`, four `tsret_` and
+four `tsrel_` - correct and balanced. The raw LLVM translation has four `malloc`s too. But
+`--emit=mlir-affine --opt` has **three** boxing casts where the `ts` dialect had four, and from
+there the LLVM module has three `malloc`s at every optimisation level, including `-O0` where
+LLVM does essentially nothing. The box was gone before the optimiser was asked.
+
+What merged them was generic CSE, on our own dialect. `a = true` appears twice with `a = false`
+between, the constant is CSE'd into one op first, and the two casts over it are then
+structurally identical - so CSE keeps one. The third assignment therefore stores a pointer to
+the box the *second* assignment had already released:
+
+- box A (`"abc"`) is retained by the slot;
+- box B (`true`) is retained, A is released and freed, B is stored;
+- box C (`false`) is retained, B is released and **freed**, C is stored;
+- the fourth assignment is box B again - retained through freed memory, C released and freed,
+  and the freed block stored back into the slot;
+- the end of the block releases it, and B is freed a second time.
+
+So it is a double free with a use-after-free in front of it, and the `-O1` and `-O3` counts
+5ah recorded - three `malloc`s and four `free`s, then one and two - are LLVM working correctly
+on IR that already had one block freed twice.
+
+#### The fix, and the one it repeats
+
+`mlir_ts::CastOp::getEffects` reported an allocation for exactly one shape: `ConstArrayType`
+to `ArrayType`. That case was found the same way and for the same reason - CSE merging two
+casts and aliasing what must be two distinct backing arrays - and the comment above it says so.
+Casting to `AnyType` is the second allocating shape and was missed: `CastLogicHelper::cast`
+routes every cast whose result is `any` into `castToAny`, which always calls `MemoryAlloc`.
+Reporting `Allocate` and `Write` for it is the whole change.
+
+It is worth being clear about what this does *not* fix. Only a constant reaches the shape: two
+reads of a runtime value are two `ts.Load`s, so the casts over them differ and CSE never had
+anything to merge. Interning constant boxes into immortal globals - 5ah's preferred way out -
+would therefore have hidden every case that exists today, which is exactly why it was the wrong
+fix. The defect is an allocating op reporting itself as pure; who currently exploits that is a
+detail. And it was inert under `gc` only by luck: a box is immutable and `any` equality unboxes
+rather than comparing box pointers, so an alias is unobservable when nothing frees it.
+
+#### What it closed
+
+`00mixed_type_ops.ts` passes six runs in six in both tiers under `rc`, and is off the broken
+list in `test/tester/CMakeLists.txt`. Suite 2,597/2,597.
+
+The other four are unmoved, and the two that wandered have moved in a way worth recording:
+`13actions.ts` and `44toplevelcode.ts` now pass 30 runs in 30 in the JIT and still fail about
+one run in six ahead of time. That is a narrower target than "one run in ten in both tiers",
+but it is not a fix, so both stay disabled in both tiers until the cause is understood.
+`00spread.ts` (5ag) and `nbody.ts` fail every run.
+
+#### Teeth
+
+Two cases in `00owned_any_boxing.ts`, one boxing the same string twice and one the same number,
+each with a different value in between and a loop that allocates over whatever was freed before
+the value is read back. Both were checked **individually** against a build with the fix stashed
+out: 0 of 3 runs each, in both tiers. A third case, boxing one runtime value twice, was written
+and then deleted - it passes without the fix, because two loads are not one value, and a test
+that cannot fail is worse than no test.
+
+### 9.49 Step 5ai: the slot with no release, and therefore no retain
+
+`nbody.ts` is closed, and it took the two wandering files with it. One statement is the whole
+bug:
+
+```typescript
+let g: Holder;
+function init(): void { g = new Holder(5.0); }
+function main() { init(); churn(); assert(g.x == 5.0); }   // fails under -mm=rc
+```
+
+Under `gc` and `none` that program is correct. Under `rc` the assert fails, because the
+generated `init` is exactly this:
+
+```mlir
+%5 = "ts.CallIndirect"(@Holder..new) {__owned_result}   // +1
+     "ts.Store"(%5, %0)                                  // into the global - nothing taken
+     "ts.Release"(%5)                                    // §9.30, end of the producer's block
+```
+
+The instance is stored into the global and then released, so the global is left addressing a
+freed block. `main` reads a field out of it after something else has been allocated over it.
+
+#### Why it was missing
+
+`takeOwnershipOfLocal` excludes globals, and the reason it gives is true: *a global outlives
+every scope*, so there is no scope exit to release from. But that answers only half the
+question. Having no release does not mean having no retain - a global is a **root**, and a root
+holds a reference for as long as the program runs. The exclusion dropped both halves, so a
+store into a global neither took a reference nor gave one back, and `isOwningSlot` - the single
+predicate the assignment path asks - did not name a global among the slots that hand the count
+over.
+
+`isOwnedGlobalSlot` is the fix: a reference produced by `ts.AddressOf` whose element type owns
+heap memory. The assignment path then behaves exactly as it does for an owned local - consume
+an already-owned incoming value or retain it, and release what the slot held - with one
+difference that is the point of the whole section: **nothing releases the last value, and that
+is correct.** A global root's reference is given up when the process ends. Releasing the
+outgoing value on an overwrite is safe from the very first assignment because a global with no
+initializer is zero rather than undef (`ts.Default` lowers to `LLVM::ZeroOp`), and null is what
+every release routine treats as nothing to do.
+
+#### What it closed
+
+`nbody.ts`, and both files that had been failing about one run in six: `13actions.ts` and
+`44toplevelcode.ts`. All three now pass **forty runs in forty** ahead of time. That the two
+wanderers were the same bug is what the wandering was: how far a program got before a dead
+global showed depended on what the allocator handed back next, which is why they looked
+intermittent while `nbody` failed every time. **An intermittent failure and a deterministic one
+in the same list are worth trying against one fix before treating them as two.**
+
+`5ae` is down to `00spread.ts` alone. Suite 2,609/2,609, and the ownership verifier reports
+nothing on any of the four files.
+
+#### Teeth
+
+`00owned_globals.ts`, five cases, each building the global in one function and reading it in
+another with a churn between - a global written and read in `main` survives the bug, since
+nothing releases until main ends, and that is what made the first hand-written reductions pass.
+Checked individually against a build with the fix stashed out: the class instance and the
+string fail, the two array cases and the reassignment pass.
+
+The array cases are kept deliberately even so. Without the fix nothing frees the array at all -
+the heap copy a literal array is cast into is not a call result, so §9.30's end-of-block release
+never claimed it, and it leaked rather than dangled - but a release into a global *without* a
+matching retain would free a live array, and these are what would catch that. Reading `.length`
+would fail in neither direction, since an array value is `{ data, length }` and the length
+survives in the copy, so both cases go through an element.
+
+### 9.50 Step 5ag: two releases that had never had a retain
+
+`00spread.ts` is closed, and with it the broken list: **every file in the corpus now passes under
+every memory model, in both tiers.** It took the two halves 5ag named, in the order it named them,
+and both are the same shape - a release that had been running for a long time with nothing on the
+other side of it.
+
+#### A generator's locals belong to its state object
+
+A generator's locals cannot live in its frame, because the state machine has to resume, so each
+becomes a field of a heap state object. That object's release routine is generated from its type
+and gives back every field that owns memory. `localTakesOwnership` excludes these locals for
+exactly that reason - the frame is not their owner - and the exclusion, once again, took the
+retain with it. The store into the object's field is where it belongs: it is a field gaining a
+value, which is the debt `obj.f = x` carries, and `createLocalVariable` is where that store is
+emitted.
+
+That alone fixes `00spread.ts`. It also breaks `00extension_cond_access.ts`, exactly as 5ag
+predicted, which is the whole reason the order matters.
+
+#### What a capture box holds, and which reference that needs
+
+```typescript
+function f(names: string[]) { return names.filter(x => x); }
+function main() { for (const s of f(["asd", "asd1"])) print(s); }
+```
+
+`MLIRCodeLogic::CaptureTypeStorage` gives a read-write capture a `ref` field - the address of the
+variable's cell - and gives everything else a field of the variable's own type, which
+`CaptureOpLowering` fills by **dereferencing**: the box holds a copy of the value. Both kinds are
+released when the box dies: `releaseCapturedFields` releases the cell for a `ref` field and the
+value for any other owning one.
+
+`mlirGenResolveCapturedVars` decided which reference to take from a different question - whether a
+reference to the variable could be *had*. Any obtainable reference got `ts.RetainCell`, so a
+by-value capture retained the variable's cell while the box released the value. One fewer owner
+than releases, and the value went when the box did, which is at the end of the function that built
+the closure. For `f` that value is the source array of the generator it returns.
+
+The fix is to ask the question the box answers: `item.second->getReadWriteAccess()`, the same
+predicate `CaptureTypeStorage` uses. A by-value capture now retains the value, exactly as the
+branch below it already did for a captured value with no reference at all - and that branch's
+comment, *"the box holds a copy, and a copy of a reference is a further owner of what it points
+at"*, had been describing the rule the branch above it was breaking.
+
+#### What it closed
+
+`00spread.ts` and `00extension_cond_access.ts`, twenty runs in twenty each, in both tiers.
+**`TSLANG_CORPUS_BROKEN_*` is empty**, and the suite is 2,617/2,617 with nothing disabled - the
+first time that has been true since the corpus was registered in §9.42. The ownership verifier
+reports nothing on any of the files involved.
+
+Not closed: 5z. A generator with a parameter, 500k iterations at `-O3` in the JIT, costs `rc`
+41.0 MB against `gc`'s 15.9 and `none`'s 85.2 - and about 16 MB of every one of those is the
+compiler itself, so `rc` reclaims roughly half of what the shape leaks without it rather than all.
+The capture box is no longer the whole of that leak, but something still is.
+
+#### Teeth
+
+`00owned_generator_locals.ts`, four cases; the file fails against a build with both halves stashed
+out at `-O0` (a wrong answer from the escaping generator) and at `-O3` (an access violation from
+the spread). The spread case needed three things together to fail, and all three are in the file's
+comment: the suite's own `--opt --opt_level=3`, an interpolated string built inside the callee, and
+printing the result. **A freed block that nothing reuses reads back exactly as it did before** -
+the first version of the escaping-generator case passed against the broken build for that reason
+alone, and only failed once the other cases were allocating around it.
+
+### 9.51 Step 5ad: the exit code nobody returned
+
+An ahead-of-time build of
+
+```typescript
+function main() { print(1); }
+```
+
+printed `1` and told the shell it had failed, under `-mm=rc` only. Recorded as an `rc` bug for
+that reason, and it is not one.
+
+A TypeScript `main` that returns nothing lowers to `void @main()`. The C runtime that calls it
+reads an exit code out of the return register regardless of what the signature says, so the
+process's exit code was whatever the last instruction happened to leave there - zero under `gc`
+and `none` by luck, and 1 under `rc`, where the last thing `main` does is give back a
+reference. The entry point now lowers to `i32 @main()` returning 0, in every model, for anything
+that is not a JIT run or a DLL.
+
+A `main` that returns a value is deliberately left alone and is still wrong in the same way:
+`function main(): number { return 3; }` lowers to `double @main()`, which puts its result in
+XMM0 and leaves the exit code exactly as undefined as before. That is a language question - whether
+`main`'s result *is* the exit code - rather than a lowering one.
+
+#### The test that could not have caught it
+
+The suite has run ahead-of-time programs since long before any of this, and **it never looked at
+what they returned**: the generated script ran the executable, captured stdout and stderr, and the
+runner asked only whether `done.` appeared. So every `test-compile-rc-*` test passed against a
+program that was telling the shell it had failed. The scripts now record `%ERRORLEVEL%` and the
+runner fails a test whose program exited non-zero, saying so even when the output was right.
+
+Two more faults in the runner, both found by walking into them:
+
+- **Every `throw` of a string literal was uncaught.** The handlers catch `const std::exception &`,
+  so `throw "compile error"` reached `std::terminate` - a `__fastfail`, exit `0xC0000409`,
+  no message. That is what an ordinary failing test did (`checkedExecCommand` means to swallow it
+  and let the missing `done.` be the report) and what every command-line mistake did, including
+  a mistyped path. All of them are `std::runtime_error` now.
+- **`-mm=gc` was not accepted**, so naming the default explicitly hit that same silent
+  `__fastfail`. It is accepted now, and gets its own cached script like the other two.
+
+**The cached scripts are why this needed two runs to verify.** `compile.bat` and its variants are
+written once and reused, so a change to what they contain has no effect until they are deleted -
+the first suite run after adding the exit-code line had 21 failures, all of them tests whose script
+happened to be regenerated, and all of them reporting `exit code 0`, because `echo %ERRORLEVEL%`
+writes a trailing space.
+
+### 9.52 Step 5z: the box an object owns and could not release
+
+A generator that takes a parameter leaked, and the reduction is three lines:
+
+```typescript
+function* gen(n: number) { yield n; }
+function main() { for (let i = 0; i < 500000; i++) for (const v of gen(i)) {} }
+```
+
+Ahead of time at `-O3`: `rc` 33 MB against `gc`'s 3.7 and `none`'s 57.6. Three blocks are
+allocated per iteration and the loop frees one - the state object. The other two are the capture
+box and the cell holding the parameter, and the LLVM IR says plainly that the free for the cell is
+guarded by `icmp ne ptr %3, null` on a pointer that is never null, so it never runs.
+
+**An object's release routine could not see the one field of it that owns memory.** `.captured`
+has type `ref<tuple<..>>`, and a reference into storage is not ownership anywhere else in the
+compiler - `getOrCreateReleaseRoutine` returns nothing for a `RefType`, so `releaseFields`
+skipped it. The box, and every cell under it, outlived the object that was their only owner.
+
+`releaseFields` now routes a `ref<tuple<..>>` field through the capture-box release routine
+that already existed for closures - give back the cells, then free the box - and
+`mlirGenObjectLiteralCaptures` takes the one reference that pays for it. Nothing else in the
+language produces a field of that shape: `ref` is not spellable, so it is always the compiler's
+own capture box.
+
+This is 5ag's original prescription, arriving one section late and for the reason 5ag did not give.
+It was never needed to stop the double free - §9.50 was - and it is exactly what stops the leak.
+
+#### What it closed
+
+`function* gen(n) { yield n; }` at 500k iterations: **33 MB to 3.3 MB**, flat, below `gc`'s 3.7,
+with `none` at 57.6 to show the allocation is real. The two shapes 5z originally named - a
+generator with a parameter and a local, with an array local or a string local - were already flat
+at 3.3 MB before this, closed by §9.50 without being measured. Suite 2,617/2,617.
+
+**No test holds this.** A leak is not an assertion, and the suite has nothing that fails on one.
+The evidence is the measurement, and the guard against getting the pairing backwards is the corpus:
+a retain without its release leaks silently, but a release without its retain frees the box while
+the generator is still reading it, and that is what 2,617 tests would say.
+
+#### A measuring harness, at last
+
+> **The numbers from here to §9.61 are sampled, and understated - see §9.72.** This section
+> replaced the JIT with a native-executable harness, but that first harness read the peak by
+> spinning on `PeakWorkingSet64` while the process ran, which on `raytrace` reports less than
+> half the true figure and varies by 20% between runs of one binary. The non-sampling script
+> this section recommends did not reach the tree until `299eed65`, after §9.61. Conclusions in
+> that range stand; magnitudes in it do not, and none of them can be compared with a number
+> measured since.
+
+Every memory number before this was taken from the JIT, where ~13-16 MB of the measurement is
+`tslang.exe` itself and the optimiser elides different things in different models - which is why
+the same shape read 41 MB one hour and 12.6 MB the next, and why §9.31's numbers had to be
+withdrawn in §9.43. `scripts/measure_memory_model.ps1` builds a native executable per model, runs it, and
+reports peak working set: about 3.3 MB of floor instead of 16, no compiler in the process, and the
+exit code checked - which means something as of §9.51.
+
+Sampling `PeakWorkingSet64` must not sleep between reads: the counter reads **zero** once the
+process has exited, so a run that finishes between two samples is reported as 0 MB rather than as
+small.
+
+**And do not sample at all.** The script above lived in a session scratchpad and was gone by
+§9.64, which had to rebuild it - and the rebuild read 0.0 MB for every model on its first run,
+because a program that finishes before the *first* sample defeats the no-sleep rule as
+thoroughly as sleeping does. The kernel keeps the peak for as long as a handle to the process is
+open, exited or not, so `GetProcessMemoryInfo` answers after `WaitForExit` with no loop and no
+race. That is what `scripts/measure_memory_model.ps1` does now, and it is in the tree rather
+than in a scratchpad for the reason this paragraph exists.
+
+### 9.53 Step 5af, first half: a call with no single callee still has an answer
+
+`raytrace.ts` reclaimed a quarter of what it allocated, and the reason is one line of §9.32's
+reasoning taken further than it goes.
+
+`OwnedReturnConsumptionPass` consumes the reference a callee's return added, and to do that it
+has to know that *this* callee retains. `calleeNameOf` therefore refuses a virtual call: the
+identifier on `ts.ThisVirtualSymbolRef` names the declaration the call was written against, not
+what the runtime class put in the slot, and consuming a reference an override never took frees
+live memory. The same refusal covered interface dispatch, which does not even reach that code.
+
+**But the question is answerable for a set.** A virtual call has no single callee and it does have
+a set of possible ones, and "does every candidate return owned" is exactly as safe as "does this
+callee return owned". Two candidate sets, one per dispatch shape:
+
+- **A class vtable slot:** every method in the module whose name after the last dot matches the
+  call's. An override is `<Subclass>.<same member>` by construction, so this is a superset, and a
+  superset is the safe direction - it costs precision only where two unrelated classes share a
+  method name and disagree, and the cost there is a leak.
+- **An interface slot:** the member name is *not* enough, because an interface method can be
+  implemented by an object literal, whose function is named for where it was written
+  (`Surfaces..feL166C18FH19436811`) rather than for the member it fills. Matching on the name
+  would miss it, and a missed candidate is the direction that frees memory nobody retained. The
+  vtables say it exactly: a class implementing `Thing` gets `Sphere.Thing..vtbl`, an object
+  literal gets `Thing.<hash>..vtbl`, and the interface's name is a whole dot-separated component
+  of both. The candidates are that slot in every vtable global naming the interface, and a slot
+  that is absent - not initialised from a symbol - makes the call unclassifiable rather than being
+  skipped.
+
+#### What it closed
+
+| shape | before | after | `none` |
+| --- | --- | --- | --- |
+| a method returning a new instance, 300k calls | 10.7 MB | 0.6 MB | 10.6 MB |
+| a method returning an object literal as an interface | 10.7 | 0.6 | 10.6 |
+| the same through an interface-typed variable | 10.6 | 0.6 | 10.6 |
+| `raytrace`'s `intersections` loop alone | 11.5 | 0.6 | 12.1 |
+| **`raytrace.ts`** | **82.9** | **43.9** | **117** |
+
+Reference counting now reclaims about **62%** of what `raytrace` leaks without it, against 29%
+before. Suite 2,617/2,617, and an ownership-verifier sweep over 200 corpus files reports what it
+reported before the change - two findings in `00break_continue_scope_exit.ts`, confirmed
+pre-existing by rebuilding with this pass stashed out.
+
+The remaining 43.9 MB is still the largest thing open, and it is spread rather than concentrated:
+cutting the reflection recursion out of `shade` leaves 42 against `none`'s 65, and cutting the
+natural-colour closure instead leaves 27 against 40. Both keep about a third, which is the shape of
+something every path does rather than one site.
+
+### 9.54 A call through a value, and the question the module answers
+
+The shape §9.53 left is the one `calleeNameOf` calls unanswerable outright: a call through a
+plain value - a callback handed to `reduce`, a function-typed field, a callee chosen by a
+condition. There is no identifier, no vtable, and no member name to ask about.
+
+There is still an answer, and it is about the module rather than the call: **if every function here
+that hands back a heap value retains it first, then every call that returns one hands back a
+reference, whatever it dispatched to.** That is the +1 convention of §9.24 stated over the whole
+module. One unclassified function anywhere - including an external one, whose returns cannot be
+seen at all - switches it off for every indirect call, which is the conservative direction.
+
+```typescript
+function makeA(k: number): Box { return new Box(k); }
+function makeB(k: number): Box { return new Box(k + 1.0); }
+
+for (let i = 0; i < 300000; i++) {
+    let f = (i % 2 == 0) ? makeA : makeB;   // no callee to name
+    let b = f(1.0);
+    sink += b.v;
+}
+```
+
+`rc` 10.6 MB before, 0.7 after, against `none`'s 10.6 - checked against a build with the rule
+stashed out, which is the only way to attribute it. Suite 2,617/2,617.
+
+**It is worth almost nothing on `raytrace`**: 43.9 MB to 43.5. The rule fires there - `reduce`
+and `getNaturalColor` both consume their results afterwards - and the memory does not move, which
+says those particular references were not what that program is holding. It is kept for the class it
+closes rather than for the number, and the number is recorded here so the next reader does not
+re-run the experiment.
+
+#### Where raytrace's remaining 43 MB is not
+
+Enough has been ruled out to be worth writing down. Replacing `reduce` with a hand-written loop
+over the same closure makes it **worse** (79.1 MB), so `reduce` is not it. Cutting
+`getNaturalColor` out entirely leaves 5.7 against `none`'s 40 - 86% reclaimed, against 63% for
+the whole program - so what is left is inside that function, which per call builds a closure over
+six captured parameters, six heap cells to hold them, a capture box, and a colour per light. The
+per-shape benchmarks for each of those pieces come back flat under `rc`, so it is their
+combination, or their sheer number, rather than any one of them.
+
+#### A compiler bug found on the way, unrelated to any of this
+
+```typescript
+function f(a: Color): Color {
+    const g = (k: number) => { return new Color(a.r + k); };   // error
+    return g(1.0);
+}
+```
+
+*'ts.Load' op using value defined outside the region*, in every memory model. Reading a captured
+variable inside the arguments of a `new` expression fails MLIR's region isolation; hoisting the
+same expression into a local first compiles. Nothing to do with reference counting - it is what
+stopped two of the benchmarks above from being written the obvious way.
+
+### 9.55 Discovery has to walk `new`'s arguments (the bug above, fixed)
+
+A lambda captures what its body reads, and what its body reads is established by the discovery
+pass - the `dummyRun` in `mlirGenFunctionLikeDeclaration`, whose `resolveIdentifierAsVariable`
+fills `passResult->outerVariables` every time it resolves a name that lives outside the function
+being discovered. Anything that pass never visits contributes no captures.
+
+`NewClassInstance` had a shortcut for exactly that pass:
+
+```cpp
+if (genContext.dummyRun)
+{
+    // just to cut a lot of calls
+    newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(false));
+    return newOp;
+}
+```
+
+It returns before `evaluateProperty(CONSTRUCTOR_NAME, ...)` - which is the expensive part it means
+to cut - but it also returns before `mlirGenOperands(arguments, ...)`, so **the constructor
+arguments were never walked at all**. A variable read only inside them was never registered as
+captured, the lambda's real body then read the enclosing function's own value, and `ts.Func` is
+`IsolatedFromAbove`, so the module failed to verify.
+
+The fix keeps the shortcut and walks the arguments anyway, discarding both the values and any
+errors (the errors are the shortcut's own - no constructor resolved, no receiver types - and
+discovery is best-effort by construction). The ops the walk creates land in the throwaway dummy
+function.
+
+Two things this says beyond itself:
+
+- **A "just to cut calls" shortcut in the discovery pass is a semantic decision, not a
+  performance one.** Discovery is the only place captures are found, so anything skipped there is
+  not slower, it is missing. The sibling paths were checked: `NewClassInstanceByCallingNewCtor`
+  (interface and construct-signature `new`) and `NewArray` both walk their arguments
+  unconditionally; the class path was the only one with the gap.
+- **The control case is what makes the test a test.** Reading the captured variable anywhere else
+  in the same lambda - one extra `let seen = a;` - registers the capture and the `new` arguments
+  then compile fine. So a test whose lambda touches the variable twice proves nothing, and
+  `00capture_in_new_arguments.ts` reads each captured thing *only* inside the `new`. Against the
+  unfixed compiler 8 of its 9 cases fail; the 9th is that control.
+
+Verified across `gc`, `rc` and `none`, at `-O0` and `-O3`. Suite 2,623/2,623.
+
+### 9.56 An awaited result travels through a slot, not through `async.value` (5ab)
+
+5ab said "passing an argument to an awaited async function does not compile". That was wrong about
+the cause, and wrong about which programs it stops. The condition is the awaited function's
+**result type**:
+
+| result | before |
+| --- | --- |
+| `i32`, `i64`, `f32` | compiles |
+| `number`, `string`, `boolean`, a class, an array | `failed to legalize operation 'async.runtime.load'` |
+
+Arguments never mattered. `await withDefault()` compiled and `await twice(3.0)` did not, and what
+separates them is that one returns an `i32` and the other a `number` - `00async_await.ts`'s
+`f(a = 1)` happens to return the literal's `i32`, which is the only reason the suite had a passing
+async test at all.
+
+**Root cause.** `await` built an `async.execute` whose result was the awaited expression's type,
+so the value travelled as `!async.value<!ts.number>`. In `transform.cpp` the pass order is
+`createConvertAsyncToLLVMPass()` **then** `createLowerToLLVMPass(compileOptions)` - MLIR's async
+conversion runs first, and it converts an async value's payload with its own `LLVMTypeConverter`,
+which has none of the TypeScript conversions that `populateTypeScriptConversionPatterns` adds to
+the later pass. A builtin payload passed straight through; anything from this dialect had no
+conversion and `RuntimeLoadOpLowering` refused it.
+
+**The fix.** A token carries no payload, so give the async value nothing to convert: the awaiting
+function allocates a slot, the region stores into it, and `async.await` on the token is what orders
+that write before the read. Outlining already passes values the region uses from above in as
+arguments, so the slot needs no special handling. `!async.value<T>` no longer appears in anything
+this compiler emits.
+
+**And under `rc` the slot has to own what it holds.** Everything the awaited expression produced is
+a temporary of the region's block, so §9.50's end-of-block release frees it as the region ends -
+before the awaiting function loads the slot. Same two cases as a local's declaration: a value that
+already carries a reference hands it over (`__owned_consumed`), anything else is retained, and the
+awaiting scope gives that reference back. The attributes go on only if the store actually
+happened, because an owned slot is released whatever is in it and a slot nothing wrote holds
+whatever the frame held before.
+
+Worth keeping from this one:
+
+- **The reported condition of a bug is a hypothesis, not a datum.** "Passing an argument" was
+  recorded from two programs that differed in more than one way. Ten minutes of a type-by-type
+  table said the argument had nothing to do with it - and the fix for what it actually was is
+  unrelated to arguments entirely.
+- **`-O0` correct and `-O3` garbage is not an optimiser bug, it is a lifetime bug.** The class case
+  printed the right answer at `-O0` with the release already in the wrong place; nothing had
+  reused the block yet. The test allocates over it on purpose - the standing rule that a freed
+  block keeps its contents until something else takes it, applied to an await.
+
+`00async_result_types.ts` covers each result type, both directions of the argument question, an
+await inside an async function, and three results read after a churn loop. Suite 2,629/2,629.
+
+### 9.57 The collector was allocating without a lock (5ac)
+
+`-mm=gc` faulted on a long chain of awaits - about 1 run in 4 at 200k coroutine frames, never at
+50k, never under `rc` or `none`. It had been read as something about collection, and it was not.
+
+**Evidence, in the order it narrowed:**
+
+| probe | result |
+| --- | --- |
+| `rc` and `none`, 200k awaits | 0 failures in 6 each - `gc` only |
+| `GC_INITIAL_HEAP_SIZE=1G` (nothing needs collecting) | unchanged, 2 in 8 |
+| resume the coroutine inline instead of on the pool | 0 in 10 |
+
+A heap large enough that no collection happens changes nothing, so the collector is not reclaiming
+a live frame; taking the pool thread away fixes it, so the second thread is the whole story.
+
+**Root cause.** Boehm does not lock its allocator until it is told the program is multi-threaded.
+From `include/private/gc_locks.h`, `set_need_to_lock()` is `GC_need_to_lock = TRUE`, and until
+that runs `LOCK()`/`UNLOCK()` expand to nothing. Nothing had run it: the worker threads are
+`llvm::DefaultThreadPool`'s plain `std::thread`s, created by neither `GC_CreateThread` nor
+anything else the collector knows about. So a worker freeing a coroutine frame and the awaiting
+thread allocating walked the same free lists at once, unlocked.
+
+`GC_allow_register_threads()` is the call that sets it (`win32_threads.c`: `GC_start_mark_threads()`
+then `set_need_to_lock()`), and it is also the permission a thread needs before it may register
+itself. Both halves are wanted, and they are separate: **adding the call alone took 200k awaits
+from 1 failure in 4 to none in 32, with the workers still unregistered.** Registration is the
+other half - an unknown thread is not suspended during a collection and its stack is not scanned,
+so a frame held only in that worker's registers can be freed underneath it.
+
+**Where the call goes.** In `injectInit`, beside `GC_init`, because an ahead-of-time build links
+the collector's own `GC_init` and there is no hooking that; the GC pass runs only for `-mm=gc`,
+which is exactly when this is wanted. `GC_enable_threads` is the name, defined in both copies of
+the async runtime - the one inside `TypeScriptRuntime.dll` for the JIT and
+`TypeScriptAsyncRuntime.lib` for AOT - over the shared `AsyncGCThreads.h`.
+
+Two things this cost, and both are worth keeping:
+
+- **A first attempt broke every `rc` and `none` await.** The workers registered themselves guarded
+  by `GC_is_init_called()`, which looks like "is this a `gc` program" and is not: the collector
+  initializes itself on first use, so it answers yes in a program that never meant to collect
+  anything - and `GC_register_my_thread` then aborts, because `GC_allow_register_threads` had not
+  run. The guard has to be **our own flag, set by the call we make**, never the collector's idea of
+  whether it woke up. Caught because the new test runs under all three models; a `gc`-only test
+  would have shipped it.
+- **The runtime is two files, not one.** `lib/TypeScriptRuntime/AsyncRuntime.cpp` and
+  `lib/TypeScriptAsyncRuntime/AsyncRuntime.cpp` are near-duplicates, JIT and AOT respectively.
+  Fixing one leaves the other, and the suite says so - the JIT tier passed while `test-compile-*`
+  failed with `0xC0000005`.
+
+**One more thing the injected call cost, and it is worth stating plainly.** A JIT run resolves
+external symbols from the export tables of what is loaded, and `GC_enable_threads` lives in
+TypeScriptRuntime.dll - which a JIT run only has if it was passed with `--shared-libs`. The call
+is in `main`, so for one build **every** bare `tslang --emit=jit` under `gc` failed to
+materialize, async or not. The suite never saw it: its runner passes the DLL. `runJit` now stands
+the symbol in when nothing else provides it - and the stand-in only lets the program run, it does
+not carry the fix, so a bare JIT is still exposed to the race exactly as it was before. Two
+mechanisms had to be told apart to place it: `DynamicLibrary::AddSymbol` is found by
+`SearchForAddressOfSymbol` but **not** by the process generator the JIT resolves through, so the
+obvious placement compiles, looks right, and changes nothing; the definition has to go into the
+JITDylib's `absoluteSymbols` map beside the CRT overrides. And it must be conditional, because a
+JITDylib definition beats a generator - an unconditional one would shadow the real
+`GC_enable_threads` whenever the DLL *is* present.
+
+`00async_gc_threading.ts` is 250k awaits that allocate on both sides, so the two threads are in
+the allocator together rather than taking turns. Against the unfixed runtime it faults 7 runs in
+20 at `-O3` and 6 in 10 at `-O0`; smaller shapes are much weaker (60k iterations: 2 in 20). It is
+a race, so it is a rate - but it is a rate that two tiers sample on every run. Suite 2,635/2,635.
+
+### 9.58 `for...of` over a literal array does not leak (5aa)
+
+5aa said `rc` held about a tenth of what iterating a literal array allocates: 15.6 MB at 900k
+iterations against `gc`'s 4.1 and `none`'s 155.9. Re-measured on the AOT harness (§9.52), with the
+default library, at `-O3`:
+
+| iterations | rc | gc | none |
+| --- | --- | --- | --- |
+| 300k | 0.7 | 2.8 | 49.0 |
+| 900k | 0.6 | 2.6 | 145.2 |
+| 3M | 0.7 | 2.8 | 482.3 |
+| 900k, strings | 0.7 | 2.7 | 145.2 |
+
+Flat across a tenfold range while `none` climbs to 482 MB, and **below `gc`** at every size, which
+is what a reference count should look like on a value nothing outlives. Whether some later slice
+closed it or the 15.6 MB was an artifact of the JIT method cannot be told apart now; either way
+the figure goes with the rest of the withdrawn ones.
+
+Two notes for whoever measures next:
+
+- **`--no-default-lib` makes this shape measure nothing.** Without the library the optimiser
+  elides the whole loop and `none` reports 0.7 MB - the same as `rc`, and equally meaningless. The
+  harness now takes `-WithDefaultLib` for cases like this. It is the standing rule in its
+  sharpest form: **if `none` is flat, there is no benchmark here.**
+- The same rule kills the object version - `for (const p of [new P(1), new P(2)])` elides under
+  every model, `none` included, so it says nothing about ownership.
+
+### 9.59 What raytrace's remaining 43.5 MB is, measured rather than guessed (5af)
+
+Two things measured on the AOT harness, both of which narrow 5af without closing it.
+
+**It is a constant fraction, not a fixed set.** Rendering the same scene at four sizes:
+
+| pixels | rc | gc | none | rc / none |
+| --- | --- | --- | --- | --- |
+| 64x64 | 3.4 | 2.7 | 8.0 | 0.43 |
+| 128x128 | 11.5 | 2.8 | 29.9 | 0.38 |
+| 256x256 | 43.5 | 1.3 | 117.0 | 0.37 |
+| 512x512 | 172.4 | 2.9 | 465.8 | 0.37 |
+
+`rc` grows exactly with the pixel count and holds a flat **37% of everything the program
+allocates**. So this is not a set of objects retained once; it is a share of every pixel's work -
+some allocation site, or class of them, that is never released at all.
+
+**It is not the closure.** §9.54 recorded that a hand-written loop over the same closure is worse
+(79.1 MB) and left the closure itself under suspicion. Replacing `addLight` with an ordinary
+method taking its six captures as parameters - no closure, no capture box, no cells, same
+arithmetic - gives **`rc` 43.5 MB, unchanged to the decimal**, while `none` falls 117 → 88.2. So
+the closure accounted for a quarter of what the program allocates and **none** of what it holds.
+Reference counting reclaims closures here exactly as it should.
+
+That leaves the per-pixel object traffic: `Vector` and `Color` results, the `{ start, dir }` ray
+literals, and the `Intersection` object literals that `intersect` returns through an interface.
+The obvious next measurement - make `Intersection` a class and see what moves - **cannot be taken
+yet**: that two-line edit segfaults the compiler (5aj).
+
+### 9.60 A return written inside an `if` (5af, 5aj)
+
+> **Both numbers below are sampled ones - see §9.72.** Every figure in §9.52 through §9.61 was
+> taken with the spin-on-`PeakWorkingSet64` harness, which reports less than half the real peak
+> on `raytrace` and wanders between runs. The fix here is real and the shape of the improvement
+> is real; the magnitudes are not. Measured with the in-tree script, `raytrace` at this commit is
+> **9.2 MB**, and 8.9 today. Do not use 6.2 or 43.5 as a baseline without re-measuring.
+
+`raytrace` held 43.5 MB against `gc`'s 2.8 and had done for the whole arc. It is **6.2 MB** now -
+95% of what `none` leaks, reclaimed - and the whole of the difference was one shape.
+
+**The bug.** §9.30 releases a value nothing receives at the end of the block that produced it.
+The end of the block is not the only way out of it: a `return` written inside an `if` leaves from
+a nested region and never reaches that release. `releaseDiscardedTemporaries` scanned only the
+value's own block for an exiting op, found the tail `ts.ReturnVal`, and put the release there -
+correct for the path that falls through and nothing at all for the path that returns.
+
+`getNaturalColor`'s inner function is exactly that shape, and it runs per light per pixel:
+
+```typescript
+let neatIsect = this.testRay({ start: pos, dir: livec }, scene);   // a ray, nothing receives it
+let isInShadow = (neatIsect === undefined) ? false : (neatIsect <= Vector.mag(ldis));
+if (isInShadow) {
+    return col;                                                    // ray lost here
+}
+```
+
+The fix walks the ops that follow the definition in its block and puts a release before every
+`return` nested inside them. Returns only, and the walk is its own argument: everything it reaches
+is inside a **sibling** of the definition, so a `break` or `continue` found that way targets a
+loop that does not contain the definition - control comes back into the block and runs the
+end-of-block release too, and releasing at both would give the same reference back twice. A
+return leaves for good wherever it is written. (The reverse case - a temporary in a loop *body*
+whose iteration ends in a `break` - still leaks; distinguishing the two needs the jump's target
+loop rather than its position, and a labelled `break` can leave more than the nearest one. Filed
+as 5ak.)
+
+**How it was found, which is the part worth keeping.** By measuring, one cut at a time, on the
+program itself rather than in miniature. Every synthetic version of these shapes came back flat -
+the optimiser elides an allocation whose escape it can see, so `none` reported the same 0.7 MB as
+`rc` and the benchmark measured nothing. Cutting the real program does not have that problem:
+
+| variant | rc | none |
+| --- | --- | --- |
+| whole program | 43.5 | 117.0 |
+| the `addLight` closure replaced by a plain method | 43.5 | 88.2 |
+| `Intersection` a class instead of a literal through an interface | 43.5 | 117.0 |
+| `Ray` a class instead of a literal | 50.0 | 121.4 |
+| shading math removed, shadow test kept | 42.3 | 87.2 |
+| shadow test removed, shading math kept | 5.7 | 40.1 |
+| the shadow test's result bound but never used | 5.7 | 73.5 |
+| the shadow test's result used inline, not bound | 5.7 | 73.5 |
+| bound, used, and an early `return` under it | 23.5 | 73.5 |
+
+The first three rows are what the item had been suspecting for three sections, and each of them
+moved `none` without moving `rc` at all - which is the signature of "allocates, but not what
+leaks". The last three isolate it to one line, and to the `return` rather than the value: the
+same call with the same binding leaks only when something returns out of the block afterwards.
+
+Two general things:
+
+- **`rc` holding a constant FRACTION of what a program allocates, flat across problem sizes, is
+  what a missing release on a common path looks like.** §9.59 measured 37% at every image size and
+  read it as "a share of every pixel's work"; that was right, and it was one line.
+- **When `none` does not move, the change is not about allocation.** Three of the rows above are
+  perfectly good programs that answer a question nobody asked.
+
+**5aj, found on the way and fixed first, because it blocked the third row.** The return statement
+reported "No return value" and then carried on to cast and retain it - and reading a null
+`mlir::Value`'s type faults with no diagnostic at all (exit `0xC0000005`, silence). A discovery
+pass reaching there is ordinary: a return expression can depend on something not registered yet,
+and the statement loop comes back for it. So the report has to be conditional and the failure
+unconditional; it was the other way round. Fixing that turned the crash into a proper diagnostic,
+which then pointed at a second gap of §9.55's kind - a call whose callee cannot be resolved during
+discovery returned a placeholder **without walking its arguments**, so `scene`, read nowhere else
+in that closure, was never captured. Same shortcut, same fix, second place: `new` was the first.
+
+**One change in that commit is defensive and did not earn its place by measurement, which is worth
+saying rather than leaving implied.** `mlirGenReleaseOwned` and `mlirGenDisposable` ended their
+outward walk at the first scope with no list of its own; that guard is the wrong shape - a scope
+that owns nothing still stands between a `return` and the scopes that do - so it was hoisted out.
+No program has been found that needs it. Every block scope is given a list when it is created, so
+the walk was reaching the enclosing scopes anyway: an owned local plus a `return` out of an `if`
+measures 0.6 MB against `none`'s 13.9 either way, and `raytrace` is 6.2 either way.
+
+The first control run said otherwise - 13.9, reclaiming nothing - and it was wrong: it disabled the
+outward walk **entirely** rather than restoring the original nesting, which is a strictly worse
+build than the bug. Restoring the actual original is what gave the identical numbers. **A control
+has to be the thing it claims to be**; "turn the fix off" and "put the bug back" are not the same
+edit, and the difference here was the whole result.
+
+Suite 2,641/2,641, corpus under all three models in both tiers - which is the guard against the
+new release being a second one. `00owned_early_return.ts` covers the shapes; a leak cannot be
+asserted, so the cases build over the memory they might have freed and read it back.
+
+### 9.61 Which jumps leave the block (5ak)
+
+§9.60 covered `return` and deliberately left `break` and `continue` alone, because whether one of
+them leaves the block holding a temporary decides between a leak and a double release, and
+position alone does not answer it. It is answerable, so here it is answered.
+
+**Both directions are real.** A discarded temporary in a loop *body* whose iteration ends in a
+`break` is lost - the release at the end of that body never runs for that iteration. Measured
+with a maker behind an interface so the optimiser cannot elide it, one iteration in four ending in
+a break: **13.9 MB against `none`'s 53.2**, and 0.6 after. But a temporary in the block that
+*contains* the loop is a different case entirely: the `break` leaves only the loop, control comes
+back, and the end-of-block release runs - a release at the jump as well would give the same
+reference back twice.
+
+**The question, and how it is asked.** Walk from the jump outwards to the op that sits in the
+temporary's block, asking at each level whether it catches the jump: an unlabelled `break` is
+caught by the nearest enclosing loop or `switch`, an unlabelled `continue` by the nearest
+enclosing loop, and a labelled one by whatever carries that label - which may be several levels
+further out. Nothing on the way means the jump is caught beyond the block, so the block is inside
+the loop being left. That last part is why position cannot stand in for it:
+`outer: while (..) { while (..) { break outer; } }` leaves two loops from inside one.
+
+**How it is verified, given that a double release is invisible at run time.** By reading the IR
+rather than the numbers: the count of `ts.Release` in each shape says which way the predicate
+answered.
+
+| shape | releases |
+| --- | --- |
+| temporary in the loop body, `break` | 2 - one at the jump, one at the end of the body |
+| temporary in the loop body, `continue` | 2 |
+| temporary in the inner body, `break outer` | 2 |
+| temporary above the loop, `break` below it | 1 - end of block only |
+| temporary above the loop, `continue` below it | 1 |
+
+Those five are in `00owned_early_return.ts`, and the last two are the ones that matter: a test
+cannot observe the double release they guard against - the second decrement reads a freed block's
+refcount and usually just returns - so the IR count is the evidence, and the corpus under `rc` and
+`none` in both tiers is the backstop. Suite 2,641/2,641.
+
+### 9.62 The two findings the verifier had been reporting all along
+
+`--verify-ownership` had two standing findings, both in `00break_continue_scope_exit.ts`,
+confirmed pre-existing when they first appeared (section 9.53) and left open since. They are the
+two nested `using` scopes - `bothScopes`, and the labelled `labelledContinue`:
+
+```
+00break_continue_scope_exit.ts:68:19: error: ownership: this slot takes a reference that some
+path out of the function never gives back
+```
+
+**What the path is.** A scope's cleanup region runs while an exception is already unwinding. The
+disposal in it is a call, and `TryOpLowering` marks every call in a scope's body with that scope's
+landing pad - which reaches into the cleanup regions of the scopes nested inside it, because those
+sit in its body. The inner cleanup's `[Symbol.dispose]()` therefore became an invoke unwinding to
+the *outer* cleanup, and the `ts.ReleaseSlot` written after it was stepped over. The outer cleanup
+releases its own slot and knows nothing of the inner one, so the reference is gone:
+
+```
+^bb8:                                    // the inner scope's cleanup
+  ts.Invoke(dispose, inner)[^bb9, ^bb12] // ^bb12 is the OUTER cleanup
+^bb9:
+  ts.ReleaseSlot(inner)                  // not on the ^bb12 edge
+^bb12:
+  ts.CallInternal(dispose, outer)
+  ts.ReleaseSlot(outer)                  // and never inner
+```
+
+**The fix is to remove the edge, not to add a release.** `^bb12` above is the function's outermost
+cleanup, and it has always used a plain call - nothing encloses it, so there was no landing pad to
+mark it with. Every cleanup now agrees with the one that was already right: a call written inside
+a nested cleanup region is skipped when a scope marks its body, so it stays a plain call.
+`isInsideNestedCleanupRegion` in `LowerToAffineLoops.cpp` is the whole change. The price is the
+C++ rule - a disposal that throws while unwinding terminates instead of continuing outwards - and
+it is a price only in principle: throwing from a `[Symbol.dispose]()` does not work at all today.
+A single, un-nested `using` whose disposal throws fails to JIT on a missing `??_7type_info@@6B@`
+in every model, which is why no test could be written for the path this fixes.
+
+> **The premise is false — see §9.65.** A throwing disposal with something to catch it runs fine;
+> the case that produced this claim had nothing to catch it, and a plain `throw 1` with no `using`
+> gives the identical exit. `??_7type_info@@6B@` appears nowhere. So the price above is real and
+> observable — the disposal terminates the process at `0x80000003` — and it diverges from TC39's
+> `SuppressedError` semantics. Still a defensible choice; it was just not a free one.
+
+**The first attempt was the obvious one and it was wrong.** Wrap the cleanup's disposals in a
+catch-less `TryOp` of their own whose cleanup gives the references back - correct by construction,
+and it silenced the verifier. It also failed 24 tests. A `TryOp` nested inside a `TryOp` is the
+construct section 9.11 records as already broken, and `00try_using_catch.ts`'s own comment says
+so in as many words. **The machinery a fix wants to reuse may be the machinery a known bug is
+about**; the test that fails will say so, but only after the change is built.
+
+**Two adjacent defects, read off the same IR and deliberately not fixed here.** Both are about the
+cleanup region standing in for a scope exit it cannot see the progress of, and neither is a
+refcount question:
+
+- The cleanup's landing pad is also the unwind target of the *body's* disposal, so a disposal that
+  throws in the body is followed by the cleanup disposing the same variable a second time.
+- It is the unwind target of the `using` initializer's own `new` as well, so a constructor that
+  throws leaves the cleanup disposing a slot nothing was ever stored into.
+
+Both are fixed in section 9.63, and both turned out to be testable - the "no test could be
+written" above is about the path *this* section fixes, not about those two.
+
+**The verifier now runs in `ctest`.** Both of its real findings - the break/continue scope-exit bug
+of section 9.18 and this pair - came from a sweep run by hand that nothing repeated, which is why
+this pair sat open as long as it did. `verify-ownership.cmake` is that sweep, over every corpus
+file, in eight shards of about four seconds: `test-ownership-verifier-0..7`. It is the only check
+in the suite that reads the IR rather than the program's output, and that is exactly why it earns
+its place - a reference nobody gives back changes no answer, so nothing else here can see one.
+Suite 2,641 -> 2,649, all green.
+
+### 9.63 How far the block got (the two defects 9.62 left open)
+
+Section 9.62 read both of these off the IR, named them, and left them: a cleanup region standing
+in for a scope exit whose progress it cannot see. Both are now fixed, and both turn out to be
+observable, which 9.62 did not expect.
+
+**They are not the path 9.62 could not test.** That section closed with "no test could be written
+for the path this fixes", because a `[Symbol.dispose]()` that throws while unwinding fails to JIT
+on a missing `??_7type_info@@6B@`. That is true of the path *9.62* fixed - a disposal inside a
+nested cleanup region. Neither of these two is that path. One needs a constructor that throws and
+the other a disposal that throws on the **normal** exit, and both of those work today:
+
+| | before | after |
+| --- | --- | --- |
+| `using r = new Boom(true)`, constructor throws | `0xC0000005` | disposes nothing, throw reaches the caller |
+| `[Symbol.dispose]()` throws on normal exit | `0x80000003` | disposes once, throw reaches the caller |
+
+The first reads a vtable out of whatever the frame happened to hold, because the cleanup disposes
+a slot the initializing store never reached. The second is the double disposal: the body's own
+disposal is a call in the try body, so it unwinds to that same cleanup, and the cleanup disposes
+the very same variable again - the second throw arriving while the first is still unwinding, which
+terminates.
+
+**One guard answers both, because they are one question asked twice.** A boolean beside the
+hoisted slot, declared in front of the `TryOp` with the slot so the cleanup can see it, set false
+there and true only after the initializing store; every disposal reads it, clears it, and disposes
+only if it was set. Cleared **before** the call rather than after it, which is the whole of the
+first defect - after the call is never reached when the call is what threw. `mlirGenDisposeOne` is
+the change; a `using` in a plain block has no `TryOp`, no cleanup, no second visitor, and so no
+guard.
+
+```
+%5 = ts.Variable()                    // the using slot, hoisted
+%7 = ts.Variable(false)                // its guard, hoisted beside it
+ts.Try {
+  %11 = call @Boom..new; call @Boom.constructor  // throws here -> cleanup, guard still false
+  ts.Store(%11, %5)
+  ts.Store(true, %7)                   // armed only now
+  ...
+  ts.If(load %7) { store false, %7; call dispose }   // throws here -> cleanup, guard now false
+  ts.ReleaseSlot(%5)
+} cleanup {
+  ts.If(load %7) { store false, %7; call dispose }
+  ts.ReleaseSlot(%5)
+}
+```
+
+`ts.ReleaseSlot` needs no guard and gets none: the reference is owed exactly once whichever way
+the block is left, and an owned local hoisted in front of a `TryOp` already starts as null under
+`rc` (`VariableOpLowering`), which the release routines treat as nothing to do. The two debts are
+different debts - a disposal is a call the program wrote, a release is a count - and only one of
+them is idempotent in the wrong direction.
+
+**`00using_unwind_progress.ts` is the test, and every case in it was checked against a build with
+the fix taken back out** - not with the fix switched off, which 9.60 records as a different and
+worse build, but with the three files restored to their committed state. Six cases, three models:
+
+| case | control build | with the fix |
+| --- | --- | --- |
+| normal exit disposes once | passes | passes |
+| throw after the declaration, cleanup disposes | passes | passes |
+| constructor throws | `0xE06D7363` / assert | passes |
+| second of two constructors throws | `0x80000003` / assert | passes |
+| disposal throws | `0x80000003` | passes |
+| the same in a hand-written `try` body | `0xE06D7363` / assert | passes |
+
+The first two are controls in the strict sense: they are what a fix that simply skipped the
+cleanup would break, and they pass on both builds. The fourth is why "skip everything" is not the
+fix - one declaration completed and owes a disposal, the next never existed. And the `none` column
+is the reason to run all three models rather than one: where `gc` and `rc` crash, `none` reaches
+the assertion and names the case, because an uninitialised slot holds something different under
+each allocator. Same bug, three faces - the pattern of section 9.55.
+
+Suite 2,649 -> 2,655, all green, ownership verifier included. Six tests: the file's four named
+entries, plus the two ahead-of-time corpus entries the loop generates for it under `rc` and
+`none` - its JIT entries under those models are named already, so the loop skips them.
+
+### 9.64 Closing 5o by measuring it rather than by writing more of it (5o)
+
+5o was left open on 2026-09-04 with three specific claims. All three are now false, two of them
+because §9.46 and §9.53 closed them the day after the item was written and nobody went back to
+its text. This section is the measurement that retires it.
+
+**The instrument.** A counter in `OwnedReturnConsumptionPass` over every call whose result owns
+heap memory: how many are refused, and which of the four answers refused them - a named callee,
+the closed-world rule, the virtual candidate set, the interface candidate set. Plus an upper
+bound, `virt_exact_would_pass`: would this virtual call pass if the candidate set were exactly
+the declaration named on the ref? That is what a *perfect* override set could buy, and it is
+deliberately not sound - it is a ceiling, not a proposal. Swept over all 261 corpus files that
+compile alone at `--opt --opt_level=3 -mm=rc`.
+
+| 5o's claim | measured |
+| --- | --- |
+| "it buys 2.6% of `raytrace`" | **0%.** `raytrace` refuses 0 of its 80 owning calls |
+| "doing it properly needs the callee's override set" | worth **2 calls in the whole corpus**, both cross-module |
+| "every `new C(...)` through such an interface leaks one instance" | does not reproduce; §9.53's interface half covers it |
+
+The third was checked on the harness rather than on the text: a virtual method returning a new
+instance, an interface method returning one, and `new C(...)` through a constructor interface all
+measure **4.1 MB against `none`'s 13.4** at 300k iterations, which is `gc`'s 5.7 beaten rather
+than matched.
+
+**The candidate-set worry was the wrong worry.** §9.53 chose a superset - every method in the
+module sharing the call's member name - and recorded the precision cost as "two unrelated classes
+share a method name and disagree". Three attempts to build that case all failed to leak, each for
+its own reason worth knowing: a call with no override is not virtual at all and never consults the
+set; a method returning a field still retains on the way out, so it *does* return owned; and a
+generator method's wrapper returns `new <state object>`, so it classifies as owning too and the
+generator exclusion never reaches it. The ceiling column then said why - across 261 files a
+precise override set would change **two** decisions.
+
+**What is actually left is cross-module, and it is not a classification problem.** Every virtual
+and interface refusal in the corpus is in an `import_*` file - eleven virtual, five interface,
+zero anywhere else:
+
+```
+ts.Func @M.Animal.speak !ts.func<...> {
+} {export, sym_visibility = "private"}     // imported: no body to read
+```
+
+`functionReturnsOwned` declines an empty body, so one imported method poisons the candidate set
+for its whole member name and every `.speak()` in `import_class_extends.ts` keeps its string.
+An imported tslang function is distinguishable from a foreign one - it carries `export` where a
+`declare`d C function carries nothing - so the *classification* is easy. What is not easy is that
+consuming its result is only sound if the module that defines it was built reference-counted, and
+that is §4's question, not this one. §9.7 settled the policy for the case it can see: a DLL
+carries `__tsmm_<model>_...`, a mismatch warns, and the agreed answer is to allow the link and
+leak rather than double-free. A statically linked second module carries no marker at all, because
+the import is resolved by re-parsing that module's *source* before any artifact of it exists.
+
+So the residue is filed where it belongs rather than left under 5o:
+
+5al. **A virtual or interface call on an imported class is never consumed.** Sound to fix only
+   once a link can guarantee both sides were built reference-counted; today it cannot, and §9.7's
+   agreed policy is to leak across a mixed link rather than risk a double free. Making a mixed
+   static link *fail* would make it sound, and that reverses a recorded decision, so it is a
+   question rather than a task. Dominated in any case by the same section's larger instance: the
+   default lib is GC-built, so under `-mm=rc` everything the standard library allocates crosses a
+   boundary and leaks.
+
+**5o is done.** Not by this section - by §9.46, §9.53 and §9.54, on 2026-09-04 and 2026-09-05.
+What this section adds is the evidence, and the lesson that an item's own text is a claim about
+the compiler as it was, not as it is: three sessions of work went past it without re-reading it.
+No code changed here.
+
+### 9.65 Re-reading the open claims (the audit 9.64 asked for)
+
+§9.64 closed 5o by discovering its text described a compiler that no longer existed, and ended
+with the obvious follow-up: the other open items assert things too, and nothing re-checks them.
+This is that sweep. Seven claims, each turned back into the one-line experiment that produced it.
+**Five were stale. One was mischaracterised in a way that matters. One holds.**
+
+| claim | where | verdict |
+| --- | --- | --- |
+| `catch (e: int) { using r = new Res(); }` still crashes | §9.17 | **stale** - runs in all three models |
+| throwing from a `finally` still crashes the compiler | §9.17 | **stale** - runs, and the throw is caught |
+| a heap local in a `catch`/`finally` is not owned, and leaks under `rc` | §9.17 | **stale** - reclaims identically |
+| throwing from a `[Symbol.dispose]()` "does not work at all today" | §9.62 | **false** - it works |
+| ...so the terminate price is "only in principle" | §9.62 | **false** - it is real and observable |
+| reading a catch variable reads 0 | §9.29 | **open, and worse than that** |
+| `--di --opt_level=0` emits no LLVM IR for an `rc` program | §9.31 | **holds** |
+
+**The leak that was not there.** §9.17 kept `blockIsInsideCatchOrFinally` and named its second
+cost: `localTakesOwnership` consults the same predicate, so a heap local declared in a catch
+clause is unowned and leaks. Measured behind an interface so nothing elides it, 300k iterations:
+the local declared *inside* the catch reads **4.2 MB against `none`'s 13.4**, and so does the
+same allocation one scope out. There is no leak to close, because §9.30's discarded-temporary
+pass consumes the call's reference whether or not MLIRGen made the local an owner. Two
+mechanisms, one debt, and the later one covers the case the earlier one declines.
+
+**§9.62's price is real, which changes what it cost.** That section accepted "a disposal that
+throws while unwinding terminates instead of continuing outwards" on the stated grounds that
+throwing from a `[Symbol.dispose]()` does not work at all, so the price was theoretical. It is
+not: a `using` whose disposal throws, with something to catch it, prints `body / caught / done.`
+and exits 0. The failing case that produced the original claim was a throwing disposal with
+*nothing* to catch it - and a plain `throw 1` with no `using` anywhere gives the identical
+`0xE06D7363` and exit 127, because an uncaught exception terminates a process.
+
+> **One correction to this paragraph, from §9.66's work.** "`??_7type_info@@6B@` appears nowhere"
+> was measured with `--shared-libs=TypeScriptRuntime.dll`, and is too strong. Without that
+> library *every* throwing program fails to JIT on that symbol, throwing disposal or not - which
+> is almost certainly what §9.62 hit. The correction that stands is the attribution: the symbol
+> has nothing to do with disposals. So the price is now measurable, and it is paid: an inner `using` whose disposal
+throws while an exception is already unwinding terminates at `0x80000003` in every model. Worth
+saying plainly, because TC39's explicit-resource-management proposal specifies `SuppressedError`
+there - the original error preserved, the disposal's error attached - and terminating is not that.
+The C++ rule §9.62 cited is a defensible choice; it is a choice, and it was made on a premise that
+was not true.
+
+**The catch-variable bug is JIT-only, and that is the whole diagnosis.** §9.29 recorded it as
+reading 0 rather than 2, "only in a module that throws just that one type". Both halves mislead.
+It is not 0 and it is not a constant: the same binary run three times reads 134, 131, 184. It is
+uninitialised memory, and every payload type has it - `int`, `number` and `string` alike, the
+last printing a garbage pointer's bytes. It is not about how many types the module throws either;
+three `int` catches in a row read 425, -1765822016, 425.
+
+What it *is* about is which back end runs. Ahead of time every one of those cases is right, three
+runs each:
+
+| | JIT (gc / rc / none) | AOT |
+| --- | --- | --- |
+| `try { throw 2 } catch (v: int) { t = v }` | 134, 131, 184 / 0, 0, 0 / 73, 135, 15 | **2, 2, 2** |
+| a `number` catch | denormal garbage | **2.5** |
+| three `int` catches | 425, -1765822016, 425 | **7, 8, 9** |
+
+The LLVM IR is not where it goes wrong. The catchpad names the slot and the load reads that slot,
+`_CT??_R0H@84` carries `sizeOrOffset` 4 - §9.15's fix intact - and the ThrowInfo chain is
+well-formed. What differs between the two runs of that same IR is the image base: every RVA in
+those descriptors is a 32-bit truncation of `x - __ImageBase`, and the JIT reaches
+`_CxxThrowException` through the image-base shim §9.13 built. The handler is found, so the clause
+runs; the object is not copied into the slot, so the read is whatever the frame held.
+
+**Two consequences worth acting on.** §9.29's rule - "never write a test that reads a catch
+value" - is too strong: ahead of time it is correct, and the AOT tier already runs every corpus
+file, so a catch-value assertion there is a real test that nothing else provides. And the JIT
+tier cannot be trusted on this at all, which is a much sharper thing to know than "it depends on
+what else the module throws". Filed:
+
+5am. **A catch variable's value is uninitialised under the JIT.** Not an ownership bug and not
+   `rc`-specific - all three models, both opt levels, every payload type, and correct ahead of
+   time in every case tried. The suspect is the image-base-relative RVAs the MSVC EH descriptors
+   are built from, read under the JIT's `__ImageBase` shim (§9.13): the handler is found and the
+   clause runs, but the exception object never reaches the slot the catchpad names. Supersedes
+   §9.29's "reads 0" and its "depends on what else the module throws".
+
+**Two new tests, and the suite says what is broken.** `00catch_value.ts` is the coverage §9.29
+declined to write - three clauses of one type in a row, two payload types in one function, a value
+read after its clause has ended - and it passes in both tiers, because six catch values is enough
+to land in the working regime. `00catch_value_minimal.ts` is the same feature cut to one clause;
+it passes ahead of time and fails under the JIT, so its three JIT registrations are **disabled**
+rather than omitted, and ctest names them on every run. That is the convention the `BROKEN` lists
+exist for: what is broken lives in the build, not only here.
+
+Suite 2,655 -> 2,667, of which 2,664 run and 3 are disabled and counted out loud. All green.
+
+**The first draft of `00catch_value.ts` asserted in its own comment that it was ahead-of-time
+only, because it failed under the JIT.** It does not - it passes in both tiers, and the comment
+was written from the reasoning rather than from a run. Checking it is what turned "one type in the
+module" into "size decides the regime", which is the more useful statement and the one that made
+the minimal file worth writing separately. **A comment claiming a measurement is a measurement**,
+and this section is entirely about what happens when nobody re-reads one.
+
+### 9.66 Item 5am: a type descriptor at RVA 0 is a `catch(...)` (and 9.65's suspect was innocent)
+
+§9.65 found the catch-variable bug to be JIT-only and filed 5am naming the image-base shim of
+§9.13 as the suspect. **That suspect is innocent, and the real cause is one line of arithmetic.**
+
+**What the personality is actually handed.** Wrapping `__CxxFrameHandler3` under the JIT and
+printing its inputs settles the throw side immediately: magic `0x19930520`, four parameters, and
+
+```
+[eh] jitImageBase=000002842c3d0000 dcImageBase=000002842c3d0000 (match)
+[eh] EstablisherFrame=000000b08c78e740   thrown value=2 at ...e76c
+```
+
+The two image bases **match**, so the shim works. The addresses reconcile with the disassembly
+exactly - the thrown object at frame+0x2c is `rbp-0x14`, the catch slot at frame+0x3c is
+`rbp-0x4` - and the slot reads the same garbage before the search call and again at the
+consolidate, so the copy simply never happens.
+
+**Resolving the tables the way the handler does gives the answer in one line.** Walking
+`HandlerData -> FuncInfo -> TryBlockMap -> HandlerType` against `pDC->ImageBase`:
+
+```
+handler[0] adj=00000001 dispType=0 dispCatchObj=60 dispOfHandler=327952 dispFrame=56
+bytes at ImageBase+16: '.H'
+```
+
+`dispCatchObj` (0x3c) and `dispFrame` (0x38) are right. **`dispType` is 0** - and in the MSVC
+encoding a zero type RVA means `catch(...)`. The clause is silently a catch-all. It still
+catches, which is why nothing looks wrong; but a catch-all has no catch object, so
+`BuildCatchObject` copies nothing and the clause reads whatever the frame held.
+
+And `dispType` is 0 because it is **correct**. `'.H'` at the image base is `??_R0H@8`'s own name
+field: the `int` type descriptor is sitting *at* the image base, so its image-relative offset
+really is zero. RTDyld defines the image base as the lowest section load address, so whatever
+datum lands lowest gets RVA 0 - and RVA 0 is the encoding's sentinel for "no type". Ahead of
+time this cannot happen: RVA 0 of a PE is the DOS header, and no datum is ever there.
+
+**Everything §9.29 and §9.65 saw follows from that, including the parts that looked contradictory.**
+
+| observation | why |
+| --- | --- |
+| garbage, different every run | an uninitialised frame slot, never written |
+| "only in a module that throws just that one type" (§9.29) | which descriptor lands lowest depends on what the module contains |
+| "size decides the regime" (§9.65) | more content, and the descriptor is no longer at the lowest address |
+| an `int` clause still declines a `string` throw | that program's `char*` descriptor is at the base; the `int` one has a real RVA and filters correctly |
+| `00catch_value.ts` passes, `00catch_value_minimal.ts` does not | measured: the passing file's handlers read `dispType=65536, 65584, 65632`, and nothing meaningful sits at its image base |
+
+That last row is a prediction made before it was run, which is what makes it evidence rather than
+a story: the file was known to pass, so its descriptors had to be off the base, and they are.
+
+**The fix is not in the shim, and not a one-liner.** The datum at RVA 0 is always the first byte
+of the lowest section, so "nothing at RVA 0" cannot be arranged by padding an allocation - the
+base moves with it. What can be arranged is *which* section is lowest: no field in the MSVC EH
+encoding treats a **code** RVA of 0 as a sentinel, so a layout that puts code below all read-only
+data removes the ambiguity. `SectionMemoryManager` supports exactly that through
+`needsToReserveAllocationSpace`/`reserveAllocationSpace` - reserve one region and lay out code,
+then read-only, then read-write. The alternative is JITLink's `ObjectLinkingLayer`, which models
+an image base explicitly, and which is a much larger change.
+
+5am is therefore re-stated rather than closed, with the diagnosis it was missing:
+
+5am. **A catch clause whose type descriptor lands at the JIT image base becomes `catch(...)`.**
+   RTDyld's image base is the lowest section load address, so a descriptor allocated there has
+   RVA 0, and `dispType == 0` is the MSVC encoding's `catch(...)`. The clause still catches, so
+   only the missing catch-object copy is visible - the value reads as uninitialised memory.
+   Not `rc`-specific, not an ownership bug, and correct ahead of time in every case tried. The
+   fix is to place code below read-only data via `reserveAllocationSpace`, so that the RVA-0
+   sentinel can only ever fall on code, where nothing reads 0 as "none". Proven in §9.66; the
+   image-base shim of §9.13, which the item previously accused, is measured working.
+
+### 9.67 `+` does not promote its right operand (5an)
+
+Found while writing §9.65's catch-value tests, where `t + u` over a caught `int` and a caught
+`number` read 5 rather than 5.5. It was kept out of that file - a test about catch values should
+not also be a test about arithmetic - and is filed here rather than left in a comment.
+
+**`+` takes the type of its left operand and coerces the right one to it.** Every other
+arithmetic operator promotes correctly:
+
+| expression | reads | should be |
+| --- | --- | --- |
+| `i + f` | **5** | 5.5 |
+| `f + i` | 5.5 | 5.5 |
+| `2 + 3.5` | **5** | 5.5 |
+| `i * f` | 7 | 7 |
+| `f - i` | 1.5 | 1.5 |
+| `i / f` | 0.571429 | 0.571429 |
+
+with `i = 2`, `f = 3.5`. Both tiers, all three memory models, both optimisation levels, and
+literals are not spared - `2 + 3.5` is wrong on its own.
+
+**It is the right operand that is converted, not the result.** `1 + (-0.5)` reads `1`, which is
+`1 + trunc(-0.5)`; truncating the sum would give `0`. So the addition happens in integer, after
+discarding the fraction, rather than in double and then narrowing.
+
+`+` is the one arithmetic operator that is also string concatenation, so it is the one with a
+result type chosen ahead of the operands rather than from them; that is the obvious place to
+look. Nothing here is reference counting, and nothing in the corpus caught it, which is its own
+result: 2,664 tests and none of them adds an integer variable to a float one.
+
+5an. **`+` coerces its right operand to the left operand's type instead of promoting both.**
+   Not an ownership bug and not `rc`-specific - every model, both tiers, both optimisation
+   levels, and constant operands too (`2 + 3.5` reads 5). `-`, `*` and `/` are all correct, which
+   points at `+` being overloaded for string concatenation and so choosing its result type before
+   looking at both operands. See §9.67.
+
+### 9.68 5am fixed, and the fix was one flag
+
+§9.66 proved the cause and then estimated the fix as taking section allocation over from
+`SectionMemoryManager`, W^X handling included, and deferred it on that basis. **That estimate was
+wrong, and it was made without reading the header.** LLVM already implements exactly the layout
+required, for the ARM ABI, behind a constructor argument that defaults to false:
+
+```cpp
+JitSectionMemoryManager() : llvm::SectionMemoryManager(nullptr, /*ReserveAlloc=*/true) {}
+```
+
+`reserveAllocationSpace` takes one contiguous block and fills it code, then read-only, then
+read-write. Code is therefore always the lowest section, so the RVA-0 collision can only ever
+land on code - and no field in the MSVC EH encoding reads a code RVA of 0 as "none", where
+`dispType == 0` on a *data* RVA meant `catch(...)`.
+
+| shape | before | after |
+| --- | --- | --- |
+| `catch (v: int)`, three runs of one binary | 134, 131, 184 | **2, 2, 2** |
+| `catch (v: number)` | denormal garbage | **2.5** |
+| three `int` catches in a row | 425, -1765822016, 425 | **7, 8, 9** |
+| two payload types in one function | `t=0 u=3.5` | **`t=2 u=3.5`** |
+| an `int` clause declining a `string` throw | correct | correct |
+
+The three JIT registrations of `00catch_value_minimal.ts` are re-enabled and both
+`TSLANG_CORPUS_BROKEN_JIT_*` lists are empty again. Suite **2,667/2,667 with nothing disabled**,
+up from 2,664 run with three disabled.
+
+**The price the flag names.** All memory is pre-allocated from the sizes RTDyld computes up
+front, and an allocation beyond them fails rather than growing. That is the trade the ARM users
+of this path already make, and the corpus - 2,667 tests, every one of them JIT or AOT across
+three memory models - exercises it without a failure. It is worth knowing about if a future
+module is much larger than anything here.
+
+**The lesson is the same one this document keeps producing, one level up.** §9.64 found an item
+whose text described a compiler that had moved; this is an item whose *fix estimate* described a
+library that already did the work. The estimate cost a session of deferral. Read the header
+before costing the change.
+
+### 9.69 Debug info under `-mm=rc` (item from §9.31, open since 2026-09-04)
+
+§9.31 recorded it in one line - "`--di --opt_level=0` fails to emit LLVM IR for any
+reference-counted program" - and left it. §9.65's audit confirmed it was the one open claim of
+seven that still held. It is fixed, and it was a standing tax the whole time: every RC
+investigation in this document was carried out in release builds because a debug build of an
+`rc` program did not exist.
+
+**The cause.** Every op in a generated ownership routine is built with `op->getLoc()`, because
+that is the only location in scope - the routine is synthesised from a type, not from source.
+Under `--di` that location is the *enclosing user function's*, complete with its `DISubprogram`,
+and the translation attaches it to whatever function it lands on. So `main`'s subprogram was
+attached to `tsrel_...`, `tsret_...`, `__tslang_inc_ref`, `__tslang_dec_ref` and
+`__tslang_free_block` as well, and one `DISubprogram` cannot belong to two functions. The
+routines are `rc`-only, which is exactly why `gc` and `none` never saw it.
+
+**Four attempts, and each failure named the next one.** Worth keeping in that order, because the
+last two are not things one would predict:
+
+| attempt | what it hit |
+| --- | --- |
+| drop the locations entirely | `DIScopeForLLVMFuncOpPass` then *gives* each routine a subprogram of its own, and its now-unlocated body trips the opposite check - "inlinable function call in a function with a DISubprogram location must have a debug location" |
+| peel off the `DISubprogram` only | an op fused with a `DILocalVariable` still names a scope inside the user function: "!dbg attachment points at wrong subprogram" |
+| reduce to plain file/line | 7 of 15 files build, the rest die on a `phi` - **block arguments carry locations, and an operation walk never visits them** |
+| unwrap `NameLoc` too | 453 of 453 - `loc("sAny"(fused<#di_subprogram<main>>[...]))` hides the scope one layer further in than `FusedLoc` and `CallSiteLoc` |
+
+So the routine keeps a real location and borrows no scope: reduced through `FusedLoc`,
+`CallSiteLoc` and `NameLoc` to the file and line underneath, across block arguments as well as
+ops. It reaches the scope pass with no subprogram, is given one of its own, and every op and
+argument in it still has somewhere to hang. `gc` and `none` are untouched, because these
+routines do not exist there.
+
+**Every corpus file that compiles alone now emits IR under `-mm=rc --di`: 453 of 453.** "Up
+from none" would overstate it, and the exception is worth knowing: a program that allocates
+nothing generates no ownership routine and so had nothing to collide - `print("literal")` built
+fine before this, where `let x = 1; print(x)` did not, because printing a number allocates. That
+is the whole of what worked. Suite 2,668/2,668. `00owned_debug_info.ts` is registered as `test-compile-rc-debug-info`
+and is the only test in the suite that passes `--di` with `-mm=rc`, which is why the gap lasted
+as long as it did - nothing ran the combination.
+
+### 9.70 `+` promotes both operands (5an), and it was not only floats
+
+Fixed. `adjustTypesForBinaryOp`'s `PlusToken` case took the left operand's type and cast the
+right one to it. Every other arithmetic operator shares a promotion path that picks the *wider*
+of the two - a widest-first list, `syncTypes` casting both sides to the first type either of
+them already has - and `+` was the one operator not using it, because it is also string
+concatenation and so has to keep `x + 1` as concat when `x` is a string.
+
+The one-line shape of it, on `let i = 2; let f = 3.5; i + f`:
+
+```mlir
+%9 = "ts.Cast"(%8) : (!ts.number) -> si32          // 3.5 truncated to 3, before the add
+%10 = "ts.ArithmeticBinary"(%7, %9) : (si32, si32) -> si32
+```
+
+`+` now uses the shared promotion whenever **both** operands are unambiguously numeric, and
+keeps the old left-preferring behaviour for every other shape - strings, `any`, unions, objects
+with `[Symbol.toPrimitive]`, `undefined`, `null`. That boundary is the whole of the care needed
+here: `any` is not promotable, so `let x: any = "a"; x + 1` still takes the path it took before.
+
+**Three observable defects, not one.** Section 9.67 recorded the int-plus-float case. Measuring a
+control binary - the compiler rebuilt with the fix stashed - found the same truncation in two
+more shapes it had not looked at, and both are silent wrong answers rather than crashes:
+
+| expression | before | after |
+| --- | --- | --- |
+| `i + f`, `2 + 3.5` | 5 | 5.5 |
+| `1 + (-0.5)` | 1 | 0.5 |
+| `true + 2.5` | **2** | 3.5 |
+| `i8(100) + i32(1000)` | **76** | 1100 |
+
+76 is 1100 truncated into an `i8`. So this was never about floats: it was `+` narrowing its
+right operand to the left one's type in *any* direction, and a float fraction was simply the
+easiest way to notice. `f + i`, `2.5 + true` and `i32 + i8` were all correct already, because
+there the left operand was the wider one - which is exactly why a test written from one
+direction only would have passed.
+
+The control also settled a case that looked like a regression and was not: `any + number` fails
+to compile ("Binary operation is not supported for type: '!llvm.ptr'"), before this change and
+after it, identically.
+
+`00add_promotes_both_operands.ts` covers all of it, in the corpus so it runs under all three
+memory models and both optimisation levels. Five of its cases fail on the control and the rest
+are guards, which is the composition to want - the guards are the string-concatenation cases the
+left-preferring rule exists for.
+
+### 9.71 An imported function's result is taken over (5al)
+
+Fixed, and it was worth much more than the item said.
+
+5al was filed as a classification refusal with a soundness question attached:
+`functionReturnsOwned` reads a function's returns to decide whether it hands back a reference,
+an imported function has no body here to read, so every one of them was refused. The item then
+stalled on whether consuming such a result is sound at all, since a statically linked module
+carries no memory-model marker.
+
+**First, the size of it, which nobody had measured.** A two-module program whose work is an
+imported method returning a string, 300k calls, AOT, `--opt --opt_level=3`:
+
+| | before | after |
+| --- | --- | --- |
+| `rc` | **18.0 MB** | **3.8 MB** |
+| `gc` | 5.7 | 5.4 |
+| `none` | 18.0 | 17.6 |
+
+`rc` and `none` agreed *to the decimal* before this. Across a module boundary, reference
+counting was reclaiming nothing whatsoever - not "less than it could", nothing - and it now
+reclaims more than GC does on the same program. That is a different item from the one filed,
+which read as a precision refinement worth a couple of calls.
+
+It is also not confined to imported functions. The candidate set for a virtual call is every
+method in the module sharing the member name, so a single bodyless imported `M.Animal.speak`
+made `Dog.speak()` unclassifiable too, on a class defined entirely in this module.
+
+**Second, the soundness, which turned out to be already provided.** Two things have to hold.
+
+That the callee is a tslang function rather than a foreign one is easy and was always easy: an
+imported tslang declaration carries `export`, re-printed from the exporting module's source; a
+`declare`d C function returning a `string` carries nothing and must never be consumed.
+
+That the defining module returns +1 (section 9.24) is the part the item stalled on. Two
+measurements answer it. Sweeping the corpus with a counter on the classifier: of the functions
+that return a heap value, **36 of 36 exported ones with a body classify as returning owned**,
+and the only 16 that fail are `.next` methods of generator state objects - anonymous, internal,
+and not exportable. And for the mixed link the item was actually worried about, consumption
+*removes a receiver's retain* rather than adding a release, so a foreign block's count goes to
+-1, which is `HEAP_BLOCK_IMMORTAL`, and it leaks instead of being freed. That is section 4's
+agreed policy, and the born-at-zero design of section 9.24 was already delivering it.
+
+All nine exporter/importer model combinations were run to check that, and all nine produce the
+right answer and exit 0. The two mixed rows that matter hold their memory - `none` into `rc` at
+18.0 MB - rather than crashing.
+
+**A change I made and then took back out.** Believing the mixed link needed protecting, I had
+`_MemoryAlloc` write `HEAP_BLOCK_IMMORTAL` under `gc` and `none` instead of leaving the header
+word as `malloc` found it, so that a counting importer could never read an uninitialised count.
+The argument is still sound on paper, and the code carries a deliberate decision the other way
+("a store per allocation on the hot path is not worth paying for dead code"). But across eleven
+measured configurations - the nine-way matrix plus two tests built to detect a premature free,
+one of them deliberately filling the allocator's free lists with the value 1 first - **it made
+no observable difference to anything**, so it was reverted rather than shipped on reasoning.
+Reversing a deliberate hot-path decision needs a failing case, and three attempts did not
+produce one.
+
+**Coverage.** `import_owned_returns.ts` / `export_owned_returns.ts`: an imported method, a local
+override of one, virtual dispatch to that override, a method through an imported interface, and
+a plain imported function - results held, allocated over, then read back, because a freed block
+keeps its contents until something reuses it. Registered under all three models both statically
+and shared. The teeth are not hypothetical: this test's assertion fires for real, on 5ao below.
+
+**Two things found on the way, both pre-existing.**
+
+5ao. **A shared library built `gc` and linked ahead of time frees strings the importing module
+   still holds.** `test-compile-shared-export-import-owned-returns`, registered and DISABLED.
+   It fails with 5al's fix reverted as well, so it is not that fix's doing, and every
+   neighbouring configuration passes: the same test shared under `rc` and under `none`,
+   statically linked under `gc`, and shared under `gc` through the JIT. Only shared plus `gc`
+   plus AOT. That shape points at Boehm not tracing the importing module's roots into a
+   dynamically linked module's heap. DISABLED rather than WILL_FAIL because it produces
+   corrupted memory rather than a clean failure.
+
+- **The plain multi-file test path had no working-directory isolation.** Object files are named
+  after the source stems, so two tests built from the same pair of sources - the `gc`, `rc` and
+  `none` variants of one import/export pair - delete each other's `.obj` under `ctest -j`. This
+  stayed hidden only because every such pair had been registered exactly once, which is also why
+  **the statically linked two-module form had no `rc` or `none` coverage at all** - the exact
+  configuration whose leak went unmeasured until now. `createMultiCompileBatchFile` now creates
+  the same per-test directory the shared path has created for this reason all along. It showed
+  up as a single failure in a full parallel run that passed when run alone; four consecutive
+  full runs are clean since.
+
+**Suite 2,680 of 2,680**, one disabled (5ao). Cross-module `rc` 4.1 MB against `gc`'s 5.7 and
+`none`'s 18.0.
+
+**One number that looked stale and was not.** Section 9.60 records `raytrace` at 6.2 MB; it
+measures 8.9 today. Chased in section 9.72 - it is the measuring harness that changed, not the
+compiler, and neither fix here moves `raytrace` at all.
+
+### 9.72 The harness changed, not the compiler - and the old one halved `raytrace`
+
+Section 9.71 ended by flagging section 9.60's `raytrace` figure of 6.2 MB as stale, on the
+strength of measuring 8.9 today, and suggested something between the two had moved it. That was
+worth checking rather than filing, and checking it says the suggestion was wrong.
+
+**Checked at the commit that wrote the number.** Building `3d8bddf6` - the commit whose diff
+introduces the string "6.2 MB" - and measuring `raytrace` there with the current script gives
+**9.2 MB**, not 6.2. There is no regression to find between then and now, because the number was
+never 6.2 on this harness at that commit either.
+
+**What differs is how the peak is read.** Section 9.52 describes two generations of harness: an
+original that spun on `PeakWorkingSet64` while the process ran, and the present
+`scripts/measure_memory_model.ps1`, which does not sample at all - it calls
+`GetProcessMemoryInfo` after `WaitForExit`, since the kernel keeps the peak for as long as a
+handle stays open. That script was added in `299eed65`, *after* section 9.61. Every memory number
+in sections 9.52 to 9.61 was therefore taken by sampling.
+
+Running one already-built `raytrace-rc.exe` both ways, six times:
+
+| run | sampled | after exit |
+| --- | --- | --- |
+| 1 | 4.9 | 8.9 |
+| 2 | 4.1 | 8.9 |
+| 3 | 4.0 | 8.9 |
+| 4 | 4.0 | 8.9 |
+| 5 | 4.1 | 8.9 |
+| 6 | 4.2 | 8.9 |
+
+The sampling technique reports **less than half** the real peak, and wanders by 20% between runs
+of the same binary; reading the counter after exit gives the same figure every time. Section
+9.52 predicted exactly this failure - "a program that finishes before the *first* sample defeats
+the no-sleep rule as thoroughly as sleeping does" - and then the sections after it went on
+quoting sampled numbers, because the replacement script did not arrive until `299eed65`.
+
+**What this invalidates.** Not the conclusions - `raytrace` really did fall from tens of MB to
+single digits, and every one of those fixes was a real fix. What it invalidates is *comparing a
+number from sections 9.52-9.61 against one measured since*, and the precise magnitudes in that
+range, which are understated by something like the factor above. Anything quoted from there
+should be re-measured before it is used as a baseline rather than trusted to the decimal. The
+in-tree script has been the only harness since `299eed65`, so numbers from section 9.62 onwards
+are on the stable footing.
+
+**A current baseline, so the next section has something sound to compare against.** All taken
+with `scripts/measure_memory_model.ps1` at `c3f629e4`, AOT, `--opt --opt_level=3
+--no-default-lib`:
+
+| program | gc | rc | none |
+| --- | --- | --- | --- |
+| `raytrace.ts` | 5.8 | **8.9** | 114.5 |
+| `nbody.ts` | 5.6 | **4.1** | 4.1 |
+| cross-module, 300k imported calls (§9.71) | 5.7 | **4.1** | 18.0 |
+
+`raytrace` reclaims 92% of what `none` leaks and remains the one program where `rc` is behind
+`gc` rather than ahead of it - which is the honest headline, and a less flattering one than the
+6.2 that was being quoted. **Superseded within the hour: §9.73 found what that gap was, and
+`raytrace` is now 4.1 MB, flat at every image size and below `gc`.** `nbody` allocates almost nothing per step, so `rc` and `none` agree
+and `gc` pays for its runtime. Quote these rather than anything from §9.52-§9.61.
+
+**And the 0.3 MB that section 9.71 attributed to this work is not real either.** Measuring
+`20dfb37f` - the commit before 5an and 5al - gives **8.9 MB**, the same figure as HEAD with both
+fixes applied, stable across four runs each. The 9.2 readings were first-run noise on a
+freshly built binary. Both fixes move `raytrace` by nothing measurable, which is what one would
+expect: it is a single-module program, so it imports nothing, and its arithmetic is `number`
+throughout, so nothing in it was being narrowed.
+
+The lesson worth keeping is smaller than the finding: **a number and the tool that produced it
+travel together.** Three sections' worth of memory figures went into this document without
+recording which harness took them, and the one line that would have prevented an hour of
+bisecting is the harness name beside the number.
+
+### 9.73 The branches of a conditional disagreed about ownership (5ap)
+
+`raytrace` under `rc` is **3.8 MB at every image size**, flat, against `gc`'s 5.5 and `none`'s
+10.8 to 445.0. It was 81 bytes per pixel above that floor an hour ago, and the whole of it was
+one line of TypeScript.
+
+**Finding it started from the corrected baseline.** §9.72 left `raytrace` as the one program
+where `rc` (8.9 MB) was behind `gc` (5.8). Rendering at four sizes says what kind of cost that
+is - a fixed floor, or something per pixel:
+
+| pixels | rc | none |
+| --- | --- | --- |
+| 64x64 | 4.5 | 11.1 |
+| 128x128 | 5.4 | 31.8 |
+| 256x256 | 9.2 | 114.5 |
+| 512x512 | 24.5 | 445.3 |
+
+A two-point fit on the extremes predicts the two middle rows to within 0.06 MB in both columns:
+`rc` = 4.18 MB + **81.3 bytes/pixel**, `none` = 4.21 MB + 1764 bytes/pixel. So a floor both
+share, and a real per-pixel retention of 4.6% of everything allocated. §9.59 had found a *flat
+37%* by the same method, so that leak was gone; this was a smaller, different one.
+
+**Four hypotheses died before the right one.** Worth recording, because each was plausible and
+each cost only one measurement:
+
+| hypothesis | test | result |
+| --- | --- | --- |
+| the two arrows built per pixel inside `getPoint` | hoist them, then delete them | 24.2 to 24.5 - nothing, and `none` does not move either, so at `-O3` they never allocated |
+| `Intersection` object literals through an interface (§9.59's own suspect) | make `Intersection` a class - **the measurement §9.59 said could not be taken until 5aj was fixed** | 24.2 to 24.6 - nothing |
+| the `{ start, dir }` ray literal in the reflection path | hoist it into a local | 24.6 - nothing |
+| `traceRay` returning the borrowed global `Color.background` | return a fresh `Color` instead | 24.6 - nothing |
+
+Splitting `shade` into its two halves is what localised it. With the 4.1 MB floor subtracted:
+
+| variant | rc excess | none excess | reclaimed |
+| --- | --- | --- | --- |
+| baseline | 20.1 | 440.9 | 95.4% |
+| no natural colour, reflection kept | 18.2 | 149.0 | 87.8% |
+| **no reflection, natural colour kept** | **1.2** | 243.9 | **99.5%** |
+
+All of it was in the reflection path, and stepping `maxDepth` 0,1,2,3,5 showed the leak appear
+the moment reflection is enabled at all and then decay geometrically like the work itself - a
+fixed *share* of that path, not something accumulating with depth. What distinguishes that path
+is one line in `shade`:
+
+```typescript
+let reflectedColor = (depth >= this.maxDepth) ? Color.grey : this.getReflectionColor(...);
+```
+
+Rewriting **just that ternary** as an `if`/`else` with an assignment: `rc` 24.6 to **6.4 MB**,
+`none` unchanged at 445.3.
+
+**The bug.** A conditional expression builds a `ts.If` with a result, and its branches hand back
+references on different terms. Reduced to 14 lines, `cond ? aGlobal : make(n)` in a loop:
+
+| | rc | none |
+| --- | --- | --- |
+| ternary | **56.9** | 56.9 |
+| the same thing as `if`/`else` | **4.1** | 56.9 |
+
+Identical allocation, and reference counting reclaimed *nothing at all* through the ternary. The
+IR says why in one attribute:
+
+```mlir
+// ternary                                   // if / else
+%9 = "ts.CallIndirect"(...) {__owned_result} %12 = "ts.CallIndirect"(...) {__owned_result,
+                                                                          __owned_result_consumed}
+"ts.Result"(%9)                              "ts.ReleaseSlot"(%5)
+...                                          "ts.Store"(%12, %5)
+%5 = "ts.Variable"(%4) {__owned}
+"ts.RetainSlot"(%5)      // a SECOND owner
+```
+
+The call's +1 escapes the region through `ts.Result` and nobody takes it over, while the
+receiver outside retains as well: two owners, one release. §9.30 cannot reach it and says so in
+its own terms - the value's only user is a terminator, and releasing a value handed to a
+successor would free it while it is still live.
+
+**The fix makes the branches agree before anything outside looks.** Whichever branch borrows
+takes a reference of its own, so that every branch yields +1; the `ts.If` result then carries a
+reference exactly as a call's result does, and the ordinary machinery applies - a receiver takes
+it over, or §9.30 gives it back at the end of the block. `consumeConditionalResults` in
+`OwnedReturnConsumptionPass`.
+
+**Retaining the borrowed side, rather than releasing the owned one, is the whole of the care
+here.** There is no point inside the region at which the owned value could safely be released:
+the receiver's retain has not happened yet, so releasing there frees a live value. That is not
+a theoretical preference - building exactly that mistake (mark the result owned, consume the
+receiver's retain, skip the retain on the borrowing branch) makes
+`00conditional_owned_result.ts` fail at both optimisation levels with "a conditional's result
+was freed while still referenced". The test has teeth in the dangerous direction, which is the
+only direction that matters, and it holds results from both branches and allocates over them
+before reading them back, because a freed block keeps its contents until something reuses it.
+
+**Result.** `raytrace` is flat at 3.8 MB from 64x64 to 512x512 - the per-pixel retention is not
+reduced but *gone* - and `rc` is now below `gc` at every size. Suite 2,684 of 2,684, one
+disabled (5ao). The ownership verifier is clean across all 496 corpus files.
+
+| program | gc | rc | none |
+| --- | --- | --- | --- |
+| `raytrace.ts` (256x256) | 5.8 | **4.1** | 114.5 |
+| `nbody.ts` | 5.6 | **4.1** | 4.1 |
+| cross-module, 300k imported calls (§9.71) | 5.7 | **4.1** | 18.0 |
+
+Every one of those is at the allocator's floor. Supersedes the table in §9.72, which was
+measured before this.
+
+5ap. **DONE, §9.73 - a conditional expression whose branches disagree about ownership.** The
+   allocating branch's +1 escaped through `ts.Result` unclaimed while the receiver retained
+   separately. `cond ? borrowed : f()` is not a corner of the language, and one such line held
+   18 of `raytrace`'s remaining 20 MB.
+
+**What this says about the method.** §9.59 named three suspects for `raytrace`'s residue and the
+real cause was none of them - it was not any *kind of value*, it was a *control-flow shape* that
+no amount of staring at allocation sites would have suggested. What found it was bisecting the
+program by deleting halves of the work and watching which half took the leak with it. Four
+one-measurement hypotheses cost less than any one of them would have cost to reason about, and
+the §9.59 suspect that had been waiting on 5aj since it was filed turned out, once finally
+measurable, to be innocent.
+
+### 9.74 What `splice` deletes is given back (5f's remainder), and two bugs beside it
+
+`splice` is the last leaking insertion point, open since §9.22 filed it and left it deliberately:
+what it removes is memmoved over and the array realloc'd, so the references in those slots were
+overwritten rather than released. Measured before the fix, a loop splicing two of three boxed
+strings away held **16.4 MB against 4.1 MB** for the same program without the splice, `none` at
+28.7 so nothing was elided. It is **3.8 either way** now.
+
+**Why this one is in the lowering.** Every other insertion point in this arc sits in MLIRGen,
+where how many elements are involved is a compile-time matter. Here the count is a runtime
+value that only exists after conversion, so this is the first - and so far only - release
+emitted from `LowerToLLVM`. `OwnershipRoutineLogic::emitReleaseArrayElements` walks the deleted
+range with the existing counted-loop helper and calls the element's release routine, which
+already existed for the case where a whole array is released.
+
+Two things had to be checked before emitting it, and both could have made it an over-release:
+
+- **The release routines exist in every memory model.** They are reference-counting shaped
+  everywhere and dead weight under `gc` (§9.4); what keeps them dead is that `ts.Release` erases
+  on the way to LLVM (§9.10). A call planted directly by a lowering has no such eraser in front
+  of it, so it has to test `isRefCounted()` itself, or `gc` would start freeing objects it is
+  still tracing.
+- **`splice` must not hand the removed elements back to anyone.** JavaScript's returns them as
+  an array; if tslang's did, releasing them would free values the caller still held. It returns
+  a **count** - `["aa","bb","cc","dd"].splice(1, 2)` prints `2` - so nothing outside can reach
+  them. Checked before the release was written rather than assumed.
+
+The release runs on the original data pointer and before the grow/shrink branch, which is the
+only correct placement: the growing branch reallocs *first*, and a realloc may move the block.
+
+**A pre-existing crash, found by the test and fixed here because it had to be.** `deleteCount`
+was never clamped to what the array holds, so `["p","q"].splice(1, 10)` computed `2 - 1 - 10` in
+an unsigned index and asked `memmove` for about 2^64 bytes:
+
+```
+Exception Code: 0xC0000005 ... GC_realloc
+```
+
+Every memory model, and nothing to do with reference counting - but it had to be settled first,
+because a release loop walking off the end reads freed memory rather than merely computing a
+wrong size. Clamping `deleteCount` to `length - start` fixes both and is what JavaScript
+specifies anyway.
+
+5aq. **DONE, below - pushing one owned value into two arrays consumed it twice.**
+
+**The second bug, and the more serious one.** The new test failed its own over-release
+assertion, and the cause was not `splice` at all:
+
+```typescript
+const keep = new Box("kept");
+victim.push(keep);        // consumes the +1
+survivors.push(keep);     // must retain - and did not
+```
+
+A `const` initialised from `new` gets no storage of its own, so both pushes see the *same*
+`ts.CallIndirect` and `retainInsertedElements` asked only whether it carried `OWNED_RESULT`,
+never whether that reference had already been taken. Both consumed it. One reference, two
+holders, and whichever array died first freed an element the other still held. **It reproduces
+with no splice anywhere in the program** - the surviving array reads back the churn value - so
+it long predates this section; what made it visible is that until now an array outliving its
+elements never gave them back, so the second holder was never exercised. One condition:
+consume only when the reference has not already been consumed, otherwise retain.
+
+That is the failure mode this arc has treated as the one that matters, and it took a fix in a
+neighbouring area to expose it. Worth remembering next to §9.25's note that this was already
+"the one receiving site that skipped its retain without recording the consumption" - it was
+also skipping the *check*.
+
+**Coverage.** `00owned_array_splice.ts`: an element spliced out of one array while another still
+holds it (both objects and strings), splice that inserts as well as removes, an over-long delete
+count, a zero delete count, and a non-owning element type. Its teeth are in the over-release
+direction and are not hypothetical - it fails on the compiler as it stood, twice over: the
+double-push assertion, and the over-long delete count crashing outright in all three models.
+
+Suite **2,688 of 2,688**, one disabled (5ao). Ownership verifier clean across all 497 corpus
+files.
+
+### 9.75 Cycles, written down for users
+
+The other half of "what is left" was never code. §4 settled the policy - leak cycles, document
+it, keep `gc` the default - and nothing in the repository told a user any of it. `-mm=` appeared
+in no user-facing document at all.
+
+`docs/memory-models.md` now covers the three models, what `-mm=rc` buys, and cycles: the shapes
+that leak, the shapes that do not, and what to do. Every claim in it is measured rather than
+reasoned:
+
+| shape | rc | none |
+| --- | --- | --- |
+| `a.parent = b; b.parent = a` | 22.6 | 22.6 |
+| doubly linked (`next`/`prev`) | 22.6 | 22.6 |
+| an object holding a closure that captures it | 22.6 | 22.6 |
+| the same loop with the back-reference removed | **4.1** | - |
+
+`rc` equals `none` to the decimal in all three: reference counting reclaims **none** of a cycle.
+Removing one assignment takes the same loop to the floor.
+
+Two claims on the "does not leak" side were checked rather than assumed, and one of them
+corrected a statement in §4. **A self-recursive function is not a cycle** - a named recursive
+function holds no reference to itself at run time, and §4's "recursive closures are a
+compiler-generated cycle" does not currently apply, because a self-referential *arrow* function
+does not compile at all:
+
+```
+error: can't resolve name: fact
+    const fact = (k: number): number => k <= 1 ? 1 : k * fact(k - 1);
+```
+
+That matters for the shipping decision more than it looks. §4's argument for needing weak
+references leaned on the compiler emitting cycles behind the user's back; it does not. Cycles
+under `-mm=rc` are only what a user writes deliberately, which is exactly the position Swift
+ships ARC in - and here `gc` is still the default and one flag away.
+
+The other check: **strings cannot participate in a cycle at all**, since a string never points
+at another heap object. That is the property that makes §2's "Tier C, strings only" scope
+free of this entire question.
+
+`WeakRef<T>` therefore stays unimplemented and unblocking. §9.8 settled its ABI so that
+`strong` sits at `payload - wordSize` in every model and `weak` exists only under `-mm=rc`, so
+it can land later without a break.
+
+### 9.76 Two collectors in one process (5ao)
+
+Fixed. The suite is **2,689 of 2,689 with nothing disabled**, which it has not been at any point
+in this arc.
+
+5ao was filed by §9.71 as "a `gc` shared library linked ahead of time frees strings the importing
+module still holds", with the shape of the evidence pointing at Boehm and the cause unknown. It
+is simpler and worse than that.
+
+**The executable and the shared library each link `gc.lib` statically, so each has its own
+collector** - its own heap, its own roots. The library allocates the strings; the executable
+holds them in an array the library's collector has no reason to scan, and frees them.
+
+Proving it took three measurements, and the first two said the opposite of the answer:
+
+| test | result |
+| --- | --- |
+| a DLL that allocates a string the exe holds, 200k churn | **passes** |
+| each of the five call shapes in the failing test, alone, 100k churn | **all five pass** |
+| the five together | fails at four |
+
+That looked like a combination effect and was not. Dumping the held values rather than counting
+mismatches is what turned it round:
+
+```
+0 [0] Generic makes a noise. | [1] Mitzie barks. | [2] Mitzie barks. | [3] Generic makes a noise.
+...
+11 [0] Generic makes a noise. | [1] Mitzie barks. | [2] Mitzie barks. | [3] animal Generic
+```
+
+Slot 3 is `asIface.describe()`, which should read `animal Generic` every time. It reads what the
+*churn loop* allocates - `a.speak()`'s result - in every entry but the last. The strings were
+freed and their memory reused.
+
+**So every entry was being freed, and only one was detectable.** The earlier tests churned with
+the *same* call they were holding, so a freed slot was reallocated with identical content and
+read back correct. They did not pass; they could not fail. The bug was invisible for exactly the
+reason it is dangerous, and this is the third time in this arc that a test which "passed" was
+measuring nothing (§9.21, §9.22 - and here the flaw was that the churn and the held value came
+from the same producer).
+
+Confirmed independently before any fix: with `GC_INITIAL_HEAP_SIZE=536870912`, so that Boehm
+never needs to collect, slot 3 reads correctly. A collection issue, not dispatch.
+
+**The fix is one collector.** Boehm built with `BUILD_SHARED_LIBS=ON` - it was explicitly `OFF` -
+and both binaries linked against the import library, with `gc.dll` beside the executable. Slot 3
+then reads `animal Generic` on every iteration, and the disabled test passes.
+
+Scoped to shared builds only, which is where the problem is: a statically linked program has one
+binary and therefore already one collector, and keeps the static `gc.lib`. `scripts/build_gc_release_shared_vs.bat`
+builds it; `test-runner`'s shared path links it and copies the DLL into the per-test working
+directory; the test CMakeLists reports it clearly if it has not been built rather than linking
+the wrong thing silently.
+
+**The cost, which is real and worth stating: a program that loads a tslang shared library now
+ships `gc.dll`.** There is no way round it - two static collectors in one process cannot be made
+correct - but it is a change to how such programs are deployed, and it is written down in
+`docs/memory-models.md` rather than left in this file.
+
+**What this says about the rest of the shared tests.** They pass, and they were never exercising
+this: they are small enough that no collection happens at all. Nothing in the suite churned
+across a shared boundary until §9.71's test did. That is worth remembering when the next
+shared-library feature is called covered.
+
+5ao. **DONE, §9.76** - two statically linked collectors, one per binary. Not an ownership bug and
+   not reference counting's: `rc` and `none` were always correct here, because neither has a
+   collector to get this wrong.
+
+### 9.77 A default library per memory model
+
+The largest instance of §9.7's cross-model leak is closed. It was never a subtle one: **every
+program that does not pass `--no-default-lib` linked a garbage-collected standard library**, so
+under `-mm=rc` everything the standard library allocated crossed a model boundary and was never
+reclaimed. The whole corpus runs with `--no-default-lib`, which is why the arc got this far
+without tripping over it.
+
+Measured on 2 million string concatenations through the default library:
+
+| | before | after |
+| --- | --- | --- |
+| `-mm=gc` | 5.7 MB | 5.7 MB |
+| `-mm=rc` | *(a gc library, leaking)* | **4.1 MB** |
+| `-mm=none` | 218.8 MB | 218.8 MB |
+
+`rc` is at the allocator's floor and below `gc`, on a program made entirely of standard-library
+allocation. `none` is the largest column, so nothing was elided.
+
+**The library is not model-neutral, which is why one build could never have served.** Under `gc`
+it allocates through Boehm and pulls `libgc` in with it; under `rc` it initialises the block
+header's reference count and follows the +1 return convention (§9.24); under `none` it does
+neither. The difference is visible in the artifacts: the `gc` build of
+`TypeScriptDefaultLib.lib` carries `GC_malloc` references and the `rc` and `none` builds carry
+none, and a hello-world linked against them comes out 335 KB under `gc` against 145 KB under
+`rc` - the collector is simply not there any more.
+
+**Layout.** `defaultlib/{lib,dll}/{debug,release}/{gc,rc,none}/`, one directory per (kind, build,
+model). The model directory is named by `memoryModelName()`, the same function that spells the
+`-mm=` flag and the shared-library marker symbol, so the three cannot drift apart.
+`getDefaultLibSubDir` in `Defines.h` composes it and both consumers - the linker path in
+`exe.cpp` and the JIT's shared-library list in `jit.cpp` - go through it.
+
+**No fallback, and a diagnostic rather than a linker error.** Asking for a model that has not
+been built now says so:
+
+```
+error: no default library built for -mm=rc: ...\defaultlib\lib\release\rc does not exist.
+Build it (see the default-lib build scripts), or compile with --no-default-lib.
+```
+
+Without the check it reached lld as a `-L` to nowhere and came back as `cannot open input file
+'TypeScriptDefaultLib.lib'`, which names neither the model nor the remedy. Falling back to
+another model's build would be worse than either: it links, and then misbehaves at run time.
+
+**Building it.** `build.bat` builds all three models for both configurations (twelve artifacts);
+`build.bat release rc` builds one. `build.sh` on Linux takes the same two arguments and does the
+same thing, passing the model down to `scripts/build.sh` as its fourth argument (after the
+compiler and `pic`, so the existing three keep their positions). The install step needed no
+change on either platform - `xcopy /e` and `cp -r` already copy whatever subdirectories are
+there.
+
+One leftover worth knowing: the artifacts at the *old* paths (`lib/release/TypeScriptDefaultLib.lib`
+and friends, with no model directory) are now dead, since nothing looks there any more. The build
+script clears only the model directory it is writing, so they survive until deleted by hand.
+
+> **§9.7's larger case is closed by §9.77.** The default lib is now built per model and a
+> program links the one matching its own `-mm=`. What remains of §9.7 is the general mixed-link
+> question for *user* libraries, where the policy is unchanged: allow, warn, and leak.

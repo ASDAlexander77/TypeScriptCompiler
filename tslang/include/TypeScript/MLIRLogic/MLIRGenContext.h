@@ -65,10 +65,11 @@ struct GenContext
         passResult = nullptr;
         capturedVars = nullptr;
         usingVars = nullptr;
+        ownedVars = nullptr;
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
-        allocateUsingVarsOutsideOfOperation = false;
+        allocateScopeOwnedVarsOutsideOfOperation = false;
     }
 
     void clearReceiverTypes()
@@ -143,7 +144,12 @@ struct GenContext
     bool allowConstEval = false;
     bool allocateVarsInContextThis = false;
     bool allocateVarsOutsideOfOperation = false;
-    bool allocateUsingVarsOutsideOfOperation = false;
+    // Hoist the storage of scope-owned locals - the ones a `using` declares and the ones that
+    // own a heap reference - out in front of `currentOperation`, instead of leaving it inside
+    // the region it was declared in. A `TryOp`'s cleanup region is a sibling of its body, so
+    // storage declared in the body does not dominate it; hoisting is what lets the unwind leg
+    // dispose and release what the body's scope owes.
+    bool allocateScopeOwnedVarsOutsideOfOperation = false;
     bool forceDiscover = false;
     bool discoverParamsOnly = false;
     bool insertIntoParentScope = false;
@@ -152,6 +158,15 @@ struct GenContext
     FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars = nullptr;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars = nullptr;
+    // Storage of the locals declared in this scope that took a reference of their own and owe
+    // a release on the way out. Filled unconditionally, whatever the memory model: what it
+    // drives are `ts.RetainSlot`/`ts.ReleaseSlot` pairs, which erase whole in a collected
+    // build (see TypeScriptOps.td).
+    //
+    // The storage value is held directly rather than the declaration, so that scope exit
+    // releases the slot the retain was paired with. Resolving the name again, as the `using`
+    // list has to, would find whichever declaration shadows it at the exit point.
+    llvm::SmallVector<mlir::Value> *ownedVars = nullptr;
     mlir::Type thisType;
     mlir_ts::ClassType thisClassType;
     mlir::Type receiverFuncType;
@@ -176,8 +191,16 @@ struct GenContext
     bool disableSpreadParams = false;
     const GenContext* parentBlockContext = nullptr;
     const GenContext* rootContext = nullptr;
+    // Set by a loop on the context it hands its body, and inherited by every context copied
+    // from it - so it answers "somewhere inside a loop", not "is the loop".
     bool isLoop = false;
     std::string loopLabel;
+    // Set by the block that becomes the loop's own body scope, and cleared for anything nested
+    // further in. That is the distinction a `break` or `continue` needs: it owes a dispose and
+    // a release to every scope between itself and the loop, so the walk outwards can only stop
+    // at the loop's own scope - and `isLoop` alone reads true for all of them, which is what
+    // made a `break` written inside an `if` skip the lot.
+    bool isLoopBodyScope = false;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

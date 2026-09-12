@@ -245,7 +245,7 @@ namespace mlirgen
 
             MLIRDebugInfoHelper mdi(builder, debugScope);
             mdi.setFile(mainSourceFileName);
-            location = mdi.getCompileUnit(location, "TypeScript Native Compiler", isOptimized);
+            location = mdi.getCompileUnit(location, "TypeScript Compiler", isOptimized);
         }
 
         // We create an empty MLIR module and codegen functions one at a time and
@@ -337,6 +337,46 @@ namespace mlirgen
 #else
         return success();
 #endif
+    }
+
+    // Records which memory model this module was built under, so an importer can tell whether
+    // objects arriving from it are managed the same way its own are. Emitted alongside the
+    // declaration text and under the same condition: a module that exports no declarations
+    // cannot be imported, so there is no boundary to mark.
+    mlir::LogicalResult MLIRGenImpl::createMemoryModelExportGlobalVar(const GenContext &genContext)
+    {
+        if (!declExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
+        {
+            return mlir::success();
+        }
+
+        auto modelName = std::string(memoryModelName(compileOptions.memoryModel));
+
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, modelName, true));
+            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);
+        };
+
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
+
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        varClass.isPublic = true;
+
+        // the model is part of the symbol name, so reading it back is a symbol enumeration
+        // rather than a data load
+        std::string varName(SHARED_LIB_MEMORY_MODEL);
+        varName.append(modelName);
+        varName.append("_");
+        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append("_");
+        varName.append(to_string(hash_value(mainSourceFileName)));
+
+        auto varNameRef = StringRef(varName).copy(stringAllocator);
+
+        registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
+
+        return mlir::success();
     }
 
     mlir::LogicalResult MLIRGenImpl::createGenericClassDeclarationExportGlobalVar(const GenContext &genContext)
@@ -481,6 +521,23 @@ namespace mlirgen
         return anyCode;        
     }
 
+    // Whether anything at the root runs when the program starts - code, or a variable whose
+    // initializer does. Deliberately a wider question than hasGlobalCode: that one asks only
+    // whether an entry function has to be built to hold statements held back from the module
+    // level, and answering it "yes" for variables moves them out of the module scope where the
+    // file's own functions have to be able to see them.
+    bool MLIRGenImpl::hasGlobalInitialization(NodeArray<Statement> statements) {
+        for (auto &statement : statements)
+        {
+            if (isCodeStatment(statement) || statement == SyntaxKind::VariableStatement)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     void MLIRGenImpl::addGlobalConstructor(mlir::Location location, StringRef funcName)
     {
         mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -495,7 +552,7 @@ namespace mlirgen
     }
 
     mlir::LogicalResult MLIRGenImpl::generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
-                          const GenContext &genContext)
+                          bool hasDeferredStatements, const GenContext &genContext)
     {
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
@@ -505,6 +562,13 @@ namespace mlirgen
 
         if (theModule.lookupSymbol(fullGlobalFuncName))
         {
+            // a user-written `main` already is the entry point, so with nothing deferred to run
+            // ahead of it there is nothing left to generate
+            if (!hasDeferredStatements)
+            {
+                return mlir::success();
+            }
+
             // create global ctor
             name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
             fullGlobalFuncName = getFullNamespaceName(name);
@@ -518,6 +582,13 @@ namespace mlirgen
 
         if (mlir::failed(mlirGenFunctionBody(location, name, fullGlobalFuncName, funcType,
             [&](mlir::Location location, const GenContext &genContext) {
+                // nothing was held back from the module level, so this is an empty entry point
+                // that exists only to be the program's entry (see the call site)
+                if (!hasDeferredStatements)
+                {
+                    return mlir::success();
+                }
+
                 for (auto &statement : statements)
                 {
                     auto isVariableStatement = statement == SyntaxKind::VariableStatement;
@@ -676,9 +747,27 @@ namespace mlirgen
        
         if (isMain && notResolved == 0)
         {
-            // generate code to run at global entry
-            if (anyGlobalCode && mlir::failed(
-                generateGlobalEntryCode(loc(module), module->statements, genContext)))
+            // generate code to run at global entry.
+            //
+            // A program still needs `main` when the root holds no code to defer into it: root-level
+            // variables initialize from the global constructors either way, but with no `main` there
+            // is nothing for the JIT to call and nothing for the CRT to link against, which is how
+            // `class S {} const s = new S();` used to fail with "Symbols not found: [ main ]".
+            //
+            // A root that only declares things gets no entry point, because that is what a library
+            // looks like and its object is linked next to a program that has a `main` of its own -
+            // emitting one here is a duplicate symbol at link time.
+            //
+            // `isExecutable` alone is not the test: it is set only by `--emit=exe`, while everything
+            // that links a program compiles with `--emit=obj` and drives the linker itself (same trap
+            // as giveEntryPointAnExitCode in LowerToLLVM.cpp). But `--emit=obj` compiles the libraries
+            // too, and a library root initializing a variable looks exactly like a program root doing
+            // the same, so the object path has to be told which file is the program - that is what
+            // generateEntryPoint carries. Guessing it from the emit action instead put a `main` in
+            // every library object, and two of those failed to link.
+            auto needsEntryPoint = compileOptions.generateEntryPoint && hasGlobalInitialization(module->statements);
+            if ((anyGlobalCode || needsEntryPoint) && mlir::failed(
+                generateGlobalEntryCode(loc(module), module->statements, anyGlobalCode, genContext)))
             {
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
@@ -691,6 +780,11 @@ namespace mlirgen
             }
 
             if (mlir::failed(createGenericClassDeclarationExportGlobalVar(genContext))) {
+                outputDiagnostics(postponedMessages, 1);
+                return mlir::failure();
+            }
+
+            if (mlir::failed(createMemoryModelExportGlobalVar(genContext))) {
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
@@ -840,16 +934,41 @@ namespace mlirgen
         SmallVector<StringRef> symbolsAll;
         Dump::getSymbols(filePath, symbolsAll, stringAllocator);
 
+        StringRef memoryModelSymbol;
         for (auto symbol : symbolsAll)
         {
             if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
             {
                 symbols.push_back(symbol);
             }
+            else if (symbol.starts_with(SHARED_LIB_MEMORY_MODEL))
+            {
+                memoryModelSymbol = symbol;
+            }
             else if (symbol == MLIR_GCTORS)
             {
                 mlirGctors = symbol;
             }
+        }
+
+        // "__tsmm_<model>_<file>_<hash>" - the model is the segment after the prefix. A library
+        // with no marker predates it, and everything did collect back then.
+        auto libraryModel = std::string("gc");
+        if (!memoryModelSymbol.empty())
+        {
+            auto rest = memoryModelSymbol.drop_front(StringRef(SHARED_LIB_MEMORY_MODEL).size());
+            libraryModel = rest.take_until([](char c) { return c == '_'; }).str();
+        }
+
+        if (libraryModel != memoryModelName(compileOptions.memoryModel))
+        {
+            // Allowed on purpose: an object arriving from a module managed differently is
+            // treated as immortal rather than rejected, so it leaks instead of being freed
+            // twice. See docs/reference-counting-evaluation.md section 4.
+            emitWarning(location) << "shared library '" << filePath << "' was built with -mm="
+                                  << libraryModel << ", this module with -mm="
+                                  << memoryModelName(compileOptions.memoryModel)
+                                  << ". Objects crossing between them are never reclaimed.";
         }
 #else
         // only 1 file to load        

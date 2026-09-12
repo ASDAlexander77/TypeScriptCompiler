@@ -17,7 +17,7 @@ $files | ForEach-Object -Parallel {
 	$outFileName = $file.BaseName + ".wasm"
         $stdOutputFileName = $file.BaseName + ".txt"
         $errOutputFileName = $file.BaseName + ".err"
-	$argumentList = "--emit=exe", "--nogc", "-mtriple=wasm32-unknown-unknown", "-o=$outFileName", $file.FullName
+	$argumentList = "--emit=exe", "-mm=none", "-mtriple=wasm32-unknown-unknown", "-o=$outFileName", $file.FullName
 
 
 	if (Test-Path -Path $outFileName -PathType Leaf)

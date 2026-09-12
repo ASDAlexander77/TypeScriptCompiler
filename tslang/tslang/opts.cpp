@@ -15,7 +15,7 @@ namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
 extern cl::opt<enum Action> emitAction;
-extern cl::opt<bool> disableGC;
+extern cl::opt<enum MemoryModel> memoryModelOpt;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
@@ -25,6 +25,7 @@ extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> appendGCtorsToMethod;
+extern cl::opt<bool> entryPoint;
 extern cl::opt<bool> strictNullChecks;
 extern cl::opt<bool> embedExportDeclarationsAction;
 extern cl::opt<bool> enableFastMath;
@@ -42,7 +43,7 @@ CompileOptions prepareOptions()
 
     CompileOptions compileOptions;
     compileOptions.isJit = emitAction.getValue() == Action::RunJIT;
-    compileOptions.disableGC = disableGC.getValue();
+    compileOptions.memoryModel = memoryModelOpt.getValue();
     compileOptions.enableBuiltins = enableBuiltins.getValue();
     compileOptions.noDefaultLib = noDefaultLib.getValue();
     compileOptions.disableWarnings = disableWarnings.getValue();
@@ -56,6 +57,10 @@ CompileOptions prepareOptions()
     compileOptions.sizeBits = 32;
     compileOptions.isExecutable = emitAction == Action::BuildExe;
     compileOptions.isDLL = emitAction == Action::BuildDll;
+    // A DLL never gets one, whatever was asked for: its root initialization runs from the
+    // global constructors and there is no program here to enter.
+    compileOptions.generateEntryPoint = !compileOptions.isDLL &&
+        (compileOptions.isJit || compileOptions.isExecutable || entryPoint.getValue());
     compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     compileOptions.strictNullChecks = strictNullChecks.getValue();
     compileOptions.enableFastMath = enableFastMath.getValue();

@@ -1,4 +1,5 @@
 #include "helper.h"
+#include <stdexcept>
 #ifndef WIN32
 #include <unistd.h> // for usleep
 #endif
@@ -100,20 +101,26 @@ auto tslang_opt = "--di --opt_level=0 --no-default-lib";
 #endif
 
 auto fastMath = false;
+auto memoryModel = std::string("");
 auto tslang_opt_ext = std::string("");
 
-// -fast-math tests get their own cached script (jitfm/compilefm) because the
-// plain jit/compile scripts are shared across all parallel single-file tests
-// and embed tslang_opt_ext at creation time - reusing the same file name would
-// let whichever runner created it first decide the flags for everyone.
+// Tests that pass extra compiler flags get their own cached script (jitfm/jitrc, and the
+// compile equivalents) because the plain jit/compile scripts are shared across all parallel
+// single-file tests and embed tslang_opt_ext at creation time - reusing the same file name
+// would let whichever runner created it first decide the flags for everyone.
+std::string optVariantSuffix()
+{
+    return std::string(fastMath ? "fm" : "") + memoryModel;
+}
+
 std::string jitBatName()
 {
-    return std::string(JIT_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+    return std::string(JIT_NAME) + optVariantSuffix() + BAT_NAME;
 }
 
 std::string compileBatName()
 {
-    return std::string(COMPILE_NAME) + (fastMath ? "fm" : "") + BAT_NAME;
+    return std::string(COMPILE_NAME) + optVariantSuffix() + BAT_NAME;
 }
 
 void createJitBatchFile()
@@ -170,7 +177,7 @@ void createCompileBatchFile()
     batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
+    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
@@ -178,6 +185,7 @@ void createCompileBatchFile()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo %ERRORLEVEL% > %FILENAME%.code" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
     batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;        
@@ -198,10 +206,11 @@ void createCompileBatchFile()
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << "$TSLANGEXEPATH/tslang --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "echo $? > $FILENAME.code" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
     batFile << "rm -f $FILENAME" << std::endl;
     batFile.close();    
@@ -253,9 +262,9 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 {
     std::stringstream mask;
 #if WIN32
-    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
+    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".code " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
 #else
-    mask << "rm -f " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
+    mask << "rm -f " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".code " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
 #endif
 
     auto delCmd = mask.str();
@@ -266,11 +275,33 @@ std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
 {
     auto txtFile = tempOutputFileNameNoExt + ".txt";
     auto errFile = tempOutputFileNameNoExt + ".err";
+    auto codeFile = tempOutputFileNameNoExt + ".code";
 
     auto output = readOutput(txtFile);
     auto errors = readOutput(errFile);
+    // written by the compile scripts only; a JIT run has no separate program to ask
+    auto exitCode = readOutput(codeFile);
 
     if (!getenv("TSLANG_TEST_KEEP_TEMP")) deleteFiles(tempOutputFileNameNoExt);
+
+    // A program that prints everything it was asked to and then tells the shell it failed is a
+    // failing program, and until this was checked nothing in the suite would say so: an
+    // ahead-of-time `-mm=rc` build exited 1 from a `main` returning nothing for as long as `rc`
+    // has existed, and every one of these tests passed.
+    if (!exitCode.empty())
+    {
+        // `echo %ERRORLEVEL% > file` writes a trailing space before the newline, so this has to
+        // trim whitespace at both ends rather than just cut at the line break
+        auto first = exitCode.find_first_not_of(" \t\r\n");
+        auto last = exitCode.find_last_not_of(" \t\r\n");
+        auto trimmed = first == std::string::npos ? std::string() : exitCode.substr(first, last - first + 1);
+        if (!trimmed.empty() && trimmed != "0")
+        {
+            return "exit code " + trimmed + (output.find("done.") != std::string::npos
+                                                 ? " from a run that printed 'done.'"
+                                                 : "");
+        }
+    }
 
     if (output.find("done.") != std::string::npos)
     {
@@ -306,18 +337,25 @@ std::string getTempOutputFileNameNoExt(std::string file)
     return fileNameNoExtWithMs;
 }
 
+// Every throw here and below is a std::runtime_error rather than a string literal, and that is
+// not a style choice: the only handlers in this file catch `const std::exception &`, so a
+// `throw "..."` was never caught anywhere. It reached std::terminate, which on Windows is a
+// __fastfail - the runner died with 0xC0000409 and printed nothing at all. That happened for an
+// ordinary failing test (checkedExecCommand means to swallow this and let the missing "done."
+// be the report) and for every misuse of the command line, where the message says exactly what
+// is wrong and was never seen.
 void checkExecOutput(std::string compileResult)
 {
     auto index = compileResult.find("error:");
     if (index != std::string::npos)
     {
-        throw "compile error";
+        throw std::runtime_error("compile error");
     }
 
     index = compileResult.find("failed");
     if (index != std::string::npos)
     {
-        throw "run error";
+        throw std::runtime_error("run error");
     }
 }
 
@@ -365,13 +403,24 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
+    // Same isolation the shared multi-file path uses, and for the same reason: the object files
+    // are named after the SOURCE stems, so two tests built from the same pair of sources - the
+    // gc, rc and none variants of one import/export pair, say - write and then delete each
+    // other's .obj under `ctest -j`. That only stayed hidden while every such pair was
+    // registered exactly once. The .txt/.err/.code output goes to the parent, where the runner
+    // reads it from.
+    batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
+    batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
+    batFile << "mkdir %WORKDIR%" << std::endl;
+    batFile << "cd %WORKDIR%" << std::endl;
+
     std::stringstream objs;
     auto isFirst = true;
     for (auto &file : files)
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".obj ";
-        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << (isFirst ? "--entry-point " : "") << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
         isFirst = false;
     }
 
@@ -382,10 +431,14 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << std::endl;
 
     batFile << "del " << objs.str() << std::endl;
-    batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "call " RUN_CMD "%FILENAME%.exe 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err" << std::endl;
+    batFile << "echo %ERRORLEVEL% > ..\\%FILENAME%.code" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
-    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
+    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;
+    batFile << "echo off" << std::endl;
+    batFile << "cd .." << std::endl;
+    batFile << "rmdir /s /q %WORKDIR%" << std::endl;
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
@@ -404,7 +457,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
         // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
         auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
-        batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        batFile << "$TSLANGEXEPATH/tslang --emit=obj " << (isFirst ? "--entry-point " : "") << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
     }
 
@@ -412,6 +465,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "echo $? > $FILENAME.code" << std::endl;
     
     batFile << "rm -f " << objs.str() << std::endl;
     batFile << "rm -f $FILENAME" << std::endl;
@@ -424,7 +478,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 {
     if (gctorsAsMethod)
     {
-        tslang_opt_ext += "--gctors-as-method";
+        // the separator matters: `-mm=` may already have put something here, and without it
+        // the two run together into one unrecognised option
+        tslang_opt_ext += " --gctors-as-method";
     }
 
     auto linker_opt = SHARED_LIB_OPT;
@@ -440,7 +496,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
     batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
-    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
+    // The SHARED collector, and only here. Two binaries that each link gc.lib statically get a
+    // collector each: the library's frees objects the executable is still holding, because the
+    // executable's roots are not its to scan. Item 5ao - it produced silently wrong strings
+    // rather than a crash, and only where the value differed from whatever was allocated over
+    // it, which is why every other shared test passed. Statically linked programs keep the
+    // static collector; one binary already means one collector.
+    batFile << "set GC_LIB_PATH=" << TEST_GC_SHARED_LIBPATH << std::endl;
 
     // run everything inside a unique per-test working directory: the shared lib must keep its
     // real name (<stem>.dll) for `import './<stem>'` to resolve, but that name is not unique
@@ -450,6 +512,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
     batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
     batFile << "mkdir %WORKDIR%" << std::endl;
+    batFile << "copy \"" << TEST_GC_SHARED_BINPATH << "\\gc.dll\" %WORKDIR% >nul" << std::endl;
     batFile << "cd %WORKDIR%" << std::endl;
 
     auto first = true;
@@ -476,7 +539,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        (first ? execBat : sharedBat) << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << (first ? "--entry-point " : "") << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
 
         first = false;
     }
@@ -571,7 +634,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSLANGEXEPATH/tslang --emit=obj " << (first ? "--entry-point " : "") << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
@@ -639,7 +702,7 @@ void testMutliFiles(std::vector<std::string> &files)
     {
         if (jitRun)
         {
-            throw "not supported";
+            throw std::runtime_error("-jit with several files needs -shared");
         }
 
         createMultiCompileBatchFile(tempOutputFileNameNoExt, files);
@@ -684,6 +747,17 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
             fastMath = true;
             tslang_opt_ext += " --fast-math";
         }
+        // `-mm=gc` is accepted as well as the two that change behaviour, and it is not a no-op:
+        // it names the default explicitly, which is what anyone comparing the three models types.
+        // It gets its own cached script like the others - the suffix is what keeps two runners
+        // with different flags from sharing one - so passing it costs a script and nothing else.
+        else if (std::string(argv[index]) == "-mm=gc" || std::string(argv[index]) == "-mm=rc" ||
+                 std::string(argv[index]) == "-mm=none")
+        {
+            memoryModel = std::string(argv[index]).substr(4);
+            tslang_opt_ext += " ";
+            tslang_opt_ext += argv[index];
+        }
         else if (exists(argv[index]))
         {
             files.push_back(argv[index]);
@@ -692,18 +766,18 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             std::string msg = "unknown param or file does not exist: ";
             msg.append(argv[index]);
-            throw msg.c_str();
+            throw std::runtime_error(msg);
         }
     }
 
     if (sharedLibCompileTime && !sharedLib)
     {
-        throw "-compile-time can be used with -shared";
+        throw std::runtime_error("-compile-time can be used with -shared");
     }
 
     if (sharedLibCompileTime && jitRun)
     {
-        throw "-compile-time can't be used with -jit";
+        throw std::runtime_error("-compile-time can't be used with -jit");
     }
 }
 
@@ -724,7 +798,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            throw "no file provided";
+            throw std::runtime_error("no file provided");
         }
     }
     catch (const std::exception &e)

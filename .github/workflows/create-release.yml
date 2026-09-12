@@ -122,6 +122,28 @@ jobs:
         run: cmake --install . --config ${{ env.BUILD_TYPE }}
         shell: pwsh
 
+      # Boehm as a DLL: an executable and a tslang shared library that each link the static
+      # gc.lib get two collectors, and one frees what the other still holds (item 5ao). Used by
+      # the -shared tests, and shipped in the zip's gcdll folder. Mirrors
+      # scripts/build_gc_release_shared_vs.bat; installed before tslang is configured, since the
+      # test CMakeLists checks for it at configure time.
+      - name: Configure GC (shared)
+        continue-on-error: false
+        run: New-Item -ItemType Directory -Force -Path ".\__build\gcdll\msbuild\x64\release" | Out-Null; cd ".\__build\gcdll\msbuild\x64\release"; cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 18 2026" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gcdll/x64/release -DBUILD_SHARED_LIBS=ON -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+        shell: pwsh
+
+      - name: Build GC (shared)
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gcdll/msbuild/x64/release
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+        shell: pwsh
+
+      - name: Install GC (shared)
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gcdll/msbuild/x64/release
+        run: cmake --install . --config ${{ env.BUILD_TYPE }}
+        shell: pwsh
+
       - name: Configure
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
@@ -178,10 +200,16 @@ jobs:
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
         # Flatten the compiler/runtime binaries into the archive root, and add the
-        # default library as a whole tree so its per-build subfolders are preserved:
-        #   defaultlib/dll/{debug,release}, defaultlib/lib/{debug,release},
+        # default library as a whole tree so its per-build, per-memory-model subfolders
+        # are preserved:
+        #   defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
         #   defaultlib/*.d.ts, defaultlib/generics/
-        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build | Compress-Archive -DestinationPath ..\tslang.zip
+        # plus the shared collector in its own folder, because its import library is also named
+        # gc.lib: gcdll/gc.lib + gcdll/gc.dll, for programs that load a tslang shared library.
+        run: |
+          New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
+          Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\tslang.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -375,8 +403,8 @@ jobs:
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMSupport.a ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMDemangle.a ./__stage/
-          # Add the default library as a whole tree so its per-build subfolders are
-          # preserved: defaultlib/dll/{debug,release}, defaultlib/lib/{debug,release},
+          # Add the default library as a whole tree so its per-build, per-memory-model
+          # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
           tar -czvhf ../tslang.tar.gz -C ./__stage .

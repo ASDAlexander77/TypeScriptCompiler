@@ -346,6 +346,165 @@ class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
     }
 };
 
+class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::TypeDescriptorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TypeDescriptorOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeOfOpHelper toh(rewriter);
+
+        auto descriptorType = op.getDescriptorType();
+        auto name = toh.typeOfAsString(descriptorType);
+        if (name.empty())
+        {
+            // TypeOfOpHelper::typeDescriptorValue only builds this op when the type has a
+            // name, so an empty one here means a type grew a descriptor without growing a
+            // typeOf name.
+            op.emitError("no 'typeof' name for type: ") << descriptorType;
+            return mlir::failure();
+        }
+
+        // generated first: the descriptor's initializer takes the routine's address, so the
+        // symbol has to exist before the global is built
+        OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(descriptorType);
+
+        rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
+                                                               TypeOfOpHelper::typeKindFromName(name),
+                                                               releaseRoutineName, retainRoutineName));
+
+        return success();
+    }
+};
+
+// Retain and Release lower to nothing at all unless the memory model is reference
+// counting. That is what lets MLIRGen state ownership unconditionally: the ops carry the
+// intent, and the model decides whether it costs anything. It also means the collected
+// builds cannot be broken by where the ops are placed, only the counted ones can.
+class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainValue(op.getReference().getType(), transformed.getReference());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+// The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
+// access with it - there is no load to leave behind in a collected build.
+class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainSlotOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseSlotOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseSlotOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+// The cell-addressed forms. The slot is itself a heap block - a captured variable's storage -
+// so these count owners of that block, where the two above count owners of the value in it.
+class RetainCellOpLowering : public TsLlvmPattern<mlir_ts::RetainCellOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::RetainCellOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::RetainCellOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainCell(transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
+class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseCellOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseCellOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseCell(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(),
+                                transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -454,6 +613,49 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+
+        // `arr.length = n` on a grown array exposes slots the allocator has not written, and a
+        // store into one gives up what the slot held first (`isOwnedElementSlot`) - so the
+        // release reads whatever was last in that memory. `result.length = this.length` followed
+        // by `result[i] = ..` is exactly the default library's `Array.map`, which is why
+        // `arrS.map(e => e + "_")` crashed about one run in three (§9.37).
+        //
+        // Only where an element owns something, and only under -mm=rc: nothing reads an
+        // unwritten slot in the other models, and the memset is not free.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+            if (mth.ownsHeapMemory(loc, elementType))
+            {
+                auto oldBytes = rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(),
+                                                                    ValueRange{sizeOfTypeAsIndexType,
+                                                                               rewriter.create<mlir::index::CastUOp>(
+                                                                                   loc, th.getIndexType(), countAsIndexType)});
+                auto grew = rewriter.create<mlir::index::CmpOp>(loc, mlir::index::IndexCmpPredicate::UGT,
+                                                                multSizeOfTypeValue, oldBytes);
+
+                auto *currentBlock = rewriter.getInsertionBlock();
+                auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+                auto *zeroBlock = rewriter.createBlock(continuationBlock);
+
+                rewriter.setInsertionPointToEnd(zeroBlock);
+                auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), allocated,
+                                                              ValueRange{rewriter.create<mlir::index::CastUOp>(
+                                                                  loc, llvmIndexType, oldBytes)});
+                auto tailBytes = rewriter.create<mlir::index::SubOp>(loc, th.getIndexType(),
+                                                                     multSizeOfTypeValue, oldBytes);
+                rewriter.create<LLVM::MemsetOp>(
+                    loc, tailStart,
+                    rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
+                    rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, tailBytes), /*isVolatile=*/false);
+                rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+                rewriter.setInsertionPointToEnd(currentBlock);
+                rewriter.create<LLVM::CondBrOp>(loc, grew, zeroBlock, continuationBlock);
+
+                rewriter.setInsertionPointToStart(continuationBlock);
+            }
+        }
 
         auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
@@ -854,21 +1056,18 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
 
         // typeOfAsString reports concrete-width tags ("s32"/"s64"/...) for integer
         // literals and only uses "number" for float-typed values (see
-        // TypeOfOpHelper::typeOfAsString) -- so "is this any numeric" must check the
-        // realistic set of concrete tags a `number`-inferred literal can carry, not
-        // just the literal string "number".
-        auto isNumericTag = [&](mlir::Value tag) {
-            mlir::Value result = isTag(tag, "number");
-            for (auto name : {"s32", "s64", "u32", "u64", "i32", "i64", "f32", "f64"})
-            {
-                result = rewriter.create<LLVM::OrOp>(loc, result, isTag(tag, name));
-            }
-            return result;
-        };
+        // TypeOfOpHelper::typeOfAsString), so "is this any numeric" cannot just test the
+        // name "number". The descriptor behind every tag carries the category directly, so
+        // this is one load and one compare rather than a chain of strcmps -- and it covers
+        // every numeric width rather than the nine that were spelled out here before.
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto isKind = [&](mlir::Value tag, int kind) { return tdl.isKind(tag, kind); };
 
         // unbox a numeric `any` (whatever its concrete boxed width/signedness) into
         // a normalized f64 for comparison, dispatching on the exact tag reported at
-        // box time so we read back the same width that was stored.
+        // box time so we read back the same width that was stored. This one stays
+        // name-based: the descriptor's kind says "numeric", not which width, and the
+        // width is what decides how many bytes to read back.
         auto unboxNumericAsF64 = [&](mlir::Value numberSideAny, mlir::Value numberTag) {
             auto asF64 = [&](mlir::Type storedTy) {
                 auto raw = al.UnboxAny(numberSideAny, tch.convertType(storedTy));
@@ -923,12 +1122,12 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
             return compareAsString(coercedStr, strVal);
         };
 
-        auto tag1IsNumber = isNumericTag(tag1);
-        auto tag1IsString = isTag(tag1, "string");
-        auto tag1IsBoolean = isTag(tag1, "boolean");
-        auto tag2IsNumber = isNumericTag(tag2);
-        auto tag2IsString = isTag(tag2, "string");
-        auto tag2IsBoolean = isTag(tag2, "boolean");
+        auto tag1IsNumber = isKind(tag1, TYPE_KIND_NUMBER);
+        auto tag1IsString = isKind(tag1, TYPE_KIND_STRING);
+        auto tag1IsBoolean = isKind(tag1, TYPE_KIND_BOOLEAN);
+        auto tag2IsNumber = isKind(tag2, TYPE_KIND_NUMBER);
+        auto tag2IsString = isKind(tag2, TYPE_KIND_STRING);
+        auto tag2IsBoolean = isKind(tag2, TYPE_KIND_BOOLEAN);
 
         auto op1IsNumberOp2IsString = rewriter.create<LLVM::AndOp>(loc, tag1IsNumber, tag2IsString);
         auto op1IsStringOp2IsNumber = rewriter.create<LLVM::AndOp>(loc, tag1IsString, tag2IsNumber);
@@ -1247,6 +1446,22 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
         }
 
         TypeConverterHelper tch(getTypeConverter());
+
+        // `undefined` materialised as a value of a type that owns heap memory has to be null
+        // rather than undef: under reference counting whoever receives it retains it, and
+        // reaching an undef pointer's block header is undefined behaviour. An iterator's final
+        // `{ value: undefined, done: true }` is built exactly this way, and the caller retains
+        // the result before it looks at `done`.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+            if (mth.ownsHeapMemory(op.getLoc(), op.getType()))
+            {
+                rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, tch.convertType(op.getType()));
+                return success();
+            }
+        }
+
         rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
         return success();
     }
@@ -2096,6 +2311,17 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         {
 
             allocated = ch.MemoryAlloc(storageType);
+
+            // A captured variable's storage is a heap block - a cell - shared by the frame that
+            // declared it and by every capture box that captured it. Unlike a value block, which
+            // is born unowned because a receiver is about to take it (§9.24), a cell is born
+            // owned: the frame is its first owner, and the frame's scope exit is what gives that
+            // reference back. A box is the one heap variable with no frame owner, and says so.
+            if (tsLlvmContext->compileOptions.isRefCounted() && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
+            {
+                OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+                orl.emitRetainCell(allocated);
+            }
         }
 
 #ifdef GC_ENABLE
@@ -2131,6 +2357,28 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         }
 
         auto value = transformed.getInitializer();
+        auto isUnwrittenCell = isCaptured && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
+        if (!value && tsLlvmContext->compileOptions.isRefCounted() &&
+            (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || isUnwrittenCell))
+        {
+            // An owned local with no initializer here is one whose storage was hoisted out in
+            // front of a TryOp; its initializing store stayed behind at the declaration. The
+            // unwind edge can reach the cleanup region before that store runs, and the release
+            // waiting there reads whatever the frame happened to hold. Null is the one value
+            // the release routines treat as nothing to do, so the slot starts as null.
+            //
+            // A cell needs it for the plainer reason that it is a *heap* block, so what it holds
+            // before its first store is whatever the allocator last had there. `let x: string;`
+            // captured by a closure that only assigns on a path never taken is the case: the
+            // scope exit releases the cell, the cell releases its contents, and the contents were
+            // never written. Not a corner - it is any captured declaration without an
+            // initializer, which an owned local can never be (§9.36).
+            //
+            // Only under -mm=rc: nothing reads the slot before its store in any other model, and
+            // a collected build is meant to come out of this step byte-identical.
+            rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
+        }
+
         if (value)
         {
             rewriter.create<LLVM::StoreOp>(location, value, allocated);
@@ -2141,6 +2389,18 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
             }
 #endif            
+
+            // A cell owns the value in it: giving up the last reference to the cell releases
+            // what it holds (`emitReleaseCell`), and every store into one hands the count over
+            // (`isOwningSlot`). So the first value has to be taken too, unless the frame has
+            // already taken it - which is what an owned local's mark says, and what a captured
+            // parameter's storage is precisely missing, the argument being the caller's.
+            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+                !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
+            {
+                OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+                orl.emitRetainSlot(referenceType.getElementType(), allocated);
+            }
         }
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
@@ -2865,9 +3125,39 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto decSizeAsIndexType = spliceOp.getDeleteCount();
 
         auto startIndexAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, startIndexAsIndexType);
-        auto decSizeAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, decSizeAsIndexType);            
+        mlir::Value decSizeAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, decSizeAsIndexType);
 
         auto incSizeAsLLVMType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
+
+        // Give back what the removed elements were holding, before anything moves or frees them.
+        //
+        // `splice` memmoves the tail over the deleted range and reallocs; the references those
+        // slots held are simply overwritten, so under `-mm=rc` every element it removes leaked.
+        // Measured on a loop that splices two of three boxed strings away: 16.4 MB against 4.1
+        // for the same program without the splice. See §9.74.
+        //
+        // This runs on `currentPtr` and before `conditionalExpressionLowering` below, which is
+        // the only correct place: the growing branch reallocs *first*, and a realloc may move the
+        // block, so releasing afterwards would read the deleted elements through a stale pointer.
+        //
+        // The delete count is first clamped to what is actually in the array, which JavaScript's
+        // `splice` also does ("if greater than the number of elements after start, then all of
+        // the elements from start onwards will be deleted"). It was not clamped here, and the
+        // subtraction below then underflowed an unsigned index: `["p","q"].splice(1, 10)` asked
+        // `memmove` for about 2^64 bytes and faulted. That reproduces under every memory model
+        // and long predates any of this - it simply had to be settled before releasing anything,
+        // since a release loop walking off the end reads freed memory rather than merely
+        // computing a wrong size.
+        auto availableAsLLVMType =
+            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
+        auto deleteFits =
+            rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, decSizeAsLLVMType, availableAsLLVMType);
+        decSizeAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, deleteFits, decSizeAsLLVMType, availableAsLLVMType);
+
+        {
+            OwnershipRoutineLogic orl(spliceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseArrayElements(elementType, currentPtr, startIndexAsLLVMType, decSizeAsLLVMType);
+        }
 
         // Keep all arithmetic in the already-LLVM-converted domain (llvmIndexType), matching
         // every sibling array-mutation lowering (ArrayPushOp/ArrayUnshiftOp/ArrayShiftOp) --
@@ -3016,6 +3306,18 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         
+
+        // Under reference counting `delete` drops a reference rather than freeing outright:
+        // the object goes only if this was the last one, and what it owns is released with it.
+        // That also keeps `delete` off an immortal block, which a bare free would not.
+        if (tsLlvmContext->compileOptions.isRefCounted())
+        {
+            OwnershipRoutineLogic orl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());
+
+            rewriter.eraseOp(deleteOp);
+            return mlir::success();
+        }
 
         LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
@@ -4760,6 +5062,12 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 
         CodeLogicHelper clh(endCleanupOp, rewriter);
 
+        // getUnwindDest() is deliberately not read here, unlike the windows lowering above. A
+        // landingpad is only reachable as an invoke's unwind destination, so there is no way to
+        // hand the exception to another pad from here - resume is the only exit. TryOpLowering
+        // knows this and never gives an EndCleanupOp an unwind destination on this path: a
+        // cleanup that does have an enclosing pad to reach is lowered to a catch-all pad and a
+        // rethrow instead (linuxCleanupOnlyChainsToParent).
         rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(endCleanupOp, transformed.getLandingPad());
 
         auto terminator = rewriter.getInsertionBlock()->getTerminator();
@@ -5010,6 +5318,46 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 {
     using TsLlvmPattern<mlir_ts::NewInterfaceOp>::TsLlvmPattern;
 
+    // The runtime type tag for whatever `this` points at, to go in INTERFACE_TYPE_INDEX.
+    //
+    // Null when that type owns no heap memory - which covers `null` and `undefined` cast to
+    // an interface, where `this` is a null pointer and there would be nothing to release
+    // anyway. A null tag states that positively, the same way a null descriptor slot does.
+    //
+    // The descriptor this returns is keyed by the concrete type, not by the `typeof` name, so
+    // two object literals of different shapes get their own records rather than sharing the
+    // one every "object" would otherwise map to.
+    mlir::Value getTypeTag(mlir_ts::NewInterfaceOp newInterfaceOp, ConversionPatternRewriter &rewriter) const
+    {
+        TypeHelper th(rewriter);
+        auto loc = newInterfaceOp.getLoc();
+        auto thisType = newInterfaceOp.getThisVal().getType();
+
+        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+        if (!mth.ownsHeapMemory(loc, thisType))
+        {
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        TypeOfOpHelper toh(rewriter);
+        auto name = toh.typeOfAsString(thisType);
+        if (name.empty())
+        {
+            // an interface over a type with no `typeof` name: nothing to key a descriptor on,
+            // so it goes untracked and leaks rather than guessing at a record
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        // generated first: the descriptor's initializer takes their addresses
+        OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+
+        LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
+                                                releaseRoutineName, retainRoutineName);
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -5029,7 +5377,14 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
+        // Every interface value in the program is built here - a cast from a class, from an
+        // object literal, and even `null`/`undefined` as an interface all end up at this op
+        // (CastLogicHelper) - which is what makes the type tag safe to rely on: there is no
+        // other way to produce an interface value with the slot left undefined.
+        auto structVal4 = rewriter.create<LLVM::InsertValueOp>(loc, structVal3, getTypeTag(newInterfaceOp, rewriter),
+                                                               MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
+
+        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal4});
 
         return success();
     }
@@ -5264,6 +5619,59 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 {
     using TsLlvmPattern<mlir_ts::CreateBoundFunctionOp>::TsLlvmPattern;
 
+    // The runtime type tag of the capture box, for CLOSURE_TYPE_INDEX.
+    //
+    // Null unless MLIRGen marked this closure as owning its `this` - a bound method's receiver
+    // belongs to whoever holds the object, and giving the closure a tag for it would have `obj.m`
+    // take a reference to `obj` and hand it back when the bound value dies.
+    //
+    // The box arrives as a `ref` to its tuple, which owns nothing by itself (a reference into
+    // storage is not ownership). What has to be released is the block, so the tag names the
+    // ObjectType over that tuple: its routine decrefs, releases whatever the box holds, and
+    // frees - which is exactly what a capture box needs.
+    mlir::Value getCaptureTypeTag(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp,
+                                  ConversionPatternRewriter &rewriter) const
+    {
+        TypeHelper th(rewriter);
+        auto loc = createBoundFunctionOp.getLoc();
+        auto nullTag = [&]() -> mlir::Value { return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()); };
+
+        if (!createBoundFunctionOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
+        {
+            return nullTag();
+        }
+
+        auto captureRefType = dyn_cast<mlir_ts::RefType>(createBoundFunctionOp.getThisVal().getType());
+        if (!captureRefType || !isa<mlir_ts::TupleType>(captureRefType.getElementType()))
+        {
+            return nullTag();
+        }
+
+        auto boxType = mlir_ts::ObjectType::get(captureRefType.getElementType());
+
+        TypeOfOpHelper toh(rewriter);
+        auto name = toh.typeOfAsString(boxType);
+        if (name.empty())
+        {
+            return nullTag();
+        }
+
+        // generated first: the descriptor's initializer takes their addresses.
+        //
+        // The box has routines of its own rather than an object's, because a captured
+        // variable's field holds the address of that variable's *cell* - a heap block the box
+        // co-owns - and a RefType field owns nothing anywhere else in the compiler. Keyed by
+        // the capture's `ref<tuple<..>>` for the same reason, so neither the routines nor the
+        // descriptor can be reused for a plain object of the same shape.
+        OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateCaptureBoxReleaseRoutine(captureRefType);
+        auto retainRoutineName = orl.getOrCreateCaptureBoxRetainRoutine(captureRefType);
+
+        LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        return ch.getOrCreateTypeDescriptorName(captureRefType, name, TypeOfOpHelper::typeKindFromName(name),
+                                                releaseRoutineName, retainRoutineName);
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -5293,7 +5701,13 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
+        // Every bound or hybrid function value in the program is built here, which is what makes
+        // the tag safe to read - the same property NewInterface has (§9.31).
+        auto structVal4 = rewriter.create<LLVM::InsertValueOp>(
+            loc, structVal3, getCaptureTypeTag(createBoundFunctionOp, rewriter),
+            MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
+
+        rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal4});
 
         return success();
     }
@@ -6171,12 +6585,16 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        // type tag of the capture box, when this value is a closure - see CLOSURE_TYPE_INDEX
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::HybridFunctionType type) {
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        // as above
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
@@ -6247,6 +6665,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         // vtable
         rtInterfaceType.push_back(th.getPtrType());
         // this
+        rtInterfaceType.push_back(th.getPtrType());
+        // runtime type tag of what `this` points at - see INTERFACE_TYPE_INDEX
         rtInterfaceType.push_back(th.getPtrType());
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);
@@ -6719,6 +7139,79 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
     return success();
 }
 
+// A TypeScript `main` returning nothing lowers to `void @main()`, and the C runtime that calls it
+// reads an exit code out of the return register regardless. Whatever the last instruction happened
+// to leave there became the process's exit code: zero under `gc` and `none` by luck, and 1 under
+// `rc`, where the last thing `main` does is give back a reference. So an ahead-of-time `rc` build
+// of `function main() { print(1); }` printed the right answer and told the shell it had failed.
+//
+// Give the entry point the signature its caller assumes: `i32 @main()` returning 0. Only for a
+// `main` that returns nothing and takes nothing - a `main` returning a value is left alone here,
+// and is a separate question (today it lowers to `double @main()`, which is wrong in the same way
+// and for the same reason).
+//
+// The test for "will be linked into an executable" is not `isExecutable`: that is only true for
+// `--emit=exe`, and everything that links a program here compiles with `--emit=obj` and calls the
+// linker itself, which is how this went unnoticed once already. A JIT run has no C runtime reading
+// a return register, and a DLL's `main` is not an entry point and may be something an importer
+// resolves, so those two are the exclusions.
+static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOptions)
+{
+    if (compileOptions.isJit || compileOptions.isDLL)
+    {
+        return;
+    }
+
+    auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(m.lookupSymbol(MAIN_ENTRY_NAME));
+    if (!funcOp || funcOp.getBody().empty())
+    {
+        return;
+    }
+
+    auto funcType = funcOp.getFunctionType();
+    if (funcType.getNumParams() != 0 || !isa<LLVM::LLVMVoidType>(funcType.getReturnType()))
+    {
+        return;
+    }
+
+    // A call inside the module would be left calling a signature that no longer matches. Nothing
+    // generates one today - `main` is the entry point, and top-level code that needs to run before
+    // it becomes a global constructor - but a silent type mismatch is not the failure to risk.
+    auto hasInternalCaller = false;
+    m.walk([&](LLVM::CallOp callOp) {
+        if (callOp.getCallee() && callOp.getCallee().value() == MAIN_ENTRY_NAME)
+        {
+            hasInternalCaller = true;
+        }
+    });
+
+    if (hasInternalCaller)
+    {
+        return;
+    }
+
+    mlir::OpBuilder builder(funcOp);
+    auto i32Type = builder.getI32Type();
+    funcOp.setFunctionType(LLVM::LLVMFunctionType::get(i32Type, {}, false));
+
+    SmallVector<LLVM::ReturnOp> returns;
+    funcOp.walk([&](LLVM::ReturnOp returnOp) {
+        if (returnOp.getNumOperands() == 0)
+        {
+            returns.push_back(returnOp);
+        }
+    });
+
+    for (auto returnOp : returns)
+    {
+        mlir::OpBuilder returnBuilder(returnOp);
+        auto zero = returnBuilder.create<LLVM::ConstantOp>(returnOp.getLoc(), i32Type,
+                                                           returnBuilder.getI32IntegerAttr(0));
+        returnBuilder.create<LLVM::ReturnOp>(returnOp.getLoc(), mlir::ValueRange{zero});
+        returnOp.erase();
+    }
+}
+
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
     auto m = getOperation();
@@ -6781,7 +7274,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
@@ -6846,6 +7339,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << m << "\n";);
 
     cleanupUnrealizedConversionCast(m);
+
+    giveEntryPointAnExitCode(m, tsContext.compileOptions);
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << m << "\n";);
 

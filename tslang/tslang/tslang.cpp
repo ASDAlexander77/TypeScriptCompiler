@@ -40,6 +40,12 @@
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
 
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#include <stdlib.h>
+#include <windows.h>
+#endif
+
 #define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
@@ -114,8 +120,13 @@ cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print s
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
-cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of compiled code"),
+                                       cl::values(clEnumValN(MemoryModelGC, "gc", "garbage collection (default)")),
+                                       cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting, no collector (in development; cycles and anything the counts miss leak)")),
+                                       cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
+                                       cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful to compile the same code into 'lib' (static library) and/or 'dll/so' (dynamic library)) "),
@@ -135,6 +146,7 @@ cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (us
 
 cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> entryPoint("entry-point", cl::desc("This file holds the program's entry point, so give it a 'main' even when its root only declares and initializes variables. Implied by --emit=jit and --emit=exe; pass it for the program's own file when building with --emit=obj and linking yourself, and leave it off for the libraries linked beside it"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method (" MLIR_GCTORS ") to initialize Static Objects instead of Global Constructors (gctors)"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
@@ -147,8 +159,17 @@ cl::opt<bool> newCMakeFolder("cmake", cl::desc("New CMake Project"), cl::cat(Typ
 cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
 
 static void TslangPrintVersion(llvm::raw_ostream &OS) {
-  OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
-  OS << "  TySC version " << TSLANG_PACKAGE_VERSION << '\n' << '\n';
+  OS << "TypeScript Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
+
+  llvm::StringRef packageVersion = TSLANG_PACKAGE_VERSION;
+  if (packageVersion.empty() || packageVersion == "0.0.0-not-set")
+  {
+    OS << "  tslang version (commit " << TSLANG_GIT_COMMIT_HASH << ")" << '\n' << '\n';
+  }
+  else
+  {
+    OS << "  tslang version " << packageVersion << '\n' << '\n';
+  }
 
   cl::PrintVersionMessage();
 }
@@ -257,6 +278,18 @@ int main(int argc, char **argv)
     // a non-interactive/headless run.
     _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );
     _CrtSetReportFile( _CRT_ASSERT, _CRTDBG_FILE_STDERR );
+#endif
+
+#ifdef _MSC_VER
+    // Neither the CRT nor Windows may stop and ask. A modal dialog in an unattended run is not
+    // a failure but a hang - whatever raised it waits forever on a window nobody is there to
+    // close - and the compiler is run unattended far more often than not. `_CrtSetReportMode`
+    // above only covers the debug CRT, so the release build needs `_set_error_mode` to send a
+    // runtime error report to stderr; `SetErrorMode` is the same thought one layer out, for a
+    // program that faults rather than reports: die, and let the caller see the exit code.
+    // (The JIT'd program's own `assert` is handled separately, in jit.cpp.)
+    _set_error_mode(_OUT_TO_STDERR);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
 
     // version printer

@@ -39,6 +39,19 @@ namespace mlirgen
             auto resultValue = V(result);
             if (resultValue)
             {
+                // A concise arrow body (`() => expr`) returns without going through the return
+                // statement, so it did not get the retain that makes every function hand back
+                // +1 (§9.24). There is no scope exit here to free the value, so this is not
+                // fixing a dangling read - it is the convention itself: a caller cannot be told
+                // "calls return owned" while one shape of function quietly returns borrowed.
+                // §9.27's classification checks for exactly this retain, so without it every
+                // arrow function would be excluded.
+                //
+                // Cast first, for the reason spelled out at the return statement below.
+                EXIT_IF_FAILED(castToDeclaredReturnType(loc(body), resultValue, genContext))
+
+                mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue});
+
                 return mlirGenReturnValue(loc(body), resultValue, false, genContext);
             }
 
@@ -130,11 +143,44 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ts::Block blockAST, const GenContext &genContext, int skipStatements)
     {
+        // A `using` here needs disposal on the unwind path too, and only a TryOp has a
+        // landing pad to run that from - see mlirGenBlockWithUnwindCleanup and
+        // blockDeclaresUsing. Most blocks qualify: a function's own body, an if/loop body, a
+        // nested `{ }`, a hand-written try's own body, and - since the ToInvoke fix in
+        // Win32ExceptionPass - one that contains a nested using-scope of its own, which used
+        // to need a blockHasNestedUsing guard here.
+        //
+        // A `using` is not the only thing that needs the unwind path: on the Itanium path a
+        // typed `catch` leaves behind a rethrow block for the clause that did not match, and
+        // that is an exit the scope's owned locals have to be released before - see
+        // blockHasTypedCatch. Same wrapping, same cleanup region, different reason to want it.
+        //
+        // The two remaining conditions each guard against a real, still-open bug the wrapping
+        // would otherwise hit (see their comments). blockUsingInitializersAreAllNewExpr is
+        // about disposing a `using`, so it only has a say when there is one - but it keeps its
+        // veto in that case even if the typed-catch reason would have wrapped anyway, since
+        // what it guards against is the disposal, not the wrapping. A block that qualifies on
+        // neither count keeps the plain path below unchanged: no TryOp, no personality
+        // attribute, same IR as before this check existed.
+        auto declaresUsing = blockDeclaresUsing(blockAST, skipStatements);
+        auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
+        auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup) && !blockIsInsideCatchOrFinally())
+        {
+            return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
+        }
+
         auto location = loc(blockAST);
 
         SymbolTableScopeT varScope(symbolTable);
         GenContext genContextUsing(genContext);
         genContextUsing.parentBlockContext = &genContext;
+
+        // This block is the loop's own body scope exactly when the loop offered the marker to
+        // the context it handed down. Take it, and clear the offer so a block nested further in
+        // does not claim to be the loop as well - see GenContext::isLoopBodyScope.
+        genContextUsing.isLoopBodyScope = genContext.isLoop;
+        genContextUsing.isLoop = false;
 
         DITableScopeT debugBlockScope(debugScope);
         if (compileOptions.generateDebugInfo && !blockAST->parent)
@@ -146,11 +192,97 @@ namespace mlirgen
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 
+        auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+        genContextUsing.ownedVars = ownedVars.get();
+
         EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing, skipStatements));
 
-        // we need to call dispose for those which are in "using"
+        // we need to call dispose for those which are in "using", and to give up the
+        // references the block's own locals took
         // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
+
+        return mlir::success();
+    }
+
+    // The unwind-safe counterpart of mlirGen(Block): the same statements and the same
+    // dispose-on-exit, but wrapped in a catch-less TryOp so an exception passing through
+    // still runs the cleanup region before it keeps unwinding. Mirrors mlirGen(TryStatement)'s
+    // own try-body/cleanup handling - a real `try { using x = ...; } finally {}` already goes
+    // through that path and already disposes correctly on throw, which is what this reuses.
+    // Catches and finally stay empty: TryOpLowering erases an empty catches region and wires
+    // the cleanup block as a plain cleanup landing pad, so the exception is never caught here,
+    // only cleaned up after.
+    mlir::LogicalResult MLIRGenImpl::mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext,
+                                                                    int skipStatements)
+    {
+        auto location = loc(blockAST);
+
+        DITableScopeT debugBlockScope(debugScope);
+        if (compileOptions.generateDebugInfo && !blockAST->parent)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            mdi.setLexicalBlock(location);
+        }
+
+        mlir_ts::FuncOp funcOp = genContext.funcOp;
+        funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+
+        auto tryOp = builder.create<mlir_ts::TryOp>(location);
+
+        GenContext tryGenContext(genContext);
+        tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
+        tryGenContext.currentOperation = tryOp;
+
+        SmallVector<mlir::Type, 0> types;
+
+        builder.createBlock(&tryOp.getBody(), {}, types);
+        builder.createBlock(&tryOp.getCleanup(), {}, types);
+        builder.createBlock(&tryOp.getCatches(), {}, types);
+        builder.createBlock(&tryOp.getFinally(), {}, types);
+
+        {
+            builder.setInsertionPointToStart(&tryOp.getBody().front());
+
+            SymbolTableScopeT varScope(symbolTable);
+            GenContext tryBodyGenContext(tryGenContext);
+            tryBodyGenContext.parentBlockContext = &tryGenContext;
+
+            // as in mlirGen(Block): this is the block's own scope, so it is where a break or
+            // continue walking outwards stops
+            tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.isLoop = false;
+
+            auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+            tryBodyGenContext.usingVars = usingVars.get();
+
+            auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+            tryBodyGenContext.ownedVars = ownedVars.get();
+
+            EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, tryBodyGenContext, skipStatements));
+
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+
+            builder.create<mlir_ts::ResultOp>(location);
+
+            // cleanup: everything the body's scope owes, reached only from the unwind edge. The
+            // storage it names was hoisted out in front of the TryOp, so it dominates here as
+            // well as in the body.
+            builder.setInsertionPointToStart(&tryOp.getCleanup().front());
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+
+            builder.create<mlir_ts::ResultOp>(location);
+        }
+
+        // no catch clause
+        builder.setInsertionPointToStart(&tryOp.getCatches().front());
+        builder.create<mlir_ts::ResultOp>(location);
+
+        // no finally block
+        builder.setInsertionPointToStart(&tryOp.getFinally().front());
+        builder.create<mlir_ts::ResultOp>(location);
+
+        builder.setInsertionPointAfter(tryOp);
 
         return mlir::success();
     }
@@ -306,20 +438,52 @@ namespace mlirgen
             auto expressionValue = V(result);
             if (!expressionValue)
             {
-                emitError(location, "No return value");
+                // Nothing below can run without a value: the cast to the declared return type and
+                // the retain the return performs both read its type, and reading a null Value's
+                // type faults - silently, with no diagnostic, in MLIRGen (item 5aj).
+                //
+                // Reaching here during a discovery pass is ordinary rather than an error. A return
+                // expression can depend on something not registered yet - a sibling method's
+                // prototype, a class whose members are still being generated - and the statement
+                // loop comes back for it. That is why the report is conditional and the failure is
+                // not: the previous shape had them the other way round, reporting every time and
+                // returning only when the run was final, so a discovery pass carried the null
+                // forward instead of asking again.
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location, "No return value");
+                }
+
+                return mlir::failure();
             }
 
-            if (!genContext.allowPartialResolve)
-            {
-                VALIDATE(expressionValue, location)
-            }
+            // The scope exit below releases every owned local in the frame, and the value being
+            // returned is very often held by one of them - `return x` after `let x = new C()`
+            // being the whole of it. Once an allocation is born unowned (§9.24) that local's
+            // release is the last one, so without this the value would be freed on the way out
+            // and the caller handed a dangling pointer.
+            //
+            // Retaining the value rather than trying to spot which local holds it is what makes
+            // this work for `return h.item`, `return arr[0]` and `return cond ? a : b` alike. It
+            // hands the caller a reference of its own, which is the same +1 transfer `pop` and
+            // `shift` perform (§9.22) - and, like those, one the caller does not yet consume.
+            //
+            // The cast to the declared return type comes first, so that the retain lands on the
+            // value the caller actually receives. mlirGenReturnValue below would otherwise cast
+            // afterwards and the reference would be left on whatever the return expression
+            // happened to evaluate to - a leak wherever the cast is a conversion, and nothing
+            // held at all where it allocates: `return { start: p, dir: d }` against a declared
+            // interface builds a heap block the tuple's own reference says nothing about.
+            EXIT_IF_FAILED(castToDeclaredReturnType(location, expressionValue, genContext))
 
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
+            mlirGenRetainCaptured(location, mlir::ValueRange{expressionValue});
+
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
         builder.create<mlir_ts::ReturnOp>(location);
         return mlir::success();
@@ -786,7 +950,7 @@ namespace mlirgen
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
         builder.create<mlir_ts::ContinueOp>(location, builder.getStringAttr(label));
         return mlir::success();
@@ -798,7 +962,7 @@ namespace mlirgen
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
 
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
         builder.create<mlir_ts::BreakOp>(location, builder.getStringAttr(label));
         return mlir::success();
@@ -930,7 +1094,7 @@ namespace mlirgen
         GenContext tryGenContext(genContext);
         // TODO: why do I need to allocate variables outside of "try" block?
         // well - short answer: to get access to vars in nested blocks for example 'cleanup'
-        tryGenContext.allocateUsingVarsOutsideOfOperation = true;
+        tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
 
         SmallVector<mlir::Type, 0> types;
@@ -949,22 +1113,30 @@ namespace mlirgen
             GenContext tryBodyGenContext(tryGenContext);
             tryBodyGenContext.parentBlockContext = &tryGenContext;
 
+            // as in mlirGen(Block): this is the block's own scope, so it is where a break or
+            // continue walking outwards stops
+            tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.isLoop = false;
+
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
             tryBodyGenContext.usingVars = usingVars.get();
+
+            auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+            tryBodyGenContext.ownedVars = ownedVars.get();
 
             auto result = mlirGenNoScopeVarsAndDisposable(tryStatementAST->tryBlock, tryBodyGenContext);
             EXIT_IF_FAILED(result)
 
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
 
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
 
             // cleanup
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
-            // we need to call dispose for those which are in "using"
-            // usingVars are empty here
-            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+            // dispose what "using" declared and release what the body's locals took; their
+            // storage was hoisted out in front of the TryOp so it dominates this region too
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
 
             // terminator
             builder.create<mlir_ts::ResultOp>(location);

@@ -1,4 +1,10 @@
-// TODO: somehow when we use align_alloc & align_free, I can see the error: pointer is broken
+// The coroutine lowering asks for a frame with `aligned_alloc` and gives it back with plain
+// `free`, which is the C11 pairing and is fine everywhere `aligned_alloc` exists. MSVC has no
+// `aligned_alloc`, and `_aligned_malloc` - the obvious stand-in - hands back memory that only
+// `_aligned_free` may release, so that pairing corrupts the CRT heap. Windows' own `malloc` is
+// already aligned enough for everything that asks, so the request is served from the ordinary
+// heap and `free` stays honest. (Under `-mm=gc` this never showed, because GCPass rewrites the
+// whole pair to GC_memalign/GC_free.)
 
 #ifndef _WIN32
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
@@ -12,6 +18,7 @@
 #endif // _WIN32
 
 #include <cinttypes>
+#include <cstdio>
 #include <cstdlib>
 
 #include "llvm/ADT/StringMap.h"
@@ -27,9 +34,23 @@ namespace runtime
 
 extern "C" void *Alloc(uint64_t size) { return malloc(size); }
 
+// What MSVC's `malloc` guarantees: enough for any fundamental type, 16 bytes on x64.
+static constexpr uint64_t kMallocAlignment = 2 * sizeof(void *);
+
 extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
 #ifdef _WIN32
-  return _aligned_malloc(size, alignment);
+  // Everything here comes from `malloc`, so the block can go back through either `free` or
+  // AlignedFree and both are right. `malloc`'s own guarantee covers every request anything
+  // makes - the coroutine frame asks for 8. A stricter request cannot be served and stay
+  // `free`-compatible at the same time, and silently handing back under-aligned memory is the
+  // worse of the two failures, so say so.
+  if (alignment > kMallocAlignment)
+  {
+    fprintf(stderr, "tslang runtime: alignment of %" PRIu64 " requested, only %" PRIu64 " is available\n",
+            alignment, kMallocAlignment);
+  }
+
+  return malloc(size);
 #else
   void *result = nullptr;
   (void)::posix_memalign(&result, alignment, size);
@@ -39,13 +60,7 @@ extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
 
 extern "C" void Free(void *ptr) { free(ptr); }
 
-extern "C" void AlignedFree(void *ptr) {
-#ifdef _WIN32
-  _aligned_free(ptr);
-#else
-  free(ptr);
-#endif
-}
+extern "C" void AlignedFree(void *ptr) { free(ptr); }
 
 } // namespace runtime
 } // namespace mlir

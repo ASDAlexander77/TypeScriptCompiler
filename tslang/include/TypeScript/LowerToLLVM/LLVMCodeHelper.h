@@ -14,6 +14,7 @@
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -344,6 +345,83 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.getStringAttr(StringRef(value.data(), value.length() + 1));
     }
 
+    // Emits, once per concrete type, the static descriptor for that type, and returns a
+    // pointer to its trailing name bytes. That pointer is the runtime type tag: it reads as
+    // an ordinary NUL-terminated type name, and the record is at `tag - sizeof(record)`.
+    // See TYPE_DESCR_* in Defines.h.
+    mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
+                                             StringRef releaseRoutineName, StringRef retainRoutineName)
+    {
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        // keyed by the concrete type rather than by the name: every class reports the name
+        // "class", but each needs its own record, which is the point of having one at all
+        std::stringstream varName;
+        varName << "td_" << (size_t)hash_value(type) << "_" << name;
+
+        TypeConverterHelper tch(typeConverter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto recordType = TypeDescriptorLogic::getRecordType(rewriter, llvmIndexType);
+        auto nameArrayType = th.getArrayType(th.getI8Type(), name.length() + 1);
+        auto descriptorType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {recordType, nameArrayType}, false);
+
+        LLVM::GlobalOp global;
+        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(varName.str())))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            seekLast(parentModule.getBody());
+
+            global = rewriter.create<LLVM::GlobalOp>(loc, descriptorType, true, LLVM::Linkage::Internal, varName.str(),
+                                                     mlir::Attribute{});
+
+            setStructWritingPoint(global);
+
+            auto i32Ty = th.getI32Type();
+
+            mlir::Value recordValue = rewriter.create<LLVM::UndefOp>(loc, recordType);
+            setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(kind)),
+                           TYPE_DESCR_KIND);
+            setStructValue(loc, recordValue, rewriter.create<LLVM::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(0)),
+                           TYPE_DESCR_RESERVED);
+            // empty when the type owns no heap memory, which a null slot states positively:
+            // "nothing to release", rather than leaving it unknown
+            mlir::Value releaseValue =
+                releaseRoutineName.empty()
+                    ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
+                    : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), releaseRoutineName);
+            setStructValue(loc, recordValue, releaseValue, TYPE_DESCR_RELEASE);
+            mlir::Value retainValue =
+                retainRoutineName.empty()
+                    ? (mlir::Value)rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType())
+                    : (mlir::Value)rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), retainRoutineName);
+            setStructValue(loc, recordValue, retainValue, TYPE_DESCR_RETAIN);
+            // a tag doubles as a string payload, so what precedes the name has to read as an
+            // immortal block header - see TYPE_DESCR_BLOCK_HEADER
+            setStructValue(loc, recordValue,
+                           rewriter.create<LLVM::ConstantOp>(
+                               loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                           TYPE_DESCR_BLOCK_HEADER);
+
+            mlir::Value descriptorValue = rewriter.create<LLVM::UndefOp>(loc, descriptorType);
+            setStructValue(loc, descriptorValue, recordValue, 0);
+            setStructValue(loc, descriptorValue,
+                           rewriter.create<LLVM::ConstantOp>(loc, nameArrayType, getStringAttrWith0(name)), 1);
+
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{descriptorValue});
+
+            // the header immediately before the name is read as a whole word
+            global.setAlignment(getHeapBlockHeaderSize());
+        }
+
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), descriptorType, globalPtr, ArrayRef<LLVM::GEPArg>{0, 1, 0});
+    }
+
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
     {
         std::stringstream ss;
@@ -470,6 +548,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto ptrType = th.getPtrType();
         auto arrayType = th.getArrayType(llvmElementType, size);
 
+        // A constant array is a block like any other under reference counting: an element of it
+        // can be bound to a local that takes a reference, so the same header word has to sit in
+        // front of the data, marked immortal - exactly as it does for a string literal. Without
+        // it a retain reads, and a release writes, the word before a read-only global.
+        auto withHeader = compileOptions.isRefCounted();
+        auto headerSize = getHeapBlockHeaderSize();
+
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
         if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
@@ -479,14 +564,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (value.size() > 0 && llvmElementType.isIntOrIndexOrFloat())
+            auto isDense = value.size() > 0 && llvmElementType.isIntOrIndexOrFloat();
+
+            mlir::Type dataType = arrayType;
+            DenseElementsAttr denseAttr;
+            if (isDense)
             {
-                seekLast<DenseElementsAttr>(parentModule.getBody());
+                auto vectorType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
+                dataType = vectorType;
 
-                // end
-                auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-
-                DenseElementsAttr attr;
                 if (llvmElementType.isIntOrIndex())
                 {
                     SmallVector<APInt> values;
@@ -494,7 +580,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::IntegerAttr>(value_).getValue());
                     });
 
-                    attr = DenseElementsAttr::get(dataType, values);
+                    denseAttr = DenseElementsAttr::get(vectorType, values);
                 }
                 else
                 {
@@ -503,10 +589,47 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::FloatAttr>(value_).getValue());
                     });
 
-                    attr = DenseElementsAttr::get(dataType, values);
+                    denseAttr = DenseElementsAttr::get(vectorType, values);
                 }
+            }
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
+            if (withHeader)
+            {
+                seekLast(parentModule.getBody());
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                // packed, because the header has to sit exactly one word in front of the data:
+                // an unpacked struct pads to the data's own alignment, and a vector of three
+                // i32 wants sixteen bytes, which would put the header two words back instead
+                auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, dataType},
+                                                                  /*isPacked=*/true);
+                global = rewriter.create<LLVM::GlobalOp>(loc, blockType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+
+                setStructWritingPoint(global);
+
+                mlir::Value blockVal = rewriter.create<LLVM::UndefOp>(loc, blockType);
+                blockVal = rewriter.create<LLVM::InsertValueOp>(
+                    loc, blockVal,
+                    rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
+                                                      rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                    MLIRHelper::getStructIndex(rewriter, 0));
+
+                mlir::Value dataVal = isDense
+                                          ? (mlir::Value)rewriter.create<LLVM::ConstantOp>(loc, dataType, denseAttr)
+                                          : getArrayValue(originalElementType, llvmElementType, size, arrayAttr);
+                blockVal = rewriter.create<LLVM::InsertValueOp>(loc, blockVal, dataVal, MLIRHelper::getStructIndex(rewriter, 1));
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{blockVal});
+
+                // the header is read as a whole word, so the block base has to be word-aligned
+                global.setAlignment(headerSize);
+            }
+            else if (isDense)
+            {
+                seekLast<DenseElementsAttr>(parentModule.getBody());
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, denseAttr);
             }
             else
             {
@@ -524,9 +647,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             }
         }
 
-        // Get the pointer to the first character in the global string.
+        // Get the pointer to the first element - past the header, when there is one.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        return rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
+        return withHeader ? rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 1})
+                          : rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
     }
 
     mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)
@@ -593,7 +717,18 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             {
                 LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
 
-                auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
+                // An unspecified field of an owning type must be null rather than undef: under
+                // reference counting the tuple is retained as a whole before anything writes the
+                // field (a generator's state object is built exactly this way), and walking an
+                // undef pointer to reach its header is undefined behaviour, which the optimizer
+                // is entitled to - and does - fold the whole caller away for.
+                auto unspecifiedFieldIsOwning = compileOptions.isRefCounted() &&
+                                                MLIRTypeHelper(rewriter.getContext(), compileOptions).ownsHeapMemory(loc, type);
+
+                mlir::Value itemValue = unspecifiedFieldIsOwning
+                                            ? rewriter.create<LLVM::ZeroOp>(loc, llvmType).getResult()
+                                            : rewriter.create<mlir_ts::UndefOp>(loc, llvmType).getResult();
+
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto stringAttr = dyn_cast<StringAttr>(item))

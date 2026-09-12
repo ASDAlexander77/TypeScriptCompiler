@@ -1,6 +1,8 @@
 #ifndef DEFINES_H_
 #define DEFINES_H_
 
+#include <string>
+
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define BUILTIN_FUNC_ATTR_NAME "__builtin"
 #define GENERIC_ATTR_NAME "__generic"
@@ -11,6 +13,51 @@
 #define NONTEMPORAL_ATTR_NAME "__nontemporal"
 #define INVARIANT_ATTR_NAME "__invariant"
 #define INSTANCES_COUNT_ATTR_NAME "InstancesCount"
+// Marks a local's storage as holding a reference the scope owns, so that assigning through it
+// hands the count over rather than dropping a reference nobody took. Only variable
+// declarations set it, which is what keeps parameters and fields - references the frame
+// borrows rather than owns - out of the assignment path. See MLIRGen's takeOwnershipOfLocal.
+#define OWNED_LOCAL_ATTR_NAME "__owned"
+
+// Marks an operation whose result already carries a reference the receiver is expected to take
+// over, rather than one it must retain for itself. `new C()` is the case that matters: it lowers
+// to a call of the generated `C..new`, and every function retains its result before returning
+// (§9.24), so the value arrives owned. A receiver that retained it again would be one owner
+// above the truth, which is exactly the leak §9.25 removes.
+//
+// Only set where the producer is known to retain - never inferred from a call being a call. A
+// runtime or builtin helper, or a function imported from a module built before that convention,
+// returns a heap value without any retain, and treating one of those as owned would skip a
+// retain nobody performed and free live memory.
+#define OWNED_RESULT_ATTR_NAME "__owned_result"
+
+// Marks an owned local that took its reference by consuming an OWNED_RESULT_ATTR_NAME value
+// instead of by retaining. The slot still releases at every scope exit - that release is what
+// gives the consumed reference back - so the pair is still balanced, but there is no
+// `ts.RetainSlot` to pair the release with. The ownership verifier reads this attribute as the
+// retain it stands in for.
+#define OWNED_LOCAL_CONSUMED_ATTR_NAME "__owned_consumed"
+
+// Marks an OWNED_RESULT_ATTR_NAME operation whose reference some receiver has taken over, so the
+// +1 it produced is now somebody's to give back. Set at each of the receiving sites (§9.25) and
+// by OwnedReturnConsumptionPass (§9.27) when it removes a receiver's retain.
+//
+// Its absence is what identifies a discarded temporary: an operation that produced a reference
+// nothing took. `f();` on its own, and - far more commonly - a call result used as an argument
+// and then dropped, which is what expression-shaped code is made of. See §9.30.
+#define OWNED_RESULT_CONSUMED_ATTR_NAME "__owned_result_consumed"
+
+// Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
+// rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
+// only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of
+// the object it is bound to. Set where the closure is built and the difference is known.
+#define OWNS_CAPTURE_ATTR_NAME "__owns_capture"
+
+// Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
+// `captured = true` only because that is how a variable asks to be allocated in the heap, and
+// without this marker it would be indistinguishable from the cell of a captured variable - and
+// so would be given a frame's reference it has no owner for. A box's owner is the closure.
+#define CAPTURE_BOX_ATTR_NAME "__capture_box"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
@@ -64,6 +111,15 @@
 #define SHARED_LIB_DECLARATIONS_FILENAME "__decls.ts"
 #define SHARED_LIB_DECLARATIONS_2UNDERSCORE "__decls"
 #define SHARED_LIB_DECLARATIONS "___decls"
+// A shared library records the memory model it was built under as an exported data symbol
+// named "__tsmm_<model>_<file>_<hash>" - the model is in the NAME, so an importer reads it by
+// enumerating symbols and never has to load the data. Deliberately not "__decls"-prefixed, so
+// it can never reach the declaration re-parser.
+//
+// Objects allocated by a module built under a different model must not be freed by this one:
+// see docs/reference-counting-evaluation.md section 4. A missing marker means a module built
+// before this existed, which is always garbage-collected.
+#define SHARED_LIB_MEMORY_MODEL "__tsmm_"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 
@@ -80,6 +136,28 @@
 #define DATA_VALUE_INDEX 0
 #define THIS_VALUE_INDEX 1
 
+// An interface value is { vtable, this, type } - the first two share the indexes above with
+// every other pair-shaped value. The third is the runtime type tag of whatever `this` points
+// at, which an interface needs for the same reason an `any` box does: the interface type
+// carries only a name, so the layout behind `this` is not recoverable from it. With the tag
+// there, an interface can be released and retained like anything else, through the concrete
+// type's own routines (see OwnershipRoutineLogic and section 9.31).
+//
+// Null when `this` owns no heap memory - a null interface, or one made from a value that
+// carries nothing.
+#define INTERFACE_TYPE_INDEX 2
+
+// A bound or hybrid function value is { func, this, type }, and the third word is there for the
+// same reason as an interface's: the `this` of a closure is its capture box, heap-allocated and
+// not named anywhere in the function type, so nothing could give it back. The tag makes it
+// releasable through the box's own routine.
+//
+// Null for every function value that is not a closure over captured variables - a plain function
+// pointer, a bound method, an interface's method slot - which is what keeps `obj.m` from taking
+// ownership of `obj`. Only CreateBoundFunctionOp builds one of these, so there is no path that
+// leaves the slot undefined. See section 9.33.
+#define CLOSURE_TYPE_INDEX 2
+
 #define ARRAY_DATA_INDEX 0
 #define ARRAY_SIZE_INDEX 1
 
@@ -93,6 +171,70 @@
 #define ANY_TYPE 1
 #define ANY_DATA 2
 
+// Every heap block reserves one index-sized word in front of its payload (see
+// LLVMCodeHelperBase::getHeapBlockHeaderSize). Static blocks - string literals - carry the
+// same word, set to this marker, so that a payload pointer is one shape whether it names
+// heap or static storage and a release can tell the two apart before calling free.
+//
+// All bits set, so the marker is the same value whatever the word size or endianness, and it
+// is not a value a real count reaches. It is deliberately not zero: a zeroed word is what a
+// fresh heap block reads.
+//
+// Under `-mm=rc` the word holds a live reference count: _MemoryAlloc writes zero into it, and
+// a block is freed when a release takes it back to zero (§9.6, §9.24). Under `gc` and `none`
+// nothing reads it and nothing writes it - only the static side below is pinned in every model,
+// because it is the side that changes a global's layout and so cannot be retrofitted without an
+// ABI break. See docs/reference-counting-evaluation.md sections 9.5 and 9.24.
+#define HEAP_BLOCK_IMMORTAL -1
+
+// Runtime type descriptor.
+//
+// The ANY_TYPE slot of an "any" box, and the UNION_TAG_INDEX slot of a tagged union, both
+// hold a "type tag": a pointer to the NUL-terminated type name, which is what `typeof`
+// returns. That name is stored immediately after a fixed-size descriptor record, so the
+// descriptor for a tag is reachable at `tag - sizeof(descriptor)` - the same
+// header-in-front-of-payload arrangement used for heap blocks. The trailing name is a byte
+// array, so it never needs padding in front of it and that offset is exactly the record
+// size on every target.
+//
+// This makes the layout below a cross-module contract even though each module emits its
+// own internal-linkage descriptors: a tag produced by one module is read back by another.
+// Fields may be added, but never reordered or resized, and a new one goes immediately before
+// the block header, which has to stay last - see TYPE_DESCR_BLOCK_HEADER.
+#define TYPE_DESCR_KIND 0
+#define TYPE_DESCR_RESERVED 1
+// Address of the type's release routine, or null when the type owns no heap memory - null
+// says "nothing to release", not "unknown". Generated by OwnershipRoutineLogic.
+#define TYPE_DESCR_RELEASE 2
+// Address of the type's retain routine, on the same terms as the release slot. Both exist
+// because a tagged union carries its payload inline: copying or dropping one has to retain
+// or release a value whose type is only known at run time, and the tag is what knows it.
+#define TYPE_DESCR_RETAIN 3
+// The block header, last so that it sits immediately in front of the name bytes. A tag is a
+// `typeof` result, and `typeof x` can be assigned to a `string` and released like any other
+// string - so a tag has to look like a payload with an immortal block header, exactly as a
+// string literal does, on top of being a name preceded by a descriptor. Both reads work off
+// the same pointer: `tag - sizeof(header)` is the marker, `tag - sizeof(record)` the record.
+#define TYPE_DESCR_BLOCK_HEADER 4
+
+// Coarse category of the described type. These correspond one-to-one with the names
+// TypeOfOpHelper::typeOfAsString reports, and are derived from that name so the two cannot
+// drift apart - see TypeOfOpHelper::typeKindFromName.
+#define TYPE_KIND_UNKNOWN 0
+#define TYPE_KIND_NUMBER 1
+#define TYPE_KIND_STRING 2
+#define TYPE_KIND_BOOLEAN 3
+#define TYPE_KIND_CHAR 4
+#define TYPE_KIND_ARRAY 5
+#define TYPE_KIND_TUPLE 6
+#define TYPE_KIND_OBJECT 7
+#define TYPE_KIND_CLASS 8
+#define TYPE_KIND_INTERFACE 9
+#define TYPE_KIND_FUNCTION 10
+#define TYPE_KIND_SYMBOL 11
+#define TYPE_KIND_UNDEFINED 12
+#define TYPE_KIND_NULL 13
+
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 
@@ -102,6 +244,24 @@
 // the defaultlib root.
 #define DEFAULT_LIB_BUILD_DIR_RELEASE "release"
 #define DEFAULT_LIB_BUILD_DIR_DEBUG "debug"
+
+// ...and then per memory model, because a default lib is not model-neutral. Under `-mm=gc` it
+// allocates through Boehm and drags libgc in with it; under `-mm=rc` it initialises the block
+// header's reference count and follows the +1 return convention (§9.24); under `-mm=none` it
+// does neither. Linking one model's library into another model's program is the case §9.7
+// warns about, and it is the largest instance of it, since every program that does not pass
+// `--no-default-lib` links this one.
+//
+// Layout: defaultlib/{lib,dll}/{debug,release}/{gc,rc,none}/. The model name is exactly
+// `memoryModelName()`, so the directory and the `-mm=` flag cannot drift apart.
+#define DEFAULT_LIB_KIND_STATIC "lib"
+#define DEFAULT_LIB_KIND_SHARED "dll"
+
+inline std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel)
+{
+    return std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC) + "/" +
+           (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
+}
 
 #define DEBUG_SCOPE "current"
 #define CU_DEBUG_SCOPE "compileUnit"

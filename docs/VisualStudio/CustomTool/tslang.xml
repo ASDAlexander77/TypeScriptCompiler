@@ -31,7 +31,7 @@
         <DataSource Persistence="ProjectFile" ItemType="TSLANG" SourceType="Item"/>
       </StringProperty.DataSource>
     </StringProperty>
-    <BoolProperty Name="DisableGarbageCollection" Category="TypeScript Compiler Options" DisplayName="Disable Garbage Collection" Description="Disable Garbage Collection.     (--nogc)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--nogc"/>
+    <BoolProperty Name="DisableGarbageCollection" Category="TypeScript Compiler Options" DisplayName="Disable Garbage Collection" Description="Disable Garbage Collection.     (-mm=none)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="-mm=none"/>
     <BoolProperty Name="DisableWarnings" Category="TypeScript Compiler Options" DisplayName="Disable Warnings" Description="Disable Warnings.     (--nowarn)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--nowarn"/>
     <BoolProperty Name="GenerateDebugInformation" Category="TypeScript Compiler Options" DisplayName="Generate Debug Information" Description="Generates Debug Information.     (--di)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--di"/>
     <BoolProperty Name="DebugInformationForLLDB" Category="TypeScript Compiler Options" DisplayName="Debug Information For LLDB" Description="Debug Information for LLDB.      (--lldb)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--lldb"/>

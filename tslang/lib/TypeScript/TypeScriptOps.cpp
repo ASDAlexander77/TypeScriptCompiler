@@ -828,11 +828,25 @@ bool mlir_ts::CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
 // effects here (as the previous blanket `Pure` trait did) let generic CSE - which runs on the
 // `ts` dialect before this op is ever lowered to the actual allocation call - treat two such
 // casts with the same (identical, CSE'd) constant operand as redundant and merge them into one,
-// silently aliasing what should be two distinct backing arrays. All other CastOp shapes are true
-// value-preserving casts with no allocation, so they keep reporting no effects.
+// silently aliasing what should be two distinct backing arrays.
+//
+// Casting anything to AnyType is the second allocating shape, and for the same reason: the
+// lowering boxes the value, and CastLogicHelper::castToAny always calls MemoryAlloc. Merging two
+// identical boxing casts is what made `00mixed_type_ops.ts` a double free under `-mm=rc` - `a =
+// true` twice with another value in between produced two structurally identical casts, so the
+// second assignment stored a pointer to the box the first had already released, and the block was
+// freed once there and again at the end of the block. It is inert under `gc` (a box is immutable
+// and equality unboxes rather than comparing box pointers, so an alias is unobservable and nothing
+// frees it) but it is an allocation being reported as pure either way. See
+// docs/reference-counting-evaluation.md section 9.48.
+//
+// All other CastOp shapes are true value-preserving casts with no allocation, so they keep
+// reporting no effects.
 void mlir_ts::CastOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>> &effects)
 {
-    if (isa<mlir_ts::ConstArrayType>(getIn().getType()) && isa<mlir_ts::ArrayType>(getRes().getType()))
+    auto allocates = (isa<mlir_ts::ConstArrayType>(getIn().getType()) && isa<mlir_ts::ArrayType>(getRes().getType())) ||
+                     isa<mlir_ts::AnyType>(getRes().getType());
+    if (allocates)
     {
         auto result = cast<OpResult>(getRes());
         effects.emplace_back(MemoryEffects::Allocate::get(), result);

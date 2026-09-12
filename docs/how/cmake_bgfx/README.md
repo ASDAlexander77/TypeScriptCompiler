@@ -100,6 +100,19 @@ cmake --preset debug
 cmake --build --preset debug
 ```
 
+### Memory model
+
+The default library is compiled separately for each memory model, and a program has to link the
+build matching the model it was compiled with. One variable drives both:
+
+```bash
+cmake --preset default -DTSLANG_MEMORY_MODEL=rc
+```
+
+It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+to the compile flags, so the two cannot disagree; configuring fails if that model has not been
+built. Valid values are `gc` (default), `rc` and `none`; only `gc` links Boehm.
+
 ## How it works
 
 1. **`main_entry.cpp`** calls TypeScript `Main()`, then C++ `run_loop()`.

@@ -7,6 +7,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "llvm/ADT/StringSwitch.h"
+
 #define DEBUG_TYPE "mlir"
 
 using namespace ::typescript;
@@ -25,13 +27,76 @@ class TypeOfOpHelper
     {
     }
 
-    mlir::Value strValue(mlir::Location loc, std::string value)
+    // The runtime type tag: the same string `typeOfAsString` reports, but pointing into the
+    // static descriptor for `type` rather than at a bare literal, so the descriptor is
+    // recoverable from any tag. Every producer of an "any" box tag or a union tag goes
+    // through here - see TypeScript_TypeDescriptorOp and TYPE_DESCR_* in Defines.h.
+    mlir::Value typeDescriptorValue(mlir::Location loc, mlir::Type type)
     {
-        if (value.empty()) return mlir::Value();
+        if (typeOfAsString(type).empty()) return mlir::Value();
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
-        auto typeOfValue = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(value));
-        return typeOfValue;
+        return rewriter.create<mlir_ts::TypeDescriptorOp>(loc, strType, mlir::TypeAttr::get(typeOfBaseType(type)));
+    }
+
+    // The type a descriptor is actually keyed by: the wrappers `typeOfAsString` sees through
+    // are stripped here too, so every string literal type shares one "string" descriptor
+    // instead of minting its own. Each distinct class or object still gets its own, which is
+    // the distinction the descriptor exists to preserve.
+    static mlir::Type typeOfBaseType(mlir::Type type)
+    {
+        if (auto subType = dyn_cast<mlir_ts::RefType>(type))
+        {
+            return typeOfBaseType(subType.getElementType());
+        }
+
+        if (auto subType = dyn_cast<mlir_ts::ValueRefType>(type))
+        {
+            return typeOfBaseType(subType.getElementType());
+        }
+
+        if (auto subType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return typeOfBaseType(subType.getElementType());
+        }
+
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            return typeOfBaseType(literalType.getElementType());
+        }
+
+        return type;
+    }
+
+    // Coarse category for a name produced by `typeOfAsString`. Deriving the kind from the
+    // name (rather than re-switching over the type) is what keeps the two from drifting
+    // apart as `typeOfAsString` grows cases.
+    static int typeKindFromName(llvm::StringRef name)
+    {
+        // "s32", "u64", "f64", "i1", ... - a numeric-width tag, as opposed to a name that
+        // merely starts with one of those letters ("interface", "symbol", "function").
+        if (name.size() > 1 && (name[0] == 'i' || name[0] == 's' || name[0] == 'u' || name[0] == 'f') &&
+            llvm::all_of(name.drop_front(), [](char c) { return c >= '0' && c <= '9'; }))
+        {
+            return TYPE_KIND_NUMBER;
+        }
+
+        return llvm::StringSwitch<int>(name)
+            .Case("number", TYPE_KIND_NUMBER)
+            .Case("index", TYPE_KIND_NUMBER)
+            .Case("string", TYPE_KIND_STRING)
+            .Case("boolean", TYPE_KIND_BOOLEAN)
+            .Case("char", TYPE_KIND_CHAR)
+            .Case("array", TYPE_KIND_ARRAY)
+            .Case("tuple", TYPE_KIND_TUPLE)
+            .Case("object", TYPE_KIND_OBJECT)
+            .Case("class", TYPE_KIND_CLASS)
+            .Case("interface", TYPE_KIND_INTERFACE)
+            .Case("function", TYPE_KIND_FUNCTION)
+            .Case("symbol", TYPE_KIND_SYMBOL)
+            .Case(UNDEFINED_NAME, TYPE_KIND_UNDEFINED)
+            .Case("null", TYPE_KIND_NULL)
+            .Default(TYPE_KIND_UNKNOWN);
     }
 
     std::string typeOfAsString(mlir::Type type)
@@ -193,7 +258,7 @@ class TypeOfOpHelper
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)
     {
-        return strValue(loc, typeOfAsString(type));
+        return typeDescriptorValue(loc, type);
     }
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType, CompileOptions& compileOptions)
@@ -242,7 +307,9 @@ class TypeOfOpHelper
 
             rewriter.setInsertionPointToStart(&elseRegion.back());
 
-            auto undefStrValue = strValue(loc, UNDEFINED_NAME);
+            // goes through a descriptor like every other tag, so an "any" holding an empty
+            // optional carries a recoverable descriptor rather than a bare literal
+            auto undefStrValue = typeDescriptorValue(loc, mlir_ts::UndefinedType::get(rewriter.getContext()));
             rewriter.create<mlir_ts::ResultOp>(loc, undefStrValue);
 
             rewriter.setInsertionPointAfter(ifOp);

@@ -691,7 +691,7 @@
             "args": [
                 "-emit=exe",
                 "-opt",
-                "--nogc",
+                "-mm=none",
                 "-o=c:/temp/1.wasm",
                 "-mtriple=wasm32-unknown-unknown",
                 "C:/temp/1.ts"
@@ -723,7 +723,7 @@
                 "-emit=exe",
                 "-mlir-disable-threading",
                 "-debug-only=pass",
-                "--nogc",
+                "-mm=none",
                 "-o=c:/temp/1.wasm",
                 "-mtriple=wasm32-pc-emscripten",
                 "--emsdk-sysroot-path=C:/utils/emsdk/upstream/emscripten/cache/sysroot",
@@ -818,7 +818,7 @@
             "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=jit",
-                "-nogc",
+                "-mm=none",
                 "-dump-object-file",
                 "-object-filename=out.o",
                 "C:/temp/1.ts"

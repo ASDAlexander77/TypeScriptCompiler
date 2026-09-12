@@ -1309,6 +1309,33 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // A parameter a closure captures is stored in a cell of its own, like a captured local,
+        // and the cell has to go back the same way - so the frame is listed as an owner of every
+        // parameter's storage, and scope exit gives back the ones that turned out to be cells.
+        //
+        // This list belongs to the function rather than to the body block, which is the scope a
+        // parameter actually has, and it is wired in only now that the prologue is generated:
+        // while it was null the prologue's own declarations - a destructured parameter's
+        // bindings - were not owned by anything, and this is not the slice that changes that.
+        auto paramCells = std::make_unique<SmallVector<mlir::Value>>();
+        for (auto &prologueOp : entryBlock)
+        {
+            if (isa<mlir_ts::ParamOp, mlir_ts::ParamOptionalOp>(prologueOp))
+            {
+                paramCells->push_back(prologueOp.getResult(0));
+            }
+        }
+
+        funcGenContext.ownedVars = paramCells.get();
+
+        // A scope exit walking outwards stops here. The chain came in from whatever context this
+        // function was generated under - for a nested function, the enclosing function's own
+        // blocks - and a `return` releasing those would be releasing another frame's locals from
+        // inside this one. It has always been wrong; it only became reachable now that this
+        // context has a list of its own, since the walk used to stop at the first context
+        // without one.
+        funcGenContext.parentBlockContext = nullptr;
+
         // if we need params only we do not need to process body
         auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
         if (!discoverParamsOnly)
@@ -1319,6 +1346,14 @@ namespace mlirgen
             {
                 return mlir::failure();
             }
+        }
+
+        // Falling off the end of the body reaches here rather than through a `return`, and the
+        // body block's own exit stops at itself. A `return` inside walks the whole stack outwards
+        // and so has already released these on its own path.
+        if (failed(mlirGenReleaseOwned(location, DisposeDepth::CurrentScope, {}, &funcGenContext)))
+        {
+            return mlir::failure();
         }
 
         // add exit code
@@ -1452,26 +1487,60 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // How the box will store this variable decides which reference has to be taken, and
+            // it is not the same question as whether a reference to the variable can be had.
+            // MLIRCodeLogic::CaptureTypeStorage gives a read-write capture a `ref` field - the
+            // address of the variable's cell - and everything else a field of the variable's own
+            // type, which CaptureOpLowering fills by dereferencing. A by-value field is released
+            // by `releaseCapturedFields` like any other owning field, so the copy needs a
+            // reference of its own; retaining the cell instead leaves the value with one owner
+            // fewer than the releases that will run for it, which is what freed the source array
+            // of a generator out from under the generator (§9.50).
+            auto capturedByRef = item.second && item.second->getReadWriteAccess();
+
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);
-            if (refValue)
+            if (refValue && !capturedByRef)
+            {
+                // the box holds a copy, exactly as it does for a value with no reference at all
+                capturedValues.push_back(refValue);
+                mlirGenRetainCaptured(location, mlir::ValueRange{varValue});
+            }
+            else if (refValue)
             {
                 capturedValues.push_back(refValue);
                 // set var as captures
                 if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
                 {
                     varOp.setCapturedAttr(builder.getBoolAttr(true));
+                    // the box about to be built is a further owner of this variable's cell
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else if (auto paramOp = refValue.getDefiningOp<mlir_ts::ParamOp>())
                 {
                     paramOp.setCapturedAttr(builder.getBoolAttr(true));
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else if (auto paramOptOp = refValue.getDefiningOp<mlir_ts::ParamOptionalOp>())
                 {
                     paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
+                }
+                else if (isCapturedCellSlot(refValue))
+                {
+                    // A closure inside a closure, capturing the same variable. There is nothing
+                    // to mark here - the frame that declared the variable already made its
+                    // storage a cell, and this function only knows the cell through its own
+                    // capture box - but the box about to be built owns it exactly as that first
+                    // box does, and releases it when the bound function goes. Without the
+                    // matching retain the inner box gives back a count nobody added.
+                    builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
                 else
                 {
+                    // no retain here: what makes a variable's storage a cell is being marked
+                    // captured, and nothing was marked. Retaining a stack slot would write a
+                    // count into the frame word in front of it.
                     // TODO: review it.
                     // find out if u need to ensure that data is captured and belong to VariableOp or ParamOp with
                     // captured = true
@@ -1482,8 +1551,10 @@ namespace mlirgen
             }
             else
             {
-                // this is not ref, this is const value
+                // this is not ref, this is const value - the box holds a copy, and a copy of a
+                // reference is a further owner of what it points at
                 capturedValues.push_back(varValue);
+                mlirGenRetainCaptured(location, mlir::ValueRange{varValue});
             }
         }
 
@@ -1530,7 +1601,18 @@ namespace mlirgen
             auto captureType = mcl.CaptureType(captureVars->getValue());
             auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
             auto captured = V(result);
-            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), captured, funcSymbolOp);
+            auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), captured, funcSymbolOp);
+
+            // The capture box was allocated for this closure and nothing else holds it, so the
+            // closure is its owner - which is the one shape of function value that owns its
+            // `this`, and the reason for OWNS_CAPTURE_ATTR_NAME. A closure built here and then
+            // dropped - `apply(v => v.x + base.x, v)` - is released at the end of the block that
+            // made it (§9.30), which is what gives the box back.
+            boundFuncVal->setAttr(OWNS_CAPTURE_ATTR_NAME, builder.getUnitAttr());
+            builder.create<mlir_ts::RetainOp>(location, boundFuncVal);
+            boundFuncVal->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+
+            return V(boundFuncVal);
         }
 
         if (thisValue)

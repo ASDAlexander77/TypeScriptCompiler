@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(TSLANG_ROOT "" CACHE PATH "TypeScriptCompiler __build folder (contains tslang/, llvm/, gc/)")
+set(TSLANG_MEMORY_MODEL "gc" CACHE STRING "Memory model of compiled code: gc, rc or none")
+set_property(CACHE TSLANG_MEMORY_MODEL PROPERTY STRINGS gc rc none)
 
 include(LocateTSLang)
 locate_tslang_compiler()
@@ -49,6 +51,10 @@ else()
     set(CMAKE_TSLANG_FLAGS "--di --opt_level=0")
 endif()
 
+# The same variable that picked the default-lib link directory has to reach the compiler as
+# well, or the program is compiled for one model and linked against another model's default lib.
+set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -mm=${TSLANG_MEMORY_MODEL}")
+
 if(WIN32)
 else()
     set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -relocation-model=pic")
@@ -66,8 +72,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE native)
 set(TSLANG_LINK_LIBS
     TypeScriptDefaultLib
     TypeScriptAsyncRuntime
-    gc
     LLVMSupport)
+
+# Boehm is only referenced by the gc default lib; the rc and none builds allocate through the
+# CRT and must not drag a collector in.
+if(TSLANG_MEMORY_MODEL STREQUAL "gc")
+    list(APPEND TSLANG_LINK_LIBS gc)
+endif()
 
 if(WIN32)
     list(APPEND TSLANG_LINK_LIBS ntdll)

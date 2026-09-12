@@ -30,6 +30,7 @@ class VariableDeclarationDOM
     bool captured;
     bool ignoreCapturing;
     bool _using;
+    mlir::Value disposeGuard;
 
   public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
@@ -103,6 +104,19 @@ class VariableDeclarationDOM
     void setUsing(bool value = true)
     {
         _using = value;
+    }
+
+    // A boolean slot saying whether this `using` declaration currently holds something that
+    // still owes a `[Symbol.dispose]()`. Only a declaration whose storage was hoisted out in
+    // front of a TryOp has one, because only that shape has a cleanup region able to dispose
+    // it a second time or before the first time. See mlirGenDisposeOne.
+    mlir::Value getDisposeGuard() const
+    {
+        return disposeGuard;
+    }
+    void setDisposeGuard(mlir::Value value)
+    {
+        disposeGuard = value;
     }
 
     void setAtomic(int ordering_, StringRef syncscope_)

@@ -113,16 +113,29 @@ function(setup_tslang_link_paths)
         message(FATAL_ERROR "setup_tslang_link_paths: TSLANG_PREFIX is not set")
     endif()
 
+    # The compiled default lib is split per build mode (debug/release) and then per memory
+    # model (gc/rc/none): a default lib built for one model allocates the way that model
+    # allocates, so linking it into a program built for another is the mismatch the compiler
+    # refuses to paper over. TSLANG_MEMORY_MODEL picks both this directory and the -mm= flag.
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(_defaultlib_config "release")
     else()
         set(_defaultlib_config "debug")
     endif()
 
+    set(_defaultlib_dir
+        "${TSLANG_BIN_DIR}/defaultlib/lib/${_defaultlib_config}/${TSLANG_MEMORY_MODEL}")
+    if(NOT IS_DIRECTORY "${_defaultlib_dir}")
+        message(FATAL_ERROR
+            "No default library built for -mm=${TSLANG_MEMORY_MODEL}: ${_defaultlib_dir} "
+            "does not exist. Build it (see the default-lib build scripts), or select a model "
+            "that is built with -DTSLANG_MEMORY_MODEL=<gc|rc|none>.")
+    endif()
+
     set(_link_dirs
         "${TSLANG_BIN_DIR}"
         "${TSLANG_PREFIX}/lib"
-        "${TSLANG_BIN_DIR}/defaultlib/lib/${_defaultlib_config}")
+        "${_defaultlib_dir}")
 
     if(TSLANG_ROOT)
         if(EXISTS "${TSLANG_ROOT}/gc/release")

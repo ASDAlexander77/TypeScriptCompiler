@@ -1226,6 +1226,46 @@ struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundInd
 };
 
 
+// Does this operation sit in the cleanup region of a scope nested inside the one being lowered?
+//
+// It matters because everything in a cleanup region runs while an exception is already on its
+// way out. Giving a call written there an unwind edge to the enclosing scope's landing pad means
+// that if it throws, whatever the inner cleanup had left to do is stepped over - and what it has
+// left to do is give back the references its own locals took. The ownership verifier reports
+// exactly that on the nested `using` scopes of `00break_continue_scope_exit.ts`; see section 9.62.
+//
+// The outermost cleanup of a function has never had such an edge, because nothing encloses it,
+// so leaving these calls alone is what makes every cleanup agree with the one that was already
+// right. The price is the C++ rule: a `[Symbol.dispose]()` that throws while unwinding
+// terminates rather than continuing outwards.
+//
+// The walk goes all the way up rather than stopping at the scope being lowered - by this point
+// that scope's blocks have been inlined into the enclosing region, so it is no longer an
+// ancestor. That would misread a `TryOp` written *inside* a cleanup region, which nothing
+// generates: cleanup regions hold scope exits only, and a `TryOp` in one is the construct
+// section 9.11 records as already broken.
+static bool isInsideNestedCleanupRegion(mlir::Operation *op)
+{
+    for (auto *region = op->getParentRegion(); region != nullptr; region = region->getParentRegion())
+    {
+        auto *owner = region->getParentOp();
+        if (owner == nullptr)
+        {
+            break;
+        }
+
+        if (auto tryOp = dyn_cast<mlir_ts::TryOp>(owner))
+        {
+            if (region == &tryOp.getCleanup())
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
@@ -1261,16 +1301,34 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto i8PtrTy = mth.getOpaqueType();
 
         // find catch var
+        //
+        // This region walk must stop at a nested `try`: a `try/catch` written inside a catch
+        // clause puts a second CatchOp in this region, and picking it up here means setting the
+        // RTTI type from the *inner* clause and pointing catchOpPtr at a catch that belongs to
+        // another try. That is a wrong type filter on this try's landing pad, which faults at
+        // run time in every memory model at every optimisation level (the debug assert below
+        // fires on it first). A nested try is lowered by its own application of this pattern,
+        // which finds its own catch there.
+        //
+        // Pre-order, because `skip()` only prunes the regions still to come - a post-order walk
+        // has already visited them by the time the callback sees the TryOp.
         Operation *catchOpPtr = nullptr;
         auto visitorCatchContinue = [&](Operation *op) {
+            if (op != tryOp.getOperation() && isa<mlir_ts::TryOp>(op))
+            {
+                return WalkResult::skip();
+            }
+
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
                 rttih.setType(cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType());
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
+
+            return WalkResult::advance();
         };
-        tryOp.getCatches().walk(visitorCatchContinue);
+        tryOp.getCatches().walk<mlir::WalkOrder::PreOrder>(visitorCatchContinue);
 
         // set TryOp -> child TryOp
         auto visitorTryOps = [&](Operation *op) {
@@ -1377,6 +1435,22 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 else if (auto returnValOp = dyn_cast_or_null<mlir_ts::ReturnValOp>(op))
                 {
                     tsContext->unwind[op] = catchesBlock;
+                }
+                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                {
+                    // A throw leaves the catch clause just as abruptly as a return does, and
+                    // owes the same end-of-catch. It cannot be recorded in `unwind` with the
+                    // others: for a throw that map already means its invoke destination, and
+                    // the finally handling below writes exactly that into it.
+                    //
+                    // Only when there is no finally, though. With one, that same handling
+                    // turns this throw into an invoke into the finally block, and the finally
+                    // is what ends the catch - ending it here as well runs it twice and
+                    // breaks the unwind (51exceptions.ts is the case that proves it).
+                    if (!finallyHasOps)
+                    {
+                        tsContext->leavesCatch.insert(op);
+                    }
                 }
             };
             auto it = catchesBlock;
@@ -1514,6 +1588,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         {
             // TODO: check for nested ops for example in if block
             auto visitorCallOpContinue = [&](Operation *op) {
+                if (isInsideNestedCleanupRegion(op))
+                {
+                    return;
+                }
+
                 if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
                 {
                     tsContext->unwind[op] = landingBlock;
@@ -1545,8 +1624,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
+        // A cleanup-only try (a `using` scope) nested inside another try in the same function
+        // has to hand the exception on to that enclosing landing pad once it has disposed, and
+        // on the Itanium path that is done by rethrowing rather than resuming - see the
+        // linuxHasCleanups block at the end of this method. That rethrow needs a catch-all pad,
+        // same as the nested-finally case beside it.
+        auto linuxCleanupOnlyChainsToParent =
+            linuxHasCleanups && !catchHasOps && !finallyHasOps && parentTryOpLandingPad;
+
         mlir::Value catchAll;
-        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType())
+        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
+            linuxCleanupOnlyChainsToParent)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
@@ -1582,10 +1670,27 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
             mlir::SmallVector<mlir::Block *> unwindDests;
-            unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock);
+            // catchesBlock and finallyBlock both being null is a real case, not an oversight:
+            // a cleanup-only try (a `using` with no explicit catch/finally) has nowhere of its
+            // own to hand the unwind to. Leaving unwindDests empty here is what tells
+            // EndCleanupOp to resume unwinding instead of branching to a block that does not
+            // exist - the Linux cleanup-only case below already relies on the same fallback
+            // chain, catchesBlock -> finallyBlock -> parentTryOpLandingPad -> resume.
+            if (catchesBlock)
+            {
+                unwindDests.push_back(catchesBlock);
+            }
+            else if (finallyBlock)
+            {
+                unwindDests.push_back(finallyBlock);
+            }
+            else if (parentTryOpLandingPad)
+            {
+                unwindDests.push_back(parentTryOpLandingPad);
+            }
 
             auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
-            rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);                
+            rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
         }
 
         mlir::Value cmpValue;
@@ -1802,12 +1907,45 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     rewriter.mergeBlocks(finallyBlock, cleanupBlockLast);
                 }
             }
+            else if (linuxCleanupOnlyChainsToParent)
+            {
+                // cleanup-only try (a `using` scope) with another try around it in the same
+                // function. Resuming here would unwind straight past that enclosing try - its
+                // landing pad would be left with no predecessors at all and an exception the
+                // function does mean to catch would leave it instead, which is what
+                // 00using_nested_scopes.ts caught.
+                //
+                // The funclet path repairs this shape in Win32ExceptionPass by redirecting the
+                // unwind edge, but there is no equivalent on the Itanium path: a landingpad is
+                // only ever reachable as an invoke's unwind destination, so this cleanup cannot
+                // simply branch into the enclosing pad. What it can do is catch the exception,
+                // dispose, and throw it again with the enclosing pad as the unwind edge. That is
+                // exactly the shape the nested-finally case above already lowers to - catch-all
+                // pad, __cxa_begin_catch, the cleanup body, then a rethrow that unwinds to the
+                // parent - so this reuses it rather than inventing a second one.
+                //
+                // No EndCatchOp: the rethrow leaves through the unwind edge, so control never
+                // reaches an instruction after it.
+                rewriter.setInsertionPointToStart(cleanupBlock);
+
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
+                tsContext->unwind[throwOp] = parentTryOpLandingPad;
+            }
             else
             {
-                // cleanup-only try (e.g. lowered from a `using` declaration with no explicit
-                // catch/finally): the Windows path already sets up its own landing pad for this
-                // case unconditionally at cleanupHasOps&&isWindows above; mirror that here for
-                // Linux so cleanupBlockLast keeps a valid terminator instead of losing it.
+                // cleanup-only try at the top of its function: nothing encloses it, so once the
+                // cleanup has run the exception carries on out of the function. The Windows path
+                // sets up its own landing pad for this case unconditionally at
+                // cleanupHasOps&&isWindows above; mirror that here so cleanupBlockLast keeps a
+                // valid terminator instead of losing it.
                 rewriter.setInsertionPointToStart(cleanupBlock);
 
                 auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
@@ -1815,14 +1953,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
                 rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
-                mlir::SmallVector<mlir::Block *> unwindDests;
-                if (parentTryOpLandingPad)
-                {
-                    unwindDests.push_back(parentTryOpLandingPad);
-                }
-
                 auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
-                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp,
+                                                                   mlir::SmallVector<mlir::Block *>{});
             }
         }
 
@@ -1939,6 +2072,17 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         CodeLogicHelper clh(throwOp, rewriter);
 
         Location loc = throwOp.getLoc();
+
+        // Throwing out of a catch clause has to end the active catch first, the same as a
+        // return, break or continue leaving one. Without it the catch region is left with no
+        // end marker at all - CutBlock below removes the one TryOpLowering placed before the
+        // terminator - and Win32ExceptionPass then picks an end for itself, splitting the
+        // block ahead of the throw and emitting the catchret before a call that still carries
+        // the funclet token. That IR reaches the backend and crashes it.
+        if (tsContext->leavesCatch.contains(throwOp.getOperation()))
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
 
         if (auto unwind = tsContext->unwind[throwOp])
         {
@@ -2110,6 +2254,11 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 #endif
         mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(
             location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory), rewriter.getIndexAttr(0));
+
+        // `captured` here only means "allocate in the heap". Saying so keeps the box from being
+        // read as a captured variable's cell, which is the other reason a variable is heap
+        // allocated and the one that comes with a frame's reference.
+        allocTempStorage.getDefiningOp()->setAttr(CAPTURE_BOX_ATTR_NAME, rewriter.getUnitAttr());
 
         for (auto [index, val] : enumerate(captureOp.getCaptured()))
         {
@@ -2334,7 +2483,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::AddressOfOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, 
         mlir_ts::ElementRefOp, mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, 
         mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
-        mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
+        mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::TypeDescriptorOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp, mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
         mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::AnyCompareOp, 
         mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
         mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, 

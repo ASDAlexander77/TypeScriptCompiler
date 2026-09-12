@@ -85,6 +85,108 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // A local that holds a heap reference becomes an owner of it: it takes a reference here and
+    // gives it back at every exit from its scope (mlirGenReleaseOwned). Stated unconditionally
+    // - `ts.RetainSlot`/`ts.ReleaseSlot` erase whole under a collector, so a collected build
+    // sees no trace of this and cannot be broken by where the pair lands.
+    //
+    // The pair is balanced by construction, which is the property that makes this safe to add
+    // before anything consumes a count: the reference an allocation is born with is never given
+    // up here, so no release can outnumber its retains. It leaks rather than over-releases -
+    // and under `-mm=rc` the collector is still what reclaims, so the leak is inert.
+    //
+    // Deliberately excluded, each because the frame borrows the reference rather than owning
+    // it, and releasing one would drop a count nobody took:
+    //  - globals, which outlive every scope;
+    //  - parameters, owned by the caller - only variable declarations reach this;
+    //  - captured variables held in the `this` context, whose slot belongs to the context;
+    //  - const bindings with no storage, which have no slot to release from;
+    //  - declarations with no initializer, whose slot holds nothing yet. A catch variable is
+    //    the one that matters: it is declared here but written by the landing pad, so
+    //    retaining at the declaration would read an uninitialized slot as a live reference.
+    //    Consequently a `let s: string;` assigned later never becomes an owner - the
+    //    assignment path below only fires on a slot this marked, so that stays balanced;
+    //  - locals declared in a catch or finally clause. A release there is a call inside an
+    //    exception funclet, and a call there is fragile independently of ownership: `catch (e:
+    //    int) { new Res(); throw 2; }` crashes at run time with nothing of this involved.
+    //    Rather than add a second way to reach it, those locals are not owned.
+    //
+    // The test itself is localTakesOwnership, shared with the hoisting decision in
+    // createLocalVariable so the two cannot disagree about which declarations these are.
+    //
+    // An excluded declaration is not finished with, though: it may still be captured, and a
+    // captured variable's *cell* is the scope's to give back whoever owns the value in it. That
+    // is trackPossibleCell below, and it is a different question with a different answer.
+    void MLIRGenImpl::takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
+                                           const GenContext &genContext)
+    {
+        if (!variableDeclarationInfo.storage || !localTakesOwnership(location, variableDeclarationInfo, genContext))
+        {
+            trackPossibleCell(variableDeclarationInfo, genContext);
+            return;
+        }
+
+        auto varOp = variableDeclarationInfo.storage.getDefiningOp<mlir_ts::VariableOp>();
+        if (!varOp)
+        {
+            return;
+        }
+
+        varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
+
+        // When the initializer already carries a reference for its receiver - `let x = new C()`,
+        // whose `C..new` retained the instance on the way out (§9.24) - taking another would put
+        // the slot one owner above the truth and nothing would ever be freed. Consume that
+        // reference instead: no retain here, and the scope-exit release is what gives it back.
+        // The pair stays balanced, so this cannot over-release; it is only the retain that moves.
+        //
+        // The attribute is what tells the verifier the release still has a partner, since there
+        // is no `ts.RetainSlot` left to pair it with.
+        if (producesOwnedReference(variableDeclarationInfo.initial))
+        {
+            varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+            consumeOwnedReference(variableDeclarationInfo.initial);
+        }
+        else
+        {
+            builder.create<mlir_ts::RetainSlotOp>(location, variableDeclarationInfo.storage);
+        }
+
+        genContext.ownedVars->push_back(variableDeclarationInfo.storage);
+    }
+
+    // A local that owns nothing still has to be listed, because it may yet become a cell.
+    //
+    // Whether a variable is captured is not known here: the closure that captures it is written
+    // after the declaration, and marks the storage when it is generated. Scope exit is generated
+    // after both, so that is where the question can be answered - all this does is make sure the
+    // slot is there to be asked about. Nothing is emitted for one that never becomes a cell.
+    //
+    // Two exclusions, and both are about where the release would land rather than about the
+    // variable. A declaration directly inside a try body has its release repeated in the
+    // cleanup region, which cannot see storage declared in the body - localTakesOwnership pairs
+    // its own answer with hoisting for exactly that reason, and hoisting every local of every
+    // try body is not a trade this makes. A catch or finally clause is excluded on the same
+    // terms takeOwnershipOfLocal excludes it. A captured variable declared in either keeps
+    // leaking its cell.
+    void MLIRGenImpl::trackPossibleCell(struct VariableDeclarationInfo &variableDeclarationInfo,
+                                        const GenContext &genContext)
+    {
+        if (genContext.ownedVars == nullptr || genContext.allocateScopeOwnedVarsOutsideOfOperation ||
+            variableDeclarationInfo.isGlobal || variableDeclarationInfo.deleted ||
+            variableDeclarationInfo.allocateInContextThis || blockIsInsideCatchOrFinally())
+        {
+            return;
+        }
+
+        if (!variableDeclarationInfo.storage || !variableDeclarationInfo.storage.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return;
+        }
+
+        genContext.ownedVars->push_back(variableDeclarationInfo.storage);
+    }
+
     mlir::Type MLIRGenImpl::registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings, bool forceLocalVar)
     {
@@ -134,9 +236,12 @@ namespace mlirgen
 
         //LLVM_DEBUG(variableDeclarationInfo.printDebugInfo(););
 
+        takeOwnershipOfLocal(location, variableDeclarationInfo, genContext);
+
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
         if (genContext.usingVars != nullptr && varDecl->getUsing())
         {
+            varDecl->setDisposeGuard(variableDeclarationInfo.disposeGuard);
             genContext.usingVars->push_back(varDecl);
         }
 

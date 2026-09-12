@@ -1,3 +1,8 @@
 {
-    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    // Release builds of the MLIR-heavy TUs peak at ~3 GB RSS per cc1plus.
+    // Ninja's default (nproc + 2 = 26 here) exhausts RAM and the OOM killer
+    // takes out cc1plus ("g++: fatal error: Killed signal terminated program
+    // cc1plus"). 8 matches build_tslang_release.sh.
+    "cmake.parallelJobs": 8
 }

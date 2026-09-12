@@ -75,8 +75,8 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
-extern cl::opt<bool> disableGC;
 extern cl::opt<bool> disableWarnings;
+extern cl::opt<bool> verifyOwnership;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
@@ -91,6 +91,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
     // Check to see what granularity of MLIR we are compiling to.
     bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;
     bool isLoweringToLLVM = emitAction >= Action::DumpMLIRLLVM;
+
+    // Before anything is lowered, and in every memory model: the ops it removes erase on the
+    // way to LLVM under `gc` and `none` anyway, so doing this here keeps the IR the same shape
+    // in all three and keeps the ownership verifier checking one thing rather than two.
+    pm.addPass(mlir::typescript::createOwnedReturnConsumptionPass(compileOptions));
 
     if (isLoweringToAffine)
     {
@@ -123,6 +128,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
 #endif
+
+        // Ahead of the optimisation passes, so it checks what MLIRGen and the affine lowering
+        // actually produced rather than what the inliner left of it, and after the lowering,
+        // because that is what turns unwind paths into ordinary CFG edges.
+        if (verifyOwnership)
+        {
+            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipVerifierPass());
+        }
 
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
@@ -158,7 +171,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
         }
 
-        if (!disableGC)
+        if (compileOptions.needsGCRuntime())
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }

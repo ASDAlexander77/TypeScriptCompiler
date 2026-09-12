@@ -78,7 +78,21 @@ target_link_libraries(test-runner PRIVATE ${LIBS})
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
 # GC lib dir derived from the BDWgc package (BDWgc_DIR=<prefix>/lib/cmake/bdwgc)
 get_filename_component(TEST_GC_LIBDIR "${BDWgc_DIR}/../.." ABSOLUTE)
+# A shared Boehm, for the shared-library tests only. Two binaries that each link gc.lib
+# statically get two collectors, and the one inside the library then frees objects the
+# executable is still holding - item 5ao. Built by scripts/build_gc_release_shared_vs.bat;
+# when it is absent the shared-library tests are skipped rather than run wrong.
+set(TEST_GC_SHARED_PREFIX "${PROJECT_SOURCE_DIR}/../3rdParty/gcdll/x64/${CMAKE_BUILD_TYPE_LOWERCASE}")
+if (EXISTS "${TEST_GC_SHARED_PREFIX}/lib/gc.lib" OR EXISTS "${TEST_GC_SHARED_PREFIX}/lib/libgc.so")
+    set(TSLANG_HAVE_SHARED_GC TRUE)
+else()
+    set(TSLANG_HAVE_SHARED_GC FALSE)
+    message(STATUS "shared Boehm not found at ${TEST_GC_SHARED_PREFIX} - shared-library tests will be skipped (see scripts/build_gc_release_shared_vs.bat)")
+endif()
+
 if (WIN32)
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"${WINDOWS_KITS_DIR_LIB}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH=\"${WINDOWS_KITS_DIR_UCRT_LIB}\"")
@@ -89,6 +103,8 @@ if (WIN32)
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
 else()
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
@@ -109,7 +125,15 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compilefm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitfm.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilefm.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitfm.sh"
-    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.sh")
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledfm.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdfm.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilerc.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitrc.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledrc.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdrc.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilerc.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitrc.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledrc.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdrc.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilenone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitnone.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilenone.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitnone.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh")
 
 ######## enable testing ############
 # open __build\tslang   
@@ -162,6 +186,7 @@ add_test(NAME test-compile-00-break-continue COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
+add_test(NAME test-compile-00-globals-entry-point COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
 add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -203,6 +228,7 @@ add_test(NAME test-compile-00-union-type COMMAND test-runner "${PROJECT_SOURCE_D
 add_test(NAME test-compile-01-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01union_type.ts")
 add_test(NAME test-compile-02-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02union_type.ts")
 add_test(NAME test-compile-03-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type.ts")
+add_test(NAME test-compile-03-union-type-case-order COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type_case_order.ts")
 add_test(NAME test-compile-04-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
 add_test(NAME test-compile-05-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05union_type.ts")
 add_test(NAME test-compile-00-union-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_ops.ts")
@@ -221,6 +247,38 @@ add_test(NAME test-compile-00-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-compile-01-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 add_test(NAME test-compile-02-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 add_test(NAME test-compile-00-new-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-compile-00-owned-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+# The JIT variants are the ones that matter here: this shape was a JIT-only miscompile until
+# the catchable-type size was fixed (see the file header). Kept in all three models, since the
+# bad size was model-independent.
+add_test(NAME test-compile-00-try-using-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
+add_test(NAME test-compile-00-throw-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
+add_test(NAME test-compile-00-throw-inlined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
+add_test(NAME test-compile-00-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
+add_test(NAME test-compile-00-owned-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
+add_test(NAME test-compile-00-owned-literals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_literals.ts")
+add_test(NAME test-compile-00-owned-array-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_array_ops.ts")
+add_test(NAME test-compile-00-owned-inline-records COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
+add_test(NAME test-compile-00-owned-transfer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
+add_test(NAME test-compile-00-owned-call-results COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+add_test(NAME test-compile-00-owned-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
+add_test(NAME test-compile-00-owned-interfaces COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
+add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
+add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
+add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-compile-00-owned-generator-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
+add_test(NAME test-compile-00-owned-iteration COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
+add_test(NAME test-compile-00-owned-async COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-compile-00-owned-nested-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
+add_test(NAME test-compile-00-owned-unions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
+add_test(NAME test-compile-00-owned-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-compile-00-owned-early-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
+add_test(NAME test-compile-00-owned-construct-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
 add_test(NAME test-compile-00-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-compile-00-in-method-names COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -228,6 +286,7 @@ add_test(NAME test-compile-00-class-structural-extends COMMAND test-runner "${PR
 add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 add_test(NAME test-compile-01-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 add_test(NAME test-compile-00-class-stack COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 add_test(NAME test-compile-00-class-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -325,11 +384,15 @@ add_test(NAME test-compile-00-safe-cast-bug COMMAND test-runner "${PROJECT_SOURC
 add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 add_test(NAME test-compile-01-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-compile-00-async-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
+add_test(NAME test-compile-00-async-result-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_result_types.ts")
+add_test(NAME test-compile-00-async-gc-threading COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_gc_threading.ts")
 add_test(NAME test-compile-00-for-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 
 add_test(NAME test-compile-00-for-await-yield COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-compile-00-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 add_test(NAME test-compile-00-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-compile-00-catch-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
+add_test(NAME test-compile-00-catch-value-minimal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
 add_test(NAME test-compile-01-try-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-compile-00-try-catch-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
 add_test(NAME test-compile-00-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
@@ -388,6 +451,8 @@ add_test(NAME test-compile-00-conditional-type COMMAND test-runner "${PROJECT_SO
 add_test(NAME test-compile-00-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00disposable.ts")
 add_test(NAME test-compile-01-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01disposable.ts")
 add_test(NAME test-compile-02-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02disposable.ts")
+add_test(NAME test-compile-03-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+add_test(NAME test-compile-04-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
 add_test(NAME test-compile-00-if-conditional-compile COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00if_conditional_compile.ts")
 add_test(NAME test-compile-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-compile-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
@@ -535,6 +600,7 @@ add_test(NAME test-jit-00-break-continue COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
+add_test(NAME test-jit-00-globals-entry-point COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
 add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -576,6 +642,7 @@ add_test(NAME test-jit-00-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_
 add_test(NAME test-jit-01-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01union_type.ts")
 add_test(NAME test-jit-02-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02union_type.ts")
 add_test(NAME test-jit-03-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type.ts")
+add_test(NAME test-jit-03-union-type-case-order COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type_case_order.ts")
 add_test(NAME test-jit-04-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
 add_test(NAME test-jit-05-union-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/05union_type.ts")
 add_test(NAME test-jit-00-union-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_ops.ts")
@@ -594,6 +661,35 @@ add_test(NAME test-jit-00-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-01-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 add_test(NAME test-jit-02-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
+add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
+add_test(NAME test-jit-00-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
+add_test(NAME test-jit-00-owned-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
+add_test(NAME test-jit-00-owned-literals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_literals.ts")
+add_test(NAME test-jit-00-owned-array-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_array_ops.ts")
+add_test(NAME test-jit-00-owned-inline-records COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
+add_test(NAME test-jit-00-owned-transfer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
+add_test(NAME test-jit-00-owned-call-results COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+add_test(NAME test-jit-00-owned-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
+add_test(NAME test-jit-00-owned-interfaces COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
+add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
+add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
+add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-00-owned-generator-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
+add_test(NAME test-jit-00-owned-iteration COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
+add_test(NAME test-jit-00-owned-async COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-jit-00-owned-nested-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
+add_test(NAME test-jit-00-owned-unions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
+add_test(NAME test-jit-00-owned-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-jit-00-owned-early-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
+add_test(NAME test-jit-00-owned-construct-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
+add_test(NAME test-jit-00-try-using-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
 add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-jit-00-in-method-names COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
@@ -601,6 +697,7 @@ add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -jit "${P
 add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 add_test(NAME test-jit-01-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 add_test(NAME test-jit-00-class-stack COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
 add_test(NAME test-jit-00-class-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static.ts")
@@ -698,9 +795,13 @@ add_test(NAME test-jit-00-safe-cast-bug COMMAND test-runner -jit "${PROJECT_SOUR
 add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
+add_test(NAME test-jit-00-async-result-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_result_types.ts")
+add_test(NAME test-jit-00-async-gc-threading COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_gc_threading.ts")
 add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-jit-00-catch-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value.ts")
+add_test(NAME test-jit-00-catch-value-minimal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_value_minimal.ts")
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
 add_test(NAME test-jit-00-try-catch-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_return.ts")
 add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
@@ -766,6 +867,8 @@ add_test(NAME test-jit-00-conditional-type COMMAND test-runner -jit "${PROJECT_S
 add_test(NAME test-jit-00-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00disposable.ts")
 add_test(NAME test-jit-01-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01disposable.ts")
 add_test(NAME test-jit-02-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02disposable.ts")
+add_test(NAME test-jit-03-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+add_test(NAME test-jit-04-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
 add_test(NAME test-jit-00-if-conditional-compile COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00if_conditional_compile.ts")
 add_test(NAME test-jit-01-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-jit-02-numbers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
@@ -862,7 +965,18 @@ add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOU
 
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
+# A library whose root only declares and initializes a variable must not get an entry point of
+# its own: it is compiled with the same --emit=obj as the program linked beside it, and a `main`
+# in both fails to link. Only the program half is given --entry-point.
+add_test(NAME test-compile-export-import-root-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_root_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_root_var.ts")
 add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# Item 5al: an imported function's returned reference is taken over rather than retained
+# again. Registered statically as well as shared, and under every memory model - the
+# static two-module form had no rc/none coverage at all, which is why the leak it fixes
+# went unmeasured for so long.
+add_test(NAME test-compile-export-import-owned-returns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-rc-export-import-owned-returns COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-none-export-import-owned-returns COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-export-import-class-extends-multilevel COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-compile-export-import-class-extends-implements-diamond COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
@@ -938,6 +1052,7 @@ add_test(NAME test-compile-shared-export-import-object-literal-with-class-types 
 # DeclarationPrinter no longer prints a wrong extends target (own name instead of
 # the base's) nor the synthetic base-class storage field (which shifted every
 # subsequent field's offset in the importer).
+add_test(NAME test-compile-shared-export-import-owned-returns COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
@@ -1018,6 +1133,7 @@ add_test(NAME test-jit-shared-decl-emit-class COMMAND test-runner -jit -shared "
 # shared libs tests (exports/imports)
 add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-jit-shared-export-import-owned-returns COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
@@ -1055,3 +1171,906 @@ add_test(NAME test-jit-shared-export-import-object-literal-structural-typed-exte
 add_test(NAME test-jit-shared-export-import-vars COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
 add_test(NAME test-jit-shared-export-import-vars-2 COMMAND test-runner -jit -shared -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
 add_test(NAME test-jit-shared-export-import-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+
+# -mm=rc builds every allocation with a live reference count in the block header, generates
+# the reference-counting routines, and now calls them: a local holding a heap reference takes
+# one at its declaration and gives it back at every exit from its scope. A representative set
+# rather than the whole suite, since the cost is a second full compile per test.
+#
+# These are the only tests ownership insertion can break. The ops it emits erase whole under a
+# collector, so the rest of the suite is immune to where they land, not merely expected to
+# survive it.
+add_test(NAME test-jit-rc-strings COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
+add_test(NAME test-jit-rc-str-null COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00str_null.ts")
+add_test(NAME test-jit-rc-array COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
+add_test(NAME test-jit-rc-array-push-pop COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
+add_test(NAME test-jit-rc-array-splice COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
+add_test(NAME test-jit-rc-any COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any.ts")
+add_test(NAME test-jit-rc-any-compare COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_compare.ts")
+add_test(NAME test-jit-rc-any-types COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
+add_test(NAME test-jit-rc-class COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
+add_test(NAME test-jit-rc-union-type COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_type.ts")
+add_test(NAME test-jit-rc-tuple COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple.ts")
+add_test(NAME test-jit-rc-interface COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface.ts")
+add_test(NAME test-jit-rc-generator COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator.ts")
+add_test(NAME test-jit-rc-new-delete COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+add_test(NAME test-jit-rc-try-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
+add_test(NAME test-jit-rc-for-of COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_of.ts")
+add_test(NAME test-jit-rc-print COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
+add_test(NAME test-jit-rc-owned-locals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+add_test(NAME test-jit-rc-throw-in-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
+add_test(NAME test-jit-rc-throw-inlined COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+add_test(NAME test-jit-none-throw-inlined COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+add_test(NAME test-jit-rc-using-nested-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-jit-none-using-nested-scopes COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
+add_test(NAME test-jit-rc-using-unwind-progress COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+add_test(NAME test-jit-none-using-unwind-progress COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
+add_test(NAME test-jit-rc-break-continue-scope-exit COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
+add_test(NAME test-jit-none-break-continue-scope-exit COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
+add_test(NAME test-jit-rc-owned-fields COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
+add_test(NAME test-jit-none-owned-fields COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_fields.ts")
+add_test(NAME test-jit-rc-owned-elements COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
+add_test(NAME test-jit-none-owned-elements COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_elements.ts")
+add_test(NAME test-jit-rc-owned-literals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_literals.ts")
+add_test(NAME test-jit-none-owned-literals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_literals.ts")
+add_test(NAME test-jit-rc-owned-array-ops COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_array_ops.ts")
+add_test(NAME test-jit-none-owned-array-ops COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_array_ops.ts")
+add_test(NAME test-jit-rc-owned-inline-records COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
+add_test(NAME test-jit-none-owned-inline-records COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
+add_test(NAME test-jit-rc-owned-transfer COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
+add_test(NAME test-jit-none-owned-transfer COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
+add_test(NAME test-jit-rc-owned-call-results COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+add_test(NAME test-jit-none-owned-call-results COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+add_test(NAME test-jit-rc-owned-temporaries COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
+add_test(NAME test-jit-none-owned-temporaries COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
+add_test(NAME test-jit-rc-owned-interfaces COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
+add_test(NAME test-jit-none-owned-interfaces COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
+add_test(NAME test-jit-rc-owned-closures COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
+add_test(NAME test-jit-none-owned-closures COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
+add_test(NAME test-jit-rc-owned-any-boxing COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
+add_test(NAME test-jit-none-owned-any-boxing COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
+add_test(NAME test-jit-rc-owned-strings COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+add_test(NAME test-jit-none-owned-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+add_test(NAME test-jit-rc-owned-generators COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-jit-none-owned-generators COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
+add_test(NAME test-jit-rc-owned-globals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-none-owned-globals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
+add_test(NAME test-jit-rc-owned-generator-locals COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
+add_test(NAME test-jit-none-owned-generator-locals COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
+add_test(NAME test-jit-rc-owned-iteration COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
+add_test(NAME test-jit-none-owned-iteration COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_iteration.ts")
+add_test(NAME test-jit-rc-owned-async COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-jit-none-owned-async COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_async.ts")
+add_test(NAME test-jit-rc-owned-nested-captures COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
+add_test(NAME test-jit-none-owned-nested-captures COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_nested_captures.ts")
+add_test(NAME test-jit-rc-owned-unions COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
+add_test(NAME test-jit-none-owned-unions COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_unions.ts")
+add_test(NAME test-jit-rc-owned-delete COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-jit-none-owned-delete COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_delete.ts")
+add_test(NAME test-jit-rc-owned-early-return COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
+add_test(NAME test-jit-none-owned-early-return COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_early_return.ts")
+add_test(NAME test-jit-rc-owned-construct-interface COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
+add_test(NAME test-jit-none-owned-construct-interface COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_construct_interface.ts")
+add_test(NAME test-jit-rc-try-using-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
+add_test(NAME test-jit-none-try-using-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
+add_test(NAME test-jit-rc-disposable-scopes COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
+add_test(NAME test-jit-none-disposable-scopes COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/04disposable.ts")
+add_test(NAME test-jit-rc-disposable-unwind COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+add_test(NAME test-jit-none-disposable-unwind COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/03disposable.ts")
+
+# Allocating inside a Win64 catch/finally funclet - the shape that only faults once the model
+# stops going through the collector, so it needs both non-gc variants to be worth anything.
+add_test(NAME test-compile-00-alloc-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-00-alloc-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-rc-alloc-in-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+add_test(NAME test-jit-none-alloc-in-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00alloc_in_catch.ts")
+
+# A try/catch inside a catch clause - crashed in every model at every optimisation level.
+add_test(NAME test-compile-00-nested-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-00-nested-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-rc-nested-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+add_test(NAME test-jit-none-nested-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+
+# `-mm=none` - leak everything - had no coverage at all before the rename that gave it a name
+# of its own. One test, so a future change to the model plumbing cannot silently break it.
+add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
+
+# ============================================================================
+# The corpus, under the models that are not the default
+#
+# `-mm=rc` ran 42 files of this corpus and `-mm=none` ran 24, and neither ran a
+# single one ahead of time. That is why three faults in a row were found by an
+# out-of-tree sweep instead of here, and why the last of them was invisible
+# twice over - once for the model, and once for the build mode. Every file the
+# default model runs in a tier is run again below, in the same tier, under both
+# other models. See docs/reference-counting-evaluation.md, plan item 5y.
+#
+# A file that does not pass yet under a model is listed in the matching BROKEN
+# set below, and registered but disabled - so what is broken is written down in
+# the build rather than in a document somebody has to find.
+# ============================================================================
+
+# every single-file test the default model runs, in either tier
+set(TSLANG_CORPUS
+    00add_promotes_both_operands.ts
+    00conditional_owned_result.ts
+    00owned_array_splice.ts
+    00alloc_in_catch.ts
+    00any_compare.ts
+    00any_generic_equals.ts
+    00any_types.ts
+    00any.ts
+    00array_assignment5.ts
+    00array_cond_access.ts
+    00array_of.ts
+    00array_shift.ts
+    00array_splice.ts
+    00array_view.ts
+    00array.ts
+    00array2.ts
+    00array3.ts
+    00array4_push_pop.ts
+    00array5_deconst.ts
+    00array6.ts
+    00array7.ts
+    00array8_tuple_spread.ts
+    00arrow_generic.ts
+    00arrow_global.ts
+    00arrow_in_arrow.ts
+    00as_const.ts
+    00as.ts
+    00assert.ts
+    00async_await.ts
+    00async_gc_threading.ts
+    00async_result_types.ts
+    00bool_arith_ops.ts
+    00break_continue_scope_exit.ts
+    00break_continue.ts
+    00capture_in_new_arguments.ts
+    00catch_value.ts
+    00catch_value_minimal.ts
+    00class_abstract.ts
+    00class_access_control.ts
+    00class_accessor_super.ts
+    00class_accessor_virtual.ts
+    00class_accessor.ts
+    00class_accessor2.ts
+    00class_constr_fields.ts
+    00class_deconst.ts
+    00class_def_constr.ts
+    00class_discover_types.ts
+    00class_expression.ts
+    00class_expression2.ts
+    00class_expression3.ts
+    00class_from_tuple.ts
+    00class_generic_iface.ts
+    00class_generic_method.ts
+    00class_generic_method2.ts
+    00class_generic.ts
+    00class_iface.ts
+    00class_indexer_super.ts
+    00class_indexer.ts
+    00class_iterator_super.ts
+    00class_iterator.ts
+    00class_local_decl.ts
+    00class_nested.ts
+    00class_new.ts
+    00class_or_interface_to_tuple.ts
+    00class_protected_constr.ts
+    00class_recursive.ts
+    00class_stack.ts
+    00class_static_block.ts
+    00class_static_constr.ts
+    00class_static_generic_method.ts
+    00class_static_generic_method2.ts
+    00class_static_generic_method3.ts
+    00class_structural_extends.ts
+    00class_super_static.ts
+    00class_super.ts
+    00class_symbol_iterator.ts
+    00class_var_args.ts
+    00class_virtual_call.ts
+    00class_virtual_table.ts
+    00class.ts
+    00computedpropertyname.ts
+    00cond_expr.ts
+    00conditional_type.ts
+    00decorators.ts
+    00disposable.ts
+    00dowhile.ts
+    00enum_multiple.ts
+    00enum.ts
+    00equals.ts
+    00every.ts
+    00extends.ts
+    00extension_cond_access.ts
+    00extension.ts
+    00filter.ts
+    00for_await_yield.ts
+    00for_await.ts
+    00for_in.ts
+    00for_infinite_result.ts
+    00for_of.ts
+    00for.ts
+    00funcs_bindings.ts
+    00funcs_capture.ts
+    00funcs_expression_generic.ts
+    00funcs_expression_iterator.ts
+    00funcs_generic_arrow.ts
+    00funcs_generic_iterator.ts
+    00funcs_generic_with_typeof.ts
+    00funcs_generic.ts
+    00funcs_nesting_capture.ts
+    00funcs_nesting_generic.ts
+    00funcs_nesting.ts
+    00funcs_typed_generic_iterator.ts
+    00funcs_typeless_function_as_generic.ts
+    00funcs_vararg.ts
+    00funcs.ts
+    00generator_manual_next.ts
+    00generator_manual_next2.ts
+    00generator.ts
+    00generator2.ts
+    00generator3.ts
+    00generator4.ts
+    00generator5.ts
+    00generator6.ts
+    00generator7.ts
+    00generic_arguments_name_conflict.ts
+    00global_const_object_method.ts
+    00globals.ts
+    00globals2.ts
+    00globals3.ts
+    00globals_entry_point.ts
+    00if_conditional_compile.ts
+    00if_return.ts
+    00in_method_names.ts
+    00in.ts
+    00infer.ts
+    00instanceof.ts
+    00interface_captures.ts
+    00interface_conjunction.ts
+    00interface_function_typed_field.ts
+    00interface_generic.ts
+    00interface_global_method.ts
+    00interface_indexer.ts
+    00interface_new.ts
+    00interface_object_array.ts
+    00interface_object.ts
+    00interface_object2.ts
+    00interface_object3.ts
+    00interface_object4.ts
+    00interface_object5.ts
+    00interface_optional_cast_order.ts
+    00interface_optional_extends.ts
+    00interface_optional_method_extends.ts
+    00interface_optional.ts
+    00interface_partial.ts
+    00interface.ts
+    00interface2.ts
+    00intersection_type_generic.ts
+    00intersection_type.ts
+    00iterator_bug.ts
+    00iterator.ts
+    00lambdas_generic_global.ts
+    00lambdas.ts
+    00length.ts
+    00map.ts
+    00method_access_cond.ts
+    00mixed_type_ops.ts
+    00names_conflict.ts
+    00nested_catch.ts
+    00new_delete.ts
+    00ns_bug.ts
+    00ns.ts
+    00ns2.ts
+    00ns3.ts
+    00ns4.ts
+    00ns5.ts
+    00numbers.ts
+    00object_accessor.ts
+    00object_annotated_method_extends_interface_multilevel.ts
+    00object_annotated_method_extends_interface.ts
+    00object_annotated_method_interleaved.ts
+    00object_annotated_method_params.ts
+    00object_annotated_method.ts
+    00object_boxed_infra.ts
+    00object_chained_sibling_method_return.ts
+    00object_deconst.ts
+    00object_func.ts
+    00object_func2.ts
+    00object_func3.ts
+    00object_global.ts
+    00object_new.ts
+    00object_ref_semantics.ts
+    00object.ts
+    00optional.ts
+    00owned_any_boxing.ts
+    00owned_array_ops.ts
+    00owned_async.ts
+    00owned_call_results.ts
+    00owned_closures.ts
+    00owned_construct_interface.ts
+    00owned_delete.ts
+    00owned_early_return.ts
+    00owned_elements.ts
+    00owned_fields.ts
+    00owned_generator_locals.ts
+    00owned_generators.ts
+    00owned_globals.ts
+    00owned_inline_records.ts
+    00owned_interfaces.ts
+    00owned_iteration.ts
+    00owned_literals.ts
+    00owned_locals.ts
+    00owned_nested_captures.ts
+    00owned_strings.ts
+    00owned_temporaries.ts
+    00owned_unions.ts
+    00owned_transfer.ts
+    00prefix_postfix.ts
+    00print.ts
+    00property_access_cond.ts
+    00question_question.ts
+    00reduce.ts
+    00reference_index_bug.ts
+    00reference_null_bug.ts
+    00reference_ref_deref.ts
+    00safe_cast_bug.ts
+    00safe_cast_field_access.ts
+    00safe_cast_typeof.ts
+    00safe_cast_while.ts
+    00safe_cast.ts
+    00safe_cast2.ts
+    00sizeof.ts
+    00spread_assignment.ts
+    00spread.ts
+    00stack_test.ts
+    00str_null.ts
+    00strings.ts
+    00switch.ts
+    00symbol.ts
+    00throw_in_catch.ts
+    00throw_inlined.ts
+    00to_primitive_ops.ts
+    00toplevel_control_flow.ts
+    00toplevel_no_main_with_helpers.ts
+    00try_catch_mismatch_rethrow.ts
+    00try_catch_rethrow.ts
+    00try_catch_return_dispose.ts
+    00try_catch_return.ts
+    00try_catch.ts
+    00try_finally_break_continue.ts
+    00try_finally_return.ts
+    00try_finally.ts
+    00try_using_catch.ts
+    00tuple_named.ts
+    00tuple_with_array.ts
+    00tuple.ts
+    00type_aliases_in_generics.ts
+    00type_guard_function.ts
+    00typed_array.ts
+    00types_indexedaccesstype.ts
+    00types_keyof_enum.ts
+    00types_mappedtype.ts
+    00types_templateliteraltype.ts
+    00types_unknown1.ts
+    00types_utility.ts
+    00types.ts
+    00uint_compare_bug.ts
+    00undef.ts
+    00union_bin_ops.ts
+    00union_bin_ops2.ts
+    00union_errors.ts
+    00union_ops.ts
+    00union_to_any.ts
+    00union_type.ts
+    00using_nested_scopes.ts
+    00using_unwind_progress.ts
+    00var_bindings.ts
+    00vars.ts
+    00void.ts
+    00while.ts
+    01any.ts
+    01arguments.ts
+    01class_new.ts
+    01disposable.ts
+    01enum.ts
+    01extends.ts
+    01extension.ts
+    01funcs_generic_iterator.ts
+    01funcs_generic.ts
+    01funcs_vararg.ts
+    01iterator.ts
+    01lambdas.ts
+    01map.ts
+    01method_access_cond.ts
+    01optional.ts
+    01print-bug.ts
+    01reduce.ts
+    01safe_cast_while.ts
+    01sizeof.ts
+    01spread_assignment.ts
+    01spread.ts
+    01switch.ts
+    01symbol.ts
+    01try_catch_return_dispose.ts
+    01try_catch.ts
+    01try_finally.ts
+    01tuple.ts
+    01types_mappedtype.ts
+    01types_templateliteraltype.ts
+    01types_utility.ts
+    01union_type.ts
+    02disposable.ts
+    02extends.ts
+    02funcs_generic_iterator.ts
+    02funcs_vararg.ts
+    02iterator.ts
+    02numbers.ts
+    02sizeof.ts
+    02union_type.ts
+    03disposable.ts
+    03iterator.ts
+    03union_type.ts
+    03union_type_case_order.ts
+    04disposable.ts
+    04union_type.ts
+    05strings.ts
+    05union_type.ts
+    06numbercollections.ts
+    07stringcollections.ts
+    08stringopertations.ts
+    09postprefix.ts
+    10arrayincrement.ts
+    11equalsoperator.ts
+    12referencecollection.ts
+    13actions.ts
+    14lazyoperations.ts
+    15references_capture.ts
+    15references.ts
+    17classes.ts
+    18enums.ts
+    19forof_capture.ts
+    19forof.ts
+    20maps.ts
+    22lambdas.ts
+    23generics.ts
+    241arrayforeach.ts
+    243arrayevery.ts
+    244arraysome.ts
+    25lamdacapture.ts
+    26staticclasses.ts
+    28boolcasts.ts
+    29lazyreferences.ts
+    32complexcalls.ts
+    33inheritance.ts
+    34switch.ts
+    35lambdaparameters.ts
+    36interfaces.ts
+    39objectdestructuring.ts
+    40generics.ts
+    41anonymoustypes.ts
+    42lambdaproperties.ts
+    43nestednamespace.ts
+    44toplevelcode.ts
+    45enumtostring.ts
+    48instanceof.ts
+    51exceptions.ts
+    abstractPropertyInConstructor.ts
+    additionOperatorWithNumberAndEnum.ts
+    arithmeticOperatorWithEnum.ts
+    arithmeticOperatorWithTypeParameter.ts
+    arrayFakeFlatNoCrashInferenceDeclarations.ts
+    arrayLiterals.ts
+    arrayLiterals2ES5.ts
+    arrayLiterals3.ts
+    assignmentTypeNarrowing.ts
+    asyncMethodWithSuper_es2017.ts
+    callWithSpread.ts
+    comparisonOperatorWithIdenticalObjects.ts
+    conditionalTypes1.ts
+    conditionalTypes2.ts
+    declarationsAndAssignments.ts
+    dependencies.ts
+    disallowLineTerminatorBeforeArrow.ts
+    emitDefaultParametersFunctionExpression.ts
+    gc_malloc_cse_o3.ts
+    Grammar_and_types.ts
+    internals.ts
+    load_store_decorators.ts
+    logicalAssignment5_2.ts
+    logicalAssignment5_3.ts
+    logicalAssignment5.ts
+    nbody.ts
+    newWithSpread.ts
+    no_main.ts
+    noPropertyAccessFromIndexSignature1.ts
+    parser.ts
+    path.ts
+    raytrace.ts
+    structural-typing.ts
+    thisTypeInClasses.ts
+    typeGuardFunction.ts
+    typeGuardOfFormThisMember.ts
+    typeGuardOfFormTypeOfBoolean.ts
+    types_vs_interfaces.ts
+    )
+
+# the default model runs these ahead of time only, so the other models do too
+set(TSLANG_CORPUS_NO_JIT
+    00array_cond_access.ts
+    00try_catch_mismatch_rethrow.ts
+    )
+
+# and this one in the JIT only
+set(TSLANG_CORPUS_NO_AOT
+    02funcs_vararg.ts
+    )
+
+# Files with a hand-written `-mm=rc` JIT entry further up. They keep the names the
+# evaluation document cites, so the generated pass skips them rather than running
+# each of them twice.
+set(TSLANG_CORPUS_RC_NAMED
+    00alloc_in_catch.ts
+    00any_compare.ts
+    00any_types.ts
+    00any.ts
+    00array_splice.ts
+    00array.ts
+    00array4_push_pop.ts
+    00break_continue_scope_exit.ts
+    00class.ts
+    00for_of.ts
+    00generator.ts
+    00interface.ts
+    00nested_catch.ts
+    00new_delete.ts
+    00owned_any_boxing.ts
+    00owned_array_ops.ts
+    00owned_async.ts
+    00owned_call_results.ts
+    00owned_closures.ts
+    00owned_construct_interface.ts
+    00owned_delete.ts
+    00owned_early_return.ts
+    00owned_elements.ts
+    00owned_fields.ts
+    00owned_generator_locals.ts
+    00owned_generators.ts
+    00owned_globals.ts
+    00owned_inline_records.ts
+    00owned_interfaces.ts
+    00owned_iteration.ts
+    00owned_literals.ts
+    00owned_locals.ts
+    00owned_nested_captures.ts
+    00owned_strings.ts
+    00owned_temporaries.ts
+    00owned_unions.ts
+    00owned_transfer.ts
+    00print.ts
+    00str_null.ts
+    00strings.ts
+    00throw_in_catch.ts
+    00throw_inlined.ts
+    00try_catch.ts
+    00try_using_catch.ts
+    00tuple.ts
+    00union_type.ts
+    00using_nested_scopes.ts
+    00using_unwind_progress.ts
+    03disposable.ts
+    04disposable.ts
+    )
+
+# the same, for `-mm=none`
+set(TSLANG_CORPUS_NONE_NAMED
+    00alloc_in_catch.ts
+    00break_continue_scope_exit.ts
+    00nested_catch.ts
+    00owned_any_boxing.ts
+    00owned_array_ops.ts
+    00owned_async.ts
+    00owned_call_results.ts
+    00owned_closures.ts
+    00owned_construct_interface.ts
+    00owned_delete.ts
+    00owned_early_return.ts
+    00owned_elements.ts
+    00owned_fields.ts
+    00owned_generator_locals.ts
+    00owned_generators.ts
+    00owned_globals.ts
+    00owned_inline_records.ts
+    00owned_interfaces.ts
+    00owned_iteration.ts
+    00owned_literals.ts
+    00owned_nested_captures.ts
+    00owned_strings.ts
+    00owned_temporaries.ts
+    00owned_unions.ts
+    00owned_transfer.ts
+    00strings.ts
+    00throw_inlined.ts
+    00try_using_catch.ts
+    00using_nested_scopes.ts
+    00using_unwind_progress.ts
+    03disposable.ts
+    04disposable.ts
+    )
+
+# Nothing is known broken. The lists are kept because they are how a reference-counting fault
+# gets written down while it is being worked on: a file that does not pass yet under a model
+# goes here and is registered but DISABLED, so ctest counts it out loud and the list of what is
+# broken lives in the build rather than in a document somebody has to find.
+#
+# Not WILL_FAIL, which was tried first and does not hold - a corrupted heap does not always
+# land, so a file can fail six runs in six on its own and come up clean in a suite run, where
+# twelve tests at a time give the allocator a different history, and a WILL_FAIL test that
+# passes is a red suite.
+#
+# Six files came off these lists. Section 9.48 took `00mixed_type_ops.ts` (a boxing cast
+# reported no memory effects, so CSE merged two boxes over one constant and the block was freed
+# twice), section 9.49 took `nbody.ts` and with it the two that wandered, `13actions.ts` and
+# `44toplevelcode.ts` (a global never took a reference to what was stored into it), and section
+# 9.50 took `00spread.ts` (a generator's locals live in its state object, which released what
+# nothing had retained, and a by-value capture took a reference to the cell instead of to the
+# value the box would release).
+set(TSLANG_CORPUS_BROKEN_JIT_RC
+    )
+
+set(TSLANG_CORPUS_BROKEN_JIT_NONE
+    )
+
+set(TSLANG_CORPUS_BROKEN_AOT_RC
+    )
+
+set(TSLANG_CORPUS_BROKEN_AOT_NONE
+    )
+
+foreach(corpus_file ${TSLANG_CORPUS})
+    string(REGEX REPLACE "\\.ts$" "" corpus_slug "${corpus_file}")
+    string(REGEX REPLACE "[_.]" "-" corpus_slug "${corpus_slug}")
+    set(corpus_path "${PROJECT_SOURCE_DIR}/test/tester/tests/${corpus_file}")
+
+    foreach(corpus_model rc none)
+        string(TOUPPER "${corpus_model}" corpus_MODEL)
+
+        if(NOT corpus_file IN_LIST TSLANG_CORPUS_NO_JIT AND
+           NOT corpus_file IN_LIST TSLANG_CORPUS_${corpus_MODEL}_NAMED)
+            set(corpus_test "test-jit-${corpus_model}-corpus-${corpus_slug}")
+            add_test(NAME ${corpus_test}
+                     COMMAND test-runner -jit -mm=${corpus_model} "${corpus_path}")
+            if(corpus_file IN_LIST TSLANG_CORPUS_BROKEN_JIT_${corpus_MODEL})
+                set_tests_properties(${corpus_test} PROPERTIES DISABLED TRUE)
+            endif()
+        endif()
+
+        if(NOT corpus_file IN_LIST TSLANG_CORPUS_NO_AOT)
+            set(corpus_test "test-compile-${corpus_model}-corpus-${corpus_slug}")
+            add_test(NAME ${corpus_test}
+                     COMMAND test-runner -mm=${corpus_model} "${corpus_path}")
+            if(corpus_file IN_LIST TSLANG_CORPUS_BROKEN_AOT_${corpus_MODEL})
+                set_tests_properties(${corpus_test} PROPERTIES DISABLED TRUE)
+            endif()
+        endif()
+    endforeach()
+endforeach()
+
+# `fast_math.ts` is the one corpus file the loop leaves out. It needs `-fast-math`, which
+# would give the runner a fourth and fifth cached link script (`jitfmrc`, `jitfmnone`, and
+# their compile and debug variants) for a test about floating point, where the memory model
+# has nothing to do with the answer.
+
+# The ownership verifier over every corpus file. It is the only check here that reads the IR
+# rather than the program's output, which is what makes it worth running: a reference nobody
+# gives back changes no answer, so nothing else in this suite can see one. See
+# verify-ownership.cmake for what it asks and why it is sharded.
+# Reference-counted programs built WITH debug info - see debug-info-rc.cmake for why this needs
+# a test of its own rather than a `test-runner` registration.
+add_test(NAME test-compile-rc-debug-info
+         COMMAND ${CMAKE_COMMAND}
+                 -DTSLANG=$<TARGET_FILE:tslang>
+                 -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
+
+set(TSLANG_OWNERSHIP_SHARDS 8)
+math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
+foreach(ownership_shard RANGE ${ownership_last})
+    add_test(NAME test-ownership-verifier-${ownership_shard}
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DSHARD=${ownership_shard}"
+                     "-DSHARDS=${TSLANG_OWNERSHIP_SHARDS}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
+endforeach()
+
+# The shared-component tier under the other two models. A shared library records the model
+# it was built under, so both halves of a pair are built with the same flag - which is what
+# these run. The file pairs are the default model's, verbatim.
+add_test(NAME test-compile-time-rc-shared-decl-emit-type COMMAND test-runner -shared -mm=rc -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_func.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-compile-time-none-shared-decl-emit-type COMMAND test-runner -shared -mm=none -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_func.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-compile-time-rc-shared-decl-emit-class COMMAND test-runner -shared -mm=rc -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-compile-time-none-shared-decl-emit-class COMMAND test-runner -shared -mm=none -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-compile-rc-shared-component COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
+add_test(NAME test-compile-none-shared-component COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
+add_test(NAME test-compile-rc-shared-decl-emit-interface COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-compile-none-shared-decl-emit-interface COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-compile-rc-shared-decl-emit-type COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-compile-none-shared-decl-emit-type COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-compile-rc-shared-decl-emit-enum COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
+add_test(NAME test-compile-none-shared-decl-emit-enum COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
+add_test(NAME test-compile-rc-shared-decl-emit-class COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-compile-none-shared-decl-emit-class COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-interface COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-compile-none-shared-export-import-class-interface COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-compile-rc-shared-export-import-owned-returns COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-none-shared-export-import-owned-returns COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-extends COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+add_test(NAME test-compile-none-shared-export-import-class-extends COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-compile-none-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-extends-multilevel COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-compile-none-shared-export-import-class-extends-multilevel COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-abstract COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-compile-none-shared-export-import-class-abstract COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-static COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+add_test(NAME test-compile-none-shared-export-import-class-static COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-compile-none-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-compile-none-shared-export-import-class-implements-interface-optional COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-structural-interface COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+add_test(NAME test-compile-none-shared-export-import-class-structural-interface COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-compile-none-shared-export-import-class-implements-interface-abstract COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+add_test(NAME test-compile-none-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-generic COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+add_test(NAME test-compile-none-shared-export-import-class-generic COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+add_test(NAME test-compile-rc-shared-export-import-function-generic COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
+add_test(NAME test-compile-none-shared-export-import-function-generic COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
+add_test(NAME test-compile-rc-shared-export-import-type-alias-generic COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
+add_test(NAME test-compile-none-shared-export-import-type-alias-generic COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
+add_test(NAME test-compile-rc-shared-export-import-function COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
+add_test(NAME test-compile-none-shared-export-import-function COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
+add_test(NAME test-compile-rc-shared-export-import-type-alias COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
+add_test(NAME test-compile-none-shared-export-import-type-alias COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
+add_test(NAME test-compile-rc-shared-export-import-interface-generic COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
+add_test(NAME test-compile-none-shared-export-import-interface-generic COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-accessor COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
+add_test(NAME test-compile-none-shared-export-import-class-accessor COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
+add_test(NAME test-compile-rc-shared-export-import-class-indexer COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_indexer.ts")
+add_test(NAME test-compile-none-shared-export-import-class-indexer COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_indexer.ts")
+add_test(NAME test-compile-rc-shared-export-import-interface-indexer COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
+add_test(NAME test-compile-none-shared-export-import-interface-indexer COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-with-interface COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-with-interface COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-untyped COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-untyped COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-params COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_params.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_params.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-params COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_params.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_params.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-multi-method COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_multi_method.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-multi-method COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_multi_method.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-interleaved COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_interleaved.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_interleaved.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-interleaved COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_interleaved.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_interleaved.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface-multilevel COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_multilevel.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface-multilevel COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_multilevel.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface-diamond COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_diamond.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface-diamond COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_diamond.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
+add_test(NAME test-compile-rc-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
+add_test(NAME test-compile-none-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
+add_test(NAME test-compile-rc-shared-export-import-vars COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+add_test(NAME test-compile-none-shared-export-import-vars COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+add_test(NAME test-compile-rc-shared-export-import-vars-2 COMMAND test-runner -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-compile-none-shared-export-import-vars-2 COMMAND test-runner -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-compile-rc-shared-export-import-enum COMMAND test-runner -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+add_test(NAME test-compile-none-shared-export-import-enum COMMAND test-runner -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+add_test(NAME test-jit-rc-shared-component COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
+add_test(NAME test-jit-none-shared-component COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
+add_test(NAME test-jit-rc-shared-decl-emit-interface COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-jit-none-shared-decl-emit-interface COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-jit-rc-shared-decl-emit-type COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-jit-none-shared-decl-emit-type COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-jit-rc-shared-decl-emit-enum COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
+add_test(NAME test-jit-none-shared-decl-emit-enum COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
+add_test(NAME test-jit-rc-shared-decl-emit-class COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-jit-none-shared-decl-emit-class COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-interface COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-jit-none-shared-export-import-class-interface COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+add_test(NAME test-jit-rc-shared-export-import-owned-returns COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-jit-none-shared-export-import-owned-returns COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-extends COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+add_test(NAME test-jit-none-shared-export-import-class-extends COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-jit-none-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-jit-none-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-abstract COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-jit-none-shared-export-import-class-abstract COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-static COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+add_test(NAME test-jit-none-shared-export-import-class-static COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_static.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-jit-none-shared-export-import-class-implements-interface-multilevel COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_multilevel.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-jit-none-shared-export-import-class-implements-interface-optional COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_optional.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+add_test(NAME test-jit-none-shared-export-import-class-structural-interface COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_structural_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_structural_interface.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-jit-none-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+add_test(NAME test-jit-none-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-generic COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+add_test(NAME test-jit-none-shared-export-import-class-generic COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
+add_test(NAME test-jit-rc-shared-export-import-function-generic COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
+add_test(NAME test-jit-none-shared-export-import-function-generic COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
+add_test(NAME test-jit-rc-shared-export-import-type-alias-generic COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
+add_test(NAME test-jit-none-shared-export-import-type-alias-generic COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
+add_test(NAME test-jit-rc-shared-export-import-function COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
+add_test(NAME test-jit-none-shared-export-import-function COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
+add_test(NAME test-jit-rc-shared-export-import-type-alias COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
+add_test(NAME test-jit-none-shared-export-import-type-alias COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
+add_test(NAME test-jit-rc-shared-export-import-interface-generic COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
+add_test(NAME test-jit-none-shared-export-import-interface-generic COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-accessor COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
+add_test(NAME test-jit-none-shared-export-import-class-accessor COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_accessor.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_accessor.ts")
+add_test(NAME test-jit-rc-shared-export-import-class-indexer COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_indexer.ts")
+add_test(NAME test-jit-none-shared-export-import-class-indexer COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_indexer.ts")
+add_test(NAME test-jit-rc-shared-export-import-interface-indexer COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
+add_test(NAME test-jit-none-shared-export-import-interface-indexer COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_indexer.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_indexer.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-untyped COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-untyped COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-untyped-multi-method COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_untyped_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_untyped_multi_method.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-params COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_params.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_params.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-params COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_params.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_params.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-multi-method COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_multi_method.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-multi-method COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_multi_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_multi_method.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-interleaved COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_interleaved.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_interleaved.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-interleaved COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_interleaved.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_interleaved.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface-multilevel COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_multilevel.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface-multilevel COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_multilevel.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface-diamond COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_diamond.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface-diamond COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_diamond.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface-triple COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_triple.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_triple.ts")
+add_test(NAME test-jit-rc-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
+add_test(NAME test-jit-none-shared-export-import-object-literal-structural-typed-extends-interface-optional COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_structural_typed_extends_interface_optional.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_structural_typed_extends_interface_optional.ts")
+add_test(NAME test-jit-rc-shared-export-import-vars COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+add_test(NAME test-jit-none-shared-export-import-vars COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+add_test(NAME test-jit-rc-shared-export-import-vars-2 COMMAND test-runner -jit -shared -mm=rc -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-jit-none-shared-export-import-vars-2 COMMAND test-runner -jit -shared -mm=none -gctors-as-method "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-jit-rc-shared-export-import-enum COMMAND test-runner -jit -shared -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+add_test(NAME test-jit-none-shared-export-import-enum COMMAND test-runner -jit -shared -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
+
+# Without the shared Boehm (see TSLANG_HAVE_SHARED_GC above) every -shared test fails to link
+# with "could not open 'gc.lib'", so disable them instead. Only Windows links the shared
+# collector. Every test named "-shared-" passes -shared and no other test does.
+if (WIN32 AND NOT TSLANG_HAVE_SHARED_GC)
+    get_property(tslang_all_tests DIRECTORY PROPERTY TESTS)
+    foreach(tslang_test ${tslang_all_tests})
+        if (tslang_test MATCHES "-shared-")
+            set_tests_properties(${tslang_test} PROPERTIES DISABLED TRUE)
+        endif()
+    endforeach()
+endif()

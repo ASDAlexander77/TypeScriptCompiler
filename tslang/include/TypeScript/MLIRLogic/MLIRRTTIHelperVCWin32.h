@@ -34,6 +34,9 @@ class MLIRRTTIHelperVCWin32
         std::string typeName;
         std::string typeInfoRef;
         std::string catchableTypeInfoRef;
+        // bytes the CRT copies into the catch variable's slot - see catchableTypeSize in
+        // LLVMRTTIHelperVCWin32Const.h for why getting this wrong corrupts the frame
+        int catchableTypeSize;
     };
 
     mlir::OpBuilder &rewriter;
@@ -57,7 +60,8 @@ class MLIRRTTIHelperVCWin32
 
     void setF32AsCatchType()
     {
-        types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef});
+        types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef,
+                         windows::F32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F32Type::throwInfoRef;
@@ -65,7 +69,8 @@ class MLIRRTTIHelperVCWin32
 
     void setF64AsCatchType()
     {
-        types.push_back({windows::F64Type::typeName, windows::F64Type::typeInfoRef, windows::F64Type::catchableTypeInfoRef});
+        types.push_back({windows::F64Type::typeName, windows::F64Type::typeInfoRef, windows::F64Type::catchableTypeInfoRef,
+                         windows::F64Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::F64Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F64Type::throwInfoRef;
@@ -73,7 +78,8 @@ class MLIRRTTIHelperVCWin32
 
     void setI32AsCatchType()
     {
-        types.push_back({windows::I32Type::typeName, windows::I32Type::typeInfoRef, windows::I32Type::catchableTypeInfoRef});
+        types.push_back({windows::I32Type::typeName, windows::I32Type::typeInfoRef, windows::I32Type::catchableTypeInfoRef,
+                         windows::I32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::I32Type::throwInfoRef;
@@ -81,8 +87,10 @@ class MLIRRTTIHelperVCWin32
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({windows::StringType::typeName, windows::StringType::typeInfoRef, windows::StringType::catchableTypeInfoRef});
-        types.push_back({windows::StringType::typeName2, windows::StringType::typeInfoRef2, windows::StringType::catchableTypeInfoRef2});
+        types.push_back({windows::StringType::typeName, windows::StringType::typeInfoRef, windows::StringType::catchableTypeInfoRef,
+                         pointerSize()});
+        types.push_back({windows::StringType::typeName2, windows::StringType::typeInfoRef2, windows::StringType::catchableTypeInfoRef2,
+                         pointerSize()});
 
         catchableTypeInfoArrayRef = windows::StringType::catchableTypeInfoArrayRef;
         throwInfoRef = windows::StringType::throwInfoRef;
@@ -90,7 +98,8 @@ class MLIRRTTIHelperVCWin32
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({windows::I8PtrType::typeName, windows::I8PtrType::typeInfoRef, windows::I8PtrType::catchableTypeInfoRef});
+        types.push_back({windows::I8PtrType::typeName, windows::I8PtrType::typeInfoRef, windows::I8PtrType::catchableTypeInfoRef,
+                         pointerSize()});
 
         catchableTypeInfoArrayRef = windows::I8PtrType::catchableTypeInfoArrayRef;
         throwInfoRef = windows::I8PtrType::throwInfoRef;
@@ -102,10 +111,12 @@ class MLIRRTTIHelperVCWin32
         {
             types.push_back({join(name, windows::ClassType::typeName, windows::ClassType::typeNameSuffix),
                              join(name, windows::ClassType::typeInfoRef, windows::ClassType::typeInfoRefSuffix),
-                             join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix)});
+                             join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix),
+                             pointerSize()});
         }
 
-        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2});
+        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
+                         pointerSize()});
 
         catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
         throwInfoRef = windows::ClassType::throwInfoRef;
@@ -115,12 +126,21 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({join(name, windows::ClassType::typeName, windows::ClassType::typeNameSuffix),
                          join(name, windows::ClassType::typeInfoRef, windows::ClassType::typeInfoRefSuffix),
-                         join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix)});
+                         join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix),
+                         pointerSize()});
 
-        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2});
+        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
+                         pointerSize()});
 
         catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
         throwInfoRef = windows::ClassType::throwInfoRef;
+    }
+
+    // A pointer-shaped catchable type (a string, an opaque pointer, a class reference) is as
+    // wide as the target's pointer, unlike `int` and `double`, which are fixed.
+    int pointerSize()
+    {
+        return compileOptions.sizeBits / 8;
     }
 
     std::string join(StringRef name, const char *prefix, const char *suffix)
@@ -392,13 +412,14 @@ class MLIRRTTIHelperVCWin32
     {
         for (auto type : types)
         {
-            catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName);
+            catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName, type.catchableTypeSize);
         }
 
         return mlir::success();
     }
 
-    mlir::LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName)
+    mlir::LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName,
+                                      int catchableTypeSize)
     {
         auto name = catchableTypeInfoRefName;
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
@@ -450,7 +471,7 @@ class MLIRRTTIHelperVCWin32
             auto itemValue5 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(0));
             setStructValue(loc, structVal, itemValue5, 4);
 
-            auto itemValue6 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(8));
+            auto itemValue6 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(catchableTypeSize));
             setStructValue(loc, structVal, itemValue6, 5);
 
             auto itemValue7 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(0));

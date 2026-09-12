@@ -499,6 +499,116 @@ def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny", [Pure]> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
+def TypeScript_TypeDescriptorOp : TypeScript_Op<"TypeDescriptor", [Pure]> {
+  let summary = "type name from the static descriptor of a type";
+  let description = [{
+    Yields the type name of $descriptorType, as `typeof` reports it. The name is a pointer
+    into a static per-type descriptor record, so consumers that only want the name treat
+    this exactly like any other string, while consumers that want the record reach it at
+    `name - sizeof(descriptor)` - see TYPE_DESCR_* in Defines.h.
+
+    This is what produces the runtime type tag stored in an "any" box and in a tagged
+    union, so every such tag points into a descriptor.
+  }];
+
+  let arguments = (ins TypeAttr:$descriptorType);
+  let results = (outs TypeScript_String:$name);
+}
+
+def TypeScript_RetainOp : TypeScript_Op<"Retain"> {
+  let summary = "take one reference to a value";
+  let description = [{
+    Records that a further owner now holds $reference, so that its heap blocks outlive the
+    original owner. The mirror of `ts.Release`, and the two are only ever emitted in pairs.
+
+    Under a memory model that is not reference counting this op is erased: a collector needs
+    no help tracking who holds what, so ownership can be expressed once, in MLIRGen, without
+    the insertion having to ask which model is in force.
+
+    Retaining a *reference* stops at the block it names. Only values held inline - tuples,
+    optionals, tagged unions - propagate the retain to what they contain, because copying one
+    really does duplicate every reference it holds.
+  }];
+
+  let arguments = (ins AnyType:$reference);
+}
+
+def TypeScript_ReleaseOp : TypeScript_Op<"Release"> {
+  let summary = "drop one reference to a value";
+  let description = [{
+    Gives up one owner's claim on $reference. When it was the last, the value is destroyed -
+    what it owns is released in turn - and its block freed.
+
+    Erased under a memory model that is not reference counting, like `ts.Retain`.
+  }];
+
+  let arguments = (ins AnyType:$reference);
+}
+
+def TypeScript_RetainSlotOp : TypeScript_Op<"RetainSlot"> {
+  let summary = "take one reference to the value held in a slot";
+  let description = [{
+    `ts.Retain` for a value that is already in memory: $slot addresses the storage rather than
+    naming the value. That is the form MLIRGen has at a variable declaration and at scope exit,
+    and it is also the form the per-type routines take, so nothing has to be spilled to an
+    alloca on the way.
+
+    Erased under a memory model that is not reference counting - and erased whole, taking the
+    load with it, which is why ownership insertion can use it in a collected build without
+    leaving dead reads behind.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
+def TypeScript_ReleaseSlotOp : TypeScript_Op<"ReleaseSlot"> {
+  let summary = "drop one reference to the value held in a slot";
+  let description = [{
+    The mirror of `ts.RetainSlot`, and `ts.Release` addressed by storage. When the released
+    reference was the last, the value is destroyed and its block freed.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
+def TypeScript_RetainCellOp : TypeScript_Op<"RetainCell"> {
+  let summary = "take one reference to a captured variable's storage";
+  let description = [{
+    A variable a closure captures by reference does not live in the frame: its storage is a
+    heap block of its own - a *cell* - so that the frame and every closure over it read and
+    write the same value. $slot addresses that cell, and this records one more owner of the
+    cell itself, not of the value inside it.
+
+    That is what separates this from `ts.RetainSlot`, which addresses storage in order to
+    reach the value in it. A cell has two kinds of owner: the frame that declared the
+    variable, and each capture box that captured it.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
+def TypeScript_ReleaseCellOp : TypeScript_Op<"ReleaseCell"> {
+  let summary = "drop one reference to a captured variable's storage";
+  let description = [{
+    The mirror of `ts.RetainCell`. When the dropped reference was the cell's last, the value
+    in the cell is released and the cell freed - in that order, because releasing the value
+    reads the cell.
+
+    A scope exit releasing a captured local emits this rather than `ts.ReleaseSlot`: the
+    frame is giving up the *cell*, and the value inside it outlives the frame whenever a
+    closure does. Assigning to the variable still releases the old value with
+    `ts.ReleaseSlot`, which is the other question and unaffected.
+
+    Erased under a memory model that is not reference counting.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

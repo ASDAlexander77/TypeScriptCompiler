@@ -14,12 +14,17 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Path.h"
 
 #include <cstdio>
+#include <cstdlib>
 #ifdef _WIN32
+#include <process.h>
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #include "llvm/TargetParser/Host.h"
@@ -42,7 +47,6 @@ extern cl::opt<int> sizeLevel;
 extern cl::list<std::string> clSharedLibs;
 extern cl::opt<bool> dumpObjectFile;
 extern cl::opt<std::string> objectFilename;
-extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
 
@@ -118,7 +122,7 @@ static uint64_t jitImageBase = 0;
 //    in the JIT an object reachable only from a global (e.g. a static class member)
 //    is collected on the first GC cycle and its memory recycled. Register every RW
 //    data section via GC_add_roots, resolved dynamically from the already-loaded
-//    TypeScriptRuntime library so this stays inert under --nogc.
+//    TypeScriptRuntime library so this stays inert under -mm=none.
 //
 // 2. Win64 unwind info. LLVM's RTDyld never registers .pdata with the OS
 //    (RTDyldMemoryManager::registerEHFramesInProcess only speaks the Itanium
@@ -137,8 +141,29 @@ static uint64_t jitImageBase = 0;
 class JitSectionMemoryManager : public llvm::SectionMemoryManager
 {
     using GCRootsFn = void (*)(void *, void *);
+    // (see jitEnableGCThreads below for the matching stand-in)
 
   public:
+    // 4. One contiguous reservation, laid out code first (item 5am).
+    //
+    // RTDyld resolves every IMAGE_REL_AMD64_ADDR32NB relocation against an "image base" it
+    // defines as the LOWEST section load address, so whatever datum lands there has RVA 0 - and
+    // RVA 0 is what the MSVC C++ EH encoding uses as its "none" sentinel. A catch clause whose
+    // `??_R0*@8` type descriptor landed at the base therefore read `dispType == 0`, which is
+    // `catch(...)`: the clause still caught, so nothing looked wrong, but a catch-all has no
+    // catch object, so the value was never copied and the variable read uninitialised stack.
+    // Ahead of time this cannot happen - RVA 0 of a PE is the DOS header, never a datum.
+    //
+    // `reserveAllocationSpace` takes one block and lays it out code, then read-only, then
+    // read-write, so the lowest section is always code. No field in the MSVC EH encoding reads a
+    // *code* RVA of 0 as "none", so the collision has nowhere left to land. Section 9.66.
+    //
+    // The cost of the flag is that all memory is pre-allocated from the sizes RTDyld computes up
+    // front, and an allocation beyond them fails rather than growing.
+    JitSectionMemoryManager() : llvm::SectionMemoryManager(nullptr, /*ReserveAlloc=*/true)
+    {
+    }
+
     uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment, unsigned sectionID,
                                  llvm::StringRef sectionName) override
     {
@@ -235,6 +260,46 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 #endif
 };
 
+// Stands in for the async runtime's GC_enable_threads when a JIT run has no TypeScriptRuntime.dll
+// to provide it - see the site in runJit that decides whether to install it. Its job is to let the
+// program RUN: the GC pass puts that call in every `gc` entry point, so without a definition the
+// module does not materialize at all, whether or not it has an await in it.
+//
+// It is a stand-in, not the fix. It forwards to the collector's own GC_allow_register_threads if
+// the process exports one, and does nothing if not; and it cannot do the other half at all -
+// registering the pool's worker threads needs the runtime that owns those threads. A `gc` program
+// awaiting in a long loop is therefore still exposed to §9.57's race in this configuration, as it
+// was before any of this. Pass `--shared-libs=TypeScriptRuntime.dll` to get the real one.
+//
+// Resolved dynamically rather than called directly because tslang.exe does not link the collector.
+static void jitEnableGCThreads()
+{
+    if (auto *allowRegisterThreads = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_allow_register_threads"))
+    {
+        reinterpret_cast<void (*)()>(allowRegisterThreads)();
+    }
+}
+
+// A failing `assert` in compiled code calls `_assert`, and under --emit=jit that call lands
+// in whichever CRT the process resolver reaches first - ucrtbase.dll, whose report mode is
+// nobody's to set from here, and which puts the failure up as a modal message box. In an
+// unattended run that is not a failure but a hang: the harness waits on a window nobody is
+// there to close, and a whole test tier can stall on one bad assertion. Answer the call here
+// instead. The lowering passes the source position along, so this says more than the box did.
+static void jitAssertFailed(const char *message, const char *file, unsigned line)
+{
+    if (file != nullptr && *file != '\0')
+    {
+        fprintf(stderr, "%s:%u: ", file, line);
+    }
+
+    fprintf(stderr, "assertion failed: %s\n", message != nullptr ? message : "assert");
+    fflush(stderr);
+
+    // not abort(): that has a dialog of its own to put up
+    _exit(3);
+}
+
 #ifdef _WIN64
 // MSVC x64 C++ EH encodes throw-site type information as image-relative offsets.
 // vcruntime's _CxxThrowException recovers the base with RtlPcToFileHeader on the
@@ -295,14 +360,34 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     {
         // per-build subfolder (debug/release) must match the JIT compilation mode.
         // Keyed on --di (generate debug info): with debug info use the debug lib.
-        auto defaultLibBuildDir = compileOptions.generateDebugInfo ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE;
-        clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(),
+        // ...and per memory model, for the same reason the linker path is: the default lib
+        // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
+        auto defaultLibSubDir =
+            getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
+                                memoryModelName(compileOptions.memoryModel));
+        auto defaultLibFile = mergeWithDefaultLibPath(getDefaultLibPath(),
 #ifdef WIN32
-            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/" DEFAULT_LIB_NAME ".dll"
+            defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"
 #else
-            std::string(DEFAULT_LIB_DIR "/dll/") + defaultLibBuildDir + "/lib" DEFAULT_LIB_NAME ".so"
+            defaultLibSubDir + "/lib" DEFAULT_LIB_NAME ".so"
 #endif
-        ));
+        );
+
+        // Named here rather than left to the loader, for the reason exe.cpp checks the link
+        // directory: a model that has not been built otherwise surfaces as the platform's
+        // "module could not be found", which says nothing about which model is missing. No
+        // fallback to another model's build - the wrong one loads and then misbehaves at run
+        // time, which is far harder to diagnose than a file that is not there.
+        if (!defaultLibFile.empty() && !llvm::sys::fs::exists(defaultLibFile))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << "no default library built for -mm=" << memoryModelName(compileOptions.memoryModel)
+                << ": " << defaultLibFile << " does not exist. Build it (see the default-lib build "
+                << "scripts), or compile with --no-default-lib.\n";
+            return -1;
+        }
+
+        clSharedLibs.push_back(defaultLibFile);
     }      
 
     // add default libs in case they are not part of options
@@ -323,7 +408,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     });
 
     std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
-    if (!disableGC.getValue() && !hasTypeScriptRuntime)
+    if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime)
     {
         auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
         if (absPath3.empty())
@@ -337,7 +422,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
                 {
                     /*
                     llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-mm=none'\n";
                     return -1;            
                     */
                 }        
@@ -382,6 +467,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addSym("calloc", (void*)&calloc);
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
+        // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
+        // unattended run cannot answer
+        addSym("_assert", (void*)&jitAssertFailed);
 #ifdef _WIN64
         // C++ EH: bind the JIT'd module's personality to our static CRT and route
         // throws through the shim that fixes up the throw-site image base (see
@@ -411,7 +499,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
         if (!maybeEngine)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+            auto err = maybeEngine.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
         auto &engine = maybeEngine.get();
@@ -419,7 +509,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto expectedFPtr = engine->lookup(mainFuncName);
         if (!expectedFPtr)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << expectedFPtr.takeError();
+            auto err = expectedFPtr.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << err;
+            llvm::consumeError(std::move(err));
             return -1;
         }
 
@@ -457,6 +549,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         }
     }
 
+    // Under `-mm=gc` the GC pass puts a `GC_enable_threads` call in the entry point, next to
+    // GC_init: the async runtime resumes coroutines on a thread pool, and the collector must be
+    // told it is multi-threaded before that (see AsyncGCThreads.h). The runtime that defines it is
+    // TypeScriptRuntime.dll, which a JIT run only has if it was passed with `--shared-libs` - and
+    // without it EVERY `gc` program fails to materialize, async or not, because the call is in
+    // main. So stand the symbol in when nothing else provides it.
+    //
+    // Asked here, after the shared libraries are loaded and before anything is defined, because
+    // the answer decides whether to shadow a real definition: SearchForAddressOfSymbol sees the
+    // export tables of everything loaded so far, which is exactly what the JIT's process generator
+    // will see.
+    auto needsGCEnableThreadsStandIn =
+        llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_enable_threads") == nullptr;
+
     auto llvmContext = std::make_unique<llvm::LLVMContext>();
     auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
     if (!llvmModule)
@@ -468,7 +574,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
     if (!tmBuilderOrError)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << tmBuilderOrError.takeError() << "\n";
+        auto err = tmBuilderOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -480,7 +588,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto tmOrError = tmBuilderOrError->createTargetMachine();
     if (!tmOrError)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << tmOrError.takeError() << "\n";
+        auto err = tmOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -489,7 +599,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (auto err = optPipeline(llvmModule.get()))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -524,7 +635,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             .create();
     if (!maybeJit)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << maybeJit.takeError() << "\n";
+        auto err = maybeJit.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -535,7 +648,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(jit->getDataLayout().getGlobalPrefix());
     if (!generator)
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << generator.takeError() << "\n";
+        auto err = generator.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -561,15 +676,28 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addOverride("calloc", (void *)&calloc);
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
+        // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
+        // unattended run cannot answer
+        addOverride("_assert", (void *)&jitAssertFailed);
 #ifdef _WIN64
         // C++ EH: same-CRT personality, and throws routed through the shim that
         // fixes up the throw-site image base (see jitCxxThrowException above)
         addOverride("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
         addOverride("_CxxThrowException", (void *)&jitCxxThrowException);
 #endif
+        // The stand-in decided above. It goes here rather than through
+        // DynamicLibrary::AddSymbol because the process generator resolves from export tables
+        // only - an explicitly added symbol is found by SearchForAddressOfSymbol but not by the
+        // generator, which is why adding it there looked right and changed nothing.
+        if (needsGCEnableThreadsStandIn)
+        {
+            addOverride("GC_enable_threads", (void *)&jitEnableGCThreads);
+        }
+
         if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(crtOverrides))))
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << std::move(err) << "\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
     }
@@ -577,14 +705,16 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(llvmContext))))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
     // run platform initializers (llvm.global_ctors etc.)
     if (auto err = jit->initialize(jit->getMainJITDylib()))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << std::move(err) << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -592,7 +722,13 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto sym = jit->lookup(name);
         if (!sym)
         {
-            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << sym.takeError() << "\n";
+            // Streaming an Error only logs it - the payload survives, and ~Error then trips
+            // fatalUncheckedError, turning a plain "no such symbol" into an abort with a crash
+            // backtrace wherever LLVM_ENABLE_ABI_BREAKING_CHECKS is on (i.e. debug builds).
+            // consumeError takes the payload; the message itself is unchanged.
+            auto err = sym.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
             return -1;
         }
 

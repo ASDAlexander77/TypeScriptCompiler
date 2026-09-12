@@ -72,6 +72,13 @@ struct Win32ExceptionPassCode
     {
     }
 
+    static bool isEndCatchCall(llvm::Instruction *I)
+    {
+        auto *CI = dyn_cast<CallInst>(I);
+        return CI && CI->getCalledFunction() != nullptr && CI->getCalledFunction()->hasName() &&
+               CI->getCalledFunction()->getName() == "__cxa_end_catch";
+    }
+
     bool runOnFunction(Function &F)
     {
         auto MadeChange = false;
@@ -101,6 +108,15 @@ struct Win32ExceptionPassCode
             // it is outsize of catch/finally region
             if (!catchRegion)
             {
+                // A surplus end-of-catch marker, with no region left for it to close. See the
+                // note at the `endOfCatch` handling below for where they come from; either way
+                // one that survives is an unresolved symbol at link time, so it goes.
+                if (isEndCatchCall(&I))
+                {
+                    toRemoveWorkSet.push_back(&I);
+                    MadeChange = true;
+                }
+
                 continue;
             }
 
@@ -113,6 +129,24 @@ struct Win32ExceptionPassCode
 
             if (endOfCatch)
             {
+                // A second end-of-catch marker can follow the one that just closed this region,
+                // and it must not become the region's `end`: `end` is where the catchret goes,
+                // and leaving an `__cxa_end_catch` there keeps an Itanium marker with no Win64
+                // counterpart in the emitted code - an unresolved symbol at link time.
+                //
+                // They arise wherever a catch clause is ended twice over. A `try/catch` written
+                // inside a catch clause is the case that found this: the inner `throw` ends the
+                // enclosing catch ahead of itself (§9.14), and the outer try then emits its own
+                // end marker as well, so the tail carries both. Skipping past them - staying in
+                // this state rather than leaving it - handles any number of them and leaves the
+                // real end instruction to close the region.
+                if (isEndCatchCall(&I))
+                {
+                    toRemoveWorkSet.push_back(&I);
+                    MadeChange = true;
+                    continue;
+                }
+
                 // BR, or instraction without BR
                 catchRegion->end = &I;
                 endOfCatch = false;
@@ -169,8 +203,34 @@ struct Win32ExceptionPassCode
                     // possible end
                     if (CI->getCalledFunction()->getName() == "_CxxThrowException")
                     {
-                        // do not put continue, we need to add facelet
                         catchRegion->end = &I;
+
+                        // For a catch, the end-of-catch handling below splits the block ahead
+                        // of `end` and emits the catchret there, which leaves this call on the
+                        // far side of it - outside the funclet. So it must not be collected
+                        // into `calls`, which is what stamps the funclet bundle on: a bundle
+                        // naming a pad the throw has already returned from is malformed IR,
+                        // and it crashes the backend.
+                        //
+                        // The __cxa_end_catch marker above keeps the two apart for this same
+                        // instruction whenever MLIRGen emitted one, by closing the region
+                        // before the throw is ever reached. A throw the inliner brought in has
+                        // no marker - the EndCatchOp that followed the call it replaced went
+                        // with the rest of the now-unreachable code after it - so it has to be
+                        // recognised on its own.
+                        //
+                        // Skipping the call is all that takes, though: leave the region open.
+                        // This scan walks the function's instructions in order rather than by
+                        // region, so after inlining a throw belonging to one catch can turn up
+                        // while another is still open, and closing on it would strand the rest
+                        // of that catch's calls with no bundle at all (00try_catch.ts).
+                        //
+                        // A cleanup region gets no catchret, so its throw stays inside the
+                        // funclet and does still need the bundle; leave that path alone.
+                        if (catchRegion->isCatch())
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
@@ -646,6 +706,20 @@ struct Win32ExceptionPassCode
 
     InvokeInst *ToInvoke(CallBase *CB, BasicBlock *unwind, llvm::SmallVector<OperandBundleDef> &opBundle)
     {
+        // An invoke already ends its block and already names a normal destination, so all it
+        // needs is its unwind edge redirected and the bundle added - not a block of its own.
+        // Splitting at one puts it alone in the continuation block, and every caller erases it
+        // immediately afterwards, which leaves that block empty and without a terminator while
+        // the real continuation is left with no predecessors at all. A `using` in a nested
+        // scope inside a try body produced exactly that, and the empty block crashed the
+        // inliner. Cloning it in place is what the funclet-bundle loop above already does.
+        if (auto *II = dyn_cast<InvokeInst>(CB))
+        {
+            auto *newInvoke = cast<InvokeInst>(CallBase::Create(II, opBundle, II->getIterator()));
+            newInvoke->setUnwindDest(unwind);
+            return newInvoke;
+        }
+
         BasicBlock *CurrentBB = CB->getParent();
         BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CB->getIterator(), "invoke.cont");
 

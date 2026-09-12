@@ -297,6 +297,24 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         }
     }
 
+    /// The inliner has a fast path for a callee that is a single block: it hands the block's
+    /// terminator to handleTerminator and then erases it outright, on the assumption that a
+    /// terminator is return-like and its operands are all it had left to say. `ts.ThrowCall`
+    /// is a terminator too, and erasing one deletes the throw - the caller then carries on as
+    /// if the callee had returned, which is how a function whose whole body is `throw` came to
+    /// inline down to nothing. Only a return survives that path, so send everything else down
+    /// the multi-block one, which leaves the terminator where it is.
+    bool allowSingleBlockOptimization(mlir::iterator_range<mlir::Region::iterator> inlinedBlocks) const final
+    {
+        if (!llvm::hasSingleElement(inlinedBlocks))
+        {
+            // the fast path is not taken anyway; the answer does not matter
+            return true;
+        }
+
+        return isa<mlir_ts::ReturnInternalOp>(inlinedBlocks.begin()->getTerminator());
+    }
+
     /// Attempts to materialize a conversion for a type mismatch between a call
     /// from this dialect, and a callable region. This method should generate an
     /// operation that takes 'input' as the only operand, and produces a single

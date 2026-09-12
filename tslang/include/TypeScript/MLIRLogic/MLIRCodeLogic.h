@@ -670,6 +670,83 @@ class MLIRCustomMethods
         return mlir::Value();
     }
 
+    // Takes a reference to each value about to be handed to an array's data block. That block
+    // releases every element it holds when it dies, so it has to have taken one - the same debt
+    // an array literal carries (§9.21 in docs/reference-counting-evaluation.md). These ops fill
+    // the block through their own lowering rather than through an assignment, so nothing else on
+    // the path takes it.
+    //
+    // The ops that take an element back out - pop and shift - need no counterpart here, and that
+    // is not an omission. The block simply stops holding it: the size shrinks past the slot, so
+    // the release routine never reaches it, and the reference the block held transfers to the
+    // returned value. That leaves the result carrying the same "+1 nobody has consumed" every
+    // freshly produced value already carries, which is removed with the rest of the slack rather
+    // than one op at a time.
+    //
+    // What splice deletes is a different matter: those elements are memmoved over and their
+    // references dropped without a release. That leaks rather than over-releases, so it waits -
+    // and it cannot be fixed here anyway, because the count to release is only known inside the
+    // lowering.
+    // Records that this value already carries a reference for whoever receives it. Only used
+    // where the transfer is a property of the operation itself - see OWNED_RESULT_ATTR_NAME.
+    void markResultOwned(mlir::Value value)
+    {
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        if (!value || !mth.ownsHeapMemory(location, value.getType()))
+        {
+            return;
+        }
+
+        if (auto *definingOp = value.getDefiningOp())
+        {
+            definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+    }
+
+    void retainInsertedElements(ArrayRef<mlir::Value> values)
+    {
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        for (auto value : values)
+        {
+            if (!value || !mth.ownsHeapMemory(location, value.getType()))
+            {
+                continue;
+            }
+
+            // `arr.push(new C())` arrives already owned (§9.25) - the data block takes that
+            // reference over rather than adding one of its own.
+            //
+            // Saying so is not optional. This was the one receiving site that skipped its retain
+            // without recording the consumption, and once §9.30 began releasing what nothing
+            // consumed, the pushed value was released at the end of the pushing block - freeing
+            // an element the array still held. Invisible for as long as the block that pushes is
+            // also the block that reads, which is why §9.30's own tests missed it;
+            // `function add() { store.push(new C()) }` reads the freed block.
+            //
+            // There is only ever ONE reference to take over, so the second array to receive the
+            // same value has to retain like any other holder. Reading `OWNED_RESULT` without also
+            // asking whether it had already been consumed made both of these consume it:
+            //
+            //     const keep = new Box("kept");   // a const with no storage of its own, so both
+            //     victim.push(keep);              // pushes see the `new` itself
+            //     survivors.push(keep);
+            //
+            // and the value ended up with two holders and one reference, so whichever array died
+            // first freed an element the other still held. Nothing to do with `splice` - it
+            // reproduces with no splice anywhere - but §9.74's release is what made it visible,
+            // because until then an array that outlived its elements never gave them back.
+            auto *definingOp = value.getDefiningOp();
+            if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+                !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
+            {
+                definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                continue;
+            }
+
+            builder.create<mlir_ts::RetainOp>(location, value);
+        }
+    }
+
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
@@ -697,6 +774,8 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
+        retainInsertedElements(castedValues);
+
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArrayPushOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
 
@@ -721,6 +800,12 @@ class MLIRCustomMethods
 
         mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
             location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
+
+        // The data block gives up the element without releasing it - the size shrinks past the
+        // slot, so its release routine never reaches it again - which hands the block's own
+        // reference to whoever receives the result. Saying so lets that receiver take it over
+        // rather than add one of its own (§9.26).
+        markResultOwned(value);
 
         return value;
     }
@@ -752,6 +837,8 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
+        retainInsertedElements(castedValues);
+
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
 
@@ -776,6 +863,9 @@ class MLIRCustomMethods
 
         mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
             location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
+
+        // same transfer as pop, from the front
+        markResultOwned(value);
 
         return value;
     }    
@@ -816,6 +906,8 @@ class MLIRCustomMethods
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
+
+        retainInsertedElements(castedValues);
 
         mlir::Value sizeOfValue =
             builder.create<mlir_ts::ArraySpliceOp>(location, builder.getIndexType(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});

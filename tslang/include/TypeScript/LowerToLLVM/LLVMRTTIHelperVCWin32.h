@@ -33,6 +33,9 @@ class LLVMRTTIHelperVCWin32
         std::string typeName;
         std::string typeInfoRef;
         std::string catchableTypeInfoRef;
+        // bytes the CRT copies into the catch variable's slot - see catchableTypeSize in
+        // LLVMRTTIHelperVCWin32Const.h for why getting this wrong corrupts the frame
+        int catchableTypeSize;
     };
 
     Operation *op;
@@ -40,6 +43,7 @@ class LLVMRTTIHelperVCWin32
     ModuleOp parentModule;
     TypeHelper th;
     LLVMCodeHelper ch;
+    CompileOptions &compileOptions;
 
     SmallVector<TypeNames> types;
 
@@ -48,14 +52,15 @@ class LLVMRTTIHelperVCWin32
     std::string throwInfoRef;
 
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, typeConverter, compileOptions)
+        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter),
+          ch(op, rewriter, typeConverter, compileOptions), compileOptions(compileOptions)
     {
         // setI32AsCatchType();
     }
 
     void setF32AsCatchType()
     {
-        types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef});
+        types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef, F32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = F32Type::throwInfoRef;
@@ -63,7 +68,7 @@ class LLVMRTTIHelperVCWin32
 
     void setF64AsCatchType()
     {
-        types.push_back({F64Type::typeName, F64Type::typeInfoRef, F64Type::catchableTypeInfoRef});
+        types.push_back({F64Type::typeName, F64Type::typeInfoRef, F64Type::catchableTypeInfoRef, F64Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = F64Type::catchableTypeInfoArrayRef;
         throwInfoRef = F64Type::throwInfoRef;
@@ -71,7 +76,7 @@ class LLVMRTTIHelperVCWin32
 
     void setI32AsCatchType()
     {
-        types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef});
+        types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef, I32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = I32Type::throwInfoRef;
@@ -79,8 +84,8 @@ class LLVMRTTIHelperVCWin32
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({StringType::typeName, StringType::typeInfoRef, StringType::catchableTypeInfoRef});
-        types.push_back({StringType::typeName2, StringType::typeInfoRef2, StringType::catchableTypeInfoRef2});
+        types.push_back({StringType::typeName, StringType::typeInfoRef, StringType::catchableTypeInfoRef, pointerSize()});
+        types.push_back({StringType::typeName2, StringType::typeInfoRef2, StringType::catchableTypeInfoRef2, pointerSize()});
 
         catchableTypeInfoArrayRef = StringType::catchableTypeInfoArrayRef;
         throwInfoRef = StringType::throwInfoRef;
@@ -88,7 +93,7 @@ class LLVMRTTIHelperVCWin32
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({I8PtrType::typeName, I8PtrType::typeInfoRef, I8PtrType::catchableTypeInfoRef});
+        types.push_back({I8PtrType::typeName, I8PtrType::typeInfoRef, I8PtrType::catchableTypeInfoRef, pointerSize()});
 
         catchableTypeInfoArrayRef = I8PtrType::catchableTypeInfoArrayRef;
         throwInfoRef = I8PtrType::throwInfoRef;
@@ -98,12 +103,19 @@ class LLVMRTTIHelperVCWin32
     {
         types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
                          join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix),
-                         join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix)});
+                         join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix), pointerSize()});
 
-        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2});
+        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2, pointerSize()});
 
         catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
         throwInfoRef = ClassType::throwInfoRef;
+    }
+
+    // A pointer-shaped catchable type (a string, an opaque pointer, a class reference) is as
+    // wide as the target's pointer, unlike `int` and `double`, which are fixed.
+    int pointerSize()
+    {
+        return compileOptions.sizeBits / 8;
     }
 
     std::string join(StringRef name, const char *prefix, const char *suffix)
@@ -280,7 +292,7 @@ class LLVMRTTIHelperVCWin32
     {
         for (auto type : types)
         {
-            if (mlir::failed(catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName)))
+            if (mlir::failed(catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName, type.catchableTypeSize)))
             {
                 return mlir::failure();
             }
@@ -289,7 +301,8 @@ class LLVMRTTIHelperVCWin32
         return mlir::success();
     }
 
-    LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName)
+    LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName,
+                                int catchableTypeSize)
     {
         auto name = catchableTypeInfoRefName;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
@@ -339,7 +352,7 @@ class LLVMRTTIHelperVCWin32
             auto itemValue5 = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
             ch.setStructValue(loc, structVal, itemValue5, 4);
 
-            auto itemValue6 = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(8));
+            auto itemValue6 = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(catchableTypeSize));
             ch.setStructValue(loc, structVal, itemValue6, 5);
 
             auto itemValue7 = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));

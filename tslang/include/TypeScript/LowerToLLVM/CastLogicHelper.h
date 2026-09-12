@@ -634,8 +634,10 @@ class CastLogicHelper
         if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))
         {
             in.getDefiningOp()->emitWarning("using casting to undefined value");
+            // the `mlir_ts::UndefOp` this makes is where an owning type is turned into null
+            // instead of undef - see UndefOpLowering
             return rewriter.create<mlir_ts::UndefOp>(loc, resType);
-        }   
+        }
 
         return mlir::Value();
     }
@@ -1037,12 +1039,23 @@ class CastLogicHelper
         auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
 
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         if (isUndef)
         {
-            return structValue;
+            // `undefined` as an array has to be an empty array rather than undef under
+            // reference counting: whoever receives it retains it, and reaching an undef
+            // pointer's block header is undefined behaviour. An iterator's final
+            // `{ value: undefined, done: true }` is built exactly this way, and the caller
+            // retains the result before it looks at `done`.
+            if (compileOptions.isRefCounted())
+            {
+                return rewriter.create<LLVM::ZeroOp>(loc, llvmRtArrayStructType).getResult();
+            }
+
+            return rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType).getResult();
         }
-        
+
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
 
         mlir::Value arrayPtr;

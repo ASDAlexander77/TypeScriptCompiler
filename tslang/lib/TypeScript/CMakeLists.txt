@@ -31,6 +31,8 @@ add_mlir_dialect_library(MLIRTypeScript
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
     RelocateConstantPass.cpp
+    OwnershipVerifierPass.cpp
+    OwnedReturnConsumptionPass.cpp
     GCPass.cpp
     ObjDumper.cpp
     DeclarationPrinter.cpp

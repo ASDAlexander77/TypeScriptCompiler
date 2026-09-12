@@ -219,6 +219,7 @@ class MLIRGenImpl
 #endif    
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext);
+    mlir::LogicalResult createMemoryModelExportGlobalVar(const GenContext &genContext);
     mlir::LogicalResult createGenericClassDeclarationExportGlobalVar(const GenContext &genContext);
 
     bool isCodeStatment(SyntaxKind kind);
@@ -229,11 +230,13 @@ class MLIRGenImpl
 
     bool hasGlobalCode(NodeArray<Statement> statements);
 
+    bool hasGlobalInitialization(NodeArray<Statement> statements);
+
     // appends GlobalConstructorOp after the last one in the module; LAST priority so it runs after CRT init
     void addGlobalConstructor(mlir::Location location, StringRef funcName);
 
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
-                          const GenContext &genContext);
+                          bool hasDeferredStatements, const GenContext &genContext);
 
     mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                                           int notResolved);
@@ -430,6 +433,179 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
 
+    // A block whose statements include a top-level `using` needs to dispose even when an
+    // exception unwinds through it, not only on normal exit. A plain block has no landing pad
+    // to run that dispose from, so mlirGen(Block) wraps such a block in a synthetic
+    // catch-less TryOp instead - see mlirGenBlockWithUnwindCleanup.
+    //
+    // Checked syntactically, off the AST flag, before generation: by the time the DOM would
+    // know a `using` was declared, the block's ops are already emitted at the current
+    // insertion point and there is no clean way to wrap them retroactively.
+    bool blockDeclaresUsing(ts::Block blockAST, int skipStatements = 0)
+    {
+        auto index = 0;
+        for (auto statement : blockAST->statements)
+        {
+            if (index++ < skipStatements)
+            {
+                continue;
+            }
+
+            if ((SyntaxKind)statement != SyntaxKind::VariableStatement)
+            {
+                continue;
+            }
+
+            auto variableStatementAST = statement.as<VariableStatement>();
+            if ((variableStatementAST->declarationList->flags & NodeFlags::Using) == NodeFlags::Using)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether every top-level `using` this block declares initializes directly from
+    // `new SomeClass(...)`.
+    //
+    // Disposing a class instance through the synthesized TryOp is verified working; disposing
+    // an object literal (`{ [Symbol.dispose]() {...} }`) is not - dropping this check alone
+    // and compiling `using r = loggy(); throw 1;` fails the build, so the gap is in disposing
+    // that shape rather than in the wrapping. What actually needs disposing is a semantic fact
+    // (the initializer's resolved type), not available before generation - see
+    // blockDeclaresUsing for why the check has to run before that. `new X(...)` is the
+    // syntactic proxy, and it costs nothing to check.
+    bool blockUsingInitializersAreAllNewExpr(ts::Block blockAST, int skipStatements = 0)
+    {
+        auto index = 0;
+        for (auto statement : blockAST->statements)
+        {
+            if (index++ < skipStatements)
+            {
+                continue;
+            }
+
+            if ((SyntaxKind)statement != SyntaxKind::VariableStatement)
+            {
+                continue;
+            }
+
+            auto variableStatementAST = statement.as<VariableStatement>();
+            if ((variableStatementAST->declarationList->flags & NodeFlags::Using) != NodeFlags::Using)
+            {
+                continue;
+            }
+
+            for (auto &declaration : variableStatementAST->declarationList->declarations)
+            {
+                if (!declaration->initializer || (SyntaxKind)declaration->initializer != SyntaxKind::NewExpression)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // Whether any `catch` clause nested anywhere inside this block names a type.
+    //
+    // On the Itanium path a typed catch cannot be dispatched by the personality routine alone:
+    // TryOpLowering emits a selector compare and, on the other side of it, a block that
+    // rethrows because this clause did not match (`cmpValue` there). That rethrow is an exit
+    // from the function like a `return` is, so the scope's owned locals have to be given back
+    // before it - and wrapping this block in a cleanup TryOp is what puts them there. Without
+    // it the ownership verifier reports `00catch_value.ts` exactly, and the reference is
+    // genuinely leaked when a clause does not match.
+    //
+    // Windows generates no such block: the funclet personality performs the type match itself,
+    // so there is nothing there to leak on and nothing to wrap for.
+    //
+    // The walk covers the whole subtree rather than this block's own statements, because the
+    // locals that would leak are this block's while the `try` that rethrows can be nested any
+    // depth below it. Nested functions and classes open a scope of their own and are skipped;
+    // each qualifying block on the way down is wrapped on its own account, and the resulting
+    // cleanups chain outwards through parentTryOpLandingPad.
+    //
+    // A block with nothing to release costs nothing: mlirGenScopeExit writes no operations into
+    // the cleanup region, TryOpLowering sees an empty one, and the wrapping leaves no trace.
+    bool blockHasTypedCatch(ts::Block blockAST, int skipStatements = 0)
+    {
+        auto found = false;
+        ts::FilterVisitorSkipFuncsAST<CatchClause> visitor(SyntaxKind::CatchClause, [&](CatchClause catchClauseNode) {
+            if (catchClauseNode->variableDeclaration && catchClauseNode->variableDeclaration->type)
+            {
+                found = true;
+            }
+        });
+
+        auto index = 0;
+        for (auto statement : blockAST->statements)
+        {
+            if (index++ < skipStatements)
+            {
+                continue;
+            }
+
+            if (found)
+            {
+                break;
+            }
+
+            visitor.visit(statement);
+        }
+
+        return found;
+    }
+
+    mlir::LogicalResult mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
+
+    // Whether the insertion point sits inside the catches or finally region of an enclosing
+    // TryOp.
+    //
+    // Synthesizing a TryOp there crashes the compiler: `try { throw 1; } catch (e: int) {
+    // using r = new Res(); }` segfaults with the wrapping and compiles without it. Nesting a
+    // synthesized TryOp inside another one's *body* is fine and is exercised by
+    // 04disposable.ts - it is the catch and finally regions specifically that do not tolerate
+    // it, which is the half of the old blockIsFunctionRootBody condition that was doing real
+    // work and was dropped with it.
+    //
+    // Re-checked after the ToInvoke fix in Win32ExceptionPass, which retired the sibling
+    // blockHasNestedUsing guard: this one is still needed, and the crash it avoids still has a
+    // cause of its own. Note it also costs ownership - localTakesOwnership consults it, so a
+    // heap local declared in a catch or finally clause is not owned and leaks under -mm=rc.
+    bool blockIsInsideCatchOrFinally()
+    {
+        auto *block = builder.getInsertionBlock();
+        while (block)
+        {
+            auto *region = block->getParent();
+            if (!region)
+            {
+                break;
+            }
+
+            auto *parentOp = region->getParentOp();
+            if (!parentOp)
+            {
+                break;
+            }
+
+            if (auto tryOp = dyn_cast<mlir_ts::TryOp>(parentOp))
+            {
+                if (region == &tryOp.getCatches() || region == &tryOp.getFinally())
+                {
+                    return true;
+                }
+            }
+
+            block = parentOp->getBlock();
+        }
+
+        return false;
+    }
+
     mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
@@ -508,8 +684,463 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // Everything a scope owes on the way out: dispose what `using` declared, then give up the
+    // references its locals took. In that order - a disposable is still usable while its
+    // `[Symbol.dispose]()` runs, and dropping the last reference first could have freed it.
+    //
+    // The unwind leg calls this too. It can, because a scope that owes a release has its storage
+    // hoisted out in front of the `TryOp` (allocateScopeOwnedVarsOutsideOfOperation), so the slot
+    // dominates the cleanup region as well as the body.
+    mlir::LogicalResult mlirGenScopeExit(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
+    {
+        EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, loopLabel, genContext));
+        return mlirGenReleaseOwned(location, disposeDepth, loopLabel, genContext);
+    }
+
+    // Whether a scope exit that has just finished with this scope still owes the scopes outside
+    // it. `FullStack` - a `return` - owes all of them. A `break` or `continue` owes every scope
+    // up to and including the body scope of the loop it targets.
+    //
+    // The loop test belongs here, and on `isLoopBodyScope`. Written as
+    // `disposeDepth == LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel`
+    // in the "keep going" position it stopped the walk at the first scope that was not itself
+    // a loop - and since `isLoop` is inherited by every context inside a loop, the very first
+    // step thought it had already arrived. A `break` or `continue` written inside an `if`,
+    // which is where they are usually written, then skipped every scope between it and the
+    // loop, disposing and releasing none of them. Found by the ownership verifier.
+    static bool scopeExitContinuesOutwards(DisposeDepth disposeDepth, const std::string &loopLabel,
+                                           const GenContext *genContext)
+    {
+        if (disposeDepth == DisposeDepth::FullStack)
+        {
+            return true;
+        }
+
+        if (disposeDepth != DisposeDepth::LoopScope)
+        {
+            return false;
+        }
+
+        // The label comparison is left exactly as it was, including the empty label the
+        // recursion below hands the parent. It looks like it should carry the target label
+        // outwards instead, but the loop sites clear `label` before storing it, so a labelled
+        // loop's context holds an empty one too - and `continue cont1` then relies on the outer
+        // loop matching that empty label. 02disposable.ts is the case that proves it.
+        auto isTargetLoop = genContext->isLoopBodyScope && genContext->loopLabel == loopLabel;
+        return !isTargetLoop;
+    }
+
+    // Drops the reference each local of this scope took when it was declared. Shaped after
+    // mlirGenDisposable, and walks outwards on the same terms, so that a `return` from a
+    // nested block releases every scope it leaves and a `break` releases up to the loop.
+    mlir::LogicalResult mlirGenReleaseOwned(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
+    {
+        // the outermost scope of a function has no parent to walk to
+        if (genContext == nullptr)
+        {
+            return mlir::success();
+        }
+
+        if (genContext->ownedVars != nullptr)
+        {
+            // reverse declaration order, the order a scope is unwound in: a later local may
+            // hold the only other reference to what an earlier one points at
+            for (auto storage : llvm::reverse(*genContext->ownedVars))
+            {
+                // Two different debts, and a slot can carry either, both or neither. A cell is
+                // released as a cell whatever its contents are owned by - the block has to go
+                // back regardless. A slot that is neither is here only because it might have
+                // turned into a cell and did not; see trackPossibleCell.
+                if (isCapturedVariableCell(storage))
+                {
+                    builder.create<mlir_ts::ReleaseCellOp>(location, storage);
+                }
+                else if (isOwnedLocalSlot(storage))
+                {
+                    builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+                }
+            }
+
+            // Process-once, as for usingVars: CurrentScopeKeepAfterUse is what the try body
+            // passes so that the cleanup region, generated after it, still sees the list.
+            if (disposeDepth == DisposeDepth::CurrentScope)
+            {
+                const_cast<GenContext *>(genContext)->ownedVars = nullptr;
+            }
+        }
+
+        // Outside the test above: a scope that owns nothing itself still stands between a `return`
+        // and the scopes that do, so having no list of its own is not a reason to stop walking.
+        //
+        // DEFENSIVE, and honestly labelled as such - no program has been found that needs it.
+        // Every block scope is given a list when it is created, so in practice the walk was
+        // reaching the enclosing scopes anyway; the shapes that looked like they would prove this
+        // (an owned local plus a `return` out of an `if`, measured both ways) come back identical.
+        // It is kept because the guard is the wrong shape for what it guards, not because it was
+        // measured. Section 9.60 records the measurement, and records that what actually leaked
+        // `raytrace`'s per-light ray was the discarded-temporary placement in
+        // OwnedReturnConsumptionPass, not this.
+        if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
+        {
+            EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
+        }
+
+        return mlir::success();
+    }
+
+    // Does this reference address a captured variable's cell - a heap block the frame shares
+    // with the closures that captured it - rather than ordinary frame storage?
+    //
+    // The question is asked at scope exit, which is generated after the closure that does the
+    // capturing, so the answer is settled by then. A `return` written *before* the capture is
+    // one where the closure cannot exist on that path: releasing the value there is right, and
+    // all that is lost is the cell, which those paths leak.
+    //
+    // A parameter answers yes on the same terms a local does. Being captured is what makes
+    // storage a cell, and a parameter's storage is the same `ts.Variable` by the time the
+    // affine pass has run - ParamOpLowering builds one, carrying the marking across.
+    static bool isCapturedVariableCell(mlir::Value reference)
+    {
+        if (auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return varOp.getCaptured().value_or(false);
+        }
+
+        if (auto paramOp = reference.getDefiningOp<mlir_ts::ParamOp>())
+        {
+            return paramOp.getCaptured().value_or(false);
+        }
+
+        if (auto paramOptionalOp = reference.getDefiningOp<mlir_ts::ParamOptionalOp>())
+        {
+            return paramOptionalOp.getCaptured().value_or(false);
+        }
+
+        return false;
+    }
+
+    // Does this reference address a captured variable's cell, reached through a capture box?
+    // Inside a closure that is how the variable is named: the box's field holds the cell's
+    // address, so the reference is a load of that field, and neither the load nor the field is
+    // anything the other cases here recognise.
+    //
+    // A cell owns what it holds - releasing the last owner of the cell releases the value in it
+    // - so assigning through one hands the count over exactly as assigning to the variable in
+    // its own frame does. Without this, `cur = new Vec(..)` written inside a closure stored a
+    // value nothing had taken, which §9.30 then released at the end of the block as a discarded
+    // temporary, freeing the variable the assignment had just set.
+    //
+    // The shape is what identifies it: a tuple field whose type is a reference is what a
+    // capture by reference is, and nothing else builds one.
+    static bool isCapturedCellSlot(mlir::Value reference)
+    {
+        auto loadOp = reference.getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || !isa<mlir_ts::RefType>(loadOp.getType()))
+        {
+            return false;
+        }
+
+        auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        auto boxRefType = dyn_cast<mlir_ts::RefType>(propertyRefOp.getObjectRef().getType());
+        return boxRefType && isa<mlir_ts::TupleType>(boxRefType.getElementType());
+    }
+
+    // Does this reference address a local whose scope owns what it holds? Only a variable
+    // declaration marks its storage that way, so a parameter's slot answers no, and assigning
+    // through it neither retains nor releases.
+    bool isOwnedLocalSlot(mlir::Value reference)
+    {
+        auto varOp = reference.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
+    }
+
+    // Does this reference address a global that owns what it holds? It does, and this is the
+    // one slot with no matching release: a global is a root, it outlives every scope, and the
+    // value in it at exit is never given back. That is why takeOwnershipOfLocal excludes
+    // globals - there is no scope to release from - and it is also why the retain was missing
+    // entirely, which is the whole of the bug: `g = new C()` stored the instance and then gave
+    // its reference back at the end of the function that built it (§9.30), leaving the global
+    // pointing at freed memory. `nbody.ts` is that program - `init()` builds the system, and
+    // the first method call that reads a field out of it writes a refcount into a freed block.
+    //
+    // Overwriting one still hands the count over, so the release on the outgoing value runs as
+    // for any other owning slot. That is safe from the first assignment onwards because a
+    // global with no initializer is zero, not undef (`ts.Default` lowers to `LLVM::ZeroOp`),
+    // and null is what every release routine treats as nothing to do.
+    bool isOwnedGlobalSlot(mlir::Location location, mlir::Value reference)
+    {
+        if (!reference.getDefiningOp<mlir_ts::AddressOfOp>())
+        {
+            return false;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
+    // Does this reference address a field of an instance that will release what the field
+    // holds? A class or object instance does: it is a heap block with a release routine, and
+    // that routine releases what each of its fields owns (`releaseFields` in
+    // OwnershipRoutineLogic). So overwriting such a field carries the same debt as overwriting
+    // an owned local - the incoming value gains an owner, the outgoing one loses one.
+    //
+    // A record held *inline* - a tuple in a local - answers the same question, but conditionally:
+    // its fields are released by whatever holds the record, so the field owns exactly when the
+    // storage under it does. That is the recursive case below, and it is why this is not simply
+    // "the base is a heap reference".
+    //
+    // This was first excluded outright, on the reasoning that retaining into a record nothing
+    // releases would leak. The half of that reasoning which was wrong is that an owned local
+    // holding a record *does* release its fields: `ts.RetainSlot` and `ts.ReleaseSlot` on a
+    // record-shaped slot go through the type's own routines, which walk its fields. So the local
+    // retained the field's original value and released whatever the field held at scope exit,
+    // while an assignment in between swapped that value without taking or giving anything - and
+    // two such assignments of one value released it twice and freed it live (§9.23).
+    bool isOwnedFieldSlot(mlir::Location location, mlir::Value reference)
+    {
+        auto propertyRefOp = reference.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        auto objectRef = propertyRefOp.getObjectRef();
+        if (isa<mlir_ts::RefType>(objectRef.getType()))
+        {
+            // an inline record: it owns its fields only if something owns the record. A
+            // parameter's slot, and the scratch storage a literal is built in, both answer no -
+            // nothing releases those, so retaining into them would leak.
+            if (!isOwningSlot(location, objectRef))
+            {
+                return false;
+            }
+        }
+        else if (!isa<mlir_ts::ClassType, mlir_ts::ObjectType>(objectRef.getType()))
+        {
+            return false;
+        }
+
+        // an `int` field has nothing to hand over; only ask the type helper once past the
+        // structural checks, since it walks the type
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
+    // Does this reference address an element of an array that will release what the element
+    // holds? A `T[]` value is { data, length }, and its release routine walks the elements of
+    // the data block before freeing it (`buildArrayBody` in OwnershipRoutineLogic) - the exact
+    // mirror of what `releaseFields` does for an instance. So `arr[i] = x` carries the same
+    // debt as `obj.f = x`.
+    //
+    // Only ArrayType. `ts.ElementRef` also addresses a ConstArrayType, whose data is a static
+    // literal nothing releases, and a StringType, whose characters are not references at all.
+    //
+    // This covers the element *store*. The array-mutating builtins - push, unshift, splice -
+    // put a value into that same data block through their own ops rather than through an
+    // assignment, and pop and shift take one back out; neither is here. The taking-out half
+    // asks the same question a return does (give up a reference to a value the caller is about
+    // to hold), so the two belong in one slice, not this one.
+    bool isOwnedElementSlot(mlir::Location location, mlir::Value reference)
+    {
+        auto elementRefOp = reference.getDefiningOp<mlir_ts::ElementRefOp>();
+        if (!elementRefOp)
+        {
+            return false;
+        }
+
+        if (!isa<mlir_ts::ArrayType>(elementRefOp.getArray().getType()))
+        {
+            return false;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
+    }
+
+    // Does this value already carry a reference for whoever receives it, rather than one the
+    // receiver has to take for itself? Only an operation explicitly marked as such answers yes -
+    // see OWNED_RESULT_ATTR_NAME. Nothing is inferred from an operation merely being a call: a
+    // runtime helper, or a function from a module built before returns retained their result,
+    // hands back a heap value with no retain behind it, and consuming one of those would skip a
+    // retain nobody performed. Answering "no" for something that was in fact owned only leaks.
+    bool producesOwnedReference(mlir::Value value)
+    {
+        if (!value)
+        {
+            return false;
+        }
+
+        auto *definingOp = value.getDefiningOp();
+        return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
+    }
+
+    // Records that a receiver has taken over the reference this value carried, so nothing later
+    // reads it as a temporary nobody claimed. Every site that answers `producesOwnedReference`
+    // by skipping its retain calls this; what is left unmarked is what §9.30 releases.
+    void consumeOwnedReference(mlir::Value value)
+    {
+        if (auto *definingOp = value ? value.getDefiningOp() : nullptr)
+        {
+            definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+        }
+    }
+
+    // Takes a reference to each of `values` that owns heap memory.
+    //
+    // For construction sites that fill an owning block in one go rather than through an
+    // assignment - an array literal's data block, a boxed object literal's storage. The block's
+    // release routine walks what it holds when it dies, so it has to have taken a reference to
+    // each of them; nothing else on this path does.
+    //
+    // Without this the block gives up references it never took, and that is not a leak but an
+    // over-release, reachable today: an element seeded by a literal is one below an equivalent
+    // field, one overwrite is masked by the unconsumed birth reference, and a second overwrite
+    // of the same value takes it past zero and frees it while a local still holds it. See
+    // §9.21 in docs/reference-counting-evaluation.md.
+    //
+    // A record-shaped value retains through its own routine, which walks its owning fields, so
+    // the boxed-literal case needs one of these on the whole tuple rather than one per field.
+    void mlirGenRetainCaptured(mlir::Location location, mlir::ValueRange values)
+    {
+        for (auto value : values)
+        {
+            if (!mth.ownsHeapMemory(location, value.getType()))
+            {
+                continue;
+            }
+
+            // a value that already carries a reference for its receiver is taken over rather
+            // than retained again (§9.25) - `[new C()]`, and `return new C()` alike
+            if (producesOwnedReference(value))
+            {
+                consumeOwnedReference(value);
+            }
+            else
+            {
+                builder.create<mlir_ts::RetainOp>(location, value);
+            }
+        }
+    }
+
+    // Does building a `string` out of a value of this type allocate a new one?
+    //
+    // Only the printing conversions do: `ConvertLogic`'s itoa and f64ToString, and
+    // `ts.CharToString`, each allocate a buffer and write into it. Everything else that reaches
+    // the plain cast - a boolean, `undefined`, a string literal - hands back a global, which is
+    // immortal and owns nothing. A literal is asked about by its element type, since that is
+    // what the lowering unwraps it to before choosing.
+    static bool castToStringAllocates(mlir::Type valueType)
+    {
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(valueType))
+        {
+            valueType = literalType.getElementType();
+        }
+
+        return isa<mlir_ts::NumberType, mlir_ts::CharType>(valueType) || valueType.isIntOrIndex();
+    }
+
+    // Gives a freshly built string the same standing as every other producer of a new heap
+    // value: the retain makes the reference real, and the mark says a receiver may take it over
+    // rather than adding one of its own - which is also what lets §9.30 give it back where
+    // nothing receives it at all.
+    //
+    // Both halves are needed together, and the retain is what makes this safe to be generous
+    // with: a value wrongly counted as fresh gains a reference and a release for it, which is
+    // balanced, where a mark on its own would hand a receiver a reference nobody took.
+    void markFreshStringOwned(mlir::Location location, mlir::Value value)
+    {
+        if (!value || !isa<mlir_ts::StringType>(value.getType()))
+        {
+            return;
+        }
+
+        auto *definingOp = value.getDefiningOp();
+        if (!definingOp || definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+        {
+            return;
+        }
+
+        builder.create<mlir_ts::RetainOp>(location, value);
+        definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+    }
+
+    // Storage that hands ownership over when it is overwritten: the incoming value gains an
+    // owner and the outgoing one loses one.
+    //
+    // A cell is here for the same reason its box-side view isCapturedCellSlot is: the cell owns
+    // what it holds, so a store into one has to hand the count over. This is the view from the
+    // declaring frame - `p = ..` where the closure below captured `p` - and the two must agree,
+    // since they address the very same block.
+    bool isOwningSlot(mlir::Location location, mlir::Value reference)
+    {
+        return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
+               isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
+               isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
+    }
+
+    // One `using` declaration's `[Symbol.dispose]()`, at one scope exit.
+    //
+    // A declaration whose storage was hoisted out in front of a TryOp is disposed from two
+    // places that cannot see each other's progress: the scope exit written in the try body, and
+    // the cleanup region reached by the unwind edge. Neither knows how far the other got, and
+    // both were wrong about it in opposite directions - the two defects section 9.62 records
+    // and leaves open:
+    //
+    //   - the body's own disposal is a call in the try body, so it unwinds to that same
+    //     cleanup. A `[Symbol.dispose]()` that throws was therefore followed by the cleanup
+    //     disposing the very same variable a second time - and the second throw, arriving
+    //     while the first was still unwinding, terminates the process.
+    //   - the `using` initializer's `new` is in the try body too. A constructor that throws
+    //     left the cleanup disposing a slot nothing had ever been stored into, reading a
+    //     vtable out of whatever the frame happened to hold. That one is an access violation,
+    //     not a subtlety.
+    //
+    // The guard is what the cleanup was missing: a boolean beside the slot, false until the
+    // initializing store has run, and cleared before each disposal rather than after it. Read
+    // and cleared in that order, the second visitor to a variable always finds it false -
+    // whether it arrives because the first one threw, or because the first one never ran.
+    //
+    // A `using` in a plain block has no guard and takes the direct path: with no cleanup
+    // region there is no second visitor, and nothing to be wrong about.
+    mlir::LogicalResult mlirGenDisposeOne(mlir::Location location, ts::VariableDeclarationDOM::TypePtr varDecl,
+                                          mlir::Value varValue, const GenContext &genContext)
+    {
+        auto disposeGuard = varDecl->getDisposeGuard();
+        if (!disposeGuard)
+        {
+            auto callResult = mlirGenCallThisMethod(location, varValue, SYMBOL_DISPOSE, undefined, {}, genContext);
+            EXIT_IF_FAILED(callResult);
+            return mlir::success();
+        }
+
+        auto isLive = builder.create<mlir_ts::LoadOp>(location, getBooleanType(), disposeGuard);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, isLive, /*withElseRegion=*/false);
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+        auto notLive = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, notLive, disposeGuard);
+
+        auto callResult = mlirGenCallThisMethod(location, varValue, SYMBOL_DISPOSE, undefined, {}, genContext);
+        EXIT_IF_FAILED(callResult);
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
     {
+        // as in mlirGenReleaseOwned: the walk outwards ends at the function
+        if (genContext == nullptr)
+        {
+            return mlir::success();
+        }
+
         if (genContext->usingVars != nullptr)
         {
             for (auto vi : *genContext->usingVars)
@@ -520,8 +1151,7 @@ class MLIRGenImpl
                     llvm_unreachable("can't find local variable");
                 }
 
-                auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, *genContext);
-                EXIT_IF_FAILED(callResult);            
+                EXIT_IF_FAILED(mlirGenDisposeOne(location, vi, varInTable.first, *genContext));
             }
 
             // remove when used
@@ -530,13 +1160,15 @@ class MLIRGenImpl
                 // NOTE: upward mailbox into caller context (process-once) - see docs/MLIRGen-refactoring-review.md A7
                 const_cast<GenContext *>(genContext)->usingVars = nullptr;
             }
+        }
 
-            auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
-                    || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
-            if (continueIntoDepth)
-            {
-                EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
-            }
+        // Outside the test above: a scope that declared no `using` of its own is not the end of
+        // the walk. Same shape, and the same honest caveat, as mlirGenReleaseOwned below - every
+        // block scope is given a list when it is created, so this is defensive rather than
+        // something a program was found to need.
+        if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
+        {
+            EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
         }
 
         return mlir::success();
@@ -695,7 +1327,7 @@ class MLIRGenImpl
         VariableDeclarationInfo(CompileOptions& compileOptions) : compileOptions(compileOptions), variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
             isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false},
-            needsIdentityStorage{false}, typeAndInitResolved{false}
+            needsIdentityStorage{false}, typeAndInitResolved{false}, disposeGuard()
         {
         };
 
@@ -764,7 +1396,7 @@ class MLIRGenImpl
             }
 
             allocateOutsideOfOperation = genContext.allocateVarsOutsideOfOperation
-                || genContext.allocateUsingVarsOutsideOfOperation && varClass_.isUsing;
+                || genContext.allocateScopeOwnedVarsOutsideOfOperation && varClass_.isUsing;
             allocateInContextThis = genContext.allocateVarsInContextThis;
 
             isGlobal = scope == VariableScope::Global || varClass == VariableType::Var;
@@ -959,7 +1591,29 @@ class MLIRGenImpl
         bool isUsed;
         bool needsIdentityStorage;
         bool typeAndInitResolved;
+
+        // See createLocalVariable: set only for a `using` declaration hoisted out in front of a
+        // TryOp, and carried onto the VariableDeclarationDOM that mlirGenDisposable walks.
+        mlir::Value disposeGuard;
     };
+
+    // Will this declaration make its scope the owner of what it holds - a retain now, a release
+    // at every exit? Asked twice from two different places, and they must not disagree: the
+    // hoisting decision below reads it before the storage exists, and takeOwnershipOfLocal reads
+    // it again once the storage does. A local that is hoisted but not owned only wastes a move;
+    // one that is owned but not hoisted puts a release in a region its slot does not dominate,
+    // and the module stops verifying.
+    //
+    // Everything excluded here is excluded because the frame borrows the reference rather than
+    // owning it; takeOwnershipOfLocal documents each case.
+    bool localTakesOwnership(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo,
+                             const GenContext &genContext)
+    {
+        return genContext.ownedVars != nullptr && !variableDeclarationInfo.isGlobal &&
+               !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
+               variableDeclarationInfo.initial && variableDeclarationInfo.type &&
+               mth.ownsHeapMemory(location, variableDeclarationInfo.type) && !blockIsInsideCatchOrFinally();
+    }
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
@@ -1041,6 +1695,16 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // An owned local is hoisted for the same reason a `using` one is: its release belongs on
+        // the unwind leg too, and the cleanup region does not see storage declared in the body.
+        // The decision cannot be made in detectFlags with the rest - it needs the type, and the
+        // type is only known here.
+        if (genContext.allocateScopeOwnedVarsOutsideOfOperation && !variableDeclarationInfo.allocateOutsideOfOperation
+            && localTakesOwnership(location, variableDeclarationInfo, genContext))
+        {
+            variableDeclarationInfo.allocateOutsideOfOperation = true;
+        }
+
         // scope to restore inserting point
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -1065,6 +1729,19 @@ class MLIRGenImpl
 
                 variableDeclarationInfo.setStorage(varOpValue);
             }
+
+            // The dispose guard goes beside the storage, and for the same reason: it is read
+            // from the cleanup region, so it has to be declared where that region can see it.
+            // Its initial value is what makes it useful - the slot is not disposable until the
+            // initializer's own store has run, and that store is back in the try body.
+            if (variableDeclarationInfo.allocateOutsideOfOperation && variableDeclarationInfo.varClass.isUsing)
+            {
+                auto notYetLive =
+                    builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+                variableDeclarationInfo.disposeGuard = builder.create<mlir_ts::VariableOp>(
+                    location, mlir_ts::RefType::get(getBooleanType()), notYetLive,
+                    builder.getBoolAttr(false), builder.getIndexAttr(0));
+            }
         }
 
         // init must be in its normal place
@@ -1072,6 +1749,26 @@ class MLIRGenImpl
             && variableDeclarationInfo.initial 
             && variableDeclarationInfo.storage)
         {
+            // A generator's locals cannot live in its frame - the state machine has to resume -
+            // so each becomes a field of a heap state object, and that object's release routine
+            // gives back every field that owns memory. localTakesOwnership excludes these for
+            // exactly that reason, the frame is not their owner, and so nothing ever *took* the
+            // reference the object will later give back. The store is where it has to happen:
+            // this is the object's field gaining a value, which is the same debt `obj.f = x`
+            // carries. See docs/reference-counting-evaluation.md section 9.50.
+            if (variableDeclarationInfo.allocateInContextThis && compileOptions.isRefCounted() &&
+                mth.ownsHeapMemory(location, variableDeclarationInfo.type))
+            {
+                if (producesOwnedReference(variableDeclarationInfo.initial))
+                {
+                    consumeOwnedReference(variableDeclarationInfo.initial);
+                }
+                else
+                {
+                    builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial);
+                }
+            }
+
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
             if (variableDeclarationInfo.varClass.atomic)
             {
@@ -1094,6 +1791,17 @@ class MLIRGenImpl
             // {
             //     storeOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
             // }
+
+            // Armed after the store, never before it: everything between the guard's own
+            // declaration and this point is the initializer, and an exception thrown there -
+            // out of the constructor, most of all - has to reach a cleanup that disposes
+            // nothing.
+            if (variableDeclarationInfo.disposeGuard)
+            {
+                auto live =
+                    builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
+                builder.create<mlir_ts::StoreOp>(location, live, variableDeclarationInfo.disposeGuard);
+            }
         }
 
         return mlir::success();
@@ -1332,6 +2040,10 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo &variableDeclarationInfo, bool showWarnings, const GenContext &genContext);
+
+    void takeOwnershipOfLocal(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext);
+
+    void trackPossibleCell(struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext);
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false);
@@ -2264,6 +2976,27 @@ class MLIRGenImpl
         }
 
         return mlir::Type();
+    }
+
+    // Casts `expressionValue` in place to the function's declared return type, if it has one
+    // and the value is not already of it. Nothing to do when the return type is being inferred:
+    // there is no declared type to convert to, and mlirGenReturnValue's own cast below is then
+    // a no-op as well.
+    //
+    // Split out so that the retain a return performs can be placed after the conversion - see
+    // its call sites. Calling it twice is harmless: the second finds the types already equal.
+    mlir::LogicalResult castToDeclaredReturnType(mlir::Location location, mlir::Value &expressionValue,
+                                                 const GenContext &genContext)
+    {
+        auto returnType = getExplicitReturnTypeOfCurrentFunction(genContext);
+        if (!returnType || !expressionValue || returnType == expressionValue.getType())
+        {
+            return mlir::success();
+        }
+
+        CAST_A(castValue, location, returnType, expressionValue, genContext);
+        expressionValue = castValue;
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, bool yieldReturn,
@@ -3209,6 +3942,16 @@ class MLIRGenImpl
         // condition
         auto isDefaultCase = SyntaxKind::DefaultClause == (SyntaxKind)caseBlock;
         auto isDefaultAsFirstCase = index == 0 && clauses.size() > 1;
+
+        // The narrowing a `case` introduces is emitted into the case BODY, below - never here.
+        // A condition only ever reads the discriminant, and that is already loaded once before
+        // the first case and shared by all of them. Narrowing here instead would reinterpret the
+        // union payload as this case's member before knowing the discriminant matches it, and a
+        // member holding references is then retained through whatever the payload happens to
+        // hold: where the union carries a smaller member, everything above it is uninitialized,
+        // and under `-mm=rc` those bytes get walked as pointers.
+        Expression caseExpr;
+        mlir::Value caseValue;
         if (SyntaxKind::CaseClause == (SyntaxKind)caseBlock)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -3218,12 +3961,10 @@ class MLIRGenImpl
                 setPreviousCondOrJumpOp(previousConditionOrFirstBranchOp, caseConditionBlock);
             }
 
-            auto caseExpr = caseBlock.as<CaseClause>()->expression;
+            caseExpr = caseBlock.as<CaseClause>()->expression;
             auto result = mlirGen(caseExpr, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto caseValue = V(result);
-
-            extraCode(caseExpr, caseValue);
+            caseValue = V(result);
 
             auto switchValueEffective = switchValue;
             auto actualCaseType = mth.stripLiteralType(caseValue.getType());
@@ -3286,6 +4027,14 @@ class MLIRGenImpl
             }
 
             pendingConditions.clear();
+
+            // the narrowed binding, now that this block is only reached when the case matched.
+            // It has to precede both the generated statements it may add and the body's own,
+            // which are what resolve the name it registers.
+            if (caseValue)
+            {
+                extraCode(caseExpr, caseValue);
+            }
 
             // process body case
             if (genContext.generatedStatements.size() > 0)
@@ -4174,6 +4923,30 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // Overwriting owning storage hands the count over: the incoming value gains an
+            // owner and the outgoing one loses it. Retaining first is what makes `x = x` safe -
+            // releasing first could drop the last reference and free the value about to be
+            // stored back. Without this the release that eventually runs for this storage -
+            // scope exit for a local, the instance's release routine for a field - would give
+            // up a reference the assignment never took.
+            if (isOwningSlot(location, loadOp.getReference()))
+            {
+                // `h.item = new C()` arrives already owned (§9.25), so the slot takes that
+                // reference over instead of adding one. The release still runs either way -
+                // what the slot was holding has to be given up regardless of where the
+                // incoming reference came from.
+                if (producesOwnedReference(savingValue))
+                {
+                    consumeOwnedReference(savingValue);
+                }
+                else
+                {
+                    builder.create<mlir_ts::RetainOp>(location, savingValue);
+                }
+
+                builder.create<mlir_ts::ReleaseSlotOp>(location, loadOp.getReference());
+            }
+
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
@@ -4673,6 +5446,36 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // The order the arithmetic operators promote in, widest first: the first type either
+    // operand already has is the one both are cast to. Shared by `+` and by the general
+    // arithmetic/comparison path below, which is the point -- they disagreed, and `+` was
+    // the one that was wrong (§9.67).
+    SmallVector<mlir::Type> numericPromotionOrder()
+    {
+        return {
+            builder.getF128Type(),
+            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
+            builder.getF32Type(), SInt(32), builder.getI32Type(),
+            builder.getF16Type(), SInt(16), builder.getI16Type(),
+            SInt(8), builder.getI8Type()
+        };
+    }
+
+    // "Numeric enough that promoting it is unambiguous." `!ts.number` is a dialect type
+    // rather than a builtin float, so `isIntOrIndexOrFloat()` alone does not see it -- the
+    // same pairing appears wherever this question is asked (see getIndexType usage below).
+    // `boolean` is deliberately excluded: it is numeric under arithmetic, but it needs
+    // widening to `number` first rather than promotion against the other operand.
+    bool isPromotableNumeric(mlir::Type type)
+    {
+        if (isa<mlir_ts::BooleanType>(type))
+        {
+            return false;
+        }
+
+        return isa<mlir_ts::NumberType>(type) || type.isIntOrIndexOrFloat();
+    }
+
     bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         auto hasType = leftExpressionValue.getType() == type ||
@@ -4823,6 +5626,55 @@ class MLIRGenImpl
             break;
         case SyntaxKind::PlusToken:
         {
+            // `+` is the one arithmetic operator that is also string concatenation, so it
+            // cannot simply promote its operands the way `-`, `*` and `/` promote theirs:
+            // `x + 1` where x is a string has to stay concat. That is why the code below
+            // syncs the right operand TO the left one rather than promoting both.
+            //
+            // When both operands are unambiguously numeric there is no concat to protect,
+            // and syncing right-to-left is then just wrong: it truncated the wider side
+            // before the addition rather than after it, so `2 + 3.5` read 5 and
+            // `1 + (-0.5)` read 1 (§9.67). Promote those exactly like every other
+            // arithmetic operator, and leave every other shape -- `any`, unions, objects
+            // with `[Symbol.toPrimitive]`, `undefined`, `null` -- on the path it was on.
+            {
+                auto leftIsString = isa<mlir_ts::StringType>(leftExpressionValue.getType());
+                auto rightIsString = isa<mlir_ts::StringType>(rightExpressionValue.getType());
+
+                auto promotable = [&](mlir::Value value) {
+                    return isPromotableNumeric(value.getType()) || isa<mlir_ts::BooleanType>(value.getType());
+                };
+
+                if (!leftIsString && !rightIsString && promotable(leftExpressionValue) && promotable(rightExpressionValue))
+                {
+                    // Booleans widen to `number` before anything else, so that `true + true`
+                    // is 2 rather than wrapping in i1, and so that `true + 2.5` promotes
+                    // against a number instead of dragging 2.5 down to a boolean.
+                    if (isa<mlir_ts::BooleanType>(leftExpressionValue.getType()))
+                    {
+                        CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                    }
+
+                    if (isa<mlir_ts::BooleanType>(rightExpressionValue.getType()))
+                    {
+                        CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                    }
+
+                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                    {
+                        for (auto type : numericPromotionOrder())
+                        {
+                            if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    break;
+                }
+            }
+
             // this is exactly the untyped default: case below (left/right type sync,
             // string-preferring) -- PlusToken used to fall through to it unconditionally.
             // Preserved as-is so string concat (`"fo" + 1`) and ordinary numeric-literal
@@ -4896,13 +5748,7 @@ class MLIRGenImpl
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
                 // TODO: do we need to sync type for all Ops?
-                static SmallVector<mlir::Type> types = {
-                    builder.getF128Type(), 
-                    getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
-                    builder.getF32Type(), SInt(32), builder.getI32Type(), 
-                    builder.getF16Type(), SInt(16), builder.getI16Type(), 
-                    SInt(8), builder.getI8Type()
-                };
+                auto types = numericPromotionOrder();
 
                 auto r = syncUnionTypes(location, leftExpressionValue, rightExpressionValue, genContext);
                 if (r.value)
@@ -4979,6 +5825,16 @@ class MLIRGenImpl
             result = builder.create<mlir_ts::ArithmeticBinaryOp>(location, leftExpressionValue.getType(),
                                                                  builder.getI32IntegerAttr((int)opCode),
                                                                  leftExpressionValue, rightExpressionValue);
+
+            // `+` on strings is the one arithmetic operator that allocates: it becomes
+            // `ts.StringConcat`, which builds a new string. A receiver takes that reference
+            // over; `("a" + b).length`, where there is no receiver, gives it back at the end of
+            // the block instead of leaking (§9.37).
+            if (opCode == SyntaxKind::PlusToken)
+            {
+                markFreshStringOwned(location, result);
+            }
+
             break;
         }
 
@@ -7418,6 +8274,9 @@ class MLIRGenImpl
             arrayValues.push_back(arrayValue);
         }
 
+        // the data block about to be filled releases every element when it dies
+        mlirGenRetainCaptured(location, arrayValues);
+
         auto newArrayOp =
             builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(arrayInfo.arrayElementType), arrayValues);
         return V(newArrayOp);
@@ -8082,6 +8941,19 @@ class MLIRGenImpl
             MLIRCodeLogic mcl(builder, compileOptions);
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
+
+            // The object is the box's only owner - nothing else holds it, and the box is born
+            // unowned like every other block - so it takes the one reference here and gives it
+            // back in its release routine, where `releaseFields` treats a `ref<tuple<..>>` field
+            // as the capture box it is. A closure's box is owned the same way, through the tag on
+            // the bound function (§9.33); this is the object-shaped half of that, and the half a
+            // generator's state object needs, since a generator is an object literal the compiler
+            // wrote. See docs/reference-counting-evaluation.md section 9.52.
+            if (compileOptions.isRefCounted() && capturedValue)
+            {
+                builder.create<mlir_ts::RetainCellOp>(location, capturedValue);
+            }
+
             if (mlir::failed(addObjectFieldInfo(location, oli, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type(), genContext))) {
                 return mlir::failure();
             }
@@ -8962,7 +9834,15 @@ class MLIRGenImpl
                     auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
                     if (retVarInfo.second)
                     {
-                        builder.create<mlir_ts::ReturnValOp>(location, castToRet, retVarInfo.first);
+                        // This body is built op by op rather than from a `return` statement, so
+                        // the retain a return performs has to be repeated here - see the
+                        // ReturnStatement path in MLIRGenStatements. Without it the instance is
+                        // released on the way out and the caller of `new I(...)` through a
+                        // constructor interface is handed a block that has already been given
+                        // back.
+                        auto returnValue = V(castToRet);
+                        mlirGenRetainCaptured(location, mlir::ValueRange{returnValue});
+                        builder.create<mlir_ts::ReturnValOp>(location, returnValue, retVarInfo.first);
                     }
                     else
                     {
