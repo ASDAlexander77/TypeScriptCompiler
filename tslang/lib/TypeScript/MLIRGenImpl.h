@@ -509,6 +509,56 @@ class MLIRGenImpl
         return true;
     }
 
+    // Whether any `catch` clause nested anywhere inside this block names a type.
+    //
+    // On the Itanium path a typed catch cannot be dispatched by the personality routine alone:
+    // TryOpLowering emits a selector compare and, on the other side of it, a block that
+    // rethrows because this clause did not match (`cmpValue` there). That rethrow is an exit
+    // from the function like a `return` is, so the scope's owned locals have to be given back
+    // before it - and wrapping this block in a cleanup TryOp is what puts them there. Without
+    // it the ownership verifier reports `00catch_value.ts` exactly, and the reference is
+    // genuinely leaked when a clause does not match.
+    //
+    // Windows generates no such block: the funclet personality performs the type match itself,
+    // so there is nothing there to leak on and nothing to wrap for.
+    //
+    // The walk covers the whole subtree rather than this block's own statements, because the
+    // locals that would leak are this block's while the `try` that rethrows can be nested any
+    // depth below it. Nested functions and classes open a scope of their own and are skipped;
+    // each qualifying block on the way down is wrapped on its own account, and the resulting
+    // cleanups chain outwards through parentTryOpLandingPad.
+    //
+    // A block with nothing to release costs nothing: mlirGenScopeExit writes no operations into
+    // the cleanup region, TryOpLowering sees an empty one, and the wrapping leaves no trace.
+    bool blockHasTypedCatch(ts::Block blockAST, int skipStatements = 0)
+    {
+        auto found = false;
+        ts::FilterVisitorSkipFuncsAST<CatchClause> visitor(SyntaxKind::CatchClause, [&](CatchClause catchClauseNode) {
+            if (catchClauseNode->variableDeclaration && catchClauseNode->variableDeclaration->type)
+            {
+                found = true;
+            }
+        });
+
+        auto index = 0;
+        for (auto statement : blockAST->statements)
+        {
+            if (index++ < skipStatements)
+            {
+                continue;
+            }
+
+            if (found)
+            {
+                break;
+            }
+
+            visitor.visit(statement);
+        }
+
+        return found;
+    }
+
     mlir::LogicalResult mlirGenBlockWithUnwindCleanup(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0);
 
     // Whether the insertion point sits inside the catches or finally region of an enclosing

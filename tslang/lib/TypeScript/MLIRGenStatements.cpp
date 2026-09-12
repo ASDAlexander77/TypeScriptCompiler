@@ -148,12 +148,24 @@ namespace mlirgen
         // blockDeclaresUsing. Most blocks qualify: a function's own body, an if/loop body, a
         // nested `{ }`, a hand-written try's own body, and - since the ToInvoke fix in
         // Win32ExceptionPass - one that contains a nested using-scope of its own, which used
-        // to need a blockHasNestedUsing guard here. The two remaining conditions each guard
-        // against a real, still-open bug the wrapping would otherwise hit (see their
-        // comments). A block that fails either keeps the plain path below unchanged: no
-        // TryOp, no personality attribute, same IR as before this check existed.
-        if (blockDeclaresUsing(blockAST, skipStatements) &&
-            blockUsingInitializersAreAllNewExpr(blockAST, skipStatements) && !blockIsInsideCatchOrFinally())
+        // to need a blockHasNestedUsing guard here.
+        //
+        // A `using` is not the only thing that needs the unwind path: on the Itanium path a
+        // typed `catch` leaves behind a rethrow block for the clause that did not match, and
+        // that is an exit the scope's owned locals have to be released before - see
+        // blockHasTypedCatch. Same wrapping, same cleanup region, different reason to want it.
+        //
+        // The two remaining conditions each guard against a real, still-open bug the wrapping
+        // would otherwise hit (see their comments). blockUsingInitializersAreAllNewExpr is
+        // about disposing a `using`, so it only has a say when there is one - but it keeps its
+        // veto in that case even if the typed-catch reason would have wrapped anyway, since
+        // what it guards against is the disposal, not the wrapping. A block that qualifies on
+        // neither count keeps the plain path below unchanged: no TryOp, no personality
+        // attribute, same IR as before this check existed.
+        auto declaresUsing = blockDeclaresUsing(blockAST, skipStatements);
+        auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
+        auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup) && !blockIsInsideCatchOrFinally())
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }
