@@ -128,13 +128,23 @@ the executable's roots, so it frees objects the executable is still holding. The
 a crash: the freed memory is reallocated and the program reads a plausible wrong value, which
 only shows up when what was written over it differs from what was there.
 
-The Windows release package ships the shared collector in its `gcdll` folder, beside the static
-`gc.lib` at its root — both files are named `gc.lib`, so the folder is what tells them apart.
-Compile the executable **and** every shared library with `--gc-lib-path=<package>/gcdll`, and
-ship `gcdll/gc.dll` beside the executable.
+On Windows `tslang` makes the choice itself:
 
-From a source build, the same files come from `scripts/build_gc_release_shared_vs.bat`: link
-against `3rdParty/gcdll/x64/release/lib/gc.lib` and ship `3rdParty/gcdll/x64/release/bin/gc.dll`.
+- `--emit=dll`, and `--emit=exe` for a program that imports a tslang shared library, link the
+  shared collector and copy `gc.dll` beside the output.
+- `--emit=exe` for a program that imports none keeps the static `gc.lib`, and ships as one file.
+
+It finds the shared collector through `--gc-shared-lib-path` (or `GC_SHARED_LIB_PATH`), else the
+`gcdll` folder inside `--gc-lib-path` — which is where the Windows release package ships it, beside
+the static `gc.lib` at its root; both files are named `gc.lib`, so the folder is what tells them
+apart — else `--gc-lib-path` itself when that already names a shared build. If none of those has
+one, the build stops with an error rather than linking a collector of its own.
+
+From a source build, the shared collector comes from `scripts/build_gc_release_shared_vs.bat`:
+`--gc-shared-lib-path=3rdParty/gcdll/x64/release/lib` (with `gc.dll` in its `../bin`).
+
+Linking by hand (`--emit=obj` and your own linker) makes no choice for you: link the executable
+**and** every shared library against the shared `gc.lib`, and ship `gc.dll` beside the executable.
 
 Statically linked programs are unaffected and keep the static `gc.lib` — one binary already
 means one collector. `-mm=rc` and `-mm=none` are unaffected either way: neither has a collector.

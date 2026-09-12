@@ -1,7 +1,7 @@
 # One collector per process: design proposal
 
-Status: **PR 1 implemented** (steps 1, 2, 5 - Windows) on branch `fix-single-gc-collector`;
-steps 3, 4, 6 and Linux still open. See [Progress](#progress) at the end.
+Status: **PR 1 merged** (steps 1, 2, 5 - Windows); **PR 2** (step 3) on branch
+`gc-shared-lib-auto`; steps 4, 6 and Linux still open. See [Progress](#progress) at the end.
 
 ## Problem
 
@@ -222,5 +222,32 @@ suppressed):
 | JIT + default-lib DLL repro | 2000 / 2000 bad | 0 bad |
 | exe + user DLL + default-lib DLL repro | 1984 / 2000 bad | 0 bad |
 
-Still open: the tests that would include the default library itself (the suite still passes
-`--no-default-lib`), steps 3, 4 and 6, the debug default-lib build, and all of Linux.
+Merged as #309 (compiler) and TypeScriptCompilerDefaultLib #6.
+
+### PR 2 - `tslang` chooses the collector's linkage (step 3, Windows)
+
+- `CompileOptions::importsSharedLibrary`, set in `tslang.cpp` by walking the generated module for
+  `LoadLibraryPermanentlyOp` before the passes lower it. Every `import` that resolves to a DLL -
+  dynamic or `@static` - goes through `mlirGenImportSharedLib`, which emits that op.
+- `exe.cpp`: under `-mm=gc` on Windows, `--emit=dll` or an importing `--emit=exe` links
+  `-L<shared>` instead of the static directory, and after a successful link copies `gc.dll` beside
+  the output (a warning names the file to ship if it cannot).
+- The shared directory: `--gc-shared-lib-path`, else `GC_SHARED_LIB_PATH`, else
+  `<gc-lib-path>/gcdll` (the release package), else `--gc-lib-path` itself when `gc.dll` sits
+  beside it or in `../bin` (so the default library's `build_core.bat` keeps working). Nothing found
+  is an **error**, not a fallback to the static `gc.lib`.
+- A lone program is unchanged: static `gc.lib`, no `gc.dll` copied.
+- `test-compile-gc-shared-auto` (`shared-collector-auto.cmake`) drives `tslang --emit=dll/exe` itself -
+  `test-runner` links with lld directly and never exercised the compiler's choice. Five cases: the
+  library gets `gc.dll`; its importer runs clean; `--gc-lib-path` at a shared build alone is
+  enough; a lone exe runs with no `gc.dll` near it and gets none copied; a library with only a
+  static collector fails and names `gc.dll`.
+- Teeth, with the previous compiler: a library and its importer built with only
+  `--gc-lib-path=<static>` link two collectors and fail the gc_single_collector assertion; with
+  collection suppressed the same binary prints 0 bad.
+- The VS Code template's `--emit=dll` task passes `--gc-lib-path=<package root>`, so it resolves
+  `<package>/gcdll` without a change.
+
+Still open: steps 4 and 6, the CMake project template (it links `gc` for every executable and does
+not build shared libraries), tests that include the default library itself (the suite still passes
+`--no-default-lib`), the debug default-lib build, and all of Linux.

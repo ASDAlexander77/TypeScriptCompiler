@@ -1881,6 +1881,26 @@ add_test(NAME test-compile-rc-debug-info
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
 
+# tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
+if (WIN32)
+    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+        set(gc_shared_auto_opt "--opt;--opt_level=3")
+    else()
+        set(gc_shared_auto_opt "--di;--opt_level=0")
+    endif()
+    add_test(NAME test-compile-gc-shared-auto
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/gc-shared-auto"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib"
+                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${gc_shared_auto_opt}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
+endif()
+
 set(TSLANG_OWNERSHIP_SHARDS 8)
 math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
 foreach(ownership_shard RANGE ${ownership_last})
