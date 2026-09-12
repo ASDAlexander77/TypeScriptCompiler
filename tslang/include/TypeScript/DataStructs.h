@@ -36,6 +36,13 @@ struct CompileOptions
     bool strictNullChecks;
     bool enableFastMath;
 
+    // Whether the module imports a tslang shared library (`import './lib'` resolving to a DLL).
+    // Set once the module is generated, and read when linking: under `-mm=gc` such a program must
+    // take its collector from gc.dll, like the library does, because two statically linked
+    // collectors in one process each free what only the other's memory references.
+    // See docs/single-gc-collector-design.md.
+    bool importsSharedLibrary = false;
+
     // Whether the Boehm runtime has to be present. Only `gc` needs it: it is the model whose
     // reclamation *is* the collector. `rc` frees through the reference counts it maintains and
     // `none` frees nothing, so both allocate straight from `malloc` and neither links libgc.
