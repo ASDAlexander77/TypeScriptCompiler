@@ -1,6 +1,7 @@
 # One collector per process: design proposal
 
-Status: **proposal**, nothing implemented. Branch `fix-single-gc-collector`.
+Status: **PR 1 implemented** (steps 1, 2, 5 - Windows) on branch `fix-single-gc-collector`;
+steps 3, 4, 6 and Linux still open. See [Progress](#progress) at the end.
 
 ## Problem
 
@@ -189,3 +190,37 @@ sweeping. Fragile at best; rejected.
    closes the bug for JIT, the most exposed path.
 2. `tslang` picks the flavour and copies `gc.dll` (step 3), plus packaging and docs (step 6).
 3. The `__tsgc_` marker and the import-time diagnostic (step 4).
+
+## Progress
+
+### PR 1 - runtime and default-lib DLL on `gc.dll` (Windows)
+
+- **Step 1.** The top-level CMakeLists defines an imported `tslang_gc_shared` target from
+  `3rdParty/gcdll/x64/<build>` (`TSLANG_GC_SHARED_PREFIX`, with `GC_DLL` so the headers declare the
+  API `dllimport`). Configuring fails on Windows if it is missing. `TypeScriptRuntime` links it and
+  copies `gc.dll` into `bin/`; `gc.cpp` no longer forces `GC_NOT_DLL` when `GC_DLL` is set.
+  `prepare_3rdParty.bat` builds the shared Boehm, and the release zip ships `bin/gc.dll` in its
+  root. `TypeScriptRuntime.dll` now imports `gc.dll`.
+- **Step 2.** In the default library's `scripts/build_core.bat`, the DLL step links
+  `--gc-lib-path=%GC_SHARED_LIB_PATH%` (default `..\TypeScriptCompiler\3rdParty\gcdll\x64\<build>\lib`;
+  the release workflow sets it). `TypeScriptDefaultLib.dll` now imports `gc.dll`. Separate repo,
+  same branch name.
+- **Step 5.** `import_gc_single_collector.ts` / `export_gc_single_collector.ts`, registered as
+  `test-jit-shared-export-import-gc-single-collector` and
+  `test-compile-shared-export-import-gc-single-collector`. It needs no default library: the
+  library side builds the held strings **and** churns, so the library's collector is the one that
+  must run. The existing owned-returns test churned in the importer, which is why its JIT variant
+  passed with two collectors.
+
+Measured (release, before → after, each "before" failing and passing again with collection
+suppressed):
+
+| Case | Before | After |
+| --- | --- | --- |
+| new test, `-jit -shared` | assertion failed | 0 bad |
+| new test, AOT `-shared` | 0 bad | 0 bad |
+| JIT + default-lib DLL repro | 2000 / 2000 bad | 0 bad |
+| exe + user DLL + default-lib DLL repro | 1984 / 2000 bad | 0 bad |
+
+Still open: the tests that would include the default library itself (the suite still passes
+`--no-default-lib`), steps 3, 4 and 6, the debug default-lib build, and all of Linux.

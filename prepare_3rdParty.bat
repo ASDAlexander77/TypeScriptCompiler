@@ -41,3 +41,13 @@ IF EXIST ".\3rdParty\gc\x64\%BUILD%\lib\gc.lib" (
   cd %p%
   @call scripts\build_gc_%BUILD%_%TOOL%.bat
 )
+
+rem Boehm as a DLL too: TypeScriptRuntime.dll, the default library's DLL and user shared
+rem libraries take the collector from gc.dll so a process has only one.
+rem See tslang/docs/single-gc-collector-design.md.
+IF EXIST ".\3rdParty\gcdll\x64\%BUILD%\lib\gc.lib" (
+  echo "No need to build shared GC (%BUILD%)"
+) ELSE (
+  cd %p%
+  @call scripts\build_gc_%BUILD%_shared_%TOOL%.bat
+)

@@ -102,6 +102,40 @@ if (NOT BDWgc_FOUND)
     message(FATAL_ERROR "Failed to find BDWgc (garbage collector)")
 endif()
 
+# Boehm built as a DLL (gc.dll + its import library gc.lib). One process must have one
+# collector: every Boehm linked statically brings its own heap and roots, and a collector frees
+# objects that only another binary's memory still references. So anything that shares a process
+# with other gc binaries - TypeScriptRuntime.dll under the JIT, the default library's DLL, user
+# shared libraries - takes Boehm from gc.dll. See docs/single-gc-collector-design.md.
+# Built by scripts/build_gc_{release,debug}_shared_vs.bat (prepare_3rdParty.bat calls it).
+string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+if ("${TSLANG_GC_SHARED_PREFIX}" STREQUAL "")
+  if (MSVC OR WIN32)
+    get_filename_component(TSLANG_GC_SHARED_PREFIX "${CMAKE_SOURCE_DIR}/../3rdParty/gcdll/x64/${CMAKE_BUILD_TYPE_LOWERCASE}" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  else()
+    get_filename_component(TSLANG_GC_SHARED_PREFIX "${CMAKE_SOURCE_DIR}/../3rdParty/gcdll/${CMAKE_BUILD_TYPE_LOWERCASE}" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  endif()
+endif()
+message(STATUS "TSLANG_GC_SHARED_PREFIX is ${TSLANG_GC_SHARED_PREFIX}")
+
+if (WIN32)
+    if (NOT EXISTS "${TSLANG_GC_SHARED_PREFIX}/lib/gc.lib" OR NOT EXISTS "${TSLANG_GC_SHARED_PREFIX}/bin/gc.dll")
+        message(FATAL_ERROR "shared Boehm (gc.dll) not found at ${TSLANG_GC_SHARED_PREFIX}. "
+                            "TypeScriptRuntime.dll needs it so a JIT process has one collector. "
+                            "Build it with scripts/build_gc_${CMAKE_BUILD_TYPE_LOWERCASE}_shared_vs.bat, "
+                            "or point TSLANG_GC_SHARED_PREFIX at an existing install.")
+    endif()
+
+    # Same headers as the static package; GC_DLL makes them declare the API dllimport.
+    get_target_property(TSLANG_GC_INCLUDE_DIRS BDWgc::gc INTERFACE_INCLUDE_DIRECTORIES)
+    add_library(tslang_gc_shared SHARED IMPORTED GLOBAL)
+    set_target_properties(tslang_gc_shared PROPERTIES
+        IMPORTED_IMPLIB "${TSLANG_GC_SHARED_PREFIX}/lib/gc.lib"
+        IMPORTED_LOCATION "${TSLANG_GC_SHARED_PREFIX}/bin/gc.dll"
+        INTERFACE_INCLUDE_DIRECTORIES "${TSLANG_GC_INCLUDE_DIRS}"
+        INTERFACE_COMPILE_DEFINITIONS "GC_DLL")
+endif()
+
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_CMAKE_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_CMAKE_DIR}")
 message(STATUS "Using ClangConfig.cmake in: ${CLANG_CMAKE_DIR}")

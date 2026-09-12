@@ -82,7 +82,7 @@ get_filename_component(TEST_GC_LIBDIR "${BDWgc_DIR}/../.." ABSOLUTE)
 # statically get two collectors, and the one inside the library then frees objects the
 # executable is still holding - item 5ao. Built by scripts/build_gc_release_shared_vs.bat;
 # when it is absent the shared-library tests are skipped rather than run wrong.
-set(TEST_GC_SHARED_PREFIX "${PROJECT_SOURCE_DIR}/../3rdParty/gcdll/x64/${CMAKE_BUILD_TYPE_LOWERCASE}")
+set(TEST_GC_SHARED_PREFIX "${TSLANG_GC_SHARED_PREFIX}")
 if (EXISTS "${TEST_GC_SHARED_PREFIX}/lib/gc.lib" OR EXISTS "${TEST_GC_SHARED_PREFIX}/lib/libgc.so")
     set(TSLANG_HAVE_SHARED_GC TRUE)
 else()
@@ -1053,6 +1053,11 @@ add_test(NAME test-compile-shared-export-import-object-literal-with-class-types 
 # the base's) nor the synthetic base-class storage field (which shifted every
 # subsequent field's offset in the importer).
 add_test(NAME test-compile-shared-export-import-owned-returns COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+# One collector per process (docs/single-gc-collector-design.md): the library builds strings only
+# the importer holds, then churns different ones, so the LIBRARY's collector has to run and has to
+# see the importer's array. Under -jit this failed (2000 of 2000 freed) while TypeScriptRuntime.dll
+# linked Boehm statically beside a library on gc.dll.
+add_test(NAME test-compile-shared-export-import-gc-single-collector COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-implements-diamond COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")
 add_test(NAME test-compile-shared-export-import-class-extends-multilevel COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
@@ -1134,6 +1139,7 @@ add_test(NAME test-jit-shared-decl-emit-class COMMAND test-runner -jit -shared "
 add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
 add_test(NAME test-jit-shared-export-import-owned-returns COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
+add_test(NAME test-jit-shared-export-import-gc-single-collector COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-multilevel COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_multilevel.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_multilevel.ts")
 add_test(NAME test-jit-shared-export-import-class-extends-implements-diamond COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends_implements_diamond.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends_implements_diamond.ts")

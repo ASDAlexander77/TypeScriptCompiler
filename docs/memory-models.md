@@ -117,6 +117,10 @@ three.
 ## Shared libraries and `-mm=gc`
 
 **A program that loads a tslang shared library must link Boehm as a DLL, not statically.**
+The same rule is why, on Windows, `TypeScriptRuntime.dll` (the JIT's runtime) and the default
+library's `TypeScriptDefaultLib.dll` take the collector from `gc.dll`: under the JIT, or beside a
+user's shared library, they share a process with other `gc` code, and one static collector
+among them frees what the others hold. `gc.dll` ships beside `tslang.exe`.
 
 If the executable and the library each link `gc.lib` statically, each gets its own collector,
 with its own heap and its own idea of what the roots are. The library's collector does not scan
