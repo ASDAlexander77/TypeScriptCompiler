@@ -12,7 +12,9 @@
 #define GC_INSIDE_DLL
 #define GC_NAMESPACE
 
-#if defined _WIN32 || defined _WIN64 || defined PLATFORM_ANDROID || defined __ANDROID__
+// GC_DLL comes from the build when the runtime takes Boehm from gc.dll (Windows - see
+// lib/TypeScriptRuntime/CMakeLists.txt); only a statically linked Boehm needs GC_NOT_DLL.
+#if !defined GC_DLL && (defined _WIN32 || defined _WIN64 || defined PLATFORM_ANDROID || defined __ANDROID__)
 #define GC_NOT_DLL
 #endif
 
