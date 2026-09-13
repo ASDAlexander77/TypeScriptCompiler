@@ -9,6 +9,8 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+  # release archives carry the version (the pushed tag): tslang-v0.0-pre-alpha82.zip / .tar.gz
+  ASSET_NAME: tslang-${{ github.ref_name }}
   CACHE_VERSION: v10
   LLVM_VERSION: 22
   LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/q6o011dlgw7n2ebzo176q/llvm_22_1_8_release_vs2026.zip?rlkey=s2h7c64nrmyz9bire0zr3ctzh&st=3nqb99qb&dl=1"
@@ -223,14 +225,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
-          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\tslang.zip
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
         uses: actions/upload-artifact@v4
         with:
           name: tslang-windows-asset
-          path: tslang.zip
+          path: ${{ env.ASSET_NAME }}.zip
           retention-days: 1          
   
   build_on_linux:
@@ -431,13 +433,13 @@ jobs:
           # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
-          tar -czvhf ../tslang.tar.gz -C ./__stage .
+          tar -czvhf ../${{ env.ASSET_NAME }}.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
         with:
           name: tslang-linux-asset
-          path: tslang.tar.gz
+          path: ${{ env.ASSET_NAME }}.tar.gz
           retention-days: 1
 
   create_release:
@@ -475,8 +477,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tslang.zip
-          asset_name: tslang.zip
+          asset_path: ./${{ env.ASSET_NAME }}.zip
+          asset_name: ${{ env.ASSET_NAME }}.zip
           asset_content_type: application/zip
 
   deploy_linux_asset:
@@ -496,6 +498,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tslang.tar.gz
-          asset_name: tslang.tar.gz
+          asset_path: ./${{ env.ASSET_NAME }}.tar.gz
+          asset_name: ${{ env.ASSET_NAME }}.tar.gz
           asset_content_type: application/tar+gzip
