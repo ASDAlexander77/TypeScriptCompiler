@@ -1661,6 +1661,19 @@ class MLIRGenImpl
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
+        // A global other modules reach holds a function the way a local `let` does
+        // (adjustLocalVariableType): as a hybrid function. Its declaration in __decls,
+        // `let f : (p0: number) => number`, reads back as one, so a library inferring a plain
+        // function from its initializer stored a smaller value than its importers loaded - the
+        // call's arguments landed in the wrong place and it returned garbage.
+        if (variableDeclarationInfo.isExport || variableDeclarationInfo.isImport || variableDeclarationInfo.isExternal)
+        {
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+            {
+                actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+            }
+        }
+
         variableDeclarationInfo.setType(actualType);
 
         if (variableDeclarationInfo.initial && actualType != type)
@@ -1819,7 +1832,9 @@ class MLIRGenImpl
         GenContext genContextWithNameReceiver(genContext);
         if (variableDeclarationInfo.isConst)
         {
-            genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+            // the short name: getNameOfFunction qualifies it with the namespace itself, and the
+            // function's name-without-namespace is what __decls prints inside `namespace X { }`
+            genContextWithNameReceiver.receiverName = variableDeclarationInfo.variableName;
         }
         else
         {
@@ -2029,11 +2044,23 @@ class MLIRGenImpl
 
     mlir::LogicalResult isGlobalConstLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
-        if (variableDeclarationInfo.isConst 
-            && variableDeclarationInfo.initial 
+        // Only when the function IS the const: its initializer named the function after it (an
+        // arrow function or function expression, see getNameWithArguments), so erasing the global
+        // leaves the name resolving to that function. A const that merely holds a function made
+        // under another name - `const alias = plainFn`, or a generator's wrapper - must keep its
+        // global, or nothing named after it is left: "can't resolve name" in the module itself,
+        // an undefined symbol in its importers.
+        if (variableDeclarationInfo.isConst
+            && variableDeclarationInfo.initial
             && mth.isAnyFunctionType(variableDeclarationInfo.type))
         {
-            return mlir::success();
+            if (auto symbolRefOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                if (symbolRefOp.getIdentifier() == variableDeclarationInfo.fullName)
+                {
+                    return mlir::success();
+                }
+            }
         }
 
         return mlir::failure();
@@ -2169,7 +2196,12 @@ class MLIRGenImpl
             // so if arrow is part of call, it will be considered as receiver of initialization which is wrong,
             // example: const seq = f( (x) => x + 1 ); 
             // seq will become name of function
-            if (initializer != SyntaxKind::ArrowFunction) 
+            // a generator function expression is rewritten into a wrapper (mlirGenFunctionGenerator),
+            // which must not take the receiver's name
+            auto isNamedByReceiver = initializer == SyntaxKind::ArrowFunction
+                || (initializer == SyntaxKind::FunctionExpression
+                    && !initializer.template as<FunctionLikeDeclarationBase>()->asteriskToken);
+            if (!isNamedByReceiver)
             {
                 genContextWithTypeReceiver.receiverName = StringRef();
                 genContextWithTypeReceiver.isGlobalVarReceiver = false;
@@ -10242,7 +10274,17 @@ class MLIRGenImpl
             }
             else if (declarationAST == SyntaxKind::FunctionExpression)
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe", "");
+                // like an arrow function: `const f = function () {...}` is the function `f`, which
+                // is how another module refers to it (see mlirGen(VariableDeclaration)). A generator
+                // arrives without a receiver name: the variable's initializer clears it for one.
+                if (!genContext.receiverName.empty())
+                {
+                    name = genContext.receiverName.str();
+                }
+                else
+                {
+                    name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe", "");
+                }
             }
             else if (declarationAST == SyntaxKind::ClassExpression)
             {

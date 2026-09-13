@@ -933,6 +933,15 @@ namespace mlirgen
             });
         }
 
+        // An exported module-level const is a variable, as an exported `let` is. A const may be
+        // folded away inside its module - a const function becomes the function and its global is
+        // erased (isGlobalConstLambda) - but other modules reach it by symbol, so it has to be the
+        // global they import: an importer reads `export const f = () => ...` out of variable `f`.
+        if (varClass.type == VariableType::Const && !isUsing && varClass.isExport && !varClass.isImport && !genContext.funcOp)
+        {
+            varClass.type = VariableType::Let;
+        }
+
         for (auto &item : variableDeclarationListAST->declarations)
         {
             // we need it for support "undefined type" in 'let' without initialization
