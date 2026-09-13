@@ -716,7 +716,7 @@ namespace mlirgen
                     auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
                     if (!globalFuncVar)
                     {
-                        auto symbolNameValue = V(mlirGenStringValue(location, funcName.str(), true));
+                        auto symbolNameValue = V(mlirGenStringValue(location, funcEntry.dllName.empty() ? funcName.str() : funcEntry.dllName, true));
                         auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                             location, getOpaqueType(), symbolNameValue);
                         auto castResult = cast(location, effectiveFuncType, referenceToFuncOpaque, genContext);
@@ -838,7 +838,7 @@ namespace mlirgen
                 auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext);
                 if (!globalFuncVar)
                 {
-                    auto symbolNameValue = V(mlirGenStringValue(location, funcName.str(), true));
+                    auto symbolNameValue = V(mlirGenStringValue(location, funcEntry.dllName.empty() ? funcName.str() : funcEntry.dllName, true));
                     auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                         location, getOpaqueType(), symbolNameValue);
                     auto castResult = cast(location, effectiveFuncType, referenceToFuncOpaque, genContext);

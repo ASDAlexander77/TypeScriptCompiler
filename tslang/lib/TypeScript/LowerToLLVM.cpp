@@ -1568,9 +1568,11 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 continue;
             }
 
-            auto addAttr = 
+            auto addAttr =
                 std::find(skipAttrs.begin(), skipAttrs.end(), name) == skipAttrs.end();
-            if (addAttr) 
+            if (addAttr && name == DLL_NAME)
+                funcAttrs.push_back(ArrayAttr::get(rewriter.getContext(), {name, attr.getValue()}));
+            else if (addAttr)
                 funcAttrs.push_back(name);
         }
 
@@ -7215,6 +7217,30 @@ static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOp
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
     auto m = getOperation();
+
+    // @dllname on a global: unlike a function, an LLVM global carries no string attribute
+    // ExportFixPass could rename it by, so rename the symbol and its uses here instead
+    SmallVector<mlir_ts::GlobalOp> renamedGlobals;
+    m.walk([&](mlir_ts::GlobalOp globalOp) {
+        if (globalOp->hasAttr(DLL_NAME))
+        {
+            renamedGlobals.push_back(globalOp);
+        }
+    });
+
+    for (auto globalOp : renamedGlobals)
+    {
+        auto dllName = globalOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
+        globalOp->removeAttr(DLL_NAME);
+        if (failed(SymbolTable::replaceAllSymbolUses(globalOp, dllName, m)))
+        {
+            globalOp.emitError("can't rename global to @dllname '") << dllName.getValue() << "'";
+            signalPassFailure();
+            return;
+        }
+
+        SymbolTable::setSymbolName(globalOp, dllName);
+    }
 
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering. For this lowering, we are only targeting

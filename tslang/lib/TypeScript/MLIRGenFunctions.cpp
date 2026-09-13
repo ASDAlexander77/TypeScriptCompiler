@@ -392,7 +392,8 @@ namespace mlirgen
                 if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
                     || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
                 {
-                    addFunctionDeclarationToExport(funcProto, currentNamespace);
+                    auto dllNameAttr = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
+                    addFunctionDeclarationToExport(funcProto, currentNamespace, dllNameAttr ? dllNameAttr.getValue() : StringRef());
                 }
             }
         }
@@ -844,10 +845,16 @@ namespace mlirgen
 
         // check decorator for class
         auto dynamicImport = false;
+        StringRef dllFuncName = funcProto->getName();
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             if (name == DLL_IMPORT && args.size() > 0)
             {
                 dynamicImport = true;
+            }
+
+            if (name == DLL_NAME && args.size() > 0)
+            {
+                dllFuncName = args.front();
             }
         });
 
@@ -855,8 +862,8 @@ namespace mlirgen
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
             auto result = mlirGenFunctionLikeDeclarationDynamicImport(
-                location, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(), 
-                funcProto->getName(), funcDeclGenContext, false);
+                location, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(),
+                dllFuncName, funcDeclGenContext, false);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 

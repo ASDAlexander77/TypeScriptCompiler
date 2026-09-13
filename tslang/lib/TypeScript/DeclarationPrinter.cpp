@@ -258,8 +258,15 @@ namespace typescript
     }
 
     void MLIRDeclarationPrinter::printAccessor(bool isStatic, StringRef keyword, StringRef name, mlir_ts::AccessLevel accessLevel,
-                                               ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType)
+                                               ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType, StringRef dllName)
     {
+        if (!dllName.empty())
+        {
+            os.indent(4);
+            os << "@dllname(\"" << dllName << "\")";
+            newline();
+        }
+
         os.indent(4);
 
         if (accessLevel == mlir_ts::AccessLevel::Protected)
@@ -347,11 +354,17 @@ namespace typescript
         printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
+    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst, StringRef dllName)
     {
         printNamespaceBegin(elementNamespace);
 
         printBeforeDeclaration();
+
+        if (!dllName.empty())
+        {
+            os << "@dllname(\"" << dllName << "\")";
+            newline();
+        }
 
         // no TS source syntax expresses "this symbol's storage is a single
         // boxed pointer to the real data, not the data inline" - an inferred
@@ -387,11 +400,17 @@ namespace typescript
         printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType)
+    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName)
     {
         printNamespaceBegin(elementNamespace);
 
         printBeforeDeclaration();
+
+        if (!dllName.empty())
+        {
+            os << "@dllname(\"" << dllName << "\")";
+            newline();
+        }
 
         printFunction(
             name,
@@ -561,6 +580,13 @@ namespace typescript
                 continue;
             }
 
+            if (!method.dllName.empty())
+            {
+                os.indent(4);
+                os << "@dllname(\"" << method.dllName << "\")";
+                newline();
+            }
+
             os.indent(4);
 
             if (method.accessLevel == mlir_ts::AccessLevel::Protected)
@@ -599,7 +625,8 @@ namespace typescript
                     accessor.isStatic, "get", accessor.name, accessor.getAccessLevel,
                     accessor.get.funcType.getParams(),
                     accessor.get.funcType.getNumResults() > 0 ? accessor.get.funcType.getResult(0) : mlir::Type(),
-                    classType->classType);
+                    classType->classType,
+                    accessor.get.dllName);
             }
 
             if (accessor.set)
@@ -608,7 +635,8 @@ namespace typescript
                     accessor.isStatic, "set", accessor.name, accessor.setAccessLevel,
                     accessor.set.funcType.getParams(),
                     mlir::Type(),
-                    classType->classType);
+                    classType->classType,
+                    accessor.set.dllName);
             }
         }
 

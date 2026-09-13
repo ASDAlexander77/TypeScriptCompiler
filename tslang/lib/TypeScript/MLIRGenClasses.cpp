@@ -1776,7 +1776,8 @@ genContext);
                             // initializer into a synthesized __cctor function via
                             // GlobalOpLowering, and a "live" (main-scoped) location on any op
                             // living there would attach the wrong DISubprogram to it.
-                            auto symbolNameValue = V(mlirGenStringValue(location, methodOrField.methodInfo.funcName, true));
+                            auto symbolNameValue = V(mlirGenStringValue(location,
+                                methodOrField.methodInfo.dllName.empty() ? methodOrField.methodInfo.funcName : methodOrField.methodInfo.dllName, true));
                             auto referenceToSymbolOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                                 location, getOpaqueType(), symbolNameValue);
                             auto castResult = cast(location, methodOrField.methodInfo.funcType, referenceToSymbolOpaque, genContext);
@@ -2001,7 +2002,10 @@ genContext);
 
                         if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
                         {
-                            auto symbolNameValue = V(mlirGenStringValue(location, symbolName.str(), true));
+                            auto dllSymbolName = !vtRecord.isStaticField && !vtRecord.methodInfo.dllName.empty()
+                                ? StringRef(vtRecord.methodInfo.dllName)
+                                : symbolName;
+                            auto symbolNameValue = V(mlirGenStringValue(location, dllSymbolName.str(), true));
                             auto referenceToSymbolOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                                 location, getOpaqueType(), symbolNameValue);
                             auto castResult = cast(location, slotType, referenceToSymbolOpaque, genContext);
@@ -2280,8 +2284,9 @@ genContext);
         classMethodMemberInfo.setFuncOp(funcOp);
 
         auto location = loc(funcLikeDeclaration);
+        auto dllNameAttr = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
         if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
-            location, funcOp.getName(), funcOp.getFunctionType(), funcOp.getName(), genContext)))
+            location, funcOp.getName(), funcOp.getFunctionType(), dllNameAttr ? dllNameAttr.getValue() : funcOp.getName(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;

@@ -102,6 +102,8 @@ struct VariableClass
     // DeclarationPrinter.cpp's printVariableDeclaration and
     // MLIRGenVariables.cpp's isDynamicImport load branch.
     bool isBoxed;
+    // @dllname: exported symbol name, empty when the variable keeps its own name
+    StringRef dllName;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 
@@ -124,6 +126,8 @@ struct FunctionEntry
 {
     std::string name;
     mlir_ts::FunctionType funcType;
+    // @dllname: exported symbol name, empty when the function keeps name
+    std::string dllName;
 
     explicit operator bool() const
     {
@@ -144,6 +148,8 @@ struct MethodInfo
     int virtualIndex;
     int orderWeight;
     mlir_ts::AccessLevel accessLevel;
+    // @dllname: exported symbol name, empty when the method keeps funcName
+    std::string dllName;
 };
 
 struct GenericMethodInfo

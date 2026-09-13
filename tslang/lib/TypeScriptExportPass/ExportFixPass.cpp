@@ -25,7 +25,15 @@ struct ExportFixPassCode
 
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Function: " << F.getName());
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Dump Before: ...\n" << F << "\n";);
-        
+
+        if (F.hasFnAttribute(DLL_NAME))
+        {
+            auto dllName = F.getFnAttribute(DLL_NAME).getValueAsString().str();
+            F.removeFnAttr(DLL_NAME);
+            F.setName(dllName);
+            MadeChange = true;
+        }
+
         if (F.hasFnAttribute("export"))
         {
             F.removeFnAttr("export");

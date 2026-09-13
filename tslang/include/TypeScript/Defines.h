@@ -122,6 +122,7 @@
 #define SHARED_LIB_MEMORY_MODEL "__tsmm_"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
+#define DLL_NAME "dllname"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
