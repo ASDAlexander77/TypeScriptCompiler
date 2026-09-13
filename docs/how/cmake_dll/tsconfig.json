@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+      "target": "esnext",
+      "allowJs": false,
+      "skipLibCheck": true,
+      "strict": true,
+      "noEmit": true,
+      "esModuleInterop": true,
+      "module": "esnext",
+      "moduleResolution": "bundler",
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "jsx": "preserve",
+      "incremental": true,
+      "lib": ["ESNext"],
+      "types": ["./types/tslang", "I:\\tslang/defaultlib/lib.d.ts"]
+    },
+    "include": ["wrapper.ts"]
+}
