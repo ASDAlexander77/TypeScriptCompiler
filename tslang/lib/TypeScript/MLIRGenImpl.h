@@ -1661,6 +1661,19 @@ class MLIRGenImpl
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
+        // A global other modules reach holds a function the way a local `let` does
+        // (adjustLocalVariableType): as a hybrid function. Its declaration in __decls,
+        // `let f : (p0: number) => number`, reads back as one, so a library inferring a plain
+        // function from its initializer stored a smaller value than its importers loaded - the
+        // call's arguments landed in the wrong place and it returned garbage.
+        if (variableDeclarationInfo.isExport || variableDeclarationInfo.isImport || variableDeclarationInfo.isExternal)
+        {
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+            {
+                actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+            }
+        }
+
         variableDeclarationInfo.setType(actualType);
 
         if (variableDeclarationInfo.initial && actualType != type)
@@ -1941,16 +1954,7 @@ class MLIRGenImpl
 
                 if (variableDeclarationInfo.isExternal)
                 {
-                    // A module imported as source declares its globals here. A const function's
-                    // initializer is still generated (see mlirGen(VariableDeclaration)), and has to
-                    // name the function after the const, as the library's initialization does.
-                    GenContext genContextWithNameReceiver(genContext);
-                    if (variableDeclarationInfo.isConst)
-                    {
-                        genContextWithNameReceiver.receiverName = variableDeclarationInfo.variableName;
-                    }
-
-                    if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
+                    if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
                     {
                         return mlir::failure();
                     }
@@ -2040,11 +2044,23 @@ class MLIRGenImpl
 
     mlir::LogicalResult isGlobalConstLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
-        if (variableDeclarationInfo.isConst 
-            && variableDeclarationInfo.initial 
+        // Only when the function IS the const: its initializer named the function after it (an
+        // arrow function or function expression, see getNameWithArguments), so erasing the global
+        // leaves the name resolving to that function. A const that merely holds a function made
+        // under another name - `const alias = plainFn`, or a generator's wrapper - must keep its
+        // global, or nothing named after it is left: "can't resolve name" in the module itself,
+        // an undefined symbol in its importers.
+        if (variableDeclarationInfo.isConst
+            && variableDeclarationInfo.initial
             && mth.isAnyFunctionType(variableDeclarationInfo.type))
         {
-            return mlir::success();
+            if (auto symbolRefOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                if (symbolRefOp.getIdentifier() == variableDeclarationInfo.fullName)
+                {
+                    return mlir::success();
+                }
+            }
         }
 
         return mlir::failure();
