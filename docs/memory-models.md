@@ -128,13 +128,48 @@ the executable's roots, so it frees objects the executable is still holding. The
 a crash: the freed memory is reallocated and the program reads a plausible wrong value, which
 only shows up when what was written over it differs from what was there.
 
-The Windows release package ships the shared collector in its `gcdll` folder, beside the static
-`gc.lib` at its root — both files are named `gc.lib`, so the folder is what tells them apart.
-Compile the executable **and** every shared library with `--gc-lib-path=<package>/gcdll`, and
-ship `gcdll/gc.dll` beside the executable.
+On Windows `tslang` makes the choice itself:
 
-From a source build, the same files come from `scripts/build_gc_release_shared_vs.bat`: link
-against `3rdParty/gcdll/x64/release/lib/gc.lib` and ship `3rdParty/gcdll/x64/release/bin/gc.dll`.
+- `--emit=dll`, and `--emit=exe` for a program that imports a tslang shared library, link the
+  shared collector and copy `gc.dll` beside the output.
+- `--emit=exe` for a program that imports none keeps the static `gc.lib`, and ships as one file.
+
+It finds the shared collector through `--gc-shared-lib-path` (or `GC_SHARED_LIB_PATH`), else the
+`gcdll` folder inside `--gc-lib-path` — which is where the Windows release package ships it, beside
+the static `gc.lib` at its root; both files are named `gc.lib`, so the folder is what tells them
+apart — else `--gc-lib-path` itself when that already names a shared build. If none of those has
+one, the build stops with an error rather than linking a collector of its own.
+
+From a source build, the shared collector comes from `scripts/build_gc_release_shared_vs.bat`:
+`--gc-shared-lib-path=3rdParty/gcdll/x64/release/lib` (with `gc.dll` in its `../bin`).
+
+Linking by hand (`--emit=obj` and your own linker) makes no choice for you: link the executable
+**and** every shared library against the shared `gc.lib`, and ship `gc.dll` beside the executable.
+
+What to ship with a Windows program that loads a tslang shared library, all in one folder:
+
+- the program and its shared libraries,
+- `gc.dll` (from `gcdll/` in the release package),
+- `TypeScriptDefaultLib.dll` (from `defaultlib/dll/<release|debug>/gc`), which every shared library
+  built with the default library imports.
+
+A shared library that was linked against the static `gc.lib` anyway — by an older `tslang`, or by
+hand — is refused when you import it, under `--emit=exe` and `--emit=jit` alike:
+
+```
+error: shared library 'foo.dll' links its own garbage collector (the static gc.lib). Objects
+crossing between it and this module can be freed while still in use. Rebuild it with tslang
+--emit=dll, which links gc.dll.
+```
+
+The compiler reads this from the library itself, so it holds however the library was linked. The
+JIT checks the default library's DLL the same way before loading it.
+
+On Linux nothing needs to ship. A program that imports a tslang shared object exports its own
+collector (`--whole-archive` plus `--export-dynamic-symbol=GC_*`), and the dynamic loader binds
+the shared object's `GC_*` calls to it, so the copy linked into the shared object is never used.
+The default library's `.so` links no collector at all. Under the JIT, `libTypeScriptRuntime.so`
+exports the collector the same way. If you link a program by hand, pass those two options.
 
 Statically linked programs are unaffected and keep the static `gc.lib` — one binary already
 means one collector. `-mm=rc` and `-mm=none` are unaffected either way: neither has a collector.

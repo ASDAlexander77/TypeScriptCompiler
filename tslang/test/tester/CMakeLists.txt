@@ -1884,6 +1884,60 @@ add_test(NAME test-compile-rc-debug-info
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
 
+# tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
+if (WIN32)
+    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+        set(gc_shared_auto_opt "--opt;--opt_level=3")
+    else()
+        set(gc_shared_auto_opt "--di;--opt_level=0")
+    endif()
+    add_test(NAME test-compile-gc-shared-auto
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/gc-shared-auto"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib"
+                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${gc_shared_auto_opt}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
+endif()
+
+# One collector per process with the real default library in it - see defaultlib-collector.cmake.
+# Skipped (not failed) when no default library has been built; the release workflows run them after
+# building one. The sources live outside tests/: without the default library they do not compile,
+# and every file in tests/ is compiled alone with --no-default-lib by the ownership verifier.
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+    set(defaultlib_collector_opt "--opt;--opt_level=3")
+else()
+    set(defaultlib_collector_opt "--di;--opt_level=0")
+endif()
+if (WIN32)
+    set(defaultlib_collector_llvm_lib "${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib")
+    set(defaultlib_collector_gc_shared "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib")
+else()
+    set(defaultlib_collector_llvm_lib "${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/lib")
+    set(defaultlib_collector_gc_shared "")
+endif()
+foreach(defaultlib_collector_mode jit compile)
+    add_test(NAME test-${defaultlib_collector_mode}-gc-defaultlib-collector
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${defaultlib_collector_mode}"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/gc-defaultlib-collector-${defaultlib_collector_mode}"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     ${defaultlib_collector_gc_shared}
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${defaultlib_collector_opt}"
+                     "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/defaultlib-collector.cmake")
+    set_tests_properties(test-${defaultlib_collector_mode}-gc-defaultlib-collector PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+endforeach()
+
 set(TSLANG_OWNERSHIP_SHARDS 8)
 math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
 foreach(ownership_shard RANGE ${ownership_last})

@@ -14,6 +14,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
@@ -28,6 +29,14 @@ extern cl::opt<std::string> outputFilename;
 extern cl::opt<std::string> TargetTriple;
 extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
+extern cl::opt<std::string> gcsharedlibpath;
+
+// From TypeScript/ObjDumper.h, declared here for the same reason jit.cpp does: that header's
+// llvm/BinaryFormat/COFF.h collides with <windows.h> macros.
+namespace Dump
+{
+    bool containsGarbageCollector(llvm::StringRef);
+}
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
 extern cl::opt<std::string> emsdksysrootpath;
@@ -157,6 +166,81 @@ std::string getGCLibPath()
     }    
 
     return "";    
+}
+
+// Boehm built as a DLL: a directory holding its import library `gc.lib`, with `gc.dll` beside it
+// (the release package's gcdll folder) or in `../bin` (a CMake install).
+static std::string findGCDll(llvm::StringRef libDir)
+{
+    llvm::SmallString<256> beside(libDir);
+    llvm::sys::path::append(beside, "gc.dll");
+    if (llvm::sys::fs::exists(beside))
+    {
+        return beside.str().str();
+    }
+
+    llvm::SmallString<256> bin(libDir);
+    llvm::sys::path::append(bin, "..", "bin", "gc.dll");
+    if (llvm::sys::fs::exists(bin))
+    {
+        llvm::sys::path::remove_dots(bin, /*remove_dot_dot=*/true);
+        return bin.str().str();
+    }
+
+    return "";
+}
+
+static bool isSharedGCLibDir(llvm::StringRef libDir)
+{
+    llvm::SmallString<256> lib(libDir);
+    llvm::sys::path::append(lib, "gc.lib");
+    return llvm::sys::fs::exists(lib) && !findGCDll(libDir).empty();
+}
+
+// Where the shared collector is, or "" when there is none to be found. Not a fallback to the
+// static gc.lib: that is exactly the build this exists to avoid, and it links fine and then frees
+// live objects, which is far harder to find than a link that stops here.
+std::string getGCSharedLibPath()
+{
+    if (!gcsharedlibpath.empty())
+    {
+        checkGCLibPath(gcsharedlibpath);
+        return gcsharedlibpath;
+    }
+
+    if (auto gcSharedLibEnvValue = llvm::sys::Process::GetEnv("GC_SHARED_LIB_PATH"))
+    {
+        if (!gcSharedLibEnvValue->empty())
+        {
+            checkGCLibPath(gcSharedLibEnvValue.value());
+            return gcSharedLibEnvValue.value();
+        }
+    }
+
+    std::string staticPath = gclibpath;
+    if (staticPath.empty())
+    {
+        staticPath = llvm::sys::Process::GetEnv("GC_LIB_PATH").value_or("");
+    }
+
+    if (!staticPath.empty())
+    {
+        // the release package: the shared build in a gcdll folder beside the static gc.lib
+        llvm::SmallString<256> gcdll(staticPath);
+        llvm::sys::path::append(gcdll, "gcdll");
+        if (isSharedGCLibDir(gcdll))
+        {
+            return gcdll.str().str();
+        }
+
+        // --gc-lib-path already names a shared build
+        if (isSharedGCLibDir(staticPath))
+        {
+            return staticPath;
+        }
+    }
+
+    return "";
 }
 
 std::string getLLVMLibPath()
@@ -418,6 +502,24 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             return 1;
         }
 
+        // A shared library links the default library's DLL and shares a process with it. If that
+        // DLL predates linking gc.dll it brings a second collector, which frees what the library
+        // and its host hold - the case step 4's import check cannot see, since the library does
+        // not import it by name. See docs/single-gc-collector-design.md.
+        if (win && shared && compileOptions.needsGCRuntime() && !defaultLibDir.empty())
+        {
+            llvm::SmallString<256> defaultLibDll(defaultLibDir);
+            llvm::sys::path::append(defaultLibDll, DEFAULT_LIB_NAME ".dll");
+            if (llvm::sys::fs::exists(defaultLibDll) && Dump::containsGarbageCollector(defaultLibDll))
+            {
+                llvm::WithColor::error(llvm::errs(), "tslang")
+                    << defaultLibDll << " links its own garbage collector (the static gc.lib), so a shared library "
+                    << "linked with it would run two collectors in one process. Rebuild the default library: its "
+                    << "DLL has to link gc.dll.\n";
+                return 1;
+            }
+        }
+
         defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
         if (!defaultLibPathOpt.empty())
         {
@@ -425,9 +527,34 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }
     }    
 
+    // Which Boehm. A shared library, and a program that loads one, share a process with other gc
+    // code, so they take the collector from gc.dll: linked statically, each binary brings a
+    // collector of its own, and one frees objects only the other's memory references. A program
+    // that is alone keeps the static gc.lib and ships as one file. Windows only for now - Linux has
+    // not been measured. See docs/single-gc-collector-design.md.
+    auto useSharedGC = win && compileOptions.needsGCRuntime() && (shared || compileOptions.importsSharedLibrary);
+    std::string gcSharedLibPath;
+    std::string gcDllPath;
+    if (useSharedGC)
+    {
+        gcSharedLibPath = getGCSharedLibPath();
+        if (gcSharedLibPath.empty())
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << (shared ? "a shared library" : "a program that imports a shared library")
+                << " built with -mm=gc links the garbage collector from gc.dll, so that the process has only one collector"
+                   " - linked statically, it would free objects another module still holds. Point --gc-shared-lib-path"
+                   " (or GC_SHARED_LIB_PATH) at the directory with gc.dll's import library 'gc.lib'; the release package"
+                   " ships it as 'gcdll'.\n";
+            return 1;
+        }
+
+        gcDllPath = findGCDll(gcSharedLibPath);
+    }
+
     if (compileOptions.needsGCRuntime())
     {
-        gcLibPathOpt = getLibsPathOpt(getGCLibPath());
+        gcLibPathOpt = getLibsPathOpt(useSharedGC ? gcSharedLibPath : getGCLibPath());
         if (!gcLibPathOpt.empty())
         {
             args.push_back(gcLibPathOpt.c_str());    
@@ -482,9 +609,26 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     }
 
     // tslang libs
+    // ELF: a program that loads a tslang shared object exports its whole collector, so the shared
+    // object's calls to GC_* bind to it at load time instead of to the static copy linked into the
+    // shared object, and the process runs one collector. Measured: without the export, strings the
+    // shared object built were freed while the program held them. The JIT needs nothing here, as
+    // libTypeScriptRuntime.so already exports GC_*. See docs/single-gc-collector-design.md.
+    auto exportGC = !win && !wasm && !shared && compileOptions.needsGCRuntime() && compileOptions.importsSharedLibrary;
     if (compileOptions.needsGCRuntime())
-    {    
-        args.push_back("-lgc");
+    {
+        if (exportGC)
+        {
+            // whole archive: the shared object may call GC_* functions this program never does
+            args.push_back("-Wl,--whole-archive");
+            args.push_back("-lgc");
+            args.push_back("-Wl,--no-whole-archive");
+            args.push_back("-Wl,--export-dynamic-symbol=GC_*");
+        }
+        else
+        {
+            args.push_back("-lgc");
+        }
     }
 
     if (isTslangLibNeeded)
@@ -656,6 +800,31 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     }
 
     diags.getClient()->finish();
+
+    // A binary linked against gc.dll does not start without it, so put it beside the output.
+    if (res == 0 && useSharedGC)
+    {
+        auto outputDir = llvm::sys::path::parent_path(outputFilename.getValue());
+        llvm::SmallString<256> destination(outputDir.empty() ? "." : outputDir);
+        llvm::sys::path::append(destination, "gc.dll");
+
+        bool sameFile = false;
+        if (gcDllPath.empty())
+        {
+            llvm::WithColor::warning(llvm::errs(), "tslang")
+                << "linked against gc.dll, but no gc.dll was found next to '" << gcSharedLibPath
+                << "' or in its '../bin'; ship gc.dll beside '" << outputFilename.getValue() << "'\n";
+        }
+        else if (llvm::sys::fs::equivalent(gcDllPath, destination, sameFile) || !sameFile)
+        {
+            if (auto error = llvm::sys::fs::copy_file(gcDllPath, destination))
+            {
+                llvm::WithColor::warning(llvm::errs(), "tslang")
+                    << "could not copy '" << gcDllPath << "' to '" << destination << "': " << error.message()
+                    << "; ship gc.dll beside '" << outputFilename.getValue() << "'\n";
+            }
+        }
+    }
 
     // If we have multiple failing commands, we return the result of the first
     // failing command.

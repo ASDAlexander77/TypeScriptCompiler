@@ -89,4 +89,47 @@ void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols, llvm::BumpP
     }
 }
 
+bool containsGarbageCollector(StringRef filePath)
+{
+    // Boehm's GC_init reads this environment variable, so its name is a string constant in every
+    // binary that contains the collector, in every build flavour, stripped or not - and in none
+    // that only calls it. Its internal symbols are no help: a DLL does not export them.
+    static const StringRef fingerprint = "GC_INITIAL_HEAP_SIZE";
+
+    auto expectedOwningBinary = createBinary(filePath);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return false;
+    }
+
+    auto *objFile = dyn_cast<ObjectFile>(expectedOwningBinary.get().getBinary());
+    if (!objFile)
+    {
+        return false;
+    }
+
+    for (const SectionRef &section : objFile->sections())
+    {
+        if (!section.isData() || section.isBSS())
+        {
+            continue;
+        }
+
+        auto contents = section.getContents();
+        if (!contents)
+        {
+            consumeError(contents.takeError());
+            continue;
+        }
+
+        if (contents->contains(fingerprint))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 }

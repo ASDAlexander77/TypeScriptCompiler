@@ -56,6 +56,25 @@ It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and ad
 to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
 `none`; only `gc` links Boehm.
 
+## Programs that load tslang shared libraries
+
+A program that imports a tslang shared library (`import './lib'`) has to share one garbage
+collector with it under `gc`. With two, each frees objects the other still holds. This template
+does not build shared libraries itself: build them with `tslang --emit=dll`, which does this on its
+own. Then configure the program with:
+
+```
+cmake --preset default -DTSLANG_SHARED_GC=ON
+```
+
+- Windows: links `gcdll/gc.lib` (gc.dll's import library) instead of the static `gc.lib`, and copies
+  `gc.dll` beside the program. Ship it with `TypeScriptDefaultLib.dll`
+  (`defaultlib/dll/<release|debug>/gc`) and your libraries.
+- Linux: links the whole static collector and exports its `GC_*` symbols, so the shared library
+  uses the program's collector.
+
+Leave it `OFF` for a program that loads none: it then ships as a single file.
+
 ## Minimal alternative
 
 If you don't need a first-class language, either:

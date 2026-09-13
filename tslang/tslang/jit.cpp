@@ -37,6 +37,13 @@
 
 #include "TypeScript/Defines.h"
 
+// From TypeScript/ObjDumper.h, which cannot be included here: its llvm/BinaryFormat/COFF.h
+// collides with the IMAGE_* macros <windows.h> defines above.
+namespace Dump
+{
+    bool containsGarbageCollector(llvm::StringRef);
+}
+
 #define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
@@ -386,6 +393,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
                 << "scripts), or compile with --no-default-lib.\n";
             return -1;
         }
+
+#ifdef WIN32
+        // A default library built before it linked gc.dll carries a collector of its own, next to
+        // the one TypeScriptRuntime.dll takes from gc.dll, and frees the strings it hands this
+        // program. See docs/single-gc-collector-design.md.
+        if (compileOptions.needsGCRuntime() && Dump::containsGarbageCollector(defaultLibFile))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << defaultLibFile << " links its own garbage collector (the static gc.lib), so this "
+                << "process would have two and one frees what the other holds. Rebuild the default "
+                << "library: its DLL has to link gc.dll.\n";
+            return -1;
+        }
+#endif
 
         clSharedLibs.push_back(defaultLibFile);
     }      
