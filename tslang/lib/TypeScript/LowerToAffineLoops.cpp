@@ -111,7 +111,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
         assert(tsContext->returnBlock);
 
         auto retBlock = tsContext->returnBlock;
-        if (auto unwind = tsContext->unwind[op])
+        if (auto unwind = tsContext->unwind.lookup(op))
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
@@ -122,7 +122,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        if (auto cleanup = tsContext->cleanup[op])
+        if (auto cleanup = tsContext->cleanup.lookup(op))
         {
             rewriter.create<mlir::cf::BranchOp>(loc, cleanup);
         }
@@ -152,7 +152,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         // save value into return
         rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.getOperand(), op.getReference());
-        if (auto unwind = tsContext->unwind[op])
+        if (auto unwind = tsContext->unwind.lookup(op))
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
@@ -164,7 +164,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        if (auto cleanup = tsContext->cleanup[op])
+        if (auto cleanup = tsContext->cleanup.lookup(op))
         {
             rewriter.create<mlir::cf::BranchOp>(loc, cleanup);
         }
@@ -791,10 +791,10 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         OpBuilder::InsertionGuard guard(rewriter);
         Location loc = breakOp.getLoc();
 
-        auto jump = tsContext->jumps[breakOp];
+        auto jump = tsContext->jumps.lookup(breakOp);
         assert(jump);
 
-        if (auto unwind = tsContext->unwind[breakOp])
+        if (auto unwind = tsContext->unwind.lookup(breakOp))
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
@@ -817,10 +817,10 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         OpBuilder::InsertionGuard guard(rewriter);
         Location loc = continueOp.getLoc();
 
-        auto jump = tsContext->jumps[continueOp];
+        auto jump = tsContext->jumps.lookup(continueOp);
         assert(jump);
 
-        if (auto unwind = tsContext->unwind[continueOp])
+        if (auto unwind = tsContext->unwind.lookup(continueOp))
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
@@ -1294,8 +1294,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         CodeLogicHelper clh(tryOp, rewriter);
 
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
-        auto parentTryOp = tsContext->parentTryOp[tryOp.getOperation()];
-        mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf[parentTryOp] : nullptr;
+        auto parentTryOp = tsContext->parentTryOp.lookup(tryOp.getOperation());
+        mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf.lookup(parentTryOp) : nullptr;
 
         MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
         auto i8PtrTy = mth.getOpaqueType();
@@ -1368,7 +1368,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::SmallVector<Operation *> escapingJumpsCatches;
         auto collectEscapingJumps = [&](mlir::Region &region, mlir::SmallVector<Operation *> &to) {
             region.walk([&](Operation *op) {
-                if (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.count(op))
+                if (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.contains(op))
                 {
                     to.push_back(op);
                 }
@@ -1449,7 +1449,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     // breaks the unwind (51exceptions.ts is the case that proves it).
                     if (!finallyHasOps)
                     {
-                        tsContext->leavesCatch.insert(op);
+                        tsContext->leavesCatch[op] = true;
                     }
                 }
             };
@@ -1487,16 +1487,14 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto propagateTsContextEntries = [&](const mlir::IRMapping &mapping) {
                 for (auto &[oldOp, newOp] : mapping.getOperationMap())
                 {
-                    auto jumpIt = tsContext->jumps.find(oldOp);
-                    if (jumpIt != tsContext->jumps.end())
+                    if (auto jump = tsContext->jumps.lookup(oldOp))
                     {
-                        tsContext->jumps[newOp] = jumpIt->second;
+                        tsContext->jumps[newOp] = jump;
                     }
 
-                    auto parentIt = tsContext->parentTryOp.find(oldOp);
-                    if (parentIt != tsContext->parentTryOp.end())
+                    if (auto parent = tsContext->parentTryOp.lookup(oldOp))
                     {
-                        tsContext->parentTryOp[newOp] = parentIt->second;
+                        tsContext->parentTryOp[newOp] = parent;
                     }
                 }
             };
@@ -1538,7 +1536,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             {
                 mlir::DenseMap<mlir::Block *, mlir::Block *> finallyCopyPerTarget;
                 auto routeThroughFinally = [&](Operation *op) {
-                    auto target = tsContext->jumps[op];
+                    auto target = tsContext->jumps.lookup(op);
                     auto &finallyCopy = finallyCopyPerTarget[target];
                     if (!finallyCopy)
                     {
@@ -1977,7 +1975,7 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
 
         Location loc = catchOp.getLoc();
 
-        auto catchDataValue = tsContext->catchOpData[catchOp];
+        auto catchDataValue = tsContext->catchOpData.lookup(catchOp);
         if (catchDataValue)
         {
             rewriter.create<mlir_ts::SaveCatchVarOp>(loc, catchDataValue, catchOp.getCatchArg());
@@ -2000,7 +1998,7 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CallOp op, PatternRewriter &rewriter) const final
     {
-        if (auto unwind = tsContext->unwind[op])
+        if (auto unwind = tsContext->unwind.lookup(op))
         {
             {
                 OpBuilder::InsertionGuard guard(rewriter);
@@ -2035,7 +2033,7 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp op, PatternRewriter &rewriter) const final
     {
-        if (auto unwind = tsContext->unwind[op])
+        if (auto unwind = tsContext->unwind.lookup(op))
         {
             {
                 OpBuilder::InsertionGuard guard(rewriter);
@@ -2079,12 +2077,12 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         // terminator - and Win32ExceptionPass then picks an end for itself, splitting the
         // block ahead of the throw and emitting the catchret before a call that still carries
         // the funclet token. That IR reaches the backend and crashes it.
-        if (tsContext->leavesCatch.contains(throwOp.getOperation()))
+        if (tsContext->leavesCatch.lookup(throwOp.getOperation()))
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
-        if (auto unwind = tsContext->unwind[throwOp])
+        if (auto unwind = tsContext->unwind.lookup(throwOp))
         {
             rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.getException(), unwind);
         }
@@ -2553,6 +2551,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
 
     TSFunctionContext tsFuncContext{};
     AddTsAffineLegalOps(target);
+    tsContext.beginRun();
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
@@ -2583,6 +2582,7 @@ void TypeScriptToAffineLoweringFuncPass::runOnOperation()
 
     TSFunctionContext tsFuncContext{};
     AddTsAffineLegalOps(target);
+    tsContext.beginRun();
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // TODO: Hack to fix issue with Async
@@ -2610,6 +2610,7 @@ void TypeScriptToAffineLoweringModulePass::runOnOperation()
 
     TSFunctionContext tsFuncContext{};
     AddTsAffineLegalOps(target);
+    tsContext.beginRun();
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // + Global ops
