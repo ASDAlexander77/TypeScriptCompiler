@@ -1819,7 +1819,9 @@ class MLIRGenImpl
         GenContext genContextWithNameReceiver(genContext);
         if (variableDeclarationInfo.isConst)
         {
-            genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+            // the short name: getNameOfFunction qualifies it with the namespace itself, and the
+            // function's name-without-namespace is what __decls prints inside `namespace X { }`
+            genContextWithNameReceiver.receiverName = variableDeclarationInfo.variableName;
         }
         else
         {
@@ -1939,7 +1941,16 @@ class MLIRGenImpl
 
                 if (variableDeclarationInfo.isExternal)
                 {
-                    if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
+                    // A module imported as source declares its globals here. A const function's
+                    // initializer is still generated (see mlirGen(VariableDeclaration)), and has to
+                    // name the function after the const, as the library's initialization does.
+                    GenContext genContextWithNameReceiver(genContext);
+                    if (variableDeclarationInfo.isConst)
+                    {
+                        genContextWithNameReceiver.receiverName = variableDeclarationInfo.variableName;
+                    }
+
+                    if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
                     {
                         return mlir::failure();
                     }
@@ -2169,7 +2180,12 @@ class MLIRGenImpl
             // so if arrow is part of call, it will be considered as receiver of initialization which is wrong,
             // example: const seq = f( (x) => x + 1 ); 
             // seq will become name of function
-            if (initializer != SyntaxKind::ArrowFunction) 
+            // a generator function expression is rewritten into a wrapper (mlirGenFunctionGenerator),
+            // which must not take the receiver's name
+            auto isNamedByReceiver = initializer == SyntaxKind::ArrowFunction
+                || (initializer == SyntaxKind::FunctionExpression
+                    && !initializer.as<FunctionLikeDeclarationBase>()->asteriskToken);
+            if (!isNamedByReceiver)
             {
                 genContextWithTypeReceiver.receiverName = StringRef();
                 genContextWithTypeReceiver.isGlobalVarReceiver = false;
@@ -10242,7 +10258,17 @@ class MLIRGenImpl
             }
             else if (declarationAST == SyntaxKind::FunctionExpression)
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe", "");
+                // like an arrow function: `const f = function () {...}` is the function `f`, which
+                // is how another module refers to it (see mlirGen(VariableDeclaration)). A generator
+                // arrives without a receiver name: the variable's initializer clears it for one.
+                if (!genContext.receiverName.empty())
+                {
+                    name = genContext.receiverName.str();
+                }
+                else
+                {
+                    name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe", "");
+                }
             }
             else if (declarationAST == SyntaxKind::ClassExpression)
             {

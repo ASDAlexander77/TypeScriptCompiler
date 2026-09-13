@@ -764,6 +764,20 @@ namespace mlirgen
         }
 #endif
 
+        // `const f = () => ...` / `const f = function () {...}` at module level is not a variable
+        // once generated: the function takes the name `f` and the global is erased
+        // (isGlobalConstLambda), so calls go to the function directly. Every module has to agree
+        // on that, or an importer looks for a variable `f` holding a pointer that the library
+        // never defines - an undefined symbol when linked, a call through code bytes under the JIT.
+        auto isModuleLevelConstFunction = !genContext.funcOp
+            && (varClass.type == VariableType::Const)
+            && item->name == SyntaxKind::Identifier
+            && item->initializer
+            && (item->initializer == SyntaxKind::ArrowFunction || item->initializer == SyntaxKind::FunctionExpression)
+            && item->initializer.as<FunctionLikeDeclarationBase>()->typeParameters.size() == 0
+            // a generator is rewritten into a wrapper, which is not named after the const
+            && !item->initializer.as<FunctionLikeDeclarationBase>()->asteriskToken;
+
         auto initFunc = [&](mlir::Location location, const GenContext &genContext) {
             // A module imported as source only declares what it defines, so a module-level
             // variable gets its type and no initializer code. Not a local: a function body is only
@@ -772,7 +786,10 @@ namespace mlirgen
             // its name to that value, and a destructuring pattern reads its elements from it:
             // without one, reading the const failed with "can't resolve name" and destructuring
             // with "failed statement" or a crash.
-            if (declarationMode && !genContext.funcOp)
+            //
+            // Nor a module-level const function: generating its initializer declares the function
+            // (declaration mode gives it no body), which is what the library defines.
+            if (declarationMode && !genContext.funcOp && !isModuleLevelConstFunction)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
@@ -825,6 +842,15 @@ namespace mlirgen
         if ((item->internalFlags & InternalFlags::ForceConstRef) == InternalFlags::ForceConstRef)
         {
             valClassItem = VariableType::ConstRef;
+        }
+
+        // An exported const function is exported as the function: it gets the `export` attribute
+        // and a function declaration in __decls (see mlirGenFunctionPrototype). Exporting the
+        // const as well would declare a variable that no module defines.
+        if (isModuleLevelConstFunction && valClassItem.isExport)
+        {
+            item->initializer->internalFlags |= InternalFlags::DllExport;
+            valClassItem.isExport = false;
         }
 
         if (!genContext.funcOp && (item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern))

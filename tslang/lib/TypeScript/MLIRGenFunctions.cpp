@@ -390,7 +390,8 @@ namespace mlirgen
             if (dllExport)
             {
                 if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
-                    || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
+                    || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                    || functionLikeDeclarationBaseAST == SyntaxKind::FunctionExpression)
                 {
                     addFunctionDeclarationToExport(funcProto, currentNamespace);
                 }
