@@ -765,7 +765,14 @@ namespace mlirgen
 #endif
 
         auto initFunc = [&](mlir::Location location, const GenContext &genContext) {
-            if (declarationMode)
+            // A module imported as source only declares what it defines, so a module-level
+            // variable gets its type and no initializer code. Not a local: a function body is only
+            // walked here to infer types (a dummy run, see mlirGenFunctionBody) and its IR is
+            // discarded, so its initializers may produce real values - and must. A `const` binds
+            // its name to that value, and a destructuring pattern reads its elements from it:
+            // without one, reading the const failed with "can't resolve name" and destructuring
+            // with "failed statement" or a crash.
+            if (declarationMode && !genContext.funcOp)
             {
                 auto [t, b, p] = evaluateTypeAndInit(item, genContext);
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
