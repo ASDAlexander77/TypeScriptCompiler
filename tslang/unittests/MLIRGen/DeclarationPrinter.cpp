@@ -758,6 +758,40 @@ TEST_F(DeclarationPrinterTest, variable_of_object_with_non_tuple_storage_has_no_
     EXPECT_THAT(text, testing::Not(testing::HasSubstr("@boxed")));
 }
 
+TEST_F(DeclarationPrinterTest, boxed_variable_prints_its_own_type_as_bare_shape)
+{
+    // @boxed already tells the importer to dereference once more; wrapping the type in
+    // BoxedObject<...> too would make it dereference twice.
+    llvm::SmallVector<mlir_ts::FieldInfo> fields{classField(strAttr("x"), get<mlir_ts::NumberType>())};
+    auto objType = mlir_ts::ObjectType::get(getContext(), mlir_ts::TupleType::get(getContext(), fields));
+    auto text = printed([&](MLIRDeclarationPrinter &dp) { dp.printVariableDeclaration("obj", noNamespace(), objType, true); });
+    EXPECT_THAT(text, testing::HasSubstr("const obj : {x:number};"));
+    EXPECT_THAT(text, testing::Not(testing::HasSubstr("BoxedObject")));
+}
+
+TEST_F(DeclarationPrinterTest, function_returning_object_held_by_reference_prints_boxed_object)
+{
+    // a generator function returns its object by reference (ObjectType over a tuple); printed
+    // as a bare `{...}` the importer read it back as a value tuple and the layouts disagreed.
+    llvm::SmallVector<mlir_ts::FieldInfo> fields{classField(strAttr("x"), get<mlir_ts::NumberType>())};
+    auto objType = mlir_ts::ObjectType::get(getContext(), mlir_ts::TupleType::get(getContext(), fields));
+    auto text = printed([&](MLIRDeclarationPrinter &dp) { dp.print("gen", noNamespace(), getF({}, {objType})); });
+    EXPECT_THAT(text, testing::HasSubstr("BoxedObject<{x:number}>"));
+}
+
+TEST_F(DeclarationPrinterTest, field_name_that_is_not_an_identifier_is_quoted)
+{
+    // a generator object's internal `.step` field: unquoted it is a syntax error and the
+    // importer dropped the whole declaration.
+    llvm::SmallVector<mlir_ts::FieldInfo> fields{
+        classField(strAttr(".step"), get<mlir_ts::NumberType>()),
+        classField(strAttr("value"), get<mlir_ts::NumberType>())};
+    auto text = printed([&](MLIRDeclarationPrinter &dp) {
+        dp.printTypeDeclaration("T", noNamespace(), mlir_ts::TupleType::get(getContext(), fields));
+    });
+    EXPECT_THAT(text, testing::HasSubstr("{\".step\":number, value:number}"));
+}
+
 // ---------------------------------------------------------------------------
 // Function printing: params (with optional-param and this-elision handling
 // shared with printMethod via printParams), and return-type presence.
