@@ -303,5 +303,44 @@ which already linked `3rdParty/gcdll/x64/debug/lib`. Both now import `gc.dll`; n
 needed. The release workflow builds the default library with release `GC_SHARED_LIB_PATH` for every
 flavour; a debug DLL imports `gc.dll` by name and binds to the one already in the process.
 
-Still open: tests that include the default library itself (the suite still passes
-`--no-default-lib`).
+### Tests with the default library in the process (step 5, completed)
+
+`test-jit-gc-defaultlib-collector` and `test-compile-gc-defaultlib-collector`
+(`test/tester/defaultlib-collector.cmake`, sources in `test/tester/defaultlib/`) drive `tslang` with
+the real default library, no `--no-default-lib`:
+
+- JIT: the program alone (strings built by `padStart`, churn by `repeat`, both in the default-lib
+  DLL), and the program importing a user shared library.
+- AOT: the exe alone (static default library), and an exe importing a user DLL that links
+  `TypeScriptDefaultLib.dll`, with the library building the held strings and churning.
+
+The sources are outside `tests/`: they do not compile without the default library, and the ownership
+verifier compiles every file in `tests/` alone with `--no-default-lib`.
+
+**CI.** The compiler suite runs before any default library exists, so with none found the tests print
+`SKIPPED` (`SKIP_REGULAR_EXPRESSION`) instead of failing. The library is looked up in
+`DEFAULT_LIB_PATH` first, then in the `TypeScriptCompilerDefaultLib/__build` sibling (local layout) or
+child (CI workspace) of the repository. Both jobs of `create-release.yml` gained a step after
+**Build Default Library** that runs `ctest -R gc-defaultlib-collector` with `DEFAULT_LIB_PATH` at the
+library just built and `TSLANG_REQUIRE_DEFAULT_LIB=1`, which turns a missing library into a failure.
+The Linux variant has not run anywhere yet.
+
+**A gap the tests found.** Step 4 checks the library being imported, but a user DLL links
+`TypeScriptDefaultLib.dll` without importing it by name. `exe.cpp` now refuses `--emit=dll` under `gc`
+on Windows when the default-lib DLL it links contains a collector.
+
+**Teeth** (release, a default library built by its own script with `GC_SHARED_LIB_PATH` at the static
+`gc.lib`, so its DLL carries a collector):
+
+| Case | Result |
+| --- | --- |
+| both tests against the rebuilt default library | pass, `bad: 0` in all four programs |
+| both tests against the static-collector library | fail: `--emit=dll` refuses the default-lib DLL |
+| exe + user DLL built correctly, stale DLL swapped in beside it at run time | assertion failed |
+| the same, collection suppressed (`GC_INITIAL_HEAP_SIZE=1GB`) | `bad: 0` |
+
+A machine whose `DEFAULT_LIB_PATH` names an installation with a default library from before PR 1 fails
+these two tests - correctly: `--emit=dll` and JIT runs against that library now fail the same way.
+
+Nothing from this design is open on Windows. On Linux, the `exe.cpp` export change and the
+default-library tests have their first run in CI.

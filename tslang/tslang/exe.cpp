@@ -30,6 +30,13 @@ extern cl::opt<std::string> TargetTriple;
 extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> gcsharedlibpath;
+
+// From TypeScript/ObjDumper.h, declared here for the same reason jit.cpp does: that header's
+// llvm/BinaryFormat/COFF.h collides with <windows.h> macros.
+namespace Dump
+{
+    bool containsGarbageCollector(llvm::StringRef);
+}
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
 extern cl::opt<std::string> emsdksysrootpath;
@@ -493,6 +500,24 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
                          << " does not exist. Build it (see the default-lib build scripts), "
                          << "or compile with --no-default-lib.\n";
             return 1;
+        }
+
+        // A shared library links the default library's DLL and shares a process with it. If that
+        // DLL predates linking gc.dll it brings a second collector, which frees what the library
+        // and its host hold - the case step 4's import check cannot see, since the library does
+        // not import it by name. See docs/single-gc-collector-design.md.
+        if (win && shared && compileOptions.needsGCRuntime() && !defaultLibDir.empty())
+        {
+            llvm::SmallString<256> defaultLibDll(defaultLibDir);
+            llvm::sys::path::append(defaultLibDll, DEFAULT_LIB_NAME ".dll");
+            if (llvm::sys::fs::exists(defaultLibDll) && Dump::containsGarbageCollector(defaultLibDll))
+            {
+                llvm::WithColor::error(llvm::errs(), "tslang")
+                    << defaultLibDll << " links its own garbage collector (the static gc.lib), so a shared library "
+                    << "linked with it would run two collectors in one process. Rebuild the default library: its "
+                    << "DLL has to link gc.dll.\n";
+                return 1;
+            }
         }
 
         defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
