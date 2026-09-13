@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (Ninja)",
+      "description": "TSLANG custom language requires the Ninja generator (the Visual Studio generator ignores custom languages).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}
