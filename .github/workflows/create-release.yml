@@ -9,7 +9,8 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  # release archives carry the version (the pushed tag): tslang-v0.0-pre-alpha82.zip / .tar.gz
+  # release archives carry the version (the pushed tag) and the OS they were built on:
+  # tslang-v0.0-pre-alpha83-windows-x64.zip, tslang-v0.0-pre-alpha83-ubuntu-24.04-x64.tar.gz
   ASSET_NAME: tslang-${{ github.ref_name }}
   CACHE_VERSION: v10
   LLVM_VERSION: 22
@@ -225,48 +226,51 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
-          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}.zip
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
         uses: actions/upload-artifact@v4
         with:
           name: tslang-windows-asset
-          path: ${{ env.ASSET_NAME }}.zip
+          path: ${{ env.ASSET_NAME }}-windows-x64.zip
           retention-days: 1          
   
   build_on_linux:
-    name: Create/Upload Release Asset (Ubuntu 22.04)
+    name: Create/Upload Release Asset (${{ matrix.os }})
 
-    # The CMake configure and build commands are platform agnostic and should work equally
-    # well on Windows or Mac.  You can convert this to a matrix build if you need
-    # cross-platform coverage.
-    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: ubuntu-22.04
+    # One package per Ubuntu release: each is built, tested and packaged on that release, so its
+    # binaries match that release's glibc and libstdc++.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # keyed by the Ubuntu release, not just the OS: 3rdParty holds the GC built on that release
       - name: Cache Build 3rd Party
         id: cache-3rd-party
         uses: actions/cache@v4
         with:
           path: __build/llvm/ninja
-          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+          key: ${{ matrix.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
         uses: actions/cache@v4
         with:
           path: 3rdParty
-          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+          key: ${{ matrix.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
         id: cache-3rd-party-binary-llvm-release
         uses: actions/cache@v4
         with:
           path: llvm_${{ env.LLVM_VERSION }}_release.tgz
-          key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+          key: ${{ matrix.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
 
       - name: Retrieve version
         run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
@@ -325,7 +329,7 @@ jobs:
       - name: Install Ninja
         continue-on-error: false
         shell: sh
-        run: sudo apt install ninja-build libcurl4-openssl-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev
 
   #    - name: Install Clang 12
   #      continue-on-error: false
@@ -433,13 +437,13 @@ jobs:
           # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
-          tar -czvhf ../${{ env.ASSET_NAME }}.tar.gz -C ./__stage .
+          tar -czvhf ../${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
         with:
-          name: tslang-linux-asset
-          path: ${{ env.ASSET_NAME }}.tar.gz
+          name: tslang-${{ matrix.os }}-asset
+          path: ${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz
           retention-days: 1
 
   create_release:
@@ -477,27 +481,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./${{ env.ASSET_NAME }}.zip
-          asset_name: ${{ env.ASSET_NAME }}.zip
+          asset_path: ./${{ env.ASSET_NAME }}-windows-x64.zip
+          asset_name: ${{ env.ASSET_NAME }}-windows-x64.zip
           asset_content_type: application/zip
 
   deploy_linux_asset:
     needs: create_release
-    name: Upload Release (Ubuntu 22.04)
+    name: Upload Release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
     runs-on: ubuntu-latest
     steps:
       - name: Download Release Asset from Store
         uses: actions/download-artifact@v4
         with:
-          name: tslang-linux-asset
+          name: tslang-${{ matrix.os }}-asset
 
-      - name: Upload Release Asset (Ubuntu 22.04)
+      - name: Upload Release Asset (${{ matrix.os }})
         id: upload-release-asset 
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./${{ env.ASSET_NAME }}.tar.gz
-          asset_name: ${{ env.ASSET_NAME }}.tar.gz
+          asset_path: ./${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz
+          asset_name: ${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz
           asset_content_type: application/tar+gzip
