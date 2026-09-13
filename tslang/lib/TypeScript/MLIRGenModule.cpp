@@ -970,6 +970,21 @@ namespace mlirgen
                                   << memoryModelName(compileOptions.memoryModel)
                                   << ". Objects crossing between them are never reclaimed.";
         }
+
+        // One collector per process. A gc library that linked Boehm statically brings a second
+        // collector into this one, which cannot see this module's references and frees objects it
+        // still holds - silently, as wrong values rather than a crash. Windows only: an ELF
+        // program exports its collector (exe.cpp), so a shared object's own copy is never called.
+        // See docs/single-gc-collector-design.md, step 4.
+        if (compileOptions.isWindows && compileOptions.needsGCRuntime() && libraryModel == "gc" &&
+            Dump::containsGarbageCollector(filePath))
+        {
+            emitError(location) << "shared library '" << filePath
+                                << "' links its own garbage collector (the static gc.lib). Objects crossing "
+                                   "between it and this module can be freed while still in use. Rebuild it "
+                                   "with tslang --emit=dll, which links gc.dll.";
+            return mlir::failure();
+        }
 #else
         // only 1 file to load        
         symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);

@@ -1,7 +1,8 @@
 # One collector per process: design proposal
 
-Status: **PR 1 merged** (steps 1, 2, 5 - Windows); **PR 2** (step 3) on branch
-`gc-shared-lib-auto`; steps 4, 6 and Linux still open. See [Progress](#progress) at the end.
+Status: **PR 1 merged** (steps 1, 2, 5 - Windows); **PR 2** on branch `gc-shared-lib-auto`: step 3,
+step 4 (by fingerprint, not a marker), step 6, the CMake template, the debug default library, and
+Linux. Open: suite tests that keep the default library. See [Progress](#progress) at the end.
 
 ## Problem
 
@@ -248,6 +249,59 @@ Merged as #309 (compiler) and TypeScriptCompilerDefaultLib #6.
 - The VS Code template's `--emit=dll` task passes `--gc-lib-path=<package root>`, so it resolves
   `<package>/gcdll` without a change.
 
-Still open: steps 4 and 6, the CMake project template (it links `gc` for every executable and does
-not build shared libraries), tests that include the default library itself (the suite still passes
-`--no-default-lib`), the debug default-lib build, and all of Linux.
+### PR 2, continued - step 4, step 6, template, debug default library, Linux
+
+**Step 4 reads the library, not a marker.** The proposed `__tsgc_<static|shared>_...` marker would
+be written at compile time, and the compile does not know how the binary gets linked: `test-runner`
+builds its shared libraries with `--emit=obj` and links them with lld, the default library's DLL is
+built with `--embed-declarations=false` (so it carries no markers at all), and libraries from before
+the change have none. Instead `Dump::containsGarbageCollector` (ObjDumper.cpp) looks for the string
+`GC_INITIAL_HEAP_SIZE` in the binary's data sections. Boehm's `GC_init` reads that environment
+variable, so the name is present in every binary that contains the collector and in none that only
+calls it. Checked against: stale debug `TypeScriptDefaultLib.dll` (static gc) and `gc.dll` - present;
+release `gc`/`rc` default-lib DLLs and `TypeScriptRuntime.dll` (both flavours) - absent.
+
+- `mlirGenImportSharedLib`: importing, under `-mm=gc` on Windows, a `gc` library that contains a
+  collector is an **error** (AOT and JIT). Because the fingerprint is evidence rather than a
+  missing marker, an old library gets the error too; it is broken, not merely old.
+- `jit.cpp`: the same check on `TypeScriptDefaultLib.dll` before loading it - this is what a stale
+  default library looks like.
+- Test: `test-compile-gc-shared-auto` case 6 builds a library against the static `gc.lib` (through a
+  stand-in shared directory) and expects both `--emit=exe` and `--emit=jit` importing it to fail
+  naming the collector.
+
+**Linux, measured** (WSL Ubuntu, release package v0.0-pre-alpha81, the gc_single_collector pair):
+
+| Case | Result | No-collection control |
+| --- | --- | --- |
+| exe + user `.so`, as linked today | assertion failed | 0 bad |
+| JIT + user `.so` | 0 bad | 0 bad |
+| exe linked with `--whole-archive libgc.a` + `--export-dynamic-symbol=GC_*` | 0 bad | 0 bad |
+
+The user `.so` does link its own `libgc.a` copy. Under the JIT it is harmless because
+`libTypeScriptRuntime.so` exports `GC_*` (482 symbols) and ELF symbol interposition sends the `.so`'s
+calls there. A plain exe exports none, so the `.so` ran its own collector. The default library's
+`.so` links no collector (`GC_*` undefined) and already binds to the host. So Linux needs no
+`gc.so` and no fingerprint check: `exe.cpp` now links an importing `--emit=exe` with the whole
+collector exported. Whole archive because the `.so` may call `GC_*` functions the program does not
+(without it 478 of 486 were exported, and the repro happened to pass). Not exercised on Linux beyond
+the hand link: no Linux build of this branch was available locally, so the Linux CI run is its test.
+
+**Step 6.** The zip already ships `gc.dll` in its root and `gcdll/` (PR 1). `docs/memory-models.md`
+now lists what to ship beside a program that loads a tslang DLL (`gc.dll`,
+`TypeScriptDefaultLib.dll`), the step 4 error, and the Linux behaviour.
+
+**CMake template** (`docs/how/cmake_tslang`): `TSLANG_SHARED_GC` (default OFF). On Windows it links
+`gcdll/gc.lib` by full path (same file name as the static one in the package root) and copies
+`gc.dll` beside the target; on Linux it adds the two export options. The template still builds no
+shared libraries itself - those come from `tslang --emit=dll`, which chooses on its own.
+
+**Debug default library.** `dll/debug/gc/TypeScriptDefaultLib.dll` was still the static-gc build from
+before PR 1, and the local debug `TypeScriptRuntime.dll` predated it too. Rebuilt both: the debug
+compiler (reconfigured, so it picks up `TSLANG_GC_SHARED_PREFIX`) and `scripts\build_vs.bat debug gc`,
+which already linked `3rdParty/gcdll/x64/debug/lib`. Both now import `gc.dll`; no script change
+needed. The release workflow builds the default library with release `GC_SHARED_LIB_PATH` for every
+flavour; a debug DLL imports `gc.dll` by name and binds to the one already in the process.
+
+Still open: tests that include the default library itself (the suite still passes
+`--no-default-lib`).

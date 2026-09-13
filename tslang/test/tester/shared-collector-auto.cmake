@@ -93,4 +93,29 @@ if(NOT run_output MATCHES "gc\\.dll")
     message(FATAL_ERROR "--emit=dll failed without naming gc.dll:\n${run_output}")
 endif()
 
-message(STATUS "tslang picks the shared collector for a library and its importer, and the static one for a lone program")
+# 6. Importing a library that did link a collector of its own is a compile-time error, AOT and JIT.
+#    Such a library is what an older tslang, or a hand-made link, produced. To make one here, the
+#    shared path is pointed at the STATIC gc.lib, with a stand-in gc.dll only so tslang accepts
+#    the directory - nothing loads it, since the library then imports nothing from gc.dll.
+file(MAKE_DIRECTORY "${WORK_DIR}/own/fake-gcdll")
+file(COPY "${GC_LIB}/gc.lib" DESTINATION "${WORK_DIR}/own/fake-gcdll")
+file(WRITE "${WORK_DIR}/own/fake-gcdll/gc.dll" "")
+run("--emit=dll against the static gc.lib" "${WORK_DIR}/own" TRUE
+    "${TSLANG}" --emit=dll ${common} "--gc-shared-lib-path=${WORK_DIR}/own/fake-gcdll"
+    "${library}" -o export_gc_single_collector.dll)
+file(REMOVE "${WORK_DIR}/own/gc.dll")
+
+run("--emit=exe importing a library with its own collector" "${WORK_DIR}/own" FALSE
+    "${TSLANG}" --emit=exe ${common} "--gc-lib-path=${GC_LIB}" "--gc-shared-lib-path=${GC_SHARED_LIB}"
+    "${program}" -o main.exe)
+if(NOT run_output MATCHES "links its own garbage collector")
+    message(FATAL_ERROR "importing a library with its own collector failed for another reason:\n${run_output}")
+endif()
+
+run("--emit=jit importing a library with its own collector" "${WORK_DIR}/own" FALSE
+    "${TSLANG}" --emit=jit --no-default-lib ${OPT} "${program}")
+if(NOT run_output MATCHES "links its own garbage collector")
+    message(FATAL_ERROR "the JIT import of a library with its own collector failed for another reason:\n${run_output}")
+endif()
+
+message(STATUS "tslang picks the shared collector for a library and its importer, the static one for a lone program, and refuses a library with a collector of its own")

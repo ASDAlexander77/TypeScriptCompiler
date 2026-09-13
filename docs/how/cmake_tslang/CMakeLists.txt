@@ -24,6 +24,12 @@ endif()
 set(TSLANG_MEMORY_MODEL "gc" CACHE STRING "Memory model of compiled code: gc, rc or none")
 set_property(CACHE TSLANG_MEMORY_MODEL PROPERTY STRINGS gc rc none)
 
+# Turn on when the program imports a tslang shared library (`import './lib'`, built with
+# `tslang --emit=dll`). Under gc the process must then have one collector, shared by the program
+# and the library: on Windows both take it from gc.dll, on Linux the program exports its own.
+# Two collectors free each other's live objects. See docs/memory-models.md.
+option(TSLANG_SHARED_GC "The program loads tslang shared libraries (gc: share one collector)" OFF)
+
 # Lib folders
 link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD}/${TSLANG_MEMORY_MODEL})
 
@@ -56,7 +62,18 @@ set(TSLANG_LINK_LIBS "TypeScriptDefaultLib" "TypeScriptAsyncRuntime" "LLVMSuppor
 # Boehm is only referenced by the gc default lib; the rc and none builds allocate through the
 # CRT and must not drag a collector in.
 if (TSLANG_MEMORY_MODEL STREQUAL "gc")
-    list(APPEND TSLANG_LINK_LIBS "gc")
+    if (NOT TSLANG_SHARED_GC)
+        list(APPEND TSLANG_LINK_LIBS "gc")
+    elseif(WIN32)
+        # gc.dll's import library. It has the same name as the static gc.lib in the package root,
+        # so it is named by its full path rather than found through the link directories.
+        list(APPEND TSLANG_LINK_LIBS "${CMAKE_TSLANG_DIR}/gcdll/gc.lib")
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_TSLANG_DIR}/gcdll/gc.dll" "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+    else()
+        # the whole collector, exported, so a shared object's GC_* calls bind to this copy
+        list(APPEND TSLANG_LINK_LIBS "-Wl,--whole-archive" "gc" "-Wl,--no-whole-archive" "-Wl,--export-dynamic-symbol=GC_*")
+    endif()
 endif()
 
 # ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows

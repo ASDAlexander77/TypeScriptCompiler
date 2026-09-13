@@ -584,9 +584,26 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     }
 
     // tslang libs
+    // ELF: a program that loads a tslang shared object exports its whole collector, so the shared
+    // object's calls to GC_* bind to it at load time instead of to the static copy linked into the
+    // shared object, and the process runs one collector. Measured: without the export, strings the
+    // shared object built were freed while the program held them. The JIT needs nothing here, as
+    // libTypeScriptRuntime.so already exports GC_*. See docs/single-gc-collector-design.md.
+    auto exportGC = !win && !wasm && !shared && compileOptions.needsGCRuntime() && compileOptions.importsSharedLibrary;
     if (compileOptions.needsGCRuntime())
-    {    
-        args.push_back("-lgc");
+    {
+        if (exportGC)
+        {
+            // whole archive: the shared object may call GC_* functions this program never does
+            args.push_back("-Wl,--whole-archive");
+            args.push_back("-lgc");
+            args.push_back("-Wl,--no-whole-archive");
+            args.push_back("-Wl,--export-dynamic-symbol=GC_*");
+        }
+        else
+        {
+            args.push_back("-lgc");
+        }
     }
 
     if (isTslangLibNeeded)
