@@ -1,6 +1,7 @@
 #include "TypeScript/Version.h"
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllExtensions.h"
@@ -138,6 +139,7 @@ cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embe
 
 cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gc.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> gcsharedlibpath("gc-shared-lib-path", cl::desc("Shared GC library path: the directory with gc.dll's import library 'gc.lib' (gc.dll beside it or in '../bin'). Used under -mm=gc for --emit=dll and for executables that import a shared library, so the process has one collector. Or GC_SHARED_LIB_PATH environmental variable; defaults to '<gc-lib-path>/gcdll'"), cl::value_desc("gcsharedlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> tslanglibpath("tslang-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSLANG_LIB_PATH environmental variable"), cl::value_desc("tslanglibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -395,6 +397,10 @@ int main(int argc, char **argv)
     {
         return error;
     }
+
+    // Read before the passes lower it away: a program that loads a tslang shared library has to
+    // share that library's garbage collector, so linking needs to know. See exe.cpp.
+    module->walk([&](mlir::typescript::LoadLibraryPermanentlyOp) { compileOptions.importsSharedLibrary = true; });
 
     if (auto error = runMLIRPasses(mlirContext, sourceMgr, module, compileOptions))
     {

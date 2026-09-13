@@ -186,6 +186,18 @@ jobs:
           .\build.bat
         shell: pwsh
 
+      # The compiler suite runs before the default library exists, so its default-library tests
+      # skip there; run them now against the library just built. One collector per process with
+      # the default library in it: tslang/test/tester/defaultlib-collector.cmake.
+      - name: Test Compiler with Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
+        env:
+          DEFAULT_LIB_PATH: ${{github.workspace}}/TypeScriptCompilerDefaultLib/__build
+          TSLANG_REQUIRE_DEFAULT_LIB: 1
+        run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
+        shell: pwsh
+
       - name: Test Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
@@ -378,6 +390,16 @@ jobs:
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
         run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh
+
+      # See the Windows job: the default-library tests skip in the compiler suite and run here.
+      - name: Test Compiler with Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tslang/ninja/release
+        shell: sh
+        env:
+          DEFAULT_LIB_PATH: ${{github.workspace}}/TypeScriptCompilerDefaultLib/__build
+          TSLANG_REQUIRE_DEFAULT_LIB: 1
+        run: ctest -C ${{ env.BUILD_TYPE }} -R gc-defaultlib-collector --output-on-failure
 
       - name: Test Default Library
         continue-on-error: false

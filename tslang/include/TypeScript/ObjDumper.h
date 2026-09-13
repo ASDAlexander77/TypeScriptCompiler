@@ -72,6 +72,11 @@ static std::unique_ptr<Dumper> createDumperT(const ELFObjectFile<ELFT> &elfObjec
 namespace Dump
 {
     void getSymbols(llvm::StringRef, SmallVector<StringRef> &, BumpPtrAllocator &);
+
+    // Whether the binary carries a Boehm collector of its own (linked the static gc library),
+    // rather than importing one from gc.dll / its host or having none. Read from the binary itself,
+    // so it answers for libraries linked by hand or by an older tslang as well.
+    bool containsGarbageCollector(llvm::StringRef);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);
