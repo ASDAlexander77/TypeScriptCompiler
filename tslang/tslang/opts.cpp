@@ -20,7 +20,7 @@ extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
-extern cl::opt<enum Exports> exportAction;
+extern cl::list<std::string> exportFilters;
 extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
@@ -47,7 +47,7 @@ CompileOptions prepareOptions()
     compileOptions.enableBuiltins = enableBuiltins.getValue();
     compileOptions.noDefaultLib = noDefaultLib.getValue();
     compileOptions.disableWarnings = disableWarnings.getValue();
-    compileOptions.exportOpt = exportAction.getValue();
+    compileOptions.exportFilters.assign(exportFilters.begin(), exportFilters.end());
     compileOptions.embedExportDeclarations = embedExportDeclarationsAction.getValue();
     compileOptions.generateDebugInfo = generateDebugInfo.getValue();
     compileOptions.lldbDebugInfo = lldbDebugInfo.getValue();

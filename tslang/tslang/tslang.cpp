@@ -130,9 +130,8 @@ cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(Ty
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
-cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful to compile the same code into 'lib' (static library) and/or 'dll/so' (dynamic library)) "),
-                                       cl::values(clEnumValN(ExportAll, "all", "export all symbols")),
-                                       cl::values(clEnumValN(IgnoreAll, "none", "ignore all exports")),
+cl::list<std::string> exportFilters("export", cl::desc("Export Symbols, comma separated: 'all', 'none', names or globs (short or namespaced, e.g. 'add' or 'M.*') to export, '!name' to exclude. Without an including filter the 'export' keyword decides. (Useful to compile the same code into 'lib' (static library) and/or 'dll/so' (dynamic library))"),
+                                       cl::value_desc("all|none|name|!name"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                        cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embed declarations as member __decls_lib_XXXX. (Needed in 'import' statement)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));

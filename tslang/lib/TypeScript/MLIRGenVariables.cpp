@@ -874,13 +874,14 @@ namespace mlirgen
 
         varClass.isUsing = isUsing;
 
+        auto exportByDecorator = false;
         if (variableDeclarationListAST->parent)
         {
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
-            varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
             iterateDecorators(variableDeclarationListAST->parent, genContext, [&](StringRef name, SmallVector<StringRef> args) {
                 if (name == DLL_EXPORT)
                 {
+                    exportByDecorator = true;
                     varClass.isExport = true;
                 }
 
@@ -943,16 +944,25 @@ namespace mlirgen
         // folded away inside its module - a const function becomes the function and its global is
         // erased (isGlobalConstLambda) - but other modules reach it by symbol, so it has to be the
         // global they import: an importer reads `export const f = () => ...` out of variable `f`.
-        if (varClass.type == VariableType::Const && !isUsing && varClass.isExport && !varClass.isImport && !genContext.funcOp)
-        {
-            varClass.type = VariableType::Let;
-        }
-
         for (auto &item : variableDeclarationListAST->declarations)
         {
             // we need it for support "undefined type" in 'let' without initialization
             item->parent = variableDeclarationListAST;
-            if (mlir::failed(mlirGen(item, varClass, genContext)))
+
+            // --export filters by name, and one statement can declare several names
+            auto itemVarClass = varClass;
+            if (variableDeclarationListAST->parent && !exportByDecorator)
+            {
+                itemVarClass.isExport = getExportModifier(
+                    variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
+            }
+
+            if (itemVarClass.type == VariableType::Const && !isUsing && itemVarClass.isExport && !itemVarClass.isImport && !genContext.funcOp)
+            {
+                itemVarClass.type = VariableType::Let;
+            }
+
+            if (mlir::failed(mlirGen(item, itemVarClass, genContext)))
             {
                 return mlir::failure();
             }

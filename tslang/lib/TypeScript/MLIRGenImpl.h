@@ -25,6 +25,7 @@
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
 #include "TypeScript/MLIRLogic/MLIRDeclarationPrinter.h"
+#include "TypeScript/MLIRLogic/MLIRExportFilter.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/VisitorAST.h"
 
@@ -2275,19 +2276,59 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext);
 
+    // members are filtered by the name of the class or interface they belong to
+    StringRef getExportFilterName(Node node)
+    {
+        if (node->parent == SyntaxKind::ClassDeclaration || node->parent == SyntaxKind::ClassExpression
+            || node->parent == SyntaxKind::InterfaceDeclaration)
+        {
+            node = node->parent;
+        }
+
+        if (node == SyntaxKind::ClassDeclaration || node == SyntaxKind::ClassExpression)
+        {
+            return MLIRHelper::getName(node.as<ClassLikeDeclaration>()->name, stringAllocator);
+        }
+
+        if (node == SyntaxKind::InterfaceDeclaration)
+        {
+            return MLIRHelper::getName(node.as<InterfaceDeclaration>()->name, stringAllocator);
+        }
+
+        if (node == SyntaxKind::EnumDeclaration)
+        {
+            return MLIRHelper::getName(node.as<EnumDeclaration>()->name, stringAllocator);
+        }
+
+        if (node == SyntaxKind::TypeAliasDeclaration)
+        {
+            return MLIRHelper::getName(node.as<TypeAliasDeclaration>()->name, stringAllocator);
+        }
+
+        if (node == SyntaxKind::FunctionDeclaration || node == SyntaxKind::FunctionExpression
+            || node == SyntaxKind::ArrowFunction || node == SyntaxKind::MethodDeclaration)
+        {
+            return MLIRHelper::getName(node.as<FunctionLikeDeclarationBase>()->name, stringAllocator);
+        }
+
+        return StringRef();
+    }
+
+    auto getExportModifier(Node node, StringRef name) -> boolean
+    {
+        auto hasExportKeyword = hasModifier(node, SyntaxKind::ExportKeyword);
+        if (compileOptions.exportFilters.empty())
+        {
+            return hasExportKeyword;
+        }
+
+        auto fullName = name.empty() ? StringRef() : getFullNamespaceName(name);
+        return isExportedByFilters(compileOptions.exportFilters, name, fullName, hasExportKeyword);
+    }
+
     auto getExportModifier(Node node) -> boolean
     {
-        if (compileOptions.exportOpt == ExportAll)
-        {
-            return true;
-        }
-
-        if (compileOptions.exportOpt == IgnoreAll)
-        {
-            return false;
-        }
-
-        return hasModifier(node, SyntaxKind::ExportKeyword);
+        return getExportModifier(node, compileOptions.exportFilters.empty() ? StringRef() : getExportFilterName(node));
     }
 
     mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext);
