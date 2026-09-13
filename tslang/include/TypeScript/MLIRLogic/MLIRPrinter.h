@@ -9,6 +9,7 @@
 
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/StringExtras.h"
 
 #include <functional>
 
@@ -22,6 +23,39 @@ namespace typescript
 class MLIRPrinter
 {
   public:
+
+    // print an object held by reference (ObjectType over a tuple, e.g. a generator's object)
+    // as `BoxedObject<{...}>` rather than as its bare shape `{...}`, which reads back as a
+    // value tuple. Declaration text (__decls) needs it: an importer that took the object for a
+    // value would disagree with the library on its layout. Off for diagnostics.
+    bool printBoxedObjectTypes = false;
+
+    // print a field name that is not an identifier (an internal one such as a generator's
+    // `.step`) quoted, `".step": s32`: unquoted it is a syntax error, and the importer dropped
+    // the whole declaration. Off for diagnostics.
+    bool quoteNonIdentifierFieldNames = false;
+
+    template <typename T>
+    void printFieldName(T &out, mlir::Attribute id)
+    {
+        if (quoteNonIdentifierFieldNames)
+        {
+            if (auto strAttr = dyn_cast<mlir::StringAttr>(id))
+            {
+                auto name = strAttr.getValue();
+                auto isIdentifierChar = [](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; };
+                if (name.empty() || llvm::isDigit(name.front()) || !llvm::all_of(name, isIdentifierChar))
+                {
+                    out << "\"";
+                    out.write_escaped(name);
+                    out << "\"";
+                    return;
+                }
+            }
+        }
+
+        printAttribute(out, id, true);
+    }
 
     template <typename T, typename F>
     void printFuncType(T &out, F t)
@@ -185,7 +219,7 @@ class MLIRPrinter
             // silently misaligns every subsequent read through the field.
             if (allowMethodSignature && field.id && isa<mlir_ts::FunctionType>(field.type))
             {
-                printAttribute(out, field.id, true);
+                printFieldName(out, field.id);
                 printFuncTypeAsMethodSignature(out, mlir::cast<mlir_ts::FunctionType>(field.type));
                 first = false;
                 continue;
@@ -193,7 +227,7 @@ class MLIRPrinter
 
             if (field.id)
             {
-                printAttribute(out, field.id, true);
+                printFieldName(out, field.id);
                 out << ":";
             }
 
@@ -448,6 +482,13 @@ class MLIRPrinter
                 // into a real structural type on reimport instead of degrading to
                 // bare `object` (which has no fields/methods to cast against).
                 auto storageType = t.getStorageType();
+                auto isBoxedShape = isa<mlir_ts::TupleType>(storageType) || isa<mlir_ts::ConstTupleType>(storageType)
+                    || isa<mlir_ts::ObjectStorageType>(storageType);
+                if (isBoxedShape && printBoxedObjectTypes)
+                {
+                    out << "BoxedObject<";
+                }
+
                 if (auto tupleType = dyn_cast<mlir_ts::TupleType>(storageType))
                 {
                     printObjectType(out, tupleType);
@@ -463,6 +504,11 @@ class MLIRPrinter
                 else
                 {
                     out << "object";
+                }
+
+                if (isBoxedShape && printBoxedObjectTypes)
+                {
+                    out << ">";
                 }
             })
             .template Case<mlir_ts::ObjectStorageType>([&](auto t) {

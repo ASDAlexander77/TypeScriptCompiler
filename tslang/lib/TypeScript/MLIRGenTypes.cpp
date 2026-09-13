@@ -903,6 +903,7 @@ namespace mlirgen
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"Ref", true }, // alias of Reference
+            {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -991,6 +992,7 @@ namespace mlirgen
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"Ref", true }, // alias of Reference
+            {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"ThisType", true },
             //{"Array", true }
         };
@@ -1144,13 +1146,14 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
+            None, TypeOf, Reference, BoxedObject, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
             Parameters, ThisParameterType, OmitThisParameter, Uppercase, Lowercase, Capitalize, Uncapitalize
         };
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
             .Case("TypeOf", EmbeddedType::TypeOf)
             .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
             .Case("NonNullable", EmbeddedType::NonNullable)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
@@ -1184,6 +1187,8 @@ namespace mlirgen
                 return mth.wideStorageType(type);
             case EmbeddedType::Reference:
                 return mlir_ts::RefType::get(type);
+            case EmbeddedType::BoxedObject:
+                return getObjectType(type);
             case EmbeddedType::FirstTypeArgument:
                 return type;
             case EmbeddedType::NonNullable:
@@ -1240,12 +1245,13 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, ThisType, Array
+            None, TypeOf, Reference, BoxedObject, ThisType, Array
         };
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
             .Case("TypeOf", EmbeddedType::TypeOf)
             .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("ThisType", EmbeddedType::ThisType)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
@@ -1264,6 +1270,8 @@ namespace mlirgen
                 return mth.wideStorageType(type);
             case EmbeddedType::Reference:
                 return mlir_ts::RefType::get(type);
+            case EmbeddedType::BoxedObject:
+                return getObjectType(type);
             case EmbeddedType::ThisType:
                 return type;
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS

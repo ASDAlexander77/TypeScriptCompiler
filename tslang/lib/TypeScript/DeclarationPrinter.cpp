@@ -24,6 +24,8 @@ namespace typescript
     void MLIRDeclarationPrinter::print(mlir::Type type)
     {
         MLIRPrinter mp{};
+        mp.printBoxedObjectTypes = true;
+        mp.quoteNonIdentifierFieldNames = true;
         mp.printType<raw_ostream>(os, type);
     }
     
@@ -361,6 +363,10 @@ namespace typescript
         // ordinary `import '...'` - see mlirGenImportSharedLib's '.' hack)
         // knows to dereference one extra level instead of reading the tuple
         // inline at the resolved symbol address.
+        // The variable's own type is then printed as the bare shape - @boxed already adds the
+        // extra dereference - while objects held by reference inside it (a generator returned
+        // by a method, say) still print as BoxedObject<...>.
+        auto printedType = type;
         if (auto objectType = dyn_cast<mlir_ts::ObjectType>(type))
         {
             auto storageType = objectType.getStorageType();
@@ -369,11 +375,12 @@ namespace typescript
             {
                 os << "@boxed";
                 newline();
+                printedType = storageType;
             }
         }
 
         os << (isConst ? "const" : "let") << " " << name << " : ";
-        print(type);
+        print(printedType);
         os << ";";
         newline();
 
