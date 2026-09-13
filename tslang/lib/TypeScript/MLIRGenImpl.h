@@ -2200,7 +2200,7 @@ class MLIRGenImpl
             // which must not take the receiver's name
             auto isNamedByReceiver = initializer == SyntaxKind::ArrowFunction
                 || (initializer == SyntaxKind::FunctionExpression
-                    && !initializer.as<FunctionLikeDeclarationBase>()->asteriskToken);
+                    && !initializer.template as<FunctionLikeDeclarationBase>()->asteriskToken);
             if (!isNamedByReceiver)
             {
                 genContextWithTypeReceiver.receiverName = StringRef();
