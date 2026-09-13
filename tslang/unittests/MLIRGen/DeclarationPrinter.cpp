@@ -299,6 +299,56 @@ TEST_F(DeclarationPrinterTest, function_declaration_has_dllimport_marker)
     EXPECT_THAT(text, testing::HasSubstr("@dllimport"));
 }
 
+// @dllname must survive the __decls round trip, or the importer looks up the
+// mangled name the exporting library no longer exports.
+TEST_F(DeclarationPrinterTest, function_declaration_prints_dllname_decorator)
+{
+    auto text = printed([&](MLIRDeclarationPrinter &dp) {
+        dp.print("foo", noNamespace(), getF({}, {}), "custom_foo");
+    });
+    EXPECT_THAT(text, testing::HasSubstr("@dllname(\"custom_foo\")\nfunction foo"));
+}
+
+TEST_F(DeclarationPrinterTest, function_declaration_without_dllname_has_no_decorator)
+{
+    auto text = printed([&](MLIRDeclarationPrinter &dp) {
+        dp.print("foo", noNamespace(), getF({}, {}));
+    });
+    EXPECT_THAT(text, testing::Not(testing::HasSubstr("@dllname")));
+}
+
+TEST_F(DeclarationPrinterTest, variable_declaration_prints_dllname_decorator)
+{
+    auto text = printed([&](MLIRDeclarationPrinter &dp) {
+        dp.printVariableDeclaration("x", noNamespace(), get<mlir_ts::NumberType>(), /*isConst*/ false, "custom_x");
+    });
+    EXPECT_THAT(text, testing::HasSubstr("@dllname(\"custom_x\")\nlet x"));
+}
+
+TEST_F(DeclarationPrinterTest, class_accessor_prints_dllname_decorator)
+{
+    auto ci = makeClass("Foo");
+    auto getter = entry("Foo.get_x", getF({}, {get<mlir_ts::NumberType>()}));
+    getter.dllName = "custom_get_x";
+    ci->accessors.push_back(accessor("x", getter, noEntry()));
+
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::HasSubstr("    @dllname(\"custom_get_x\")\n    get x("));
+}
+
+TEST_F(DeclarationPrinterTest, class_method_prints_dllname_decorator)
+{
+    auto ci = makeClass("Foo");
+    auto m = method("bar", getF({}, {}));
+    m.dllName = "custom_bar";
+    ci->methods.push_back(m);
+    ci->methods.push_back(method("baz", getF({}, {})));
+
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::HasSubstr("    @dllname(\"custom_bar\")\n    bar("));
+    EXPECT_THAT(text, testing::Not(testing::HasSubstr("@dllname(\"custom_bar\")\n    baz(")));
+}
+
 TEST_F(DeclarationPrinterTest, class_declaration_has_dllimport_marker)
 {
     auto text = printClass(makeClass("Foo"));

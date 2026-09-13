@@ -18,8 +18,8 @@ namespace typescript
 
         void printTypeDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type);
         void printEnum(StringRef, NamespaceInfo::TypePtr, mlir::DictionaryAttr);
-        void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool);
-        void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType);
+        void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool, StringRef = StringRef());
+        void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType, StringRef = StringRef());
         void print(ClassInfo::TypePtr);
         void print(InterfaceInfo::TypePtr);
         void printGenericClass(NamespaceInfo::TypePtr, StringRef);
@@ -35,7 +35,7 @@ namespace typescript
         void printParams(ArrayRef<mlir::Type>, mlir::Type);
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
         void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
-        void printAccessor(bool, StringRef, StringRef, mlir_ts::AccessLevel, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
+        void printAccessor(bool, StringRef, StringRef, mlir_ts::AccessLevel, ArrayRef<mlir::Type>, mlir::Type, mlir::Type, StringRef);
         void printIndexer(mlir::Type, mlir::Type);
         void printNamespaceBegin(NamespaceInfo::TypePtr);
         void printNamespaceEnd(NamespaceInfo::TypePtr);

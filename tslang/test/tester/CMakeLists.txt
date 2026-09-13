@@ -1108,6 +1108,7 @@ add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runne
 add_test(NAME test-compile-shared-export-import-function-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
 add_test(NAME test-compile-shared-export-import-type-alias-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
 add_test(NAME test-compile-shared-export-import-function COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
+add_test(NAME test-compile-shared-export-import-dllname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_dllname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_dllname.ts")
 add_test(NAME test-compile-shared-export-import-type-alias COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
 add_test(NAME test-compile-shared-export-import-interface-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
 # FIXED (2026-07-22): the -shared declaration-reconstruction path never printed real

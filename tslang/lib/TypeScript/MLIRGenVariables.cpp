@@ -723,7 +723,7 @@ namespace mlirgen
             if (varClass.isExport)
             {
                 auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
-                addVariableDeclarationToExport(nameStr, currentNamespace, varType, isConst);
+                addVariableDeclarationToExport(nameStr, currentNamespace, varType, isConst, varClass.dllName);
             }
 
             return mlir::success();
@@ -782,7 +782,9 @@ namespace mlirgen
 
             if (varClass.isDynamicImport)
             {
-                auto nameStr = concatFullNamespaceName(MLIRHelper::getName(item->name));
+                auto nameStr = varClass.dllName.empty()
+                    ? concatFullNamespaceName(MLIRHelper::getName(item->name))
+                    : varClass.dllName.str();
                 auto fieldType = std::get<0>(typeAndInit);
                 if (fieldType)
                 {
@@ -898,6 +900,10 @@ namespace mlirgen
 
                 if (name == "boxed") {
                     varClass.isBoxed = true;
+                }
+
+                if (name == DLL_NAME && args.size() > 0) {
+                    varClass.dllName = args.front();
                 }
 
                 if (name == "used") {

@@ -1917,7 +1917,14 @@ class MLIRGenImpl
             if (variableDeclarationInfo.isImport)
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
-            }  
+            }
+
+            // a dynamic import only holds a local copy resolved by name at runtime
+            if (!variableDeclarationInfo.varClass.dllName.empty() && !variableDeclarationInfo.varClass.isDynamicImport)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), DLL_NAME),
+                    mlir::StringAttr::get(builder.getContext(), variableDeclarationInfo.varClass.dllName)});
+            }
 
             if (this->compileOptions.generateDebugInfo)
             {
@@ -2544,6 +2551,11 @@ class MLIRGenImpl
             if (name == "used") {
                 builder.create<mlir_ts::AppendToUsedOp>(location, fullName);
             }
+
+            if (name == DLL_NAME && args.size() > 0)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), DLL_NAME), mlir::StringAttr::get(builder.getContext(), args.front())});
+            }
         });
 
         // add modifiers
@@ -2683,7 +2695,9 @@ class MLIRGenImpl
 
     static FunctionEntry makeFunctionEntry(mlir_ts::FuncOp funcOp)
     {
-        return FunctionEntry{funcOp.getName().str(), mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType())};
+        auto dllNameAttr = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
+        return FunctionEntry{funcOp.getName().str(), mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType()),
+            dllNameAttr ? dllNameAttr.getValue().str() : std::string()};
     }
 
     bool registerFunctionOp(FunctionPrototypeDOM::TypePtr funcProto, mlir_ts::FuncOp funcOp);
@@ -6443,7 +6457,8 @@ class MLIRGenImpl
                     //    time any method body runs. Self-contained: no global state, valid
                     //    in both discovery (ops land in the throwaway module) and real
                     //    passes, at the cost of one symbol lookup per call site.
-                    auto symbolNameValue = V(mlirGenStringValue(location, funcName.str(), true));
+                    auto symbolNameValue = V(mlirGenStringValue(location,
+                        methodInfo.dllName.empty() ? funcName.str() : methodInfo.dllName, true));
                     auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
                         location, getOpaqueType(), symbolNameValue);
                     auto castResult = cast(location, effectiveFuncType, referenceToFuncOpaque, genContext);
@@ -10064,6 +10079,8 @@ class MLIRGenImpl
             auto &methodInfos = newClassPtr->methods;
 
             auto methodIndex = newClassPtr->getMethodIndex(methodName);
+            auto dllNameAttr = funcOp ? funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME) : mlir::StringAttr();
+            auto dllName = dllNameAttr ? dllNameAttr.getValue().str() : std::string();
             if (methodIndex < 0)
             {
                 methodInfos.push_back(
@@ -10072,17 +10089,22 @@ class MLIRGenImpl
                     getFuncType(),
                     getFuncName().str(),
                     isStatic,
-                    isAbstract || isVirtual, 
-                    isAbstract, 
-                    -1, 
-                    orderWeight, 
-                    accessLevel
+                    isAbstract || isVirtual,
+                    isAbstract,
+                    -1,
+                    orderWeight,
+                    accessLevel,
+                    dllName
                 });
             }
             else
             {
                 methodInfos[methodIndex].orderWeight = orderWeight;
                 methodInfos[methodIndex].accessLevel = accessLevel;
+                if (!dllName.empty())
+                {
+                    methodInfos[methodIndex].dllName = dllName;
+                }
             }
 
             if (propertyName.size() > 0)
@@ -11344,22 +11366,22 @@ class MLIRGenImpl
         declExports << ss.str().str();        
     }
 
-    void addVariableDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
-    {               
+    void addVariableDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst, StringRef dllName)
+    {
         // TODO: add distinct declaration
 
         // we need to add it anyway as it is varaible declaration
         addDependancyTypesToExport(type);
 
         SmallVector<char> out;
-        llvm::raw_svector_ostream ss(out);        
+        llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss);
-        dp.printVariableDeclaration(name, elementNamespace, type, isConst);
+        dp.printVariableDeclaration(name, elementNamespace, type, isConst, dllName);
 
         declExports << ss.str().str();
     }
 
-    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace, StringRef dllName)
     {
         // TODO: add distinct declaration
 
@@ -11367,9 +11389,9 @@ class MLIRGenImpl
         addDependancyTypesToExport(funcProto->getFuncType());
 
         SmallVector<char> out;
-        llvm::raw_svector_ostream ss(out);        
+        llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss);
-        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType());
+        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName);
 
         declExports << ss.str().str();
     }
