@@ -3307,6 +3307,16 @@ class MLIRGenImpl
         else
         {
             if (inverse) return mlir::failure();
+
+            // `typeof x === "function"` (also "class", "interface", "object") names no type, only Opaque.
+            // The type x already has is more precise: casting would lose it - a function could no longer
+            // be called in the branch - and for a generic function nobody instantiated it references a
+            // function that is never emitted.
+            if (isa<mlir_ts::OpaqueType>(safeType))
+            {
+                return mlir::success();
+            }
+
             CAST_A(result, location, safeType, exprValue, genContext);
             castedValue = V(result);
         }
