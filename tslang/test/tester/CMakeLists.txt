@@ -171,6 +171,7 @@ add_test(NAME test-compile-00-funcs-nesting-generic COMMAND test-runner "${PROJE
 add_test(NAME test-compile-00-funcs-nesting-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 add_test(NAME test-compile-00-funcs-hybrid-null-this COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
 add_test(NAME test-compile-00-typeof-static-fold COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
+add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 add_test(NAME test-compile-00-funcs-expression-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 add_test(NAME test-compile-00-funcs-expression-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
 add_test(NAME test-compile-00-arrow-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00arrow_generic.ts")
@@ -587,6 +588,7 @@ add_test(NAME test-jit-00-funcs-nesting-generic COMMAND test-runner -jit "${PROJ
 add_test(NAME test-jit-00-funcs-nesting-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 add_test(NAME test-jit-00-funcs-hybrid-null-this COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
 add_test(NAME test-jit-00-typeof-static-fold COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
+add_test(NAME test-jit-00-array-move-wide-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 add_test(NAME test-jit-00-funcs-expression-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 add_test(NAME test-jit-00-funcs-expression-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
 add_test(NAME test-jit-00-arrow-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00arrow_generic.ts")
@@ -1322,6 +1324,7 @@ set(TSLANG_CORPUS
     00any.ts
     00array_assignment5.ts
     00array_cond_access.ts
+    00array_move_wide_elements.ts
     00array_of.ts
     00array_shift.ts
     00array_splice.ts
