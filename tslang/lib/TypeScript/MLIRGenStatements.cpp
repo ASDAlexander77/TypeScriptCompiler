@@ -501,14 +501,7 @@ namespace mlirgen
         auto condValue = V(result);
 
         // special case: in case of LiteralValue do not process If value is False
-        std::optional<bool> literalValue;
-        if (auto litType = mlir::dyn_cast<mlir_ts::LiteralType>(condValue.getType()))
-        {
-            if (auto boolVal = mlir::dyn_cast<mlir::BoolAttr>(litType.getValue()))
-            {
-                literalValue = boolVal.getValue();
-            }
-        }
+        auto literalValue = getStaticBoolean(condValue);
 
         // default implementation of IfOp
         if (condValue.getType() != getBooleanType())
@@ -639,6 +632,10 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
 
+        // a condition known to be false: the body never runs and, as in mlirGen(IfStatement), is not
+        // generated, so its narrowing cannot cast the tested value to a type it cannot have
+        auto processBody = getStaticBoolean(conditionValue).value_or(true);
+
         if (conditionValue.getType() != getBooleanType())
         {
             CAST(conditionValue, location, getBooleanType(), conditionValue, loopGenContext);
@@ -649,13 +646,17 @@ namespace mlirgen
         // body
         builder.setInsertionPointToStart(&whileOp.getBody().front());
 
-        // check if we do safe-cast here
-        SymbolTableScopeT varScopeBody(symbolTable);
-        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-        checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, loopGenContext);
+        if (processBody)
+        {
+            // check if we do safe-cast here
+            SymbolTableScopeT varScopeBody(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+            checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, loopGenContext);
 
-        auto result2 = mlirGen(whileStatementAST->statement, loopGenContext);
-        EXIT_IF_FAILED(result2)
+            auto result2 = mlirGen(whileStatementAST->statement, loopGenContext);
+            EXIT_IF_FAILED(result2)
+        }
+
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(whileOp);
