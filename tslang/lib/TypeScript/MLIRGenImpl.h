@@ -4345,6 +4345,24 @@ class MLIRGenImpl
 
         CAST_A(condValue, location, getBooleanType(), leftExpressionValue, genContext);
 
+        // `false && right`: right never runs and is not generated, see mlirGenSkippedBranch
+        auto rightSkipped = andOp && !getStaticBoolean(leftExpressionValue).value_or(true);
+        mlir::Type skippedRightType;
+        if (rightSkipped)
+        {
+            skippedRightType = evaluateSkippedBranch(rightExpression, [&](const GenContext &evalGenContext) {
+                checkSafeCast(leftExpression, leftExpressionValue, nullptr, evalGenContext);
+            }, genContext);
+
+            // a boolean `false && right` is the constant false itself, so an enclosing `if` or `while`
+            // sees that its condition is known too
+            if (!saveResult && skippedRightType
+                && getUnionType(location, skippedRightType, leftExpressionValue.getType()) == getBooleanType())
+            {
+                return condValue;
+            }
+        }
+
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{leftExpressionValue.getType()}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
@@ -4352,7 +4370,12 @@ class MLIRGenImpl
         ElseSafeCase elseSafeCase;
         mlir::Value resultTrue;
         {
-            if (andOp)
+            if (rightSkipped)
+            {
+                resultTrue = builder.create<mlir_ts::UndefOp>(
+                    location, skippedRightType ? skippedRightType : leftExpressionValue.getType());
+            }
+            else if (andOp)
             {
                 // check if we do safe-cast here
                 SymbolTableScopeT varScope(symbolTable);
@@ -7696,6 +7719,66 @@ class MLIRGenImpl
     {
         auto literalType = getBooleanLiteral(val);
         return V(builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue()));
+    }
+
+    // The value of a condition known at compile time: a boolean literal, also seen through casts to
+    // boolean - a folded `typeof x === "name"`, or an `&&` whose left side folded to false.
+    std::optional<bool> getStaticBoolean(mlir::Value value)
+    {
+        while (value)
+        {
+            if (auto litType = dyn_cast<mlir_ts::LiteralType>(value.getType()))
+            {
+                if (auto boolVal = dyn_cast<mlir::BoolAttr>(litType.getValue()))
+                {
+                    return boolVal.getValue();
+                }
+
+                return std::nullopt;
+            }
+
+            auto castOp = value.getDefiningOp<mlir_ts::CastOp>();
+            if (!castOp || !isa<mlir_ts::BooleanType>(value.getType()))
+            {
+                return std::nullopt;
+            }
+
+            value = castOp.getIn();
+        }
+
+        return std::nullopt;
+    }
+
+    // A branch whose condition is known at compile time never runs and is not generated: its narrowing
+    // (see mlirGen(IfStatement)) would cast the tested value to a type the value cannot have. The branch
+    // still contributes its type to the expression, so it is evaluated, narrowing included, in the temporary
+    // module, and yields an undefined value of that type. Returns no value when the branch does not resolve.
+    mlir::Value mlirGenSkippedBranch(mlir::Location location, Expression expr,
+                                     std::function<void(const GenContext &)> narrow, const GenContext &genContext)
+    {
+        auto type = evaluateSkippedBranch(expr, narrow, genContext);
+        if (!type)
+        {
+            return mlir::Value();
+        }
+
+        return builder.create<mlir_ts::UndefOp>(location, type);
+    }
+
+    mlir::Type evaluateSkippedBranch(Expression expr, std::function<void(const GenContext &)> narrow,
+                                     const GenContext &genContext)
+    {
+        TempModuleScope tempModuleScope(*this);
+        SymbolTableScopeT varScope(symbolTable);
+        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        evalGenContext.funcOp = tempFuncOp;
+        narrow(evalGenContext);
+        auto result = mlirGen(expr, evalGenContext);
+        auto value = V(result);
+        return value ? value.getType() : mlir::Type();
     }
 
     // `typeof x ==/===/!=/!== "name"` (either operand order) where `typeof x` is a TypeDescriptor, i.e.

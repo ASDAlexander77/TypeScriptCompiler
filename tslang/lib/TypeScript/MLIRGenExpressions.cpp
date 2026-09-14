@@ -641,6 +641,10 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
 
         auto condValue = V(result);
+
+        // only the branch that runs is generated when the condition is known, see mlirGenSkippedBranch
+        auto staticCondition = getStaticBoolean(condValue);
+
         if (condValue.getType() != getBooleanType())
         {
             CAST(condValue, location, getBooleanType(), condValue, genContext);
@@ -656,6 +660,7 @@ namespace mlirgen
 
         ElseSafeCase elseSafeCase;
         mlir::Value resultTrue;
+        if (staticCondition.value_or(true))
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
@@ -666,21 +671,28 @@ namespace mlirgen
             {
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
             }
-            
+
             resultTrue = V(result);
+        }
+        else
+        {
+            resultTrue = mlirGenSkippedBranch(location, whenTrueExpression, [&](const GenContext &evalGenContext) {
+                checkSafeCast(conditionalExpressionAST->condition, V(result), nullptr, evalGenContext);
+            }, genContext);
         }
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
 
         mlir::Value resultFalse;
+        if (!staticCondition.value_or(false))
         {
             SymbolTableScopeT varScope(symbolTable);
             if (elseSafeCase.safeType)
             {
                 addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-            }        
-            
+            }
+
             auto result2 = mlirGen(whenFalseExpression, genContext);
             if (!genContext.allowPartialResolve)
             {
@@ -688,6 +700,15 @@ namespace mlirgen
             }
 
             resultFalse = V(result2);
+        }
+        else
+        {
+            resultFalse = mlirGenSkippedBranch(location, whenFalseExpression, [&](const GenContext &evalGenContext) {
+                if (elseSafeCase.safeType)
+                {
+                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, evalGenContext);
+                }
+            }, genContext);
         }
 
         if (resultTrue && resultFalse)
