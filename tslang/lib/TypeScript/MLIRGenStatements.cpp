@@ -520,16 +520,21 @@ namespace mlirgen
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
+        // Narrowing (safe-cast) is added only to a branch that is generated: it emits a cast of the tested
+        // value, and for a statically decided test that cast can be one the value cannot take - an array
+        // narrowed to `string` by `typeof x === "string"`. Under --di the narrowed variable's debug record
+        // keeps such a cast alive into LLVM lowering even though the branch body was skipped.
         ElseSafeCase elseSafeCase{};
         {
-            // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
-            checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
 
             auto processIf = !literalValue.has_value() || literalValue.value();
             if (processIf)
             {
+                // check if we do safe-cast here
+                checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
+
                 auto result = mlirGen(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
             }
@@ -539,15 +544,16 @@ namespace mlirgen
         {
             builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
             SymbolTableScopeT varScope(symbolTable);
-            if (elseSafeCase.safeType)
-            {
-                // add case statement
-                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-            }
 
             auto processIf = !literalValue.has_value() || !literalValue.value();
             if (processIf)
             {
+                if (elseSafeCase.safeType)
+                {
+                    // add case statement
+                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+                }
+
                 auto result = mlirGen(ifStatementAST->elseStatement, genContext);
                 EXIT_IF_FAILED(result)
             }

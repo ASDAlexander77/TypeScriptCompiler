@@ -779,6 +779,15 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
 
+        // `typeof x === "name"` where x has a type known at compile time: the descriptor's name is
+        // known now, and the run-time compare is a plain string compare, so fold it. The boolean
+        // literal lets `if` skip a branch that can never run - in a generic specialised for an array,
+        // such a branch can hold casts an array cannot take, which crash LLVM lowering.
+        if (auto folded = foldStaticTypeOfCompare(location, opCode, leftExpressionValue, rightExpressionValue))
+        {
+            return *folded;
+        }
+
         // check if const expr.
         if (genContext.allowConstEval)
         {

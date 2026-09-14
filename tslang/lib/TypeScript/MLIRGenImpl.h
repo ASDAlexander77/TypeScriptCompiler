@@ -7698,6 +7698,57 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue()));
     }
 
+    // `typeof x ==/===/!=/!== "name"` (either operand order) where `typeof x` is a TypeDescriptor, i.e.
+    // x's type is known at compile time. At run time the descriptor's name - typeOfAsString of its
+    // type, see TypeDescriptorOpLowering - is compared with the literal by content, so the result is
+    // known here. Returns nothing for any other comparison (an `any`, a union tag, a stored typeof).
+    std::optional<ValueOrLogicalResult> foldStaticTypeOfCompare(mlir::Location location, SyntaxKind opCode,
+                                                                mlir::Value leftValue, mlir::Value rightValue)
+    {
+        auto isEquals = opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::EqualsEqualsEqualsToken;
+        auto isNotEquals = opCode == SyntaxKind::ExclamationEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken;
+        if (!isEquals && !isNotEquals)
+        {
+            return std::nullopt;
+        }
+
+        auto stringLiteralOf = [](mlir::Value value) -> std::optional<llvm::StringRef> {
+            if (auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                if (auto strAttr = dyn_cast<mlir::StringAttr>(constOp.getValue()))
+                {
+                    return strAttr.getValue();
+                }
+            }
+
+            return std::nullopt;
+        };
+
+        auto descriptorOp = leftValue.getDefiningOp<mlir_ts::TypeDescriptorOp>();
+        auto literal = stringLiteralOf(rightValue);
+        if (!descriptorOp)
+        {
+            descriptorOp = rightValue.getDefiningOp<mlir_ts::TypeDescriptorOp>();
+            literal = stringLiteralOf(leftValue);
+        }
+
+        if (!descriptorOp || !literal)
+        {
+            return std::nullopt;
+        }
+
+        TypeOfOpHelper toh(builder);
+        auto namesMatch = toh.typeOfAsString(descriptorOp.getDescriptorType()) == *literal;
+
+        // the typeof value was built for this comparison only
+        if (descriptorOp->use_empty())
+        {
+            descriptorOp->erase();
+        }
+
+        return mlirGenBooleanValue(location, isEquals ? namesMatch : !namesMatch);
+    }
+
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext);
