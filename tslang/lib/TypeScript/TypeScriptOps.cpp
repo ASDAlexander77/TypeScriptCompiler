@@ -1263,6 +1263,23 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
             return success();
         }
 
+        // a hybrid function cast from a plain function carries a null `this` (CastLogicHelper builds
+        // CreateBoundFunction(null, func)), so call the plain function and skip the runtime `this` test
+        if (auto castOp = indirectCall.getCallee().getDefiningOp<mlir_ts::CastOp>())
+        {
+            if (isa<mlir_ts::HybridFunctionType>(castOp.getRes().getType()) && isa<mlir_ts::FunctionType>(castOp.getIn().getType()))
+            {
+                rewriter.modifyOpInPlace(indirectCall, [&] { indirectCall->setOperand(0, castOp.getIn()); });
+
+                if (castOp->use_empty())
+                {
+                    rewriter.eraseOp(castOp);
+                }
+
+                return success();
+            }
+        }
+
         // supporting trumpoline
         if (auto getMethodOp = indirectCall.getCallee().getDefiningOp<mlir_ts::GetMethodOp>())
         {
