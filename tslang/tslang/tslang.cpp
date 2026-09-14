@@ -263,9 +263,39 @@ bool prepareDefaultLib(CompileOptions &compileOptions)
     return true;
 }
 
+#if _MSC_VER && _DEBUG
+// The leak report at exit (_CRTDBG_LEAK_CHECK_DF below) goes out as _CRT_WARN. Building an exe or
+// dll runs llvm::InitLLVM (exe.cpp), which installs LLVM's AvoidMessageBoxHook: it answers every CRT
+// report with "retry", and a retry makes the report macro call _CrtDbgBreak - so a debug tslang ended
+// every --emit=exe/dll with an unhandled breakpoint (0x80000003) after writing its output. Hooks
+// installed with _CrtSetReportHook2 run before that one: a warning is written where it would have
+// gone anyway (the debugger output) and never asks to break. Asserts and errors still reach LLVM's hook.
+static int ReportWarningWithoutBreak(int reportType, char *message, int *returnValue)
+{
+    if (reportType != _CRT_WARN)
+    {
+        return FALSE;
+    }
+
+    if (message)
+    {
+        OutputDebugStringA(message);
+    }
+
+    if (returnValue)
+    {
+        *returnValue = 0;
+    }
+
+    return TRUE;
+}
+#endif
+
 int main(int argc, char **argv)
 {
 #if _MSC_VER && _DEBUG
+    _CrtSetReportHook2(_CRT_RPTHOOK_INSTALL, ReportWarningWithoutBreak);
+
     // Get current flag
     int tmpFlag = _CrtSetDbgFlag( _CRTDBG_REPORT_FLAG );
     tmpFlag |= _CRTDBG_LEAK_CHECK_DF;
