@@ -3395,6 +3395,14 @@ class MLIRGenImpl
 
                 if (typeToken)
                 {
+                    if (text == S("function") || text == S("class") || text == S("interface") || text == S("object") || text == S("array"))
+                    {
+                        if (auto membersType = getUnionMembersOfTypeOf(expr, wstos(text), genContext))
+                        {
+                            return addSafeCastStatement(expr, membersType, inverse, elseSafeCase, genContext);
+                        }
+                    }
+
                     return addSafeCastStatement(expr, typeToken, inverse, elseSafeCase, genContext);
                 }
 
@@ -3403,6 +3411,35 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
+    }
+
+    // "function", "class", "interface", "object" and "array" name a kind, not a type, so they narrow to
+    // Opaque (or Opaque[]). A union already lists its members of that kind - the members whose runtime
+    // tag, typeOfAsString, is that name - and when there is exactly one, the union is narrowed to it:
+    // through Opaque a function could not be called and a class field not resolved.
+    // With several members of the kind it stays Opaque. The union cast helper castFromUnion generates
+    // (`if (typeof t == 'function') return t;`) depends on that: narrowed to a smaller union, `return t`
+    // would be a union cast again and instantiate the helper without end.
+    // Returns no type when the value is not a union or does not have exactly one member of the kind.
+    mlir::Type getUnionMembersOfTypeOf(Expression expr, llvm::StringRef typeOfName, const GenContext &genContext)
+    {
+        auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(evaluate(expr, genContext));
+        if (!unionType)
+        {
+            return mlir::Type();
+        }
+
+        TypeOfOpHelper toh(builder);
+        SmallVector<mlir::Type> members;
+        for (auto member : unionType.getTypes())
+        {
+            if (toh.typeOfAsString(member) == typeOfName)
+            {
+                members.push_back(member);
+            }
+        }
+
+        return members.size() == 1 ? members.front() : mlir::Type();
     }
 
     mlir::LogicalResult checkSafeCastUndefined(Expression optVal, Expression undefVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
