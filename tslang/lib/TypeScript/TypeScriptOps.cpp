@@ -305,11 +305,13 @@ template <typename T> struct RemoveUnused : public OpRewritePattern<T>
 
     LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
     {
-        if (op->getResult(0).use_empty())
+        // report failure when nothing was erased: the greedy driver re-scans after every success
+        if (!op->getResult(0).use_empty())
         {
-            rewriter.eraseOp(op);
+            return failure();
         }
 
+        rewriter.eraseOp(op);
         return success();
     }
 };
@@ -359,16 +361,13 @@ template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
 
     LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
     {
-        if (op.getSetValue())
+        // a setter call has side effects; otherwise erase only an unused getter
+        if (op.getSetValue() || !op.getValue().use_empty())
         {
-            return success();
+            return failure();
         }
 
-        if (op.getValue().use_empty())
-        {
-            rewriter.eraseOp(op);
-        }
-
+        rewriter.eraseOp(op);
         return success();
     }
 };
@@ -762,9 +761,11 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         // union support
         // TODO: review this code, should it be in "cast" logic?
+        // a pattern must report failure when it leaves the IR unchanged, otherwise the greedy driver
+        // treats every cast as a rewrite and keeps re-running until its iteration limit
         if (isa<mlir_ts::AnyType>(res.getType()))
         {
-            return success();
+            return failure();
         }
 
         auto resUnionType = dyn_cast<mlir_ts::UnionType>(res.getType());
@@ -778,9 +779,10 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                 auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
                 auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), in, typeOfValue);
                 rewriter.replaceOp(castOp, ValueRange{unionValue});
+                return success();
             }
 
-            return success();
+            return failure();
         }
 
         // TODO: review it, if you still need it as we are should be using "safeCast"
@@ -791,12 +793,13 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             {
                 auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
                 rewriter.replaceOp(castOp, ValueRange{value});
+                return success();
             }
 
-            return success();
+            return failure();
         }
 
-        return success();
+        return failure();
     }
 };
 
