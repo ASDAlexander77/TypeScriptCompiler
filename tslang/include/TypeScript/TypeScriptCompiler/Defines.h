@@ -17,13 +17,6 @@ enum Action
     RunJIT
 };
 
-enum Exports
-{
-    ExportsNotSet,
-    ExportAll,
-    IgnoreAll
-};
-
 // How compiled code reclaims heap memory. There have always been three of these - the flag
 // this replaced meant "leak everything", not "collect differently" - but they were spelled
 // as one boolean. See docs/reference-counting-evaluation.md.

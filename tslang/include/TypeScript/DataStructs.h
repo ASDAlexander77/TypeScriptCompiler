@@ -4,6 +4,7 @@
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
 #include <string>
+#include <vector>
 
 struct CompileOptions
 {
@@ -29,7 +30,9 @@ struct CompileOptions
     // `--entry-point`. Without that, a library whose root merely initializes a variable would
     // define `main` too, and two of them fail to link with "duplicate symbol: main".
     bool generateEntryPoint;
-    enum Exports exportOpt;
+    // --export filters: `all`, `none`, names or globs, `!name` to exclude; empty means the
+    // `export` keyword decides (see MLIRExportFilter.h)
+    std::vector<std::string> exportFilters;
     bool embedExportDeclarations;
     std::string outputFolder;
     bool appendGCtorsToMethod;
