@@ -930,16 +930,44 @@ namespace mlirgen
 
         auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
         auto elementAttrs = constOp ? dyn_cast<mlir::ArrayAttr>(constOp.getValue()) : mlir::ArrayAttr();
-        if (!elementAttrs || llvm::any_of(elementAttrs, [](mlir::Attribute attr) { return isa<mlir::ArrayAttr>(attr); }))
+        if (!elementAttrs)
         {
-            // not a literal, or nested arrays: left to the cast below
+            // not a literal: left to the cast below
             return std::nullopt;
+        }
+
+        // `[[1, 2]]` holds arrays, kept as nested attributes. Their own elements need the same
+        // conversion, so each is made a constant array again and cast here in turn.
+        auto sourceElementType = constArrayType.getElementType();
+        mlir::Type nestedElementType;
+        if (auto nestedArrayType = dyn_cast<mlir_ts::ArrayType>(sourceElementType))
+        {
+            nestedElementType = nestedArrayType.getElementType();
+        }
+        else if (auto nestedConstArrayType = dyn_cast<mlir_ts::ConstArrayType>(sourceElementType))
+        {
+            nestedElementType = nestedConstArrayType.getElementType();
         }
 
         SmallVector<mlir::Value> elements;
         for (auto elementAttr : elementAttrs)
         {
-            auto element = builder.create<mlir_ts::ConstantOp>(location, constArrayType.getElementType(), elementAttr);
+            mlir::Value element;
+            if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr))
+            {
+                if (!nestedElementType)
+                {
+                    return std::nullopt;
+                }
+
+                element = builder.create<mlir_ts::ConstantOp>(
+                    location, getConstArrayType(nestedElementType, nestedAttrs.size()), nestedAttrs);
+            }
+            else
+            {
+                element = builder.create<mlir_ts::ConstantOp>(location, sourceElementType, elementAttr);
+            }
+
             CAST_A(castedElement, location, arrayType.getElementType(), element, genContext);
             elements.push_back(castedElement);
         }

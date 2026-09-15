@@ -1790,6 +1790,23 @@ class MLIRTypeHelper
     }
 
     // TODO: review using canCast in detecting base Type. index, int, number
+    // The element of a nested array literal is an array itself (`[[1, 2]]` holds `array<si32>`), so what
+    // has to widen is the element type inside it. Only a constant array asks this: MLIRGen rebuilds one
+    // element by element (castConstArrayToArray), which is what makes the wider element type reachable -
+    // an array that is not a literal is still not converted element-wise.
+    bool canWideConstArrayElementWithoutDataLoss(mlir::Type srcElementType, mlir::Type dstElementType)
+    {
+        if (auto srcArrayType = dyn_cast<mlir_ts::ArrayType>(srcElementType))
+        {
+            if (auto dstArrayType = dyn_cast<mlir_ts::ArrayType>(dstElementType))
+            {
+                return canWideConstArrayElementWithoutDataLoss(srcArrayType.getElementType(), dstArrayType.getElementType());
+            }
+        }
+
+        return canWideTypeWithoutDataLoss(srcElementType, dstElementType);
+    }
+
     bool canWideTypeWithoutDataLoss(mlir::Type srcType, mlir::Type dstType)
     {
         if (!srcType || !dstType)
@@ -1885,9 +1902,9 @@ class MLIRTypeHelper
                     return true;
                 }
 
-                return canWideTypeWithoutDataLoss(constArrayType.getElementType(), arrayType.getElementType());
+                return canWideConstArrayElementWithoutDataLoss(constArrayType.getElementType(), arrayType.getElementType());
             }
-        }        
+        }
 
         // native types
         auto destIntType = dyn_cast<mlir::IntegerType>(dstType);
