@@ -1228,6 +1228,48 @@ namespace mlirgen
         return std::nullopt;
     }
 
+    // Names the part of the signature that does not match, rather than only the two types. The return
+    // type is the common one: an integer literal is `s32` here, so a function with an inferred return
+    // (`function one() { return 1; }` is `() => s32`) does not match `() => number` - hence the hint to
+    // declare the return type.
+    void MLIRGenImpl::emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match)
+    {
+        auto inFuncType = mth.GetFunctionType(valueType);
+        auto resFuncType = mth.GetFunctionType(type);
+
+        auto diag = emitError(location) << "can't assign '" << to_print(valueType) << "' to '" << to_print(type) << "'";
+        switch (match.result)
+        {
+        case MatchResultType::NotMatchArgCount:
+            diag << ": it takes " << inFuncType.getNumInputs() << " argument(s), " << resFuncType.getNumInputs()
+                 << " expected";
+            break;
+        case MatchResultType::NotMatchArg:
+            diag << ": argument #" << (match.index + 1) << " does not match";
+            break;
+        case MatchResultType::NotMatchResultCount:
+            diag << ": one returns a value and the other does not";
+            break;
+        case MatchResultType::NotMatchResult:
+            if (match.index < inFuncType.getNumResults() && match.index < resFuncType.getNumResults())
+            {
+                auto inResultType = inFuncType.getResult(match.index);
+                auto resResultType = resFuncType.getResult(match.index);
+                diag << ": return type '" << to_print(inResultType) << "' is not '" << to_print(resResultType)
+                     << "'. Declare the return type to get one, for example 'function f(): "
+                     << to_print(resResultType) << "'";
+            }
+            else
+            {
+                diag << ": the return types do not match";
+            }
+
+            break;
+        default:
+            break;
+        }
+    }
+
     mlir::LogicalResult MLIRGenImpl::verifyFunctionCastRules(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
     {
         if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
@@ -1249,10 +1291,10 @@ namespace mlirgen
             if (!mth.isGenericType(type) && !mth.isGenericType(valueType))
             {
                 // test fun types
-                auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type).result == MatchResultType::Match;
-                if (!test)
+                auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type);
+                if (test.result != MatchResultType::Match)
                 {
-                    emitError(location) << to_print(valueType) << " is not matching type " << to_print(type);
+                    emitFunctionTypeMismatch(location, valueType, type, test);
                     return mlir::failure();
                 }
             }
@@ -1288,6 +1330,26 @@ namespace mlirgen
             && !isa<mlir_ts::OpaqueType>(type)
             && !isa<mlir_ts::AnyType>(type)
             && !isa<mlir_ts::BooleanType>(type)) {
+            // a union is what the function was most likely meant for: say which of its function members
+            // it does not match, instead of naming the whole union
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                for (auto memberType : unionType.getTypes())
+                {
+                    if (!mth.isAnyFunctionType(memberType))
+                    {
+                        continue;
+                    }
+
+                    auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, memberType);
+                    if (test.result != MatchResultType::Match)
+                    {
+                        emitFunctionTypeMismatch(location, valueType, memberType, test);
+                        return mlir::failure();
+                    }
+                }
+            }
+
             emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
         }
