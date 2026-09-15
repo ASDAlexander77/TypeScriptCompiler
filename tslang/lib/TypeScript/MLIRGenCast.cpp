@@ -600,6 +600,11 @@ namespace mlirgen
             return *result;
         }
 
+        if (auto result = castConstArrayToArray(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
         if (auto result = castToOptionalType(location, type, value, valueType, genContext))
         {
             return *result;
@@ -907,6 +912,42 @@ namespace mlirgen
         }
 
         return std::nullopt;
+    }
+
+    // A constant array keeps the element type its literal was built with: `const c = [1, 2]` is a
+    // const_array<si32>, and so is `[1, 2]` meeting a union such as `number[] | string`, where no single
+    // array type guides the literal. Lowering turns a const array into an array by copying its data as it
+    // is, so for another element type (`number[]`) the elements were read with the wrong layout - garbage,
+    // with only a warning. Such an array is built here from its elements, each cast to the element type.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castConstArrayToArray(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
+        auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType);
+        auto arrayType = dyn_cast<mlir_ts::ArrayType>(type);
+        if (!constArrayType || !arrayType || constArrayType.getElementType() == arrayType.getElementType())
+        {
+            return std::nullopt;
+        }
+
+        auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+        auto elementAttrs = constOp ? dyn_cast<mlir::ArrayAttr>(constOp.getValue()) : mlir::ArrayAttr();
+        if (!elementAttrs || llvm::any_of(elementAttrs, [](mlir::Attribute attr) { return isa<mlir::ArrayAttr>(attr); }))
+        {
+            // not a literal, or nested arrays: left to the cast below
+            return std::nullopt;
+        }
+
+        SmallVector<mlir::Value> elements;
+        for (auto elementAttr : elementAttrs)
+        {
+            auto element = builder.create<mlir_ts::ConstantOp>(location, constArrayType.getElementType(), elementAttr);
+            CAST_A(castedElement, location, arrayType.getElementType(), element, genContext);
+            elements.push_back(castedElement);
+        }
+
+        // the data block about to be filled releases every element when it dies
+        mlirGenRetainCaptured(location, elements);
+
+        return V(builder.create<mlir_ts::CreateArrayOp>(location, arrayType, elements));
     }
 
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)

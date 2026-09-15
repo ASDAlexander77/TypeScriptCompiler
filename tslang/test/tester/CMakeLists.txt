@@ -174,6 +174,7 @@ add_test(NAME test-compile-00-typeof-static-fold COMMAND test-runner "${PROJECT_
 add_test(NAME test-compile-00-typeof-function-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
+add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 add_test(NAME test-compile-00-funcs-expression-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 add_test(NAME test-compile-00-funcs-expression-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
@@ -594,6 +595,7 @@ add_test(NAME test-jit-00-typeof-static-fold COMMAND test-runner -jit "${PROJECT
 add_test(NAME test-jit-00-typeof-function-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
 add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
+add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 add_test(NAME test-jit-00-array-move-wide-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 add_test(NAME test-jit-00-funcs-expression-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 add_test(NAME test-jit-00-funcs-expression-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
@@ -1322,6 +1324,7 @@ add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${PROJECT
 set(TSLANG_CORPUS
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
+    00const_array_to_array_elements.ts
     00owned_array_splice.ts
     00alloc_in_catch.ts
     00any_compare.ts
