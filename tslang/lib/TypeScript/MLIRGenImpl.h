@@ -10912,6 +10912,9 @@ class MLIRGenImpl
     // casts between tuple-like types (tuple, const tuple, class storage, interface fields)
     std::optional<ValueOrLogicalResult> castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
+    // constant array literal to an array of another element type, element by element
+    std::optional<ValueOrLogicalResult> castConstArrayToArray(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here
     // but if optional points to interface then it will not work
