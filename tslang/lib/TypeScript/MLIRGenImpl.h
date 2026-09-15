@@ -10915,6 +10915,9 @@ class MLIRGenImpl
     // constant array literal to an array of another element type, element by element
     std::optional<ValueOrLogicalResult> castConstArrayToArray(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
+    // reports which part of a function signature does not match the one it is assigned to
+    void emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match);
+
     // optional
     // TODO: it is in CastLogic as well, review usage and remove from here
     // but if optional points to interface then it will not work
