@@ -34,8 +34,8 @@ void init_dynamicruntime(llvm::StringMap<void *> &exportSymbols)
         exportSymbols[name] = reinterpret_cast<void *>(ptr);
     };
 
-    exportSymbol("LLVMLoadLibraryPermanently", &mlir::runtime::LoadLibraryPermanently);
-    exportSymbol("LLVMSearchForAddressOfSymbol", &mlir::runtime::SearchForAddressOfSymbol);
+    exportSymbol("tslang_load_library_permanently", &mlir::runtime::LoadLibraryPermanently);
+    exportSymbol("tslang_search_for_address_of_symbol", &mlir::runtime::SearchForAddressOfSymbol);
 }
 
 // NOLINTNEXTLINE(*-identifier-naming): externally called.

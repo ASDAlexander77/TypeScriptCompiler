@@ -36,8 +36,8 @@ EXPORTS
     aligned_free=AlignedFree
 
     ; --- dynamic-library runtime (DynamicRuntime.cpp, extern "C") ---
-    LLVMLoadLibraryPermanently=LoadLibraryPermanently
-    LLVMSearchForAddressOfSymbol=SearchForAddressOfSymbol
+    tslang_load_library_permanently=LoadLibraryPermanently
+    tslang_search_for_address_of_symbol=SearchForAddressOfSymbol
 
     ; --- async runtime (AsyncRuntime.cpp, extern "C", names already match) ---
     mlirAsyncRuntimeAddRef

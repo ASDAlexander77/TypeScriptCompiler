@@ -276,7 +276,7 @@ checkout** — the `C:\dev\...` / `~/dev/...` values are only examples.
 | Variable | Points to |
 | --- | --- |
 | `GC_LIB_PATH` | Boehm GC library (the garbage collector) |
-| `LLVM_LIB_PATH` | LLVM/MLIR libraries |
+| `LLVM_LIB_PATH` | Not needed any more: programs no longer link an LLVM library. Still accepted so older scripts keep working |
 | `TSLANG_LIB_PATH` | TSLANG runtime library |
 | `DEFAULT_LIB_PATH` | Default library |
 

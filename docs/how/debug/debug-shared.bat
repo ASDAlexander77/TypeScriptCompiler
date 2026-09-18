@@ -30,7 +30,7 @@ set "SDKPATH=C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64"
 set "UCRTPATH=C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64"
 
 rem --- STATIC CRT link line (matches the test-runner.cpp fix) ---
-set "LIBS=libcmtd.lib libvcruntimed.lib libucrtd.lib ntdll.lib TypeScriptAsyncRuntime.lib gc.lib LLVMSupport.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"
+set "LIBS=libcmtd.lib libvcruntimed.lib libucrtd.lib TypeScriptAsyncRuntime.lib gc.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"
 set "LIBPATHS=/libpath:"%GC_LIB_PATH%" /libpath:"%LLVM_LIB_PATH%" /libpath:"%tslang_LIB_PATH%" /libpath:"%LIBPATH%" /libpath:"%SDKPATH%" /libpath:"%UCRTPATH%""
 
 cd /d "%WORK%"
