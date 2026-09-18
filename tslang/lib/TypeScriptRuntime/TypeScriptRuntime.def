@@ -35,9 +35,9 @@ EXPORTS
     aligned_alloc=AlignedAlloc
     aligned_free=AlignedFree
 
-    ; --- dynamic-library runtime (DynamicRuntime.cpp, extern "C") ---
-    tslang_load_library_permanently=LoadLibraryPermanently
-    tslang_search_for_address_of_symbol=SearchForAddressOfSymbol
+    ; --- dynamic-library runtime (DynamicRuntime.cpp, extern "C", names already match) ---
+    tslang_load_library_permanently
+    tslang_search_for_address_of_symbol
 
     ; --- async runtime (AsyncRuntime.cpp, extern "C", names already match) ---
     mlirAsyncRuntimeAddRef
