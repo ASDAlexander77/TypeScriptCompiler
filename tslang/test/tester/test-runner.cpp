@@ -11,15 +11,13 @@
 #endif
 #ifdef WIN32
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
-#define LLVM_LIBS "LLVMSupport.lib "
 //#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib "
 // static CRT (/MT[d]) to match LLVM/TypeScript runtime libs and gc.lib; mixing static+dynamic CRT crashes at startup
-#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib ntdll.lib "
+#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib "
 #else
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
-#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -ltinfo"
+#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm"
 #define TYPESCRIPT_LIB "-lTypeScriptAsyncRuntime "
-#define LLVM_LIBS "-lLLVMSupport -lLLVMDemangle "
 #endif
 
 #ifdef WIN32
@@ -179,8 +177,8 @@ void createCompileBatchFile()
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
     batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
-            << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
@@ -207,8 +205,8 @@ void createCompileBatchFile()
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSLANGEXEPATH/tslang --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
-    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
-            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
+            << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "echo $? > $FILENAME.code" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
@@ -425,8 +423,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     }
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
-            << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -462,8 +460,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     }
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
-            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
-            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+            << "-L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
+            << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "echo $? > $FILENAME.code" << std::endl;
     
@@ -546,8 +544,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     batFile << sharedBat.str();
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:" << shared_filenameNoExt << ".dll " << linker_opt << " " << shared_objs.str() << " "
-            <<  LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            <<  LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -574,8 +572,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             batFile << shared_filenameNoExt << ".lib ";
         }
 
-        batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-                << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+        batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
+                << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
                 << std::endl;
 
@@ -648,8 +646,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     batFile << sharedBat.str();
     batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str()
-            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
-            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+            << "-L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
+            << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
 
     if (jitRun)
@@ -662,7 +660,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " ";
-        batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH ";
+        batFile << "-L$GC_LIB_PATH -L$TSLANG_LIB_PATH ";
         if (sharedLib)
         {
             // dynamics and compile-time shared modes both link the produced shared lib;
@@ -670,7 +668,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
         }
 
-        batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+        batFile << TYPESCRIPT_LIB << GC_LIB << LIBS << std::endl;
 
         batFile << "rm -f " << exec_objs.str() << std::endl;
 

@@ -1028,15 +1028,16 @@ namespace mlirgen
                 return mlir::failure();
             }
 
-            // The shared-lib load + symbol resolution call into LLVM's
-            // sys::DynamicLibrary, which uses std::vector. In debug builds STL
+            // The shared-lib load + symbol resolution call into the runtime's
+            // library list (LLVM's sys::DynamicLibrary under the JIT), which uses
+            // std::vector. In debug builds STL
             // iterators take a global lock that the CRT only initializes via its
             // own '_Init_locks'/'initlocks' dynamic initializer (in .CRT$XCU).
             // FIRST_GLOBAL_CONSTRUCTOR_PRIORITY (100) places this ctor BEFORE that
             // CRT init -> entering an uninitialized CRITICAL_SECTION -> crash.
             // Use the same band as the per-symbol __cctors (LAST) so it runs after
             // 'initlocks'; it is emitted before them, so it still loads the library
-            // before any LLVMSearchForAddressOfSymbol runs.
+            // before any tslang_search_for_address_of_symbol runs.
             addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 

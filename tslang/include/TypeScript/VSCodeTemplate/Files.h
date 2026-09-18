@@ -350,7 +350,7 @@ add_executable(${PROJECT_NAME}
 )
 
 # required libs
-set(TSLANG_LINK_LIBS "TypeScriptDefaultLib" "TypeScriptAsyncRuntime" "LLVMSupport")
+set(TSLANG_LINK_LIBS "TypeScriptDefaultLib" "TypeScriptAsyncRuntime")
 
 # Boehm is only referenced by the gc default lib; the rc and none builds allocate through the
 # CRT and must not drag a collector in.
@@ -358,11 +358,8 @@ if (TSLANG_MEMORY_MODEL STREQUAL "gc")
     list(APPEND TSLANG_LINK_LIBS "gc")
 endif()
 
-# ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
-if(WIN32)
-    list(APPEND TSLANG_LINK_LIBS "ntdll")
-else()
-    list(APPEND TSLANG_LINK_LIBS "LLVMDemangle" "stdc++" "m" "pthread" "tinfo" "dl" "rt")
+if(NOT WIN32)
+    list(APPEND TSLANG_LINK_LIBS "stdc++" "m" "pthread" "dl" "rt")
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${TSLANG_LINK_LIBS})

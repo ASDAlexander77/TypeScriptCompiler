@@ -296,7 +296,7 @@ class LoadLibraryPermanentlyOpLowering : public TsLlvmPattern<mlir_ts::LoadLibra
 
         auto i8PtrTy = th.getPtrType();
 
-        auto loadLibraryPermanentlyFuncOp = ch.getOrInsertFunction("LLVMLoadLibraryPermanently", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+        auto loadLibraryPermanentlyFuncOp = ch.getOrInsertFunction("tslang_load_library_permanently", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, loadLibraryPermanentlyFuncOp, ValueRange{transformed.getFilename()});
 
         return success();
@@ -318,7 +318,7 @@ class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchF
 
         auto i8PtrTy = th.getPtrType();
 
-        auto searchForAddressOfSymbolFuncOp = ch.getOrInsertFunction("LLVMSearchForAddressOfSymbol", th.getFunctionType(i8PtrTy, {i8PtrTy}));
+        auto searchForAddressOfSymbolFuncOp = ch.getOrInsertFunction("tslang_search_for_address_of_symbol", th.getFunctionType(i8PtrTy, {i8PtrTy}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, searchForAddressOfSymbolFuncOp, ValueRange{transformed.getSymbolName()});
 
         return success();

@@ -17,17 +17,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
-
-#include "llvm/ADT/StringMap.h"
-#include "llvm/Support/ThreadPool.h"
 
 #include "TypeScript/AsyncGCThreads.h"
 
@@ -56,6 +56,103 @@ namespace
     class RefCounted;
 
     // -------------------------------------------------------------------------- //
+    // The pool the runtime resumes coroutines on. It stands in for llvm::DefaultThreadPool, which
+    // was the only thing that made every AOT executable link LLVMSupport (and LLVMDemangle on
+    // Linux). It behaves the same way: one worker per hardware thread, started only when a task
+    // is queued and no worker is idle, and `wait` returns once the queue is empty and no task is
+    // running, including tasks queued by other tasks.
+    // -------------------------------------------------------------------------- //
+
+    class ThreadPool
+    {
+    public:
+        ThreadPool() : maxConcurrency((std::max)(1u, std::thread::hardware_concurrency())), activeTasks(0), stopping(false)
+        {
+        }
+
+        ~ThreadPool()
+        {
+            {
+                std::unique_lock<std::mutex> lock(mu);
+                stopping = true;
+            }
+
+            taskAvailable.notify_all();
+            for (auto &worker : workers)
+            {
+                worker.join();
+            }
+        }
+
+        ThreadPool(const ThreadPool &) = delete;
+        ThreadPool &operator=(const ThreadPool &) = delete;
+
+        void async(std::function<void()> task)
+        {
+            {
+                std::unique_lock<std::mutex> lock(mu);
+                tasks.push_back(std::move(task));
+                // start a worker only if every existing one already has a task to run
+                if (workers.size() < (std::min<size_t>)(activeTasks + tasks.size(), maxConcurrency))
+                {
+                    workers.emplace_back([this] { processTasks(); });
+                }
+            }
+
+            taskAvailable.notify_one();
+        }
+
+        void wait()
+        {
+            std::unique_lock<std::mutex> lock(mu);
+            allDone.wait(lock, [this] { return tasks.empty() && activeTasks == 0; });
+        }
+
+        unsigned getMaxConcurrency() const
+        {
+            return maxConcurrency;
+        }
+
+    private:
+        void processTasks()
+        {
+            std::unique_lock<std::mutex> lock(mu);
+            while (true)
+            {
+                taskAvailable.wait(lock, [this] { return stopping || !tasks.empty(); });
+                if (tasks.empty())
+                {
+                    // stopping, with nothing left to run
+                    return;
+                }
+
+                auto task = std::move(tasks.front());
+                tasks.pop_front();
+                ++activeTasks;
+
+                lock.unlock();
+                task();
+                lock.lock();
+
+                --activeTasks;
+                if (tasks.empty() && activeTasks == 0)
+                {
+                    allDone.notify_all();
+                }
+            }
+        }
+
+        const unsigned maxConcurrency;
+        std::mutex mu;
+        std::condition_variable taskAvailable;
+        std::condition_variable allDone;
+        std::deque<std::function<void()>> tasks;
+        std::vector<std::thread> workers;
+        size_t activeTasks;
+        bool stopping;
+    };
+
+    // -------------------------------------------------------------------------- //
     // AsyncRuntime orchestrates all async operations and Async runtime API is built
     // on top of the default runtime instance.
     // -------------------------------------------------------------------------- //
@@ -78,7 +175,7 @@ namespace
             return numRefCountedObjects.load(std::memory_order_relaxed);
         }
 
-        llvm::ThreadPoolInterface &getThreadPool()
+        ThreadPool &getThreadPool()
         {
             return threadPool;
         }
@@ -98,7 +195,7 @@ namespace
         }
 
         std::atomic<int64_t> numRefCountedObjects;
-        llvm::DefaultThreadPool threadPool;
+        ThreadPool threadPool;
     };
 
     // -------------------------------------------------------------------------- //

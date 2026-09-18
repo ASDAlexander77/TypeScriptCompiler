@@ -131,16 +131,6 @@ void checkGCLibPath(std::string path)
     checkFileExistsAtPath(path, libName);
 }
 
-void checkLLVMLibPath(std::string path)
-{
-#ifdef WIN32
-    const auto libName = "LLVMSupport.lib";
-#else    
-    const auto libName = "libLLVMSupport.a";
-#endif    
-    checkFileExistsAtPath(path, libName);
-}
-
 void checkTslangLibPath(std::string path) 
 {
 #ifdef WIN32
@@ -247,13 +237,11 @@ std::string getLLVMLibPath()
 {
     if (!llvmlibpath.empty())
     {
-        checkLLVMLibPath(llvmlibpath);
         return llvmlibpath;
     }
 
     if (auto llvmLibEnvValue = llvm::sys::Process::GetEnv("LLVM_LIB_PATH")) 
     {
-        checkLLVMLibPath(llvmLibEnvValue.value());
         return llvmLibEnvValue.value();
     }    
 
@@ -399,12 +387,10 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 
     std::string gcLibPathOpt;
     std::string tslangLibPathOpt;
-    std::string llvmLibPathOpt;
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
     std::string defaultLibFileOpt;
 
-    auto isLLVMLibNeeded = true;
     auto isTslangLibNeeded = true;
 
     auto os = TheTriple.getOS();
@@ -418,7 +404,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 
     if (wasm)
     {
-        isLLVMLibNeeded = false;
         isTslangLibNeeded = false;        
     }
 
@@ -561,16 +546,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }
     }
     
-    // add logic to detect if libs are used and needed
-    if (isLLVMLibNeeded)
-    {
-        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath());
-        if (!llvmLibPathOpt.empty())
-        {
-            args.push_back(llvmLibPathOpt.c_str());    
-        }
-    }
-
     if (isTslangLibNeeded)
     {
         tslangLibPathOpt = getLibsPathOpt(getTslangLibPath());
@@ -604,8 +579,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             args.push_back("-llibvcruntimed");
             args.push_back("-Wl,-nodefaultlib:libcmt");
         }
-
-        args.push_back("-lntdll");
     }
 
     // tslang libs
@@ -634,15 +607,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     if (isTslangLibNeeded)
     {
         args.push_back("-lTypeScriptAsyncRuntime");
-    }
-
-    if (isLLVMLibNeeded)
-    {
-        args.push_back("-lLLVMSupport");
-        if (!win)
-        {
-            args.push_back("-lLLVMDemangle");
-        }
     }
 
     if (!win && !wasm)
@@ -675,7 +639,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         args.push_back("-lstdc++");
         args.push_back("-lm");
         args.push_back("-lpthread");
-        args.push_back("-ltinfo");
         args.push_back("-ldl");
         args.push_back("-lrt");
 

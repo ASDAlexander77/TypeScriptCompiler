@@ -287,6 +287,21 @@ static void jitEnableGCThreads()
     }
 }
 
+// A program importing a shared library loads it and resolves its symbols through these two
+// (tslang_load_library_permanently / tslang_search_for_address_of_symbol). An executable gets
+// them from TypeScriptAsyncRuntime; under the JIT they are defined here, for every memory model,
+// because TypeScriptRuntime is only loaded for `gc`. They go through this process's own
+// DynamicLibrary, so a lookup also sees the libraries passed with `--shared-libs`.
+static int jitLoadLibraryPermanently(const char *fileName)
+{
+    return llvm::sys::DynamicLibrary::LoadLibraryPermanently(fileName);
+}
+
+static void *jitSearchForAddressOfSymbol(const char *symbolName)
+{
+    return llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(symbolName);
+}
+
 // A failing `assert` in compiled code calls `_assert`, and under --emit=jit that call lands
 // in whichever CRT the process resolver reaches first - ucrtbase.dll, whose report mode is
 // nobody's to set from here, and which puts the failure up as a modal message box. In an
@@ -676,6 +691,22 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     jit->getMainJITDylib().addGenerator(std::move(*generator));
+
+    // Definitions win over the generator, so these also shadow TypeScriptRuntime's copies
+    {
+        llvm::orc::MangleAndInterner interner(jit->getExecutionSession(), jit->getDataLayout());
+        llvm::orc::SymbolMap dynamicLibrarySymbols;
+        dynamicLibrarySymbols[interner("tslang_load_library_permanently")] = {
+            llvm::orc::ExecutorAddr::fromPtr(&jitLoadLibraryPermanently), llvm::JITSymbolFlags::Exported};
+        dynamicLibrarySymbols[interner("tslang_search_for_address_of_symbol")] = {
+            llvm::orc::ExecutorAddr::fromPtr(&jitSearchForAddressOfSymbol), llvm::JITSymbolFlags::Exported};
+        if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(dynamicLibrarySymbols))))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define the shared library loader, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+    }
 
 #ifdef _WIN32
     // Bind CRT entry points to tslang.exe's static CRT (/MT[d]) explicitly: the

@@ -21,6 +21,9 @@
 
 #ifdef MLIR_ASYNCRUNTIME_DEFINE_FUNCTIONS
 
+// before the .inc: gc.h, which it includes, brings windows.h and its min/max macros
+#include "llvm/ADT/StringMap.h"
+
 #include "../AsyncRuntimeCommon.inc"
 
 //===----------------------------------------------------------------------===//
