@@ -3,6 +3,7 @@ add_mlir_unittest(MLIRGenTests
   DeclarationPrinter.cpp
   ExportFilter.cpp
   TypeHelper.cpp
+  TargetInfo.cpp
 )
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
