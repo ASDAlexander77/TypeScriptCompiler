@@ -6222,12 +6222,15 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
     LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        TypeHelper th(rewriter);
+        TypeHelper th(rewriter, tsLlvmContext->compileOptions);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto i64PtrTy = th.getPtrType();
 
-        auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(rewriter.getI64Type(), {i64PtrTy, rewriter.getI64Type()}));
+        // target-width: GC_make_descriptor returns GC_descr, a typedef of GC_word, which gc.h defines
+        // as the unsigned integer the size of `void *`; its second parameter is a `size_t` bit count
+        // (3rdParty/gc-8.2.12/include/gc_typed.h:52). Neither is a fixed 64 bits.
+        auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(th.getSizeType(), {i64PtrTy, th.getSizeType()}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, gcMakeDescriptorFunc, ValueRange{transformed.getTypeBitmap(), transformed.getSizeOfBitmapInElements()});
 
         return success();
@@ -6268,7 +6271,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(op, rewriter);
         TypeConverterHelper tch(getTypeConverter());
-        TypeHelper th(rewriter);
+        TypeHelper th(rewriter, tsLlvmContext->compileOptions);
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -6291,7 +6294,9 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
 
         auto i8PtrTy = th.getPtrType();
 
-        auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+        // target-width: GC_malloc_explicitly_typed(size_t size_in_bytes, GC_descr d) - a byte count and
+        // a GC_descr (= GC_word, the integer the size of `void *`), per gc_typed.h:81. Neither is fixed at 64.
+        auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {th.getSizeType(), th.getSizeType()}));
         // Without this, two `new` sites with identical (size, typeDescr) args - e.g. two
         // instances of the same class - look like redundant calls to GVN/EarlyCSE at -O3
         // and get merged into one shared allocation. See GCPass.cpp markAsAllocatorIfNeeded.

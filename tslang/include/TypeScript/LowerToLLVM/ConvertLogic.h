@@ -55,6 +55,9 @@ class ConvertLogic
     {
         auto i8PtrTy = th.getPtrType();
 
+        // 64-bit whatever the target: _i64toa's first parameter is `long long`
+        // (char *_i64toa(long long value, char *str, int radix)) - a fixed 64-bit integer on every
+        // target this compiler emits for, not a size_t.
         auto _i64toaFuncOp = ch.getOrInsertFunction(
             "_i64toa", th.getFunctionType(th.getPtrType(),
                                           ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getPtrType(), rewriter.getI32Type()}, true));

@@ -72,6 +72,9 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
+    // 64-bit whatever the target: this helper's whole contract is "give me an i64 constant" - the
+    // width is in its name. Call sites that want a pointer-wide constant use createIConstantOf()
+    // with TypeHelper::getSizeType()'s width instead.
     mlir::Value createI64ConstantOf(int64_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));

@@ -35,7 +35,7 @@ class ThrowLogic
 
   public:
     ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+        : op(op), rewriter(rewriter), th(rewriter, compileOptions), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
           typeConverter(tch.typeConverter), compileOptions(compileOptions), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
     {
     }
@@ -146,7 +146,9 @@ class ThrowLogic
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
 
-        auto sizeType = compileOptions.sizeBits() == 32 ? th.getI32Type() : th.getI64Type();
+        // target-width: __cxa_allocate_exception takes a `size_t` byte count. This site already asked
+        // the target by hand; getSizeType() is the same answer, spelled once.
+        auto sizeType = th.getSizeType();
 
         auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {sizeType}));
 

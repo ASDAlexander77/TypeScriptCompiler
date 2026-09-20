@@ -151,6 +151,9 @@ class MLIRTypeHelper
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value, true));
     }
 
+    // 64-bit whatever the target: like getI64Type() above, this helper's contract is its name - an
+    // attribute of the 64-bit integer type. Sites needing a pointer-wide constant build the type from
+    // compileOptions.sizeBits() and use builder.getIntegerAttr() instead.
     mlir::IntegerAttr getI64AttrValue(int64_t value)
     {
         return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value, true));
