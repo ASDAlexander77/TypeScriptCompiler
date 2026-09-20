@@ -2429,14 +2429,17 @@ def TypeScript_NoOp : TypeScript_Op<"noop", [Pure]> {
 def TypeScript_GCMakeDescriptorOp : TypeScript_Op<"GCMakeDescriptor"> {
   let summary = "GC make descriptor operation";
 
+  // The descriptor is a Boehm GC_descr, a typedef of GC_word - the integer the size of `void *` -
+  // so it is pointer-wide, i32 on a 32-bit target. An I64 constraint would reject it there.
   let arguments = (ins TypeScript_Ref:$typeBitmap, Index:$sizeOfBitmapInElements);
-  let results = (outs I64:$descr);
+  let results = (outs AnySignlessInteger:$descr);
 }
 
 def TypeScript_GCNewExplicitlyTypedOp : TypeScript_Op<"GCNewExplicitlyTyped"> {
   let summary = "GC new exmplicitly typed operation";
 
-  let arguments = (ins I64:$typeDescr);
+  // Same GC_descr contract as GCMakeDescriptorOp above: pointer-wide, not a fixed 64 bits.
+  let arguments = (ins AnySignlessInteger:$typeDescr);
   let results = (outs Res<TypeScript_AnyClassOrValueRef, "", [MemAlloc]>:$instance);
 }
 

@@ -5611,8 +5611,10 @@ class MLIRGenImpl
     {
         return {
             builder.getF128Type(),
-            // 64-bit whatever the target: these are the language's own fixed-width numeric types, the
-            // rungs of the promotion ladder - i64/SInt(64) mean "the 64-bit integer type", not "a size".
+            // 64-bit whatever the target (getI64Type/SInt(64) only): these name the language's own
+            // 64-bit integer types - a rung of the promotion ladder - not a size or a pointer. The
+            // getIndexType() beside them is a different thing entirely and IS target-dependent; it
+            // sits at this rung because that is where it promotes, not because it is 64 bits wide.
             getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
             builder.getF32Type(), SInt(32), builder.getI32Type(),
             builder.getF16Type(), SInt(16), builder.getI16Type(),
