@@ -48,7 +48,7 @@ cmake --build --preset build-windows-msbuild-2026-debug --target MLIRTypeScriptU
 Run the unit tests:
 
 ```bash
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/unittests/MLIRGen/Debug/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
 ```
 
 ---
@@ -237,7 +237,7 @@ struct TargetInfo
 
 ```bash
 cmake --build --preset build-windows-msbuild-2026-debug --target MLIRTypeScriptUnitTests
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/unittests/MLIRGen/Debug/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
 ```
 
 Expected: 6 tests, all PASS.
@@ -360,7 +360,7 @@ Each is a mechanical `compileOptions.sizeBits` → `compileOptions.sizeBits()`. 
 
 ```bash
 cmake --build --preset build-windows-msbuild-2026-debug --target MLIRTypeScriptUnitTests
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/MLIRGenTests.exe
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/unittests/MLIRGen/Debug/MLIRGenTests.exe
 ```
 
 Expected: all tests PASS, including the pre-existing `MLIRTypeHelperTest` suite. If any `MLIRTypeHelperTest` test now fails, the width default changed for x64 — that is a regression in this task, not an acceptable diff.
@@ -516,7 +516,7 @@ Then add the accessors immediately after `getI64Type()` (line 66):
 
 ```bash
 cmake --build --preset build-windows-msbuild-2026-debug --target MLIRTypeScriptUnitTests
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/unittests/MLIRGen/Debug/MLIRGenTests.exe --gtest_filter='TargetInfoTest.*'
 ```
 
 Expected: 8 tests, all PASS.
@@ -709,7 +709,7 @@ The comment is the deliverable here as much as any code change. The point of the
 
 ```bash
 cmake --build --preset build-windows-msbuild-2026-debug --target MLIRTypeScriptUnitTests
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/bin/MLIRGenTests.exe
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-debug/unittests/MLIRGen/Debug/MLIRGenTests.exe
 ```
 
 Expected: all PASS.
