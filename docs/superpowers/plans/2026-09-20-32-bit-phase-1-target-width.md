@@ -744,7 +744,7 @@ The suite is the real check that no 64-bit behavior moved. Run it exactly as for
 
 ```bash
 cmake --build --preset build-windows-msbuild-2026-release
-cd i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release && ctest -j 16
+cd i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release && ctest -j 16 -C Release
 ```
 
 Expected: the same result as `main` — 2765/2765 as of 2026-09-16. Any new failure is this task's, not a pre-existing one; confirm by re-running that test on `main` before concluding otherwise.
@@ -836,7 +836,7 @@ Expected: prints `x`, exit 0.
 - [ ] **Step 5: Run the full suite**
 
 ```bash
-cd i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release && ctest -j 16
+cd i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release && ctest -j 16 -C Release
 ```
 
 Expected: unchanged from Task 5.
@@ -862,7 +862,7 @@ All of the following, before Phase 2 is planned:
 
 - [ ] `MLIRGenTests.exe` passes, including the new `TargetInfoTest` suite.
 - [ ] `test/check-datalayout.sh` passes for `i686-pc-windows-msvc`, `wasm32-unknown-unknown` and `x86_64-pc-windows-msvc`.
-- [ ] `ctest` matches `main` — 2765/2765.
+- [ ] `ctest -j 16 -C Release` matches `main` — 2765/2765. Without `-C Release` on this multi-config MSBuild generator every test reports "(Not Run)", which looks like catastrophic failure and is not.
 - [ ] x64 `--emit=llvm` output is byte-identical to `main` for a class-and-method sample.
 - [ ] `--emit=jit -mtriple=i686-pc-windows-msvc` refuses with a message naming both triples.
 - [ ] Every one of the 18 non-EH `getI64Type()` call sites listed in `task-5-sites.md` carries a classification comment.
