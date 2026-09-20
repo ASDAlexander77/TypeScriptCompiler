@@ -260,7 +260,7 @@ namespace mlirgen
 
             // DataLayout for IndexType
             // TODO: seems u need to do it on LLVM level, as LLVMTypeHelper knows size of index
-            auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits));
+            auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits()));
             theModule->setAttr("dlti.dl_spec", mlir::DataLayoutSpecAttr::get(builder.getContext(), {indexSize}));
         }
 

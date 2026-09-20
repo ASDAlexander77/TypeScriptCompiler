@@ -1,4 +1,5 @@
 #include "TypeScript/TargetInfo.h"
+#include "TypeScript/DataStructs.h"
 
 #include "llvm/TargetParser/Triple.h"
 
@@ -74,6 +75,19 @@ TEST(TargetInfoTest, InProcessJitNeedsAMatchingHost)
     EXPECT_FALSE(infoFor("i686-pc-windows-msvc").supportsInProcessJit);
     EXPECT_FALSE(infoFor("wasm32-unknown-unknown").supportsInProcessJit);
     EXPECT_FALSE(infoFor("x86_64-unknown-linux-gnu").supportsInProcessJit);
+}
+
+// sizeBits is what ~20 existing call sites read. It must keep answering, and it must now answer
+// from TargetInfo rather than from a separate field that could drift away from it.
+TEST(TargetInfoTest, CompileOptionsSizeBitsFollowsTargetInfo)
+{
+    CompileOptions options;
+
+    options.targetInfo = infoFor("i686-pc-windows-msvc");
+    EXPECT_EQ(options.sizeBits(), 32);
+
+    options.targetInfo = infoFor("x86_64-pc-windows-msvc");
+    EXPECT_EQ(options.sizeBits(), 64);
 }
 
 } // namespace

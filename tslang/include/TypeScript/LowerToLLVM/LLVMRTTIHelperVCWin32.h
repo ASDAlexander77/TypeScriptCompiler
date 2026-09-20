@@ -115,7 +115,7 @@ class LLVMRTTIHelperVCWin32
     // wide as the target's pointer, unlike `int` and `double`, which are fixed.
     int pointerSize()
     {
-        return compileOptions.sizeBits / 8;
+        return compileOptions.sizeBits() / 8;
     }
 
     std::string join(StringRef name, const char *prefix, const char *suffix)

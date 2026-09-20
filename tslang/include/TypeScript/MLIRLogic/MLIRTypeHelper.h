@@ -1643,12 +1643,12 @@ class MLIRTypeHelper
 
         if (typeLeft.isIndex())
         {
-            intTypeLeft = mlir::IntegerType::get(typeLeft.getContext(), compileOptions.sizeBits);
+            intTypeLeft = mlir::IntegerType::get(typeLeft.getContext(), compileOptions.sizeBits());
         }
 
         if (typeRight.isIndex())
         {
-            intTypeRight = mlir::IntegerType::get(typeRight.getContext(), compileOptions.sizeBits);
+            intTypeRight = mlir::IntegerType::get(typeRight.getContext(), compileOptions.sizeBits());
         }
 
         if (intTypeLeft && intTypeRight)
@@ -1863,7 +1863,7 @@ class MLIRTypeHelper
             auto litType = literalType.getElementType();
             if (auto litIntType = dyn_cast<mlir::IntegerType>(litType))
             {
-                if (isa<mlir::IndexType>(dstType) && litIntType.getIntOrFloatBitWidth() <= (unsigned int)compileOptions.sizeBits)
+                if (isa<mlir::IndexType>(dstType) && litIntType.getIntOrFloatBitWidth() <= (unsigned int)compileOptions.sizeBits())
                 {
                     return true;
                 }
@@ -1912,12 +1912,12 @@ class MLIRTypeHelper
 
         if (dstType.isIndex())
         {
-            destIntType = mlir::IntegerType::get(dstType.getContext(), compileOptions.sizeBits);
+            destIntType = mlir::IntegerType::get(dstType.getContext(), compileOptions.sizeBits());
         }
 
         if (srcType.isIndex())
         {
-            srcIntType = mlir::IntegerType::get(srcType.getContext(), compileOptions.sizeBits);
+            srcIntType = mlir::IntegerType::get(srcType.getContext(), compileOptions.sizeBits());
         }
 
         if (destIntType && srcIntType)

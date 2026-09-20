@@ -5247,7 +5247,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 // malformed/dangling basic block.
                 LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
                 auto intPtrType = llvmtch.getIntPtrType(0);
-                auto negative1 = tsLlvmContext->compileOptions.sizeBits == 32
+                auto negative1 = tsLlvmContext->compileOptions.sizeBits() == 32
                     ? clh.createI32ConstantOf(-1)
                     : clh.createI64ConstantOf(-1);
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
@@ -5290,7 +5290,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
                 LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
 
-                auto negative1 = tsLlvmContext->compileOptions.sizeBits == 32 
+                auto negative1 = tsLlvmContext->compileOptions.sizeBits() == 32 
                     ? clh.createI32ConstantOf(-1) 
                     : clh.createI64ConstantOf(-1);
                 auto intPtrType = llvmtch.getIntPtrType(0);
@@ -7254,7 +7254,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // doing more complicated lowerings, involving loop region arguments.
     mlir::DataLayout dl(m);
     LowerToLLVMOptions options(&getContext(), dl);
-    if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits == 32)
+    if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits() == 32)
     {
         options.dataLayout = llvm::DataLayout("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
 

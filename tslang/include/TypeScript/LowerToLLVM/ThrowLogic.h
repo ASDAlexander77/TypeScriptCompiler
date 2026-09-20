@@ -146,7 +146,7 @@ class ThrowLogic
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
 
-        auto sizeType = compileOptions.sizeBits == 32 ? th.getI32Type() : th.getI64Type();
+        auto sizeType = compileOptions.sizeBits() == 32 ? th.getI32Type() : th.getI64Type();
 
         auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {sizeType}));
 
