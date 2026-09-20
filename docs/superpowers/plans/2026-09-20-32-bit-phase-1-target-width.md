@@ -662,7 +662,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Audit and classify the 19 non-EH `getI64Type()` sites
+### Task 5: Audit and classify the 18 non-EH `getI64Type()` call sites
 
 **Files:**
 - Modify (audit, some will change): `lib/TypeScript/GCPass.cpp` (1), `lib/TypeScript/LowerToLLVM.cpp` (2), `lib/TypeScript/MLIRGenAccessCall.cpp` (1), `lib/TypeScript/MLIRGenClasses.cpp` (4), `lib/TypeScript/MLIRGenExpressions.cpp` (1), `lib/TypeScript/MLIRGenImpl.h` (1), `lib/TypeScript/MLIRGenInterfaces.cpp` (2), `include/TypeScript/LowerToLLVM/CastLogicHelper.h` (2), `include/TypeScript/LowerToLLVM/CodeLogicHelper.h` (1), `include/TypeScript/LowerToLLVM/ConvertLogic.h` (1), `include/TypeScript/LowerToLLVM/ThrowLogic.h` (1), `include/TypeScript/LowerToLLVM/TypeHelper.h` (1, the definition), `include/TypeScript/MLIRLogic/MLIRTypeHelper.h` (2)
@@ -683,7 +683,11 @@ grep -rn 'getI64Type()' lib include \
 wc -l /tmp/i64-audit.txt
 ```
 
-Expected: 20 lines. **One of them is not a call site:** `include/TypeScript/LowerToLLVM/TypeHelper.h:62` is the *definition* of `getI64Type()` itself. Leave it alone. That leaves **19 call sites** to classify.
+**Do not derive the list yourself — it is already written for you** at
+`i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/task-5-sites.md`,
+with the exclusions already applied. A raw grep returns 21 hits, of which three are not
+call sites at all (two definitions of `getI64Type` and one comment mentioning it), so a
+count taken from grep will mislead you. **There are 18 call sites.**
 
 - [ ] **Step 2: Classify each site**
 
@@ -751,7 +755,7 @@ Expected: the same result as `main` — 2765/2765 as of 2026-09-16. Any new fail
 git add -A tslang/lib tslang/include
 git commit -m "Classify every i64 in lowering as fixed-width or target-width
 
-Each of the 19 non-EH getI64Type() call sites now says which it meant. Most
+Each of the 18 non-EH getI64Type() call sites now says which it meant. Most
 are genuinely 64-bit - the async runtime's parameters are int64_t, not
 size_t, so i64 is right on x86 too. The rest are pointer and size
 arithmetic and now ask the target.
@@ -861,5 +865,5 @@ All of the following, before Phase 2 is planned:
 - [ ] `ctest` matches `main` — 2765/2765.
 - [ ] x64 `--emit=llvm` output is byte-identical to `main` for a class-and-method sample.
 - [ ] `--emit=jit -mtriple=i686-pc-windows-msvc` refuses with a message naming both triples.
-- [ ] Every one of the 19 non-EH `getI64Type()` call sites carries a classification comment (the 20th grep hit is the definition in `TypeHelper.h:62`).
+- [ ] Every one of the 18 non-EH `getI64Type()` call sites listed in `task-5-sites.md` carries a classification comment.
 - [ ] The 18 EH `getI64Type()` sites are untouched. The two RTTI helper files are *not* otherwise frozen: Task 2 legitimately changes `compileOptions.sizeBits` to `sizeBits()` at `LLVMRTTIHelperVCWin32.h:118` and `MLIRRTTIHelperVCWin32.h:143`. Verify with `git diff -- <the two helpers> | grep getI64Type`, which must be empty — not with `git diff --stat`, which will legitimately be non-empty.
