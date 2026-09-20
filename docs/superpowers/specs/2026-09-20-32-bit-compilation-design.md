@@ -77,8 +77,8 @@ it.
 ### Replacing the arch list
 
 `tslang/opts.cpp` currently derives `sizeBits` from a hand-maintained list of
-64-bit architectures. The list has already rotted: `loongarch64` is on it,
-`riscv32` appears nowhere. It is replaced by
+64-bit architectures. The list is wrong: it marks `aarch64_32` as 64-bit, but
+ARM64_32 is an ILP32 target whose pointers are 32 bits. It is replaced by
 `llvm::Triple::getArchPointerBitWidth()`, which is what makes "any 32-bit
 triple" true rather than "the 32-bit triples someone remembered".
 

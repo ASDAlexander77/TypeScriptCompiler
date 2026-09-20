@@ -76,9 +76,9 @@ Create `unittests/MLIRGen/TargetInfo.cpp`:
 #include "gmock/gmock.h"
 
 // TargetInfo replaces a hand-maintained list of 64-bit architectures in opts.cpp. That list had
-// already rotted - loongarch64 was on it, riscv32 appeared nowhere - so these tests deliberately
-// cover arches nobody has built for, to prove the answer comes from the triple rather than from
-// somebody remembering to add a line.
+// already gone wrong: it marks aarch64_32 as 64-bit, but ARM64_32 is an ILP32 target whose
+// pointers are 32 bits. These tests deliberately cover arches nobody has built for, to prove
+// the answer comes from the triple rather than from somebody remembering to add a line.
 namespace
 {
 
@@ -391,7 +391,7 @@ git add tslang/include/TypeScript/DataStructs.h tslang/tslang/opts.cpp tslang/un
 git commit -m "Take pointer width from the triple, not from an arch list
 
 opts.cpp listed 23 architectures it considered 64-bit. The list had
-already rotted: loongarch64 was on it, riscv32 appeared nowhere. Triple
+wrong: it marked aarch64_32 as 64-bit, but ARM64_32 has 32-bit pointers. Triple
 already knows, so ask it.
 
 sizeBits stays, as an accessor over TargetInfo, so it cannot drift from
