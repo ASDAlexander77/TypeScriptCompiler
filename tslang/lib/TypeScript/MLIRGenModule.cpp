@@ -1,5 +1,13 @@
 // Module, discovery, include/import driver methods of MLIRGenImpl (see MLIRGenImpl.h).
 
+// Included first, before MLIRGenImpl.h: MLIRGenImpl.h transitively pulls in ts-new-parser's
+// config.h and MLIRGenContextDefines.h, which #define single-letter macros (S(x), V(x), ...)
+// for terse AST/MLIR construction. llvm/Support/CommandLine.h and FormattedStream.h,
+// transitively included by the two headers below, use those same letters as ordinary
+// identifiers (parameter and member names), so those macros corrupt them if already active.
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"
+
 #include "TypeScript/ObjDumper.h"
 
 #include "MLIRGenImpl.h"
@@ -262,6 +270,26 @@ namespace mlirgen
             // TODO: seems u need to do it on LLVM level, as LLVMTypeHelper knows size of index
             auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits()));
             theModule->setAttr("dlti.dl_spec", mlir::DataLayoutSpecAttr::get(builder.getContext(), {indexSize}));
+
+            // The data layout is otherwise only set in obj.cpp, from the TargetMachine, which is
+            // after --emit=llvm has already printed the module. Setting it here makes the emitted
+            // IR self-describing: a 32-bit triple no longer prints alongside LLVM's default
+            // 64-bit layout. Derived from the triple via LLVM's own target registry so it matches
+            // exactly what obj.cpp will later set, rather than being a second hand-built string.
+            std::string errorMessage;
+            if (auto *target = llvm::TargetRegistry::lookupTarget(
+                    compileOptions.moduleTargetTriple, errorMessage))
+            {
+                std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+                    llvm::Triple(compileOptions.moduleTargetTriple), "generic", "",
+                    llvm::TargetOptions(), std::nullopt));
+                if (machine)
+                {
+                    theModule->setAttr(
+                        mlir::LLVM::LLVMDialect::getDataLayoutAttrName(),
+                        builder.getStringAttr(machine->createDataLayout().getStringRepresentation()));
+                }
+            }
         }
 
         builder.setInsertionPointToStart(theModule.getBody());
