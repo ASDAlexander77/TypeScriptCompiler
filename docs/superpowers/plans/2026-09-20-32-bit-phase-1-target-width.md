@@ -18,7 +18,7 @@
 - Arch naming, where it appears, is `x86` / `x64`.
 - Missing per-arch resources are hard errors, never a fallback to another arch.
 - This phase changes **no** behavior for existing 64-bit targets. Any diff in x64 output is a bug in this phase.
-- The 18 `getI64Type()` sites in `LLVMRTTIHelperVCWin32.h` and `MLIRRTTIHelperVCWin32.h` belong to Phase 3. Do not touch them here.
+- The 18 `getI64Type()` sites in `LLVMRTTIHelperVCWin32.h` and `MLIRRTTIHelperVCWin32.h` belong to Phase 3. Do not touch those call sites here. The files themselves are not frozen: Task 2 changes `compileOptions.sizeBits` to `sizeBits()` in both, which is required.
 
 ## Deviation from the spec
 
@@ -661,7 +661,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Audit and classify the 20 non-EH `getI64Type()` sites
+### Task 5: Audit and classify the 19 non-EH `getI64Type()` sites
 
 **Files:**
 - Modify (audit, some will change): `lib/TypeScript/GCPass.cpp` (1), `lib/TypeScript/LowerToLLVM.cpp` (2), `lib/TypeScript/MLIRGenAccessCall.cpp` (1), `lib/TypeScript/MLIRGenClasses.cpp` (4), `lib/TypeScript/MLIRGenExpressions.cpp` (1), `lib/TypeScript/MLIRGenImpl.h` (1), `lib/TypeScript/MLIRGenInterfaces.cpp` (2), `include/TypeScript/LowerToLLVM/CastLogicHelper.h` (2), `include/TypeScript/LowerToLLVM/CodeLogicHelper.h` (1), `include/TypeScript/LowerToLLVM/ConvertLogic.h` (1), `include/TypeScript/LowerToLLVM/ThrowLogic.h` (1), `include/TypeScript/LowerToLLVM/TypeHelper.h` (1, the definition), `include/TypeScript/MLIRLogic/MLIRTypeHelper.h` (2)
@@ -682,7 +682,7 @@ grep -rn 'getI64Type()' lib include \
 wc -l /tmp/i64-audit.txt
 ```
 
-Expected: 20 lines.
+Expected: 20 lines. **One of them is not a call site:** `include/TypeScript/LowerToLLVM/TypeHelper.h:62` is the *definition* of `getI64Type()` itself. Leave it alone. That leaves **19 call sites** to classify.
 
 - [ ] **Step 2: Classify each site**
 
@@ -749,7 +749,7 @@ Expected: the same result as `main` — 2765/2765 as of 2026-09-16. Any new fail
 git add -A tslang/lib tslang/include
 git commit -m "Classify every i64 in lowering as fixed-width or target-width
 
-Each of the 20 non-EH getI64Type() sites now says which it meant. Most
+Each of the 19 non-EH getI64Type() call sites now says which it meant. Most
 are genuinely 64-bit - the async runtime's parameters are int64_t, not
 size_t, so i64 is right on x86 too. The rest are pointer and size
 arithmetic and now ask the target.
@@ -765,7 +765,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 6: Refuse `--emit=jit` for a non-host target
 
 **Files:**
-- Modify: `i:/TypeScriptCompiler/tslang/tslang/jit.cpp:554-566`
+- Modify: `i:/TypeScriptCompiler/tslang/tslang/jit.cpp:357` (the first statement of `runJit`)
 
 **Interfaces:**
 - Consumes: `CompileOptions::targetInfo.supportsInProcessJit` from Task 1.
@@ -785,20 +785,28 @@ Record the observed behavior in the commit message. If it already refuses with a
 
 - [ ] **Step 2: Write the guard**
 
-In `tslang/jit.cpp`, immediately after `TheTriple = llvm::Triple(targetTriple);` (line 561):
+The guard goes at the **top of `runJit`**, as the first statement of the function body at `tslang/jit.cpp:359` — before `PrintStackTraceOnErrorSignal`, `registerMLIRDialects` and `InitializeNativeTarget`. Nothing should be initialized for a run that cannot happen. `compileOptions` is a parameter of `runJit` (line 357), so it is in scope.
+
+Note there is a *second* `llvm::Triple TheTriple` block further down at line 554; that one is inside the `dumpToObjectFile` path and is **not** where this guard belongs.
 
 ```cpp
-        // tslang.exe is an x64 process: it cannot execute i386 or wasm code in-process. Refused
-        // here rather than left to LLJIT, whose failure for this is a relocation or "symbol not
-        // found" error deep in the session that says nothing about the triple being the cause.
-        if (!compileOptions.targetInfo.supportsInProcessJit)
-        {
-            llvm::WithColor::error(llvm::errs(), "tslang")
-                << "--emit=jit runs the code in this process, which is "
-                << llvm::sys::getDefaultTargetTriple() << ", so it cannot run code built for "
-                << targetTriple << ". Build it instead with --emit=exe or --emit=obj.\n";
-            return -1;
-        }
+int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
+{
+    // tslang.exe is an x64 process: it cannot execute i386 or wasm code in-process. Refused up
+    // front rather than left to LLJIT, whose failure for this is a relocation or "symbol not
+    // found" error deep in the session that never mentions the triple as the cause.
+    if (!compileOptions.targetInfo.supportsInProcessJit)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "--emit=jit runs the code in this process, which is "
+            << llvm::sys::getDefaultTargetTriple() << ", so it cannot run code built for "
+            << compileOptions.moduleTargetTriple
+            << ". Build it instead with --emit=exe or --emit=obj.\n";
+        return -1;
+    }
+
+    // to avoid false positive memory leak reports in release builds
+    // ... existing body continues unchanged ...
 ```
 
 - [ ] **Step 3: Verify the guard fires**
@@ -851,5 +859,5 @@ All of the following, before Phase 2 is planned:
 - [ ] `ctest` matches `main` — 2765/2765.
 - [ ] x64 `--emit=llvm` output is byte-identical to `main` for a class-and-method sample.
 - [ ] `--emit=jit -mtriple=i686-pc-windows-msvc` refuses with a message naming both triples.
-- [ ] Every one of the 20 non-EH `getI64Type()` sites carries a classification comment.
-- [ ] The 18 EH sites are untouched, and `git diff --stat` on the two RTTI helpers is empty.
+- [ ] Every one of the 19 non-EH `getI64Type()` call sites carries a classification comment (the 20th grep hit is the definition in `TypeHelper.h:62`).
+- [ ] The 18 EH `getI64Type()` sites are untouched. The two RTTI helper files are *not* otherwise frozen: Task 2 legitimately changes `compileOptions.sizeBits` to `sizeBits()` at `LLVMRTTIHelperVCWin32.h:118` and `MLIRRTTIHelperVCWin32.h:143`. Verify with `git diff -- <the two helpers> | grep getI64Type`, which must be empty — not with `git diff --stat`, which will legitimately be non-empty.
