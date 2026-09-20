@@ -1,7 +1,10 @@
 #include "TypeScript/TargetInfo.h"
 #include "TypeScript/DataStructs.h"
+#include "TypeScript/LowerToLLVM/TypeHelper.h"
 
 #include "llvm/TargetParser/Triple.h"
+
+#include "mlir/IR/MLIRContext.h"
 
 #include "gmock/gmock.h"
 
@@ -88,6 +91,33 @@ TEST(TargetInfoTest, CompileOptionsSizeBitsFollowsTargetInfo)
 
     options.targetInfo = infoFor("x86_64-pc-windows-msvc");
     EXPECT_EQ(options.sizeBits(), 64);
+}
+
+// TypeHelper is constructed at 152 sites, nearly all of which only ask for width-independent
+// types. Rather than thread CompileOptions through all of them, the options are optional and
+// only the sites that need a width pass them - so getSizeType() has to answer from the target,
+// and has to refuse rather than guess when nobody supplied one.
+TEST(TargetInfoTest, TypeHelperSizeTypeFollowsTheTarget)
+{
+    mlir::MLIRContext context;
+
+    CompileOptions options32;
+    options32.targetInfo = infoFor("i686-pc-windows-msvc");
+    EXPECT_EQ(::typescript::TypeHelper(&context, options32).getSizeType(),
+              mlir::IntegerType::get(&context, 32));
+
+    CompileOptions options64;
+    options64.targetInfo = infoFor("x86_64-pc-windows-msvc");
+    EXPECT_EQ(::typescript::TypeHelper(&context, options64).getSizeType(),
+              mlir::IntegerType::get(&context, 64));
+}
+
+// ARM64_32 (watchOS) is the arch the old hand-written list in opts.cpp got wrong: it listed
+// aarch64_32 among the 64-bit arches, but ILP32 means 32-bit pointers. Deriving the width from
+// the triple fixes that, and this test is what keeps it fixed.
+TEST(TargetInfoTest, Arm64_32IsAnIlp32Target)
+{
+    EXPECT_EQ(infoFor("arm64_32-apple-watchos").pointerBits, 32u);
 }
 
 } // namespace
