@@ -367,18 +367,19 @@ Expected: all tests PASS, including the pre-existing `MLIRTypeHelperTest` suite.
 
 - [ ] **Step 5: Verify x64 output is byte-identical**
 
-This phase must not change 64-bit behavior. Build the compiler and diff its IR against the current one:
+This phase must not change 64-bit behavior.
+
+A pre-change baseline is already stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
+binary as it stood before any Phase 1 change. Diff against it. Do **not** `git stash` and
+rebuild to regenerate a baseline - that costs a second full Release link (many minutes) and
+risks losing uncommitted work.
 
 ```bash
+BASE=i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline
 cmake --build --preset build-windows-msbuild-2026-release
-cd "$TMPDIR" && printf 'print("x");\n' > w.ts
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \
-  --emit=llvm -mm=gc --no-default-lib w.ts && mv w.ll after.ll
-git stash && cmake --build --preset build-windows-msbuild-2026-release
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \
-  --emit=llvm -mm=gc --no-default-lib w.ts && mv w.ll before.ll
-git stash pop
-diff before.ll after.ll
+cd "$BASE"
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \n  --emit=llvm -mm=gc --no-default-lib simple.ts -o after-simple.ll
+diff simple.ll after-simple.ll && echo "x64 IR unchanged"
 ```
 
 Expected: no differences.
@@ -718,16 +719,17 @@ Expected: all PASS.
 
 Any site correctly classified as target-width emits `i64` on x64 either way, so x64 IR must be byte-identical. A diff here means a site was misclassified.
 
+A pre-change baseline is already stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
+binary as it stood before any Phase 1 change. Diff against it. Do **not** `git stash` and
+rebuild to regenerate a baseline - that costs a second full Release link (many minutes) and
+risks losing uncommitted work.
+
 ```bash
+BASE=i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline
 cmake --build --preset build-windows-msbuild-2026-release
-cd "$TMPDIR" && printf 'class C { x: number; f() { return this.x; } }\nconst c = new C();\nc.x = 1;\nprint(c.f());\n' > a.ts
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \
-  --emit=llvm -mm=gc --no-default-lib a.ts && mv a.ll after.ll
-git stash && cmake --build --preset build-windows-msbuild-2026-release
-i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \
-  --emit=llvm -mm=gc --no-default-lib a.ts && mv a.ll before.ll
-git stash pop
-diff before.ll after.ll
+cd "$BASE"
+i:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin/tslang.exe \n  --emit=llvm -mm=gc --no-default-lib classes.ts -o after-classes.ll
+diff classes.ll after-classes.ll && echo "x64 IR unchanged"
 ```
 
 Expected: no differences.
