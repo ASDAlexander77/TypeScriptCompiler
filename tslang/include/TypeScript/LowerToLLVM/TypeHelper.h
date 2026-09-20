@@ -11,6 +11,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
+#include "llvm/Support/ErrorHandling.h"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -87,10 +89,22 @@ class TypeHelper
     mlir::Type getSizeType()
     {
         assert(compileOptions && "getSizeType() needs the target: construct TypeHelper with CompileOptions");
+        if (!compileOptions)
+        {
+            // assert() alone is a no-op under NDEBUG (this project's CI builds Release), which
+            // would otherwise turn a missing target into an unattributed null-deref crash. Fail
+            // identifiably in every build configuration instead of guessing a width.
+            llvm::report_fatal_error("getSizeType() needs the target: construct TypeHelper with CompileOptions");
+        }
+
         return mlir::IntegerType::get(context, compileOptions->targetInfo.pointerBits);
     }
 
-    // The integer a pointer converts to under ptrtoint on this target.
+    // The integer a pointer converts to under ptrtoint on this target. Kept as a separate name
+    // from getSizeType(), even though it currently just delegates, so call sites record which
+    // concept they actually meant - the audit of existing TypeHelper call sites can tell "this
+    // is a size/byte-count" from "this is a pointer-to-int conversion" instead of both collapsing
+    // into one ambiguously-named accessor.
     mlir::Type getPointerIntType()
     {
         return getSizeType();
