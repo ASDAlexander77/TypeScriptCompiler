@@ -30,4 +30,26 @@ check "i686-pc-windows-msvc"    "p:32:"
 check "wasm32-unknown-unknown"  "p:32:"
 check "x86_64-pc-windows-msvc"  "-p270:" # x86-64 layouts carry the AS270/271/272 entries
 
+# A triple the target registry cannot resolve must be a hard, diagnosed failure rather than
+# silently emitted IR that names the triple but carries no (or the wrong default) datalayout --
+# that's exactly the bug this phase exists to fix.
+check_bad_triple() {
+    local triple="$1"
+    local out err status
+    err="$("$TSLANG" --emit=llvm -mm=none --no-default-lib -mtriple="$triple" "$work/dl.ts" \
+        -o "$work/bad.ll" 2>&1 >/dev/null)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        echo "FAIL $triple: expected a non-zero exit for an unresolvable triple, got 0"
+        fail=1
+    elif ! printf '%s' "$err" | grep -q -- "$triple"; then
+        echo "FAIL $triple: expected the error to name the triple, got: $err"
+        fail=1
+    else
+        echo "ok   $triple (rejected as expected)"
+    fi
+}
+
+check_bad_triple "not-a-real-triple"
+
 exit "$fail"

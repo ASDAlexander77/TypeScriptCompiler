@@ -274,22 +274,39 @@ namespace mlirgen
             // The data layout is otherwise only set in obj.cpp, from the TargetMachine, which is
             // after --emit=llvm has already printed the module. Setting it here makes the emitted
             // IR self-describing: a 32-bit triple no longer prints alongside LLVM's default
-            // 64-bit layout. Derived from the triple via LLVM's own target registry so it matches
-            // exactly what obj.cpp will later set, rather than being a second hand-built string.
+            // 64-bit layout. Derived from the triple via LLVM's own target registry, using a
+            // default TargetOptions, so it matches what obj.cpp will later set for the x86
+            // targets this phase cares about; on an ABI-name-sensitive backend (ARM, Mips,
+            // PowerPC, RISCV) obj.cpp additionally threads a `-target-abi` into TargetOptions,
+            // which could change the layout there but not here.
+            //
+            // --emit=llvm (dump.cpp:dumpLLVMIR) never calls lookupTarget itself, so this is the
+            // only place on that path that validates the triple. A silently-swallowed failure
+            // here would reproduce the exact bug this task fixes: IR naming a triple but carrying
+            // the wrong (default) layout. So treat both failure modes as fatal, consistent with
+            // obj.cpp's handling of the same lookup.
             std::string errorMessage;
-            if (auto *target = llvm::TargetRegistry::lookupTarget(
-                    compileOptions.moduleTargetTriple, errorMessage))
+            llvm::Triple targetTriple(compileOptions.moduleTargetTriple);
+            auto *target = llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
+            if (!target)
             {
-                std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-                    llvm::Triple(compileOptions.moduleTargetTriple), "generic", "",
-                    llvm::TargetOptions(), std::nullopt));
-                if (machine)
-                {
-                    theModule->setAttr(
-                        mlir::LLVM::LLVMDialect::getDataLayoutAttrName(),
-                        builder.getStringAttr(machine->createDataLayout().getStringRepresentation()));
-                }
+                emitError(location, "unable to find target for triple '")
+                    << compileOptions.moduleTargetTriple << "': " << errorMessage;
+                return mlir::failure();
             }
+
+            std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+                targetTriple, "generic", "", llvm::TargetOptions(), std::nullopt));
+            if (!machine)
+            {
+                emitError(location, "unable to create target machine for triple '")
+                    << compileOptions.moduleTargetTriple << "'";
+                return mlir::failure();
+            }
+
+            theModule->setAttr(
+                mlir::LLVM::LLVMDialect::getDataLayoutAttrName(),
+                builder.getStringAttr(machine->createDataLayout().getStringRepresentation()));
         }
 
         builder.setInsertionPointToStart(theModule.getBody());
