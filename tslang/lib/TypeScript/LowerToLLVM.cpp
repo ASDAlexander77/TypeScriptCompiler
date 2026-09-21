@@ -7254,13 +7254,15 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // doing more complicated lowerings, involving loop region arguments.
     mlir::DataLayout dl(m);
     LowerToLLVMOptions options(&getContext(), dl);
-    if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits() == 32)
+    // The type converter sizes pointers, structs and unions and computes alignment with this layout,
+    // so it has to be the target's. MLIRGenModule has already put the TargetMachine's layout on the
+    // module; without it LLVM's default applies, which has 8-byte pointers and a 4-byte-aligned i64 -
+    // wrong for i686 in the first and for x64 in the second. Allocation sizes never came from here
+    // (SizeOfOp uses getelementptr null, 1), but union storage selection, getIntPtrType and debug-info
+    // offsets do.
+    if (auto dataLayoutAttr = m->getAttrOfType<mlir::StringAttr>(mlir::LLVM::LLVMDialect::getDataLayoutAttrName()))
     {
-        options.dataLayout = llvm::DataLayout("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
-
-        m->setAttr(
-            mlir::LLVM::LLVMDialect::getDataLayoutAttrName(), 
-            mlir::StringAttr::get(&getContext(), "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20"));        
+        options.dataLayout = llvm::DataLayout(dataLayoutAttr.getValue());
     }
 
     options.allocLowering = LowerToLLVMOptions::AllocLowering::AlignedAlloc;
