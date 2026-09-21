@@ -5245,11 +5245,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 // this pattern - used successfully elsewhere in this file, e.g.
                 // ValueOrDefaultOpLowering - is simpler and carries no risk of a
                 // malformed/dangling basic block.
-                LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
-                auto intPtrType = llvmtch.getIntPtrType(0);
-                auto negative1 = tsLlvmContext->compileOptions.sizeBits() == 32
-                    ? clh.createI32ConstantOf(-1)
-                    : clh.createI64ConstantOf(-1);
+                // Both sides take the target width from compileOptions, not from the type converter's data layout, which is not yet target-derived.
+                auto intPtrType = rewriter.getIntegerType(tsLlvmContext->compileOptions.sizeBits());
+                auto negative1 = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, -1));
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
                 auto isMissing =
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
@@ -5288,12 +5286,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                     return typedPtr;
                 };
 
-                LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
-
-                auto negative1 = tsLlvmContext->compileOptions.sizeBits() == 32 
-                    ? clh.createI32ConstantOf(-1) 
-                    : clh.createI64ConstantOf(-1);
-                auto intPtrType = llvmtch.getIntPtrType(0);
+                // Both sides take the target width from compileOptions, not from the type converter's data layout, which is not yet target-derived.
+                auto intPtrType = rewriter.getIntegerType(tsLlvmContext->compileOptions.sizeBits());
+                auto negative1 = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, -1));
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
                 auto condVal =
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
