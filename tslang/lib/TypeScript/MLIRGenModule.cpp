@@ -981,20 +981,68 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext)
     {
+        // A library built for another architecture or OS (an i686 DLL for this x64 compiler)
+        // cannot be loaded into this process. Its declarations are then read from the file; the
+        // program still loads it at run time, through the global constructor below.
+        auto loadIntoCompiler = compileOptions.targetInfo.supportsInProcessJit;
+
         // TODO: ...
-        std::string errMsg;
-        auto dynLib = llvm::sys::DynamicLibrary::getPermanentLibrary(filePath.str().c_str(), &errMsg);
-        if (!dynLib.isValid())
+        llvm::sys::DynamicLibrary dynLib;
+        if (loadIntoCompiler)
         {
-            emitError(location, errMsg);
-            return mlir::failure();
+            std::string errMsg;
+            dynLib = llvm::sys::DynamicLibrary::getPermanentLibrary(filePath.str().c_str(), &errMsg);
+            if (!dynLib.isValid())
+            {
+                emitError(location, errMsg);
+                return mlir::failure();
+            }
+        }
+        else
+        {
+            // Only a PE image's declarations can be read from the file (Dump::readExportedCString).
+            auto machine = Dump::coffMachine(filePath);
+            if (machine == 0)
+            {
+                emitError(location) << "cannot read declarations from '" << filePath
+                                    << "': for a target other than the host, only PE DLLs can be imported";
+                return mlir::failure();
+            }
+
+            // A DLL for another machine would link, and then not load in the program.
+            uint16_t expected = 0;
+            llvm::Triple targetTriple(compileOptions.moduleTargetTriple);
+            switch (targetTriple.getArch())
+            {
+            case llvm::Triple::x86:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_I386;
+                break;
+            case llvm::Triple::x86_64:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
+                break;
+            case llvm::Triple::aarch64:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_ARM64;
+                break;
+            default:
+                break;
+            }
+
+            if (machine != expected)
+            {
+                emitError(location) << "shared library '" << filePath << "' is built for "
+                                    << Dump::coffMachineName(machine) << ", but this program targets "
+                                    << (expected ? Dump::coffMachineName(expected)
+                                                 : targetTriple.getArchName().str());
+                return mlir::failure();
+            }
         }
 
         SmallVector<StringRef> symbols;
         StringRef mlirGctors;
+        // every symbol the library exports
+        SmallVector<StringRef> symbolsAll;
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // loading Binary to get list of symbols
-        SmallVector<StringRef> symbolsAll;
         Dump::getSymbols(filePath, symbolsAll, stringAllocator);
 
         StringRef memoryModelSymbol;
@@ -1051,6 +1099,11 @@ namespace mlirgen
 #else
         // only 1 file to load        
         symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+        if (!loadIntoCompiler)
+        {
+            // read from the file below, which tells a missing symbol from an unreadable one
+            Dump::getSymbols(filePath, symbolsAll, stringAllocator);
+        }
 #endif        
 
         if (symbols.empty())
@@ -1107,11 +1160,33 @@ namespace mlirgen
         for (auto declSymbol : symbols)
         {
             // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-            if (auto addrOfDeclText = dynLib.getAddressOfSymbol(declSymbol.str().c_str()))
+            const char *declText = nullptr;
+            std::optional<std::string> declTextFromFile;
+            if (loadIntoCompiler)
+            {
+                if (auto addrOfDeclText = dynLib.getAddressOfSymbol(declSymbol.str().c_str()))
+                {
+                    declText = *(const char**)addrOfDeclText;
+                }
+            }
+            else if (llvm::is_contained(symbolsAll, declSymbol))
+            {
+                declTextFromFile = Dump::readExportedCString(filePath, declSymbol);
+                if (!declTextFromFile)
+                {
+                    emitError(location) << "shared library '" << filePath << "' exports " << declSymbol
+                                        << " but its declarations could not be read from the file";
+                    return mlir::failure();
+                }
+
+                declText = declTextFromFile->c_str();
+            }
+
+            if (declText)
             {
                 std::string result;
                 // process shared lib declarations
-                auto dataPtr = *(const char**)addrOfDeclText;
+                auto dataPtr = declText;
                 if (dynamic)
                 {
                     // TODO: use option variable instead of "this hack"

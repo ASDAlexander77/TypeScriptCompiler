@@ -116,6 +116,35 @@ for prog in hello gc_stress; do
     run_case "$prog" none "$RT_FLAG"
 done
 
+# --- Phase 4c: installer detection --------------------------------------------------------
+# Windows asks for elevation before starting a 32-bit exe that has no requestedExecutionLevel
+# manifest and whose name contains "setup", "install", "update" or "patch"; unelevated, it never
+# starts. tslang embeds an asInvoker manifest in every Windows x86 exe, so this name must run.
+# (The suite hit it with export-import-class-abstract-virtual-dispatch: "dispatch" holds "patch".)
+installer_name="my_setup_patch"
+installer_exe="$work/$installer_name.exe"
+err="$("$TSLANG" --emit=exe --opt -mm=none --no-default-lib --entry-point -mtriple=i686-pc-windows-msvc \
+    "$RT_FLAG" "$PROGRAMS/hello.ts" -o "$installer_exe" 2>&1 >/dev/null)"
+status=$?
+if [ "$status" -ne 0 ] || [ ! -f "$installer_exe" ]; then
+    echo "FAIL $installer_name.exe: compile failed (exit $status): $err"
+    fail=1
+else
+    # Without the manifest the run fails at once ("Permission denied", exit 126): CreateProcess
+    # refuses with ERROR_ELEVATION_REQUIRED rather than prompting.
+    out="$(timeout 30 "$installer_exe" 2>&1 | tr -d '\r'; echo "exit=${PIPESTATUS[0]}")"
+    if [ "$out" != "$(expected hello; echo "exit=0")" ]; then
+        echo "FAIL $installer_name.exe: runs unelevated and prints the hello text"
+        printf '%s\n' "$out" | sed 's/^/    got: /'
+        fail=1
+    elif ! "$READOBJ" --coff-resources "$installer_exe" | grep -q 'Type: MANIFEST (ID 24)'; then
+        echo "FAIL $installer_name.exe: runs, but has no RT_MANIFEST resource"
+        fail=1
+    else
+        echo "ok   $installer_name.exe (x86, asInvoker manifest) runs unelevated"
+    fi
+fi
+
 # await_order.ts links only under -mm=gc: async needs Boehm's thread API, and rc/none fail to
 # link even at x64 (out of scope; see the plan's Global Constraints).
 run_case await_order gc "$GC_FLAG" "$RT_FLAG"

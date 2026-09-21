@@ -88,12 +88,12 @@ auto sharedLibCompileTime = false;
 auto gctorsAsMethod = false;
 #ifndef COMPILE_DEBUG
 auto opt = true;
-auto tslang_opt = "--opt --opt_level=3 --no-default-lib";
+auto tslang_opt = std::string("--opt --opt_level=3 --no-default-lib");
 #define JIT_NAME "jit"
 #define COMPILE_NAME "compile"
 #else
 auto opt = false;
-auto tslang_opt = "--di --opt_level=0 --no-default-lib";
+auto tslang_opt = std::string("--di --opt_level=0 --no-default-lib");
 #define JIT_NAME "jitd"
 #define COMPILE_NAME "compiled"
 #endif
@@ -102,13 +102,60 @@ auto fastMath = false;
 auto memoryModel = std::string("");
 auto tslang_opt_ext = std::string("");
 
+// `-x86`: build and run a 32-bit (i686) program. The target triple goes into tslang_opt rather
+// than tslang_opt_ext, because the multi-file scripts leave tslang_opt_ext off the first file
+// and every file has to be compiled for the same target. The link uses the x86 libraries
+// and /machine:x86.
+auto x86 = false;
+
+#ifdef WIN32
+#define TEST_PATH_FOR_ARCH(name) (x86 ? name##_X86 : name)
+
+// the collector that the shared-library programs use; its gc.dll is copied beside the program
+const char *gcSharedLibPath()
+{
+    return TEST_PATH_FOR_ARCH(TEST_GC_SHARED_LIBPATH);
+}
+
+// where gc.dll is: bin for the 64-bit build, beside the import library for the 32-bit one
+const char *gcSharedBinPath()
+{
+    return x86 ? TEST_GC_SHARED_LIBPATH_X86 : TEST_GC_SHARED_BINPATH;
+}
+
+std::string machineOpt()
+{
+    return x86 ? " /machine:x86" : "";
+}
+
+// An x86 exe's manifest: Windows asks for elevation before starting a 32-bit program that has
+// no requestedExecutionLevel and whose name contains "setup", "install", "update" or "patch"
+// (installer detection) - export-import-class-abstract-virtual-dispatch never started. x64 is exempt.
+std::string exeManifestOpt()
+{
+    return x86 ? " /manifest:embed \"/manifestuac:level='asInvoker' uiAccess='false'\"" : "";
+}
+
+// the libpath settings that every Windows compile script starts with
+void writeLibPathSettings(std::ostream &batFile)
+{
+    batFile << "set LIBPATH=\"" << TEST_PATH_FOR_ARCH(TEST_LIBPATH) << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_PATH_FOR_ARCH(TEST_SDKPATH) << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_PATH_FOR_ARCH(TEST_UCRTPATH) << "\"" << std::endl;
+    batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "set TSLANG_LIB_PATH=" << TEST_PATH_FOR_ARCH(TEST_TSLANG_LIBPATH) << std::endl;
+}
+#endif
+
 // Tests that pass extra compiler flags get their own cached script (jitfm/jitrc, and the
 // compile equivalents) because the plain jit/compile scripts are shared across all parallel
 // single-file tests and embed tslang_opt_ext at creation time - reusing the same file name
 // would let whichever runner created it first decide the flags for everyone.
 std::string optVariantSuffix()
 {
-    return std::string(fastMath ? "fm" : "") + memoryModel;
+    return std::string(fastMath ? "fm" : "") + memoryModel + (x86 ? "x86" : "");
 }
 
 std::string jitBatName()
@@ -167,19 +214,14 @@ void createCompileBatchFile()
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
     batFile << "set LINKER_OPTS=%3" << std::endl;
-    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-    batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
-    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
-    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
+    writeLibPathSettings(batFile);
+    batFile << "set GC_LIB_PATH=" << TEST_PATH_FOR_ARCH(TEST_GCPATH) << std::endl;
     batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj --entry-point " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
-    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
+    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% "
             << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+            << machineOpt() << exeManifestOpt()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -392,14 +434,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=" << tempOutputFileNameNoExt << std::endl;
-    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-    batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
-    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
-    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
+    writeLibPathSettings(batFile);
+    batFile << "set GC_LIB_PATH=" << TEST_PATH_FOR_ARCH(TEST_GCPATH) << std::endl;
 
     // Same isolation the shared multi-file path uses, and for the same reason: the object files
     // are named after the SOURCE stems, so two tests built from the same pair of sources - the
@@ -424,8 +460,9 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
             << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+            << machineOpt() << exeManifestOpt()
             << std::endl;
 
     batFile << "del " << objs.str() << std::endl;
@@ -487,20 +524,14 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=" << tempOutputFileNameNoExt << std::endl;
-    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-    batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
-    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
+    writeLibPathSettings(batFile);
     // The SHARED collector, and only here. Two binaries that each link gc.lib statically get a
     // collector each: the library's frees objects the executable is still holding, because the
     // executable's roots are not its to scan. Item 5ao - it produced silently wrong strings
     // rather than a crash, and only where the value differed from whatever was allocated over
     // it, which is why every other shared test passed. Statically linked programs keep the
     // static collector; one binary already means one collector.
-    batFile << "set GC_LIB_PATH=" << TEST_GC_SHARED_LIBPATH << std::endl;
+    batFile << "set GC_LIB_PATH=" << gcSharedLibPath() << std::endl;
 
     // run everything inside a unique per-test working directory: the shared lib must keep its
     // real name (<stem>.dll) for `import './<stem>'` to resolve, but that name is not unique
@@ -510,7 +541,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
     batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
     batFile << "mkdir %WORKDIR%" << std::endl;
-    batFile << "copy \"" << TEST_GC_SHARED_BINPATH << "\\gc.dll\" %WORKDIR% >nul" << std::endl;
+    batFile << "copy \"" << gcSharedBinPath() << "\\gc.dll\" %WORKDIR% >nul" << std::endl;
     batFile << "cd %WORKDIR%" << std::endl;
 
     auto first = true;
@@ -545,8 +576,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << sharedBat.str();
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:" << shared_filenameNoExt << ".dll " << linker_opt << " " << shared_objs.str() << " "
             <<  LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+            << machineOpt()
             << std::endl;
 
     shared_libs << shared_filenameNoExt << ".lib ";
@@ -573,8 +605,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         }
 
         batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
-                << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
+                << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+                << machineOpt() << exeManifestOpt()
                 << std::endl;
 
         batFile << "del " << exec_objs.str() << std::endl;
@@ -736,6 +769,10 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             gctorsAsMethod = true;
         }
+        else if (std::string(argv[index]) == "-x86")
+        {
+            x86 = true;
+        }
         else if (std::string(argv[index]) == "-noopt")
         {
             opt = false;
@@ -776,6 +813,22 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
     if (sharedLibCompileTime && jitRun)
     {
         throw std::runtime_error("-compile-time can't be used with -jit");
+    }
+
+    if (x86)
+    {
+        // tslang refuses a JIT for a target that is not the host's; say so here, before a
+        // script is written, rather than report it as a failing program
+        if (jitRun)
+        {
+            throw std::runtime_error("test-runner: -jit cannot run x86 code in the x64 compiler process");
+        }
+
+#ifdef WIN32
+        tslang_opt += " -mtriple=i686-pc-windows-msvc";
+#else
+        throw std::runtime_error("test-runner: -x86 is supported on Windows only");
+#endif
     }
 }
 

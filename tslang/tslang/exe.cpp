@@ -8,6 +8,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/COFF.h"
+#include "llvm/Object/WindowsResource.h"
+#include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/TargetParser/Host.h"
@@ -40,6 +43,7 @@ namespace Dump
 {
     bool containsGarbageCollector(llvm::StringRef);
     uint16_t coffMachine(llvm::StringRef);
+    std::string coffMachineName(uint16_t);
 }
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
@@ -331,21 +335,6 @@ std::string getLibOpt(std::string path)
     return concatIfNotEmpty("-l", path);
 }
 
-static std::string getCOFFMachineName(uint16_t machine)
-{
-    switch (machine)
-    {
-    case llvm::COFF::IMAGE_FILE_MACHINE_I386:
-        return "x86";
-    case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
-        return "x64";
-    case llvm::COFF::IMAGE_FILE_MACHINE_ARM64:
-        return "arm64";
-    default:
-        return "0x" + llvm::utohexstr(machine);
-    }
-}
-
 // Windows x86 and x64: refuses a binary built for another machine than the target's. The linker
 // only warns about a library (LNK4272) and then fails on every symbol it was to supply, which
 // names neither the library nor the fix; a DLL of the wrong machine does not load at all.
@@ -357,8 +346,8 @@ static bool checkWindowsBinaryMachine(const llvm::Triple &triple, llvm::StringRe
     if (machine != 0 && machine != expected)
     {
         llvm::WithColor::error(llvm::errs(), "tslang")
-            << file << " is built for " << getCOFFMachineName(machine) << ", but this program targets "
-            << getCOFFMachineName(expected) << ".\n";
+            << file << " is built for " << Dump::coffMachineName(machine) << ", but this program targets "
+            << Dump::coffMachineName(expected) << ".\n";
         return false;
     }
 
@@ -445,6 +434,105 @@ void removeCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*
     }
 }
 
+// Writes a COFF object for `machine` holding an RT_MANIFEST resource (ID 1, en-US) that asks for
+// asInvoker execution, as link.exe's /manifest:embed and lld-link's default manifest do, and puts
+// its path in `path`. The .res image is built as lld-link builds its own, then converted with the
+// same writer llvm-cvtres uses.
+static llvm::Error writeAsInvokerManifestObj(llvm::COFF::MachineTypes machine, llvm::SmallVectorImpl<char> &path)
+{
+    static const char manifest[] =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+        "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">\n"
+        "  <trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n"
+        "    <security>\n"
+        "      <requestedPrivileges>\n"
+        "        <requestedExecutionLevel level=\"asInvoker\" uiAccess=\"false\"/>\n"
+        "      </requestedPrivileges>\n"
+        "    </security>\n"
+        "  </trustInfo>\n"
+        "</assembly>\n";
+    const size_t manifestSize = sizeof(manifest) - 1;
+    const uint16_t rtManifest = 24;
+    const uint16_t langEnglishUS = 0x0409;
+
+    size_t headerSize =
+        sizeof(llvm::object::WinResHeaderPrefix) + sizeof(llvm::object::WinResIDs) + sizeof(llvm::object::WinResHeaderSuffix);
+    size_t resSize = llvm::alignTo(llvm::object::WIN_RES_MAGIC_SIZE + llvm::object::WIN_RES_NULL_ENTRY_SIZE + headerSize + manifestSize,
+                                   llvm::object::WIN_RES_DATA_ALIGNMENT);
+    auto res = llvm::WritableMemoryBuffer::getNewMemBuffer(resSize, "manifest.res");
+    if (!res)
+    {
+        return llvm::createStringError(std::errc::not_enough_memory, "cannot allocate the manifest resource");
+    }
+
+    char *buf = res->getBufferStart();
+    memset(buf, 0, resSize);
+
+    // the file header: the magic, then a null entry
+    memcpy(buf, llvm::COFF::WinResMagic, sizeof(llvm::COFF::WinResMagic));
+    buf += llvm::object::WIN_RES_MAGIC_SIZE + llvm::object::WIN_RES_NULL_ENTRY_SIZE;
+
+    auto *prefix = reinterpret_cast<llvm::object::WinResHeaderPrefix *>(buf);
+    prefix->DataSize = manifestSize;
+    prefix->HeaderSize = headerSize;
+    buf += sizeof(llvm::object::WinResHeaderPrefix);
+
+    auto *ids = reinterpret_cast<llvm::object::WinResIDs *>(buf);
+    ids->setType(rtManifest);
+    ids->setName(1);
+    buf += sizeof(llvm::object::WinResIDs);
+
+    auto *suffix = reinterpret_cast<llvm::object::WinResHeaderSuffix *>(buf);
+    suffix->DataVersion = 0;
+    suffix->MemoryFlags = llvm::object::WIN_RES_PURE_MOVEABLE;
+    suffix->Language = langEnglishUS;
+    suffix->Version = 0;
+    suffix->Characteristics = 0;
+    buf += sizeof(llvm::object::WinResHeaderSuffix);
+
+    memcpy(buf, manifest, manifestSize);
+
+    auto resource = llvm::object::WindowsResource::createWindowsResource(res->getMemBufferRef());
+    if (!resource)
+    {
+        return resource.takeError();
+    }
+
+    llvm::object::WindowsResourceParser parser;
+    std::vector<std::string> duplicates;
+    if (auto error = parser.parse(resource->get(), duplicates))
+    {
+        return error;
+    }
+
+    auto obj = llvm::object::writeWindowsResourceCOFF(machine, parser, /*TimeDateStamp=*/0);
+    if (!obj)
+    {
+        return obj.takeError();
+    }
+
+    int fd;
+    if (auto ec = llvm::sys::fs::createTemporaryFile("tslang-manifest", "obj", fd, path))
+    {
+        return llvm::errorCodeToError(ec);
+    }
+
+    llvm::raw_fd_ostream os(fd, /*shouldClose=*/true);
+    os << (*obj)->getBuffer();
+    os.close();
+    if (os.has_error())
+    {
+        auto ec = os.error();
+        os.clear_error();
+        // the caller only takes charge of the file on success
+        llvm::sys::fs::remove(path);
+        path.clear();
+        return llvm::errorCodeToError(ec);
+    }
+
+    return llvm::Error::success();
+}
+
 int buildExe(int argc, char **argv, std::string objFileName, std::string additionalObjFileName, CompileOptions &compileOptions)
 {
     // Initialize variables to call the driver
@@ -496,6 +584,9 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
     std::string defaultLibFileOpt;
+    // Windows x86 programs: the asInvoker manifest's resource object, removed after the link
+    llvm::SmallString<128> manifestObjFileName;
+    llvm::FileRemover manifestObjRemover;
 
     auto isTslangLibNeeded = true;
 
@@ -720,6 +811,28 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             args.push_back("-llibcmtd");
             args.push_back("-llibvcruntimed");
             args.push_back("-Wl,-nodefaultlib:libcmt");
+        }
+
+        // Windows asks for elevation before starting a 32-bit program that has no
+        // requestedExecutionLevel and whose name contains "setup", "install", "update" or "patch"
+        // (installer detection), so `my_setup.exe` or `dispatch.exe` would never start. Link an
+        // asInvoker manifest in. x64 programs are exempt and keep having no manifest; a DLL is
+        // never launched, so it needs none. Not `-manifest:embed`: the driver links with MSVC's
+        // link.exe when Visual Studio is installed, and link.exe embeds a manifest by running
+        // rc.exe, which is only on PATH in a developer prompt (LNK1158: cannot run 'rc.exe').
+        // A ready-made resource object needs no tool and serves link.exe and lld-link alike.
+        if (arch == llvm::Triple::x86 && !shared)
+        {
+            if (auto error = writeAsInvokerManifestObj(llvm::COFF::IMAGE_FILE_MACHINE_I386, manifestObjFileName))
+            {
+                llvm::WithColor::error(llvm::errs(), "tslang")
+                    << "could not write the manifest object for " << outputFilename.getValue() << ": "
+                    << llvm::toString(std::move(error)) << "\n";
+                return 1;
+            }
+
+            manifestObjRemover.setFile(manifestObjFileName);
+            args.push_back(manifestObjFileName.c_str());
         }
     }
 
