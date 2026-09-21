@@ -8,10 +8,11 @@
 
 #include "gmock/gmock.h"
 
-// TargetInfo replaces a hand-maintained list of 64-bit architectures in opts.cpp. That list had
-// already rotted - loongarch64 was on it, riscv32 appeared nowhere - so these tests deliberately
-// cover arches nobody has built for, to prove the answer comes from the triple rather than from
-// somebody remembering to add a line.
+// TargetInfo replaces a hand-maintained list of 64-bit architectures in opts.cpp; any arch not on
+// it got 32. The list was wrong in two ways: it put aarch64_32 among the 64-bit arches (it is ILP32,
+// see Arm64_32IsAnIlp32Target), and it missed 64-bit arches - systemz, sparcv9, amdgcn, ve, spirv,
+// riscv64be - which therefore got 32. These tests cover arches nobody has built for, to prove the
+// answer comes from the triple rather than from somebody remembering to add a line.
 namespace
 {
 
@@ -39,12 +40,14 @@ TEST(TargetInfoTest, PointerWidthComesFromTheTriple)
     EXPECT_EQ(infoFor("aarch64-unknown-linux-gnu").pointerBits, 64u);
 }
 
-// The arches the old list got wrong, in both directions.
+// 64-bit arches missing from the old list, which gave them 32. Each spelling is one that
+// llvm::Triple's parseArch maps to the arch named in the comment.
 TEST(TargetInfoTest, PointerWidthIsRightForArchesTheOldListMissed)
 {
-    EXPECT_EQ(infoFor("riscv32-unknown-elf").pointerBits, 32u);
-    EXPECT_EQ(infoFor("armv7-unknown-linux-gnueabihf").pointerBits, 32u);
-    EXPECT_EQ(infoFor("loongarch64-unknown-linux-gnu").pointerBits, 64u);
+    EXPECT_EQ(infoFor("s390x-unknown-linux-gnu").pointerBits, 64u); // systemz
+    EXPECT_EQ(infoFor("sparcv9-sun-solaris").pointerBits, 64u);     // sparcv9
+    EXPECT_EQ(infoFor("amdgcn-amd-amdhsa").pointerBits, 64u);       // amdgcn
+    EXPECT_EQ(infoFor("ve-unknown-linux-gnu").pointerBits, 64u);    // ve
 }
 
 // An unknown arch has no width of its own; falling back to 0 would make every size computation
