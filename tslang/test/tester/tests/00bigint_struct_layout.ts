@@ -99,13 +99,11 @@ function main() {
     const big = <Big><any>pickUnion(false);
     assert(big.flag, "union big flag");
     assert(big.v == 9007199254740993n, "union big value");
-    // The other member reads back only in part. `a` sits at offset 4, inside the padding of the
-    // {i1, i64} storage, and a struct copy does not carry padding, so it comes back 0. That is a
-    // separate union-storage defect, independent of the data layout: the same union with `number`
-    // in place of `bigint` ({i1, double}, 8-aligned under either layout) loses `a` the same way. It
-    // is not asserted here; `b`, outside the padding, is.
+    // The other member must read back whole too. `a` sits at offset 4, inside the padding of the
+    // {i1, i64} member; union storage has to carry those bytes (see 00union_member_padding).
     const three = <Three><any>pickUnion(true);
     assert(!three.flag, "union three flag");
+    assert(three.a == 2, "union three a");
     assert(three.b == 3, "union three b");
 
     print("done.");
