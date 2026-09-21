@@ -29,6 +29,9 @@ check() {
 check "i686-pc-windows-msvc"    "p:32:"
 check "wasm32-unknown-unknown"  "p:32:"
 check "x86_64-pc-windows-msvc"  "-p270:" # x86-64 layouts carry the AS270/271/272 entries
+# wasm32's layout used to be a hardcoded string with f128:64 and no i128:128, matching neither of
+# LLVM's own wasm32 derivations; lowering now reads the TargetMachine's layout from the module.
+check "wasm32-unknown-unknown"  "i128:128"
 
 # A triple the target registry cannot resolve must be a hard, diagnosed failure rather than
 # silently emitted IR that names the triple but carries no (or the wrong default) datalayout --
@@ -51,5 +54,8 @@ check_bad_triple() {
 }
 
 check_bad_triple "not-a-real-triple"
+
+# x32: the arch is 64-bit but the ABI's pointers are 32. MLIRGen and lowering would disagree.
+check_bad_triple "x86_64-pc-linux-gnux32"
 
 exit "$fail"

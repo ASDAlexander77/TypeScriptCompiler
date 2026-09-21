@@ -6,6 +6,8 @@
 #include "clang/Driver/Compilation.h"
 #include "clang/Options/Options.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/BinaryFormat/COFF.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/TargetParser/Host.h"
@@ -31,11 +33,13 @@ extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> gcsharedlibpath;
 
-// From TypeScript/ObjDumper.h, declared here for the same reason jit.cpp does: that header's
-// llvm/BinaryFormat/COFF.h collides with <windows.h> macros.
+// From TypeScript/ObjDumper.h, declared here as jit.cpp does, where that header's
+// llvm/BinaryFormat/COFF.h collides with <windows.h> macros. This file does not include
+// <windows.h>, so it can take the COFF machine constants from llvm/BinaryFormat/COFF.h itself.
 namespace Dump
 {
     bool containsGarbageCollector(llvm::StringRef);
+    uint16_t coffMachine(llvm::StringRef);
 }
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
@@ -121,8 +125,34 @@ bool checkFileExistsAtPath(std::string path, std::string fileName)
     return true;
 }
 
+// Windows x86 takes its libraries from an `x86` subdirectory of each configured lib path, so the
+// flat path has none of them by design; buildExe checks the subdirectory instead (see
+// resolveWindowsLibPath). Every other target keeps the flat layout.
+static bool isWindowsX86Target()
+{
+    llvm::Triple triple(TargetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : llvm::Triple::normalize(TargetTriple));
+    return triple.getOS() == llvm::Triple::Win32 && triple.getArch() == llvm::Triple::x86;
+}
+
+// The directory a lib path's libraries are in: its `x86` subdirectory for Windows x86, else itself.
+static std::string getTargetLibDir(llvm::StringRef path, bool windowsX86)
+{
+    llvm::SmallString<256> dir(path);
+    if (windowsX86)
+    {
+        llvm::sys::path::append(dir, "x86");
+    }
+
+    return dir.str().str();
+}
+
 void checkGCLibPath(std::string path)
 {
+    if (isWindowsX86Target())
+    {
+        return;
+    }
+
 #ifdef WIN32
     const auto libName = "gc.lib";
 #else    
@@ -133,6 +163,11 @@ void checkGCLibPath(std::string path)
 
 void checkTslangLibPath(std::string path) 
 {
+    if (isWindowsX86Target())
+    {
+        return;
+    }
+
 #ifdef WIN32
     const auto libName = "TypeScriptAsyncRuntime.lib";
 #else    
@@ -182,9 +217,10 @@ static std::string findGCDll(llvm::StringRef libDir)
 
 static bool isSharedGCLibDir(llvm::StringRef libDir)
 {
-    llvm::SmallString<256> lib(libDir);
+    auto targetLibDir = getTargetLibDir(libDir, isWindowsX86Target());
+    llvm::SmallString<256> lib(targetLibDir);
     llvm::sys::path::append(lib, "gc.lib");
-    return llvm::sys::fs::exists(lib) && !findGCDll(libDir).empty();
+    return llvm::sys::fs::exists(lib) && !findGCDll(targetLibDir).empty();
 }
 
 // Where the shared collector is, or "" when there is none to be found. Not a fallback to the
@@ -295,6 +331,76 @@ std::string getLibOpt(std::string path)
     return concatIfNotEmpty("-l", path);
 }
 
+static std::string getCOFFMachineName(uint16_t machine)
+{
+    switch (machine)
+    {
+    case llvm::COFF::IMAGE_FILE_MACHINE_I386:
+        return "x86";
+    case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
+        return "x64";
+    case llvm::COFF::IMAGE_FILE_MACHINE_ARM64:
+        return "arm64";
+    default:
+        return "0x" + llvm::utohexstr(machine);
+    }
+}
+
+// Windows x86 and x64: refuses a binary built for another machine than the target's. The linker
+// only warns about a library (LNK4272) and then fails on every symbol it was to supply, which
+// names neither the library nor the fix; a DLL of the wrong machine does not load at all.
+static bool checkWindowsBinaryMachine(const llvm::Triple &triple, llvm::StringRef file)
+{
+    auto expected = triple.getArch() == llvm::Triple::x86 ? llvm::COFF::IMAGE_FILE_MACHINE_I386
+                                                          : llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
+    auto machine = Dump::coffMachine(file);
+    if (machine != 0 && machine != expected)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << file << " is built for " << getCOFFMachineName(machine) << ", but this program targets "
+            << getCOFFMachineName(expected) << ".\n";
+        return false;
+    }
+
+    return true;
+}
+
+// Windows x86 and x64: turns `path` into the directory the link takes `libName` from - its `x86`
+// subdirectory for x86, the path itself for x64 - and refuses a library built for another
+// machine. Not a fallback to the flat path for x86: the libraries there are x64. `buildScript`
+// builds the x86 library and leaves it in the `x86` subdirectory of `builtDir`, which is
+// therefore the directory to pass.
+static bool resolveWindowsLibPath(const llvm::Triple &triple, std::string &path, llvm::StringRef libName,
+                                  llvm::StringRef component, llvm::StringRef flag, llvm::StringRef buildScript,
+                                  llvm::StringRef builtDir)
+{
+    if (path.empty())
+    {
+        return true;
+    }
+
+    auto x86 = triple.getArch() == llvm::Triple::x86;
+    auto libDir = getTargetLibDir(path, x86);
+    llvm::SmallString<256> lib(libDir);
+    llvm::sys::path::append(lib, libName);
+
+    if (x86)
+    {
+        if (!llvm::sys::fs::exists(lib))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << "no x86 build of " << component << " in " << libDir << ". Build it with scripts\\" << buildScript
+                << ".bat, which puts it in " << builtDir << "\\x86, and point " << flag << " at " << builtDir
+                << " (or at any directory holding an x86 subdirectory with it).\n";
+            return false;
+        }
+
+        path = libDir;
+    }
+
+    return checkWindowsBinaryMachine(triple, lib);
+}
+
 void addCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*> cmdParts)
 {
     for (auto &job : c->getJobs())
@@ -399,6 +505,10 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     auto wasm = arch == llvm::Triple::wasm32 || arch == llvm::Triple::wasm64;
     auto emscripten = os == llvm::Triple::Emscripten;
     auto shared = emitAction == BuildDll;
+    // Windows x86 and x64 link libraries whose machine tslang checks; see resolveWindowsLibPath.
+    auto winX86OrX64 = win && (arch == llvm::Triple::x86 || arch == llvm::Triple::x86_64);
+    // the same debug/release choice as the CRT below
+    std::string libConfig = enableOpt ? "release" : "debug";
     
     std::optional<llvm::Reloc::Model> RM = llvm::codegen::getExplicitRelocModel();
 
@@ -534,12 +644,34 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             return 1;
         }
 
+        if (winX86OrX64
+            && !resolveWindowsLibPath(TheTriple, gcSharedLibPath, "gc.lib", "gc.dll's import library gc.lib",
+                                      "--gc-shared-lib-path (or GC_SHARED_LIB_PATH)",
+                                      "build_gc_" + libConfig + "_shared_vs_x86",
+                                      "3rdParty\\gcdll\\x64\\" + libConfig + "\\lib"))
+        {
+            return 1;
+        }
+
         gcDllPath = findGCDll(gcSharedLibPath);
+        // the DLL the program will load, not only the import library it links against
+        if (winX86OrX64 && !gcDllPath.empty() && !checkWindowsBinaryMachine(TheTriple, gcDllPath))
+        {
+            return 1;
+        }
     }
 
     if (compileOptions.needsGCRuntime())
     {
-        gcLibPathOpt = getLibsPathOpt(useSharedGC ? gcSharedLibPath : getGCLibPath());
+        auto gcLibPath = useSharedGC ? gcSharedLibPath : getGCLibPath();
+        if (!useSharedGC && winX86OrX64
+            && !resolveWindowsLibPath(TheTriple, gcLibPath, "gc.lib", "gc.lib", "--gc-lib-path (or GC_LIB_PATH)",
+                                      "build_gc_" + libConfig + "_vs_x86", "3rdParty\\gc\\x64\\" + libConfig + "\\lib"))
+        {
+            return 1;
+        }
+
+        gcLibPathOpt = getLibsPathOpt(gcLibPath);
         if (!gcLibPathOpt.empty())
         {
             args.push_back(gcLibPathOpt.c_str());    
@@ -548,7 +680,17 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     
     if (isTslangLibNeeded)
     {
-        tslangLibPathOpt = getLibsPathOpt(getTslangLibPath());
+        auto tslangLibPath = getTslangLibPath();
+        if (winX86OrX64
+            && !resolveWindowsLibPath(TheTriple, tslangLibPath, "TypeScriptAsyncRuntime.lib", "TypeScriptAsyncRuntime.lib",
+                                      "--tslang-lib-path (or TSLANG_LIB_PATH)",
+                                      "build_tslang_runtime_" + libConfig + "_x86",
+                                      "__build\\tslang-runtime\\" + libConfig))
+        {
+            return 1;
+        }
+
+        tslangLibPathOpt = getLibsPathOpt(tslangLibPath);
         if (!tslangLibPathOpt.empty())
         {
             args.push_back(tslangLibPathOpt.c_str());    
