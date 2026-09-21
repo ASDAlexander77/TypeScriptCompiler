@@ -178,8 +178,15 @@ emit_await_order_ir() {
     printf '%s' "$out"
 }
 
+# Only the parameter TYPES are checked: once aligned_alloc has the target's size_t signature,
+# LLVM recognizes it as the C library function and adds attributes to the declaration, e.g.
+# `declare noalias noundef ptr @aligned_alloc(i32 allocalign noundef, i32 noundef)`.
+declared_with_i32_params() {
+    grep -Eq "^declare .*ptr @$1\(i32( [^,]*)?, i32( [^)]*)?\)" "$2"
+}
+
 if out="$(emit_await_order_ir gc)"; then
-    if grep -Eq '^declare ptr @GC_memalign\(i32, i32\)' "$out"; then
+    if declared_with_i32_params GC_memalign "$out"; then
         echo "ok   x86 IR -mm=gc: frame allocator is GC_memalign(i32, i32)"
     else
         echo "FAIL x86 IR -mm=gc: frame allocator is GC_memalign(i32, i32)"
@@ -189,7 +196,7 @@ if out="$(emit_await_order_ir gc)"; then
 fi
 
 if out="$(emit_await_order_ir none)"; then
-    if grep -Eq '^declare ptr @aligned_alloc\(i32, i32\)' "$out"; then
+    if declared_with_i32_params aligned_alloc "$out"; then
         echo "ok   x86 IR -mm=none: frame allocator is aligned_alloc(i32, i32)"
     else
         echo "FAIL x86 IR -mm=none: frame allocator is aligned_alloc(i32, i32)"

@@ -41,6 +41,11 @@ std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 /// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free
 std::unique_ptr<mlir::Pass> createMemAllocPass(CompileOptions&);
 
+/// Repairs the upstream ConvertAsyncToLLVM output for a target whose pointers are narrower than
+/// 64 bits: that pass declares the coroutine frame allocator as aligned_alloc(i64, i64) whatever
+/// the target. Schedule only when the pointer width is below 64.
+std::unique_ptr<mlir::Pass> createAsyncTargetWidthPass(unsigned pointerBits);
+
 } // end namespace typescript
 } // end namespace mlir
 
