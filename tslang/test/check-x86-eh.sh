@@ -14,6 +14,8 @@ ok()   { echo "ok   $1"; }
 bad()  { echo "FAIL $1"; fail=1; }
 need() { [ -e "$1" ] || { echo "FAIL missing prerequisite: $1"; exit 1; }; }
 need "$TSLANG"
+# Without timeout every run would report exit 127, which looks like a real failure mode.
+command -v timeout >/dev/null || { echo "FAIL missing prerequisite: timeout"; exit 1; }
 
 # emit_ir <triple> <test-name> -> path of the .ll
 emit_ir() {

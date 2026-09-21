@@ -58,11 +58,13 @@ TEST(TargetInfoTest, UnknownArchFallsBackToHostWidth)
 }
 
 // MSVC C++ EH cross-references are image-base-relative RVAs on 64-bit Windows and absolute
-// pointers on 32-bit x86. Non-Windows targets use the Itanium scheme and neither applies.
+// pointers on 32-bit Windows (x86 and ARM). Non-Windows targets use the Itanium scheme and neither applies.
 TEST(TargetInfoTest, ImageBaseRelativeEHIsWin64Only)
 {
     EXPECT_TRUE(infoFor("x86_64-pc-windows-msvc").usesImageBaseRelativeEH);
+    EXPECT_TRUE(infoFor("aarch64-pc-windows-msvc").usesImageBaseRelativeEH);
     EXPECT_FALSE(infoFor("i686-pc-windows-msvc").usesImageBaseRelativeEH);
+    EXPECT_FALSE(infoFor("thumbv7-pc-windows-msvc").usesImageBaseRelativeEH);
     EXPECT_FALSE(infoFor("x86_64-unknown-linux-gnu").usesImageBaseRelativeEH);
 }
 
