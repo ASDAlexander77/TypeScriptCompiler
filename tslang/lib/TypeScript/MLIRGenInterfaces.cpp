@@ -440,8 +440,12 @@ namespace mlirgen
                         {
                             // null value, as missing field/method
                             // auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
-                            auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
-                                                                                 mth.getI64AttrValue(-1));
+                            // target-width: a -1 pointer sentinel, cast straight to the field's ref type
+                            // below. InterfaceSymbolRefOpLowering (LowerToLLVM.cpp) compares against a -1
+                            // built at compileOptions.sizeBits(), so this must be the same width.
+                            auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                            auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType,
+                                                                                 builder.getIntegerAttr(ptrIntType, -1));
                             auto castedPtr = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
                                                    negative1, genContext);
                             vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
@@ -459,8 +463,12 @@ namespace mlirgen
                         // a required method is always compile-time-resolvable through
                         // lookupObjectLiteralMethodSymbol/findMethod above and never reaches
                         // isMissing here; only a genuinely-absent optional method does.
-                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
-                                                                             mth.getI64AttrValue(-1));
+                        // target-width: a -1 pointer sentinel, cast straight to the method's
+                        // func-pointer ref type below - same convention and same width as the field
+                        // case above and as InterfaceSymbolRefOpLowering's compileOptions.sizeBits() -1.
+                        auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType,
+                                                                             builder.getIntegerAttr(ptrIntType, -1));
                         auto castedPtr = cast(location, mlir_ts::RefType::get(methodOrField.methodInfo.funcType),
                                               negative1, genContext);
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(

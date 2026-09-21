@@ -151,6 +151,9 @@ class MLIRTypeHelper
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value, true));
     }
 
+    // 64-bit whatever the target: like getI64Type() above, this helper's contract is its name - an
+    // attribute of the 64-bit integer type. Sites needing a pointer-wide constant build the type from
+    // compileOptions.sizeBits() and use builder.getIntegerAttr() instead.
     mlir::IntegerAttr getI64AttrValue(int64_t value)
     {
         return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value, true));
@@ -182,6 +185,11 @@ class MLIRTypeHelper
     }
 
 #ifdef ENABLE_TYPED_GC
+    // NOT YET target-width, deliberately: this models GC_word, the element type of the bitmap array
+    // handed to GC_make_descriptor(const GC_word *, size_t), so by the same contract as the
+    // descriptor itself it is pointer-wide rather than a fixed 64 bits. Left at u64 for a later
+    // phase - it is the one remaining width gap in the typed-GC path, which is inert anyway while
+    // Config.h has ENABLE_TYPED_GC false.
     mlir::IntegerType getTypeBitmapValueType()
     {
         return getU64Type();
@@ -1643,12 +1651,12 @@ class MLIRTypeHelper
 
         if (typeLeft.isIndex())
         {
-            intTypeLeft = mlir::IntegerType::get(typeLeft.getContext(), compileOptions.sizeBits);
+            intTypeLeft = mlir::IntegerType::get(typeLeft.getContext(), compileOptions.sizeBits());
         }
 
         if (typeRight.isIndex())
         {
-            intTypeRight = mlir::IntegerType::get(typeRight.getContext(), compileOptions.sizeBits);
+            intTypeRight = mlir::IntegerType::get(typeRight.getContext(), compileOptions.sizeBits());
         }
 
         if (intTypeLeft && intTypeRight)
@@ -1863,7 +1871,7 @@ class MLIRTypeHelper
             auto litType = literalType.getElementType();
             if (auto litIntType = dyn_cast<mlir::IntegerType>(litType))
             {
-                if (isa<mlir::IndexType>(dstType) && litIntType.getIntOrFloatBitWidth() <= (unsigned int)compileOptions.sizeBits)
+                if (isa<mlir::IndexType>(dstType) && litIntType.getIntOrFloatBitWidth() <= (unsigned int)compileOptions.sizeBits())
                 {
                     return true;
                 }
@@ -1912,12 +1920,12 @@ class MLIRTypeHelper
 
         if (dstType.isIndex())
         {
-            destIntType = mlir::IntegerType::get(dstType.getContext(), compileOptions.sizeBits);
+            destIntType = mlir::IntegerType::get(dstType.getContext(), compileOptions.sizeBits());
         }
 
         if (srcType.isIndex())
         {
-            srcIntType = mlir::IntegerType::get(srcType.getContext(), compileOptions.sizeBits);
+            srcIntType = mlir::IntegerType::get(srcType.getContext(), compileOptions.sizeBits());
         }
 
         if (destIntType && srcIntType)

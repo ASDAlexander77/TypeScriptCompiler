@@ -276,7 +276,7 @@ class LLVMCodeHelperBase
     // moving - sits behind ENABLE_TYPED_GC and was retired in §9.2, before the header existed.
     unsigned getHeapBlockHeaderSize()
     {
-        return compileOptions.sizeBits / 8;
+        return compileOptions.sizeBits() / 8;
     }
 
     mlir::Value createHeapBlockHeaderSizeConstant(mlir::Location loc, mlir::Type llvmIndexType, bool negated = false)

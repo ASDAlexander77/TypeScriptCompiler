@@ -1373,6 +1373,8 @@ namespace mlirgen
             *(bigIntLiteral->text.end() - 1) == S('n') 
                 ? bigIntLiteral->text.substr(0, bigIntLiteral->text.length() - 1) 
                 : bigIntLiteral->text.c_str()));
+        // 64-bit whatever the target: a `bigint` literal is modeled as the language's own 64-bit
+        // integer type; its width is fixed by the language, not by the pointer width.
         auto type = builder.getI64Type();
         auto attrVal = mlir::IntegerAttr::get(type, newVal.getExtValue());
         auto literalType = mlir_ts::LiteralType::get(attrVal, type);

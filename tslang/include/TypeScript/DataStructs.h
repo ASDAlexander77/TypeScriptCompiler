@@ -2,6 +2,7 @@
 #define TYPESCRIPT_DATASTRUCT_H_
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/TargetInfo.h"
 
 #include <string>
 #include <vector>
@@ -17,7 +18,14 @@ struct CompileOptions
     bool generateDebugInfo;
     bool lldbDebugInfo;
     std::string moduleTargetTriple;
-    int sizeBits;
+    TargetInfo targetInfo;
+
+    // Pointer/size width in bits. Kept as an accessor rather than a field so it cannot drift
+    // away from targetInfo, which is the single place the target's width is decided.
+    int sizeBits() const
+    {
+        return static_cast<int>(targetInfo.pointerBits);
+    }
     bool isWasm;
     bool isWindows;
     bool isExecutable;

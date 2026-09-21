@@ -48,7 +48,7 @@ class CastLogicHelper
 
   public:
     CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter, compileOptions), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
           compileOptions(compileOptions), external(false)
     {
     }
@@ -712,8 +712,11 @@ class CastLogicHelper
 
         if (isa<LLVM::LLVMPointerType>(inLLVMType) && isBool(resLLVMType))
         {            
-            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
-            return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
+            // target-width: a ptrtoint of a real pointer - the integer it produces is as wide as the
+            // target's pointer, and the zero it is compared against has to be the same width.
+            auto ptrIntType = th.getPointerIntType();
+            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, ptrIntType, in);
+            return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createIConstantOf(ptrIntType.getIntOrFloatBitWidth(), 0));
         }
 
         if (isa<LLVM::LLVMPointerType>(inLLVMType) && isInt(resLLVMType))
@@ -723,8 +726,16 @@ class CastLogicHelper
 
         if (isa<LLVM::LLVMPointerType>(inLLVMType) && isFloat(resLLVMType))
         {
-            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
-            return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, intVal);
+            // target-width: a ptrtoint of a real pointer; the integer handed to the fp conversion is
+            // as wide as the target's pointer.
+            // Unsigned, not signed: an address is an unsigned quantity, and once the integer is only
+            // as wide as the pointer its top bit is reachable - any address >= 0x80000000 in a
+            // /LARGEADDRESSAWARE i686 process or a large wasm32 memory would read back as a negative
+            // float under sitofp. (Same reasoning as the ZExtOp used for int widening two branches
+            // down.) While this produced a 64-bit integer from a 32-bit pointer the zero-extension
+            // hid the question; it no longer does.
+            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getPointerIntType(), in);
+            return rewriter.create<mlir::arith::UIToFPOp>(loc, resLLVMType, intVal);
         }
 
         if (isInt(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))

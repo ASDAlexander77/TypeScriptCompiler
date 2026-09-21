@@ -72,6 +72,12 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
+    // 64-bit whatever the target: this helper builds a constant of the fixed 64-bit integer type,
+    // which is the whole of its contract - it has no target to ask. That is a statement about this
+    // function, not about its callers: some of them do pass byte counts through it (e.g.
+    // LowerToLLVM.cpp's MemoryAlloc(clh.createI64ConstantOf(2))), which is a width question of their
+    // own and not audited here. A caller that wants a pointer-wide constant should build it with
+    // createIConstantOf() at TypeHelper::getSizeType()'s width.
     mlir::Value createI64ConstantOf(int64_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));

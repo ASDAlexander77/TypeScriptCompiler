@@ -11,6 +11,8 @@
 
 #include "mlir/IR/MLIRContext.h"
 
+#include "llvm/TargetParser/Triple.h"
+
 #include "gmock/gmock.h"
 
 #define DEBUG_TYPE "test"
@@ -33,7 +35,8 @@ public:
     void SetUp() override
     {
         context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
-        compileOptions.sizeBits = 64;
+        compileOptions.targetInfo = TargetInfo::fromTriple(
+            llvm::Triple("x86_64-pc-windows-msvc"), llvm::Triple("x86_64-pc-windows-msvc"));
     }
 
     mlir::MLIRContext *getContext()

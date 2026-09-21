@@ -1309,8 +1309,11 @@ genContext);
                 location, fullClassStaticFieldName, true,
                 newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
                 [&](mlir::Location location, const GenContext &genContext) {
+                    // target-width: the global caches a Boehm GC_descr (= GC_word, the integer the size
+                    // of `void *`), so it is pointer-wide rather than a fixed 64 bits.
+                    auto typeDescrType = builder.getIntegerType(compileOptions.sizeBits());
                     auto init =
-                        builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
+                        builder.create<mlir_ts::ConstantOp>(location, typeDescrType, builder.getIntegerAttr(typeDescrType, 0));
                     return std::make_tuple(init.getType(), init, TypeProvided::Yes);
                 },
                 genContext);
@@ -1334,7 +1337,9 @@ genContext);
         auto name = TYPE_BITMAP_NAME;
         auto fullClassStaticFieldName = getTypeBitmapMethodName(newClassPtr);
 
-        auto funcType = getFunctionType({}, builder.getI64Type(), false);
+        // target-width: the bitmap method returns the Boehm GC_descr built below (= GC_word, the
+        // integer the size of `void *`), and must agree with the descriptor global's type.
+        auto funcType = getFunctionType({}, builder.getIntegerType(compileOptions.sizeBits()), false);
 
         mlirGenFunctionBody(
             location, name, fullClassStaticFieldName, funcType,
@@ -1439,7 +1444,9 @@ genContext);
                     auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
                 }
 
-                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue,
+                // target-width: GC_make_descriptor's result is a GC_descr (= GC_word, the integer the
+                // size of `void *`) - see the lowering in LowerToLLVM.cpp GCMakeDescriptorOpLowering.
+                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getIntegerType(compileOptions.sizeBits()), arrayValue,
                                                                              sizeOfTypeInBitmapTypes);
 
                 auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -1721,8 +1728,12 @@ genContext);
                         // detected and handled up front rather than falling into the "present"
                         // branches - use the same -1 sentinel placeholder, cast to the slot's
                         // ref/func-pointer type.
-                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
-                                                                             mth.getI64AttrValue(-1));
+                        // target-width: a -1 pointer sentinel, cast straight to a ref/func-pointer slot
+                        // below. The lowering that tests it (InterfaceSymbolRefOpLowering in
+                        // LowerToLLVM.cpp) builds its -1 at compileOptions.sizeBits(), so this must match.
+                        auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType,
+                                                                             builder.getIntegerAttr(ptrIntType, -1));
                         auto slotType = methodOrField.isField ? methodOrField.fieldInfo.type : methodOrField.methodInfo.funcType;
                         auto castedPtr = cast(location, mlir_ts::RefType::get(slotType), negative1, genContext);
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(

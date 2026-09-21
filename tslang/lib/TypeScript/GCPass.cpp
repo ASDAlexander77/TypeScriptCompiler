@@ -262,10 +262,11 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     {
         PatternRewriter rewriter(memSetCallOp.getContext());
 
-        TypeHelper th(memSetCallOp.getContext());
+        TypeHelper th(memSetCallOp.getContext(), tsContext.compileOptions);
         LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getPtrType();
-        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+        // target-width: GC_malloc_atomic's parameter is `size_t size_in_bytes` (3rdParty/gc-8.2.12/include/gc.h:545).
+        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{th.getSizeType()}));
         markAsAllocatorIfNeeded("GC_malloc_atomic", gcInitFuncOp);
     }
 

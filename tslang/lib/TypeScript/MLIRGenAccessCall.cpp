@@ -1845,7 +1845,9 @@ namespace mlirgen
         auto enabledGC = compileOptions.needsGCRuntime();
         if (enabledGC && !stackAlloc)
         {
-            auto typeDescrType = builder.getI64Type();
+            // target-width: this value is a Boehm GC_descr, a typedef of GC_word - the unsigned integer
+            // the size of `void *` - so it is pointer-wide, not a fixed 64 bits.
+            auto typeDescrType = builder.getIntegerType(compileOptions.sizeBits());
             auto typeDescGlobalName = getTypeDescriptorFieldName(classInfo);
             auto typeDescRef = resolveFullNameIdentifier(location, typeDescGlobalName, true, genContext);
             auto typeDescCurrentValue = builder.create<mlir_ts::LoadOp>(location, typeDescrType, typeDescRef);
