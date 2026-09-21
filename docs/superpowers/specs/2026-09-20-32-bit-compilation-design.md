@@ -3,7 +3,7 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design. Phases 1-3 and 4a implemented; 4b and 4c not.
+Status: approved design. Phases 1-3, 4a and 4b implemented; 4c not.
 
 ## Why now
 
@@ -39,7 +39,10 @@ obvious reading of the emitted IR suggests the opposite.
 `mlirAsyncRuntimeAddRef(ptr, i64)`, `mlirAsyncRuntimeCreateValue(i64)` and
 similar regardless of triple, which looks like a 64-bit-shaped ABI. It is not:
 `lib/AsyncRuntimeCommon.inc` declares these parameters as `int64_t`, not
-`size_t`. `i64` is correct on both arches. Nothing to change.
+`size_t`. `i64` is correct on both arches. Nothing to change in the runtime API.
+(Phase 4b found the one real width bug on this path elsewhere: the coroutine
+frame allocator, `aligned_alloc`, *is* `size_t`, and upstream declares it
+`(i64, i64)`.)
 
 **The Win32 EH struct layouts are already correct for x86.** `ThrowInfo` is
 emitted as `{i32 x 4}` and `CatchableType` as `{i32 x 7}`
@@ -254,8 +257,6 @@ They depend on phases 2 and 3 and cannot run before both are in place. Nothing
 in the probing suggests they are separately broken; if they are, that is a
 finding of this phase.
 
-Already found: at i686, `00for_await` and `00for_await_yield` fail at
-`--emit=llvm` with an `unrealized_conversion_cast` left in the IR; x64 passes.
 
 **Gate.** The same suite that runs at 64 bits runs at 32 bits, green. Genuine
 failures are triaged and recorded the way the Debug-suite failures are, not
@@ -275,12 +276,23 @@ only, so phase 4 is three PRs:
   i686), and a module-level union initialized with a constant now gets a
   global constructor instead of failing to compile. 29 probe rows newly pass,
   none regress; x64 `.text` is unchanged within 0.03%.
-- **4b — async at i686.**
+- **4b — async at i686 (done).** Upstream `ConvertAsyncToLLVM` assumes 64 bits
+  twice. It declares the coroutine frame allocator `aligned_alloc(i64, i64)`
+  whatever the target; at i686 the callee reads `size = 0` and the frame
+  overflows its block (the crash: `mlirAsyncRuntimeEmplaceToken(null)` on a
+  worker thread). And its 64-bit-index converter meets tslang's 32-bit one,
+  leaving `i32 -> index -> i64` casts into `mlirAsyncRuntimeCreateGroup` that
+  LLVM translation rejects (`00for_await`). The upstream pass is prebuilt, so
+  two tslang passes repair its output when `sizeBits() < 64`:
+  `AsyncTargetWidthPass` (after `ConvertAsyncToLLVM`) retypes `aligned_alloc`
+  to pointer width, and `AsyncIndexCastPass` (after `LowerToLLVM`) folds the
+  cast chains into `sext`/`trunc`. x64 never runs them. All six async corpus
+  files run at i686 under gc (async needs Boehm's thread API, so under rc and
+  none it does not link at x64 either); wasm32 had the same allocator bug.
 - **4c — the suite at i686:** test-runner arch flag, x86 default library,
   reading `__decls` from a DLL file, and the remaining failures.
 
-Remaining i686-only probe failures after 4a: the six async files (4b);
-`internals` (an `inline_asm<i64>` with an `=r` constraint, which no single
+Remaining i686-only probe failures after 4b: `internals` (an `inline_asm<i64>` with an `=r` constraint, which no single
 i686 register can satisfy); `02funcs_vararg` (unresolved `_printf`; it is
 commented out of the suite).
 
@@ -312,14 +324,15 @@ confusion:
   `MLIRGenImpl::mlirGenImportSharedLib` calls `getPermanentLibrary`, which loads
   the x86 DLL into the x64 compiler process to read its `__decls`. The fix is to
   read `__decls` from the file rather than by loading it.
-- **`00for_await` at i686 (phase 4).** A likely cause of the leftover
-  `unrealized_conversion_cast`: upstream `ConvertAsyncToLLVMPass`
-  (`AsyncToLLVM.cpp:1026`) builds `LowerToLLVMOptions(ctx)` with LLVM's default
-  layout and a 64-bit index, so its types disagree with the i686 type converter's.
-
-- **Async programs crash at i686 (phase 4).** Found in phase 3: every async
-  program, including `00async_await` and one with no `try`, exits 139 as a
-  32-bit exe. Not EH-related.
+- **`mlirAsyncRuntimGetNumWorkerThreads` is declared `() -> i32` at 32 bits**
+  (upstream declares it returning `index`) while the runtime returns `int64_t`.
+  Harmless at i686 cdecl (the low half is in EAX); at wasm32 it would be a
+  signature mismatch. Unreachable from TypeScript today: only upstream's
+  async-parallel-for creates the op.
+- **wasm32 `-mm=none` async crashes the compiler (pre-existing).** Compiling an
+  async program for wasm32 without GC usually fails with 0xC0000005, before and
+  after phase 4b. Suspected: `MemAllocFixPass` erasing the `free` declaration
+  that the coroutine frame's `free` calls still use.
 - **x86 EH type names use the 64-bit mangling (phase 4, interop only).** The
   hardcoded names in `LLVMRTTIHelperVCWin32Const.h` (`??_R0PEAD@8`,
   `_CT??_R0PEAD@88`) carry the `__ptr64` qualifier and 64-bit sizes. tslang's

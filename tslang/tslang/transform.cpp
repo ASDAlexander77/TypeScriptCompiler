@@ -166,7 +166,9 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
         // Before GCPass, which renames aligned_alloc to GC_memalign and so keeps the corrected
-        // signature; before LowerToLLVM, so nothing else has looked the declaration up yet.
+        // signature; before LowerToLLVM, whose memref alloc lowering (AlignedAlloc) looks up
+        // aligned_alloc with a pointer-width index and would reject the (i64, i64) declaration as a
+        // redefinition.
         if (compileOptions.sizeBits() < 64)
         {
             pm.addPass(mlir::typescript::createAsyncTargetWidthPass(compileOptions.sizeBits()));

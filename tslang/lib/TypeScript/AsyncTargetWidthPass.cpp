@@ -42,8 +42,8 @@ class AsyncTargetWidthPass : public mlir::PassWrapper<AsyncTargetWidthPass, Modu
 
     // Upstream ConvertAsyncToLLVM assumes 64-bit sizes: it allocates coroutine frames with
     // aligned_alloc(i64, i64) whatever the target. aligned_alloc takes size_t, which is pointer
-    // width, so on a 32-bit target the callee reads (alignment, 0) and the frame overflows its
-    // block. Retype the declaration to the pointer width and truncate the arguments at each call.
+    // width. At i686 (cdecl, arguments on the stack) the callee reads (alignment, 0) and the frame
+    // overflows its block; at wasm32 the call does not match the definition's signature. Retype the declaration to the pointer width and truncate the arguments at each call.
     // The values are a coroutine frame's size and alignment, which fit in 32 bits.
     //
     // Runs directly after ConvertAsyncToLLVM and before GCPass, which renames the declaration
@@ -157,8 +157,13 @@ class AsyncIndexCastPass : public mlir::PassWrapper<AsyncIndexCastPass, ModulePa
 
             mlir::Value replacement = source;
             builder.setInsertionPoint(outerCast);
-            // index is signed in MLIR's arith semantics, so widen with sign extension. The values
-            // that take this path (group sizes, counts) are non-negative, where the two agree.
+            // index is signed in MLIR's arith semantics, so widen with sign extension. Today the
+            // only widened value is async.runtime.create_group's size (for-await's constant 0);
+            // the narrowing direction would be add_to_group's rank, which tslang never uses. Both
+            // are non-negative, where sign and zero extension agree. The fold is not limited to
+            // async: any iA -> index -> iB chain is lowered, but only ConvertAsyncToLLVM makes
+            // them, and before this pass such a chain failed LLVM translation anyway. A chain of
+            // any other shape is left for translation to reject.
             if (sourceType.getWidth() < resultType.getWidth())
             {
                 replacement = builder.create<LLVM::SExtOp>(outerCast.getLoc(), resultType, source);

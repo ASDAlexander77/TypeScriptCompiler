@@ -33,8 +33,8 @@ GC_X86="$GC_DIR/x86/gc.lib"
 RT_DIR="$REPO/__build/tslang-runtime/release"
 RT_X86="$RT_DIR/x86/TypeScriptAsyncRuntime.lib"
 
-# The async corpus cases (gc only): defined at test/tester/tests, main() with no `export`, so
-# --entry-point is required, as the suite builds with it.
+# The async corpus cases (gc only), from test/tester/tests. They are built with --entry-point to
+# mirror the suite; for --emit=exe it changes nothing, it matters only to the --emit=llvm IR checks.
 ASYNC_CORPUS=(00async_await 00async_gc_threading 00async_result_types 00owned_async
               00for_await 00for_await_yield)
 
