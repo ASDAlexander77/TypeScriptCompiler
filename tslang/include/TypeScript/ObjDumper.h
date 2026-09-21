@@ -10,6 +10,9 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <optional>
+#include <string>
+
 using namespace llvm;
 using namespace llvm::object;
 
@@ -82,6 +85,12 @@ namespace Dump
     // library - for a library, that of its first member that names one - or 0 when there is none
     // to be read. A query: an unreadable or non-COFF file is 0, not an error.
     uint16_t coffMachine(llvm::StringRef);
+
+    // The NUL-terminated string that the exported pointer variable `symbol` (a `const char *`)
+    // points to in a PE DLL, read from the file without loading it - for a DLL built for another
+    // architecture, which this process cannot load. std::nullopt when the file is not a PE image,
+    // does not export `symbol`, or the pointer or string lies outside the file's data.
+    std::optional<std::string> readExportedCString(llvm::StringRef path, llvm::StringRef symbol);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);

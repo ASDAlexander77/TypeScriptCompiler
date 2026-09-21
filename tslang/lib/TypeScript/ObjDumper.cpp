@@ -4,6 +4,7 @@
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/WithColor.h"
@@ -67,6 +68,36 @@ Expected<std::unique_ptr<Dumper>> createDumper(const ObjectFile &objFile)
 
     return createStringError(errc::invalid_argument,
                             "unsupported object file format");
+}
+
+// The bytes of a PE image from `rva` to the end of the section's data in the file. Only the part of
+// a section that is in the file counts: past SizeOfRawData the loader zero-fills, and nothing a
+// pointer could usefully point at is there.
+static std::optional<ArrayRef<uint8_t>> imageBytesAt(const COFFObjectFile &coffObj, uint32_t rva)
+{
+    auto fileData = coffObj.getData();
+    for (const SectionRef &sectionRef : coffObj.sections())
+    {
+        const coff_section *section = coffObj.getCOFFSection(sectionRef);
+        uint32_t start = section->VirtualAddress;
+        uint32_t size = section->VirtualSize ? std::min<uint32_t>(section->VirtualSize, section->SizeOfRawData)
+                                             : section->SizeOfRawData;
+        if (rva < start || rva - start >= size)
+        {
+            continue;
+        }
+
+        uint64_t offset = uint64_t(section->PointerToRawData) + (rva - start);
+        uint64_t end = std::min<uint64_t>(uint64_t(section->PointerToRawData) + size, fileData.size());
+        if (offset >= end)
+        {
+            return std::nullopt;
+        }
+
+        return ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(fileData.data()) + offset, end - offset);
+    }
+
+    return std::nullopt;
 }
 
 namespace Dump
@@ -188,6 +219,98 @@ uint16_t coffMachine(StringRef filePath)
 
     consumeError(std::move(err));
     return 0;
+}
+
+std::optional<std::string> readExportedCString(StringRef path, StringRef symbol)
+{
+    auto expectedOwningBinary = createBinary(path);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return std::nullopt;
+    }
+
+    auto *coffObj = dyn_cast<COFFObjectFile>(expectedOwningBinary.get().getBinary());
+    if (!coffObj)
+    {
+        return std::nullopt;
+    }
+
+    // An image has one of the two optional headers; an object file has neither and no exports.
+    auto pe32 = coffObj->getPE32Header() != nullptr;
+    if (!pe32 && !coffObj->getPE32PlusHeader())
+    {
+        return std::nullopt;
+    }
+
+    for (const ExportDirectoryEntryRef &entry : coffObj->export_directories())
+    {
+        StringRef name;
+        if (Error err = entry.getSymbolName(name))
+        {
+            consumeError(std::move(err));
+            continue;
+        }
+
+        if (name != symbol)
+        {
+            continue;
+        }
+
+        bool forwarder = false;
+        if (Error err = entry.isForwarder(forwarder))
+        {
+            consumeError(std::move(err));
+            return std::nullopt;
+        }
+
+        if (forwarder)
+        {
+            return std::nullopt;
+        }
+
+        uint32_t slotRva = 0;
+        if (Error err = entry.getExportRVA(slotRva))
+        {
+            consumeError(std::move(err));
+            return std::nullopt;
+        }
+
+        // The exported variable is a pointer. The file holds its value as linked, which is the
+        // string's address at the preferred image base; the loader's base relocation for the slot
+        // would only add the load delta, so subtracting the preferred base gives the string's RVA.
+        auto pointerSize = pe32 ? 4u : 8u;
+        auto slot = imageBytesAt(*coffObj, slotRva);
+        if (!slot || slot->size() < pointerSize)
+        {
+            return std::nullopt;
+        }
+
+        uint64_t address = pe32 ? uint64_t(support::endian::read32le(slot->data()))
+                                : support::endian::read64le(slot->data());
+        uint64_t imageBase = coffObj->getImageBase();
+        if (address < imageBase || address - imageBase > UINT32_MAX)
+        {
+            return std::nullopt;
+        }
+
+        auto text = imageBytesAt(*coffObj, uint32_t(address - imageBase));
+        if (!text)
+        {
+            return std::nullopt;
+        }
+
+        StringRef bytes(reinterpret_cast<const char *>(text->data()), text->size());
+        auto nul = bytes.find('\0');
+        if (nul == StringRef::npos)
+        {
+            return std::nullopt;
+        }
+
+        return bytes.take_front(nul).str();
+    }
+
+    return std::nullopt;
 }
 
 }
