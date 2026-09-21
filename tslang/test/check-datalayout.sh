@@ -55,4 +55,7 @@ check_bad_triple() {
 
 check_bad_triple "not-a-real-triple"
 
+# x32: the arch is 64-bit but the ABI's pointers are 32. MLIRGen and lowering would disagree.
+check_bad_triple "x86_64-pc-linux-gnux32"
+
 exit "$fail"

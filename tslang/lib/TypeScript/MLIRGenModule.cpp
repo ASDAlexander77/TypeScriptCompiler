@@ -304,9 +304,25 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            auto dataLayout = machine->createDataLayout();
+
+            // MLIRGen sizes things with the arch's pointer width (TargetInfo/sizeBits) and lowering
+            // with this layout. For ABI-by-environment triples (gnux32, gnuabin32, ilp32) the arch is
+            // 64-bit but the ABI's pointers are 32-bit, so the two disagree and nothing downstream can
+            // reconcile them. Treat that the same as the lookup failures above: fatal, and naming the
+            // triple.
+            if (dataLayout.getPointerSizeInBits(0) != static_cast<unsigned>(compileOptions.sizeBits()))
+            {
+                emitError(location, "target triple '")
+                    << compileOptions.moduleTargetTriple << "' has " << dataLayout.getPointerSizeInBits(0)
+                    << "-bit pointers but a " << compileOptions.sizeBits()
+                    << "-bit architecture; this ABI is not supported";
+                return mlir::failure();
+            }
+
             theModule->setAttr(
                 mlir::LLVM::LLVMDialect::getDataLayoutAttrName(),
-                builder.getStringAttr(machine->createDataLayout().getStringRepresentation()));
+                builder.getStringAttr(dataLayout.getStringRepresentation()));
         }
 
         builder.setInsertionPointToStart(theModule.getBody());
