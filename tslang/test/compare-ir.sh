@@ -7,7 +7,11 @@ set -u
 TSLANG="${1:?tslang.exe}"; TRIPLE="${2:?triple}"; BASE="${3:?baseline dir}"; OUT="${4:?out dir}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TESTS="$HERE/tester/tests"
-MASK="${MASK:-$(cd "$BASE/.." && pwd)/mask.sh}"
+MASK="${MASK:-$HERE/mask-ir.sh}"
+if [ ! -x "$MASK" ]; then
+    echo "compare-ir.sh: mask '$MASK' is missing or not executable; without it every file would differ" >&2
+    exit 2
+fi
 mkdir -p "$OUT"
 same=0; differ=0; newfail=0; newpass=0
 for f in "$TESTS"/*.ts; do

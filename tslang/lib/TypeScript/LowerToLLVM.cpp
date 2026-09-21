@@ -7256,14 +7256,31 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LowerToLLVMOptions options(&getContext(), dl);
     // The type converter sizes pointers, structs and unions and computes alignment with this layout,
     // so it has to be the target's. MLIRGenModule has already put the TargetMachine's layout on the
-    // module; without it LLVM's default applies, which has 8-byte pointers and a 4-byte-aligned i64 -
-    // wrong for i686 in the first and for x64 in the second. Allocation sizes never came from here
-    // (SizeOfOp uses getelementptr null, 1), but union storage selection, getIntPtrType and debug-info
-    // offsets do.
-    if (auto dataLayoutAttr = m->getAttrOfType<mlir::StringAttr>(mlir::LLVM::LLVMDialect::getDataLayoutAttrName()))
+    // module. LLVM's default layout - what this used before - has 8-byte pointers and a 4-byte-aligned
+    // i64, wrong for i686 in the first and for x64 in the second, so a module without the attribute is
+    // an error rather than a fallback. SizeOfOp does not read this layout (it emits getelementptr
+    // null, 1, which LLVM folds with the module's layout), but union storage selection
+    // (findMaxSizeType), getIntPtrType and debug-info offsets do.
+    auto dataLayoutAttr = m->getAttrOfType<mlir::StringAttr>(mlir::LLVM::LLVMDialect::getDataLayoutAttrName());
+    if (!dataLayoutAttr)
     {
-        options.dataLayout = llvm::DataLayout(dataLayoutAttr.getValue());
+        m.emitError() << "module has no '" << mlir::LLVM::LLVMDialect::getDataLayoutAttrName()
+                      << "' attribute; MLIRGenModule sets it from the target triple's TargetMachine, and lowering "
+                         "will not guess a layout";
+        signalPassFailure();
+        return;
     }
+
+    auto parsedDataLayout = llvm::DataLayout::parse(dataLayoutAttr.getValue());
+    if (!parsedDataLayout)
+    {
+        m.emitError() << "invalid data layout '" << dataLayoutAttr.getValue()
+                      << "': " << llvm::toString(parsedDataLayout.takeError());
+        signalPassFailure();
+        return;
+    }
+
+    options.dataLayout = *parsedDataLayout;
 
     options.allocLowering = LowerToLLVMOptions::AllocLowering::AlignedAlloc;
     DataLayoutAnalysis analysis(m);

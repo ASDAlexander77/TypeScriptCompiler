@@ -177,6 +177,7 @@ add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJ
 add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
 add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
+add_test(NAME test-compile-00-bigint-struct-layout COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_struct_layout.ts")
 add_test(NAME test-compile-00-funcs-expression-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 add_test(NAME test-compile-00-funcs-expression-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
 add_test(NAME test-compile-00-arrow-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00arrow_generic.ts")
