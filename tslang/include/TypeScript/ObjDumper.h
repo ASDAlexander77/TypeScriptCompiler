@@ -77,6 +77,11 @@ namespace Dump
     // rather than importing one from gc.dll / its host or having none. Read from the binary itself,
     // so it answers for libraries linked by hand or by an older tslang as well.
     bool containsGarbageCollector(llvm::StringRef);
+
+    // The COFF machine (IMAGE_FILE_MACHINE_*) of an object file, a static library or an import
+    // library - for a library, that of its first member that names one - or 0 when there is none
+    // to be read. A query: an unreadable or non-COFF file is 0, not an error.
+    uint16_t coffMachine(llvm::StringRef);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);

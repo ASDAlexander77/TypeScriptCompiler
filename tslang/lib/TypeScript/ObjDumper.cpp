@@ -1,6 +1,8 @@
 #include "TypeScript/ObjDumper.h"
 
+#include "llvm/Object/Archive.h"
 #include "llvm/Object/Binary.h"
+#include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
@@ -130,6 +132,61 @@ bool containsGarbageCollector(StringRef filePath)
     }
 
     return false;
+}
+
+uint16_t coffMachine(StringRef filePath)
+{
+    auto expectedOwningBinary = createBinary(filePath);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return 0;
+    }
+
+    auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *coffObj = dyn_cast<COFFObjectFile>(binary))
+    {
+        return coffObj->getMachine();
+    }
+
+    auto *archive = dyn_cast<Archive>(binary);
+    if (!archive)
+    {
+        return 0;
+    }
+
+    // A static library holds objects; an import library holds short import members (and a few
+    // objects for the import descriptors). Both carry the machine, the linker members before them
+    // do not.
+    Error err = Error::success();
+    for (auto &child : archive->children(err))
+    {
+        auto childBinary = child.getAsBinary();
+        if (!childBinary)
+        {
+            consumeError(childBinary.takeError());
+            continue;
+        }
+
+        uint16_t machine = 0;
+        if (auto *coffObj = dyn_cast<COFFObjectFile>(childBinary->get()))
+        {
+            machine = coffObj->getMachine();
+        }
+        else if (auto *importFile = dyn_cast<COFFImportFile>(childBinary->get()))
+        {
+            machine = importFile->getMachine();
+        }
+
+        if (machine != 0)
+        {
+            consumeError(std::move(err));
+            return machine;
+        }
+    }
+
+    consumeError(std::move(err));
+    return 0;
 }
 
 }
