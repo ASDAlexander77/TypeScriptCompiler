@@ -128,6 +128,14 @@ std::string machineOpt()
     return x86 ? " /machine:x86" : "";
 }
 
+// An x86 exe's manifest: Windows asks for elevation before starting a 32-bit program that has
+// no requestedExecutionLevel and whose name contains "setup", "install", "update" or "patch"
+// (installer detection) - export-import-class-abstract-virtual-dispatch never started. x64 is exempt.
+std::string exeManifestOpt()
+{
+    return x86 ? " /manifest:embed \"/manifestuac:level='asInvoker' uiAccess='false'\"" : "";
+}
+
 // the libpath settings that every Windows compile script starts with
 void writeLibPathSettings(std::ostream &batFile)
 {
@@ -213,7 +221,7 @@ void createCompileBatchFile()
             << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
-            << machineOpt()
+            << machineOpt() << exeManifestOpt()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -454,7 +462,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
-            << machineOpt()
+            << machineOpt() << exeManifestOpt()
             << std::endl;
 
     batFile << "del " << objs.str() << std::endl;
@@ -599,7 +607,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << CMAKE_C_STANDARD_LIBRARIES
                 << " /libpath:%GC_LIB_PATH% /libpath:%TSLANG_LIB_PATH%"
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
-                << machineOpt()
+                << machineOpt() << exeManifestOpt()
                 << std::endl;
 
         batFile << "del " << exec_objs.str() << std::endl;
