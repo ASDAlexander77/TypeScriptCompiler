@@ -140,6 +140,44 @@ class LLVMTypeConverterHelper
         return selectedType;
     }
 
+    // Bytes a union's value field must hold: the largest alloc size among its members.
+    unsigned getUnionStorageSize(mlir_ts::UnionType unionType)
+    {
+        unsigned size = 0;
+        for (auto subType : unionType.getTypes())
+        {
+            size = std::max(size, (unsigned)getTypeAllocSizeInBytes(typeConverter->convertType(subType)));
+        }
+
+        return size;
+    }
+
+    // The LLVM type of a tagged union's value field: N bytes, N being the largest member's alloc
+    // size, as a packed <{ [N / P x iP], [N % P x i8] }> with P the pointer size in bytes (an
+    // empty part is left out). Being packed, it has no padding, so every byte of every member is
+    // carried by a value copy (see the UnionType conversion in LowerToLLVM.cpp). Pointer-sized
+    // words rather than one [N x i8]: LLVM passes an array argument element by element, and a
+    // byte array would become N separate arguments.
+    mlir::Type getUnionStorageType(mlir_ts::UnionType unionType)
+    {
+        auto *context = &typeConverter->getContext();
+        auto size = getUnionStorageSize(unionType);
+        auto wordBytes = getPointerBitwidth(0) / 8;
+
+        SmallVector<mlir::Type> parts;
+        if (size / wordBytes > 0)
+        {
+            parts.push_back(LLVM::LLVMArrayType::get(mlir::IntegerType::get(context, wordBytes * 8), size / wordBytes));
+        }
+
+        if (size % wordBytes > 0)
+        {
+            parts.push_back(LLVM::LLVMArrayType::get(mlir::IntegerType::get(context, 8), size % wordBytes));
+        }
+
+        return LLVM::LLVMStructType::getLiteral(context, parts, /*isPacked=*/true);
+    }
+
     const LLVMTypeConverter *typeConverter;
 };
 } // namespace typescript

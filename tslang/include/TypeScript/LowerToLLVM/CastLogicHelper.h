@@ -560,23 +560,6 @@ class CastLogicHelper
             }
         }
 
-        /*
-        // TODO: we do not need as struct can cast to struct
-        if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
-        {
-            if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
-            {
-                LLVMTypeConverterHelper ltch((LLVMTypeConverter &)tch.typeConverter);
-                auto maxStoreType = ltch.findMaxSizeType(inUnionType);
-                auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
-                auto typeOfValue =
-                    rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-                auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resType, value, typeOfValue);
-                return unionValue;
-            }
-        }
-        */
-
         if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
         {
             // TODO: do I need to test income types?
@@ -619,9 +602,11 @@ class CastLogicHelper
                 bool needTagRes = mth.isUnionTypeNeedsTag(loc, resUnionType, baseTypeRes);
                 if (needTagRes)
                 {
+                    // carry the source's value field as it is stored - its bytes, whichever
+                    // member they hold - not as one member's type, whose padding a value copy drops
                     LLVMTypeConverterHelper ltch((const LLVMTypeConverter *)tch.typeConverter);
-                    auto maxStoreType = ltch.findMaxSizeType(inUnionType);
-                    auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
+                    auto storageType = ltch.getUnionStorageType(inUnionType);
+                    auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
                     auto typeOfValue = rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
                     auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resType, value, typeOfValue);
                     return unionValue;
@@ -772,7 +757,11 @@ class CastLogicHelper
         return mlir::Value();
     }
 
-    mlir::Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    // `sizesMayDiffer`: the caller reinterprets on purpose between aggregates of different sizes
+    // - a union member going into or out of a tagged union's storage - so a size mismatch is not
+    // worth a warning.
+    mlir::Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType,
+                              bool sizesMayDiffer = false)
     {
         if (inLLVMType == resLLVMType)
         {
@@ -795,7 +784,7 @@ class CastLogicHelper
             auto srcSize = llvmtch.getTypeAllocSizeInBytes(inLLVMType);
             auto dstSize = llvmtch.getTypeAllocSizeInBytes(resLLVMType);
 
-            if (srcSize != dstSize)
+            if (srcSize != dstSize && !sizesMayDiffer)
             {
                 op->emitWarning("types have different sizes:\n ")
                     << inLLVMType << " size of #" << srcSize << ",\n " << resLLVMType << " size of #" << dstSize;
@@ -805,14 +794,20 @@ class CastLogicHelper
                 loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
             auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), 
                 mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
-            if (srcSize <= 8 && dstSize <= 8)
+
+            if (dstSize > srcSize)
             {
-                rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
+                // the copy fills only the first srcSize bytes: zero the rest rather than leave
+                // it undefined - a union's storage is compared bytewise once boxed into `any`,
+                // and stale bytes could look like pointers to a conservative collector
+                auto dstPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(dstAddr.getType()), dstAddr);
+                auto zero = rewriter.create<LLVM::ZeroOp>(loc, resLLVMType);
+                rewriter.create<LLVM::StoreOp>(loc, zero, dstPtr);
             }
-            else
-            {
-                rewriter.create<mlir_ts::CopyStructOp>(loc, dstAddr, srcAddr);
-            }
+
+            // copies min(srcSize, dstSize) bytes; LLVM turns a constant-size copy into plain
+            // loads and stores
+            rewriter.create<mlir_ts::CopyStructOp>(loc, dstAddr, srcAddr);
 
             auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
             return val;
@@ -1117,10 +1112,12 @@ class CastLogicHelper
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType, compileOptions);
 
                 LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
-                // so we need to get biggest value from Union
-                auto maxUnionType = llvmtch.findMaxSizeType(unionType);
-                LLVM_DEBUG(llvm::dbgs() << "\n!! max size union type: " << maxUnionType << "\n";);
-                valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxUnionType, in);
+                // box the union's value field whole, as its bytes: unboxing reads it back as
+                // whichever member the tag names, and a member type's padding would drop bytes
+                // another member keeps there
+                auto storageType = llvmtch.getUnionStorageType(unionType);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! union storage type: " << storageType << "\n";);
+                valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
             }
             else
             {

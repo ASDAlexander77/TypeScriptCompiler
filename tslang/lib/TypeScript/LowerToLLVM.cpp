@@ -2166,7 +2166,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
                 rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
             auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
 
-            auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
+            auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType, /*sizesMayDiffer=*/true);
             if (!casted)
             {
                 return mlir::failure();
@@ -2211,7 +2211,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
             // TODO: should not cast anything
             CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
             auto casted = castLogic.castLLVMTypes(transformed.getIn(), transformed.getIn().getType(), unionPartialType,
-                                                  unionPartialType);
+                                                  unionPartialType, /*sizesMayDiffer=*/true);
             if (!casted)
             {
                 return mlir::failure();
@@ -4025,7 +4025,10 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 isa<mlir_ts::ArrayPushOp>(op) || isa<mlir_ts::ArrayUnshiftOp>(op) || isa<mlir_ts::ArraySpliceOp>(op) ||
                 isa<mlir_ts::ArrayPopOp>(op) || isa<mlir_ts::ArrayShiftOp>(op) || isa<mlir_ts::DeleteOp>(op) ||
                 isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::SetStringLengthOp>(op) ||
-                isa<mlir_ts::StringConcatOp>(op) || isa<mlir_ts::CharToStringOp>(op))
+                isa<mlir_ts::StringConcatOp>(op) || isa<mlir_ts::CharToStringOp>(op) ||
+                // a tagged union's value goes in and out through memory (an alloca and a copy),
+                // which a global's initializer cannot hold
+                isa<mlir_ts::CreateUnionInstanceOp>(op) || isa<mlir_ts::GetValueFromUnionOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
@@ -4035,6 +4038,22 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 if (isa<mlir_ts::ArrayType>(castType) || isa<mlir_ts::TupleType>(castType))
                 {
                    createAsGlobalConstructor = true;
+                }
+                else
+                {
+                    // see CreateUnionInstanceOp above: a cast to or from a tagged union lowers to
+                    // one of those ops
+                    MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
+                    for (auto type : {castType, castOp.getIn().getType()})
+                    {
+                        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+                        {
+                            if (mth.isUnionTypeNeedsTag(castOp->getLoc(), unionType))
+                            {
+                                createAsGlobalConstructor = true;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -6691,10 +6710,18 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         LLVMTypeConverterHelper ltch(&converter);
         MLIRTypeHelper mth(m.getContext(), compileOptions);
 
-        mlir::Type selectedType = ltch.findMaxSizeType(type);
         bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType
+        // With a tag, the value field is padding-free storage as large as the largest member
+        // (packed words plus a byte tail, see getUnionStorageType), not that member's struct
+        // type. A value copy of a struct does not carry its padding, and another member's field
+        // can sit in that padding: at 32-bit a member's f64 lands in the storage member's padding
+        // after a 4-byte pointer, and it read back as garbage once the union was copied. Without
+        // a tag there is no real union - the members share one base type - and that type is kept
+        // as it is.
+        mlir::Type selectedType = needTag ? ltch.getUnionStorageType(type) : ltch.findMaxSizeType(type);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! storage type in union: " << selectedType
                                 << "\n size: " << ltch.getTypeAllocSizeInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
                                 << "\n union type: " << type << "\n";);
 
@@ -7222,8 +7249,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // module. LLVM's default layout - what this used before - has 8-byte pointers and a 4-byte-aligned
     // i64, wrong for i686 in the first and for x64 in the second, so a module without the attribute is
     // an error rather than a fallback. SizeOfOp does not read this layout (it emits getelementptr
-    // null, 1, which LLVM folds with the module's layout), but union storage selection
-    // (findMaxSizeType), getIntPtrType and debug-info offsets do. Checked before anything else, so
+    // null, 1, which LLVM folds with the module's layout), but union storage sizing
+    // (getUnionStorageSize), getIntPtrType and debug-info offsets do. Checked before anything else, so
     // the pass fails before it has changed the module (the @dllname renames below).
     auto dataLayoutAttr = m->getAttrOfType<mlir::StringAttr>(mlir::LLVM::LLVMDialect::getDataLayoutAttrName());
     if (!dataLayoutAttr)
