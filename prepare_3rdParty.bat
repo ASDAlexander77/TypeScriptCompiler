@@ -5,6 +5,9 @@ if not "%1"=="" (
 	set BUILD=%1
 )
 
+set ARCH=x64
+if not "%2"=="" set ARCH=%2
+
 set GC_VER=8.2.12
 set LIBATOMIC_OPS_VER=7.10.0
 
@@ -50,4 +53,21 @@ IF EXIST ".\3rdParty\gcdll\x64\%BUILD%\lib\gc.lib" (
 ) ELSE (
   cd %p%
   @call scripts\build_gc_%BUILD%_shared_%TOOL%.bat
+)
+
+rem x86 (Win32) Boehm, for compiling 32-bit programs (-mtriple=i686-pc-windows-msvc). Opt-in:
+rem   prepare_3rdParty.bat release x86
+IF "%ARCH%"=="x86" (
+  IF EXIST ".\3rdParty\gc\x86\%BUILD%\lib\gc.lib" (
+    echo "No need to build x86 GC (%BUILD%)"
+  ) ELSE (
+    cd %p%
+    @call scripts\build_gc_%BUILD%_%TOOL%_x86.bat
+  )
+  IF EXIST ".\3rdParty\gcdll\x86\%BUILD%\lib\gc.lib" (
+    echo "No need to build x86 shared GC (%BUILD%)"
+  ) ELSE (
+    cd %p%
+    @call scripts\build_gc_%BUILD%_shared_%TOOL%_x86.bat
+  )
 )
