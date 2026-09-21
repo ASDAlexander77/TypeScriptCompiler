@@ -91,6 +91,34 @@ else()
 endif()
 
 if (WIN32)
+    # The 32-bit (i686) libraries, for `test-runner -x86`. Each path names the directory that
+    # holds the libraries themselves: the runner links with lld directly and passes these as
+    # /libpath, so there is no tslang lookup rule to add the `x86` segment for it. The gc and
+    # runtime libraries use the phase 2 layout, an `x86` subdirectory beside the x64 ones.
+    string(REPLACE "bin/${C_HOST}/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/x86" TEST_LIBPATH_X86 "${CMAKE_CXX_COMPILER}")
+    get_filename_component(TEST_SDKPATH_X86 "${WINDOWS_KITS_DIR_LIB}" DIRECTORY)
+    set(TEST_SDKPATH_X86 "${TEST_SDKPATH_X86}/x86")
+    get_filename_component(TEST_UCRTPATH_X86 "${WINDOWS_KITS_DIR_UCRT_LIB}" DIRECTORY)
+    set(TEST_UCRTPATH_X86 "${TEST_UCRTPATH_X86}/x86")
+    set(TEST_GCPATH_X86 "${TEST_GC_LIBDIR}/x86")
+    # the 32-bit gc.dll sits beside its import library; there is no bin/x86
+    set(TEST_GC_SHARED_LIBPATH_X86 "${TEST_GC_SHARED_PREFIX}/lib/x86")
+    get_filename_component(TEST_TSLANG_LIBPATH_X86 "${PROJECT_SOURCE_DIR}/../__build/tslang-runtime/${CMAKE_BUILD_TYPE_LOWERCASE}/x86" ABSOLUTE)
+
+    message(STATUS ">>> TEST_LIBPATH_X86 >>> ${TEST_LIBPATH_X86}")
+    message(STATUS ">>> TEST_SDKPATH_X86 >>> ${TEST_SDKPATH_X86}")
+    message(STATUS ">>> TEST_UCRTPATH_X86 >>> ${TEST_UCRTPATH_X86}")
+    message(STATUS ">>> TEST_GCPATH_X86 >>> ${TEST_GCPATH_X86}")
+    message(STATUS ">>> TEST_GC_SHARED_LIBPATH_X86 >>> ${TEST_GC_SHARED_LIBPATH_X86}")
+    message(STATUS ">>> TEST_TSLANG_LIBPATH_X86 >>> ${TEST_TSLANG_LIBPATH_X86}")
+
+    target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH_X86=\"${TEST_LIBPATH_X86}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH_X86=\"${TEST_SDKPATH_X86}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH_X86=\"${TEST_UCRTPATH_X86}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GCPATH_X86=\"${TEST_GCPATH_X86}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH_X86=\"${TEST_GC_SHARED_LIBPATH_X86}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH_X86=\"${TEST_TSLANG_LIBPATH_X86}\"")
+
     target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
@@ -134,6 +162,11 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compilednone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilenone.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitnone.sh"
     "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh")
+# and the 32-bit variants (`-x86`), every one of which ends in "x86"
+file(GLOB TSLANG_X86_CACHED_SCRIPTS "${CMAKE_CURRENT_BINARY_DIR}/compile*x86.bat")
+if (TSLANG_X86_CACHED_SCRIPTS)
+    file(REMOVE ${TSLANG_X86_CACHED_SCRIPTS})
+endif()
 
 ######## enable testing ############
 # open __build\tslang   
