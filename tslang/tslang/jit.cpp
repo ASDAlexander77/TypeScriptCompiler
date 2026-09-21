@@ -356,6 +356,19 @@ extern "C" EXCEPTION_DISPOSITION __CxxFrameHandler3(struct _EXCEPTION_RECORD *, 
 
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
+    // tslang.exe is an x64 process: it cannot execute i386 or wasm code in-process. Refused up
+    // front rather than left to LLJIT, whose failure for this is a relocation or "symbol not
+    // found" error deep in the session that never mentions the triple as the cause.
+    if (!compileOptions.targetInfo.supportsInProcessJit)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "--emit=jit runs the code in this process, which is "
+            << llvm::sys::getDefaultTargetTriple() << ", so it cannot run code built for "
+            << compileOptions.moduleTargetTriple
+            << ". Build it instead with --emit=exe or --emit=obj.\n";
+        return -1;
+    }
+
     // to avoid false positive memory leak reports in release builds
     // Print a stack trace if we signal out.
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
