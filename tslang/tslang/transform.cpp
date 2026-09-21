@@ -173,6 +173,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         }
 #endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
+#ifdef ENABLE_ASYNC
+        // After LowerToLLVM: the index casts it folds are half made by ConvertAsyncToLLVM and half
+        // by LowerToLLVM, so this is the first point at which the whole chain exists.
+        if (compileOptions.sizeBits() < 64)
+        {
+            pm.addPass(mlir::typescript::createAsyncIndexCastPass());
+        }
+#endif
         if (compileOptions.generateDebugInfo)
         {
             pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());

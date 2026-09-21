@@ -46,6 +46,11 @@ std::unique_ptr<mlir::Pass> createMemAllocPass(CompileOptions&);
 /// the target. Schedule only when the pointer width is below 64.
 std::unique_ptr<mlir::Pass> createAsyncTargetWidthPass(unsigned pointerBits);
 
+/// Folds the `iA -> index -> iB` unrealized_conversion_cast chains left where upstream
+/// ConvertAsyncToLLVM (64-bit index) meets LowerToLLVM (pointer-width index). Schedule after
+/// LowerToLLVM, only when the pointer width is below 64.
+std::unique_ptr<mlir::Pass> createAsyncIndexCastPass();
+
 } // end namespace typescript
 } // end namespace mlir
 

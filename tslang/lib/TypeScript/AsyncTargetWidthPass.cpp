@@ -122,6 +122,79 @@ class AsyncTargetWidthPass : public mlir::PassWrapper<AsyncTargetWidthPass, Modu
         return mlir::success();
     }
 };
+
+// Folds `iA -> index -> iB` chains of unrealized_conversion_cast into one integer cast.
+//
+// Two type converters with different index widths meet here. Upstream ConvertAsyncToLLVM lowers
+// the async runtime calls with its own converter, whose index is 64 bits, and the runtime really
+// does take int64_t there (e.g. mlirAsyncRuntimeCreateGroup(int64_t), lib/AsyncRuntimeCommon.inc),
+// so it bridges an index operand with `index -> i64`. LowerToLLVM later converts the operand's
+// producer with our converter, whose index is pointer width, and bridges back with `i32 -> index`.
+// Neither cast is an identity, so reconciliation cannot remove the pair and LLVM translation
+// rejects it. Scheduled after LowerToLLVM, the first point at which both halves exist.
+class AsyncIndexCastPass : public mlir::PassWrapper<AsyncIndexCastPass, ModulePass>
+{
+  public:
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AsyncIndexCastPass)
+
+    void runOnModule() override
+    {
+        llvm::SmallVector<mlir::UnrealizedConversionCastOp> outerCasts;
+        getModule().walk([&](mlir::UnrealizedConversionCastOp castOp) {
+            if (isIndexBridge(castOp))
+            {
+                outerCasts.push_back(castOp);
+            }
+        });
+
+        mlir::OpBuilder builder(&getContext());
+        for (auto outerCast : outerCasts)
+        {
+            auto innerCast = outerCast.getInputs().front().getDefiningOp<mlir::UnrealizedConversionCastOp>();
+            auto source = innerCast.getInputs().front();
+            auto sourceType = cast<mlir::IntegerType>(source.getType());
+            auto resultType = cast<mlir::IntegerType>(outerCast.getResult(0).getType());
+
+            mlir::Value replacement = source;
+            builder.setInsertionPoint(outerCast);
+            // index is signed in MLIR's arith semantics, so widen with sign extension. The values
+            // that take this path (group sizes, counts) are non-negative, where the two agree.
+            if (sourceType.getWidth() < resultType.getWidth())
+            {
+                replacement = builder.create<LLVM::SExtOp>(outerCast.getLoc(), resultType, source);
+            }
+            else if (sourceType.getWidth() > resultType.getWidth())
+            {
+                replacement = builder.create<LLVM::TruncOp>(outerCast.getLoc(), resultType, source);
+            }
+
+            outerCast.getResult(0).replaceAllUsesWith(replacement);
+            outerCast.erase();
+            if (innerCast->use_empty())
+            {
+                innerCast.erase();
+            }
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AsyncIndexCastPass: folded " << outerCasts.size() << " index casts\n";);
+    }
+
+    // The `index -> iB` cast of an `iA -> index -> iB` chain, each cast having one operand and one
+    // result. Every other unrealized_conversion_cast is left alone.
+    static bool isIndexBridge(mlir::UnrealizedConversionCastOp outerCast)
+    {
+        if (outerCast.getInputs().size() != 1 || outerCast->getNumResults() != 1 ||
+            !isa<mlir::IntegerType>(outerCast.getResult(0).getType()) ||
+            !isa<mlir::IndexType>(outerCast.getInputs().front().getType()))
+        {
+            return false;
+        }
+
+        auto innerCast = outerCast.getInputs().front().getDefiningOp<mlir::UnrealizedConversionCastOp>();
+        return innerCast && innerCast.getInputs().size() == 1 && innerCast->getNumResults() == 1 &&
+               isa<mlir::IntegerType>(innerCast.getInputs().front().getType());
+    }
+};
 } // end anonymous namespace
 
 #undef DEBUG_TYPE
@@ -130,4 +203,9 @@ class AsyncTargetWidthPass : public mlir::PassWrapper<AsyncTargetWidthPass, Modu
 std::unique_ptr<mlir::Pass> mlir_ts::createAsyncTargetWidthPass(unsigned pointerBits)
 {
     return std::make_unique<AsyncTargetWidthPass>(pointerBits);
+}
+
+std::unique_ptr<mlir::Pass> mlir_ts::createAsyncIndexCastPass()
+{
+    return std::make_unique<AsyncIndexCastPass>();
 }
