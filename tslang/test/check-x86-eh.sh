@@ -103,4 +103,72 @@ for name in 00try_catch 00try_catch_rethrow 00try_finally; do
   done
 done
 
+# --- Task 3: 32-bit programs throw and catch correctly ------------------------------------
+# Each program is linked as a 32-bit exe under every memory model and run with a 20 s limit, so a
+# hang is a FAIL. The x86 libraries sit in the x86 subdirectory of the directories x64 uses.
+GC_DIR="$REPO/3rdParty/gc/x64/release/lib"
+RT_DIR="$REPO/__build/tslang-runtime/release"
+need "$GC_DIR/x86/gc.lib"
+need "$RT_DIR/x86/TypeScriptAsyncRuntime.lib"
+EH_ORDER="$REPO/tslang/test/x86/eh_order.ts"
+need "$EH_ORDER"
+
+# run_x86 <label> <model> <file.ts> -> sets $run_out (stdout without CR, then "exit=<code>");
+# returns 1 after reporting a FAIL if the build fails or the exe is not I386.
+run_x86() {
+  local label="$1" mm="$2" src="$3" exe="$TMP/run.$(basename "$3" .ts).$2.exe" err machine
+  local libs=("--tslang-lib-path=$RT_DIR")
+  [ "$mm" = gc ] && libs+=("--gc-lib-path=$GC_DIR")
+  if ! err="$("$TSLANG" --emit=exe --opt -mm="$mm" --no-default-lib -mtriple=i686-pc-windows-msvc \
+                "${libs[@]}" "$src" -o "$exe" 2>&1 >/dev/null)" || [ ! -f "$exe" ]; then
+    bad "$label: compiles and links"; echo "$err"; return 1
+  fi
+  machine="$("$READOBJ" --file-headers "$exe" | grep -m1 'Machine:')"
+  if ! printf '%s' "$machine" | grep -q 'IMAGE_FILE_MACHINE_I386 (0x14C)'; then
+    bad "$label: I386 (0x14C) executable (got: $machine)"; return 1
+  fi
+  # The Windows CRT writes stdout in text mode, so lines end in CR LF.
+  run_out="$(timeout 20 "$exe" 2>"$exe.stderr" | tr -d '\r'; echo "exit=${PIPESTATUS[0]}")"
+}
+
+# Unwinding order: finally blocks run innermost-first, a throw from a catch reaches the outer
+# try, a rethrow is caught, and execution continues after each.
+eh_expected="throw
+finally 0
+finally 1
+finally 2
+caught
+inner catch
+outer catch
+rethrow
+caught rethrown
+done
+exit=0"
+for mm in gc rc none; do
+  run_x86 "x86 run -mm=$mm: eh_order" "$mm" "$EH_ORDER" || continue
+  if [ "$run_out" = "$eh_expected" ]; then
+    ok "x86 run -mm=$mm: eh_order prints the unwinding trace"
+  else
+    bad "x86 run -mm=$mm: eh_order prints the unwinding trace"
+    printf '%s\n' "$run_out" | sed 's/^/    got: /'
+  fi
+done
+
+# The exception corpus files assert internally, so exiting 0 is the check.
+eh_corpus=(00try_catch 00nested_catch 00try_finally 00try_finally_return 00try_finally_break_continue
+           00try_catch_rethrow 00try_catch_mismatch_rethrow 00throw_in_catch 00try_catch_return
+           00alloc_in_catch 51exceptions)
+for mm in gc rc none; do
+  for name in "${eh_corpus[@]}"; do
+    run_x86 "x86 run -mm=$mm: $name" "$mm" "$TESTS/$name.ts" || continue
+    status="${run_out##*exit=}"
+    if [ "$status" = 0 ]; then
+      ok "x86 run -mm=$mm: $name exits 0"
+    else
+      bad "x86 run -mm=$mm: $name exits 0 (exit $status)"
+      printf '%s\n' "$run_out" | tail -5 | sed 's/^/    got: /'
+    fi
+  done
+done
+
 exit "$fail"
