@@ -86,6 +86,9 @@ namespace Dump
     // to be read. A query: an unreadable or non-COFF file is 0, not an error.
     uint16_t coffMachine(llvm::StringRef);
 
+    // The name a user knows a COFF machine by ("x86", "x64", "arm64"), or its number in hex.
+    std::string coffMachineName(uint16_t);
+
     // The NUL-terminated string that the exported pointer variable `symbol` (a `const char *`)
     // points to in a PE DLL, read from the file without loading it - for a DLL built for another
     // architecture, which this process cannot load. std::nullopt when the file is not a PE image,

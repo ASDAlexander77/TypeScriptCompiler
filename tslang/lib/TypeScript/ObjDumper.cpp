@@ -113,12 +113,17 @@ void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols, llvm::BumpP
         {
             auto dumperOrErr = createDumper(*objFile);
             if (!dumperOrErr) {
+                consumeError(dumperOrErr.takeError());
                 return;
             }
 
             auto &dumper = **dumperOrErr;
             dumper.getSymbols(symbols, stringAllocator);
         }
+    }
+    else
+    {
+        consumeError(expectedOwningBinary.takeError());
     }
 }
 
@@ -219,6 +224,21 @@ uint16_t coffMachine(StringRef filePath)
 
     consumeError(std::move(err));
     return 0;
+}
+
+std::string coffMachineName(uint16_t machine)
+{
+    switch (machine)
+    {
+    case COFF::IMAGE_FILE_MACHINE_I386:
+        return "x86";
+    case COFF::IMAGE_FILE_MACHINE_AMD64:
+        return "x64";
+    case COFF::IMAGE_FILE_MACHINE_ARM64:
+        return "arm64";
+    default:
+        return "0x" + utohexstr(machine);
+    }
 }
 
 std::optional<std::string> readExportedCString(StringRef path, StringRef symbol)

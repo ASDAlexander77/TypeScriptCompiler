@@ -43,6 +43,7 @@ namespace Dump
 {
     bool containsGarbageCollector(llvm::StringRef);
     uint16_t coffMachine(llvm::StringRef);
+    std::string coffMachineName(uint16_t);
 }
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
@@ -334,21 +335,6 @@ std::string getLibOpt(std::string path)
     return concatIfNotEmpty("-l", path);
 }
 
-static std::string getCOFFMachineName(uint16_t machine)
-{
-    switch (machine)
-    {
-    case llvm::COFF::IMAGE_FILE_MACHINE_I386:
-        return "x86";
-    case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
-        return "x64";
-    case llvm::COFF::IMAGE_FILE_MACHINE_ARM64:
-        return "arm64";
-    default:
-        return "0x" + llvm::utohexstr(machine);
-    }
-}
-
 // Windows x86 and x64: refuses a binary built for another machine than the target's. The linker
 // only warns about a library (LNK4272) and then fails on every symbol it was to supply, which
 // names neither the library nor the fix; a DLL of the wrong machine does not load at all.
@@ -360,8 +346,8 @@ static bool checkWindowsBinaryMachine(const llvm::Triple &triple, llvm::StringRe
     if (machine != 0 && machine != expected)
     {
         llvm::WithColor::error(llvm::errs(), "tslang")
-            << file << " is built for " << getCOFFMachineName(machine) << ", but this program targets "
-            << getCOFFMachineName(expected) << ".\n";
+            << file << " is built for " << Dump::coffMachineName(machine) << ", but this program targets "
+            << Dump::coffMachineName(expected) << ".\n";
         return false;
     }
 
@@ -538,6 +524,9 @@ static llvm::Error writeAsInvokerManifestObj(llvm::COFF::MachineTypes machine, l
     {
         auto ec = os.error();
         os.clear_error();
+        // the caller only takes charge of the file on success
+        llvm::sys::fs::remove(path);
+        path.clear();
         return llvm::errorCodeToError(ec);
     }
 

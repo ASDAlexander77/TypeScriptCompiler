@@ -998,6 +998,44 @@ namespace mlirgen
                 return mlir::failure();
             }
         }
+        else
+        {
+            // Only a PE image's declarations can be read from the file (Dump::readExportedCString).
+            auto machine = Dump::coffMachine(filePath);
+            if (machine == 0)
+            {
+                emitError(location) << "cannot read declarations from '" << filePath
+                                    << "': for a target other than the host, only PE DLLs can be imported";
+                return mlir::failure();
+            }
+
+            // A DLL for another machine would link, and then not load in the program.
+            uint16_t expected = 0;
+            llvm::Triple targetTriple(compileOptions.moduleTargetTriple);
+            switch (targetTriple.getArch())
+            {
+            case llvm::Triple::x86:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_I386;
+                break;
+            case llvm::Triple::x86_64:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
+                break;
+            case llvm::Triple::aarch64:
+                expected = llvm::COFF::IMAGE_FILE_MACHINE_ARM64;
+                break;
+            default:
+                break;
+            }
+
+            if (machine != expected)
+            {
+                emitError(location) << "shared library '" << filePath << "' is built for "
+                                    << Dump::coffMachineName(machine) << ", but this program targets "
+                                    << (expected ? Dump::coffMachineName(expected)
+                                                 : targetTriple.getArchName().str());
+                return mlir::failure();
+            }
+        }
 
         SmallVector<StringRef> symbols;
         StringRef mlirGctors;
