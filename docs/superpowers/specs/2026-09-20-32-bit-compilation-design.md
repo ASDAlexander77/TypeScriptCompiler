@@ -3,7 +3,8 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design. Phases 1-3, 4a and 4b implemented; 4c not.
+Status: approved design. Phases 1-4 implemented, except the x86 default library
+(deferred; see Open issues).
 
 ## Why now
 
@@ -289,8 +290,32 @@ only, so phase 4 is three PRs:
   cast chains into `sext`/`trunc`. x64 never runs them. All six async corpus
   files run at i686 under gc (async needs Boehm's thread API, so under rc and
   none it does not link at x64 either); wasm32 had the same allocator bug.
-- **4c — the suite at i686:** test-runner arch flag, x86 default library,
-  reading `__decls` from a DLL file, and the remaining failures.
+- **4c — the suite at i686 (done, without the x86 default library).**
+  `test-runner -x86` builds and runs a test as a 32-bit program (i686 triple,
+  the x86 library directories, `/machine:x86`). Configure with
+  `-DTSLANG_TEST_X86=ON`, then run `ctest -C Release -L x86`; the option is off
+  by default, so the default suite and CI are unchanged (2769 tests, same
+  names). With it on, every non-JIT registration gets a `test-x86-...` twin:
+  1398 twins. The 1357 JIT registrations get none, because `--emit=jit` runs in
+  the x64 compiler process and refuses a foreign arch; neither does the one
+  collector test that links the real default library, which has no x86 build.
+  1395 twins pass; 3 are registered `DISABLED` in
+  `tslang/test/tester/x86-exclusions.cmake`: `internals` under gc, rc and
+  none, because its `inline_asm<i64>` with an `=r` constraint needs a 64-bit
+  register that i686 does not have. Importing an x86 DLL now reads `__decls`
+  from the file when the target arch is not the host's (the host path, which
+  loads the DLL, is unchanged).
+  The last three failures were not a compiler defect but Windows installer
+  detection: a 32-bit exe with no `requestedExecutionLevel` manifest, whose
+  name contains `setup`, `install`, `update` or `patch`, needs elevation and,
+  unelevated, never starts (`...-abstract-virtual-dispatch`: "dispatch" holds
+  "patch"). x64 exes are exempt. tslang now links an asInvoker `RT_MANIFEST`
+  resource object into every Windows x86 `--emit=exe` (not DLLs, which are not
+  launched, and not x64, whose output stays unchanged); it builds the object
+  itself because `-manifest:embed` makes MSVC's link.exe run `rc.exe`, which is
+  on `PATH` only in a developer prompt. The runner passes lld-link
+  `/manifest:embed /manifestuac:...` for x86 exes. `check-x86-run.sh` builds
+  hello as `my_setup_patch.exe` and runs it.
 
 Remaining i686-only probe failures after 4b: `internals` (an `inline_asm<i64>` with an `=r` constraint, which no single
 i686 register can satisfy); `02funcs_vararg` (unresolved `_printf`; it is
@@ -318,12 +343,21 @@ confusion:
   data layout says `p:32`. Nothing asserts the two agree. Proposed fix: a check
   in `lib/TypeScript/MLIRGenModule.cpp` comparing
   `createDataLayout().getPointerSizeInBits(0)` with `compileOptions.sizeBits()`.
-- **Importing an x86 DLL (phase 4).** An x86 `--emit=dll` builds, but compiling
-  a program that imports it fails at compile time with
-  `./lib.dll: Can't open: Unknown error (0xC1)`.
-  `MLIRGenImpl::mlirGenImportSharedLib` calls `getPermanentLibrary`, which loads
-  the x86 DLL into the x64 compiler process to read its `__decls`. The fix is to
-  read `__decls` from the file rather than by loading it.
+- **Importing an x86 DLL (phase 4) — closed in 4c.** Compiling a program that
+  imported an x86 DLL failed with `./lib.dll: Can't open: Unknown error (0xC1)`:
+  `MLIRGenImpl::mlirGenImportSharedLib` loaded the DLL into the x64 compiler to
+  read its `__decls`. For a foreign-arch target it now reads the string from
+  the file (`Dump::readExportedCString`); the x86 `-shared` twins pass.
+- **The x86 default library (deferred from phase 4).** `getDefaultLibSubDir`
+  in `include/TypeScript/Defines.h` still has no arch segment, and the default
+  library, built in the separate `TypeScriptCompilerDefaultLib` repository, has
+  no x86 build. Both are needed before an x86 program can link the default
+  library; until then x86 programs use `--no-default-lib`, and the collector
+  test that links the real default library has no x86 twin.
+- **Per-test flags miss the entry file of multi-file tests (not 32-bit;
+  pre-existing).** Found in phase 4c: in `test-runner`, `-mm`, `-fast-math`
+  and `--gctors-as-method` reach only the non-entry files of a multi-file test,
+  so the entry file compiles with the defaults.
 - **`mlirAsyncRuntimGetNumWorkerThreads` is declared `() -> i32` at 32 bits**
   (upstream declares it returning `index`) while the runtime returns `int64_t`.
   Harmless at i686 cdecl (the low half is in EAX); at wasm32 it would be a
