@@ -19,7 +19,10 @@ READOBJ="$REPO/3rdParty/llvm/x64/release/bin/llvm-readobj.exe"
 # Hermetic: the compiler falls back to these when a flag is missing, and they may name stale builds.
 unset GC_LIB_PATH GC_SHARED_LIB_PATH TSLANG_LIB_PATH DEFAULT_LIB_PATH LLVM_LIB_PATH
 
-GC_X86="$REPO/3rdParty/gc/x86/release/lib/gc.lib"
+# The documented layout: build_gc_release_vs_x86.bat copies the x86 gc.lib into the x86
+# subdirectory of the x64 lib directory, so the flag x64 programs use serves x86 as well.
+GC_DIR="$REPO/3rdParty/gc/x64/release/lib"
+GC_X86="$GC_DIR/x86/gc.lib"
 RT_DIR="$REPO/__build/tslang-runtime/release"
 RT_X86="$RT_DIR/x86/TypeScriptAsyncRuntime.lib"
 
@@ -33,12 +36,9 @@ done
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# --gc-lib-path names a directory whose x86 subdirectory holds gc.lib; the runtime's build
-# directory already has that shape (<dir>/x86/TypeScriptAsyncRuntime.lib).
-mkdir -p "$work/gc/x86"
-cp "$GC_X86" "$work/gc/x86/gc.lib"
-
-GC_FLAG="--gc-lib-path=$work/gc"
+# Both flags name a directory whose x86 subdirectory holds the library, as the build scripts
+# leave them: nothing is staged by hand.
+GC_FLAG="--gc-lib-path=$GC_DIR"
 RT_FLAG="--tslang-lib-path=$RT_DIR"
 
 expected() {

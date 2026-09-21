@@ -271,14 +271,16 @@ namespace mlirgen
             auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits()));
             theModule->setAttr("dlti.dl_spec", mlir::DataLayoutSpecAttr::get(builder.getContext(), {indexSize}));
 
-            // The data layout is otherwise only set in obj.cpp, from the TargetMachine, which is
-            // after --emit=llvm has already printed the module. Setting it here makes the emitted
-            // IR self-describing: a 32-bit triple no longer prints alongside LLVM's default
-            // 64-bit layout. Derived from the triple via LLVM's own target registry, using a
-            // default TargetOptions, so it matches what obj.cpp will later set for the x86
-            // targets this phase cares about; on an ABI-name-sensitive backend (ARM, Mips,
-            // PowerPC, RISCV) obj.cpp additionally threads a `-target-abi` into TargetOptions,
-            // which could change the layout there but not here.
+            // The layout lowering sizes with. LowerToLLVM reads this attribute to build its type
+            // converter (pointer sizes, struct and union layout, alignment) and fails without it,
+            // so it is required, not decoration; obj.cpp sets the TargetMachine's layout again only
+            // after lowering. It also makes --emit=llvm output carry the triple's own layout rather
+            // than LLVM's default 64-bit one. Derived from the triple via LLVM's own target
+            // registry, using a default TargetOptions, so it matches what obj.cpp later sets for
+            // every supported target. On an ABI-name-sensitive backend (ARM, Mips, PowerPC, RISCV)
+            // obj.cpp additionally threads a `-target-abi` into TargetOptions, which could change the
+            // layout there but not here: lowering's layout would then differ from codegen's. No
+            // supported target is affected.
             //
             // --emit=llvm (dump.cpp:dumpLLVMIR) never calls lookupTarget itself, so this is the
             // only place on that path that validates the triple. A silently-swallowed failure

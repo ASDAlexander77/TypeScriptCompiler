@@ -4,17 +4,19 @@
 # machine and the script that builds it, a missing x86 build or a library built for another
 # machine. Without the check the linker reports LNK4272 and a page of unresolved symbols.
 set -u
-TSLANG="${1:?usage: check-x86-libs.sh <path to tslang.exe>}"
+TSLANG="${1:?usage: check-x86-libs.sh <path to tslang.exe> [x64 TypeScriptAsyncRuntime.lib]}"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+# The x64 runtime is only copied into wrong-machine layouts; the in-tree build's is the default.
+RT_X64="${2:-$REPO/__build/tslang/windows-msbuild-2026-release/lib/TypeScriptAsyncRuntime.lib}"
 
 GC_X64="$REPO/3rdParty/gc/x64/release/lib/gc.lib"
 GC_X86="$REPO/3rdParty/gc/x86/release/lib/gc.lib"
 GCDLL_X86_LIB="$REPO/3rdParty/gcdll/x86/release/lib/gc.lib"
 GCDLL_X86_DLL="$REPO/3rdParty/gcdll/x86/release/bin/gc.dll"
-RT_X64="$REPO/__build/tslang-runtime/release/TypeScriptAsyncRuntime.lib"
+GCDLL_X64_DLL="$REPO/3rdParty/gcdll/x64/release/bin/gc.dll"
 RT_X86="$REPO/__build/tslang-runtime/release/x86/TypeScriptAsyncRuntime.lib"
 
-for f in "$GC_X64" "$GC_X86" "$GCDLL_X86_LIB" "$GCDLL_X86_DLL" "$RT_X64" "$RT_X86"; do
+for f in "$GC_X64" "$GC_X86" "$GCDLL_X86_LIB" "$GCDLL_X86_DLL" "$GCDLL_X64_DLL" "$RT_X64" "$RT_X86"; do
     if [ ! -f "$f" ]; then
         echo "FAIL missing prerequisite: $f"
         exit 1
@@ -28,7 +30,7 @@ printf 'print("x");\n' > "$work/x.ts"
 # Layouts: <dir> is what --*-lib-path names; x86 libraries sit in <dir>/x86.
 mkdir -p "$work/empty" \
          "$work/gc-good/x86" "$work/gc-x64-in-x86/x86" "$work/gc-x86-flat" \
-         "$work/gcdll-good/x86" \
+         "$work/gcdll-good/x86" "$work/gcdll-x64-dll/x86" \
          "$work/rt-good/x86" "$work/rt-x64-in-x86/x86" \
          "$work/gcdll-x86-flat" "$work/rt-x86-flat"
 cp "$GC_X86" "$work/gc-good/x86/gc.lib"
@@ -36,6 +38,8 @@ cp "$GC_X64" "$work/gc-x64-in-x86/x86/gc.lib"
 cp "$GC_X86" "$work/gc-x86-flat/gc.lib"
 cp "$GCDLL_X86_LIB" "$work/gcdll-good/x86/gc.lib"
 cp "$GCDLL_X86_DLL" "$work/gcdll-good/x86/gc.dll"
+cp "$GCDLL_X86_LIB" "$work/gcdll-x64-dll/x86/gc.lib"
+cp "$GCDLL_X64_DLL" "$work/gcdll-x64-dll/x86/gc.dll"
 cp "$RT_X86" "$work/rt-good/x86/TypeScriptAsyncRuntime.lib"
 cp "$RT_X64" "$work/rt-x64-in-x86/x86/TypeScriptAsyncRuntime.lib"
 cp "$GCDLL_X86_LIB" "$work/gcdll-x86-flat/gc.lib"
@@ -108,6 +112,8 @@ expect_error "runtime: x64 runtime in x86/"   "$X86" exe "TypeScriptAsyncRuntime
     "$GOOD_GC" "--tslang-lib-path=$work/rt-x64-in-x86"
 expect_error "gcdll: no x86 subdirectory"     "$X86" dll "x86" "build_gc_release_shared_vs_x86" -- \
     "--gc-shared-lib-path=$work/empty" "$GOOD_GC" "$GOOD_RT"
+expect_error "gcdll: x64 gc.dll beside x86 gc.lib" "$X86" dll "gc.dll" "x64" "but this program targets x86" -- \
+    "--gc-shared-lib-path=$work/gcdll-x64-dll" "$GOOD_GC" "$GOOD_RT"
 expect_error "x64: x86 gc.lib in flat path"   "$X64" exe "gc.lib" "x86" "but this program targets x64" -- \
     "--gc-lib-path=$work/gc-x86-flat" "--tslang-lib-path=$(dirname "$RT_X64")"
 expect_error "x64: x86 gc.dll import lib in flat path" "$X64" dll "gc.lib" "x86" "but this program targets x64" -- \

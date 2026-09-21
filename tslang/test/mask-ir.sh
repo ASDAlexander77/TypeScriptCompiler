@@ -2,6 +2,8 @@
 # Masks the run-to-run nondeterminism in tslang's emitted IR, so two builds can be diffed.
 # The noise is hash-like IDs that change between runs of the same binary:
 #   - 6+ digits after a letter/underscore inside a name: @s_<n>, %FH<n>, td_<n>_object
+#   - the numeric ID after td_, tsrel_ and tsret_, whatever its digit count (a 5-digit td_72136
+#     slips under the 6-digit rule)
 #   - FH followed by any number of digits: the function-hash suffix of generated names
 #     (.objL10C13FH<n>, ..afL27C20FH<n>) is sometimes only 3-4 digits long (FH668, FH6184)
 #   - 6+ digits between '.' and '..vtbl': @"Iterable<si32>.<n>..vtbl"
@@ -19,6 +21,7 @@
 # A file hit by either is noisy by nature; compare it across two runs before calling a difference
 # real. Known noisy files in tslang/test/tester/tests: typeGuardOfFormTypeOfBoolean,
 # typeGuardFunction, 00funcs, 00union_bin_ops2, conditionalTypes2 (hash-ordered union choices),
+# 00array8_tuple_spread (an equal-size tie in findMaxSizeType),
 # and - before FH<n> was masked - 00global_const_object_method and 00object_func.
-sed -E 's/([A-Za-z_$]\.?)[0-9]{6,}/\1N/g; s/FH[0-9]+/FHN/g; s/\.[0-9]{6,}\.\.vtbl/.N..vtbl/g; s/(^|[^A-Za-z0-9_.$])-?[0-9]{12,}/\1N/g' "$1" \
-  | sed -E '/c"[^"]*FHN/ s/\[[0-9]+ x i8\]/[K x i8]/g'
+sed -E 's/([A-Za-z_$]\.?)[0-9]{6,}/\1N/g; s/(td|tsrel|tsret)_[0-9]+/\1_N/g; s/FH[0-9]+/FHN/g; s/\.[0-9]{6,}\.\.vtbl/.N..vtbl/g; s/(^|[^A-Za-z0-9_.$])-?[0-9]{12,}/\1N/g' "$1" \
+  | sed -E '/c"[^"]*(FHN|(td|tsrel|tsret)_N)/ s/\[[0-9]+ x i8\]/[K x i8]/g'

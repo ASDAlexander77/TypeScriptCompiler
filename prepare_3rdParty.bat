@@ -57,14 +57,17 @@ IF EXIST ".\3rdParty\gcdll\x64\%BUILD%\lib\gc.lib" (
 
 rem x86 (Win32) Boehm, for compiling 32-bit programs (-mtriple=i686-pc-windows-msvc). Opt-in:
 rem   prepare_3rdParty.bat release x86
+rem Checked where the compiler looks: each x86 script also copies its output into the x86
+rem subdirectory of the x64 lib directory (one --gc-lib-path / --gc-shared-lib-path serves both
+rem machines). A build from before that copy existed is re-run, which redoes the copy.
 IF "%ARCH%"=="x86" (
-  IF EXIST ".\3rdParty\gc\x86\%BUILD%\lib\gc.lib" (
+  IF EXIST ".\3rdParty\gc\x64\%BUILD%\lib\x86\gc.lib" (
     echo "No need to build x86 GC (%BUILD%)"
   ) ELSE (
     cd %p%
     @call scripts\build_gc_%BUILD%_%TOOL%_x86.bat
   )
-  IF EXIST ".\3rdParty\gcdll\x86\%BUILD%\lib\gc.lib" (
+  IF EXIST ".\3rdParty\gcdll\x64\%BUILD%\lib\x86\gc.dll" (
     echo "No need to build x86 shared GC (%BUILD%)"
   ) ELSE (
     cd %p%

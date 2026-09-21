@@ -93,6 +93,10 @@ unit and existing x64 paths keep their shape:
 - `3rdParty/gc/x86/release/`, `3rdParty/gcdll/x86/release/`
 - `defaultlib/{lib,dll}/x86/{debug,release}/{gc,rc,none}/`
 
+Those are the build trees. The compiler finds the x86 libraries in the `x86`
+subdirectory of the lib path it is given, so the gc scripts also copy their
+output under the x64 lib directories (see phase 2, "As built").
+
 Strict, no fallback — the rule the default-lib layout already follows. A
 missing arch tree is an error that names the arch and the script that builds
 it. It never falls back to another arch: that link succeeds and then corrupts
@@ -155,18 +159,42 @@ riding along with the build-matrix work. It also removes the hardcoded wasm32
 layout string, which has `f128:64` and lacks `i128:128` and so matches neither
 of LLVM's derivations.
 
-- `3rdParty/gc/x86` and `3rdParty/gcdll/x86`: Boehm built for x86, static and
-  DLL, debug and release.
-- `TypeScriptRuntime` and `TypeScriptAsyncRuntime` cross-built for x86.
-- `tslang/exe.cpp` resolves `GC_LIB_PATH`, `GC_SHARED_LIB_PATH` and
-  `TSLANG_LIB_PATH` per target arch rather than per host.
-
 The compiler itself stays x64 and cross-compiles. Building `tslang.exe` as a
 32-bit binary is out of scope.
 
-`checkGCLibPath` and `checkTslangLibPath` grow a COFF machine-type check, so an
-arch mismatch is reported against the path that is wrong rather than surfacing
-as LNK4272 plus a list of unresolved symbols.
+**As built.** The lookup rule is one path for both machines: for an x86
+target, the compiler takes each library from the `x86` subdirectory of the lib
+path it is given (`--gc-lib-path`, `--gc-shared-lib-path`, `--tslang-lib-path`
+or their environment variables). The x64 layout stays flat and unchanged.
+
+| Library | Built by | Installed to | Copied to (what the compiler reads) | Flag value, for x64 and x86 alike |
+| --- | --- | --- | --- | --- |
+| static Boehm `gc.lib` | `scripts\build_gc_<cfg>_vs_x86.bat` | `3rdParty/gc/x86/<cfg>/` | `3rdParty/gc/x64/<cfg>/lib/x86/gc.lib` | `--gc-lib-path=3rdParty/gc/x64/<cfg>/lib` |
+| Boehm DLL: `gc.lib` + `gc.dll` | `scripts\build_gc_<cfg>_shared_vs_x86.bat` | `3rdParty/gcdll/x86/<cfg>/` (`lib/`, `bin/`) | `3rdParty/gcdll/x64/<cfg>/lib/x86/` (both files) | `--gc-shared-lib-path=3rdParty/gcdll/x64/<cfg>/lib` |
+| `TypeScriptAsyncRuntime.lib` | `scripts\build_tslang_runtime_<cfg>_x86.bat` | `__build/tslang-runtime/<cfg>/x86/` | (installed in place) | `--tslang-lib-path=__build/tslang-runtime/<cfg>` |
+
+`<cfg>` is `release` for `--opt` and `debug` otherwise, the same choice that
+picks the CRT. Each gc script installs into its own x86 tree, then copies into
+the x86 subdirectory of the matching x64 lib directory. It adds only that
+subdirectory; the x64 files are not touched. The shared build's `gc.dll` goes
+beside `gc.lib` because the compiler looks for `gc.dll` next to the import
+library first and in `../bin` second. From `lib/x86`, `../bin` would be
+`lib/bin`, which does not exist. So the value users already pass for x64
+(the `lib` directory, as the test suite does) works for x86 unchanged.
+`prepare_3rdParty.bat <cfg> x86` checks the copied location, so an x86 build
+made before the copy existed is re-run and gets the copy.
+
+There is no x86 `TypeScriptRuntime` (the JIT DLL): `--emit=jit` refuses a
+non-host arch, so nothing would load it.
+
+`tslang/exe.cpp` resolves the three paths for the target, not the host. For
+Windows x86 and x64 it reads the COFF machine of the library the link will use
+(`Dump::coffMachine`), and of the `gc.dll` it picked. A mismatch is a hard error
+naming the file, its machine and the target's, rather than LNK4272 plus a list
+of unresolved symbols. A missing x86 build is a hard error naming the script
+and the directory to pass. `tslang/test/check-x86-libs.sh` covers the error
+paths. `tslang/test/check-x86-run.sh` links and runs 32-bit programs from the
+real layout under `-mm=gc`, `rc` and `none`.
 
 **Gate.** `-mm=gc` and `-mm=rc` link and run a 32-bit hello world.
 
@@ -233,6 +261,16 @@ confusion:
   data layout says `p:32`. Nothing asserts the two agree. Proposed fix: a check
   in `lib/TypeScript/MLIRGenModule.cpp` comparing
   `createDataLayout().getPointerSizeInBits(0)` with `compileOptions.sizeBits()`.
+- **Importing an x86 DLL (phase 4).** An x86 `--emit=dll` builds, but compiling
+  a program that imports it fails at compile time with
+  `./lib.dll: Can't open: Unknown error (0xC1)`.
+  `MLIRGenImpl::mlirGenImportSharedLib` calls `getPermanentLibrary`, which loads
+  the x86 DLL into the x64 compiler process to read its `__decls`. The fix is to
+  read `__decls` from the file rather than by loading it.
+- **`00for_await` at i686 (phase 4).** A likely cause of the leftover
+  `unrealized_conversion_cast`: upstream `ConvertAsyncToLLVMPass`
+  (`AsyncToLLVM.cpp:1026`) builds `LowerToLLVMOptions(ctx)` with LLVM's default
+  layout and a 64-bit index, so its types disagree with the i686 type converter's.
 
 ## Out of scope
 
