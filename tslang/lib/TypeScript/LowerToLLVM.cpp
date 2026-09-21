@@ -6691,10 +6691,17 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         LLVMTypeConverterHelper ltch(&converter);
         MLIRTypeHelper mth(m.getContext(), compileOptions);
 
-        mlir::Type selectedType = ltch.findMaxSizeType(type);
         bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType
+        // With a tag, the value field is a byte array as large as the largest member, not that
+        // member's struct type. A value copy of a struct does not carry its padding, and another
+        // member's field can sit in that padding: at 32-bit a member's f64 lands in the storage
+        // member's padding after a 4-byte pointer, and it read back as garbage once the union
+        // was copied. A byte array has no padding. Without a tag there is no real union - the
+        // members share one base type - and that type is kept as it is.
+        mlir::Type selectedType = needTag ? ltch.getUnionStorageType(type) : ltch.findMaxSizeType(type);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! storage type in union: " << selectedType
                                 << "\n size: " << ltch.getTypeAllocSizeInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
                                 << "\n union type: " << type << "\n";);
 

@@ -619,9 +619,11 @@ class CastLogicHelper
                 bool needTagRes = mth.isUnionTypeNeedsTag(loc, resUnionType, baseTypeRes);
                 if (needTagRes)
                 {
+                    // carry the source's value field as it is stored - its bytes, whichever
+                    // member they hold - not as one member's type, whose padding a value copy drops
                     LLVMTypeConverterHelper ltch((const LLVMTypeConverter *)tch.typeConverter);
-                    auto maxStoreType = ltch.findMaxSizeType(inUnionType);
-                    auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
+                    auto storageType = ltch.getUnionStorageType(inUnionType);
+                    auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
                     auto typeOfValue = rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
                     auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resType, value, typeOfValue);
                     return unionValue;
@@ -788,8 +790,12 @@ class CastLogicHelper
         auto inType = in.getType();
 
         // review usage of ts.Type here
-        // struct to struct. TODO: add validation
-        if (isa<LLVM::LLVMStructType>(inLLVMType) && isa<LLVM::LLVMStructType>(resLLVMType))
+        // struct to struct, through memory. An array (a tagged union's byte storage) is an
+        // aggregate reinterpreted the same way. TODO: add validation
+        auto isAggregate = [](mlir::Type llvmType) {
+            return isa<LLVM::LLVMStructType>(llvmType) || isa<LLVM::LLVMArrayType>(llvmType);
+        };
+        if (isAggregate(inLLVMType) && isAggregate(resLLVMType))
         {
             LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
             auto srcSize = llvmtch.getTypeAllocSizeInBytes(inLLVMType);
@@ -805,7 +811,12 @@ class CastLogicHelper
                 loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
             auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), 
                 mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
-            if (srcSize <= 8 && dstSize <= 8)
+            // LoadSaveOp moves one pointer-sized value (it loads the source address's own LLVM
+            // type, a `ptr`), so it carries the whole aggregate only up to the pointer's size - 8
+            // bytes at 64-bit, but 4 at 32-bit, where an 8-byte { tag, [4 x i8] } union would
+            // otherwise lose its value. Anything larger is copied by CopyStructOp.
+            auto pointerSize = llvmtch.getPointerBitwidth(0) / 8;
+            if (srcSize <= pointerSize && dstSize <= pointerSize)
             {
                 rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
             }
@@ -1117,10 +1128,12 @@ class CastLogicHelper
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType, compileOptions);
 
                 LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
-                // so we need to get biggest value from Union
-                auto maxUnionType = llvmtch.findMaxSizeType(unionType);
-                LLVM_DEBUG(llvm::dbgs() << "\n!! max size union type: " << maxUnionType << "\n";);
-                valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxUnionType, in);
+                // box the union's value field whole, as its bytes: unboxing reads it back as
+                // whichever member the tag names, and a member type's padding would drop bytes
+                // another member keeps there
+                auto storageType = llvmtch.getUnionStorageType(unionType);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! union storage type: " << storageType << "\n";);
+                valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
             }
             else
             {

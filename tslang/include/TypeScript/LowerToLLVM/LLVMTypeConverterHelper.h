@@ -140,6 +140,27 @@ class LLVMTypeConverterHelper
         return selectedType;
     }
 
+    // Bytes a union's value field must hold: the largest alloc size among its members.
+    unsigned getUnionStorageSize(mlir_ts::UnionType unionType)
+    {
+        unsigned size = 0;
+        for (auto subType : unionType.getTypes())
+        {
+            size = std::max(size, (unsigned)getTypeAllocSizeInBytes(typeConverter->convertType(subType)));
+        }
+
+        return size;
+    }
+
+    // The LLVM type of a tagged union's value field: a byte array as large as its largest member.
+    // A byte array has no padding, so every byte of every member is carried by a value copy (see
+    // the UnionType conversion in LowerToLLVM.cpp).
+    mlir::Type getUnionStorageType(mlir_ts::UnionType unionType)
+    {
+        return LLVM::LLVMArrayType::get(mlir::IntegerType::get(&typeConverter->getContext(), 8),
+                                        getUnionStorageSize(unionType));
+    }
+
     const LLVMTypeConverter *typeConverter;
 };
 } // namespace typescript
