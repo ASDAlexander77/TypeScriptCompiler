@@ -278,6 +278,13 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult imageBase(mlir::Location loc)
     {
+        if (!compileOptions.targetInfo.usesImageBaseRelativeEH)
+        {
+            // absolute EH references (32-bit x86) never reference __ImageBase, and an unused
+            // external declaration would still pull in the linker-defined symbol
+            return success();
+        }
+
         auto name = imageBaseRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
@@ -286,6 +293,30 @@ class LLVMRTTIHelperVCWin32
 
         rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
+    }
+
+    // A cross-reference inside ThrowInfo, CatchableType or CatchableTypeArray: an i32 field.
+    // 64-bit MSVC stores an image-base-relative RVA there, 32-bit x86 the absolute address, which
+    // is also 4 bytes - so the struct layouts coincide and only the value differs.
+    mlir::Value ehReference(mlir::Location loc, mlir::Value ptrValue)
+    {
+        if (!compileOptions.targetInfo.usesImageBaseRelativeEH)
+        {
+            if (compileOptions.sizeBits() != 32)
+            {
+                llvm::report_fatal_error("absolute EH references need 32-bit pointers");
+            }
+
+            return rewriter.create<LLVM::PtrToIntOp>(loc, th.getI32Type(), ptrValue);
+        }
+
+        auto intPtrTy = rewriter.getIntegerType(compileOptions.sizeBits());
+        auto ptrInt = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrTy, ptrValue);
+        auto imageBasePtr =
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+        auto imageBaseInt = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrTy, imageBasePtr);
+        auto rva = rewriter.create<LLVM::SubOp>(loc, intPtrTy, ptrInt, imageBaseInt);
+        return rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), rva);
     }
 
     LogicalResult catchableTypes(mlir::Location loc)
@@ -328,19 +359,7 @@ class LLVMRTTIHelperVCWin32
             auto rttiTypeDescriptor2PtrValue =
                 rewriter.create<LLVM::AddressOfOp>(loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
                                                   FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName));
-            auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
-
-            auto imageBasePtrValue =
-                rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
-            auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
-
-            // sub
-            auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiTypeDescriptor2IntValue, imageBaseIntValue);
-
-            // trunc
-            auto subRes32Value = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), subResValue);
-
-            auto itemValue2 = subRes32Value;
+            auto itemValue2 = ehReference(loc, rttiTypeDescriptor2PtrValue);
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
             auto itemValue3 = rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
@@ -371,19 +390,7 @@ class LLVMRTTIHelperVCWin32
     {
         auto rttiCatchableTypePtrValue = rewriter.create<LLVM::AddressOfOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeRefName));
-        auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableTypePtrValue);
-
-        auto imageBasePtrValue =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
-        auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
-
-        // sub
-        auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiCatchableTypeIntValue, imageBaseIntValue);
-
-        // trunc
-        auto subRes32Value = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), subResValue);
-
-        return subRes32Value;
+        return ehReference(loc, rttiCatchableTypePtrValue);
     }
 
     LogicalResult catchableArrayType(mlir::Location loc)
@@ -459,18 +466,8 @@ class LLVMRTTIHelperVCWin32
         // value 3
         auto rttiCatchableArrayTypePtrValue = rewriter.create<LLVM::AddressOfOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeInfoArrayRef));
-        auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableArrayTypePtrValue);
-
-        auto imageBasePtrValue =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
-        auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
-
-        // sub
-        auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiCatchableArrayTypeIntValue, imageBaseIntValue);
-
-        // trunc
-        auto subRes32Value = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), subResValue);
-        ch.setStructValue(loc, structValue, subRes32Value, 3);
+        auto rttiCatchableArrayTypeRefValue = ehReference(loc, rttiCatchableArrayTypePtrValue);
+        ch.setStructValue(loc, structValue, rttiCatchableArrayTypeRefValue, 3);
 
         rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structValue});
 

@@ -22,6 +22,7 @@
 # real. Known noisy files in tslang/test/tester/tests: typeGuardOfFormTypeOfBoolean,
 # typeGuardFunction, 00funcs, 00union_bin_ops2, conditionalTypes2 (hash-ordered union choices),
 # 00array8_tuple_spread (an equal-size tie in findMaxSizeType),
+# 00typeof_union_narrowing (differs between two runs of the same base-commit compiler),
 # and - before FH<n> was masked - 00global_const_object_method and 00object_func.
 sed -E 's/([A-Za-z_$]\.?)[0-9]{6,}/\1N/g; s/(td|tsrel|tsret)_[0-9]+/\1_N/g; s/FH[0-9]+/FHN/g; s/\.[0-9]{6,}\.\.vtbl/.N..vtbl/g; s/(^|[^A-Za-z0-9_.$])-?[0-9]{12,}/\1N/g' "$1" \
   | sed -E '/c"[^"]*(FHN|(td|tsrel|tsret)_N)/ s/\[[0-9]+ x i8\]/[K x i8]/g'

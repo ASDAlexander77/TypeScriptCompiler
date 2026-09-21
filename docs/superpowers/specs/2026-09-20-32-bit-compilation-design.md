@@ -3,7 +3,7 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design. Phase 1 implemented; phases 2-4 not.
+Status: approved design. Phases 1-3 implemented; phase 4 not.
 
 ## Why now
 
@@ -202,15 +202,30 @@ real layout under `-mm=gc`, `rc` and `none`.
 
 Two changes, both narrow because of the finding above.
 
-1. `_CxxThrowException` is `__stdcall` on x86. The block already present but
-   commented out at `lib/TypeScriptExceptionPass/Win32ExceptionPass.cpp:696`
-   sets `CallingConv::X86_StdCall`, which makes LLVM emit
-   `__CxxThrowException@8`. Gated on `stdcallDecoratesCxxThrow`.
-2. The image-base subtraction in `LLVMRTTIHelperVCWin32.h` (three sites) and
-   the corresponding logic in `MLIRRTTIHelperVCWin32.h` is gated on
-   `usesImageBaseRelativeEH`. On x86 the field takes the `ptrtoint` result
-   directly. The `ptrtoint` and `sub` widths come from `TargetInfo` rather than
-   being hardcoded `i64`.
+1. `_CxxThrowException` is `__stdcall` on x86, so its symbol is
+   `__CxxThrowException@8`. **As built:** a module pass,
+   `CxxThrowCallingConvPass` (`lib/TypeScriptExceptionPass`), sets
+   `CallingConv::X86_StdCall` on the declaration and on every call and invoke
+   of it. `transform.cpp` adds it after `Win32ExceptionPass` and before the
+   optimization pipeline, gated on `stdcallDecoratesCxxThrow`. It is one pass
+   rather than a fix at each declaration because three places create calls:
+   the MLIR lowering (`ThrowLogic.h`), the rethrow `Win32ExceptionPass`
+   synthesizes, and its `ToInvoke`. A call whose convention differs from its
+   callee's is undefined behaviour, which InstCombine turns into `unreachable`.
+   Any use other than as a direct callee is a hard error. The commented-out
+   block that used to sit in `Win32ExceptionPass::getThrowFn` is gone.
+2. The cross-references in `ThrowInfo`, `CatchableType` and
+   `CatchableTypeArray` are built by one `ehReference` function in each Win32
+   RTTI helper. When `usesImageBaseRelativeEH` holds it emits
+   `trunc(ptrtoint - ptrtoint __ImageBase)` at `sizeBits()` width, which is
+   exactly the old x64 output; otherwise it emits `ptrtoint` to i32, and
+   `__ImageBase` is not declared. Only the MLIR-level helper
+   (`MLIRRTTIHelperVCWin32.h`) emits these globals; the LLVM-dialect helper's
+   table emitters (`LLVMRTTIHelperVCWin32::setRTTIForType` and what it calls)
+   have no callers, and were changed only so neither helper can compute RVAs
+   on x86. `usesImageBaseRelativeEH` is decided by pointer width, as clang's
+   `MicrosoftCXXABI::isImageRelative()` does, so 32-bit ARM Windows is absolute
+   as well.
 
 **Testing.** Tests assert that control flow reaches the catch, and on
 unwinding order. They do not assert on the catch variable's contents: reading a
@@ -218,8 +233,15 @@ catch variable's value is a known-unreliable area independent of this work, and
 a test written on it would fail for reasons that have nothing to do with 32-bit
 support.
 
+`tslang/test/check-x86-eh.sh` (hand-run, needs the phase 2 x86 libraries,
+release only) checks the IR and object form of both changes, then links and
+runs `tslang/test/x86/eh_order.ts` (an exact unwinding trace) and eleven
+exception corpus files as 32-bit exes under gc, rc and none. Debug x86 builds,
+the `using`/dispose corpus files and a throw crossing an x86 `--emit=dll`
+boundary into a C++ `catch (int)` were verified by hand.
+
 **Gate.** throw/catch, nested catch, try/finally and rethrow behave correctly
-as 32-bit binaries.
+as 32-bit binaries. Met: no compiler change beyond the two above was needed.
 
 ## Phase 4 — Default library and the suite
 
@@ -271,6 +293,24 @@ confusion:
   `unrealized_conversion_cast`: upstream `ConvertAsyncToLLVMPass`
   (`AsyncToLLVM.cpp:1026`) builds `LowerToLLVMOptions(ctx)` with LLVM's default
   layout and a 64-bit index, so its types disagree with the i686 type converter's.
+
+- **Async programs crash at i686 (phase 4).** Found in phase 3: every async
+  program, including `00async_await` and one with no `try`, exits 139 as a
+  32-bit exe. Not EH-related.
+- **x86 EH type names use the 64-bit mangling (phase 4, interop only).** The
+  hardcoded names in `LLVMRTTIHelperVCWin32Const.h` (`??_R0PEAD@8`,
+  `_CT??_R0PEAD@88`) carry the `__ptr64` qualifier and 64-bit sizes. tslang's
+  throw and catch share them, so tslang programs are unaffected, and a C++
+  `catch (int)` across a DLL boundary works; catching a *pointer* type thrown
+  by MSVC-compiled x86 code would not match.
+- **`00catch_value*` at i686.** Both exit 0 under gc, rc and none, release and
+  debug, as of phase 3.
+- **Untyped `catch (e)` does not catch a thrown number (not 32-bit; x64 too).**
+  The `ThrowInfo` follows the thrown value's static type
+  (`MLIRGenStatements.cpp` ~1049-1067) while an untyped catch variable gets a
+  `void*` handler (`??_R0PEAX@8`), so `throw 1` / `throw "s"` escape it and the
+  process exits 127 with its earlier output unflushed. `throw <any>x` and class
+  objects are caught. Pre-existing; `eh_order.ts` uses `catch (e: TypeOf<1>)`.
 
 ## Out of scope
 

@@ -44,7 +44,9 @@ struct TargetInfo
         const bool msvc = target.isKnownWindowsMSVCEnvironment();
         const bool x86_32 = target.getArch() == llvm::Triple::x86;
 
-        info.usesImageBaseRelativeEH = msvc && !x86_32;
+        // By pointer width, as clang's MicrosoftCXXABI::isImageRelative() decides it: 32-bit ARM
+        // Windows stores absolute pointers too, not just x86.
+        info.usesImageBaseRelativeEH = msvc && info.pointerBits == 64;
         info.stdcallDecoratesCxxThrow = msvc && x86_32;
         info.supportsInProcessJit =
             target.getArch() == host.getArch() && target.getOS() == host.getOS();
