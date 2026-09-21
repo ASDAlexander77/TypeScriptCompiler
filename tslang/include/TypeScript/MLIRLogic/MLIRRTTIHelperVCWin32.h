@@ -398,6 +398,13 @@ class MLIRRTTIHelperVCWin32
 
     mlir::LogicalResult imageBase(mlir::Location loc)
     {
+        if (!compileOptions.targetInfo.usesImageBaseRelativeEH)
+        {
+            // absolute EH references (32-bit x86) never reference __ImageBase, and an unused
+            // external declaration would still pull in the linker-defined symbol
+            return mlir::success();
+        }
+
         auto name = windows::imageBaseRef;
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
@@ -406,6 +413,31 @@ class MLIRRTTIHelperVCWin32
 
         rewriter.create<mlir_ts::GlobalOp>(loc, mth.getI8Type(), true, name, LLVM::Linkage::External);
         return mlir::success();
+    }
+
+    // A cross-reference inside ThrowInfo, CatchableType or CatchableTypeArray: an i32 field.
+    // 64-bit MSVC stores an image-base-relative RVA there, 32-bit x86 the absolute address, which
+    // is also 4 bytes - so the struct layouts coincide and only the value differs.
+    mlir::Value ehReference(mlir::Location loc, mlir::Value ptrValue)
+    {
+        if (!compileOptions.targetInfo.usesImageBaseRelativeEH)
+        {
+            if (compileOptions.sizeBits() != 32)
+            {
+                llvm::report_fatal_error("absolute EH references need 32-bit pointers");
+            }
+
+            return rewriter.create<mlir_ts::CastOp>(loc, mth.getI32Type(), ptrValue);
+        }
+
+        auto intPtrTy = mlir::IntegerType::get(rewriter.getContext(), compileOptions.sizeBits());
+        auto ptrInt = rewriter.create<mlir_ts::CastOp>(loc, intPtrTy, ptrValue);
+        auto imageBasePtr = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getOpaqueType(),
+                                                                 mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
+        auto imageBaseInt = rewriter.create<mlir_ts::CastOp>(loc, intPtrTy, imageBasePtr);
+        auto rva = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
+            loc, intPtrTy, rewriter.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), ptrInt, imageBaseInt);
+        return rewriter.create<mlir_ts::CastOp>(loc, mth.getI32Type(), rva);
     }
 
     mlir::LogicalResult catchableTypes(mlir::Location loc)
@@ -445,21 +477,7 @@ class MLIRRTTIHelperVCWin32
             auto rttiTypeDescriptor2PtrValue =
                 rewriter.create<mlir_ts::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName));
-            auto rttiTypeDescriptor2IntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiTypeDescriptor2PtrValue);
-
-            auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(
-                loc, mth.getOpaqueType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
-            auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
-
-            // sub
-            auto subResValue = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
-                loc, mth.getI64Type(), rewriter.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)),
-                rttiTypeDescriptor2IntValue, imageBaseIntValue);
-
-            // trunc
-            auto subRes32Value = rewriter.create<mlir_ts::CastOp>(loc, mth.getI32Type(), subResValue);
-
-            auto itemValue2 = subRes32Value;
+            auto itemValue2 = ehReference(loc, rttiTypeDescriptor2PtrValue);
             setStructValue(loc, structVal, itemValue2, 1);
 
             auto itemValue3 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(0));
@@ -490,21 +508,7 @@ class MLIRRTTIHelperVCWin32
     {
         auto rttiCatchableTypePtrValue = rewriter.create<mlir_ts::ConstantOp>(
             loc, getCatchableTypePtrTy(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeRefName));
-        auto rttiCatchableTypeIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiCatchableTypePtrValue);
-
-        auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getOpaqueType(),
-                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
-        auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
-
-        // sub
-        auto subResValue = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
-            loc, mth.getI64Type(), rewriter.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), rttiCatchableTypeIntValue,
-            imageBaseIntValue);
-
-        // trunc
-        auto subRes32Value = rewriter.create<mlir_ts::CastOp>(loc, mth.getI32Type(), subResValue);
-
-        return subRes32Value;
+        return ehReference(loc, rttiCatchableTypePtrValue);
     }
 
     mlir::LogicalResult catchableArrayType(mlir::Location loc)
@@ -602,20 +606,8 @@ class MLIRRTTIHelperVCWin32
         // value 3
         auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir_ts::ConstantOp>(
             loc, getCatchableArrayTypePtrTy(arraySize), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeInfoArrayRef));
-        auto rttiCatchableArrayTypeIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiCatchableArrayTypePtrValue);
-
-        auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getOpaqueType(),
-                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
-        auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
-
-        // sub
-        auto subResValue = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
-            loc, mth.getI64Type(), rewriter.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), rttiCatchableArrayTypeIntValue,
-            imageBaseIntValue);
-
-        // trunc
-        auto subRes32Value = rewriter.create<mlir_ts::CastOp>(loc, mth.getI32Type(), subResValue);
-        setStructValue(loc, structValue, subRes32Value, 3);
+        auto rttiCatchableArrayTypeRefValue = ehReference(loc, rttiCatchableArrayTypePtrValue);
+        setStructValue(loc, structValue, rttiCatchableArrayTypeRefValue, 3);
 
         rewriter.create<mlir_ts::GlobalResultOp>(loc, mlir::ValueRange{structValue});
 
