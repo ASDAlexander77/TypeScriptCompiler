@@ -3,7 +3,7 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design, not yet implemented.
+Status: approved design. Phase 1 implemented; phases 2-4 not.
 
 ## Why now
 
@@ -51,20 +51,22 @@ differs is only the *value* stored: x86 must not subtract the image base.
 ## Architecture
 
 One new type, `TargetInfo`, constructed once in `prepareOptions()` from
-`llvm::Triple` and carried on `CompileOptions` alongside the parsed `Triple`
-itself. It holds two kinds of fact:
+`llvm::Triple` and carried on `CompileOptions`. The triple itself stays on
+`CompileOptions` only as the existing `moduleTargetTriple` string. `TargetInfo`
+holds two kinds of fact:
 
-- **Widths** — `pointerBits`, `indexBits`.
+- **Widths** — `pointerBits`, used for pointers, sizes and indices alike.
 - **Policy** — `usesImageBaseRelativeEH`, `stdcallDecoratesCxxThrow`,
   `supportsInProcessJit`.
 
 `TypeHelper` gains `getSizeType()` and `getPointerIntType()` backed by it.
-`TypeHelper` currently takes only an `MLIRContext*`, so it grows a
-`CompileOptions` parameter. That is a wide but mechanical diff and the single
-riskiest mechanical change in this plan.
-
-Keeping the parsed `llvm::Triple` on `CompileOptions` as well means one-off
-queries do not each require a new `TargetInfo` field.
+`TypeHelper` took only an `MLIRContext*`; it now takes an optional
+`const CompileOptions *`, defaulting to null. Most of its ~150 construction
+sites use only width-independent helpers (`getI8Type`, `getPtrType`,
+`getVoidType`) and are unchanged; only the sites that need a target width pass
+the options. `getSizeType()` called on a `TypeHelper` built without them fails
+via `report_fatal_error` in every build configuration, rather than guessing a
+width.
 
 ### Naming policy predicates
 
@@ -98,33 +100,60 @@ memory, which is far harder to diagnose than a directory that is not there.
 
 ## Phase 1 — Target width correctness
 
-`TargetInfo` lands. `TypeHelper` takes `CompileOptions`. The arch list is
-replaced.
+`TargetInfo` lands. `TypeHelper` takes an optional `CompileOptions`. The arch
+list is replaced.
 
-There are 38 `getI64Type()` call sites across `lib/` and `include/`. Eighteen
-of them are in the two Win32 RTTI helpers
+Eighteen `getI64Type()` call sites are in the two Win32 RTTI helpers
 (`include/TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32.h` and
 `include/TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h`, nine each); those are
-phase 3's, since phase 3 rewrites that arithmetic anyway. Phase 1 audits the
-remaining 20, and each is classified in a comment as one of:
+phase 3's, since phase 3 rewrites that arithmetic anyway. Outside them there are
+18 call sites across `lib/` and `include/`. A grep for `getI64Type()` returns
+21 lines there, but three are not call sites: the two definitions of
+`getI64Type` (`TypeHelper` and `MLIRTypeHelper`) and a comment mentioning it.
+Phase 1 audits the 18, and each is classified in a comment as one of:
 
 - **genuinely 64-bit** — the language's `number` is f64; runtime ABI
   parameters declared `int64_t`; anything whose width is fixed by a contract
   outside the target.
 - **target-width** — pointer arithmetic, object sizes, GEP indices.
 
-Most are expected to be genuinely 64-bit. The audit's value is not the count of
-changes but that the classification becomes explicit and survives future edits.
+Result: 13 are target-width and 5 genuinely 64-bit. The audit's value is not
+the count of changes but that the classification becomes explicit and survives
+future edits. It also found two latent 32-bit bugs, both fixed:
+
+- The `-1` sentinel for an optional interface member the object does not
+  provide was produced at `i64` in MLIRGen while the lowering that tests for it
+  compared at a different width. Producer and consumer now both use the target
+  width.
+- A pointer converted to a float went through `sitofp`. With the intermediate
+  integer now as wide as the pointer, an address at or above `0x80000000` on a
+  32-bit target would read back as a negative float. It is now `uitofp`.
 
 `target datalayout` is set at IR emission rather than only later in
 `tslang/obj.cpp`, so `--emit=llvm` output is self-describing.
 
 **Gate.** `--emit=llvm` for `i686-pc-windows-msvc`, `wasm32-unknown-unknown`
-and `x86_64-pc-windows-msvc` emits the correct datalayout, and no 32-bit target
-emits 64-bit-shaped size or pointer arithmetic. Verifiable with no native
-builds.
+and `x86_64-pc-windows-msvc` emits the correct datalayout. Verifiable with no
+native builds.
+
+The gate originally also required that no 32-bit target emit 64-bit-shaped size
+or pointer arithmetic. Phase 1 does not meet that, and the requirement moves to
+phase 2. The lowering's `LLVMTypeConverter` is built with LLVM's default data
+layout for every non-wasm target (`TypeScriptToLLVMLoweringPass::runOnOperation`
+in `lib/TypeScript/LowerToLLVM.cpp`, ~7255-7268), so on i686 `getIntPtrType`,
+struct layout, union sizing and alignment still use 8-byte pointers. Phase 1
+fixes the widths MLIRGen and the lowering choose explicitly; it does not change
+what the type converter derives.
 
 ## Phase 2 — 32-bit native build matrix
+
+The first task, and a gate on any native 32-bit test, is to build the type
+converter's data layout from the module's `llvm.data_layout` instead of LLVM's
+default. This changes x64 output — the default layout aligns `i64` at 32 bits,
+x64's real layout at 64 — so it needs its own x64 diff and review rather than
+riding along with the build-matrix work. It also removes the hardcoded wasm32
+layout string, which has `f128:64` and lacks `i128:128` and so matches neither
+of LLVM's derivations.
 
 - `3rdParty/gc/x86` and `3rdParty/gcdll/x86`: Boehm built for x86, static and
   DLL, debug and release.
@@ -175,6 +204,9 @@ They depend on phases 2 and 3 and cannot run before both are in place. Nothing
 in the probing suggests they are separately broken; if they are, that is a
 finding of this phase.
 
+Already found: at i686, `00for_await` and `00for_await_yield` fail at
+`--emit=llvm` with an `unrealized_conversion_cast` left in the IR; x64 passes.
+
 **Gate.** The same suite that runs at 64 bits runs at 32 bits, green. Genuine
 failures are triaged and recorded the way the Debug-suite failures are, not
 silently excluded.
@@ -194,6 +226,14 @@ confusion:
    so. What the combination does today must be confirmed before this guard is
    written; the guard is `supportsInProcessJit`.
 
+## Open issues
+
+- **ABI-by-environment triples.** For `x86_64-…-gnux32`, mips64 `gnuabin32` and
+  aarch64 `ilp32`, `getArchPointerBitWidth()` says 64 while the TargetMachine's
+  data layout says `p:32`. Nothing asserts the two agree. Proposed fix: a check
+  in `lib/TypeScript/MLIRGenModule.cpp` comparing
+  `createDataLayout().getPointerSizeInBits(0)` with `compileOptions.sizeBits()`.
+
 ## Out of scope
 
 - `-m32` shorthand. `-mtriple=i686-pc-windows-msvc` already works and is the
@@ -207,7 +247,7 @@ confusion:
 
 | Decision | Choice | Alternative rejected because |
 | --- | --- | --- |
-| Where target facts live | `TargetInfo` on `CompileOptions`, derived once from `llvm::Triple` | Querying the `Triple` at each site scatters policy across 38 call sites and relocates the arch-list rot rather than fixing it. Querying MLIR's `DataLayout` cannot express EH policy at all, and much width-dependent code runs in MLIRGen where no `DataLayout` is in scope. |
+| Where target facts live | `TargetInfo` on `CompileOptions`, derived once from `llvm::Triple` | Querying the `Triple` at each site scatters policy across every width-dependent call site and relocates the arch-list rot rather than fixing it. Querying MLIR's `DataLayout` cannot express EH policy at all, and much width-dependent code runs in MLIRGen where no `DataLayout` is in scope. |
 | Arch naming | `x86` / `x64` | Matches `3rdParty/gc/x64`, which already exists. |
 | Arch position in paths | Outermost under each component | A whole arch tree ships or is deleted as one unit; x64 paths keep their shape. |
 | Missing arch tree | Hard error | A fallback links and then corrupts memory. |

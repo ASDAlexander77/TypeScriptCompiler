@@ -4,7 +4,7 @@
 
 **Goal:** Make the compiler derive pointer/size width and target policy from the target triple rather than from a hand-maintained architecture list, so that any 32-bit triple is handled correctly.
 
-**Architecture:** A new `TargetInfo` struct is derived once from `llvm::Triple` in `prepareOptions()` and carried on `CompileOptions` alongside the parsed `Triple`. It holds widths (`pointerBits`) and policy predicates named for the decision they answer (`usesImageBaseRelativeEH`, `stdcallDecoratesCxxThrow`, `supportsInProcessJit`). `TypeHelper` gains an optional `CompileOptions` pointer and target-width accessors; only call sites that need a width pass it.
+**Architecture:** A new `TargetInfo` struct is derived once from `llvm::Triple` in `prepareOptions()` and carried on `CompileOptions`, next to the existing `moduleTargetTriple` string. It holds widths (`pointerBits`) and policy predicates named for the decision they answer (`usesImageBaseRelativeEH`, `stdcallDecoratesCxxThrow`, `supportsInProcessJit`). `TypeHelper` gains an optional `CompileOptions` pointer and target-width accessors; only call sites that need a width pass it.
 
 **Tech Stack:** C++17, MLIR/LLVM (prebuilt in `3rdParty/llvm/x64`), CMake + MSVC (Visual Studio 18 2026), GoogleTest via `add_mlir_unittest`.
 
@@ -22,7 +22,7 @@
 
 ## Deviation from the spec
 
-The spec says `TypeHelper` "grows a `CompileOptions` parameter" and calls it "a wide but mechanical diff". Counting found 152 `TypeHelper` construction sites across 22 files, nearly all of which only use width-independent helpers (`getI8Type`, `getPtrType`, `getVoidType`). This plan instead gives `TypeHelper` an **optional** `const CompileOptions *`, defaulting to `nullptr`, and migrates only the sites that call a target-width accessor. `getSizeType()` asserts the pointer is set, so a site that needs a width and did not pass options fails loudly in debug rather than silently picking a wrong one. Net effect: same design, ~20 sites touched instead of 152.
+The spec says `TypeHelper` "grows a `CompileOptions` parameter" and calls it "a wide but mechanical diff". Counting found 152 `TypeHelper` construction sites across 22 files, nearly all of which only use width-independent helpers (`getI8Type`, `getPtrType`, `getVoidType`). This plan instead gives `TypeHelper` an **optional** `const CompileOptions *`, defaulting to `nullptr`, and migrates only the sites that call a target-width accessor. `getSizeType()` checks the pointer is set and calls `report_fatal_error` when it is not, in every build configuration, so a site that needs a width and did not pass options fails loudly rather than silently picking a wrong one. Net effect: same design, ~20 sites touched instead of 152.
 
 ## File Structure
 
@@ -30,7 +30,7 @@ The spec says `TypeHelper` "grows a `CompileOptions` parameter" and calls it "a 
 | --- | --- |
 | `include/TypeScript/TargetInfo.h` (create) | The `TargetInfo` struct and its derivation from a target/host `llvm::Triple` pair. Header-only; pure, no MLIR dependency, so it unit-tests without a compilation context. |
 | `include/TypeScript/DataStructs.h` (modify) | `CompileOptions` gains `TargetInfo targetInfo`. `sizeBits` becomes a deprecated accessor over `targetInfo.pointerBits` so existing readers keep working during migration. |
-| `tslang/opts.cpp` (modify) | `prepareOptions()` builds `TargetInfo` from the target and host triples. The 23-entry 64-bit arch list is deleted. |
+| `tslang/opts.cpp` (modify) | `prepareOptions()` builds `TargetInfo` from the target and host triples. The 20-entry 64-bit arch list is deleted. |
 | `include/TypeScript/LowerToLLVM/TypeHelper.h` (modify) | Optional `const CompileOptions *`; adds `getSizeType()` and `getPointerIntType()`. |
 | `lib/TypeScript/MLIRGenModule.cpp` (modify) | Emits `target datalayout` on the module, not just the triple. |
 | `unittests/MLIRGen/TargetInfo.cpp` (create) | GoogleTest coverage of `TargetInfo::fromTriple` across triples. |
@@ -75,10 +75,11 @@ Create `unittests/MLIRGen/TargetInfo.cpp`:
 
 #include "gmock/gmock.h"
 
-// TargetInfo replaces a hand-maintained list of 64-bit architectures in opts.cpp. That list had
-// already gone wrong: it marks aarch64_32 as 64-bit, but ARM64_32 is an ILP32 target whose
-// pointers are 32 bits. These tests deliberately cover arches nobody has built for, to prove
-// the answer comes from the triple rather than from somebody remembering to add a line.
+// TargetInfo replaces a hand-maintained list of 64-bit architectures in opts.cpp; any arch not on
+// it got 32. The list was wrong in two ways: it put aarch64_32 among the 64-bit arches (it is ILP32,
+// see Arm64_32IsAnIlp32Target), and it missed 64-bit arches - systemz, sparcv9, amdgcn, ve, spirv,
+// riscv64be - which therefore got 32. These tests cover arches nobody has built for, to prove the
+// answer comes from the triple rather than from somebody remembering to add a line.
 namespace
 {
 
@@ -106,12 +107,14 @@ TEST(TargetInfoTest, PointerWidthComesFromTheTriple)
     EXPECT_EQ(infoFor("aarch64-unknown-linux-gnu").pointerBits, 64u);
 }
 
-// The arches the old list got wrong, in both directions.
+// 64-bit arches missing from the old list, which gave them 32. Each spelling is one that
+// llvm::Triple's parseArch maps to the arch named in the comment.
 TEST(TargetInfoTest, PointerWidthIsRightForArchesTheOldListMissed)
 {
-    EXPECT_EQ(infoFor("riscv32-unknown-elf").pointerBits, 32u);
-    EXPECT_EQ(infoFor("armv7-unknown-linux-gnueabihf").pointerBits, 32u);
-    EXPECT_EQ(infoFor("loongarch64-unknown-linux-gnu").pointerBits, 64u);
+    EXPECT_EQ(infoFor("s390x-unknown-linux-gnu").pointerBits, 64u); // systemz
+    EXPECT_EQ(infoFor("sparcv9-sun-solaris").pointerBits, 64u);     // sparcv9
+    EXPECT_EQ(infoFor("amdgcn-amd-amdhsa").pointerBits, 64u);       // amdgcn
+    EXPECT_EQ(infoFor("ve-unknown-linux-gnu").pointerBits, 64u);    // ve
 }
 
 // An unknown arch has no width of its own; falling back to 0 would make every size computation
@@ -369,8 +372,10 @@ Expected: all tests PASS, including the pre-existing `MLIRTypeHelperTest` suite.
 
 This phase must not change 64-bit behavior.
 
-A pre-change baseline is already stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
-binary as it stood before any Phase 1 change. Diff against it. Do **not** `git stash` and
+A pre-change baseline is stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
+binary as it stood before any Phase 1 change. That directory is local-only scratch (`.superpowers/` is
+gitignored); a reader without it regenerates it from `main`'s Release binary, emitting
+`--emit=llvm -mm=gc --no-default-lib` for the same samples. Diff against it. Do **not** `git stash` and
 rebuild to regenerate a baseline - that costs a second full Release link (many minutes) and
 risks losing uncommitted work.
 
@@ -390,7 +395,7 @@ Expected: no differences.
 git add tslang/include/TypeScript/DataStructs.h tslang/tslang/opts.cpp tslang/unittests/MLIRGen/TargetInfo.cpp tslang/unittests/MLIRGen/TypeHelper.cpp
 git commit -m "Take pointer width from the triple, not from an arch list
 
-opts.cpp listed 23 architectures it considered 64-bit. The list had
+opts.cpp listed 20 architectures it considered 64-bit. The list had
 wrong: it marked aarch64_32 as 64-bit, but ARM64_32 has 32-bit pointers. Triple
 already knows, so ask it.
 
@@ -683,11 +688,37 @@ grep -rn 'getI64Type()' lib include \
 wc -l /tmp/i64-audit.txt
 ```
 
-**Do not derive the list yourself — it is already written for you** at
-`i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/task-5-sites.md`,
-with the exclusions already applied. A raw grep returns 21 hits, of which three are not
-call sites at all (two definitions of `getI64Type` and one comment mentioning it), so a
-count taken from grep will mislead you. **There are 18 call sites.**
+**Do not derive the list yourself — it is below**, with the exclusions already applied.
+A raw grep returns 21 hits, of which three are not call sites at all (two definitions of
+`getI64Type` and one comment mentioning it), so a count taken from grep will mislead you.
+**There are 18 call sites.**
+
+Generated at commit 97adcbf1. Line numbers shift as you edit; file plus surrounding code is
+authoritative. Excluded, and not to be touched or annotated: the two Win32 RTTI helpers (18
+sites, Phase 3's); `TypeHelper.h:81`, the definition of `TypeHelper::getI64Type`;
+`TypeHelper.h:87`, a comment mentioning it; `MLIRTypeHelper.h:71`, the definition of
+`MLIRTypeHelper::getI64Type`.
+
+```
+ 1  lib/TypeScript/GCPass.cpp:268:        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+ 2  lib/TypeScript/LowerToLLVM.cpp:6230:        auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(rewriter.getI64Type(), {i64PtrTy, rewriter.getI64Type()}));
+ 3  lib/TypeScript/LowerToLLVM.cpp:6294:        auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+ 4  lib/TypeScript/MLIRGenAccessCall.cpp:1848:            auto typeDescrType = builder.getI64Type();
+ 5  lib/TypeScript/MLIRGenClasses.cpp:1313:                        builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
+ 6  lib/TypeScript/MLIRGenClasses.cpp:1337:        auto funcType = getFunctionType({}, builder.getI64Type(), false);
+ 7  lib/TypeScript/MLIRGenClasses.cpp:1442:                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue,
+ 8  lib/TypeScript/MLIRGenClasses.cpp:1724:                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+ 9  lib/TypeScript/MLIRGenExpressions.cpp:1376:        auto type = builder.getI64Type();
+10  lib/TypeScript/MLIRGenImpl.h:5614:            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
+11  lib/TypeScript/MLIRGenInterfaces.cpp:443:                            auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+12  lib/TypeScript/MLIRGenInterfaces.cpp:462:                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
+13  include/TypeScript/LowerToLLVM/CastLogicHelper.h:715:            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
+14  include/TypeScript/LowerToLLVM/CastLogicHelper.h:726:            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
+15  include/TypeScript/LowerToLLVM/CodeLogicHelper.h:77:        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+16  include/TypeScript/LowerToLLVM/ConvertLogic.h:60:                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getPtrType(), rewriter.getI32Type()}, true));
+17  include/TypeScript/LowerToLLVM/ThrowLogic.h:149:        auto sizeType = compileOptions.sizeBits() == 32 ? th.getI32Type() : th.getI64Type();
+18  include/TypeScript/MLIRLogic/MLIRTypeHelper.h:156:        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value, true));
+```
 
 - [ ] **Step 2: Classify each site**
 
@@ -723,8 +754,10 @@ Expected: all PASS.
 
 Any site correctly classified as target-width emits `i64` on x64 either way, so x64 IR must be byte-identical. A diff here means a site was misclassified.
 
-A pre-change baseline is already stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
-binary as it stood before any Phase 1 change. Diff against it. Do **not** `git stash` and
+A pre-change baseline is stored at `i:/TypeScriptCompiler/.superpowers/sdd/2026-09-20-32-bit-phase-1-target-width/baseline/`, generated with the release
+binary as it stood before any Phase 1 change. That directory is local-only scratch (`.superpowers/` is
+gitignored); a reader without it regenerates it from `main`'s Release binary, emitting
+`--emit=llvm -mm=gc --no-default-lib` for the same samples. Diff against it. Do **not** `git stash` and
 rebuild to regenerate a baseline - that costs a second full Release link (many minutes) and
 risks losing uncommitted work.
 
@@ -863,7 +896,7 @@ All of the following, before Phase 2 is planned:
 - [ ] `MLIRGenTests.exe` passes, including the new `TargetInfoTest` suite.
 - [ ] `test/check-datalayout.sh` passes for `i686-pc-windows-msvc`, `wasm32-unknown-unknown` and `x86_64-pc-windows-msvc`.
 - [ ] `ctest -j 16 -C Release` matches `main` — 2765/2765. Without `-C Release` on this multi-config MSBuild generator every test reports "(Not Run)", which looks like catastrophic failure and is not.
-- [ ] x64 `--emit=llvm` output is byte-identical to `main` for a class-and-method sample.
+- [ ] x64 `--emit=llvm` output is identical to `main` for a class-and-method sample, except the one added `target datalayout` line.
 - [ ] `--emit=jit -mtriple=i686-pc-windows-msvc` refuses with a message naming both triples.
-- [ ] Every one of the 18 non-EH `getI64Type()` call sites listed in `task-5-sites.md` carries a classification comment.
+- [ ] Every one of the 18 non-EH `getI64Type()` call sites listed in Task 5, Step 1 carries a classification comment.
 - [ ] The 18 EH `getI64Type()` sites are untouched. The two RTTI helper files are *not* otherwise frozen: Task 2 legitimately changes `compileOptions.sizeBits` to `sizeBits()` at `LLVMRTTIHelperVCWin32.h:118` and `MLIRRTTIHelperVCWin32.h:143`. Verify with `git diff -- <the two helpers> | grep getI64Type`, which must be empty — not with `git diff --stat`, which will legitimately be non-empty.
