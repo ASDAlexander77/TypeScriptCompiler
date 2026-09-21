@@ -183,6 +183,14 @@ if (TSLANG_TEST_X86)
         message(FATAL_ERROR "TSLANG_TEST_X86: the x86 twins build Windows i686 programs, so they need a Windows host")
     endif()
 
+    # The MSVC and Windows SDK x86 libraries every 32-bit link takes (from the -x86 defines above).
+    foreach(x86_system_lib "${TEST_LIBPATH_X86}/libcmt.lib" "${TEST_SDKPATH_X86}/kernel32.lib" "${TEST_UCRTPATH_X86}/libucrt.lib")
+        if (NOT EXISTS "${x86_system_lib}")
+            message(FATAL_ERROR "TSLANG_TEST_X86: ${x86_system_lib} is missing. "
+                                "Install the MSVC x86 build tools and the Windows SDK x86 libraries (Visual Studio Installer).")
+        endif()
+    endforeach()
+
     # The x86 libraries the twins link against (phase 2 layout; paths from the -x86 defines above).
     if (NOT EXISTS "${TEST_GCPATH_X86}/gc.lib")
         message(FATAL_ERROR "TSLANG_TEST_X86: the x86 gc.lib is missing at ${TEST_GCPATH_X86}. "
@@ -221,6 +229,11 @@ function(tslang_add_test)
         message(FATAL_ERROR "tslang_add_test(${arg_NAME}): the command must be test-runner; use add_test for anything else")
     endif()
 
+    # Checked whether the twins are on or not, so a name that could not have one fails every configure.
+    if (NOT arg_NAME MATCHES "^test-")
+        message(FATAL_ERROR "tslang_add_test(${arg_NAME}): the name must start with test-")
+    endif()
+
     add_test(NAME ${arg_NAME} COMMAND ${arg_COMMAND})
 
     set(twin "")
@@ -228,9 +241,6 @@ function(tslang_add_test)
         if ("-jit" IN_LIST arg_COMMAND)
             set_property(GLOBAL APPEND PROPERTY TSLANG_X86_JIT_SKIPPED ${arg_NAME})
         else()
-            if (NOT arg_NAME MATCHES "^test-")
-                message(FATAL_ERROR "tslang_add_test(${arg_NAME}): the name must start with test-")
-            endif()
             string(REGEX REPLACE "^test-" "test-x86-" twin "${arg_NAME}")
             list(SUBLIST arg_COMMAND 1 -1 arg_runner_args)
             add_test(NAME ${twin} COMMAND test-runner -x86 ${arg_runner_args})
@@ -745,6 +755,7 @@ tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOU
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
 tslang_add_test(NAME test-jit-00-arrays-assignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_assignment5.ts")
 tslang_add_test(NAME test-jit-00-array-of COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_of.ts")
+# Named test-jit- but has no -jit, so it is a compile test, and so is its x86 twin; not renamed, to keep the suite's names.
 tslang_add_test(NAME test-jit-00-array-conditional-access COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_cond_access.ts")
 tslang_add_test(NAME test-jit-00-typed-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typed_array.ts")
 tslang_add_test(NAME test-jit-00-array-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_view.ts")
@@ -2027,8 +2038,9 @@ endforeach()
 #
 # The tests from here to the ownership verifier are cmake scripts, not `test-runner` runs, so
 # they use plain add_test and have no x86 twin (see tslang_add_test): the rc debug-info check,
-# the collector-linkage check, the default-library collector tests (the default library is built
-# in another repository, with no x86 build yet) and the ownership verifier shards.
+# the collector-linkage check, the foreign-target import checks, the default-library collector
+# tests (the default library is built in another repository, with no x86 build yet) and the
+# ownership verifier shards.
 # Reference-counted programs built WITH debug info - see debug-info-rc.cmake for why this needs
 # a test of its own rather than a `test-runner` registration.
 add_test(NAME test-compile-rc-debug-info
@@ -2055,6 +2067,23 @@ if (WIN32)
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      "-DOPT=${gc_shared_auto_opt}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
+endif()
+
+# Importing a DLL for a target other than the host, whose declarations are read from the file -
+# see foreign-target-import.cmake. Always on, with no x86 libraries: it is what covers that path
+# when the x86 twins are off.
+if (WIN32)
+    foreach(foreign_import_mode read errors)
+        add_test(NAME test-compile-foreign-target-import-${foreign_import_mode}
+                 COMMAND ${CMAKE_COMMAND}
+                         "-DMODE=${foreign_import_mode}"
+                         "-DTSLANG=$<TARGET_FILE:tslang>"
+                         "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                         "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/foreign-target-import-${foreign_import_mode}"
+                         "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                         "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                         -P "${CMAKE_CURRENT_SOURCE_DIR}/foreign-target-import.cmake")
+    endforeach()
 endif()
 
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.
