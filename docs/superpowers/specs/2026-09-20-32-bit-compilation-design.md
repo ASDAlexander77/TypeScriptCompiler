@@ -294,17 +294,29 @@ only, so phase 4 is three PRs:
   `test-runner -x86` builds and runs a test as a 32-bit program (i686 triple,
   the x86 library directories, `/machine:x86`). Configure with
   `-DTSLANG_TEST_X86=ON`, then run `ctest -C Release -L x86`; the option is off
-  by default, so the default suite and CI are unchanged (2769 tests, same
-  names). With it on, every non-JIT registration gets a `test-x86-...` twin:
-  1398 twins. The 1357 JIT registrations get none, because `--emit=jit` runs in
-  the x64 compiler process and refuses a foreign arch; neither does the one
-  collector test that links the real default library, which has no x86 build.
+  by default, so the default suite and CI keep their 2769 test names (plus the
+  two foreign-target import tests below). With it on, every `test-runner`
+  registration without `-jit` gets a `test-x86-...` twin: 1398 twins. The
+  1357 `-jit` registrations get none,
+  because `--emit=jit` runs in the x64 compiler process and refuses a foreign
+  arch. Only one test file, `02funcs_vararg.ts`, is JIT-only at the file level;
+  every other file has a compile registration and so a twin. The cmake-script
+  tests have no twin either. There were 12 of them: `rc-debug-info`,
+  `gc-shared-auto`, the two default-library collector tests (the default
+  library has no x86 build) and the 8 ownership-verifier shards. The two
+  foreign-target import tests below make 14.
   1395 twins pass; 3 are registered `DISABLED` in
   `tslang/test/tester/x86-exclusions.cmake`: `internals` under gc, rc and
   none, because its `inline_asm<i64>` with an `=r` constraint needs a 64-bit
-  register that i686 does not have. Importing an x86 DLL now reads `__decls`
-  from the file when the target arch is not the host's (the host path, which
-  loads the DLL, is unchanged).
+  register that i686 does not have. Importing a DLL now reads `__decls` from
+  the file when the target's arch or OS is not the host's
+  (`targetInfo.supportsInProcessJit` is false); the host path, which loads the
+  DLL, is unchanged. Such an import must be a PE DLL for the target's machine,
+  or it is an error. Two cmake-script tests in the default suite,
+  `test-compile-foreign-target-import-read` and `-errors`
+  (`foreign-target-import.cmake`), cover that path without x86 libraries: an
+  x64 DLL imported by a program compiled for x86_64 Linux, then a non-PE file
+  and an x64 DLL imported into an x86 program.
   The last three failures were not a compiler defect but Windows installer
   detection: a 32-bit exe with no `requestedExecutionLevel` manifest, whose
   name contains `setup`, `install`, `update` or `patch`, needs elevation and,
@@ -346,7 +358,7 @@ confusion:
 - **Importing an x86 DLL (phase 4) — closed in 4c.** Compiling a program that
   imported an x86 DLL failed with `./lib.dll: Can't open: Unknown error (0xC1)`:
   `MLIRGenImpl::mlirGenImportSharedLib` loaded the DLL into the x64 compiler to
-  read its `__decls`. For a foreign-arch target it now reads the string from
+  read its `__decls`. For a foreign target (arch or OS) it now reads the string from
   the file (`Dump::readExportedCString`); the x86 `-shared` twins pass.
 - **The x86 default library (deferred from phase 4).** `getDefaultLibSubDir`
   in `include/TypeScript/Defines.h` still has no arch segment, and the default
