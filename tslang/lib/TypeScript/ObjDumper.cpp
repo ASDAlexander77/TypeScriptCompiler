@@ -178,6 +178,7 @@ uint16_t coffMachine(StringRef filePath)
             machine = importFile->getMachine();
         }
 
+        // First non-zero, not first COFF member: machine-independent objects carry IMAGE_FILE_MACHINE_UNKNOWN (0).
         if (machine != 0)
         {
             consumeError(std::move(err));

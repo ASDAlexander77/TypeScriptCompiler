@@ -29,7 +29,8 @@ printf 'print("x");\n' > "$work/x.ts"
 mkdir -p "$work/empty" \
          "$work/gc-good/x86" "$work/gc-x64-in-x86/x86" "$work/gc-x86-flat" \
          "$work/gcdll-good/x86" \
-         "$work/rt-good/x86" "$work/rt-x64-in-x86/x86"
+         "$work/rt-good/x86" "$work/rt-x64-in-x86/x86" \
+         "$work/gcdll-x86-flat" "$work/rt-x86-flat"
 cp "$GC_X86" "$work/gc-good/x86/gc.lib"
 cp "$GC_X64" "$work/gc-x64-in-x86/x86/gc.lib"
 cp "$GC_X86" "$work/gc-x86-flat/gc.lib"
@@ -37,6 +38,9 @@ cp "$GCDLL_X86_LIB" "$work/gcdll-good/x86/gc.lib"
 cp "$GCDLL_X86_DLL" "$work/gcdll-good/x86/gc.dll"
 cp "$RT_X86" "$work/rt-good/x86/TypeScriptAsyncRuntime.lib"
 cp "$RT_X64" "$work/rt-x64-in-x86/x86/TypeScriptAsyncRuntime.lib"
+cp "$GCDLL_X86_LIB" "$work/gcdll-x86-flat/gc.lib"
+cp "$GCDLL_X86_DLL" "$work/gcdll-x86-flat/gc.dll"
+cp "$RT_X86" "$work/rt-x86-flat/TypeScriptAsyncRuntime.lib"
 
 X86="i686-pc-windows-msvc"
 X64="x86_64-pc-windows-msvc"
@@ -106,6 +110,10 @@ expect_error "gcdll: no x86 subdirectory"     "$X86" dll "x86" "build_gc_release
     "--gc-shared-lib-path=$work/empty" "$GOOD_GC" "$GOOD_RT"
 expect_error "x64: x86 gc.lib in flat path"   "$X64" exe "gc.lib" "x86" "but this program targets x64" -- \
     "--gc-lib-path=$work/gc-x86-flat" "--tslang-lib-path=$(dirname "$RT_X64")"
+expect_error "x64: x86 gc.dll import lib in flat path" "$X64" dll "gc.lib" "x86" "but this program targets x64" -- \
+    "--gc-shared-lib-path=$work/gcdll-x86-flat" "--gc-lib-path=$(dirname "$GC_X64")" "--tslang-lib-path=$(dirname "$RT_X64")"
+expect_error "x64: x86 runtime lib in flat path" "$X64" exe "TypeScriptAsyncRuntime.lib" "x86" "but this program targets x64" -- \
+    "--gc-lib-path=$(dirname "$GC_X64")" "--tslang-lib-path=$work/rt-x86-flat"
 
 expect_no_flat_error "exe: correct x86 layout" exe "$GOOD_GC" "$GOOD_RT"
 expect_no_flat_error "dll: correct x86 layout" dll "--gc-shared-lib-path=$work/gcdll-good" "$GOOD_GC" "$GOOD_RT"

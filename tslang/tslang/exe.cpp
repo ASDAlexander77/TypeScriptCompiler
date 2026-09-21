@@ -134,11 +134,11 @@ static bool isWindowsX86Target()
     return triple.getOS() == llvm::Triple::Win32 && triple.getArch() == llvm::Triple::x86;
 }
 
-// The directory a lib path's libraries are in for the current target.
-static std::string getTargetLibDir(llvm::StringRef path)
+// The directory a lib path's libraries are in: its `x86` subdirectory for Windows x86, else itself.
+static std::string getTargetLibDir(llvm::StringRef path, bool windowsX86)
 {
     llvm::SmallString<256> dir(path);
-    if (isWindowsX86Target())
+    if (windowsX86)
     {
         llvm::sys::path::append(dir, "x86");
     }
@@ -217,7 +217,7 @@ static std::string findGCDll(llvm::StringRef libDir)
 
 static bool isSharedGCLibDir(llvm::StringRef libDir)
 {
-    auto targetLibDir = getTargetLibDir(libDir);
+    auto targetLibDir = getTargetLibDir(libDir, isWindowsX86Target());
     llvm::SmallString<256> lib(targetLibDir);
     llvm::sys::path::append(lib, "gc.lib");
     return llvm::sys::fs::exists(lib) && !findGCDll(targetLibDir).empty();
@@ -360,7 +360,7 @@ static bool resolveWindowsLibPath(const llvm::Triple &triple, std::string &path,
     }
 
     auto x86 = triple.getArch() == llvm::Triple::x86;
-    auto libDir = getTargetLibDir(path);
+    auto libDir = getTargetLibDir(path, x86);
     llvm::SmallString<256> lib(libDir);
     llvm::sys::path::append(lib, libName);
 
