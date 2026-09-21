@@ -692,14 +692,7 @@ struct Win32ExceptionPassCode
         llvm::Type *Args[] = {PointerType::get(Ctx, 0), PointerType::get(Ctx, 0)};
         auto *FTy = llvm::FunctionType::get(Type::getVoidTy(Ctx), Args, /*isVarArg=*/false);
         auto Throw = Function::Create(FTy, llvm::GlobalValue::LinkageTypes::ExternalLinkage, "_CxxThrowException", module);
-        /*
-        // _CxxThrowException is stdcall on 32-bit x86 platforms.
-        if (CGM.getTarget().getTriple().getArch() == llvm::Triple::x86)
-        {
-            if (auto *Fn = dyn_cast<llvm::Function>(Throw.getCallee()))
-                Fn->setCallingConv(llvm::CallingConv::X86_StdCall);
-        }
-        */
+        // On 32-bit x86 this is __stdcall; CxxThrowCallingConvPass sets that on it and its call sites.
 
         return Throw;
     }

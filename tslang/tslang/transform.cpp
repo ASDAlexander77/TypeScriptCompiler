@@ -13,6 +13,7 @@
 #ifdef ENABLE_EXCEPTIONS
 #include "TypeScript/Pass/LandingPadFixPass.h"
 #include "TypeScript/Pass/Win32ExceptionPass.h"
+#include "TypeScript/Pass/CxxThrowCallingConvPass.h"
 #endif
 #include "TypeScript/Pass/ExportFixPass.h"
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
@@ -337,6 +338,13 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         if (compileOptions.isWindows)
         {
             mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
+        }
+
+        // After Win32ExceptionPass, which adds throw calls and turns calls into invokes, and
+        // before the optimization pipeline, which treats a calling-convention mismatch as UB.
+        if (compileOptions.targetInfo.stdcallDecoratesCxxThrow)
+        {
+            mpm.addPass(ts::CxxThrowCallingConvPass());
         }
 
         llvm::Triple triple(m->getTargetTriple());

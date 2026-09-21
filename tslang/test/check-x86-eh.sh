@@ -63,4 +63,44 @@ else
   bad "x86 obj: 00try_catch compiles"; cat "$x86obj.err"
 fi
 
+# --- Task 2: _CxxThrowException is __stdcall on x86 ---------------------------------------
+# The decorated symbol is what the linker sees.
+for triple in i686-pc-windows-msvc x86_64-pc-windows-msvc; do
+  obj="$TMP/throw.$triple.obj"
+  if "$TSLANG" --emit=obj --opt -mm=none --no-default-lib -mtriple="$triple" "$TESTS/00try_catch.ts" -o "$obj" 2>"$obj.err"; then
+    syms="$("$READOBJ" --symbols "$obj" | grep -o 'Name: .*CxxThrowException.*' | sort -u)"
+    case "$triple" in
+      i686*)   [ "$syms" = "Name: __CxxThrowException@8" ] && ok "x86 obj: __CxxThrowException@8" \
+                                                            || bad "x86 obj: __CxxThrowException@8 (got: $syms)";;
+      x86_64*) [ "$syms" = "Name: _CxxThrowException" ] && ok "x64 obj: _CxxThrowException unchanged" \
+                                                         || bad "x64 obj: _CxxThrowException unchanged (got: $syms)";;
+    esac
+  else
+    bad "$triple obj: 00try_catch compiles"; cat "$obj.err"
+  fi
+done
+
+# Every call site must carry the convention too: one left at the C convention is UB, and
+# InstCombine turns it into `unreachable`. 00try_catch throws from main (a call), 00try_catch_rethrow
+# throws inside a try (an invoke), and 00try_finally gets the catch-all rethrow that
+# Win32ExceptionPass synthesizes for a finally. Checked with and without --opt.
+for name in 00try_catch 00try_catch_rethrow 00try_finally; do
+  for opt in --opt --opt=false; do
+    ll="$TMP/cc.$name$opt.ll"
+    if "$TSLANG" --emit=llvm $opt -mm=none --no-default-lib -mtriple=i686-pc-windows-msvc "$TESTS/$name.ts" -o "$ll" 2>"$ll.err"; then
+      decl="$(grep -c '^declare x86_stdcallcc void @_CxxThrowException(' "$ll")"
+      sites="$(grep -Ec '(call|invoke) (x86_stdcallcc )?void @_CxxThrowException\(' "$ll")"
+      cdecl="$(grep -E '(call|invoke) void @_CxxThrowException\(' "$ll")"
+      if [ "$decl" = 1 ] && [ "$sites" -gt 0 ] && [ -z "$cdecl" ]; then
+        ok "x86 IR $opt: $name declares and calls _CxxThrowException as x86_stdcallcc ($sites sites)"
+      else
+        bad "x86 IR $opt: $name declares and calls _CxxThrowException as x86_stdcallcc (decl=$decl sites=$sites)"
+        [ -n "$cdecl" ] && echo "$cdecl"
+      fi
+    else
+      bad "x86 IR $opt: $name compiles"; cat "$ll.err"
+    fi
+  done
+done
+
 exit "$fail"

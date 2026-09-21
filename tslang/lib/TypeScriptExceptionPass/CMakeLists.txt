@@ -7,6 +7,7 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_library(TypeScriptExceptionPass
   Win32ExceptionPass.cpp
   LandingPadFixPass.cpp
+  CxxThrowCallingConvPass.cpp
 
   ADDITIONAL_HEADER_DIRS
 
