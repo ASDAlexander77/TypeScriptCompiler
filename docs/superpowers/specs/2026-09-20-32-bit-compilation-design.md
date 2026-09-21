@@ -3,7 +3,7 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design. Phases 1-3 implemented; phase 4 not.
+Status: approved design. Phases 1-3 and 4a implemented; 4b and 4c not.
 
 ## Why now
 
@@ -261,6 +261,29 @@ Already found: at i686, `00for_await` and `00for_await_yield` fail at
 failures are triaged and recorded the way the Debug-suite failures are, not
 silently excluded.
 
+**Split.** A corpus probe (`tslang/test/probe-corpus.sh`: every corpus file as
+a single-file exe, x64 and i686 × gc/rc/none) found 15 files failing at i686
+only, so phase 4 is three PRs:
+
+- **4a — union storage as bytes (done).** A tagged union stored its value as
+  its largest member's struct; bytes in that struct's padding were not carried
+  by a value copy, so another member's field there was lost — at x64 for some
+  layouts, at i686 for common ones (a pointer followed by an 8-aligned `f64`).
+  The value field is now a packed `<{[N/P x iP], [N%P x i8]}>` (P the pointer
+  size), with the unused tail zeroed when a smaller member is stored. Also
+  fixed: `castLLVMTypes` copied small aggregates as one pointer (4 bytes at
+  i686), and a module-level union initialized with a constant now gets a
+  global constructor instead of failing to compile. 29 probe rows newly pass,
+  none regress; x64 `.text` is unchanged within 0.03%.
+- **4b — async at i686.**
+- **4c — the suite at i686:** test-runner arch flag, x86 default library,
+  reading `__decls` from a DLL file, and the remaining failures.
+
+Remaining i686-only probe failures after 4a: the six async files (4b);
+`internals` (an `inline_asm<i64>` with an `=r` constraint, which no single
+i686 register can satisfy); `02funcs_vararg` (unresolved `_printf`; it is
+commented out of the suite).
+
 ## Error handling
 
 Three failures get explicit, actionable messages instead of downstream
@@ -311,6 +334,12 @@ confusion:
   `void*` handler (`??_R0PEAX@8`), so `throw 1` / `throw "s"` escape it and the
   process exits 127 with its earlier output unflushed. `throw <any>x` and class
   objects are caught. Pre-existing; `eh_order.ts` uses `catch (e: TypeOf<1>)`.
+
+- **A global initialized from a DLL-exported global reads garbage (not 32-bit;
+  x64 too).** Found in phase 4a review: in an importer, `const copiedN: number
+  = cN` where `cN` is exported by a `-shared` module prints a denormal (e.g.
+  3.04e-312) with both the old and new compiler; a union copy crashes silently.
+  Likely the importer's global constructor runs before the import is bound.
 
 ## Out of scope
 
