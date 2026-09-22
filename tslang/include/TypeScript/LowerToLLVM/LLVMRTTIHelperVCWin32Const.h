@@ -21,13 +21,38 @@ namespace windows
 constexpr const auto *typeInfoExtRef = "??_7type_info@@6B@";
 constexpr const auto *imageBaseRef = "__ImageBase";
 
+// F32Type/F64Type/I32Type each also carry a second, `.PEAX` (void*) catchable-type entry -
+// see the comment on StringType::typeName2 below for why: it is what lets an untyped
+// `catch (e)` or a `catch (e: any)` (which filters on `??_R0PEAX@8`, the same generic
+// void*-shaped RTTI used for `any`) match a thrown primitive at all. Without it the
+// CatchableTypeArray the CRT walks contains only the primitive's own descriptor, the
+// filter never matches, and the exception propagates out of `main` uncaught - see
+// throw-number-catchable-type-missing-any-fallback.md.
+//
+// That fallback entry's *type descriptor* (`typeInfoRef2`, `??_R0PEAX@8`) is safe to share
+// with String/Class/I8PtrType below: a type descriptor carries no size, just a vtable pointer
+// and the `.PEAX` name. Its *catchable-type* record is not safe to share, though - it carries
+// `sizeOrOffset`, and that value is genuinely different per primitive (4 for an `int`, 8 for a
+// `double`, `pointerSize()` - 4 or 8 depending on target - for a string/class/`any` pointer).
+// `_CT??_R0PEAX@88` is a `linkonce_odr` global keyed only by name: whichever translation unit
+// or, within one module, whichever type gets processed first "wins" and fixes that symbol's
+// size for every later reference to the same name (see `catchableType()`'s
+// `lookupSymbol(...) -> return failure()` idempotency guard). Giving `I32Type` and
+// `F32Type`/`F64Type` their own distinctly-named fallback records below keeps a module that
+// throws both an `int` and a `string` (say) from having one of them silently take on the
+// other's copy size.
+
 namespace F32Type
 {
 constexpr const auto *typeName = ".N";
+constexpr const auto *typeName2 = ".PEAX";
 constexpr const auto *typeInfoRef = "??_R0N@8";
+constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA1N";
-constexpr const auto *throwInfoRef = "_TI1N";
+// own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N";
+constexpr const auto *throwInfoRef = "_TI2N";
 // describes `.N` (double), like F64Type - see setF32AsCatchType
 constexpr int catchableTypeSize = 8;
 } // namespace F32Type
@@ -35,20 +60,28 @@ constexpr int catchableTypeSize = 8;
 namespace F64Type
 {
 constexpr const auto *typeName = ".N";
+constexpr const auto *typeName2 = ".PEAX";
 constexpr const auto *typeInfoRef = "??_R0N@8";
+constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA1N";
-constexpr const auto *throwInfoRef = "_TI1N";
+// own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N";
+constexpr const auto *throwInfoRef = "_TI2N";
 constexpr int catchableTypeSize = 8;
 } // namespace F64Type
 
 namespace I32Type
 {
 constexpr const auto *typeName = ".H";
+constexpr const auto *typeName2 = ".PEAX";
 constexpr const auto *typeInfoRef = "??_R0H@8";
+constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0H@84";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA1H";
-constexpr const auto *throwInfoRef = "_TI1H";
+// own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@84";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2H";
+constexpr const auto *throwInfoRef = "_TI2H";
 // 4, not the pointer size: `int` is 4 bytes on every target, and the `4` at the end of
 // `_CT??_R0H@84` says so too
 constexpr int catchableTypeSize = 4;
