@@ -253,15 +253,26 @@
 // warns about, and it is the largest instance of it, since every program that does not pass
 // `--no-default-lib` links this one.
 //
-// Layout: defaultlib/{lib,dll}/{debug,release}/{gc,rc,none}/. The model name is exactly
+// Layout: defaultlib/{lib,dll}/[x86/]{debug,release}/{gc,rc,none}/. The model name is exactly
 // `memoryModelName()`, so the directory and the `-mm=` flag cannot drift apart.
 #define DEFAULT_LIB_KIND_STATIC "lib"
 #define DEFAULT_LIB_KIND_SHARED "dll"
 
-inline std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel)
+// ...and, for a Windows x86 target, per arch, outermost under lib/ or dll/ like every other x86
+// library (spec "Arch in the library layout"). Every other target, x64 included, has no arch
+// segment, so existing trees keep their shape. There is no fallback to the x64 tree: an x64
+// library links into an x86 program only to fail on every symbol.
+#define DEFAULT_LIB_ARCH_X86 "x86"
+
+inline std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel, const char *arch)
 {
-    return std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC) + "/" +
-           (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
+    std::string subDir = std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC) + "/";
+    if (arch && *arch)
+    {
+        subDir += std::string(arch) + "/";
+    }
+
+    return subDir + (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
 }
 
 #define DEBUG_SCOPE "current"

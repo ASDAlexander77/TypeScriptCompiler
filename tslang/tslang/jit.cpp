@@ -399,7 +399,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
         auto defaultLibSubDir =
             getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
-                                memoryModelName(compileOptions.memoryModel));
+                                memoryModelName(compileOptions.memoryModel), /*arch=*/""); // JIT is host-only
         auto defaultLibFile = mergeWithDefaultLibPath(getDefaultLibPath(),
 #ifdef WIN32
             defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"
