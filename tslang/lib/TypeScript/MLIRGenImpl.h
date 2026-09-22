@@ -1424,8 +1424,22 @@ class MLIRGenImpl
             // pointer-like representation -- it still needs real storage so that
             // mutation through the bound method is visible across property accesses.
             // See docs/const-let-storage-design.md.
+            //
+            // A `const` array LITERAL is the same shape of problem: its resolved type
+            // is `!ts.const_array<T,N>`, a compile-time-constant snapshot, not the
+            // mutable heap-backed `!ts.array<T>` that TS array semantics require (a
+            // `const` binding only blocks *reassigning* `arr`, not mutating its
+            // contents). `let`/`var` widen const_array -> array once at declaration
+            // (adjustLocalVariableType -> wideStorageType) and keep that single heap
+            // array alive via real storage; `const` skipped both steps, so every call
+            // site needing `!ts.array<T>` (e.g. `.sort()`/`.reverse()`) had to
+            // `ts.Cast` the pristine const_array into a fresh, disposable copy, while
+            // direct element access indexed the immutable original directly -
+            // mutating methods silently did nothing (they mutated a copy nobody kept)
+            // and `arr[i] = v` segfaulted (write into read-only constant data).
+            // Force the same real-storage + widening path as `let` for this case too.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
-            needsIdentityStorage = mth.hasBoundMethodField(type);
+            needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type);
             if (needsIdentityStorage)
             {
                 return mlir::success();
@@ -1629,6 +1643,29 @@ class MLIRGenImpl
 
         if (variableDeclarationInfo.isConst)
         {
+            // A const array literal (`!ts.const_array<T,N>`) that was routed into real
+            // storage by processConstRef's needsIdentityStorage check still needs the
+            // same const_array -> array widening `let` gets below - storage alone is
+            // not enough. Without it, the Variable slot would hold the immutable
+            // const_array value itself, and each mutating use (.sort(), element
+            // write, ...) would still `ts.Cast` a fresh, disposable !ts.array<T> copy
+            // out of it instead of sharing one heap array through the slot. Every
+            // other const type (generator wrapper tuples, plain values) keeps the
+            // early-return: this widening is only valid/needed for const_array. See
+            // docs/const-let-storage-design.md and the const-array note above
+            // processConstRef.
+            if (isa<mlir_ts::ConstArrayType>(type) && variableDeclarationInfo.needsIdentityStorage)
+            {
+                auto actualType = mth.removeConstType(type);
+                if (variableDeclarationInfo.initial && actualType != type)
+                {
+                    CAST_A(castedValue, location, actualType, variableDeclarationInfo.initial, genContext);
+                    variableDeclarationInfo.setInitial(castedValue);
+                }
+
+                variableDeclarationInfo.setType(actualType);
+            }
+
             return mlir::success();
         }
 
@@ -1655,6 +1692,31 @@ class MLIRGenImpl
     {
         if (variableDeclarationInfo.isConst)
         {
+            // Same const-array widening as adjustLocalVariableType, for a module-level
+            // `const arr = [...]`: a global const binding never goes through
+            // processConstRef (that path is local-only), so needsIdentityStorage is
+            // never computed for it - but the GlobalOp itself is always real storage,
+            // so no extra identity check is needed here, just the type widening. The
+            // GlobalOp stays `isConst` (its own {ptr,len} header can't be
+            // reassigned - `arr = other` is still rejected) but the header's type must
+            // be the heap-backed `!ts.array<T>`, not the immutable `!ts.const_array
+            // <T,N>` snapshot, or every mutating method/element write still operates
+            // on a disposable ts.Cast copy or the read-only original. See the note
+            // above processConstRef / const-let-storage-design.md.
+            if (isa<mlir_ts::ConstArrayType>(variableDeclarationInfo.type))
+            {
+                auto type = variableDeclarationInfo.type;
+                auto actualType = mth.removeConstType(type);
+                if (variableDeclarationInfo.initial && actualType != type)
+                {
+                    auto result = cast(location, actualType, variableDeclarationInfo.initial, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    variableDeclarationInfo.initial = V(result);
+                }
+
+                variableDeclarationInfo.setType(actualType);
+            }
+
             return mlir::success();
         }
 

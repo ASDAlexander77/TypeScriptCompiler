@@ -6,6 +6,25 @@ function lengthOf(u: number[] | string) {
     return typeof u === "array" ? u.length : -1;
 }
 
+// A module-level `const` int-array literal: covers the same elementwise widening as the local
+// `const c` case below, but through the global-variable codegen path (createGlobalVariable /
+// adjustGlobalVariableType), not the local one (createLocalVariable / adjustLocalVariableType).
+// Giving `const` array literals real identity storage (so mutating methods like .sort() share one
+// heap array - see docs/const-let-storage-design.md) initially broke this: reading `moduleConst`
+// back yields `AddressOf(@moduleConst) -> Load`, a shape castConstArrayToArray's local-only
+// trace-back (Load -> VariableOp -> initializer) did not recognize, so it fell through to the
+// generic array-to-array cast and was rejected ("element type number is not base of type s32").
+// Fixed by also unwrapping AddressOf(global) -> the GlobalOp's own initializer terminator.
+const moduleConst = [7, 8, 9];
+
+function takesNumberArray(a: number[]) {
+    return a[0] + a[1] + a[2];
+}
+
+function returnsNumberArray(): number[] {
+    return moduleConst;
+}
+
 function main() {
     const c = [1, 2, 3];
     let fromConst: number[] = c;
@@ -33,6 +52,16 @@ function main() {
     // the elements are real `number`s now: fractional arithmetic works on them
     const halves: number[] = c;
     assert(halves[0] / 2 == 0.5, "number arithmetic on converted element");
+
+    // module-level const int-array literal: assignment, parameter, and return-value shapes
+    let fromModuleConst: number[] = moduleConst;
+    assert(fromModuleConst.length == 3, "module const: length");
+    assert(fromModuleConst[0] / 2 == 3.5, "module const: assignment, number arithmetic");
+
+    assert(takesNumberArray(moduleConst) == 24, "module const: parameter");
+
+    let returned = returnsNumberArray();
+    assert(returned[2] / 2 == 4.5, "module const: return value, number arithmetic");
 
     print("done.");
 }
