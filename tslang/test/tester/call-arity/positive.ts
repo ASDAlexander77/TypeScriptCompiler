@@ -10,8 +10,9 @@ function va(a: number, ...rest: number[]) {
     return a + rest.length;
 }
 
-// tslang rejects `void` as a parameter type, so an `undefined` parameter stands in for the
-// other type that TypeScript lets a call omit.
+// tslang additionally treats an `undefined` parameter as omittable; tsc does not (a call
+// omitting `b: undefined` is TS2554). tsc's own omittable case is a `void` parameter, but
+// that cannot be written in tslang: it rejects `void` as a parameter type.
 function withUndefined(a: number, u: undefined) {
     return a;
 }

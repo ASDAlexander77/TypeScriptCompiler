@@ -2190,8 +2190,11 @@ foreach(call_arity_case ${call_arity_cases})
              COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
                      "${PROJECT_SOURCE_DIR}/test/tester/call-arity/${call_arity_name}.ts"
                      -o "${CMAKE_CURRENT_BINARY_DIR}/call-arity-${call_arity_name}.obj")
+    # PASS_REGULAR_EXPRESSION alone ignores the exit code, so a crash after printing the
+    # expected message would still pass; FAIL_REGULAR_EXPRESSION catches that.
     set_tests_properties(test-compile-call-arity-${call_arity_name}
-                         PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}")
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
 # The calls the check must still accept: an omitted optional, default-valued or void

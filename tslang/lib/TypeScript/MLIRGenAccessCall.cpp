@@ -1417,6 +1417,7 @@ namespace mlirgen
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
                             : builder.create<mlir_ts::IfOp>(location, condValue, false);
 
+            mlir::OpBuilder::InsertionGuard guard(builder);
             builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
             // value if true
