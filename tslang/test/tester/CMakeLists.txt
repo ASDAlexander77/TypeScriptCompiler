@@ -297,6 +297,7 @@ tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-
 tslang_add_test(NAME test-compile-00-typeof-union-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
+tslang_add_test(NAME test-compile-00-const-array-mutation COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
 tslang_add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-compile-00-bigint-struct-layout COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_struct_layout.ts")
 tslang_add_test(NAME test-compile-00-union-member-padding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_padding.ts")
@@ -386,6 +387,12 @@ tslang_add_test(NAME test-compile-00-owned-locals COMMAND test-runner "${PROJECT
 tslang_add_test(NAME test-compile-00-try-using-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 tslang_add_test(NAME test-compile-00-throw-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 tslang_add_test(NAME test-compile-00-throw-inlined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+# Windows only: the fix this pins down is in the Win32 RTTI tables. On Linux an untyped catch
+# still does not match a thrown number (the clause is a void* pointer type, which the Itanium ABI
+# matches only against pointer exceptions), so this test fails there. See the Linux catch issue.
+if (WIN32)
+tslang_add_test(NAME test-compile-00-throw-number-untyped-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
+endif()
 tslang_add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -723,6 +730,7 @@ tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runn
 tslang_add_test(NAME test-jit-00-typeof-union-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_union_narrowing.ts")
 tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_to_array_elements.ts")
 tslang_add_test(NAME test-jit-00-const-array-nested-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
+tslang_add_test(NAME test-jit-00-const-array-mutation COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
 tslang_add_test(NAME test-jit-00-array-move-wide-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
@@ -807,6 +815,10 @@ tslang_add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_
 tslang_add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 tslang_add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 tslang_add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+# Windows only, for the reason given at the compile registration above.
+if (WIN32)
+tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
+endif()
 tslang_add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -1697,6 +1709,7 @@ set(TSLANG_CORPUS
     00symbol.ts
     00throw_in_catch.ts
     00throw_inlined.ts
+    00throw_number_untyped_catch.ts
     00to_primitive_ops.ts
     00toplevel_control_flow.ts
     00toplevel_no_main_with_helpers.ts
@@ -1997,6 +2010,14 @@ set(TSLANG_CORPUS_BROKEN_AOT_RC
 
 set(TSLANG_CORPUS_BROKEN_AOT_NONE
     )
+
+# Windows-only corpus entries. 00throw_number_untyped_catch.ts pins down a Win32 RTTI fix; the
+# same bug is still open on Linux (an untyped catch's clause is a void* pointer type there, which
+# the Itanium ABI matches only against pointer exceptions), so the file would fail its rc/none
+# corpus variants on Linux. Its explicit registrations are guarded the same way.
+if (NOT WIN32)
+    list(REMOVE_ITEM TSLANG_CORPUS 00throw_number_untyped_catch.ts)
+endif()
 
 foreach(corpus_file ${TSLANG_CORPUS})
     string(REGEX REPLACE "\\.ts$" "" corpus_slug "${corpus_file}")

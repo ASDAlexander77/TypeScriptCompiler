@@ -921,14 +921,71 @@ namespace mlirgen
     // with only a warning. Such an array is built here from its elements, each cast to the element type.
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castConstArrayToArray(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
     {
-        auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType);
         auto arrayType = dyn_cast<mlir_ts::ArrayType>(type);
-        if (!constArrayType || !arrayType || constArrayType.getElementType() == arrayType.getElementType())
+        if (!arrayType)
         {
             return std::nullopt;
         }
 
-        auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+        auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType);
+
+        // A `const` array literal (`const c = [1, 2]`) now gets real identity
+        // storage so mutating methods like .sort() share one heap array instead of
+        // a fresh disposable copy per call (see processConstRef /
+        // adjustLocalVariableType / adjustGlobalVariableType in MLIRGenImpl.h) --
+        // which means reading `c` elsewhere yields the already-widened
+        // `!ts.array<T>`, not the original `!ts.const_array<T,N>` this function
+        // keys off. Trace back through whichever shape that widening introduced to
+        // recover the original literal, so the elementwise conversion below still
+        // applies to a `const` int-array literal read into e.g. `number[]`:
+        //  - local: Load -> VariableOp -> its initializer (a Cast chain)
+        //  - module-level: Load -> AddressOf(@global) -> that GlobalOp's
+        //    initializer region, whose GlobalResultOp terminator yields the same
+        //    kind of Cast chain (see createGlobalVariableInitialization)
+        mlir::Value literalValue = value;
+        if (!constArrayType)
+        {
+            if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>())
+                {
+                    if (auto init = varOp.getInitializer())
+                    {
+                        literalValue = init;
+                    }
+                }
+                else if (auto addressOfOp = loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>())
+                {
+                    if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalNameAttr()))
+                    {
+                        if (auto *initBlock = globalOp.getInitializerBlock())
+                        {
+                            if (auto globalResultOp = dyn_cast<mlir_ts::GlobalResultOp>(initBlock->getTerminator()))
+                            {
+                                if (globalResultOp.getResults().size() == 1)
+                                {
+                                    literalValue = globalResultOp.getResults().front();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            while (auto castOp = literalValue.getDefiningOp<mlir_ts::CastOp>())
+            {
+                literalValue = castOp.getIn();
+            }
+
+            constArrayType = dyn_cast<mlir_ts::ConstArrayType>(literalValue.getType());
+        }
+
+        if (!constArrayType || constArrayType.getElementType() == arrayType.getElementType())
+        {
+            return std::nullopt;
+        }
+
+        auto constOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
         auto elementAttrs = constOp ? dyn_cast<mlir::ArrayAttr>(constOp.getValue()) : mlir::ArrayAttr();
         if (!elementAttrs)
         {

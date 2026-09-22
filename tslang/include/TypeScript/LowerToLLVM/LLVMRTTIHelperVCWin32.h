@@ -61,6 +61,12 @@ class LLVMRTTIHelperVCWin32
     void setF32AsCatchType()
     {
         types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef, F32Type::catchableTypeSize});
+        // Same catchableTypeSize as the primary entry, not pointerSize(): both entries describe
+        // the exact same in-memory value (a double), and a size mismatch here would tell the CRT
+        // to copy pointerSize() bytes out of a catchableTypeSize()-byte object when a generic
+        // `catch (e)`/`catch (e: any)` matches via this fallback entry - see the note on
+        // I32Type::typeName2 in LLVMRTTIHelperVCWin32Const.h.
+        types.push_back({F32Type::typeName2, F32Type::typeInfoRef2, F32Type::catchableTypeInfoRef2, F32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = F32Type::throwInfoRef;
@@ -69,6 +75,8 @@ class LLVMRTTIHelperVCWin32
     void setF64AsCatchType()
     {
         types.push_back({F64Type::typeName, F64Type::typeInfoRef, F64Type::catchableTypeInfoRef, F64Type::catchableTypeSize});
+        // see setF32AsCatchType for why this reuses the primary size instead of pointerSize()
+        types.push_back({F64Type::typeName2, F64Type::typeInfoRef2, F64Type::catchableTypeInfoRef2, F64Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = F64Type::catchableTypeInfoArrayRef;
         throwInfoRef = F64Type::throwInfoRef;
@@ -77,6 +85,9 @@ class LLVMRTTIHelperVCWin32
     void setI32AsCatchType()
     {
         types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef, I32Type::catchableTypeSize});
+        // `int` is 4 bytes on every target, unlike a pointer - see setF32AsCatchType for why this
+        // reuses the primary size instead of pointerSize()
+        types.push_back({I32Type::typeName2, I32Type::typeInfoRef2, I32Type::catchableTypeInfoRef2, I32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = I32Type::throwInfoRef;

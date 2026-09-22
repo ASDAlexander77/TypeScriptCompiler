@@ -62,6 +62,10 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef,
                          windows::F32Type::catchableTypeSize});
+        // Same catchableTypeSize as the primary entry, not pointerSize() - see the equivalent
+        // comment in LLVMRTTIHelperVCWin32.h::setF32AsCatchType.
+        types.push_back({windows::F32Type::typeName2, windows::F32Type::typeInfoRef2, windows::F32Type::catchableTypeInfoRef2,
+                         windows::F32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F32Type::throwInfoRef;
@@ -71,6 +75,8 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::F64Type::typeName, windows::F64Type::typeInfoRef, windows::F64Type::catchableTypeInfoRef,
                          windows::F64Type::catchableTypeSize});
+        types.push_back({windows::F64Type::typeName2, windows::F64Type::typeInfoRef2, windows::F64Type::catchableTypeInfoRef2,
+                         windows::F64Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::F64Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F64Type::throwInfoRef;
@@ -79,6 +85,8 @@ class MLIRRTTIHelperVCWin32
     void setI32AsCatchType()
     {
         types.push_back({windows::I32Type::typeName, windows::I32Type::typeInfoRef, windows::I32Type::catchableTypeInfoRef,
+                         windows::I32Type::catchableTypeSize});
+        types.push_back({windows::I32Type::typeName2, windows::I32Type::typeInfoRef2, windows::I32Type::catchableTypeInfoRef2,
                          windows::I32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = windows::I32Type::catchableTypeInfoArrayRef;
