@@ -1695,12 +1695,11 @@ namespace mlirgen
             }
             else
             {
-                auto classValue = builder.create<mlir_ts::ClassRefOp>(
-                    location, classInfo->classType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
-
-                // TODO: find out if you need to pass generics info, typeParams + typeArgs
-                return NewClassInstance(location, classValue, undefined, undefined, false, genContext);
+                // A class expression's value only has to carry the class (its type and vtable), so
+                // that `new X(...)`, casts to an interface and the like work on it. Allocate it and
+                // set the vtable, but do not run the constructor: that would execute user code at
+                // the class definition, with no arguments for its parameters.
+                return V(NewClassInstanceLogicAsOp(location, classInfo, false, genContext));
             }
         }
 

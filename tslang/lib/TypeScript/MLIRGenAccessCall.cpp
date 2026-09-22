@@ -1417,6 +1417,7 @@ namespace mlirgen
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
                             : builder.create<mlir_ts::IfOp>(location, condValue, false);
 
+            mlir::OpBuilder::InsertionGuard guard(builder);
             builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
             // value if true
@@ -1425,6 +1426,9 @@ namespace mlirgen
                 builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), actualFuncRefValue);
 
             auto result = mlirGenCallExpression(location, innerFuncRef, typeArguments, operands, genContext);
+            // a failed call (e.g. too few arguments) must fail the expression, not leave an
+            // empty branch behind - for a void callee that silently dropped the call
+            EXIT_IF_FAILED(result)
             auto value = V(result);
             if (value)
             {

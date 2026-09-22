@@ -441,6 +441,7 @@ tslang_add_test(NAME test-compile-00-class-recursive COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-class-expression COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
 tslang_add_test(NAME test-compile-00-class-expression-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression2.ts")
 tslang_add_test(NAME test-compile-00-class-expression-3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression3.ts")
+tslang_add_test(NAME test-compile-00-class-expression-no-ctor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression_no_ctor.ts")
 tslang_add_test(NAME test-compile-00-class-deconst COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 tslang_add_test(NAME test-compile-00-class-virtual-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_call.ts")
 tslang_add_test(NAME test-compile-00-class-virtual-table COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_table.ts")
@@ -862,6 +863,7 @@ tslang_add_test(NAME test-jit-00-class-recursive COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-class-expression COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
 tslang_add_test(NAME test-jit-00-class-expression-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression2.ts")
 tslang_add_test(NAME test-jit-00-class-expression-3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression3.ts")
+tslang_add_test(NAME test-jit-00-class-expression-no-ctor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression_no_ctor.ts")
 tslang_add_test(NAME test-jit-00-class-deconst COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 tslang_add_test(NAME test-jit-00-class-virtual-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_call.ts")
 tslang_add_test(NAME test-jit-00-class-virtual-table COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_table.ts")
@@ -1503,6 +1505,7 @@ set(TSLANG_CORPUS
     00class_expression.ts
     00class_expression2.ts
     00class_expression3.ts
+    00class_expression_no_ctor.ts
     00class_from_tuple.ts
     00class_generic_iface.ts
     00class_generic_method.ts
@@ -2163,6 +2166,40 @@ foreach(ownership_shard RANGE ${ownership_last})
                      "-DSHARDS=${TSLANG_OWNERSHIP_SHARDS}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
 endforeach()
+
+# A call with fewer arguments than the callee's required parameters is an error (TS2554),
+# not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
+# the compiler prints the expected message. The counts are what the user wrote, so `this`
+# (a method, a constructor) and a closure's capture are not counted. Plain add_test: these
+# compile nothing, so they need no x86 twin.
+set(call_arity_cases
+    "plain|Expected 2 arguments, but got 1\\."
+    "optional|Expected 2\\-3 arguments, but got 1\\."
+    "method|Expected 2 arguments, but got 1\\."
+    "constructor|Expected 2 arguments, but got 1\\."
+    "closure|Expected 2 arguments, but got 1\\."
+    "declared|Expected 2 arguments, but got 1\\."
+    "varargs|Expected at least 1 arguments, but got 0\\."
+    "optional_call|Expected 2 arguments, but got 1\\.")
+foreach(call_arity_case ${call_arity_cases})
+    string(FIND "${call_arity_case}" "|" call_arity_sep)
+    string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)
+    math(EXPR call_arity_sep "${call_arity_sep} + 1")
+    string(SUBSTRING "${call_arity_case}" ${call_arity_sep} -1 call_arity_message)
+    add_test(NAME test-compile-call-arity-${call_arity_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/call-arity/${call_arity_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/call-arity-${call_arity_name}.obj")
+    # PASS_REGULAR_EXPRESSION alone ignores the exit code, so a crash after printing the
+    # expected message would still pass; FAIL_REGULAR_EXPRESSION catches that.
+    set_tests_properties(test-compile-call-arity-${call_arity_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# The calls the check must still accept: an omitted optional, default-valued or void
+# parameter, and varargs with and without extra arguments.
+tslang_add_test(NAME test-compile-call-arity-positive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/call-arity/positive.ts")
 
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
