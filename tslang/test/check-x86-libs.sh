@@ -15,12 +15,17 @@ GCDLL_X86_LIB="$REPO/3rdParty/gcdll/x86/release/lib/gc.lib"
 GCDLL_X86_DLL="$REPO/3rdParty/gcdll/x86/release/bin/gc.dll"
 GCDLL_X64_DLL="$REPO/3rdParty/gcdll/x64/release/bin/gc.dll"
 RT_X86="$REPO/__build/tslang-runtime/release/x86/TypeScriptAsyncRuntime.lib"
-# The default-lib repo is a sibling checkout; its x64 release/gc static lib stands in for "a
-# default library, but the wrong one" in the cases below. Only the x64 tree is real; there is no
-# x86 default library staged here (that is Task 5's job), so this file has no positive x86 case.
+# The default-lib repo is a sibling checkout; when its x64 build exists, its release/gc static lib
+# stands in for "a default library, but the wrong one" below and is the only thing the x64-control
+# case can run against. It is optional, unlike the libraries in the prerequisite loop below: a
+# machine with no TypeScriptCompilerDefaultLib x64 build still runs every other case in this file
+# (the "x64 lib in x86 tree" case below needs only some x64 COFF archive, not a real default
+# library); only the x64-control case is SKIPPED. There is no x86 default library staged here -
+# the x86 default library (spec Phase 4, As built) has its own run coverage in check-x86-run.sh's
+# default-library section - so this file has no positive x86 case.
 DEFAULTLIB_X64_LIB="$REPO/../TypeScriptCompilerDefaultLib/__build/defaultlib/lib/release/gc/TypeScriptDefaultLib.lib"
 
-for f in "$GC_X64" "$GC_X86" "$GCDLL_X86_LIB" "$GCDLL_X86_DLL" "$GCDLL_X64_DLL" "$RT_X64" "$RT_X86" "$DEFAULTLIB_X64_LIB"; do
+for f in "$GC_X64" "$GC_X86" "$GCDLL_X86_LIB" "$GCDLL_X86_DLL" "$GCDLL_X64_DLL" "$RT_X64" "$RT_X86"; do
     if [ ! -f "$f" ]; then
         echo "FAIL missing prerequisite: $f"
         exit 1
@@ -51,11 +56,14 @@ cp "$RT_X64" "$work/rt-x64-in-x86/x86/TypeScriptAsyncRuntime.lib"
 cp "$GCDLL_X86_LIB" "$work/gcdll-x86-flat/gc.lib"
 cp "$GCDLL_X86_DLL" "$work/gcdll-x86-flat/gc.dll"
 cp "$RT_X86" "$work/rt-x86-flat/TypeScriptAsyncRuntime.lib"
-# defaultlib-x64-only: a real x64 default library, staged with no x86 tree at all.
-# defaultlib-x64-in-x86: that same x64 library, staged where the x86 tree is expected to be -
-# present, but the wrong machine.
-cp "$DEFAULTLIB_X64_LIB" "$work/defaultlib-x64-only/defaultlib/lib/release/gc/TypeScriptDefaultLib.lib"
-cp "$DEFAULTLIB_X64_LIB" "$work/defaultlib-x64-in-x86/defaultlib/lib/x86/release/gc/TypeScriptDefaultLib.lib"
+# defaultlib-x64-only/defaultlib/lib/release/gc: a stand-in file. The "no x86 tree" case below
+# never opens it - it fails on the missing x86 subdirectory before reading any file - and the
+# "x64 control" case only runs against this tree, with the real x64 default library copied over
+# it, when one is staged (see below). defaultlib-x64-in-x86 needs only *some* x64 COFF archive:
+# the machine check reads the file's COFF header before ever trying to link it as a default
+# library, so $GC_X64 stands in without this file depending on a TypeScriptCompilerDefaultLib build.
+cp "$GC_X64" "$work/defaultlib-x64-only/defaultlib/lib/release/gc/TypeScriptDefaultLib.lib"
+cp "$GC_X64" "$work/defaultlib-x64-in-x86/defaultlib/lib/x86/release/gc/TypeScriptDefaultLib.lib"
 
 X86="i686-pc-windows-msvc"
 X64="x86_64-pc-windows-msvc"
@@ -191,14 +199,24 @@ expect_no_flat_error "dll: correct x86 layout" dll "--gc-shared-lib-path=$work/g
 
 # Default library, without --no-default-lib: it takes the same x86-tree/machine-check treatment
 # as the collector and the runtime above. There is no positive x86 case here (no x86 default
-# library is staged for this script to find); Task 5 adds run coverage once one is built.
+# library is staged for this script to find); check-x86-run.sh's default-library section adds run
+# coverage once one is built.
 expect_default_lib_error "default lib: no x86 tree" "$X86" "$work/defaultlib-x64-only" \
     "no x86 default library built for -mm=gc" "defaultlib" "x86" "release" "gc" -- \
     "$GOOD_GC" "$GOOD_RT"
 expect_default_lib_error "default lib: x64 lib in x86 tree" "$X86" "$work/defaultlib-x64-in-x86" \
     "is built for x64" -- \
     "$GOOD_GC" "$GOOD_RT"
-expect_default_lib_ok "default lib: x64 control" "$X64" "$work/defaultlib-x64-only" \
-    "--gc-lib-path=$(dirname "$GC_X64")" "--tslang-lib-path=$(dirname "$RT_X64")"
+# Only this case needs a real, linkable x64 default library (an actual TypeScriptCompilerDefaultLib
+# build); the two error cases above are satisfied by the stand-in files staged above. SKIPPED, not
+# FAILed, when none is staged, matching check-x86-run.sh's skip style for the same situation.
+if [ -f "$DEFAULTLIB_X64_LIB" ]; then
+    cp "$DEFAULTLIB_X64_LIB" "$work/defaultlib-x64-only/defaultlib/lib/release/gc/TypeScriptDefaultLib.lib"
+    expect_default_lib_ok "default lib: x64 control" "$X64" "$work/defaultlib-x64-only" \
+        "--gc-lib-path=$(dirname "$GC_X64")" "--tslang-lib-path=$(dirname "$RT_X64")"
+else
+    echo "SKIPPED: default lib: x64 control (no x64 default library built at $DEFAULTLIB_X64_LIB;" \
+         "build it in TypeScriptCompilerDefaultLib)"
+fi
 
 exit "$fail"

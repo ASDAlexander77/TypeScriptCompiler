@@ -40,10 +40,20 @@ else()
     set(build "release")
 endif()
 
+# X86 (optional; unset/OFF means the ordinary x64 tree): the i686 twin passes -DX86=1 and its own
+# gc/runtime/OPT (-mtriple), and asks for the x86 arch segment the x86 default library (spec Phase 4,
+# As built) gave the default-library layout (defaultlib/{lib,dll}/x86/{debug,release}/{gc,rc,none};
+# see Defines.h getDefaultLibSubDir).
+if(DEFINED X86 AND X86)
+    set(default_lib_arch "x86/")
+else()
+    set(default_lib_arch "")
+endif()
+
 # DEFAULT_LIB_PATH at run time wins, so a workflow can point at the library it just built
 set(default_lib "")
 foreach(candidate "$ENV{DEFAULT_LIB_PATH}" ${DEFAULT_LIB_CANDIDATES})
-    if(NOT candidate STREQUAL "" AND IS_DIRECTORY "${candidate}/defaultlib/dll/${build}/gc")
+    if(NOT candidate STREQUAL "" AND IS_DIRECTORY "${candidate}/defaultlib/dll/${default_lib_arch}${build}/gc")
         set(default_lib "${candidate}")
         break()
     endif()
@@ -52,13 +62,13 @@ endforeach()
 if(default_lib STREQUAL "")
     # a workflow that has just built the library sets this, so a wrong path fails instead of skipping
     if("$ENV{TSLANG_REQUIRE_DEFAULT_LIB}" STREQUAL "1")
-        message(FATAL_ERROR "no default library built for ${build}/gc under DEFAULT_LIB_PATH='$ENV{DEFAULT_LIB_PATH}'")
+        message(FATAL_ERROR "no ${default_lib_arch}default library built for ${build}/gc under DEFAULT_LIB_PATH='$ENV{DEFAULT_LIB_PATH}'")
     endif()
-    message("SKIPPED: no default library built for ${build}/gc (set DEFAULT_LIB_PATH to the folder holding 'defaultlib')")
+    message("SKIPPED: no ${default_lib_arch}default library built for ${build}/gc (set DEFAULT_LIB_PATH to the folder holding 'defaultlib')")
     return()
 endif()
 
-set(default_lib_dll_dir "${default_lib}/defaultlib/dll/${build}/gc")
+set(default_lib_dll_dir "${default_lib}/defaultlib/dll/${default_lib_arch}${build}/gc")
 message(STATUS "default library: ${default_lib}")
 
 set(ENV{GC_SHARED_LIB_PATH} "")
