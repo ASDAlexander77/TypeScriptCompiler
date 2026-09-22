@@ -441,6 +441,7 @@ tslang_add_test(NAME test-compile-00-class-recursive COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-class-expression COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
 tslang_add_test(NAME test-compile-00-class-expression-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression2.ts")
 tslang_add_test(NAME test-compile-00-class-expression-3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression3.ts")
+tslang_add_test(NAME test-compile-00-class-expression-no-ctor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression_no_ctor.ts")
 tslang_add_test(NAME test-compile-00-class-deconst COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 tslang_add_test(NAME test-compile-00-class-virtual-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_call.ts")
 tslang_add_test(NAME test-compile-00-class-virtual-table COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_table.ts")
@@ -862,6 +863,7 @@ tslang_add_test(NAME test-jit-00-class-recursive COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-class-expression COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
 tslang_add_test(NAME test-jit-00-class-expression-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression2.ts")
 tslang_add_test(NAME test-jit-00-class-expression-3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression3.ts")
+tslang_add_test(NAME test-jit-00-class-expression-no-ctor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression_no_ctor.ts")
 tslang_add_test(NAME test-jit-00-class-deconst COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 tslang_add_test(NAME test-jit-00-class-virtual-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_call.ts")
 tslang_add_test(NAME test-jit-00-class-virtual-table COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_virtual_table.ts")
@@ -1503,6 +1505,7 @@ set(TSLANG_CORPUS
     00class_expression.ts
     00class_expression2.ts
     00class_expression3.ts
+    00class_expression_no_ctor.ts
     00class_from_tuple.ts
     00class_generic_iface.ts
     00class_generic_method.ts
