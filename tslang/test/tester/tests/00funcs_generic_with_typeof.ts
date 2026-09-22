@@ -17,7 +17,7 @@ const v2 = gen<string[]>(null);
 assert(v2 == "no")
 print(v2);
 
-const v3 = gen<string[]>();
+const v3 = gen<string[]>(undefined);
 assert(v3 == "no")
 print(v3);
 

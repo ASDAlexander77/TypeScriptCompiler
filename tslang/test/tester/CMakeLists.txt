@@ -2167,6 +2167,37 @@ foreach(ownership_shard RANGE ${ownership_last})
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
 endforeach()
 
+# A call with fewer arguments than the callee's required parameters is an error (TS2554),
+# not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
+# the compiler prints the expected message. The counts are what the user wrote, so `this`
+# (a method, a constructor) and a closure's capture are not counted. Plain add_test: these
+# compile nothing, so they need no x86 twin.
+set(call_arity_cases
+    "plain|Expected 2 arguments, but got 1\\."
+    "optional|Expected 2\\-3 arguments, but got 1\\."
+    "method|Expected 2 arguments, but got 1\\."
+    "constructor|Expected 2 arguments, but got 1\\."
+    "closure|Expected 2 arguments, but got 1\\."
+    "declared|Expected 2 arguments, but got 1\\."
+    "varargs|Expected at least 1 arguments, but got 0\\."
+    "optional_call|Expected 2 arguments, but got 1\\.")
+foreach(call_arity_case ${call_arity_cases})
+    string(FIND "${call_arity_case}" "|" call_arity_sep)
+    string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)
+    math(EXPR call_arity_sep "${call_arity_sep} + 1")
+    string(SUBSTRING "${call_arity_case}" ${call_arity_sep} -1 call_arity_message)
+    add_test(NAME test-compile-call-arity-${call_arity_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/call-arity/${call_arity_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/call-arity-${call_arity_name}.obj")
+    set_tests_properties(test-compile-call-arity-${call_arity_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}")
+endforeach()
+
+# The calls the check must still accept: an omitted optional, default-valued or void
+# parameter, and varargs with and without extra arguments.
+tslang_add_test(NAME test-compile-call-arity-positive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/call-arity/positive.ts")
+
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
 # these run. The file pairs are the default model's, verbatim.

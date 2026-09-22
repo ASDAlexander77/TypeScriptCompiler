@@ -175,7 +175,7 @@ function main() {
     assert(aC[1] === 50);
 
     // instance
-    let aI: TI0 = new S();
+    let aI: TI0 = new S("s", 1);
     let bI: TI1;
 
     // ThisParameterType

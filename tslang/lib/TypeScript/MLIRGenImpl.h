@@ -7161,13 +7161,19 @@ class MLIRGenImpl
                                              mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
                                              const GenContext &genContext)
     {
+        // `thisValue` is the one operand a call gets that the user did not write: the object of
+        // a method or constructor call (a bound function), the capture of a closure (also a
+        // bound function) or the receiver of an extension function. Callees reached without
+        // it take only what the user wrote.
+        auto hiddenOperandsCount = 0;
         if (thisValue)
         {
             operands.insert(operands.begin(), thisValue);
+            hiddenOperandsCount = 1;
         }
 
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
-                                             genContext)))
+                                             hiddenOperandsCount, genContext)))
         {
             return mlir::failure();
         }
@@ -7233,9 +7239,74 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // A call with fewer arguments than the callee needs is TypeScript's TS2554. Only a parameter
+    // whose type admits `undefined` itself may be left out - an optional (`b?: T`) or a
+    // default-valued (`b = 5`) one, both typed !ts.optional, and an `undefined` or `void` one.
+    // A rest parameter is never required. Any other missing parameter is an error; padding it
+    // with undef would hand the callee garbage.
+    //
+    // `operandsCount` and the indices of `argFuncTypes` include the `hiddenOperandsCount`
+    // leading operands the compiler inserted (`this`, a closure's capture); the message counts
+    // only what the user wrote. Too many arguments is not checked here.
+    mlir::LogicalResult checkCallArity(mlir::Location location, int operandsCount, mlir::ArrayRef<mlir::Type> argFuncTypes,
+                                       bool isVarArg, int hiddenOperandsCount)
+    {
+        auto isOmittable = [](mlir::Type type) {
+            return isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::VoidType>(type);
+        };
+
+        // the parameters before the rest parameter, if any
+        int paramsEnd = argFuncTypes.size() - (isVarArg ? 1 : 0);
+
+        auto missingRequired = false;
+        for (auto i = operandsCount; i < paramsEnd; i++)
+        {
+            if (!isOmittable(argFuncTypes[i]))
+            {
+                missingRequired = true;
+                break;
+            }
+        }
+
+        if (!missingRequired)
+        {
+            return mlir::success();
+        }
+
+        // as TypeScript counts it: every parameter up to the last one that can't be left out
+        auto minCount = 0;
+        for (auto i = hiddenOperandsCount; i < paramsEnd; i++)
+        {
+            if (!isOmittable(argFuncTypes[i]))
+            {
+                minCount = i + 1 - hiddenOperandsCount;
+            }
+        }
+
+        auto maxCount = paramsEnd - hiddenOperandsCount;
+        auto gotCount = operandsCount - hiddenOperandsCount;
+
+        auto diag = emitError(location) << "Expected ";
+        if (isVarArg)
+        {
+            diag << "at least " << minCount;
+        }
+        else if (minCount == maxCount)
+        {
+            diag << minCount;
+        }
+        else
+        {
+            diag << minCount << "-" << maxCount;
+        }
+
+        diag << " arguments, but got " << gotCount << ".";
+        return mlir::failure();
+    }
+
     mlir::LogicalResult mlirGenPrepareCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg,
-                                            const GenContext &genContext)
+                                            int hiddenOperandsCount, const GenContext &genContext)
     {
         int opArgsCount = operands.size();
         int funcArgsCount = argFuncTypes.size();
@@ -7247,6 +7318,11 @@ class MLIRGenImpl
 
         if (funcArgsCount > opArgsCount)
         {
+            if (mlir::failed(checkCallArity(location, opArgsCount, argFuncTypes, isVarArg, hiddenOperandsCount)))
+            {
+                return mlir::failure();
+            }
+
             auto lastArgIndex = argFuncTypes.size() - 1;
 
             // -1 to exclude count params
