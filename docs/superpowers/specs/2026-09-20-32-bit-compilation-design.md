@@ -3,8 +3,7 @@
 Design for compiling TypeScript to 32-bit targets, with `i686-pc-windows-msvc`
 as the proof target and width-correctness that generalizes to any 32-bit triple.
 
-Status: approved design. Phases 1-4 implemented, except the x86 default library
-(deferred; see Open issues).
+Status: approved design. Phases 1-4 implemented.
 
 ## Why now
 
@@ -301,10 +300,10 @@ only, so phase 4 is three PRs:
   because `--emit=jit` runs in the x64 compiler process and refuses a foreign
   arch. Only one test file, `02funcs_vararg.ts`, is JIT-only at the file level;
   every other file has a compile registration and so a twin. The cmake-script
-  tests have no twin either. There were 12 of them: `rc-debug-info`,
-  `gc-shared-auto`, the two default-library collector tests (the default
-  library has no x86 build) and the 8 ownership-verifier shards. The two
-  foreign-target import tests below make 14.
+  tests get no twin via `tslang_add_test` either. There were 12 of them:
+  `rc-debug-info`, `gc-shared-auto`, the two default-library collector tests
+  and the 8 ownership-verifier shards. The two foreign-target import tests
+  below make 14.
   1395 twins pass; 3 are registered `DISABLED` in
   `tslang/test/tester/x86-exclusions.cmake`: `internals` under gc, rc and
   none, because its `inline_asm<i64>` with an `=r` constraint needs a 64-bit
@@ -328,6 +327,57 @@ only, so phase 4 is three PRs:
   on `PATH` only in a developer prompt. The runner passes lld-link
   `/manifest:embed /manifestuac:...` for x86 exes. `check-x86-run.sh` builds
   hello as `my_setup_patch.exe` and runs it.
+
+**As built — the x86 default library (done; was deferred from 4c).**
+`getDefaultLibSubDir` (`include/TypeScript/Defines.h`) gained a required `arch`
+parameter and `DEFAULT_LIB_ARCH_X86`, giving the layout named above:
+`defaultlib/{lib,dll}/x86/{debug,release}/{gc,rc,none}/`, with no `x86`
+segment (and no change) for every other target, x64 included. `exe.cpp`
+passes `DEFAULT_LIB_ARCH_X86` only for a Windows x86 target, names the arch
+and the `TSLANG_ARCH=x86` build step in the missing-directory error, and
+checks the COFF machine of `TypeScriptDefaultLib.lib` the same way it already
+checked the collector and the runtime (an x64 default library in an x86
+program is refused before the link, not left to become unresolved symbols).
+`jit.cpp` and `defaultlib.cpp` pass `""` (host-only paths). In the separate
+`TypeScriptCompilerDefaultLib` repository, `TSLANG_ARCH=x86` (set before
+`build.bat`) switches `vcvarsall.bat` to `x86`, adds
+`-mtriple=i686-pc-windows-msvc` to every `tslang.exe` invocation, and routes
+every build and staging path through the same layout; `TSLANG_ARCH` unset or
+`x64` produces the same output tree as before. That repository's own 150-test
+suite passes at 150/150, release and debug, as i686 executables against the
+static x86 tree (`tests.ps1`).
+
+One probe-only failure needed a real fix: `paragraph.replaceAll(/Dog/gi,
+"ferret")` segfaulted after its first `console.log` at i686 (149/150; x64
+passed). Root cause: `RegExp.replaceAll` in `lib.ts` called the native
+`declare function regexp_replace` with 3 of its 4 parameters; tslang does not
+check declare-function call arity (TypeScript's TS2554), so the omitted
+argument read whatever a register or a stack slot happened to hold - luck
+that held at x64 and did not at i686. Fixed in the default library, not in
+the compiler: `RegExp.replaceAll`'s regex branch in `lib.ts` now passes the
+replacement string as the native call's 4th argument instead of omitting it.
+
+Compiler-side coverage: `check-x86-libs.sh` gained the default-library
+error-path cases (no x86 tree; an x64 `TypeScriptDefaultLib.lib` staged where
+the x86 one belongs; an x64 control case). `check-x86-run.sh` gained a
+default-library section, skipped (not failed) when
+`TypeScriptCompilerDefaultLib`'s x86 tree is absent: `defaultlib_smoke.ts`
+(Array, Map, string, Date and RegExp, including `replaceAll(regex, ...)`)
+under gc, rc and none release, the gc case again against the debug tree
+(`--di`), and a gc `--emit=dll` library linking the default library plus an
+exe that imports it (the shape of `defaultlib-collector.cmake`'s compile
+mode, reused in bash), with `TypeScriptDefaultLib.dll` and the x86 `gc.dll`
+copied beside the importing exe. `tester/CMakeLists.txt` hand-registers
+`test-x86-compile-gc-defaultlib-collector` (labelled `x86`) as the x86 twin
+of the existing compile-mode default-library collector test, extending
+`defaultlib-collector.cmake`'s own skip test to look under the `x86` tree
+when an `X86` flag is passed; there is still no JIT twin (the JIT refuses an
+x86 target, unrelated to the default library). With `-DTSLANG_TEST_X86=ON`:
+1396 of the 1399 x86-labelled tests pass (the 1395 `tslang_add_test` twins
+plus the new collector twin), 3 stay `DISABLED`. With it `OFF`,
+`CTestTestfile.cmake` is unchanged except for `_BACKTRACE_TRIPLES` line
+numbers (this file added lines above existing `add_test` calls), and the
+default suite stays 2771/2771.
 
 Remaining i686-only probe failures after 4b: `internals` (an `inline_asm<i64>` with an `=r` constraint, which no single
 i686 register can satisfy); `02funcs_vararg` (unresolved `_printf`; it is
@@ -360,12 +410,34 @@ confusion:
   `MLIRGenImpl::mlirGenImportSharedLib` loaded the DLL into the x64 compiler to
   read its `__decls`. For a foreign target (arch or OS) it now reads the string from
   the file (`Dump::readExportedCString`); the x86 `-shared` twins pass.
-- **The x86 default library (deferred from phase 4).** `getDefaultLibSubDir`
-  in `include/TypeScript/Defines.h` still has no arch segment, and the default
-  library, built in the separate `TypeScriptCompilerDefaultLib` repository, has
-  no x86 build. Both are needed before an x86 program can link the default
-  library; until then x86 programs use `--no-default-lib`, and the collector
-  test that links the real default library has no x86 twin.
+- **The x86 default library — closed (phase 4, "As built" note above).**
+  `getDefaultLibSubDir` has the arch segment, the `TypeScriptCompilerDefaultLib`
+  repository builds the x86 tree under `TSLANG_ARCH=x86`, and
+  `test-x86-compile-gc-defaultlib-collector` gives the compile-mode collector
+  test its x86 twin. x86 programs no longer need `--no-default-lib`.
+- **tslang does not check declare-function call arity (TypeScript's TS2554).**
+  Found while root-causing the x86 `replaceAll(regex, ...)` segfault above: a
+  call to a `declare function` with fewer arguments than it declares compiles
+  regardless, and the callee reads whatever a register or stack slot happens
+  to hold for the missing ones. That hid the `RegExp.replaceAll` bug at x64
+  (the garbage argument happened to be usable) until the x86 build read a
+  garbage stack slot instead. No arity check exists for `declare function`
+  calls generally, only for the specific case this one bug surfaced.
+- **`"xxx".replaceAll("", "_")` gives `___` instead of `_x_x_x_` (pre-existing,
+  both architectures).** An empty-pattern `replaceAll` should insert the
+  replacement between every character; it currently inserts once per
+  distinct-looking match instead. Confirmed unchanged at x64 and i686; not
+  investigated further here.
+- **Neither CI nor the release workflows build an x86 default library.** Both
+  build x64 only, so `-DTSLANG_TEST_X86=ON` and `check-x86-run.sh`'s
+  default-library section are local-only checks today; the x86-labelled ctest
+  run and the default suite's x64-only default-library collector tests never
+  run together in the same CI job. The `test-runner -x86` twins (the 1395
+  `tslang_add_test` twins) still pass `--no-default-lib` unconditionally, the
+  same as their x64 counterparts - `test-runner.cpp` was not changed by this
+  work - so they cover the arch/ABI matrix, not the default library; only
+  `test-x86-compile-gc-defaultlib-collector` and `check-x86-run.sh` exercise
+  the x86 default library itself.
 - **Per-test flags miss the entry file of multi-file tests (not 32-bit;
   pre-existing).** Found in phase 4c: in `test-runner`, `-mm`, `-fast-math`
   and `--gctors-as-method` reach only the non-entry files of a multi-file test,

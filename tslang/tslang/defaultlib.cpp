@@ -143,7 +143,8 @@ int installDefaultLib(int argc, char **argv)
     // jit.cpp resolve (defaultlib/lib/release/gc/...).
     auto result = checkFileExistsAtPath(
         builtPath,
-        getDefaultLibSubDir(/*shared=*/false, /*debugBuild=*/false, memoryModelName(MemoryModelGC)),
+        getDefaultLibSubDir(/*shared=*/false, /*debugBuild=*/false, memoryModelName(MemoryModelGC),
+                            /*arch=*/""), // install checks the host build
 #ifdef WIN32
         DEFAULT_LIB_NAME ".lib"
 #else

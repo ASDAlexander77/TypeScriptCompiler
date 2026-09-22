@@ -2037,10 +2037,11 @@ endforeach()
 # verify-ownership.cmake for what it asks and why it is sharded.
 #
 # The tests from here to the ownership verifier are cmake scripts, not `test-runner` runs, so
-# they use plain add_test and have no x86 twin (see tslang_add_test): the rc debug-info check,
-# the collector-linkage check, the foreign-target import checks, the default-library collector
-# tests (the default library is built in another repository, with no x86 build yet) and the
-# ownership verifier shards.
+# they use plain add_test and have no twin via tslang_add_test: the rc debug-info check, the
+# collector-linkage check, the foreign-target import checks and the ownership verifier shards.
+# The default-library collector tests are the one exception - they get a hand-registered x86
+# twin (test-x86-compile-gc-defaultlib-collector, below) once the default library, built in the
+# separate TypeScriptCompilerDefaultLib repository, has an x86 tree (TSLANG_ARCH=x86).
 # Reference-counted programs built WITH debug info - see debug-info-rc.cmake for why this needs
 # a test of its own rather than a `test-runner` registration.
 add_test(NAME test-compile-rc-debug-info
@@ -2119,6 +2120,37 @@ foreach(defaultlib_collector_mode jit compile)
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/defaultlib-collector.cmake")
     set_tests_properties(test-${defaultlib_collector_mode}-gc-defaultlib-collector PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
+
+# x86 twin of the compile-mode default-library collector test above (the x86 default library,
+# spec Phase 4, As built). No JIT twin: the JIT refuses an x86 target by design (see jit.cpp).
+# GC_LIB and TSLANG_LIB stay ROOT paths - tslang appends the `x86` segment itself for an i686
+# target (getTargetLibDir), the same rule the -x86 test-runner twins document above - except
+# TSLANG_LIB, which for the x64 registration above is this build's own lib/ (no x86 runtime
+# there); the i686 TypeScriptAsyncRuntime.lib lives in the separate tslang-runtime build instead
+# (see TEST_TSLANG_LIBPATH_X86), so this twin points TSLANG_LIB at that tree's root - derived from
+# TEST_TSLANG_LIBPATH_X86 itself (which names the `x86` subdirectory) rather than re-spelling the
+# tslang-runtime path a second time, so the two can't drift apart.
+if (TSLANG_TEST_X86)
+    get_filename_component(defaultlib_collector_tslang_runtime_root "${TEST_TSLANG_LIBPATH_X86}" DIRECTORY)
+    add_test(NAME test-x86-compile-gc-defaultlib-collector
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=compile"
+                     "-DX86=1"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/gc-defaultlib-collector-x86-compile"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib"
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${defaultlib_collector_tslang_runtime_root}"
+                     "-DOPT=${defaultlib_collector_opt};-mtriple=i686-pc-windows-msvc"
+                     "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/defaultlib-collector.cmake")
+    set_tests_properties(test-x86-compile-gc-defaultlib-collector PROPERTIES
+                          SKIP_REGULAR_EXPRESSION "SKIPPED:"
+                          LABELS x86)
+endif()
 
 set(TSLANG_OWNERSHIP_SHARDS 8)
 math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")

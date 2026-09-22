@@ -16,6 +16,12 @@
 # scope). Each corpus file asserts internally, so exiting 0 is the check, as in check-x86-eh.sh's
 # exception corpus loop. await_order.ts is the minimal repro from the phase 4b plan and gets an
 # exact-output check because its whole point is the print ORDER around the await.
+#
+# The x86 default library (spec Phase 4, As built) gate: defaultlib_smoke.ts, WITHOUT --no-default-lib, under
+# gc/rc/none release and gc again with --di, plus a gc --emit=dll library linking the default
+# library and an exe that imports it - the shape of defaultlib-collector.cmake's compile mode,
+# copied here in bash because that mode is a separate (x64-only today) ctest. SKIPPED, not FAILed,
+# when TypeScriptCompilerDefaultLib has no x86 tree yet (build it there with TSLANG_ARCH=x86).
 set -u
 TSLANG="${1:?usage: check-x86-run.sh <path to tslang.exe>}"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -32,6 +38,17 @@ GC_DIR="$REPO/3rdParty/gc/x64/release/lib"
 GC_X86="$GC_DIR/x86/gc.lib"
 RT_DIR="$REPO/__build/tslang-runtime/release"
 RT_X86="$RT_DIR/x86/TypeScriptAsyncRuntime.lib"
+# Debug counterparts, for the --di case only (everything else in this script is --opt/release).
+GC_DIR_DEBUG="$REPO/3rdParty/gc/x64/debug/lib"
+RT_DIR_DEBUG="$REPO/__build/tslang-runtime/debug"
+# The shared (DLL) Boehm build: --gc-shared-lib-path root, x86 gc.lib/gc.dll under its x86/.
+GCDLL_DIR="$REPO/3rdParty/gcdll/x64/release/lib"
+
+# The x86 default library (spec Phase 4, As built) is a separate build (TypeScriptCompilerDefaultLib, TSLANG_ARCH=x86;
+# see its build.bat). DEFAULT_LIB_PATH is unset above for hermeticity, so this is the one candidate
+# defaultlib-collector.cmake's DEFAULT_LIB_CANDIDATES pair resolves to from this repo's location.
+DEFAULTLIB_DIR="$REPO/../TypeScriptCompilerDefaultLib/__build"
+DEFAULTLIB_TESTS="$REPO/tslang/test/tester/defaultlib"
 
 # The async corpus cases (gc only), from test/tester/tests. They are built with --entry-point to
 # mirror the suite; for --emit=exe it changes nothing, it matters only to the --emit=llvm IR checks.
@@ -39,7 +56,8 @@ ASYNC_CORPUS=(00async_await 00async_gc_threading 00async_result_types 00owned_as
               00for_await 00for_await_yield)
 
 for f in "$TSLANG" "$READOBJ" "$GC_X86" "$RT_X86" "$PROGRAMS/hello.ts" "$PROGRAMS/gc_stress.ts" \
-         "$PROGRAMS/await_order.ts"; do
+         "$PROGRAMS/await_order.ts" "$PROGRAMS/defaultlib_smoke.ts" \
+         "$DEFAULTLIB_TESTS/export_defaultlib_collector.ts" "$DEFAULTLIB_TESTS/import_defaultlib_collector.ts"; do
     if [ ! -f "$f" ]; then
         echo "FAIL missing prerequisite: $f"
         exit 1
@@ -231,6 +249,108 @@ if out="$(emit_await_order_ir none)"; then
         echo "FAIL x86 IR -mm=none: frame allocator is aligned_alloc(i32, i32)"
         grep -m1 -E '@aligned_alloc\(' "$out" | sed 's/^/    got: /'
         fail=1
+    fi
+fi
+
+# --- The x86 default library (spec Phase 4, As built) ---------------------------------------
+# Skipped, not failed, the same rule defaultlib-collector.cmake applies for the x64 collector
+# tests: this is a build product from a sibling repository, not something this script
+# can build. `defaultlib/lib/x86` is the layout Defines.h's getDefaultLibSubDir names for any
+# model/build, so its presence (regardless of model) is the gate.
+if [ ! -d "$DEFAULTLIB_DIR/defaultlib/lib/x86" ]; then
+    echo "SKIPPED: no x86 default library built at $DEFAULTLIB_DIR/defaultlib/lib/x86" \
+         "(build it in TypeScriptCompilerDefaultLib with TSLANG_ARCH=x86; see its build.bat)"
+else
+    DL_FLAG="--default-lib-path=$DEFAULTLIB_DIR"
+
+    # run_defaultlib_case <label> <opt-flag> <mm> <extra tslang args>... -- exits 0 is the check
+    # (defaultlib_smoke.ts asserts internally), as with run_async_corpus above.
+    run_defaultlib_case() {
+        local label="$1" optflag="$2" mm="$3"
+        shift 3
+        local tag exe err status machine run_status
+        tag="$(printf '%s' "$label" | tr -c 'A-Za-z0-9' '-')"
+        exe="$work/$tag.exe"
+        err="$("$TSLANG" --emit=exe "$optflag" -mm="$mm" -mtriple=i686-pc-windows-msvc "$DL_FLAG" \
+            "$@" "$PROGRAMS/defaultlib_smoke.ts" -o "$exe" 2>&1 >/dev/null)"
+        status=$?
+        if [ "$status" -ne 0 ] || [ ! -f "$exe" ]; then
+            echo "FAIL $label: compile failed (exit $status): $err"
+            fail=1
+            return
+        fi
+        machine="$("$READOBJ" --file-headers "$exe" | grep -m1 'Machine:')"
+        if ! printf '%s' "$machine" | grep -q 'IMAGE_FILE_MACHINE_I386 (0x14C)'; then
+            echo "FAIL $label: expected an I386 (0x14C) executable, got: $machine"
+            fail=1
+            return
+        fi
+        timeout 30 "$exe" >"$work/stdout.txt" 2>"$work/stderr.txt"
+        run_status=$?
+        if [ "$run_status" -ne 0 ]; then
+            echo "FAIL $label: expected exit 0, got $run_status"
+            sed 's/^/    stdout: /' "$work/stdout.txt"
+            sed 's/^/    stderr: /' "$work/stderr.txt"
+            fail=1
+            return
+        fi
+        echo "ok   $label"
+    }
+
+    run_defaultlib_case "defaultlib_smoke -mm=gc"   --opt gc   "$GC_FLAG" "$RT_FLAG"
+    run_defaultlib_case "defaultlib_smoke -mm=rc"   --opt rc   "$RT_FLAG"
+    run_defaultlib_case "defaultlib_smoke -mm=none" --opt none "$RT_FLAG"
+    # gc again, against the debug default-library tree (--di picks it; see getDefaultLibSubDir).
+    run_defaultlib_case "defaultlib_smoke -mm=gc --di" --di gc \
+        "--gc-lib-path=$GC_DIR_DEBUG" "--tslang-lib-path=$RT_DIR_DEBUG"
+
+    # A gc --emit=dll library that links the default library, and an exe that imports it - the
+    # shape of defaultlib-collector.cmake's compile mode (run() there), reused here in bash:
+    # relative -o names with the working directory set to a shared folder, so the exe's link step
+    # finds the library's import lib next to it, the same way that cmake test does. The two source
+    # files are the x64 collector test's own (export_defaultlib_collector.ts / import_..., under
+    # test/tester/defaultlib): they need no x86-specific content, only an x86 compile of the same
+    # default-library-DLL shape.
+    dll_dir="$work/dll"
+    mkdir -p "$dll_dir"
+    err="$(cd "$dll_dir" && "$TSLANG" --emit=dll --opt -mm=gc -mtriple=i686-pc-windows-msvc \
+        "$DL_FLAG" "$GC_FLAG" "$RT_FLAG" "--gc-shared-lib-path=$GCDLL_DIR" \
+        "$DEFAULTLIB_TESTS/export_defaultlib_collector.ts" -o "export_defaultlib_collector.dll" 2>&1 >/dev/null)"
+    status=$?
+    if [ "$status" -ne 0 ] || [ ! -f "$dll_dir/export_defaultlib_collector.dll" ]; then
+        echo "FAIL defaultlib dll: library compile failed (exit $status): $err"
+        fail=1
+    else
+        cp "$DEFAULTLIB_DIR/defaultlib/dll/x86/release/gc/TypeScriptDefaultLib.dll" "$dll_dir/"
+        cp "$GCDLL_DIR/x86/gc.dll" "$dll_dir/"
+        err="$(cd "$dll_dir" && "$TSLANG" --emit=exe --opt -mm=gc -mtriple=i686-pc-windows-msvc \
+            "$DL_FLAG" "$GC_FLAG" "$RT_FLAG" "--gc-shared-lib-path=$GCDLL_DIR" \
+            "$DEFAULTLIB_TESTS/import_defaultlib_collector.ts" -o "main.exe" 2>&1 >/dev/null)"
+        status=$?
+        if [ "$status" -ne 0 ] || [ ! -f "$dll_dir/main.exe" ]; then
+            echo "FAIL defaultlib dll: importing exe compile failed (exit $status): $err"
+            fail=1
+        else
+            machine="$("$READOBJ" --file-headers "$dll_dir/main.exe" | grep -m1 'Machine:')"
+            if ! printf '%s' "$machine" | grep -q 'IMAGE_FILE_MACHINE_I386 (0x14C)'; then
+                echo "FAIL defaultlib dll: expected an I386 (0x14C) executable, got: $machine"
+                fail=1
+            else
+                # The loader finds the three DLLs beside main.exe regardless of cwd (application
+                # directory is always searched first), so this runs main.exe directly.
+                out="$(timeout 30 "$dll_dir/main.exe" 2>"$work/stderr.txt" | tr -d '\r'; echo "exit=${PIPESTATUS[0]}")"
+                if [ "$out" != "$(printf 'bad: 0\ndone.'; echo; echo "exit=0")" ]; then
+                    echo "FAIL defaultlib dll: expected output"
+                    printf '%s\n' "    bad: 0" "    done." "    exit=0"
+                    echo "  got"
+                    printf '%s\n' "$out" | sed 's/^/    /'
+                    sed 's/^/    stderr: /' "$work/stderr.txt"
+                    fail=1
+                else
+                    echo "ok   defaultlib dll: exe importing a shared library, default library"
+                fi
+            fi
+        fi
     fi
 fi
 
