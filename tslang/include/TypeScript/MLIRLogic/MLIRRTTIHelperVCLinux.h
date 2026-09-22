@@ -181,14 +181,6 @@ class MLIRRTTIHelperVCLinux
 
                 setClassTypeAsCatchType(classAndBases);
             })
-            // NOTE: this overload (with resolveClassInfo) is only used by setRTTIForType() to
-            // *declare* the RTTI globals a catch clause's type may need later - e.g. if the
-            // caught value is rethrown with `throw e;` (the project's rethrow idiom), that
-            // throw needs the `_ZTIPv` typeinfo global to already exist. It still records
-            // AnyType as I8Ptr here so that declaration keeps happening. The landingpad *match*
-            // semantics for an AnyType catch are handled separately below, in the other
-            // setType() overload that TryOpLowering actually uses to build the catch clause -
-            // see the comment there for why `void*` cannot be used as a catch-all on Linux.
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
@@ -250,8 +242,7 @@ class MLIRRTTIHelperVCLinux
             })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
-            // catch-all: see the equivalent case in the other setType() overload above.
-            .Case<mlir_ts::AnyType>([&](auto anyType) { /* catch-all, see comment above */ })
+            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
                 result = false;
