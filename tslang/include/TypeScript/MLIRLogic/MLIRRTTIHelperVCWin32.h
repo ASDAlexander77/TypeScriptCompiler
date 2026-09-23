@@ -100,9 +100,13 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef,
                          windows::F32Type::catchableTypeSize});
-        // Same catchableTypeSize as the primary entry, not pointerSize() - see the equivalent
-        // comment in LLVMRTTIHelperVCWin32.h::setF32AsCatchType.
         types.push_back(boxEntry(windows::F32Type::catchableTypeInfoRef2, windows::F32Type::copyThunk2));
+
+        TypeNames toNumber{windows::F32Type::typeName3, windows::F32Type::typeInfoRef3, windows::F32Type::catchableTypeInfoRef3,
+                           windows::F64Type::catchableTypeSize};
+        toNumber.copyThunk = windows::F32Type::copyThunk3;
+        toNumber.copyThunkTarget = mlir_ts::NumberType::get(rewriter.getContext());
+        types.push_back(toNumber);
 
         catchableTypeInfoArrayRef = windows::F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F32Type::throwInfoRef;
