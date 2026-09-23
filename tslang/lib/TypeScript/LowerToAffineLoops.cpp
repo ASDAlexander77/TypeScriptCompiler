@@ -1298,6 +1298,16 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf.lookup(parentTryOp) : nullptr;
         auto parentCatchesThis = parentTryOpLandingPad && tsContext->inParentTryBody.lookup(tryOp.getOperation());
 
+        // Where an exception this try does not catch has to go next within the function: the
+        // parent's landing pad for a try in the parent's body, the parent's finally for one in
+        // the parent's catch clause (whose exceptions the parent does not catch, but whose
+        // finally still has to run), and nowhere - the caller - otherwise.
+        mlir::Block *enclosingHandler = parentCatchesThis ? parentTryOpLandingPad : nullptr;
+        if (!enclosingHandler && parentTryOp && tsContext->inParentTryCatch.lookup(tryOp.getOperation()))
+        {
+            enclosingHandler = tsContext->finallyBlockOf.lookup(parentTryOp);
+        }
+
         MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
         auto i8PtrTy = mth.getOpaqueType();
 
@@ -1335,17 +1345,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         // set TryOp -> child TryOp
         auto inBody = false;
+        auto inCatch = false;
         auto visitorTryOps = [&](Operation *op) {
             if (auto childTryOp = dyn_cast_or_null<mlir_ts::TryOp>(op))
             {
                 tsContext->parentTryOp[op] = tryOp.getOperation();
                 tsContext->inParentTryBody[op] = inBody;
+                tsContext->inParentTryCatch[op] = inCatch;
             }
         };
         inBody = true;
         tryOp.getBody().walk(visitorTryOps);
         inBody = false;
+        inCatch = true;
         tryOp.getCatches().walk(visitorTryOps);
+        inCatch = false;
         tryOp.getFinally().walk(visitorTryOps);
 
         mlir::SmallVector<Operation *> returns;
@@ -1454,7 +1468,14 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     // turns this throw into an invoke into the finally block, and the finally
                     // is what ends the catch - ending it here as well runs it twice and
                     // breaks the unwind (51exceptions.ts is the case that proves it).
-                    if (!finallyHasOps)
+                    //
+                    // Except for a throw inside a try nested in this catch: that one unwinds to
+                    // the nested try's own pad, not to the finally. Left inside this catch's
+                    // funclet, the nested pad would be a catchswitch `within none` reached from
+                    // inside a catchpad - invalid funclet nesting, and a crash at run time. So
+                    // it ends the catch first, exactly as it does when there is no finally.
+                    auto inNestedTry = op->getParentOfType<mlir_ts::TryOp>() != nullptr;
+                    if (!finallyHasOps || inNestedTry)
                     {
                         tsContext->leavesCatch[op] = true;
                     }
@@ -1503,6 +1524,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     {
                         tsContext->parentTryOp[newOp] = parent;
                         tsContext->inParentTryBody[newOp] = tsContext->inParentTryBody.lookup(oldOp);
+                        tsContext->inParentTryCatch[newOp] = tsContext->inParentTryCatch.lookup(oldOp);
                     }
                 }
             };
@@ -1513,6 +1535,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                         finallyMapping);
             propagateTsContextEntries(finallyMapping);
             finallyBlock = beforeFinallyBlock->getNextNode();
+            tsContext->finallyBlockOf[tryOp.getOperation()] = finallyBlock;
             finallyBlockLast = continuation->getPrevNode();
 
             // add clone for 'return'
@@ -1659,7 +1682,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // where the exception belongs (the same catch-all-and-rethrow the nested finally and
         // cleanup cases here already use). linuxHasCleanups adds the clause on its own.
         auto linuxTypedCatchChains = !tsContext->compileOptions.isWindows && catchHasOps && rttih.hasType() &&
-                                     !linuxHasCleanups && (parentCatchesThis || finallyHasOps);
+                                     !linuxHasCleanups && (enclosingHandler || finallyHasOps);
 
         mlir::Value catchAll;
         if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
@@ -1759,7 +1782,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             //
             // Only a try in its parent's body has an edge to add (parentCatchesThis): one in the
             // parent's catch or finally is already inside the handler that pad leads to.
-            auto windowsNeedsParentEdge = tsContext->compileOptions.isWindows && (parentCatchesThis || finallyHasOps);
+            auto windowsNeedsParentEdge = tsContext->compileOptions.isWindows && (enclosingHandler || finallyHasOps);
             if (rttih.hasType() && (!tsContext->compileOptions.isWindows || windowsNeedsParentEdge))
             {
                 if (linuxHasCleanups)
@@ -1940,9 +1963,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 {
                     tsContext->unwind[rethrowOp] = finallyBlock;
                 }
-                else if (parentCatchesThis)
+                else if (enclosingHandler)
                 {
-                    tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
+                    tsContext->unwind[rethrowOp] = enclosingHandler;
                 }
             }
             else if (parentTryOpLandingPad)
