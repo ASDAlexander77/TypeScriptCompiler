@@ -126,8 +126,7 @@ class MLIRRTTIHelperVCWin32
         types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
                          pointerSize()});
 
-        catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
-        throwInfoRef = windows::ClassType::throwInfoRef;
+        setClassThrowInfoNames(names.front());
     }
 
     void setClassTypeAsCatchType(StringRef name)
@@ -140,8 +139,20 @@ class MLIRRTTIHelperVCWin32
         types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
                          pointerSize()});
 
-        catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
-        throwInfoRef = windows::ClassType::throwInfoRef;
+        setClassThrowInfoNames(name);
+    }
+
+    // Each class needs its own CatchableTypeArray and ThrowInfo: they list that class's own
+    // descriptors (and its bases'), and both are linkonce_odr globals keyed only by name. A
+    // shared name let the first class a module threw fix the descriptors for every other class
+    // thrown from it - `throw new B()` then went out as an `A`, and `catch (e: B)` never matched.
+    // Must agree with LLVMRTTIHelperVCWin32::setClassTypeAsCatchType, which names the ThrowInfo
+    // a throw site passes to _CxxThrowException.
+    void setClassThrowInfoNames(StringRef name)
+    {
+        catchableTypeInfoArrayRef =
+            join(name, windows::ClassType::catchableTypeInfoArrayRef, windows::ClassType::catchableTypeInfoArrayRefSuffix);
+        throwInfoRef = join(name, windows::ClassType::throwInfoRef, windows::ClassType::throwInfoRefSuffix);
     }
 
     // A pointer-shaped catchable type (a string, an opaque pointer, a class reference) is as

@@ -387,6 +387,7 @@ tslang_add_test(NAME test-compile-00-owned-locals COMMAND test-runner "${PROJECT
 tslang_add_test(NAME test-compile-00-try-using-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_using_catch.ts")
 tslang_add_test(NAME test-compile-00-throw-in-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 tslang_add_test(NAME test-compile-00-throw-inlined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+tslang_add_test(NAME test-compile-00-try-catch-sequence-and-nesting COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_sequence_and_nesting.ts")
 # Windows only: the fix this pins down is in the Win32 RTTI tables. On Linux an untyped catch
 # still does not match a thrown number (the clause is a void* pointer type, which the Itanium ABI
 # matches only against pointer exceptions), so this test fails there. See the Linux catch issue.
@@ -815,6 +816,7 @@ tslang_add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_
 tslang_add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 tslang_add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 tslang_add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
+tslang_add_test(NAME test-jit-00-try-catch-sequence-and-nesting COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_sequence_and_nesting.ts")
 # Windows only, for the reason given at the compile registration above.
 if (WIN32)
 tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
@@ -1717,6 +1719,7 @@ set(TSLANG_CORPUS
     00try_catch_rethrow.ts
     00try_catch_return_dispose.ts
     00try_catch_return.ts
+    00try_catch_sequence_and_nesting.ts
     00try_catch.ts
     00try_finally_break_continue.ts
     00try_finally_return.ts

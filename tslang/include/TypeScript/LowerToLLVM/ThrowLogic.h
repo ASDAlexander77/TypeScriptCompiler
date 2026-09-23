@@ -65,8 +65,16 @@ class ThrowLogic
 
         auto i8PtrTy = th.getPtrType();
 
+        // a `null` operand is a rethrow of the exception being handled: _CxxThrowException(0, 0)
+        auto isRethrow = isa<mlir_ts::NullType>(exceptionType);
+
         // variable
         mlir::Value value;
+        if (isRethrow)
+        {
+            value = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
+        }
+        else
         {
             OpBuilder::InsertionGuard guard(rewriter);
 
@@ -84,10 +92,18 @@ class ThrowLogic
             value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter->convertType(value.getType()), value);
         }
 
-        rewriter.create<mlir_ts::StoreOp>(loc, exceptionValue, value);
+        mlir::Value throwInfoPtr;
+        if (isRethrow)
+        {
+            throwInfoPtr = rewriter.create<LLVM::ZeroOp>(loc, throwInfoPtrTy);
+        }
+        else
+        {
+            rewriter.create<mlir_ts::StoreOp>(loc, exceptionValue, value);
 
-        // throw
-        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
+            // throw
+            throwInfoPtr = rttih.throwInfoPtrValue(loc);
+        }
 
         auto throwFuncName = "_CxxThrowException";
         auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));

@@ -118,8 +118,9 @@ class LLVMRTTIHelperVCWin32
 
         types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2, pointerSize()});
 
-        catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
-        throwInfoRef = ClassType::throwInfoRef;
+        // per class, not shared - see MLIRRTTIHelperVCWin32::setClassThrowInfoNames
+        catchableTypeInfoArrayRef = join(name, ClassType::catchableTypeInfoArrayRef, ClassType::catchableTypeInfoArrayRefSuffix);
+        throwInfoRef = join(name, ClassType::throwInfoRef, ClassType::throwInfoRefSuffix);
     }
 
     // A pointer-shaped catchable type (a string, an opaque pointer, a class reference) is as

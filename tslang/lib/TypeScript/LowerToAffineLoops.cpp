@@ -1296,6 +1296,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
         auto parentTryOp = tsContext->parentTryOp.lookup(tryOp.getOperation());
         mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf.lookup(parentTryOp) : nullptr;
+        auto parentCatchesThis = parentTryOpLandingPad && tsContext->inParentTryBody.lookup(tryOp.getOperation());
 
         MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
         auto i8PtrTy = mth.getOpaqueType();
@@ -1331,13 +1332,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         tryOp.getCatches().walk<mlir::WalkOrder::PreOrder>(visitorCatchContinue);
 
         // set TryOp -> child TryOp
+        auto inBody = false;
         auto visitorTryOps = [&](Operation *op) {
             if (auto childTryOp = dyn_cast_or_null<mlir_ts::TryOp>(op))
             {
                 tsContext->parentTryOp[op] = tryOp.getOperation();
+                tsContext->inParentTryBody[op] = inBody;
             }
         };
+        inBody = true;
         tryOp.getBody().walk(visitorTryOps);
+        inBody = false;
         tryOp.getCatches().walk(visitorTryOps);
         tryOp.getFinally().walk(visitorTryOps);
 
@@ -1495,6 +1500,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     if (auto parent = tsContext->parentTryOp.lookup(oldOp))
                     {
                         tsContext->parentTryOp[newOp] = parent;
+                        tsContext->inParentTryBody[newOp] = tsContext->inParentTryBody.lookup(oldOp);
                     }
                 }
             };
@@ -1630,9 +1636,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto linuxCleanupOnlyChainsToParent =
             linuxHasCleanups && !catchHasOps && !finallyHasOps && parentTryOpLandingPad;
 
+        // A typed catch whose exception may belong to someone else in this same function - the
+        // try's own finally, or the try around it - has to be entered for every exception, not
+        // only a matching one. An Itanium landingpad that lists just the typed clause is skipped
+        // by the personality for any other type, and since nothing in this frame unwinds to the
+        // finally or the enclosing try's pad, the exception is not handled here at all:
+        // std::terminate. So add a catch-all clause, and let the mismatch path below rethrow to
+        // where the exception belongs (the same catch-all-and-rethrow the nested finally and
+        // cleanup cases here already use). linuxHasCleanups adds the clause on its own.
+        auto linuxTypedCatchChains = !tsContext->compileOptions.isWindows && catchHasOps && rttih.hasType() &&
+                                     !linuxHasCleanups && (parentCatchesThis || finallyHasOps);
+
         mlir::Value catchAll;
         if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
-            linuxCleanupOnlyChainsToParent)
+            linuxCleanupOnlyChainsToParent || linuxTypedCatchChains)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
@@ -1698,7 +1715,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
             SmallVector<mlir::Value> catchTypes{catch1};
-            if (linuxHasCleanups && rttih.hasType())
+            if (linuxHasCleanups && rttih.hasType() || linuxTypedCatchChains)
             {
                 // we need to catch all exceptions for cleanup code
                 catchTypes.push_back(catchAll);
@@ -1707,7 +1724,23 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto landingPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
                                                                        rewriter.getBoolAttr(false), catchTypes);
 
-            if (!tsContext->compileOptions.isWindows && rttih.hasType())
+            // On Windows a typed catch that does not match is left by the runtime, through the
+            // catchswitch's unwind edge - but Win32ExceptionPass can only point that edge at the
+            // enclosing try's pad if something inside the catch region already unwinds there.
+            // A catch body with no call has nothing that does, so the enclosing pad has no
+            // predecessor left, is deleted as unreachable, and an exception the outer try was
+            // meant to catch leaves the function instead. The mismatch rethrow below is that
+            // edge: CompareCatchTypeOp is always true on Windows (the filter has already
+            // matched by the time the catch body runs), so the rethrow never executes, but it
+            // keeps the enclosing pad alive until the funclet pass has wired it up.
+            //
+            // The same goes for this try's own `finally`, which a mismatched exception has to
+            // run on its way out: without the edge the catchswitch unwinds straight past it.
+            //
+            // Only a try in its parent's body has an edge to add (parentCatchesThis): one in the
+            // parent's catch or finally is already inside the handler that pad leads to.
+            auto windowsNeedsParentEdge = tsContext->compileOptions.isWindows && (parentCatchesThis || finallyHasOps);
+            if (rttih.hasType() && (!tsContext->compileOptions.isWindows || windowsNeedsParentEdge))
             {
                 if (linuxHasCleanups)
                 {
@@ -1865,9 +1898,28 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // instead of falling through to normal post-try control flow.
             auto *rethrowBlock = rewriter.createBlock(continuationBrCmp);
             rewriter.setInsertionPointToStart(rethrowBlock);
+            if (linuxTypedCatchChains)
+            {
+                // __cxa_rethrow needs the exception to have been caught first
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), cmpValue.getDefiningOp()->getOperand(0));
+            }
+
             auto rethrowVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
             auto rethrowOp = rewriter.create<mlir_ts::ThrowOp>(loc, rethrowVal);
-            if (parentTryOpLandingPad)
+            if (tsContext->compileOptions.isWindows || linuxTypedCatchChains)
+            {
+                // see windowsNeedsParentEdge / linuxTypedCatchChains: the finally's pad comes
+                // before any enclosing try's
+                if (finallyHasOps)
+                {
+                    tsContext->unwind[rethrowOp] = finallyBlock;
+                }
+                else if (parentCatchesThis)
+                {
+                    tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
+                }
+            }
+            else if (parentTryOpLandingPad)
             {
                 tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
             }
