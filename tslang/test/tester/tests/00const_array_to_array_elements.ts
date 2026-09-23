@@ -10,11 +10,8 @@ function lengthOf(u: number[] | string) {
 // `const c` case below, but through the global-variable codegen path (createGlobalVariable /
 // adjustGlobalVariableType), not the local one (createLocalVariable / adjustLocalVariableType).
 // Giving `const` array literals real identity storage (so mutating methods like .sort() share one
-// heap array - see docs/const-let-storage-design.md) initially broke this: reading `moduleConst`
-// back yields `AddressOf(@moduleConst) -> Load`, a shape castConstArrayToArray's local-only
-// trace-back (Load -> VariableOp -> initializer) did not recognize, so it fell through to the
-// generic array-to-array cast and was rejected ("element type number is not base of type s32").
-// Fixed by also unwrapping AddressOf(global) -> the GlobalOp's own initializer terminator.
+// heap array - see docs/const-let-storage-design.md) means reading `moduleConst` back yields an
+// `s32[]` loaded from the global, not the literal; castArrayElementwise converts what it holds.
 const moduleConst = [7, 8, 9];
 
 function takesNumberArray(a: number[]) {

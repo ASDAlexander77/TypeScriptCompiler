@@ -928,64 +928,25 @@ namespace mlirgen
         }
 
         auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(valueType);
-
-        // A `const` array literal (`const c = [1, 2]`) now gets real identity
-        // storage so mutating methods like .sort() share one heap array instead of
-        // a fresh disposable copy per call (see processConstRef /
-        // adjustLocalVariableType / adjustGlobalVariableType in MLIRGenImpl.h) --
-        // which means reading `c` elsewhere yields the already-widened
-        // `!ts.array<T>`, not the original `!ts.const_array<T,N>` this function
-        // keys off. Trace back through whichever shape that widening introduced to
-        // recover the original literal, so the elementwise conversion below still
-        // applies to a `const` int-array literal read into e.g. `number[]`:
-        //  - local: Load -> VariableOp -> its initializer (a Cast chain)
-        //  - module-level: Load -> AddressOf(@global) -> that GlobalOp's
-        //    initializer region, whose GlobalResultOp terminator yields the same
-        //    kind of Cast chain (see createGlobalVariableInitialization)
-        mlir::Value literalValue = value;
         if (!constArrayType)
         {
-            if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>())
+            // a `const c = [1, 2]` read back is already the array its storage widened it to (see
+            // processConstRef / adjustLocalVariableType / adjustGlobalVariableType in MLIRGenImpl.h),
+            // and may have been changed since: its elements are converted as they are now
+            if (auto srcArrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
             {
-                if (auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>())
-                {
-                    if (auto init = varOp.getInitializer())
-                    {
-                        literalValue = init;
-                    }
-                }
-                else if (auto addressOfOp = loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>())
-                {
-                    if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalNameAttr()))
-                    {
-                        if (auto *initBlock = globalOp.getInitializerBlock())
-                        {
-                            if (auto globalResultOp = dyn_cast<mlir_ts::GlobalResultOp>(initBlock->getTerminator()))
-                            {
-                                if (globalResultOp.getResults().size() == 1)
-                                {
-                                    literalValue = globalResultOp.getResults().front();
-                                }
-                            }
-                        }
-                    }
-                }
+                return castArrayElementwise(location, arrayType, value, srcArrayType, genContext);
             }
 
-            while (auto castOp = literalValue.getDefiningOp<mlir_ts::CastOp>())
-            {
-                literalValue = castOp.getIn();
-            }
-
-            constArrayType = dyn_cast<mlir_ts::ConstArrayType>(literalValue.getType());
+            return std::nullopt;
         }
 
-        if (!constArrayType || constArrayType.getElementType() == arrayType.getElementType())
+        if (constArrayType.getElementType() == arrayType.getElementType())
         {
             return std::nullopt;
         }
 
-        auto constOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
+        auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
         auto elementAttrs = constOp ? dyn_cast<mlir::ArrayAttr>(constOp.getValue()) : mlir::ArrayAttr();
         if (!elementAttrs)
         {
@@ -1033,6 +994,87 @@ namespace mlirgen
         mlirGenRetainCaptured(location, elements);
 
         return V(builder.create<mlir_ts::CreateArrayOp>(location, arrayType, elements));
+    }
+
+    // An array of numbers held as `s32` (or another integer or float type) keeps that layout, so it is
+    // not shared as a `number[]`: a new array is built, each element cast to the element type as it is
+    // assigned - nested arrays in turn. The new array is a copy, so later changes to one of them are not
+    // seen through the other. An array literal met at a union or a `const` binding gets here with s32
+    // elements (see castConstArrayToArray), and so does a variable holding one.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castArrayElementwise(mlir::Location location, mlir_ts::ArrayType arrayType, mlir::Value value, mlir_ts::ArrayType srcArrayType, const GenContext &genContext)
+    {
+        auto isNumeric = [](mlir::Type type) {
+            return isa<mlir::IntegerType>(type) || isa<mlir::FloatType>(type) || isa<mlir_ts::NumberType>(type);
+        };
+
+        std::function<bool(mlir::Type)> isNumericSource = [&](mlir::Type type) {
+            if (auto nestedArrayType = dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                return isNumericSource(nestedArrayType.getElementType());
+            }
+
+            return isa<mlir::IntegerType>(type) || isa<mlir::FloatType>(type);
+        };
+
+        // what a number can be assigned to: another number type, `any`, or a union holding a number
+        std::function<bool(mlir::Type)> isNumericTarget = [&](mlir::Type type) {
+            if (auto nestedArrayType = dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                return isNumericTarget(nestedArrayType.getElementType());
+            }
+
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                return llvm::any_of(unionType.getTypes(), isNumeric);
+            }
+
+            return isNumeric(type) || isa<mlir_ts::AnyType>(type) || isa<mlir_ts::UnknownType>(type);
+        };
+
+        auto srcElementType = srcArrayType.getElementType();
+        auto elementType = arrayType.getElementType();
+        if (srcElementType == elementType || !isNumericSource(srcElementType) || !isNumericTarget(elementType))
+        {
+            return std::nullopt;
+        }
+
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto length = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), value);
+        auto newArray = builder.create<mlir_ts::NewArrayOp>(location, arrayType, length);
+
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", srcArrayType, location);
+        DECLARE(srcArrayVarDecl, value);
+
+        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayType, location);
+        DECLARE(dstArrayVarDecl, newArray);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _dst_array_ident = nf.createIdentifier(S(".dst_array"));
+        auto _i = nf.createIdentifier(S(".i"));
+
+        // for (let .i = 0; .i < .src_array.length; ++.i) .dst_array[.i] = .src_array[.i];
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
+        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+
+        auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken),
+                                              nf.createPropertyAccessExpression(_src_array_ident, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
+
+        auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+
+        auto assign = nf.createExpressionStatement(
+            nf.createBinaryExpression(nf.createElementAccessExpression(_dst_array_ident, _i), nf.createToken(SyntaxKind::EqualsToken),
+                                      nf.createElementAccessExpression(_src_array_ident, _i)));
+
+        if (mlir::failed(mlirGen(nf.createForStatement(initVars, cond, incr, assign), genContext)))
+        {
+            return mlir::failure();
+        }
+
+        return V(newArray);
     }
 
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
