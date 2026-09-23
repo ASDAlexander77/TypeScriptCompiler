@@ -175,9 +175,10 @@ class MLIRRTTIHelperVCLinux
 #else
                 setF32AsCatchType();
 #endif
-                // a `catch (e: number)` also takes a thrown int (`throw 1`), and binding it
-                // compares against the int type_info - see TryOpLowering, SaveCatchVarOpLowering
+                // a `catch (e: number)` also takes a thrown int (`throw 1`) or f32, and binding
+                // it compares against their type_infos - see TryOpLowering, SaveCatchVarOpLowering
                 setI32AsCatchType();
+                setF32AsCatchType();
             })
             .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
             .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setI64AsCatchType(); })
@@ -199,6 +200,7 @@ class MLIRRTTIHelperVCLinux
                 // caught value throws again.
                 setI32AsCatchType();
                 setF64AsCatchType();
+                setF32AsCatchType();
                 setBoolAsCatchType();
                 setI64AsCatchType();
                 setStringTypeAsCatchType();

@@ -7,9 +7,10 @@ namespace typescript
 namespace linux
 {
 
+// `float` - it used to be `_ZTId`, so a thrown f32 was read as a double
 namespace F32Type
 {
-constexpr const auto *typeName = "_ZTId";
+constexpr const auto *typeName = "_ZTIf";
 } // namespace F32Type
 
 namespace F64Type

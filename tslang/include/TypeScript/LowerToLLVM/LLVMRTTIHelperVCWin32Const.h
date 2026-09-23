@@ -60,20 +60,27 @@ constexpr const auto *copyThunkPrefix = ".eh.copy.";
 constexpr int copyFunctionProperties = 0;
 constexpr int simpleTypeProperties = 1;
 
+// `float`. It used to describe itself as `.N` (double) with a size of 8 - the F64Type records
+// under the F64Type names - so `catch (e: number)` caught a thrown f32 and read 8 bytes of a
+// 4-byte value, and a module throwing both kept whichever thunk came first.
 namespace F32Type
 {
-constexpr const auto *typeName = ".N";
+constexpr const auto *typeName = ".M";
 constexpr const auto *typeName2 = ".PEAX";
-constexpr const auto *typeInfoRef = "??_R0N@8";
+constexpr const auto *typeInfoRef = "??_R0M@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
-constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
+constexpr const auto *catchableTypeInfoRef = "_CT??_R0M@84";
 // own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88.box";
-constexpr const auto *copyThunk2 = ".eh.copy.box.N";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N.box";
-constexpr const auto *throwInfoRef = "_TI2N.box";
-// describes `.N` (double), like F64Type - see setF32AsCatchType
-constexpr int catchableTypeSize = 8;
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@M84.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box.M";
+// the third entry: `.N` (double), reached through a widening thunk, as for an int
+constexpr const auto *typeName3 = ".N";
+constexpr const auto *typeInfoRef3 = "??_R0N@8";
+constexpr const auto *catchableTypeInfoRef3 = "_CT??_R0N@88.fromM";
+constexpr const auto *copyThunk3 = ".eh.copy.num.M";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA3M";
+constexpr const auto *throwInfoRef = "_TI3M";
+constexpr int catchableTypeSize = 4;
 } // namespace F32Type
 
 namespace F64Type

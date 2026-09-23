@@ -1653,16 +1653,19 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
-        // `catch (e: number)` has to take `throw 1` too - an integer literal is an int here. On
-        // Windows the int's ThrowInfo lists a `.N` entry that converts it (see copyThunkPrefix in
-        // LLVMRTTIHelperVCWin32Const.h); on the Itanium path the catch lists the int type_info as
-        // a second clause, accepts either, and linux::SaveCatchVarOpLowering converts.
-        mlir::Value intTypeInfo;
+        // `catch (e: number)` has to take `throw 1` too - an integer literal is an int here - and
+        // a thrown f32. On Windows their ThrowInfos list a `.N` entry that converts (see
+        // copyThunkPrefix in LLVMRTTIHelperVCWin32Const.h); on the Itanium path the catch lists
+        // their type_infos as further clauses, accepts any of them, and
+        // linux::SaveCatchVarOpLowering converts.
+        SmallVector<mlir::Value> widenedTypeInfos;
         if (!tsContext->compileOptions.isWindows && catchVarType && isa<mlir_ts::NumberType>(catchVarType))
         {
-            intTypeInfo = rewriter.create<mlir_ts::ConstantOp>(
-                loc, mth.getRefType(mth.getOpaqueType()),
-                mlir::FlatSymbolRefAttr::get(rewriter.getContext(), ::typescript::linux::I32Type::typeName));
+            for (auto typeInfoName : {::typescript::linux::I32Type::typeName, ::typescript::linux::F32Type::typeName})
+            {
+                widenedTypeInfos.push_back(rewriter.create<mlir_ts::ConstantOp>(
+                    loc, mth.getRefType(mth.getOpaqueType()), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoName)));
+            }
         }
 
         // A cleanup-only try (a `using` scope) nested inside another try in the same function
@@ -1746,17 +1749,14 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         }
 
         mlir::Value cmpValue;
-        mlir::Value cmpIntValue;
+        SmallVector<mlir::Value> cmpWidenedValues;
         if (catchHasOps)
         {
             // catches:landingpad
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
             SmallVector<mlir::Value> catchTypes{catch1};
-            if (intTypeInfo)
-            {
-                catchTypes.push_back(intTypeInfo);
-            }
+            catchTypes.append(widenedTypeInfos.begin(), widenedTypeInfos.end());
 
             if (linuxHasCleanups && rttih.hasType() || linuxTypedCatchChains)
             {
@@ -1793,10 +1793,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp,
                                                                         rttih.throwInfoPtrValue(loc));
-                if (intTypeInfo)
+                for (auto widenedTypeInfo : widenedTypeInfos)
                 {
-                    cmpIntValue =
-                        rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, intTypeInfo);
+                    cmpWidenedValues.push_back(
+                        rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, widenedTypeInfo));
                 }
             }
 
@@ -1937,7 +1937,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (cmpValue)
         {
             // condbr
-            auto lastCmpValue = cmpIntValue ? cmpIntValue : cmpValue;
+            auto lastCmpValue = cmpWidenedValues.empty() ? cmpValue : cmpWidenedValues.back();
             rewriter.setInsertionPointAfterValue(lastCmpValue);
 
             mlir::Block *currentBlockBrCmp = rewriter.getInsertionBlock();
@@ -1975,11 +1975,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPointAfterValue(lastCmpValue);
             mlir::Value castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
-            if (cmpIntValue)
+            for (auto cmpWidenedValue : cmpWidenedValues)
             {
-                auto intToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpIntValue);
+                auto widenedToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpWidenedValue);
                 castToI1 = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
-                    loc, rewriter.getI1Type(), rewriter.getI32IntegerAttr((int)SyntaxKind::BarToken), castToI1, intToI1);
+                    loc, rewriter.getI1Type(), rewriter.getI32IntegerAttr((int)SyntaxKind::BarToken), castToI1, widenedToI1);
             }
 
             rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, continuationBrCmp, rethrowBlock);

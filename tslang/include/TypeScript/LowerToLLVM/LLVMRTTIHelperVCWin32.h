@@ -60,13 +60,8 @@ class LLVMRTTIHelperVCWin32
 
     void setF32AsCatchType()
     {
+        // only the ThrowInfo name is used from here; MLIRRTTIHelperVCWin32 builds the records
         types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef, F32Type::catchableTypeSize});
-        // Same catchableTypeSize as the primary entry, not pointerSize(): both entries describe
-        // the exact same in-memory value (a double), and a size mismatch here would tell the CRT
-        // to copy pointerSize() bytes out of a catchableTypeSize()-byte object when a generic
-        // `catch (e)`/`catch (e: any)` matches via this fallback entry - see the note on
-        // I32Type::typeName2 in LLVMRTTIHelperVCWin32Const.h.
-        types.push_back({F32Type::typeName2, F32Type::typeInfoRef2, F32Type::catchableTypeInfoRef2, F32Type::catchableTypeSize});
 
         catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = F32Type::throwInfoRef;
@@ -205,9 +200,9 @@ class LLVMRTTIHelperVCWin32
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
 #ifdef NUMBER_F64
-                setF32AsCatchType();
-#else
                 setF64AsCatchType();
+#else
+                setF32AsCatchType();
 #endif
             })
             .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })

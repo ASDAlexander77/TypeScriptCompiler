@@ -276,12 +276,17 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto i8PtrTy = th.getPtrType();
         auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
-#ifdef NUMBER_F64
-        auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, ValueRange{transformed.getArg()});
-#else
+        // atof gives a double whatever the result is: `<f32>"2.5"` wants a float
         auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.getArg()});
-        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult());
-#endif
+        auto resultType = getTypeConverter()->convertType(op.getType());
+        if (resultType == rewriter.getF64Type())
+        {
+            rewriter.replaceOp(op, funcCall.getResult());
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, resultType, funcCall.getResult());
+        }
 
         return success();
     }
@@ -5070,7 +5075,17 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
                 return rewriter.create<LLVM::SIToFPOp>(loc, llvmNumberType, intValue);
             },
             [&](OpBuilder &, Location) -> mlir::Value {
-                return rewriter.create<LLVM::LoadOp>(loc, llvmNumberType, exceptionInfo);
+                auto floatTypeInfo = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::F32Type::typeName);
+                auto isFloat = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, floatTypeInfo);
+                return clh.conditionalExpressionLowering(
+                    loc, llvmNumberType, isFloat,
+                    [&](OpBuilder &, Location) -> mlir::Value {
+                        auto floatValue = rewriter.create<LLVM::LoadOp>(loc, rewriter.getF32Type(), exceptionInfo);
+                        return rewriter.create<LLVM::FPExtOp>(loc, llvmNumberType, floatValue);
+                    },
+                    [&](OpBuilder &, Location) -> mlir::Value {
+                        return rewriter.create<LLVM::LoadOp>(loc, llvmNumberType, exceptionInfo);
+                    });
             });
     }
 
@@ -5115,6 +5130,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         SmallVector<std::pair<std::string, mlir::Type>> candidates{
             {::typescript::linux::I32Type::typeName, mlir::IntegerType::get(ctx, 32, mlir::IntegerType::Signed)},
             {::typescript::linux::F64Type::typeName, mlir_ts::NumberType::get(ctx)},
+            {::typescript::linux::F32Type::typeName, mlir::Float32Type::get(ctx)},
             {::typescript::linux::BoolType::typeName, mlir_ts::BooleanType::get(ctx)},
             {::typescript::linux::I64Type::typeName, mlir_ts::BigIntType::get(ctx)},
             {::typescript::linux::StringType::typeName, mlir_ts::StringType::get(ctx)},
