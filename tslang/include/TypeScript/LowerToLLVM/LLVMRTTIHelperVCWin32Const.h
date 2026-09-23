@@ -42,6 +42,24 @@ constexpr const auto *imageBaseRef = "__ImageBase";
 // throws both an `int` and a `string` (say) from having one of them silently take on the
 // other's copy size.
 
+// Copy-function records. A CatchableType whose properties do not say "simple type" and that
+// names a copyFunction is not memcpy'd into the catch variable: the CRT calls
+// copyFunction(catchVariable, thrownObject) instead (`__thiscall` on x86 - CxxThrowCallingConvPass
+// gives every function named with copyThunkPrefix that convention). That is what lets a thrown
+// value reach a handler of a different shape:
+//  - the `.PEAX` entry of an int/double/string/class throw boxes the value into an `any`, which
+//    is what an untyped `catch (e)` or `catch (e: any)` binds (they filter on `??_R0PEAX@8`).
+//    It used to be a plain copy, so the catch variable held the raw value and the first read of
+//    it as an `any` crashed;
+//  - an int throw also lists `.N` with a thunk widening it to a double, so `catch (e: number)`
+//    catches `throw 1` (an integer literal is an `int` here).
+// These records, and the arrays and ThrowInfos that list them, have names of their own: an
+// object built before them carries linkonce_odr records under the old names with the old
+// contents, and the linker keeps whichever copy it sees first.
+constexpr const auto *copyThunkPrefix = ".eh.copy.";
+constexpr int copyFunctionProperties = 0;
+constexpr int simpleTypeProperties = 1;
+
 namespace F32Type
 {
 constexpr const auto *typeName = ".N";
@@ -50,9 +68,10 @@ constexpr const auto *typeInfoRef = "??_R0N@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
 // own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N";
-constexpr const auto *throwInfoRef = "_TI2N";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box.N";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N.box";
+constexpr const auto *throwInfoRef = "_TI2N.box";
 // describes `.N` (double), like F64Type - see setF32AsCatchType
 constexpr int catchableTypeSize = 8;
 } // namespace F32Type
@@ -65,9 +84,10 @@ constexpr const auto *typeInfoRef = "??_R0N@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
 // own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N";
-constexpr const auto *throwInfoRef = "_TI2N";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@N88.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box.N";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2N.box";
+constexpr const auto *throwInfoRef = "_TI2N.box";
 constexpr int catchableTypeSize = 8;
 } // namespace F64Type
 
@@ -79,9 +99,15 @@ constexpr const auto *typeInfoRef = "??_R0H@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0H@84";
 // own record, not the pointer-shaped `_CT??_R0PEAX@88` - see the block comment above
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@84";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA2H";
-constexpr const auto *throwInfoRef = "_TI2H";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@84.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box.H";
+// the third entry: `.N` (double), reached through a widening thunk
+constexpr const auto *typeName3 = ".N";
+constexpr const auto *typeInfoRef3 = "??_R0N@8";
+constexpr const auto *catchableTypeInfoRef3 = "_CT??_R0N@88.fromH";
+constexpr const auto *copyThunk3 = ".eh.copy.num.H";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA3H";
+constexpr const auto *throwInfoRef = "_TI3H";
 // 4, not the pointer size: `int` is 4 bytes on every target, and the `4` at the end of
 // `_CT??_R0H@84` says so too
 constexpr int catchableTypeSize = 4;
@@ -94,9 +120,10 @@ constexpr const auto *typeName2 = ".PEAX";
 constexpr const auto *typeInfoRef = "??_R0PEAD@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0PEAD@88";
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@88";
-constexpr const auto *catchableTypeInfoArrayRef = "_CTA2PEAD";
-constexpr const auto *throwInfoRef = "_TIC2PEAD";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@88.box.PEAD";
+constexpr const auto *copyThunk2 = ".eh.copy.box.PEAD";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2PEAD.box";
+constexpr const auto *throwInfoRef = "_TIC2PEAD.box";
 } // namespace StringType
 
 namespace I8PtrType
@@ -118,11 +145,15 @@ constexpr const auto *typeInfoRefSuffix = "@@@8";
 constexpr const auto *typeInfoRef2 = "??_R0PEAX@8";
 constexpr const auto *catchableTypeInfoRef = "_CT??_R0PEAV";
 constexpr const auto *catchableTypeInfoRefSuffix = "@@@88";
-constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@88";
+// per class, like the thunk it names: catchableTypeInfoRef2 + name + suffix
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@88.box.PEAV";
+constexpr const auto *catchableTypeInfoRef2Suffix = "@@";
+constexpr const auto *copyThunk2 = ".eh.copy.box.PEAV";
+constexpr const auto *copyThunk2Suffix = "@@";
 constexpr const auto *catchableTypeInfoArrayRef = "_CTA2PEAV";
-constexpr const auto *catchableTypeInfoArrayRefSuffix = "@@";
+constexpr const auto *catchableTypeInfoArrayRefSuffix = "@@.box";
 constexpr const auto *throwInfoRef = "_TI2PEAV";
-constexpr const auto *throwInfoRefSuffix = "@@";
+constexpr const auto *throwInfoRefSuffix = "@@.box";
 } // namespace ClassType
 
 } // namespace windows

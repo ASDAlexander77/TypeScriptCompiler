@@ -11,10 +11,9 @@
 // generic filter never found a match, __CxxFrameHandler3 walked past `main` with nothing left
 // to catch it, and the process quietly ended instead of running the catch body.
 //
-// Do NOT assert on the caught value here - see 00catch_value.ts's note (item 5am) on why
-// reading a `catch` binding is a separate, already-tracked, back-end-dependent question. This
-// file only asserts control flow: the catch body runs, and the statement after the try/catch
-// still runs too.
+// This file asserts control flow only: the catch body runs, and the statement after the
+// try/catch still runs too. Reading the caught value is 00catch_untyped_value.ts. On Linux the
+// same catch used a `void*` clause, which never matches a number; it is a catch-all now.
 
 function untypedCatchesInt() {
     let ran = 0;

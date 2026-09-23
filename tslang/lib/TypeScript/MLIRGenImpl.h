@@ -92,6 +92,8 @@ void setCompileOptions(CompileOptions &compileOptions);
 
 namespace typescript
 {
+class MLIRRTTIHelperVC;
+
 namespace mlirgen
 {
 
@@ -2992,6 +2994,12 @@ class MLIRGenImpl
                                             mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(mlir::Location, const GenContext &)> funcBody,                                            
                                             const GenContext &genContext,
                                             int firstParam = 0, bool isPublic = false);
+
+    mlir::LogicalResult mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source, mlir::Type target);
+
+    void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
+
+    void recordThrownClass(mlir::Type thrownType);
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext);
 

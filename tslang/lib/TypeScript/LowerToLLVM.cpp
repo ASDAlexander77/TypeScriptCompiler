@@ -5016,7 +5016,15 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         auto llvmCatchType = getTypeConverter()->convertType(catchType);
 
         mlir::Value catchVal;
-        if (!isa<LLVM::LLVMPointerType>(llvmCatchType))
+        if (isa<mlir_ts::AnyType>(catchType))
+        {
+            catchVal = boxCaughtException(saveCatchVarOp, transformed.getExceptionInfo(), rewriter);
+        }
+        else if (isa<mlir_ts::NumberType>(catchType))
+        {
+            catchVal = loadCaughtNumber(saveCatchVarOp, transformed.getExceptionInfo(), llvmCatchType, rewriter);
+        }
+        else if (!isa<LLVM::LLVMPointerType>(llvmCatchType))
         {
             auto ptrVal =
                 rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), transformed.getExceptionInfo());
@@ -5030,6 +5038,119 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, transformed.getVarStore());
 
         return success();
+    }
+
+    // A `catch (e: number)` also catches a thrown int (TryOpLowering lists its type_info as a
+    // second clause), which has to be widened rather than read as a double.
+    mlir::Value loadCaughtNumber(mlir_ts::SaveCatchVarOp saveCatchVarOp, mlir::Value exceptionInfo, mlir::Type llvmNumberType,
+                                 ConversionPatternRewriter &rewriter) const
+    {
+        auto loc = saveCatchVarOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(saveCatchVarOp, rewriter);
+
+        auto ptrTy = th.getPtrType();
+        auto typeFunc = ch.getOrInsertFunction("__cxa_current_exception_type", th.getFunctionType(ptrTy, ArrayRef<mlir::Type>{}));
+        auto typeInfo = rewriter.create<LLVM::CallOp>(loc, typeFunc, ValueRange{}).getResult();
+        auto intTypeInfo = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::I32Type::typeName);
+        auto isInt = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, intTypeInfo);
+
+        return clh.conditionalExpressionLowering(
+            loc, llvmNumberType, isInt,
+            [&](OpBuilder &, Location) -> mlir::Value {
+                auto intValue = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), exceptionInfo);
+                return rewriter.create<LLVM::SIToFPOp>(loc, llvmNumberType, intValue);
+            },
+            [&](OpBuilder &, Location) -> mlir::Value {
+                return rewriter.create<LLVM::LoadOp>(loc, llvmNumberType, exceptionInfo);
+            });
+    }
+
+    // The value an untyped `catch (e)` / `catch (e: any)` binds, boxed into an `any`. Such a
+    // catch is a catch-all, so the exception's type is only known at run time: compare its
+    // type_info with each type tslang throws and box the thrown object accordingly.
+    // `exceptionInfo` is __cxa_begin_catch's result, which for a catch-all is the address of
+    // the thrown object. (The Win64 equivalent is done by the CRT, through the copy thunks in
+    // the `.PEAX` CatchableType records - see copyThunkPrefix in LLVMRTTIHelperVCWin32Const.h.)
+    mlir::Value boxCaughtException(mlir_ts::SaveCatchVarOp saveCatchVarOp, mlir::Value exceptionInfo,
+                                   ConversionPatternRewriter &rewriter) const
+    {
+        auto loc = saveCatchVarOp.getLoc();
+        auto &compileOptions = tsLlvmContext->compileOptions;
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter(), compileOptions);
+        CodeLogicHelper clh(saveCatchVarOp, rewriter);
+
+        auto ptrTy = th.getPtrType();
+        auto ctx = rewriter.getContext();
+
+        auto typeFuncName = "__cxa_current_exception_type";
+        auto typeFunc = ch.getOrInsertFunction(typeFuncName, th.getFunctionType(ptrTy, ArrayRef<mlir::Type>{}));
+        auto typeInfo = rewriter.create<LLVM::CallOp>(loc, typeFunc, ValueRange{}).getResult();
+
+        auto isThrownType = [&](const char *typeInfoName) -> mlir::Value {
+            auto typeInfoAddress = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, typeInfoName);
+            return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, typeInfoAddress);
+        };
+
+        auto boxThrown = [&](mlir::Type type) -> mlir::Value {
+            auto llvmType = tch.convertType(type);
+            auto value = rewriter.create<LLVM::LoadOp>(loc, llvmType, exceptionInfo);
+            TypeOfOpHelper toh(rewriter);
+            auto boxed = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(ctx), value, toh.typeOfLogic(loc, type));
+            return rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxed);
+        };
+
+        // each type tslang throws, by the type_info a throw of it carries
+        SmallVector<std::pair<std::string, mlir::Type>> candidates{
+            {::typescript::linux::I32Type::typeName, mlir::IntegerType::get(ctx, 32, mlir::IntegerType::Signed)},
+            {::typescript::linux::F64Type::typeName, mlir_ts::NumberType::get(ctx)},
+            {::typescript::linux::StringType::typeName, mlir_ts::StringType::get(ctx)},
+            // a thrown `any` is already a box
+            {::typescript::linux::I8PtrType::typeName, mlir_ts::AnyType::get(ctx)}};
+
+        // A class needs its own type descriptor in the box - unboxing checks for a class tag,
+        // and the descriptor carries the class's release routine - so only the classes this
+        // module throws can be recognised (MLIRGen lists them, see recordThrownClass). A class
+        // thrown from another module falls through to the plain-object box below.
+        if (auto thrownClasses = saveCatchVarOp->getParentOfType<mlir::ModuleOp>()->getAttrOfType<mlir::ArrayAttr>(
+                THROWN_CLASSES_ATTR_NAME))
+        {
+            for (auto thrownClass : thrownClasses.getAsValueRange<mlir::TypeAttr>())
+            {
+                auto classType = cast<mlir_ts::ClassType>(thrownClass);
+                auto name = classType.getName().getValue();
+                std::string typeInfoName = "_ZTIP" + std::to_string(name.size()) + name.str();
+                candidates.push_back({typeInfoName, classType});
+            }
+        }
+
+        std::function<mlir::Value(size_t)> dispatch = [&](size_t index) -> mlir::Value {
+            if (index == candidates.size())
+            {
+                // not a type tslang throws from this module; box the pointer as a plain object
+                return boxThrown(mlir_ts::OpaqueType::get(ctx));
+            }
+
+            auto [typeInfoName, type] = candidates[index];
+            return clh.conditionalExpressionLowering(
+                loc, ptrTy, isThrownType(typeInfoName.c_str()),
+                [&, type = type](OpBuilder &, Location) -> mlir::Value {
+                    if (isa<mlir_ts::AnyType>(type))
+                    {
+                        return rewriter.create<LLVM::LoadOp>(loc, ptrTy, exceptionInfo);
+                    }
+
+                    return boxThrown(type);
+                },
+                [&, index = index](OpBuilder &, Location) { return dispatch(index + 1); });
+        };
+
+        return dispatch(0);
     }
 };
 

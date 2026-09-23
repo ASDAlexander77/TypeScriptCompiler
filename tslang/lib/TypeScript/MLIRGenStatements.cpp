@@ -1046,6 +1046,88 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // void name(ref<target> dest, ref<source> src) { *dest = <target>*src; } - the copy function
+    // of a Windows CatchableType, which the CRT calls to build a catch variable of a different
+    // shape from the thrown value. See copyThunkPrefix in LLVMRTTIHelperVCWin32Const.h.
+    mlir::LogicalResult MLIRGenImpl::mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source,
+                                                           mlir::Type target)
+    {
+        if (theModule.lookupSymbol(name))
+        {
+            return mlir::success();
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+
+        auto funcType = getFunctionType({mlir_ts::RefType::get(target), mlir_ts::RefType::get(source)}, {}, false);
+
+        // Built directly rather than through mlirGenFunctionBody: a throw is usually generated
+        // from inside another function, whose own return variable that helper would find in the
+        // symbol table and wire into this thunk's exit.
+        auto funcOp = mlir_ts::FuncOp::create(location, name, funcType);
+        funcOp.setPrivate();
+
+        // its own context: the thunk is a function of its own, and has to be emitted even when
+        // the throw or catch that needs it is only being generated speculatively
+        GenContext thunkGenContext{};
+        thunkGenContext.funcOp = funcOp;
+
+        auto &entryBlock = *funcOp.addEntryBlock();
+        builder.setInsertionPointToStart(&entryBlock);
+
+        // no return value: the Entry/Exit pair every function body is lowered from
+        builder.create<mlir_ts::EntryOp>(location, mlir::Type());
+
+        auto arguments = entryBlock.getArguments();
+        auto value = builder.create<mlir_ts::LoadOp>(location, source, arguments[1]);
+        auto result = cast(location, target, value, thunkGenContext);
+        if (result.failed_or_no_value())
+        {
+            funcOp.erase();
+            return mlir::failure();
+        }
+
+        builder.create<mlir_ts::StoreOp>(location, V(result), arguments[0]);
+        builder.create<mlir_ts::ExitOp>(location, mlir::Value());
+
+        theModule.push_back(funcOp);
+        return mlir::success();
+    }
+
+    void MLIRGenImpl::setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti)
+    {
+        rtti.setCopyThunkBuilder([&](mlir::Location location, StringRef name, mlir::Type source, mlir::Type target) {
+            return mlirGenCatchCopyThunk(location, name, source, target);
+        });
+    }
+
+    // An untyped catch on the Itanium path is a catch-all that finds out what it caught from the
+    // exception's type_info, and a class needs its own descriptor in the `any` box it binds - so
+    // the lowering needs to know which classes can arrive. See linux::SaveCatchVarOpLowering.
+    void MLIRGenImpl::recordThrownClass(mlir::Type thrownType)
+    {
+        auto classType = dyn_cast<mlir_ts::ClassType>(mth.stripLiteralType(thrownType));
+        if (!classType)
+        {
+            return;
+        }
+
+        SmallVector<mlir::Attribute> thrownClasses;
+        if (auto existing = theModule->getAttrOfType<mlir::ArrayAttr>(THROWN_CLASSES_ATTR_NAME))
+        {
+            thrownClasses.append(existing.begin(), existing.end());
+        }
+
+        auto classTypeAttr = mlir::TypeAttr::get(classType);
+        if (llvm::is_contained(thrownClasses, classTypeAttr))
+        {
+            return;
+        }
+
+        thrownClasses.push_back(classTypeAttr);
+        theModule->setAttr(THROWN_CLASSES_ATTR_NAME, builder.getArrayAttr(thrownClasses));
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(ThrowStatement throwStatementAST, const GenContext &genContext)
     {
         auto location = loc(throwStatementAST);
@@ -1059,12 +1141,18 @@ namespace mlirgen
         if (!genContext.allowPartialResolve)
         {
             MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+            setCatchCopyThunkBuilder(rtti);
             if (!rtti.setRTTIForType(
                 location, exception.getType(), 
                 [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
             {
                 emitError(location, "Not supported type in throw");
                 return mlir::failure();
+            }
+
+            if (!compileOptions.isWindows)
+            {
+                recordThrownClass(exception.getType());
             }
         }
 
@@ -1168,6 +1256,7 @@ namespace mlirgen
                 if (!genContext.allowPartialResolve)
                 {
                     MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+                    setCatchCopyThunkBuilder(rtti);
                     if (!rtti.setRTTIForType(
                         location, 
                         varInfo.getType(),

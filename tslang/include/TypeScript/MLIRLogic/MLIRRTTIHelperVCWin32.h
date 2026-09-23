@@ -37,7 +37,20 @@ class MLIRRTTIHelperVCWin32
         // bytes the CRT copies into the catch variable's slot - see catchableTypeSize in
         // LLVMRTTIHelperVCWin32Const.h for why getting this wrong corrupts the frame
         int catchableTypeSize;
+        // when set, the CRT calls this function to build the catch variable instead of copying
+        // catchableTypeSize bytes - see copyThunkPrefix in LLVMRTTIHelperVCWin32Const.h
+        std::string copyThunk = "";
+        // what the thunk converts the thrown value to (`any`, or `number` for an int)
+        mlir::Type copyThunkTarget = mlir::Type();
     };
+
+  public:
+    // Builds the copy thunk `name`: void name(ref<target> dest, ref<source> src), storing `src`
+    // converted to `target` into `dest`. Supplied by MLIRGen, which can generate the conversion.
+    using CopyThunkBuilder = std::function<mlir::LogicalResult(mlir::Location loc, StringRef name, mlir::Type source,
+                                                               mlir::Type target)>;
+
+  private:
 
     mlir::OpBuilder &rewriter;
     mlir::ModuleOp &parentModule;
@@ -47,6 +60,10 @@ class MLIRRTTIHelperVCWin32
     SmallVector<TypeNames> types;
 
     CompileOptions& compileOptions;
+
+    // the thrown value's own type, which every copy thunk reads its source as
+    mlir::Type thrownType;
+    CopyThunkBuilder copyThunkBuilder;
 
   public:
     std::string catchableTypeInfoArrayRef;
@@ -58,14 +75,34 @@ class MLIRRTTIHelperVCWin32
         // setI32AsCatchType();
     }
 
+    void setCopyThunkBuilder(CopyThunkBuilder builder)
+    {
+        copyThunkBuilder = builder;
+    }
+
+    // the `.PEAX` entry of a primitive, string or class throw: boxes the value into the `any` an
+    // untyped or `any` catch binds
+    TypeNames boxEntry(std::string catchableTypeInfoRef, std::string copyThunk)
+    {
+        TypeNames entry{windows::I8PtrType::typeName, windows::I8PtrType::typeInfoRef, catchableTypeInfoRef, pointerSize()};
+        entry.copyThunk = copyThunk;
+        entry.copyThunkTarget = mlir_ts::AnyType::get(rewriter.getContext());
+        return entry;
+    }
+
+    TypeNames classBoxEntry(StringRef name)
+    {
+        return boxEntry(join(name, windows::ClassType::catchableTypeInfoRef2, windows::ClassType::catchableTypeInfoRef2Suffix),
+                        join(name, windows::ClassType::copyThunk2, windows::ClassType::copyThunk2Suffix));
+    }
+
     void setF32AsCatchType()
     {
         types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef,
                          windows::F32Type::catchableTypeSize});
         // Same catchableTypeSize as the primary entry, not pointerSize() - see the equivalent
         // comment in LLVMRTTIHelperVCWin32.h::setF32AsCatchType.
-        types.push_back({windows::F32Type::typeName2, windows::F32Type::typeInfoRef2, windows::F32Type::catchableTypeInfoRef2,
-                         windows::F32Type::catchableTypeSize});
+        types.push_back(boxEntry(windows::F32Type::catchableTypeInfoRef2, windows::F32Type::copyThunk2));
 
         catchableTypeInfoArrayRef = windows::F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F32Type::throwInfoRef;
@@ -75,8 +112,7 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::F64Type::typeName, windows::F64Type::typeInfoRef, windows::F64Type::catchableTypeInfoRef,
                          windows::F64Type::catchableTypeSize});
-        types.push_back({windows::F64Type::typeName2, windows::F64Type::typeInfoRef2, windows::F64Type::catchableTypeInfoRef2,
-                         windows::F64Type::catchableTypeSize});
+        types.push_back(boxEntry(windows::F64Type::catchableTypeInfoRef2, windows::F64Type::copyThunk2));
 
         catchableTypeInfoArrayRef = windows::F64Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::F64Type::throwInfoRef;
@@ -86,8 +122,13 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::I32Type::typeName, windows::I32Type::typeInfoRef, windows::I32Type::catchableTypeInfoRef,
                          windows::I32Type::catchableTypeSize});
-        types.push_back({windows::I32Type::typeName2, windows::I32Type::typeInfoRef2, windows::I32Type::catchableTypeInfoRef2,
-                         windows::I32Type::catchableTypeSize});
+        types.push_back(boxEntry(windows::I32Type::catchableTypeInfoRef2, windows::I32Type::copyThunk2));
+
+        TypeNames toNumber{windows::I32Type::typeName3, windows::I32Type::typeInfoRef3, windows::I32Type::catchableTypeInfoRef3,
+                           windows::F64Type::catchableTypeSize};
+        toNumber.copyThunk = windows::I32Type::copyThunk3;
+        toNumber.copyThunkTarget = mlir_ts::NumberType::get(rewriter.getContext());
+        types.push_back(toNumber);
 
         catchableTypeInfoArrayRef = windows::I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = windows::I32Type::throwInfoRef;
@@ -97,8 +138,7 @@ class MLIRRTTIHelperVCWin32
     {
         types.push_back({windows::StringType::typeName, windows::StringType::typeInfoRef, windows::StringType::catchableTypeInfoRef,
                          pointerSize()});
-        types.push_back({windows::StringType::typeName2, windows::StringType::typeInfoRef2, windows::StringType::catchableTypeInfoRef2,
-                         pointerSize()});
+        types.push_back(boxEntry(windows::StringType::catchableTypeInfoRef2, windows::StringType::copyThunk2));
 
         catchableTypeInfoArrayRef = windows::StringType::catchableTypeInfoArrayRef;
         throwInfoRef = windows::StringType::throwInfoRef;
@@ -123,8 +163,7 @@ class MLIRRTTIHelperVCWin32
                              pointerSize()});
         }
 
-        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
-                         pointerSize()});
+        types.push_back(classBoxEntry(names.front()));
 
         setClassThrowInfoNames(names.front());
     }
@@ -136,8 +175,7 @@ class MLIRRTTIHelperVCWin32
                          join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix),
                          pointerSize()});
 
-        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2,
-                         pointerSize()});
+        types.push_back(classBoxEntry(name));
 
         setClassThrowInfoNames(name);
     }
@@ -183,6 +221,8 @@ class MLIRRTTIHelperVCWin32
         {
             normalizedType = enumType.getElementType();
         }
+
+        thrownType = normalizedType;
 
         auto result = true;
         llvm::TypeSwitch<mlir::Type>(normalizedType)
@@ -325,8 +365,11 @@ class MLIRRTTIHelperVCWin32
         // __ImageBase
         imageBase(loc);
 
-        // _CT??_R0N@88
-        catchableTypes(loc);
+        // _CT??_R0N@88 - and the copy thunks they name
+        if (mlir::failed(catchableTypes(loc)))
+        {
+            return false;
+        }
 
         // _CTA1N
         catchableArrayType(loc);
@@ -463,19 +506,46 @@ class MLIRRTTIHelperVCWin32
     {
         for (auto type : types)
         {
-            catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName, type.catchableTypeSize);
+            if (mlir::failed(catchableType(loc, type)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
     }
 
-    mlir::LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName,
-                                      int catchableTypeSize)
+    mlir::LogicalResult catchableType(mlir::Location loc, const TypeNames &type)
     {
+        StringRef catchableTypeInfoRefName = type.catchableTypeInfoRef;
+        StringRef typeInfoRefName = type.typeInfoRef;
+        StringRef typeName = type.typeName;
+        auto catchableTypeSize = type.catchableTypeSize;
+
         auto name = catchableTypeInfoRefName;
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
-            return mlir::failure();
+            // already emitted for an earlier throw or catch of the same type
+            return mlir::success();
+        }
+
+        auto hasCopyThunk = !type.copyThunk.empty();
+        if (hasCopyThunk && !parentModule.lookupSymbol(type.copyThunk))
+        {
+            if (!copyThunkBuilder || !thrownType)
+            {
+                // nothing here can build the conversion; the record still has to exist for the
+                // array that lists it, so it stays the plain copy it used to be
+                hasCopyThunk = false;
+            }
+            else
+            {
+                mlir::OpBuilder::InsertionGuard guard(rewriter);
+                if (mlir::failed(copyThunkBuilder(loc, type.copyThunk, thrownType, type.copyThunkTarget)))
+                {
+                    return mlir::failure();
+                }
+            }
         }
 
         // _CT??_R0N@88
@@ -489,7 +559,8 @@ class MLIRRTTIHelperVCWin32
             // begin
             mlir::Value structVal = rewriter.create<mlir_ts::UndefOp>(loc, ehCatchableTypeTy);
 
-            auto itemValue1 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(1));
+            auto properties = hasCopyThunk ? windows::copyFunctionProperties : windows::simpleTypeProperties;
+            auto itemValue1 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(properties));
             setStructValue(loc, structVal, itemValue1, 0);
 
             // value 2
@@ -511,7 +582,19 @@ class MLIRRTTIHelperVCWin32
             auto itemValue6 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(catchableTypeSize));
             setStructValue(loc, structVal, itemValue6, 5);
 
-            auto itemValue7 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(0));
+            // copyFunction
+            mlir::Value itemValue7;
+            if (hasCopyThunk)
+            {
+                auto thunkPtr = rewriter.create<mlir_ts::SymbolRefOp>(
+                    loc, mth.getOpaqueType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), type.copyThunk));
+                itemValue7 = ehReference(loc, thunkPtr);
+            }
+            else
+            {
+                itemValue7 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), rewriter.getI32IntegerAttr(0));
+            }
+
             setStructValue(loc, structVal, itemValue7, 6);
 
             // end
