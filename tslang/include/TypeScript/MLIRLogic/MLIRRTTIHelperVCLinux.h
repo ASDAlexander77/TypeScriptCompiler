@@ -602,8 +602,10 @@ class MLIRRTTIHelperVCLinux
 
             if (ti == TypeInfo::Pointer_TypeInfo)
             {
-                auto itemValueI32 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), mth.getI32AttrValue(0));
-                setStructValue(loc, structVal, itemValueI32, 2);
+                // no qualifiers; the flag says the box thunk field below is there
+                auto itemValueI32 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(),
+                                                                         mth.getI32AttrValue(linux::ClassType::boxThunkFlag));
+                setStructValue(loc, structVal, itemValueI32, linux::ClassType::flagsField);
 
                 // add base class name
                 auto itemValue4 = rewriter.create<mlir_ts::AddressOfOp>(

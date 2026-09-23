@@ -2459,3 +2459,19 @@ if (TSLANG_TEST_X86)
     message(STATUS "x86 twins: ${x86_twin_count} registered (${x86_excluded_count} excluded), "
                    "${x86_jit_skipped_count} -jit registrations without a twin")
 endif()
+
+# An untyped catch of a C++ exception tslang did not throw (Itanium only: the box thunk field of
+# a __pointer_type_info is a Linux mechanism). foreign_throw.cpp throws a `const char*`, a
+# pointer to a C++ struct and an int; the catch must box each without calling into the type_info.
+if (NOT WIN32)
+    add_library(tslang_foreign_throw SHARED foreign-throw/foreign_throw.cpp)
+    add_dependencies(tslang_foreign_throw TypeScriptRuntime)
+    add_test(NAME test-jit-foreign-throw-catch
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     --shared-libs=$<TARGET_FILE:tslang_foreign_throw>
+                     "${PROJECT_SOURCE_DIR}/test/tester/foreign-throw/catch.ts")
+    set_tests_properties(test-jit-foreign-throw-catch
+                         PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Segmentation|assertion failed")
+endif()
