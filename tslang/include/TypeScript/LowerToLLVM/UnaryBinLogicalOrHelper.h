@@ -107,7 +107,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isIntOrIndex() || isa<mlir_ts::BooleanType>(leftType) || isa<mlir_ts::CharType>(leftType))
+    // a bigint is an i64; without it here a comparison of two bigints fell to the "not
+    // applicable" warning at the bottom and was constant false - `u == v` of equal values
+    // included (comparing against a literal went through the literal's own integer type)
+    else if (leftType.isIntOrIndex() || isa<mlir_ts::BooleanType>(leftType) || isa<mlir_ts::CharType>(leftType) ||
+             isa<mlir_ts::BigIntType>(leftType))
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;

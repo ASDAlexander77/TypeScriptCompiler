@@ -110,6 +110,13 @@ class CastLogicHelper
             return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
 
+        // a bigint is a signed i64; without this case it fell through to a bare inttoptr, and
+        // printing one passed its value to puts as an address
+        if (isa<mlir_ts::BigIntType>(inType) && isResString)
+        {
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), true);
+        }
+
         if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
         {
             if (inLLVMType.isF16())

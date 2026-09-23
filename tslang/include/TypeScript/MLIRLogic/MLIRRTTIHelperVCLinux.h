@@ -74,6 +74,11 @@ class MLIRRTTIHelperVCLinux
         types.push_back({linux::I32Type::typeName, TypeInfo::Value, -1});
     }
 
+    void setBoolAsCatchType()
+    {
+        types.push_back({linux::BoolType::typeName, TypeInfo::Value, -1});
+    }
+
     void setI64AsCatchType()
     {
         types.push_back({linux::I64Type::typeName, TypeInfo::Value, -1});
@@ -174,6 +179,8 @@ class MLIRRTTIHelperVCLinux
                 // compares against the int type_info - see TryOpLowering, SaveCatchVarOpLowering
                 setI32AsCatchType();
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setI64AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // we need all bases as well
@@ -192,6 +199,8 @@ class MLIRRTTIHelperVCLinux
                 // caught value throws again.
                 setI32AsCatchType();
                 setF64AsCatchType();
+                setBoolAsCatchType();
+                setI64AsCatchType();
                 setStringTypeAsCatchType();
                 setI8PtrAsCatchType();
             })
@@ -253,6 +262,8 @@ class MLIRRTTIHelperVCLinux
                 setF32AsCatchType();
 #endif
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setI64AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             // An untyped `catch (e)` / `catch (e: any)` has to catch everything, and on the

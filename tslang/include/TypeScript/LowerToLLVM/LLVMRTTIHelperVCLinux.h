@@ -64,6 +64,16 @@ class LLVMRTTIHelperVCLinux
         types.push_back({linux::I32Type::typeName});
     }
 
+    void setBoolAsCatchType()
+    {
+        types.push_back({linux::BoolType::typeName});
+    }
+
+    void setI64AsCatchType()
+    {
+        types.push_back({linux::I64Type::typeName});
+    }
+
     void setStringTypeAsCatchType()
     {
         types.push_back({linux::StringType::typeName});
@@ -108,6 +118,10 @@ class LLVMRTTIHelperVCLinux
                 {
                     setI32AsCatchType();
                 }
+                else if (intType.getIntOrFloatBitWidth() == 64)
+                {
+                    setI64AsCatchType();
+                }
                 else
                 {
                     LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
@@ -135,6 +149,8 @@ class LLVMRTTIHelperVCLinux
                 setF32AsCatchType();
 #endif
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setI64AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
