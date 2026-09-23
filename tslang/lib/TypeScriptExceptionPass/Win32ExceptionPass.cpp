@@ -79,6 +79,20 @@ struct Win32ExceptionPassCode
                CI->getCalledFunction()->getName() == "__cxa_end_catch";
     }
 
+    // The two invokes a catch region can legitimately end on: its own end-of-catch marker, or a
+    // throw out of it. Either way nothing follows inside the funclet, so it needs no catchret.
+    static bool isCatchEndingInvoke(llvm::Instruction *I)
+    {
+        auto *II = dyn_cast<InvokeInst>(I);
+        if (!II || II->getCalledFunction() == nullptr || !II->getCalledFunction()->hasName())
+        {
+            return false;
+        }
+
+        auto name = II->getCalledFunction()->getName();
+        return name == "__cxa_end_catch" || name == "_CxxThrowException";
+    }
+
     bool runOnFunction(Function &F)
     {
         auto MadeChange = false;
@@ -408,14 +422,26 @@ struct Win32ExceptionPassCode
             llvm::IRBuilder<> Builder(I);
             llvm::LLVMContext &Ctx = Builder.getContext();
 
+            // A catch region's `end` is otherwise just the first instruction after its
+            // end-of-catch marker, and that can be an ordinary invoke: once the canonicalizer
+            // merges a catch block into what follows it, a second try's first call comes
+            // straight after the first catch. Treated like the end marker, that invoke got no
+            // catchret, so the second try ran inside the first catch's funclet and crashed.
+            // It has to be split off like any other instruction instead.
+            auto *endInvoke = dyn_cast<InvokeInst>(I);
+            if (endInvoke && catchRegion.isCatch() && !isCatchEndingInvoke(endInvoke))
+            {
+                endInvoke = nullptr;
+            }
+
             auto *BI = dyn_cast<BranchInst>(I);
             if (BI)
             {
                 retBlock = BI->getSuccessor(0);
             }
-            else if (auto *II = dyn_cast<InvokeInst>(I))
+            else if (endInvoke)
             {
-                retBlock = II->getNormalDest();
+                retBlock = endInvoke->getNormalDest();
             }
             else if (dyn_cast<ResumeInst>(I))
             {
@@ -448,7 +474,7 @@ struct Win32ExceptionPassCode
 
             if (catchRegion.isCatch())
             {
-                if (!dyn_cast<InvokeInst>(I))
+                if (!endInvoke)
                 {
                     assert(catchRegion.catchPad);
                     auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());

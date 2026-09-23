@@ -125,6 +125,7 @@ struct TSContext
         unwind.beginRun();
         cleanup.beginRun();
         parentTryOp.beginRun();
+        inParentTryBody.beginRun();
         landingBlockOf.beginRun();
         leavesCatch.beginRun();
     }
@@ -138,6 +139,10 @@ struct TSContext
     OpSideTable<mlir::Block *> unwind{"unwind"};
     OpSideTable<mlir::Block *> cleanup{"cleanup"};
     OpSideTable<Operation *> parentTryOp{"parentTryOp"};
+    // Whether a try sits in its parentTryOp's *body*, where an exception leaving it is the
+    // parent's to catch - as opposed to the parent's catch or finally, where unwinding to the
+    // parent's landing pad would loop back into the handler it is already running.
+    OpSideTable<bool> inParentTryBody{"inParentTryBody"};
     OpSideTable<mlir::Block *> landingBlockOf{"landingBlockOf"};
     // Throws that sit inside a catch clause and therefore have to end the active catch before
     // they leave it. `return`, `break` and `continue` carry the same meaning in `unwind`, but
