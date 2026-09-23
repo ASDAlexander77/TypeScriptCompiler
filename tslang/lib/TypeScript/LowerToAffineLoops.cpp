@@ -1654,14 +1654,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
         // `catch (e: number)` has to take `throw 1` too - an integer literal is an int here - and
-        // a thrown f32. On Windows their ThrowInfos list a `.N` entry that converts (see
+        // a thrown u32 or f32. On Windows their ThrowInfos list a `.N` entry that converts (see
         // copyThunkPrefix in LLVMRTTIHelperVCWin32Const.h); on the Itanium path the catch lists
         // their type_infos as further clauses, accepts any of them, and
         // linux::SaveCatchVarOpLowering converts.
         SmallVector<mlir::Value> widenedTypeInfos;
         if (!tsContext->compileOptions.isWindows && catchVarType && isa<mlir_ts::NumberType>(catchVarType))
         {
-            for (auto typeInfoName : {::typescript::linux::I32Type::typeName, ::typescript::linux::F32Type::typeName})
+            for (auto typeInfoName : {::typescript::linux::I32Type::typeName, ::typescript::linux::U32Type::typeName,
+                                      ::typescript::linux::F32Type::typeName})
             {
                 widenedTypeInfos.push_back(rewriter.create<mlir_ts::ConstantOp>(
                     loc, mth.getRefType(mth.getOpaqueType()), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoName)));

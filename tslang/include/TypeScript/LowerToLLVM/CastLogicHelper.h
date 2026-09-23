@@ -154,7 +154,15 @@ class CastLogicHelper
         if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
         {
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
-        }        
+        }
+
+        // an unsigned integer is converted to a float as unsigned: castLLVMTypesLogic only sees the
+        // signless LLVM type, and its sitofp read a u32 of 0xFFFFFFFF as -1
+        if (inType.isUnsignedInteger() && isFloat(resLLVMType))
+        {
+            auto inValue = in.getType() == inLLVMType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, inLLVMType, in);
+            return rewriter.create<mlir::arith::UIToFPOp>(loc, resLLVMType, inValue);
+        }
 
         auto isResAny = isa<mlir_ts::AnyType>(resType);
         if (isResAny)
@@ -691,6 +699,17 @@ class CastLogicHelper
 
         if (isFloat(inLLVMType) && isInt(resLLVMType))
         {
+            // to a narrower integer through i64, then truncated: fptosi straight to i32 is poison
+            // outside the signed range, so a number holding a u32 above 0x7FFFFFFF (2147483649,
+            // say, which the unsigned int-to-float conversion now gives) came back as garbage.
+            // Truncating wraps modulo 2^32, as ToInt32/ToUint32 do.
+            auto width = resLLVMType.getIntOrFloatBitWidth();
+            if (width < 64)
+            {
+                auto wideValue = rewriter.create<mlir::arith::FPToSIOp>(loc, rewriter.getI64Type(), in);
+                return rewriter.create<LLVM::TruncOp>(loc, resLLVMType, wideValue);
+            }
+
             return rewriter.create<mlir::arith::FPToSIOp>(loc, resLLVMType, in);
         }
 

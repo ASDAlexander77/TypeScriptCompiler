@@ -120,6 +120,25 @@ constexpr const auto *throwInfoRef = "_TI3H";
 constexpr int catchableTypeSize = 4;
 } // namespace I32Type
 
+// `unsigned int`. A u32 used to go out as an `int` (`.H`), so every reader - the `.N` widening
+// thunk, the `.PEAX` box thunk - took its top bit for a sign and 0xFFFFFFFF came back as -1.
+// Its records have names of their own, so they never share a thunk with an `int` throw.
+namespace U32Type
+{
+constexpr const auto *typeName = ".I";
+constexpr const auto *typeInfoRef = "??_R0I@8";
+constexpr const auto *catchableTypeInfoRef = "_CT??_R0I@84";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@I84.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box.I";
+constexpr const auto *typeName3 = ".N";
+constexpr const auto *typeInfoRef3 = "??_R0N@8";
+constexpr const auto *catchableTypeInfoRef3 = "_CT??_R0N@88.fromI";
+constexpr const auto *copyThunk3 = ".eh.copy.num.I";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA3I";
+constexpr const auto *throwInfoRef = "_TI3I";
+constexpr int catchableTypeSize = 4;
+} // namespace U32Type
+
 // `bool` - a boolean is an i1, stored as a byte
 namespace BoolType
 {

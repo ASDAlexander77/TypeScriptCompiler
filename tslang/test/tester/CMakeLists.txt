@@ -394,6 +394,7 @@ tslang_add_test(NAME test-compile-00-throw-number-untyped-catch COMMAND test-run
 tslang_add_test(NAME test-compile-00-catch-untyped-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-compile-00-throw-bool-bigint COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-compile-00-throw-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
+tslang_add_test(NAME test-compile-00-throw-u32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_u32.ts")
 tslang_add_test(NAME test-compile-00-cast-to-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-compile-00-instanceof-namespace-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_namespace_narrowing.ts")
 tslang_add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
@@ -825,6 +826,7 @@ tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-catch-untyped-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-jit-00-throw-bool-bigint COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-jit-00-throw-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
+tslang_add_test(NAME test-jit-00-throw-u32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_u32.ts")
 tslang_add_test(NAME test-jit-00-cast-to-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-jit-00-instanceof-namespace-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_namespace_narrowing.ts")
 tslang_add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
@@ -1725,6 +1727,7 @@ set(TSLANG_CORPUS
     00throw_in_catch.ts
     00throw_bool_bigint.ts
     00throw_f32.ts
+    00throw_u32.ts
     00throw_inlined.ts
     00throw_number_untyped_catch.ts
     00to_primitive_ops.ts

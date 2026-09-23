@@ -5083,16 +5083,26 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
                 return rewriter.create<LLVM::SIToFPOp>(loc, llvmNumberType, intValue);
             },
             [&](OpBuilder &, Location) -> mlir::Value {
-                auto floatTypeInfo = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::F32Type::typeName);
-                auto isFloat = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, floatTypeInfo);
+                auto uintTypeInfo = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::U32Type::typeName);
+                auto isUInt = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, uintTypeInfo);
                 return clh.conditionalExpressionLowering(
-                    loc, llvmNumberType, isFloat,
+                    loc, llvmNumberType, isUInt,
                     [&](OpBuilder &, Location) -> mlir::Value {
-                        auto floatValue = rewriter.create<LLVM::LoadOp>(loc, rewriter.getF32Type(), exceptionInfo);
-                        return rewriter.create<LLVM::FPExtOp>(loc, llvmNumberType, floatValue);
+                        auto uintValue = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), exceptionInfo);
+                        return rewriter.create<LLVM::UIToFPOp>(loc, llvmNumberType, uintValue);
                     },
                     [&](OpBuilder &, Location) -> mlir::Value {
-                        return rewriter.create<LLVM::LoadOp>(loc, llvmNumberType, exceptionInfo);
+                        auto floatTypeInfo = rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::F32Type::typeName);
+                        auto isFloat = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfo, floatTypeInfo);
+                        return clh.conditionalExpressionLowering(
+                            loc, llvmNumberType, isFloat,
+                            [&](OpBuilder &, Location) -> mlir::Value {
+                                auto floatValue = rewriter.create<LLVM::LoadOp>(loc, rewriter.getF32Type(), exceptionInfo);
+                                return rewriter.create<LLVM::FPExtOp>(loc, llvmNumberType, floatValue);
+                            },
+                            [&](OpBuilder &, Location) -> mlir::Value {
+                                return rewriter.create<LLVM::LoadOp>(loc, llvmNumberType, exceptionInfo);
+                            });
                     });
             });
     }
@@ -5137,6 +5147,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         // each type tslang throws, by the type_info a throw of it carries
         SmallVector<std::pair<std::string, mlir::Type>> candidates{
             {::typescript::linux::I32Type::typeName, mlir::IntegerType::get(ctx, 32, mlir::IntegerType::Signed)},
+            {::typescript::linux::U32Type::typeName, mlir::IntegerType::get(ctx, 32, mlir::IntegerType::Unsigned)},
             {::typescript::linux::F64Type::typeName, mlir_ts::NumberType::get(ctx)},
             {::typescript::linux::F32Type::typeName, mlir::Float32Type::get(ctx)},
             {::typescript::linux::BoolType::typeName, mlir_ts::BooleanType::get(ctx)},

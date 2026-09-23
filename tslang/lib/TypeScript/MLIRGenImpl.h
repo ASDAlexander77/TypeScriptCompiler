@@ -6114,6 +6114,13 @@ class MLIRGenImpl
                                                                  builder.getI32IntegerAttr((int)opCode),
                                                                  leftExpressionValue, rightExpressionValue);
 
+            // `>>>` yields an unsigned 32-bit value; left as a signless i32 it widened to a number
+            // as signed, and `-1 >>> 0` read -1 instead of 4294967295
+            if (opCode == SyntaxKind::GreaterThanGreaterThanGreaterThanToken && result.getType() == builder.getI32Type())
+            {
+                result = builder.create<mlir_ts::CastOp>(location, builder.getIntegerType(32, /*isSigned=*/false), result);
+            }
+
             // `+` on strings is the one arithmetic operator that allocates: it becomes
             // `ts.StringConcat`, which builds a new string. A receiver takes that reference
             // over; `("a" + b).length`, where there is no receiver, gives it back at the end of

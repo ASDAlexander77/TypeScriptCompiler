@@ -64,6 +64,11 @@ class LLVMRTTIHelperVCLinux
         types.push_back({linux::I32Type::typeName});
     }
 
+    void setU32AsCatchType()
+    {
+        types.push_back({linux::U32Type::typeName});
+    }
+
     void setBoolAsCatchType()
     {
         types.push_back({linux::BoolType::typeName});
@@ -116,7 +121,14 @@ class LLVMRTTIHelperVCLinux
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (intType.getIntOrFloatBitWidth() == 64)
                 {
