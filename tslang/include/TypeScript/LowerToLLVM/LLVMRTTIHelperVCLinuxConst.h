@@ -22,6 +22,12 @@ namespace I32Type
 constexpr const auto *typeName = "_ZTIi";
 } // namespace I32Type
 
+namespace BoolType
+{
+constexpr const auto *typeName = "_ZTIb";
+} // namespace BoolType
+
+// also a bigint, which is an i64
 namespace I64Type
 {
 constexpr const auto *typeName = "_ZTIx";

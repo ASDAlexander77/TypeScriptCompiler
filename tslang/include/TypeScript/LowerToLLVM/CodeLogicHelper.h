@@ -49,6 +49,12 @@ class CodeLogicHelper
         {
             ftype = rewriter.getF16Type();
         }
+        else if (width == 32)
+        {
+            // not the default: with NUMBER_F64 that is f64, and an f32 compared against it (an
+            // f32 cast to boolean, e.g. in the ___unbox<boolean> helper) is invalid IR
+            ftype = rewriter.getF32Type();
+        }
         else if (width == 64)
         {
             ftype = rewriter.getF64Type();

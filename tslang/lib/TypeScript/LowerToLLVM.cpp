@@ -229,21 +229,27 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
+        // A result wider than 32 bits (a bigint is an i64) needs the `long long` functions: `atoi`
+        // returns an int, and `strtol` a `long`, which is also 32 bits on Windows.
+        auto resultType = getTypeConverter()->convertType(op.getType());
+        auto wide = resultType.isIntOrFloat() && resultType.getIntOrFloatBitWidth() > 32;
+        auto parsedType = wide ? rewriter.getI64Type() : rewriter.getI32Type();
+
         // Insert the `atoi` declaration if necessary.
         auto i8PtrTy = th.getPtrType();
         LLVM::LLVMFuncOp parseIntFuncOp;
         if (transformed.getBase())
         {
             parseIntFuncOp = ch.getOrInsertFunction(
-                "strtol",
-                th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
+                wide ? "strtoll" : "strtol",
+                th.getFunctionType(parsedType, {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
             auto nullOp = rewriter.create<LLVM::ZeroOp>(op->getLoc(), th.getPtrType());
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp,
                                                       ValueRange{transformed.getArg(), nullOp, transformed.getBase()});
         }
         else
         {
-            parseIntFuncOp = ch.getOrInsertFunction("atoi", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+            parseIntFuncOp = ch.getOrInsertFunction(wide ? "atoll" : "atoi", th.getFunctionType(parsedType, {i8PtrTy}));
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{transformed.getArg()});
         }
 
@@ -5109,6 +5115,8 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         SmallVector<std::pair<std::string, mlir::Type>> candidates{
             {::typescript::linux::I32Type::typeName, mlir::IntegerType::get(ctx, 32, mlir::IntegerType::Signed)},
             {::typescript::linux::F64Type::typeName, mlir_ts::NumberType::get(ctx)},
+            {::typescript::linux::BoolType::typeName, mlir_ts::BooleanType::get(ctx)},
+            {::typescript::linux::I64Type::typeName, mlir_ts::BigIntType::get(ctx)},
             {::typescript::linux::StringType::typeName, mlir_ts::StringType::get(ctx)},
             // a thrown `any` is already a box
             {::typescript::linux::I8PtrType::typeName, mlir_ts::AnyType::get(ctx)}};

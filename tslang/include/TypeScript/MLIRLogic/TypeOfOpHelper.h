@@ -125,6 +125,13 @@ class TypeOfOpHelper
             return "boolean";
         }
 
+        // without it a bigint had no descriptor, and boxing one into an `any` handed a null
+        // tag to BoxOp - a silent compiler crash (and ___unbox already tests for "bigint")
+        if (isa<mlir_ts::BigIntType>(type))
+        {
+            return "bigint";
+        }
+
         // special case
         if (isa<mlir_ts::TypePredicateType>(type))
         {

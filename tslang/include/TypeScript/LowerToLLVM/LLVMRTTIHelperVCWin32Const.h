@@ -113,6 +113,32 @@ constexpr const auto *throwInfoRef = "_TI3H";
 constexpr int catchableTypeSize = 4;
 } // namespace I32Type
 
+// `bool` - a boolean is an i1, stored as a byte
+namespace BoolType
+{
+constexpr const auto *typeName = "._N";
+constexpr const auto *typeInfoRef = "??_R0_N@8";
+constexpr const auto *catchableTypeInfoRef = "_CT??_R0_N@81";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@_N81.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box._N";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2_N.box";
+constexpr const auto *throwInfoRef = "_TI2_N.box";
+constexpr int catchableTypeSize = 1;
+} // namespace BoolType
+
+// `__int64` - a bigint is an i64
+namespace BigIntType
+{
+constexpr const auto *typeName = "._J";
+constexpr const auto *typeInfoRef = "??_R0_J@8";
+constexpr const auto *catchableTypeInfoRef = "_CT??_R0_J@88";
+constexpr const auto *catchableTypeInfoRef2 = "_CT??_R0PEAX@_J88.box";
+constexpr const auto *copyThunk2 = ".eh.copy.box._J";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA2_J.box";
+constexpr const auto *throwInfoRef = "_TI2_J.box";
+constexpr int catchableTypeSize = 8;
+} // namespace BigIntType
+
 namespace StringType
 {
 constexpr const auto *typeName = ".PEAD";

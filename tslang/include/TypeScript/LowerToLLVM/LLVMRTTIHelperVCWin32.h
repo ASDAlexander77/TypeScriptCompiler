@@ -93,6 +93,23 @@ class LLVMRTTIHelperVCWin32
         throwInfoRef = I32Type::throwInfoRef;
     }
 
+    void setBoolAsCatchType()
+    {
+        types.push_back({BoolType::typeName, BoolType::typeInfoRef, BoolType::catchableTypeInfoRef, BoolType::catchableTypeSize});
+
+        catchableTypeInfoArrayRef = BoolType::catchableTypeInfoArrayRef;
+        throwInfoRef = BoolType::throwInfoRef;
+    }
+
+    void setBigIntAsCatchType()
+    {
+        types.push_back(
+            {BigIntType::typeName, BigIntType::typeInfoRef, BigIntType::catchableTypeInfoRef, BigIntType::catchableTypeSize});
+
+        catchableTypeInfoArrayRef = BigIntType::catchableTypeInfoArrayRef;
+        throwInfoRef = BigIntType::throwInfoRef;
+    }
+
     void setStringTypeAsCatchType()
     {
         types.push_back({StringType::typeName, StringType::typeInfoRef, StringType::catchableTypeInfoRef, pointerSize()});
@@ -162,6 +179,10 @@ class LLVMRTTIHelperVCWin32
                 {
                     setI32AsCatchType();
                 }
+                else if (intType.getIntOrFloatBitWidth() == 64)
+                {
+                    setBigIntAsCatchType();
+                }
                 else
                 {
                     LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch integer width: " << intType << "\n";);
@@ -189,6 +210,8 @@ class LLVMRTTIHelperVCWin32
                 setF64AsCatchType();
 #endif
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setBigIntAsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })

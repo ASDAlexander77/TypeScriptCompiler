@@ -134,6 +134,26 @@ class MLIRRTTIHelperVCWin32
         throwInfoRef = windows::I32Type::throwInfoRef;
     }
 
+    void setBoolAsCatchType()
+    {
+        types.push_back({windows::BoolType::typeName, windows::BoolType::typeInfoRef, windows::BoolType::catchableTypeInfoRef,
+                         windows::BoolType::catchableTypeSize});
+        types.push_back(boxEntry(windows::BoolType::catchableTypeInfoRef2, windows::BoolType::copyThunk2));
+
+        catchableTypeInfoArrayRef = windows::BoolType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::BoolType::throwInfoRef;
+    }
+
+    void setBigIntAsCatchType()
+    {
+        types.push_back({windows::BigIntType::typeName, windows::BigIntType::typeInfoRef, windows::BigIntType::catchableTypeInfoRef,
+                         windows::BigIntType::catchableTypeSize});
+        types.push_back(boxEntry(windows::BigIntType::catchableTypeInfoRef2, windows::BigIntType::copyThunk2));
+
+        catchableTypeInfoArrayRef = windows::BigIntType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::BigIntType::throwInfoRef;
+    }
+
     void setStringTypeAsCatchType()
     {
         types.push_back({windows::StringType::typeName, windows::StringType::typeInfoRef, windows::StringType::catchableTypeInfoRef,
@@ -231,6 +251,12 @@ class MLIRRTTIHelperVCWin32
                 {
                     setI32AsCatchType();
                 }
+                else if (intType.getIntOrFloatBitWidth() == 64)
+                {
+                    setBigIntAsCatchType();
+                    // a bigint literal is a plain i64; box it as the bigint it is
+                    thrownType = mlir_ts::BigIntType::get(rewriter.getContext());
+                }
                 else
                 {
                     result = false;
@@ -258,6 +284,8 @@ class MLIRRTTIHelperVCWin32
                 setF32AsCatchType();
 #endif
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setBigIntAsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // we need all bases as well
@@ -291,6 +319,12 @@ class MLIRRTTIHelperVCWin32
                 {
                     setI32AsCatchType();
                 }
+                else if (intType.getIntOrFloatBitWidth() == 64)
+                {
+                    setBigIntAsCatchType();
+                    // a bigint literal is a plain i64; box it as the bigint it is
+                    thrownType = mlir_ts::BigIntType::get(rewriter.getContext());
+                }
                 else
                 {
                     result = false;
@@ -313,6 +347,8 @@ class MLIRRTTIHelperVCWin32
                 setF32AsCatchType();
 #endif
             })
+            .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
+            .Case<mlir_ts::BigIntType>([&](auto bigIntType) { setBigIntAsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
