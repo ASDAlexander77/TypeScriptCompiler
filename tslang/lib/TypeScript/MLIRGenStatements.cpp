@@ -1066,6 +1066,11 @@ namespace mlirgen
         // symbol table and wire into this thunk's exit.
         auto funcOp = mlir_ts::FuncOp::create(location, name, funcType);
         funcOp.setPrivate();
+        // internal: every module that throws or catches the type builds the same thunk, and a
+        // catch of a class another module throws failed to link (duplicate symbol). Not
+        // linkonce_odr in a comdat like the records that point at it: under the Win64 JIT a
+        // catch through such a thunk crashed (access violation).
+        funcOp->setAttr("internal_linkage", builder.getUnitAttr());
 
         // its own context: the thunk is a function of its own, and has to be emitted even when
         // the throw or catch that needs it is only being generated speculatively
@@ -1101,33 +1106,6 @@ namespace mlirgen
         });
     }
 
-    // An untyped catch on the Itanium path is a catch-all that finds out what it caught from the
-    // exception's type_info, and a class needs its own descriptor in the `any` box it binds - so
-    // the lowering needs to know which classes can arrive. See linux::SaveCatchVarOpLowering.
-    void MLIRGenImpl::recordThrownClass(mlir::Type thrownType)
-    {
-        auto classType = dyn_cast<mlir_ts::ClassType>(mth.stripLiteralType(thrownType));
-        if (!classType)
-        {
-            return;
-        }
-
-        SmallVector<mlir::Attribute> thrownClasses;
-        if (auto existing = theModule->getAttrOfType<mlir::ArrayAttr>(THROWN_CLASSES_ATTR_NAME))
-        {
-            thrownClasses.append(existing.begin(), existing.end());
-        }
-
-        auto classTypeAttr = mlir::TypeAttr::get(classType);
-        if (llvm::is_contained(thrownClasses, classTypeAttr))
-        {
-            return;
-        }
-
-        thrownClasses.push_back(classTypeAttr);
-        theModule->setAttr(THROWN_CLASSES_ATTR_NAME, builder.getArrayAttr(thrownClasses));
-    }
-
     mlir::LogicalResult MLIRGenImpl::mlirGen(ThrowStatement throwStatementAST, const GenContext &genContext)
     {
         auto location = loc(throwStatementAST);
@@ -1148,11 +1126,6 @@ namespace mlirgen
             {
                 emitError(location, "Not supported type in throw");
                 return mlir::failure();
-            }
-
-            if (!compileOptions.isWindows)
-            {
-                recordThrownClass(exception.getType());
             }
         }
 

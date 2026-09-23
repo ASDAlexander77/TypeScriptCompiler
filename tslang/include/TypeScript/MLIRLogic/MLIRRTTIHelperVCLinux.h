@@ -53,10 +53,26 @@ class MLIRRTTIHelperVCLinux
     SmallVector<TypeNames> types;
 
   public:
+    // Builds the thunk `name`: void name(ref<target> dest, ref<source> src) - the same builder as
+    // MLIRRTTIHelperVCWin32's. Here it makes a class's box thunk, see linux::ClassType::boxThunkPrefix.
+    using CopyThunkBuilder = std::function<mlir::LogicalResult(mlir::Location loc, StringRef name, mlir::Type source,
+                                                               mlir::Type target)>;
+
+  private:
+    // the class a class type_info is emitted for: the box thunk's source
+    mlir::Type classType;
+    CopyThunkBuilder copyThunkBuilder;
+
+  public:
     MLIRRTTIHelperVCLinux(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule, CompileOptions& compileOptions)
         : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext(), compileOptions), mlh(), mcl(rewriter, compileOptions)
     {
         // setI32AsCatchType();
+    }
+
+    void setCopyThunkBuilder(CopyThunkBuilder builder)
+    {
+        copyThunkBuilder = builder;
     }
 
     void setF32AsCatchType()
@@ -191,6 +207,7 @@ class MLIRRTTIHelperVCLinux
                 classInfo->getBasesWithRoot(classAndBases);
 
                 setClassTypeAsCatchType(classAndBases);
+                this->classType = classInfo->classType;
             })
             .Case<mlir_ts::AnyType>([&](auto anyType) {
                 // This overload only declares the RTTI globals a catch may reference. An
@@ -205,6 +222,9 @@ class MLIRRTTIHelperVCLinux
                 setI64AsCatchType();
                 setStringTypeAsCatchType();
                 setI8PtrAsCatchType();
+                // what tells a thrown class apart from the rest: its type_info is a
+                // __pointer_type_info, which carries the box thunk
+                types.push_back({linux::ClassType::pointerTypeInfoName, TypeInfo::Value, -1});
             })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
@@ -428,7 +448,8 @@ class MLIRRTTIHelperVCLinux
         case TypeInfo::SingleInheritance_ClassTypeInfo:
             return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getOpaqueType()});
         case TypeInfo::Pointer_TypeInfo:
-            return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType()});
+            // the last field is ours, not libstdc++'s - see linux::ClassType::boxThunkPrefix
+            return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType(), mth.getOpaqueType()});
         default:
             return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType()});
         }
@@ -490,13 +511,7 @@ class MLIRRTTIHelperVCLinux
         mlir::Type tiType;
         if (classType)
         {
-            SmallVector<mlir::Type> tiTypes;
-            tiTypes.push_back(mth.getOpaqueType());
-            tiTypes.push_back(mth.getOpaqueType());
-            tiTypes.push_back(mth.getI32Type());
-            tiTypes.push_back(mth.getOpaqueType());
-
-            tiType = mth.getTupleType(tiTypes);
+            tiType = getTIType(TypeInfo::Pointer_TypeInfo);
         }
         else
         {
@@ -506,6 +521,31 @@ class MLIRRTTIHelperVCLinux
         mlir::Value throwInfoPtr = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getRefType(tiType),
                                                                         mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         return throwInfoPtr;
+    }
+
+    // The box thunk field of a class's pointer type_info: the thunk's address, or null when
+    // nothing here can build it - an untyped catch then boxes the instance as a plain object.
+    mlir::Value boxThunkValue(mlir::Location loc, StringRef label)
+    {
+        auto thunkName = std::string(linux::ClassType::boxThunkPrefix) + label.str();
+        if (!parentModule.lookupSymbol(thunkName))
+        {
+            auto built = false;
+            if (copyThunkBuilder && classType)
+            {
+                mlir::OpBuilder::InsertionGuard guard(rewriter);
+                built = mlir::succeeded(copyThunkBuilder(loc, thunkName, classType, mlir_ts::AnyType::get(rewriter.getContext())));
+            }
+
+            if (!built)
+            {
+                auto nullValue = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+                return rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), nullValue);
+            }
+        }
+
+        return rewriter.create<mlir_ts::SymbolRefOp>(loc, mth.getOpaqueType(),
+                                                     mlir::FlatSymbolRefAttr::get(rewriter.getContext(), thunkName));
     }
 
     mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti, StringRef baseName = "",
@@ -551,6 +591,8 @@ class MLIRRTTIHelperVCLinux
 
                 auto castValue4 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue4);
                 setStructValue(loc, structVal, castValue4, 3);
+
+                setStructValue(loc, structVal, boxThunkValue(loc, labelValue(className, ti)), linux::ClassType::boxThunkField);
             }
             else if (ti == TypeInfo::SingleInheritance_ClassTypeInfo)
             {

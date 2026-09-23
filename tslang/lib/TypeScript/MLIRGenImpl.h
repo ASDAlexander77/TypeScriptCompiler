@@ -2999,7 +2999,6 @@ class MLIRGenImpl
 
     void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
 
-    void recordThrownClass(mlir::Type thrownType);
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext);
 
@@ -3896,8 +3895,13 @@ class MLIRGenImpl
                 if (instanceOf->left == SyntaxKind::Identifier)
                 {
                     NodeFactory nf(NodeFactoryFlags::None);
-                    return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right),
-                                                false, elseSafeCase, genContext);
+                    // a type reference names its type with an entity name: `N.C` has to become a
+                    // qualified name - handed over as the property access it is, it crashed
+                    if (auto typeName = instanceOfEntityName(nf, instanceOf->right))
+                    {
+                        return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(typeName),
+                                                    false, elseSafeCase, genContext);
+                    }
                 }
             }
         }
@@ -3918,6 +3922,30 @@ class MLIRGenImpl
         }
 
         return mlir::success();
+    }
+
+    // the right side of `x instanceof C` as the entity name of a type reference: `C`, or `N.C` as
+    // a qualified name; anything else (a call, an element access) names no type to narrow to
+    EntityName instanceOfEntityName(NodeFactory &nf, Expression expr)
+    {
+        if (expr == SyntaxKind::Identifier)
+        {
+            return expr;
+        }
+
+        if (expr == SyntaxKind::PropertyAccessExpression)
+        {
+            auto propertyAccess = expr.as<PropertyAccessExpression>();
+            if (propertyAccess->name == SyntaxKind::Identifier)
+            {
+                if (auto left = instanceOfEntityName(nf, propertyAccess->expression))
+                {
+                    return nf.createQualifiedName(left, propertyAccess->name.as<Identifier>());
+                }
+            }
+        }
+
+        return undefined;
     }
 
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext);
@@ -4774,6 +4802,11 @@ class MLIRGenImpl
                 return mlir::Value();
             }
 
+            // A class imported from a shared library (-shared) keeps its rtti behind a pointer
+            // resolved at load time, and the property access already reads through it - so the
+            // value is a string here too. This used to insist on a ref for such a class and fail,
+            // which dropped the call: `x instanceof C` did not compile and `<C>anyValue` always
+            // threw "Can't cast from any type".
             auto rttiOfClassValue = V(resultRtti);
             if (classInfo->isDynamicImport)
             {
@@ -4781,18 +4814,13 @@ class MLIRGenImpl
                 {
                     rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
                 }
-                else
-                {
-                    // isDynamicImport (@dllimport(path) with an argument) is itself an untested
-                    // feature path with zero coverage anywhere in the test suite (see §4.10 of
-                    // docs/not-implemented-audit.md) - this crash is nested one level deeper
-                    // inside that already-untested path. Fail cleanly instead of crashing.
-                    emitError(location, "unsupported RTTI value type for dynamic import");
-                    return mlir::Value();
-                }
             }
 
-            assert(rttiOfClassValue);
+            if (!isa<mlir_ts::StringType>(rttiOfClassValue.getType()))
+            {
+                emitError(location, "unsupported RTTI value type ") << to_print(rttiOfClassValue.getType());
+                return mlir::Value();
+            }
 
             auto instanceOfFuncType = mlir_ts::FunctionType::get(
                 builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},

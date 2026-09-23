@@ -24,10 +24,12 @@ class MLIRRTTIHelperVC
     {
     }
 
-    // Windows only: the Itanium path has no copy functions to point at a thunk
+    // Windows: the copy thunks of the CatchableType records; Itanium: the box thunk of a class's
+    // pointer type_info - see linux::ClassType::boxThunkPrefix
     void setCopyThunkBuilder(MLIRRTTIHelperVCWin32::CopyThunkBuilder builder)
     {
         rttiWin.setCopyThunkBuilder(builder);
+        rttiLinux.setCopyThunkBuilder(builder);
     }
 
     bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)

@@ -1579,6 +1579,12 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 continue;
             }
 
+            // module-local: a private symbol alone still comes out external
+            if (name == "internal_linkage") {
+                newFuncOp->setAttr("llvm.linkage", LLVM::LinkageAttr::get(getContext(), LLVM::linkage::Linkage::Internal));
+                continue;
+            }
+
             auto addAttr =
                 std::find(skipAttrs.begin(), skipAttrs.end(), name) == skipAttrs.end();
             if (addAttr && name == DLL_NAME)
@@ -5138,26 +5144,53 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
             {::typescript::linux::I8PtrType::typeName, mlir_ts::AnyType::get(ctx)}};
 
         // A class needs its own type descriptor in the box - unboxing checks for a class tag,
-        // and the descriptor carries the class's release routine - so only the classes this
-        // module throws can be recognised (MLIRGen lists them, see recordThrownClass). A class
-        // thrown from another module falls through to the plain-object box below.
-        if (auto thrownClasses = saveCatchVarOp->getParentOfType<mlir::ModuleOp>()->getAttrOfType<mlir::ArrayAttr>(
-                THROWN_CLASSES_ATTR_NAME))
-        {
-            for (auto thrownClass : thrownClasses.getAsValueRange<mlir::TypeAttr>())
-            {
-                auto classType = cast<mlir_ts::ClassType>(thrownClass);
-                auto name = classType.getName().getValue();
-                std::string typeInfoName = "_ZTIP" + std::to_string(name.size()) + name.str();
-                candidates.push_back({typeInfoName, classType});
-            }
-        }
+        // and the descriptor carries the class's release routine - and the class may be one this
+        // module has never heard of, thrown from another. So the thrower supplies the box: a
+        // class is thrown as a pointer, and its __pointer_type_info carries a thunk that boxes
+        // the instance (see linux::ClassType::boxThunkPrefix). Anything else - a foreign C++
+        // exception - is boxed as a plain object.
+        auto boxClass = [&]() -> mlir::Value {
+            auto pointerTypeInfoVtable = rewriter.create<LLVM::GEPOp>(
+                loc, ptrTy, ptrTy,
+                rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, ::typescript::linux::ClassType::pointerTypeInfoName),
+                ArrayRef<LLVM::GEPArg>{2});
+            auto typeInfoVtable = rewriter.create<LLVM::LoadOp>(loc, ptrTy, typeInfo);
+            auto isPointer = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, typeInfoVtable, pointerTypeInfoVtable);
+            return clh.conditionalExpressionLowering(
+                loc, ptrTy, isPointer,
+                [&](OpBuilder &, Location) -> mlir::Value {
+                    auto pointerTypeInfoType = LLVM::LLVMStructType::getLiteral(
+                        ctx, {ptrTy, ptrTy, th.getI32Type(), ptrTy, ptrTy}, false);
+                    auto thunkAddress = rewriter.create<LLVM::GEPOp>(
+                        loc, ptrTy, pointerTypeInfoType, typeInfo,
+                        ArrayRef<LLVM::GEPArg>{0, ::typescript::linux::ClassType::boxThunkField});
+                    auto thunk = rewriter.create<LLVM::LoadOp>(loc, ptrTy, thunkAddress);
+                    auto hasThunk = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, thunk,
+                                                                  rewriter.create<LLVM::ZeroOp>(loc, ptrTy));
+                    return clh.conditionalExpressionLowering(
+                        loc, ptrTy, hasThunk,
+                        [&](OpBuilder &, Location) -> mlir::Value {
+                            auto anyType = mlir_ts::AnyType::get(ctx);
+                            auto boxSlot = rewriter.create<mlir_ts::VariableOp>(
+                                loc, mlir_ts::RefType::get(anyType), mlir::Value(), rewriter.getBoolAttr(false),
+                                rewriter.getIndexAttr(0));
+                            auto boxSlotPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxSlot);
+                            // void thunk(ref<any> dest, ref<class> src); exceptionInfo is the
+                            // address of the thrown pointer
+                            auto thunkType = LLVM::LLVMFunctionType::get(th.getVoidType(), {ptrTy, ptrTy});
+                            rewriter.create<LLVM::CallOp>(loc, thunkType, ValueRange{thunk, boxSlotPtr, exceptionInfo});
+                            auto boxed = rewriter.create<mlir_ts::LoadOp>(loc, anyType, boxSlot);
+                            return rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxed);
+                        },
+                        [&](OpBuilder &, Location) { return boxThrown(mlir_ts::OpaqueType::get(ctx)); });
+                },
+                [&](OpBuilder &, Location) { return boxThrown(mlir_ts::OpaqueType::get(ctx)); });
+        };
 
         std::function<mlir::Value(size_t)> dispatch = [&](size_t index) -> mlir::Value {
             if (index == candidates.size())
             {
-                // not a type tslang throws from this module; box the pointer as a plain object
-                return boxThrown(mlir_ts::OpaqueType::get(ctx));
+                return boxClass();
             }
 
             auto [typeInfoName, type] = candidates[index];
