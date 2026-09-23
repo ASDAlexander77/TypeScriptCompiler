@@ -136,9 +136,11 @@ class CastLogicHelper
         }
 
         // TODO: should be in LLVM cast?
+        // not to a float: index.casts only make integers (to f32 it lowered to a trunc); a float
+        // falls through to the sitofp in castLLVMTypesLogic, as `number` always did
         if (inType.isIndex())
         {
-            if (resType.isSignedInteger() || isFloat(resType))
+            if (resType.isSignedInteger())
             {
                 return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
             }
@@ -700,6 +702,13 @@ class CastLogicHelper
         if (isFloat(inLLVMType) && isBool(resLLVMType))
         {
             return rewriter.create<mlir::arith::CmpFOp>(loc, arith::CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
+        }
+
+        // true -> 1.0, false -> 0.0 at any width; only boolean -> number had a path of its own
+        // (castBoolToNumber), so boolean -> f32 fell through to a trunc - `___unbox<f32>` has one
+        if (isBool(inLLVMType) && isFloat(resLLVMType))
+        {
+            return rewriter.create<mlir::arith::UIToFPOp>(loc, resLLVMType, in);
         }
 
         if (isa<LLVM::LLVMPointerType>(inLLVMType) && isBool(resLLVMType))

@@ -393,6 +393,7 @@ tslang_add_test(NAME test-compile-00-throw-number-untyped-catch COMMAND test-run
 tslang_add_test(NAME test-compile-00-catch-untyped-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-compile-00-throw-bool-bigint COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-compile-00-throw-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
+tslang_add_test(NAME test-compile-00-cast-to-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -821,6 +822,7 @@ tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-catch-untyped-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-jit-00-throw-bool-bigint COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-jit-00-throw-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
+tslang_add_test(NAME test-jit-00-cast-to-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -1504,6 +1506,7 @@ set(TSLANG_CORPUS
     00break_continue_scope_exit.ts
     00break_continue.ts
     00capture_in_new_arguments.ts
+    00cast_to_f32.ts
     00catch_untyped_value.ts
     00catch_value.ts
     00catch_value_minimal.ts

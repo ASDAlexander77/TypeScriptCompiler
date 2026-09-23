@@ -276,12 +276,17 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto i8PtrTy = th.getPtrType();
         auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
-#ifdef NUMBER_F64
-        auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, ValueRange{transformed.getArg()});
-#else
+        // atof gives a double whatever the result is: `<f32>"2.5"` wants a float
         auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.getArg()});
-        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult());
-#endif
+        auto resultType = getTypeConverter()->convertType(op.getType());
+        if (resultType == rewriter.getF64Type())
+        {
+            rewriter.replaceOp(op, funcCall.getResult());
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, resultType, funcCall.getResult());
+        }
 
         return success();
     }
