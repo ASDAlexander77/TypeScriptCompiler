@@ -1636,9 +1636,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto linuxCleanupOnlyChainsToParent =
             linuxHasCleanups && !catchHasOps && !finallyHasOps && parentTryOpLandingPad;
 
+        // A typed catch whose exception may belong to someone else in this same function - the
+        // try's own finally, or the try around it - has to be entered for every exception, not
+        // only a matching one. An Itanium landingpad that lists just the typed clause is skipped
+        // by the personality for any other type, and since nothing in this frame unwinds to the
+        // finally or the enclosing try's pad, the exception is not handled here at all:
+        // std::terminate. So add a catch-all clause, and let the mismatch path below rethrow to
+        // where the exception belongs (the same catch-all-and-rethrow the nested finally and
+        // cleanup cases here already use). linuxHasCleanups adds the clause on its own.
+        auto linuxTypedCatchChains = !tsContext->compileOptions.isWindows && catchHasOps && rttih.hasType() &&
+                                     !linuxHasCleanups && (parentCatchesThis || finallyHasOps);
+
         mlir::Value catchAll;
         if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
-            linuxCleanupOnlyChainsToParent)
+            linuxCleanupOnlyChainsToParent || linuxTypedCatchChains)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
@@ -1704,7 +1715,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
             SmallVector<mlir::Value> catchTypes{catch1};
-            if (linuxHasCleanups && rttih.hasType())
+            if (linuxHasCleanups && rttih.hasType() || linuxTypedCatchChains)
             {
                 // we need to catch all exceptions for cleanup code
                 catchTypes.push_back(catchAll);
@@ -1887,12 +1898,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // instead of falling through to normal post-try control flow.
             auto *rethrowBlock = rewriter.createBlock(continuationBrCmp);
             rewriter.setInsertionPointToStart(rethrowBlock);
+            if (linuxTypedCatchChains)
+            {
+                // __cxa_rethrow needs the exception to have been caught first
+                rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), cmpValue.getDefiningOp()->getOperand(0));
+            }
+
             auto rethrowVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
             auto rethrowOp = rewriter.create<mlir_ts::ThrowOp>(loc, rethrowVal);
-            if (tsContext->compileOptions.isWindows)
+            if (tsContext->compileOptions.isWindows || linuxTypedCatchChains)
             {
-                // see windowsNeedsParentEdge: the finally's cleanup pad comes before any
-                // enclosing try's; a rethrow with neither unwinds to the caller
+                // see windowsNeedsParentEdge / linuxTypedCatchChains: the finally's pad comes
+                // before any enclosing try's
                 if (finallyHasOps)
                 {
                     tsContext->unwind[rethrowOp] = finallyBlock;

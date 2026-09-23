@@ -18,6 +18,10 @@
 //
 // - The same mismatch with a `finally` on the inner try: that finally was skipped.
 //
+// The last two failed on Linux as well, for an Itanium reason: the inner landingpad listed only
+// its own typed clause, so the personality never entered it for another type, and with nothing
+// in the frame unwinding to the finally or the outer try the program called std::terminate.
+//
 // The value a catch binds is read only for typed class catches, which 00catch_value.ts covers.
 
 class A {

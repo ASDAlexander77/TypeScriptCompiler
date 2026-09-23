@@ -1075,6 +1075,10 @@ namespace mlirgen
     {
         auto location = loc(tryStatementAST);
 
+        // the catch binding belongs to its clause, not the enclosing block: without its own scope
+        // a second `catch (e)` in the same block was reported as a redeclaration of the first
+        SymbolTableScopeT catchVarScope(symbolTable);
+
         std::string varName;
         auto catchClause = tryStatementAST->catchClause;
         if (catchClause)

@@ -4923,10 +4923,11 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
 
         TypeHelper th(rewriter);
 
-        auto catch1 = transformed.getCatches().front();
-
+        // every clause TryOpLowering attached, not just the first: a typed catch's catch-all
+        // clause comes second (linuxHasCleanups, linuxTypedCatchChains), and dropping it left
+        // the pad unentered for any other exception type
         mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
-        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, transformed.getCatches());
 
         return success();
     }
