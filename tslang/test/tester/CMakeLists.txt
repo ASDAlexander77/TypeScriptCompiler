@@ -1452,7 +1452,9 @@ tslang_add_test(NAME test-jit-none-alloc-in-catch COMMAND test-runner -jit -mm=n
 
 # A try/catch inside a catch clause - crashed in every model at every optimisation level.
 tslang_add_test(NAME test-compile-00-nested-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+tslang_add_test(NAME test-compile-00-try-mismatch-in-catch-clause COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause.ts")
 tslang_add_test(NAME test-jit-00-nested-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
+tslang_add_test(NAME test-jit-00-try-mismatch-in-catch-clause COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause.ts")
 tslang_add_test(NAME test-jit-rc-nested-catch COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
 tslang_add_test(NAME test-jit-none-nested-catch COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_catch.ts")
 
@@ -1654,6 +1656,7 @@ set(TSLANG_CORPUS
     00mixed_type_ops.ts
     00names_conflict.ts
     00nested_catch.ts
+    00try_mismatch_in_catch_clause.ts
     00new_delete.ts
     00ns_bug.ts
     00ns.ts
@@ -2458,4 +2461,11 @@ if (TSLANG_TEST_X86)
     list(LENGTH TSLANG_X86_EXCLUDED x86_excluded_count)
     message(STATUS "x86 twins: ${x86_twin_count} registered (${x86_excluded_count} excluded), "
                    "${x86_jit_skipped_count} -jit registrations without a twin")
+endif()
+
+# A mismatched typed catch in a try with a `using`, inside another try's catch clause. Linux
+# only: on Windows a `using` inside a catch clause is broken already (see the test's header).
+if (NOT WIN32)
+    tslang_add_test(NAME test-compile-00-try-mismatch-in-catch-clause-using COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause_using.ts")
+    tslang_add_test(NAME test-jit-00-try-mismatch-in-catch-clause-using COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause_using.ts")
 endif()
