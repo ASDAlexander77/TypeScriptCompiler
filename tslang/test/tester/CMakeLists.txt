@@ -299,6 +299,7 @@ tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
 tslang_add_test(NAME test-compile-00-const-array-mutation COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
+tslang_add_test(NAME test-compile-00-nested-array-literal-mutation COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_array_literal_mutation.ts")
 tslang_add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-compile-00-bigint-struct-layout COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_struct_layout.ts")
 tslang_add_test(NAME test-compile-00-union-member-padding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_padding.ts")
@@ -736,6 +737,7 @@ tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runn
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-jit-00-const-array-nested-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
 tslang_add_test(NAME test-jit-00-const-array-mutation COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
+tslang_add_test(NAME test-jit-00-nested-array-literal-mutation COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_array_literal_mutation.ts")
 tslang_add_test(NAME test-jit-00-array-move-wide-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
@@ -1480,6 +1482,7 @@ set(TSLANG_CORPUS
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
     00const_array_nested_elements.ts
+    00nested_array_literal_mutation.ts
     00const_array_to_array_elements.ts
     00array_widen_elements_now.ts
     00owned_array_splice.ts

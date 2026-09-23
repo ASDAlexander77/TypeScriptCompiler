@@ -941,7 +941,11 @@ namespace mlirgen
             return std::nullopt;
         }
 
-        if (constArrayType.getElementType() == arrayType.getElementType())
+        // the same element type needs no conversion - unless the elements are arrays: the cast below
+        // copies only the outer data to the heap, and the inner arrays kept pointing at the literal's
+        // constant data, so `nested[1].push(4)` reallocated a global and `nested[1][0] = 9` wrote one
+        if (constArrayType.getElementType() == arrayType.getElementType()
+            && !isa<mlir_ts::ArrayType>(arrayType.getElementType()))
         {
             return std::nullopt;
         }
