@@ -297,11 +297,25 @@ class MLIRCodeLogicHelper
         // type will be set later
         auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
 
+        // A branch that fails leaves nothing behind: not the half-built if (an empty region, or
+        // a none-typed result), nor an insertion point inside it. Returning with both in place
+        // turned the failure into bad IR further on - "'ts.If' op expects a non-empty block", or
+        // code that silently took the other branch - whenever the caller carried on.
+        auto abandon = [&]() {
+            builder.setInsertionPoint(ifOp);
+            ifOp.erase();
+            return mlir::failure();
+        };
+
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
         // value if true
         auto trueResult = trueValue();
-        EXIT_IF_FAILED_OR_NO_VALUE(trueResult)
+        if (trueResult.failed_or_no_value())
+        {
+            return abandon();
+        }
+
         ifOp.getResults().front().setType(trueResult.value.getType());
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueResult});
 
@@ -310,7 +324,11 @@ class MLIRCodeLogicHelper
 
         // value if false
         auto falseResult = falseValue(trueResult.value.getType());
-        EXIT_IF_FAILED_OR_NO_VALUE(falseResult)
+        if (falseResult.failed_or_no_value())
+        {
+            return abandon();
+        }
+
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseResult});
 
         builder.setInsertionPointAfter(ifOp);
