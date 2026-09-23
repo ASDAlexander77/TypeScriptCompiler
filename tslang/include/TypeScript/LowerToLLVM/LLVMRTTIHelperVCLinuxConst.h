@@ -55,6 +55,14 @@ constexpr const auto *typeName = "";
 constexpr const auto *classTypeInfoName = "_ZTVN10__cxxabiv117__class_type_infoE";
 constexpr const auto *singleInheritanceClassTypeInfoName = "_ZTVN10__cxxabiv120__si_class_type_infoE";
 constexpr const auto *pointerTypeInfoName = "_ZTVN10__cxxabiv119__pointer_type_infoE";
+// A class is thrown as a pointer, and its `_ZTIP<n><name>` - a __pointer_type_info - has one
+// more field after the four libstdc++ reads: the address of a thunk that boxes the thrown
+// instance into an `any` (the class's own descriptor included). An untyped catch calls it for
+// a class it knows nothing about, e.g. one only another module throws - the Itanium
+// counterpart of the Windows `.PEAX` copy thunk. Every module emitting the type_info (a throw
+// or a typed catch of the class) emits the same thunk, so the linkonce_odr copies agree.
+constexpr const auto *boxThunkPrefix = ".eh.copy.box.";
+constexpr int boxThunkField = 4;
 } // namespace ClassType
 
 } // namespace linux

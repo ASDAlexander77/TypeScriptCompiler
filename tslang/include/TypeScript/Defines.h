@@ -124,10 +124,6 @@
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"
 
-// module attribute: the class types the module throws, for binding an untyped catch on the
-// Itanium path (linux::SaveCatchVarOpLowering)
-#define THROWN_CLASSES_ATTR_NAME "ts.thrown_classes"
-
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
 #else
