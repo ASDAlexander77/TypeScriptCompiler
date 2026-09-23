@@ -1314,6 +1314,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // Pre-order, because `skip()` only prunes the regions still to come - a post-order walk
         // has already visited them by the time the callback sees the TryOp.
         Operation *catchOpPtr = nullptr;
+        mlir::Type catchVarType;
         auto visitorCatchContinue = [&](Operation *op) {
             if (op != tryOp.getOperation() && isa<mlir_ts::TryOp>(op))
             {
@@ -1322,7 +1323,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
-                rttih.setType(cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType());
+                catchVarType = cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType();
+                rttih.setType(catchVarType);
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
@@ -1628,6 +1630,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
+        // `catch (e: number)` has to take `throw 1` too - an integer literal is an int here. On
+        // Windows the int's ThrowInfo lists a `.N` entry that converts it (see copyThunkPrefix in
+        // LLVMRTTIHelperVCWin32Const.h); on the Itanium path the catch lists the int type_info as
+        // a second clause, accepts either, and linux::SaveCatchVarOpLowering converts.
+        mlir::Value intTypeInfo;
+        if (!tsContext->compileOptions.isWindows && catchVarType && isa<mlir_ts::NumberType>(catchVarType))
+        {
+            intTypeInfo = rewriter.create<mlir_ts::ConstantOp>(
+                loc, mth.getRefType(mth.getOpaqueType()),
+                mlir::FlatSymbolRefAttr::get(rewriter.getContext(), ::typescript::linux::I32Type::typeName));
+        }
+
         // A cleanup-only try (a `using` scope) nested inside another try in the same function
         // has to hand the exception on to that enclosing landing pad once it has disposed, and
         // on the Itanium path that is done by rethrowing rather than resuming - see the
@@ -1709,12 +1723,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         }
 
         mlir::Value cmpValue;
+        mlir::Value cmpIntValue;
         if (catchHasOps)
         {
             // catches:landingpad
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
             SmallVector<mlir::Value> catchTypes{catch1};
+            if (intTypeInfo)
+            {
+                catchTypes.push_back(intTypeInfo);
+            }
+
             if (linuxHasCleanups && rttih.hasType() || linuxTypedCatchChains)
             {
                 // we need to catch all exceptions for cleanup code
@@ -1750,6 +1770,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp,
                                                                         rttih.throwInfoPtrValue(loc));
+                if (intTypeInfo)
+                {
+                    cmpIntValue =
+                        rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, intTypeInfo);
+                }
             }
 
             // catch: begin catch
@@ -1889,7 +1914,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (cmpValue)
         {
             // condbr
-            rewriter.setInsertionPointAfterValue(cmpValue);
+            auto lastCmpValue = cmpIntValue ? cmpIntValue : cmpValue;
+            rewriter.setInsertionPointAfterValue(lastCmpValue);
 
             mlir::Block *currentBlockBrCmp = rewriter.getInsertionBlock();
             mlir::Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
@@ -1924,8 +1950,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
             }
 
-            rewriter.setInsertionPointAfterValue(cmpValue);
-            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
+            rewriter.setInsertionPointAfterValue(lastCmpValue);
+            mlir::Value castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
+            if (cmpIntValue)
+            {
+                auto intToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpIntValue);
+                castToI1 = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
+                    loc, rewriter.getI1Type(), rewriter.getI32IntegerAttr((int)SyntaxKind::BarToken), castToI1, intToI1);
+            }
+
             rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, continuationBrCmp, rethrowBlock);
             // end of condbr
         }

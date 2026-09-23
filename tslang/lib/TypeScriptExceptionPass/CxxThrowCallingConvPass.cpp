@@ -1,4 +1,5 @@
 #include "TypeScript/Pass/CxxThrowCallingConvPass.h"
+#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32Const.h"
 
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Module.h"
@@ -12,10 +13,24 @@ namespace ts
 {
     llvm::PreservedAnalyses CxxThrowCallingConvPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &AM)
     {
+        auto changed = false;
+
+        // The CRT calls a CatchableType's copy function as a member function - `__thiscall` on
+        // x86: the catch variable in ECX, the thrown object on the stack. Nothing in the module
+        // calls these thunks; the EH tables only hold their addresses.
+        for (auto &F : M)
+        {
+            if (F.getName().starts_with(typescript::windows::copyThunkPrefix))
+            {
+                F.setCallingConv(CallingConv::X86_ThisCall);
+                changed = true;
+            }
+        }
+
         auto *throwFn = M.getFunction("_CxxThrowException");
         if (!throwFn)
         {
-            return llvm::PreservedAnalyses::all();
+            return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
         }
 
         throwFn->setCallingConv(CallingConv::X86_StdCall);

@@ -59,7 +59,7 @@ if "$TSLANG" --emit=obj --opt -mm=none --no-default-lib -mtriple=i686-pc-windows
   "$READOBJ" --relocations "$x86obj" > "$x86obj.rel"
   grep -q "DIR32NB" "$x86obj.rel" && bad "x86 obj: no image-relative (DIR32NB) relocations" \
                                   || ok "x86 obj: no image-relative (DIR32NB) relocations"
-  grep -Eq "IMAGE_REL_I386_DIR32 __CTA1H " "$x86obj.rel" && ok "x86 obj: absolute (DIR32) EH relocations" \
+  grep -Eq "IMAGE_REL_I386_DIR32 __CTA3H " "$x86obj.rel" && ok "x86 obj: absolute (DIR32) EH relocations" \
                                                          || bad "x86 obj: absolute (DIR32) EH relocations"
 else
   bad "x86 obj: 00try_catch compiles"; cat "$x86obj.err"

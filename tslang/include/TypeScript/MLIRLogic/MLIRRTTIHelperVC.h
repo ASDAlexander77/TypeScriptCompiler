@@ -24,6 +24,12 @@ class MLIRRTTIHelperVC
     {
     }
 
+    // Windows only: the Itanium path has no copy functions to point at a thunk
+    void setCopyThunkBuilder(MLIRRTTIHelperVCWin32::CopyThunkBuilder builder)
+    {
+        rttiWin.setCopyThunkBuilder(builder);
+    }
+
     bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
         if (isWindows)

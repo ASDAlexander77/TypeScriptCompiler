@@ -170,6 +170,9 @@ class MLIRRTTIHelperVCLinux
 #else
                 setF32AsCatchType();
 #endif
+                // a `catch (e: number)` also takes a thrown int (`throw 1`), and binding it
+                // compares against the int type_info - see TryOpLowering, SaveCatchVarOpLowering
+                setI32AsCatchType();
             })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
@@ -181,7 +184,17 @@ class MLIRRTTIHelperVCLinux
 
                 setClassTypeAsCatchType(classAndBases);
             })
-            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            .Case<mlir_ts::AnyType>([&](auto anyType) {
+                // This overload only declares the RTTI globals a catch may reference. An
+                // untyped/`any` catch is a catch-all (see the other overload), and binding its
+                // variable compares the caught exception's type_info against each of these -
+                // see linux::SaveCatchVarOpLowering. `_ZTIPv` is also what a `throw e` of the
+                // caught value throws again.
+                setI32AsCatchType();
+                setF64AsCatchType();
+                setStringTypeAsCatchType();
+                setI8PtrAsCatchType();
+            })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
                 result = false;
@@ -242,7 +255,11 @@ class MLIRRTTIHelperVCLinux
             })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
-            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            // An untyped `catch (e)` / `catch (e: any)` has to catch everything, and on the
+            // Itanium path that is a clause-less `catch ptr null`, which is what TryOpLowering
+            // emits when no type is set. A `_ZTIPv` (void*) clause is not a catch-all: it
+            // matches pointer-typed exceptions only, so a thrown number left the program.
+            .Case<mlir_ts::AnyType>([&](auto anyType) {})
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...unsupported throw/catch type: " << type << "\n";);
                 result = false;
