@@ -90,6 +90,11 @@ class MLIRRTTIHelperVCLinux
         types.push_back({linux::I32Type::typeName, TypeInfo::Value, -1});
     }
 
+    void setU32AsCatchType()
+    {
+        types.push_back({linux::U32Type::typeName, TypeInfo::Value, -1});
+    }
+
     void setBoolAsCatchType()
     {
         types.push_back({linux::BoolType::typeName, TypeInfo::Value, -1});
@@ -157,7 +162,14 @@ class MLIRRTTIHelperVCLinux
                 auto width = intType.getIntOrFloatBitWidth();
                 if (width == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (width == 64)
                 {
@@ -191,9 +203,10 @@ class MLIRRTTIHelperVCLinux
 #else
                 setF32AsCatchType();
 #endif
-                // a `catch (e: number)` also takes a thrown int (`throw 1`) or f32, and binding
+                // a `catch (e: number)` also takes a thrown int (`throw 1`), u32 or f32, and binding
                 // it compares against their type_infos - see TryOpLowering, SaveCatchVarOpLowering
                 setI32AsCatchType();
+                setU32AsCatchType();
                 setF32AsCatchType();
             })
             .Case<mlir_ts::BooleanType>([&](auto boolType) { setBoolAsCatchType(); })
@@ -216,6 +229,7 @@ class MLIRRTTIHelperVCLinux
                 // see linux::SaveCatchVarOpLowering. `_ZTIPv` is also what a `throw e` of the
                 // caught value throws again.
                 setI32AsCatchType();
+                setU32AsCatchType();
                 setF64AsCatchType();
                 setF32AsCatchType();
                 setBoolAsCatchType();
@@ -247,7 +261,14 @@ class MLIRRTTIHelperVCLinux
                 auto width = intType.getIntOrFloatBitWidth();
                 if (width == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (width == 64)
                 {

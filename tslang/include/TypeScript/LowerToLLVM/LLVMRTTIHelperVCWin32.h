@@ -88,6 +88,14 @@ class LLVMRTTIHelperVCWin32
         throwInfoRef = I32Type::throwInfoRef;
     }
 
+    void setU32AsCatchType()
+    {
+        types.push_back({U32Type::typeName, U32Type::typeInfoRef, U32Type::catchableTypeInfoRef, U32Type::catchableTypeSize});
+
+        catchableTypeInfoArrayRef = U32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = U32Type::throwInfoRef;
+    }
+
     void setBoolAsCatchType()
     {
         types.push_back({BoolType::typeName, BoolType::typeInfoRef, BoolType::catchableTypeInfoRef, BoolType::catchableTypeSize});
@@ -172,7 +180,14 @@ class LLVMRTTIHelperVCWin32
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (intType.getIntOrFloatBitWidth() == 64)
                 {

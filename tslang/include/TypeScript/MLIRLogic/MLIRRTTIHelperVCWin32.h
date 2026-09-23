@@ -138,6 +138,22 @@ class MLIRRTTIHelperVCWin32
         throwInfoRef = windows::I32Type::throwInfoRef;
     }
 
+    void setU32AsCatchType()
+    {
+        types.push_back({windows::U32Type::typeName, windows::U32Type::typeInfoRef, windows::U32Type::catchableTypeInfoRef,
+                         windows::U32Type::catchableTypeSize});
+        types.push_back(boxEntry(windows::U32Type::catchableTypeInfoRef2, windows::U32Type::copyThunk2));
+
+        TypeNames toNumber{windows::U32Type::typeName3, windows::U32Type::typeInfoRef3, windows::U32Type::catchableTypeInfoRef3,
+                           windows::F64Type::catchableTypeSize};
+        toNumber.copyThunk = windows::U32Type::copyThunk3;
+        toNumber.copyThunkTarget = mlir_ts::NumberType::get(rewriter.getContext());
+        types.push_back(toNumber);
+
+        catchableTypeInfoArrayRef = windows::U32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::U32Type::throwInfoRef;
+    }
+
     void setBoolAsCatchType()
     {
         types.push_back({windows::BoolType::typeName, windows::BoolType::typeInfoRef, windows::BoolType::catchableTypeInfoRef,
@@ -253,7 +269,14 @@ class MLIRRTTIHelperVCWin32
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (intType.getIntOrFloatBitWidth() == 64)
                 {
@@ -321,7 +344,14 @@ class MLIRRTTIHelperVCWin32
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
-                    setI32AsCatchType();
+                    if (intType.isUnsigned())
+                    {
+                        setU32AsCatchType();
+                    }
+                    else
+                    {
+                        setI32AsCatchType();
+                    }
                 }
                 else if (intType.getIntOrFloatBitWidth() == 64)
                 {

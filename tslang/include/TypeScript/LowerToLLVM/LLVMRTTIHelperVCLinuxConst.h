@@ -23,6 +23,12 @@ namespace I32Type
 constexpr const auto *typeName = "_ZTIi";
 } // namespace I32Type
 
+// `unsigned int` - a u32 used to be thrown as an `int`, and read back with its top bit as a sign
+namespace U32Type
+{
+constexpr const auto *typeName = "_ZTIj";
+} // namespace U32Type
+
 namespace BoolType
 {
 constexpr const auto *typeName = "_ZTIb";
