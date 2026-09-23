@@ -2795,7 +2795,9 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, countAsIndexType});
 
-        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue);
+        // zeroed: its elements are not set yet, and under `-mm=rc` the first store into one
+        // releases what the slot held - `malloc`'s leftovers would be released as a reference
+        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue, MemoryAllocSet::Zero);
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
