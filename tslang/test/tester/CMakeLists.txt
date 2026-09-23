@@ -2215,7 +2215,8 @@ set(call_arity_cases
     "closure|Expected 2 arguments, but got 1\\."
     "declared|Expected 2 arguments, but got 1\\."
     "varargs|Expected at least 1 arguments, but got 0\\."
-    "optional_call|Expected 2 arguments, but got 1\\.")
+    "optional_call|Expected 2 arguments, but got 1\\."
+    "optional_call_value|Expected 2 arguments, but got 1\\.")
 foreach(call_arity_case ${call_arity_cases})
     string(FIND "${call_arity_case}" "|" call_arity_sep)
     string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)
