@@ -4782,8 +4782,40 @@ class MLIRGenImpl
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
                                                const GenContext &genContext);
 
-    mlir::Value mlirGenInstanceOfOpaque(mlir::Location location, mlir::Value thisPtrValue, mlir::Value classRefVal, const GenContext &genContext)
+    // A statement's condition that is there has to produce a value. "Succeeded with no value" is
+    // what a failing expression can hand back (a null mlir::Value becomes a success), and taking
+    // it for success built no test at all: an `if` generated nothing, a `for` became endless,
+    // a `do` dereferenced the null value (segfault) and a `while` failed with "empty block".
+    mlir::LogicalResult conditionHasValue(mlir::Location location, const ValueOrLogicalResult &result)
     {
+        if (mlir::failed(result.result))
+        {
+            return mlir::failure();
+        }
+
+        if (!result.value)
+        {
+            // postponed like every message: shown only if the module then fails to compile
+            emitError(location, "the condition has no value");
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
+    // A failure here has to be a failure, not a null value: ValueOrLogicalResult takes a null
+    // mlir::Value as success with no value, and an `if` whose condition has no value quietly
+    // generates nothing - `if (a instanceof C) return a;` in the generated `___unbox<C>` lost its
+    // test, so `<C>anyValue` compiled into a cast that always throws, with no error shown.
+    ValueOrLogicalResult mlirGenInstanceOfOpaque(mlir::Location location, mlir::Value thisPtrValue, mlir::Value classRefVal, const GenContext &genContext)
+    {
+        auto classType = dyn_cast<mlir_ts::ClassType>(classRefVal.getType());
+        if (!classType)
+        {
+            emitError(location, "instanceof: ") << to_print(classRefVal.getType()) << " is not a class";
+            return mlir::failure();
+        }
+
         // get VTable we can use VTableOffset
         auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
                                                                     thisPtrValue, 0 /*VTABLE index*/);
@@ -4792,56 +4824,53 @@ class MLIRGenImpl
         auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
             location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
 
-        if (auto classType = dyn_cast<mlir_ts::ClassType>(classRefVal.getType()))
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+
+        auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
+        if (resultRtti.failed_or_no_value())
         {
-            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-
-            auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
-            if (!resultRtti)
-            {
-                return mlir::Value();
-            }
-
-            // A class imported from a shared library (-shared) keeps its rtti behind a pointer
-            // resolved at load time, and the property access already reads through it - so the
-            // value is a string here too. This used to insist on a ref for such a class and fail,
-            // which dropped the call: `x instanceof C` did not compile and `<C>anyValue` always
-            // threw "Can't cast from any type".
-            auto rttiOfClassValue = V(resultRtti);
-            if (classInfo->isDynamicImport)
-            {
-                if (auto valueRefType = dyn_cast<mlir_ts::RefType>(rttiOfClassValue.getType()))
-                {
-                    rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
-                }
-            }
-
-            if (!isa<mlir_ts::StringType>(rttiOfClassValue.getType()))
-            {
-                emitError(location, "unsupported RTTI value type ") << to_print(rttiOfClassValue.getType());
-                return mlir::Value();
-            }
-
-            auto instanceOfFuncType = mlir_ts::FunctionType::get(
-                builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
-                SmallVector<mlir::Type>{getBooleanType()});
-
-            // TODO: check result
-            auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto funcPtr = V(result);
-
-            // call methos, we need to send, this, and rtti info
-            auto callResult = builder.create<mlir_ts::CallIndirectOp>(
-                MLIRHelper::getCallSiteLocation(funcPtr, location),
-                funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
-
-            return callResult.getResult(0);
+            return mlir::failure();
         }
 
-        // error
-        return mlir::Value();
-    }    
+        // A class imported from a shared library (-shared) keeps its rtti behind a pointer
+        // resolved at load time, and the property access already reads through it - so the
+        // value is a string here too. This used to insist on a ref for such a class and fail,
+        // which dropped the call: `x instanceof C` did not compile and `<C>anyValue` always
+        // threw "Can't cast from any type".
+        auto rttiOfClassValue = V(resultRtti);
+        if (classInfo->isDynamicImport)
+        {
+            if (auto valueRefType = dyn_cast<mlir_ts::RefType>(rttiOfClassValue.getType()))
+            {
+                rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
+            }
+        }
+
+        if (!isa<mlir_ts::StringType>(rttiOfClassValue.getType()))
+        {
+            emitError(location, "unsupported RTTI value type ") << to_print(rttiOfClassValue.getType());
+            return mlir::failure();
+        }
+
+        auto instanceOfFuncType = mlir_ts::FunctionType::get(
+            builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
+            SmallVector<mlir::Type>{getBooleanType()});
+
+        auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+        if (result.failed_or_no_value())
+        {
+            return mlir::failure();
+        }
+
+        auto funcPtr = V(result);
+
+        // call methos, we need to send, this, and rtti info
+        auto callResult = builder.create<mlir_ts::CallIndirectOp>(
+            MLIRHelper::getCallSiteLocation(funcPtr, location),
+            funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
+
+        return ValueOrLogicalResult(callResult.getResult(0));
+    }
 
     ValueOrLogicalResult mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {

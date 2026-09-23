@@ -2226,6 +2226,21 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A statement's condition that produces no value is an error, not a statement generated
+# without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty
+# block" error from `while`). The void call
+# is the ordinary way to get one; the case that mattered was a failing `instanceof` in the
+# generated `___unbox<C>`, which made `<C>anyValue` always throw - see conditionHasValue.
+foreach(condition_value_name if while do for)
+    add_test(NAME test-compile-condition-value-${condition_value_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/condition-value/${condition_value_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/condition-value-${condition_value_name}.obj")
+    set_tests_properties(test-compile-condition-value-${condition_value_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "the condition has no value"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # The calls the check must still accept: an omitted optional, default-valued or void
 # parameter, and varargs with and without extra arguments.
 tslang_add_test(NAME test-compile-call-arity-positive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/call-arity/positive.ts")

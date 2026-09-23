@@ -497,7 +497,7 @@ namespace mlirgen
 
         // condition
         auto result = mlirGen(ifStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        EXIT_IF_FAILED(conditionHasValue(location, result))
         auto condValue = V(result);
 
         // special case: in case of LiteralValue do not process If value is False
@@ -589,7 +589,7 @@ namespace mlirgen
 
         builder.setInsertionPointToStart(&doWhileOp.getCond().front());
         auto result = mlirGen(doStatementAST->expression, loopGenContext);
-        EXIT_IF_FAILED(result)
+        EXIT_IF_FAILED(conditionHasValue(location, result))
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
@@ -629,7 +629,7 @@ namespace mlirgen
         // condition
         builder.setInsertionPointToStart(&whileOp.getCond().front());
         auto result = mlirGen(whileStatementAST->expression, loopGenContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        EXIT_IF_FAILED(conditionHasValue(location, result))
         auto conditionValue = V(result);
 
         // a condition known to be false: the body never runs and, as in mlirGen(IfStatement), is not
@@ -725,6 +725,12 @@ namespace mlirgen
         builder.setInsertionPointToStart(&forOp.getCond().front());
         auto result = mlirGen(forStatementAST->condition, loopGenContext);
         EXIT_IF_FAILED(result)
+        // no value means no condition (`for (;;)`) only when there is none to generate
+        if (forStatementAST->condition)
+        {
+            EXIT_IF_FAILED(conditionHasValue(location, result))
+        }
+
         auto conditionValue = V(result);
         if (conditionValue)
         {
