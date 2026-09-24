@@ -184,6 +184,10 @@ jobs:
           GC_SHARED_LIB_PATH: ${{github.workspace}}/3rdParty/gcdll/x64/release/lib
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
+          # This package ships only release-CRT (/MT) builds of TypeScriptAsyncRuntime.lib, gc.lib
+          # and LLVMSupport.lib, so the debug archive has to be /MT too or a `--di` program cannot
+          # link with them (LNK2038). It keeps its debug info. See DefaultLib's build_core.bat.
+          TSLANG_DEBUG_CRT: /MT
         run: |
           $env:VSWHERE_PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           .\build.bat
