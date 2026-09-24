@@ -1427,8 +1427,14 @@ namespace mlirgen
 
             auto result = mlirGenCallExpression(location, innerFuncRef, typeArguments, operands, genContext);
             // a failed call (e.g. too few arguments) must fail the expression, not leave an
-            // empty branch behind - for a void callee that silently dropped the call
-            EXIT_IF_FAILED(result)
+            // empty branch behind - for a void callee that silently dropped the call. Nor may the
+            // half-built if stay in the IR for a caller that carries on (as in conditionalValue)
+            if (mlir::failed(result))
+            {
+                builder.setInsertionPoint(ifOp);
+                ifOp.erase();
+                return mlir::failure();
+            }
             auto value = V(result);
             if (value)
             {
