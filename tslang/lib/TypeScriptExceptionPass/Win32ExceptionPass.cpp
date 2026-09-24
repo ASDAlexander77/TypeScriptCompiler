@@ -12,6 +12,9 @@ using namespace PatternMatch;
 
 #define DEBUG_TYPE "pass"
 
+// see readPadTag
+constexpr const char *EH_PAD_FUNC_NAME = "ts.internal.eh_pad";
+
 //#define SAVE_STACK true
 
 struct CatchRegion
@@ -29,6 +32,15 @@ struct CatchRegion
     llvm::Instruction *saveCatch;
     llvm::Instruction *cxaEndCatch;
     llvm::Instruction *end;
+    // every invoke in the region, in order - unwindInfoOp is chosen from these once all the
+    // regions are known (see chooseUnwindInfoOps)
+    llvm::SmallVector<InvokeInst *> invokes;
+    // index of the region this one is nested in, or -1; and the ids ts.internal.eh_pad gave
+    int parent = -1;
+    int padId = 0;
+    // the block the landing pad began, which is what invokes unwind to - making the catchpad
+    // splits the pad off into a block of its own
+    BasicBlock *padBlock = nullptr;
 
     bool isCatch()
     {
@@ -106,14 +118,47 @@ struct Win32ExceptionPassCode
         auto endOfCatch = false;
         auto endOfCatchIfResume = false;
         llvm::SmallVector<llvm::Instruction *> toRemoveWorkSet;
+
+        // The regions still open, innermost last, as indexes into catchRegionsWorkSet (which
+        // reallocates). A pad can be nested in a catch - a try, or a `using`, inside a catch
+        // clause - and TryOpLowering says which catch in the tag after the pad (readPadTag). Its
+        // code sits in the middle of the enclosing catch's, whose end only comes after it:
+        // taking the new pad as the end of the old region, as this scan used to, left the catch
+        // with no end at all (the pass then crashed on it), and making every pad `within none`
+        // put an edge out of the catch funclet that the verifier rejects.
+        llvm::SmallVector<int> openRegions;
+        auto closeRegion = [&]() {
+            if (!openRegions.empty())
+            {
+                openRegions.pop_back();
+            }
+
+            catchRegion = openRegions.empty() ? nullptr : &catchRegionsWorkSet[openRegions.back()];
+        };
+
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
             {
+                auto [padId, parentPadId] = readPadTag(LPI, toRemoveWorkSet);
+                auto parent = findRegionByPadId(catchRegionsWorkSet, parentPadId);
+
                 catchRegionsWorkSet.push_back(CatchRegion());
                 catchRegion = &catchRegionsWorkSet.back();
 
                 catchRegion->landingPad = LPI;
+                catchRegion->parent = parent;
+                catchRegion->padId = padId;
+                catchRegion->padBlock = LPI->getParent();
+
+                // leave open what encloses the new pad, and nothing that was nested deeper; a pad
+                // not nested in an open region starts afresh, as every pad always did
+                while (!openRegions.empty() && openRegions.back() != parent)
+                {
+                    openRegions.pop_back();
+                }
+
+                openRegions.push_back(catchRegionsWorkSet.size() - 1);
 
                 endOfCatch = false;
                 continue;
@@ -158,23 +203,33 @@ struct Win32ExceptionPassCode
                 {
                     toRemoveWorkSet.push_back(&I);
                     MadeChange = true;
+
+                    // Unless this region is nested in one still open: then the marker is the
+                    // enclosing catch's own - a try inside a catch clause ends both, inner one
+                    // first. The inner catch returns here, into the enclosing funclet, and the
+                    // enclosing catch ends at what follows.
+                    if (openRegions.size() > 1)
+                    {
+                        catchRegion->end = &I;
+                        closeRegion();
+                        catchRegion->cxaEndCatch = &I;
+                    }
+
                     continue;
                 }
 
                 // BR, or instraction without BR
                 catchRegion->end = &I;
                 endOfCatch = false;
-                catchRegion = nullptr;
+
+                // the region it was nested in carries on
+                closeRegion();
                 continue;
             }
 
-            if (catchRegion->unwindInfoOp == nullptr)
+            if (auto *II = dyn_cast<InvokeInst>(&I))
             {
-                if (auto *II = dyn_cast<InvokeInst>(&I))
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! set (unwindInfoOp) : " << *II << "\n";);
-                    catchRegion->unwindInfoOp = II;
-                }
+                catchRegion->invokes.push_back(II);
             }
 
             if (dyn_cast<AllocaInst>(&I))
@@ -197,6 +252,12 @@ struct Win32ExceptionPassCode
                         auto extractOp = cast<llvm::ExtractValueInst>(CI->getOperand(0));
                         toRemoveWorkSet.push_back(extractOp);
                         catchRegion->cxaBeginCatch = &I;
+                        continue;
+                    }
+
+                    if (CI->getCalledFunction()->getName() == EH_PAD_FUNC_NAME)
+                    {
+                        // read at the pad by readPadTag, and removed there
                         continue;
                     }
 
@@ -292,10 +353,13 @@ struct Win32ExceptionPassCode
             }
         }
 
-        // create begin of catch block
+        chooseUnwindInfoOps(catchRegionsWorkSet);
+
+        // create begin of catch block (a parent comes before the regions nested in it)
         for (auto &catchRegion : catchRegionsWorkSet)
         {
             auto *LPI = catchRegion.landingPad;
+            auto *parentPad = parentPadOf(catchRegionsWorkSet, catchRegion);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Processing: " << *LPI << " isKnownSentinel: " << (LPI->isKnownSentinel() ? "true" : "false")
                                     << "\n";);
@@ -313,7 +377,7 @@ struct Win32ExceptionPassCode
                 CurrentBB->getTerminator()->eraseFromParent();
 
                 auto *II = catchRegion.unwindInfoOp;
-                auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
+                auto *CSI = CatchSwitchInst::Create(parentPad,
                                                     II ? II->getUnwindDest() : nullptr
                                                     /*unwind to caller if null*/,
                                                     1, "catch.switch", CurrentBB);
@@ -342,7 +406,7 @@ struct Win32ExceptionPassCode
             {
                 assert(catchRegion.isCleanup());
 
-                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), {}, "cleanuppad", LPI->getIterator());
+                catchRegion.cleanupPad = CleanupPadInst::Create(parentPad, {}, "cleanuppad", LPI->getIterator());
             }
 
             auto opBundle = getCallBundleFromCatchRegion(catchRegion);
@@ -534,7 +598,8 @@ struct Win32ExceptionPassCode
                 // add rethrow code
                 auto *II = catchRegion.unwindInfoOp;
 
-                auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
+                // beside the cleanup pad, in the same parent: cleanupret unwinds to it
+                auto *CSI = CatchSwitchInst::Create(parentPadOf(catchRegionsWorkSet, catchRegion),
                                                     II ? II->getUnwindDest() : nullptr
                                                     /*unwind to caller if null*/,
                                                     1, "catchswitch", CSIBlock);
@@ -603,7 +668,9 @@ struct Win32ExceptionPassCode
                     {
                         if (auto *II = cast<InvokeInst>(callBase))
                         {
-                            if (II->getUnwindDest() != CSIBlock)
+                            // an invoke into a pad nested in this cleanup stays as it is
+                            if (II->getUnwindDest() != CSIBlock &&
+                                !isDescendantPad(catchRegionsWorkSet, catchRegion, II->getUnwindDest()))
                             {
                                 LLVM_DEBUG(llvm::dbgs() << "\n!! FIX INVOKE(cleanup): " << *callBase << "\n");
 
@@ -652,6 +719,102 @@ struct Win32ExceptionPassCode
         LLVM_DEBUG(llvm::dbgs() << "\n!! Dump After: ...\n" << F << "\n\n";);
 
         return MadeChange;
+    }
+
+    // The tag TryOpLowering puts right after a pad on Windows (see LandingPadOpLowering):
+    // ts.internal.eh_pad(this catch pad's id, id of the catch pad it is nested in). The call is
+    // queued for removal. {0, 0} for an untagged pad - one at the top, as every pad used to be.
+    static std::pair<int, int> readPadTag(LandingPadInst *LPI, llvm::SmallVector<llvm::Instruction *> &toRemove)
+    {
+        auto *CI = dyn_cast_or_null<CallInst>(LPI->getNextNode());
+        if (!CI || !CI->getCalledFunction() || CI->getCalledFunction()->getName() != EH_PAD_FUNC_NAME)
+        {
+            return {0, 0};
+        }
+
+        toRemove.push_back(CI);
+        auto id = cast<ConstantInt>(CI->getArgOperand(0))->getSExtValue();
+        auto parent = cast<ConstantInt>(CI->getArgOperand(1))->getSExtValue();
+        return {static_cast<int>(id), static_cast<int>(parent)};
+    }
+
+    static int findRegionByPadId(llvm::SmallVector<CatchRegion> &regions, int padId)
+    {
+        if (padId == 0)
+        {
+            return -1;
+        }
+
+        for (auto index = static_cast<int>(regions.size()) - 1; index >= 0; index--)
+        {
+            if (regions[index].padId == padId)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    static bool isDescendantPad(llvm::SmallVector<CatchRegion> &regions, CatchRegion &region, BasicBlock *block)
+    {
+        auto index = static_cast<int>(&region - regions.data());
+        for (auto &other : regions)
+        {
+            if (other.padBlock != block)
+            {
+                continue;
+            }
+
+            for (auto parent = other.parent; parent >= 0; parent = regions[parent].parent)
+            {
+                if (parent == index)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // A catchswitch unwinds where exceptions leaving its region go: the first invoke of the
+    // region that unwinds out of it. An invoke into a pad nested in the region is not one -
+    // a catchswitch cannot unwind into its own descendants.
+    static void chooseUnwindInfoOps(llvm::SmallVector<CatchRegion> &regions)
+    {
+        for (auto &region : regions)
+        {
+            for (auto *II : region.invokes)
+            {
+                if (!isDescendantPad(regions, region, II->getUnwindDest()))
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! set (unwindInfoOp) : " << *II << "\n";);
+                    region.unwindInfoOp = II;
+                    break;
+                }
+            }
+        }
+    }
+
+    // the pad a region's own pads are created within: its parent region's, or none
+    static Value *parentPadOf(llvm::SmallVector<CatchRegion> &regions, CatchRegion &region)
+    {
+        if (region.parent >= 0)
+        {
+            auto &parent = regions[region.parent];
+            if (parent.catchPad)
+            {
+                return parent.catchPad;
+            }
+
+            if (parent.cleanupPad)
+            {
+                return parent.cleanupPad;
+            }
+        }
+
+        return ConstantTokenNone::get(region.landingPad->getContext());
     }
 
     llvm::SmallVector<OperandBundleDef> getCallBundleFromCatchRegion(CatchRegion &catchRegion)

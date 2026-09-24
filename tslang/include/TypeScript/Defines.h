@@ -61,6 +61,10 @@
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
+// Windows: a landing pad's catch-pad id, and the id of the catch it is nested in - see tagPad in
+// TryOpLowering and ts.internal.eh_pad in Win32ExceptionPass
+#define EH_PAD_ID_ATTR_NAME "__eh_pad_id"
+#define EH_PAD_PARENT_ATTR_NAME "__eh_pad_parent"
 #define UNDEFINED_NAME "undefined"
 #define INFINITY_NAME "Infinity"
 #define NAN_NAME "NaN"

@@ -1,9 +1,9 @@
-// 00try_mismatch_in_catch_clause.ts, with a `using` in the inner try. Linux only: on Windows a
-// `using` inside a catch clause is broken on main already - its cleanup pad is not nested in the
-// catch funclet, which fails LLVM's verifier ahead of time, and with a typed catch and no try
-// around it the JIT crashes in Win32ExceptionPass (see 00try_using_catch.ts, section 9.11).
-// On Linux the mismatch rethrow after the cleanup ran with nothing caught: "terminate called
-// without an active exception".
+// 00try_mismatch_in_catch_clause.ts, with a `using` in the inner try. On Linux the mismatch
+// rethrow after the cleanup ran with nothing caught: "terminate called without an active
+// exception". On Windows a `using` inside a catch clause did not work at all: its cleanup pad was
+// not nested in the catch funclet - LLVM's verifier rejected the edge out of the catch ahead of
+// time - and without a try around it Win32ExceptionPass crashed the compiler, having taken the
+// cleanup pad for the end of the catch.
 
 let disposed = 0;
 let finals = 0;
@@ -59,6 +59,21 @@ function withUsingAndFinally() {
     }
 }
 
+// the shape that crashed the compiler on Windows: no try around the catch, and nothing thrown in
+// the inner try, so its typed catch is not taken
+function noTryAround() {
+    try {
+        throw 1;
+    } catch (o) {
+        try {
+            using r = new Res();
+            finals++;
+        } catch (e: number) {
+            wrong++;
+        }
+    }
+}
+
 function main() {
     reset();
     withUsing();
@@ -67,6 +82,10 @@ function main() {
     reset();
     withUsingAndFinally();
     assert(disposed == 1 && finals == 1 && wrong == 0 && outer == 1, "with a using and a finally");
+
+    reset();
+    noTryAround();
+    assert(disposed == 1 && finals == 1 && wrong == 0, "no try around the catch");
 
     print("done.");
 }
