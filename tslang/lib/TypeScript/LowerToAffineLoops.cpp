@@ -1329,6 +1329,48 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
         auto i8PtrTy = mth.getOpaqueType();
 
+        // Windows: which catch funclet this try's pads are nested in - the catch clause of the
+        // nearest try around it that holds it in its catch, through any try bodies in between.
+        // Win32ExceptionPass cannot tell that from the IR: a pad reached from inside a catch is
+        // either a try nested in it or where exceptions leave it, and the two look alike. A try
+        // in a finally is left at the top, as every pad was before.
+        auto funcletParentId = 0;
+        if (tsContext->compileOptions.isWindows)
+        {
+            for (Operation *child = tryOp.getOperation(), *parent = parentTryOp; parent;
+                 child = parent, parent = tsContext->parentTryOp.lookup(parent))
+            {
+                if (tsContext->inParentTryCatch.lookup(child))
+                {
+                    funcletParentId = tsContext->catchPadIdOf.lookup(parent);
+                    break;
+                }
+
+                if (!tsContext->inParentTryBody.lookup(child))
+                {
+                    break;
+                }
+            }
+        }
+
+        auto catchPadId = 0;
+        auto tagPad = [&](mlir_ts::LandingPadOp landingPadOp, bool isCatchPad) {
+            if (!tsContext->compileOptions.isWindows)
+            {
+                return;
+            }
+
+            if (isCatchPad && catchPadId)
+            {
+                landingPadOp->setAttr(EH_PAD_ID_ATTR_NAME, rewriter.getI32IntegerAttr(catchPadId));
+            }
+
+            if (funcletParentId)
+            {
+                landingPadOp->setAttr(EH_PAD_PARENT_ATTR_NAME, rewriter.getI32IntegerAttr(funcletParentId));
+            }
+        };
+
         // find catch var
         //
         // This region walk must stop at a nested `try`: a `try/catch` written inside a catch
@@ -1487,13 +1529,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     // is what ends the catch - ending it here as well runs it twice and
                     // breaks the unwind (51exceptions.ts is the case that proves it).
                     //
-                    // Except for a throw inside a try nested in this catch: that one unwinds to
-                    // the nested try's own pad, not to the finally. Left inside this catch's
-                    // funclet, the nested pad would be a catchswitch `within none` reached from
-                    // inside a catchpad - invalid funclet nesting, and a crash at run time. So
-                    // it ends the catch first, exactly as it does when there is no finally.
+                    // A throw inside a try nested in this catch does not leave the catch: the
+                    // nested try's pad takes it, and on Windows Win32ExceptionPass nests that
+                    // pad in this catch's funclet. It used to end the catch first, when the pass
+                    // could not nest pads - which, with a `using` in the nested try, ended the
+                    // catch between the using's first call and its throw, both unwinding to the
+                    // same cleanup pad: one edge inside the funclet and one outside it, which
+                    // the verifier rejects. The Itanium path has no funclets and keeps ending
+                    // the catch there, as it always did.
                     auto inNestedTry = op->getParentOfType<mlir_ts::TryOp>() != nullptr;
-                    if (!finallyHasOps || inNestedTry)
+                    auto leaves = tsContext->compileOptions.isWindows ? !finallyHasOps && !inNestedTry
+                                                                     : !finallyHasOps || inNestedTry;
+                    if (leaves)
                     {
                         tsContext->leavesCatch[op] = true;
                     }
@@ -1740,6 +1787,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
                 loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+            tagPad(landingPadCleanupOp, false);
             auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
             rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
@@ -1767,6 +1815,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);
         }
 
+        if (catchHasOps && tsContext->compileOptions.isWindows)
+        {
+            catchPadId = ++tsContext->nextCatchPadId;
+            tsContext->catchPadIdOf[tryOp.getOperation()] = catchPadId;
+        }
+
         mlir::Value cmpValue;
         SmallVector<mlir::Value> cmpWidenedValues;
         if (catchHasOps)
@@ -1785,6 +1839,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             auto landingPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
                                                                        rewriter.getBoolAttr(false), catchTypes);
+            tagPad(landingPadOp, true);
 
             // On Windows a typed catch that does not match is left by the runtime, through the
             // catchswitch's unwind edge - but Win32ExceptionPass can only point that edge at the
@@ -1872,6 +1927,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
     
                 auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
                     loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                tagPad(landingPadCleanupOp, false);
                 auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
                 rewriter.setInsertionPoint(finallyBlockLast->getTerminator());

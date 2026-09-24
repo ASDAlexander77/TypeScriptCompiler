@@ -130,6 +130,7 @@ struct TSContext
         finallyBlockOf.beginRun();
         landingBlockOf.beginRun();
         leavesCatch.beginRun();
+        catchPadIdOf.beginRun();
     }
 
     // options
@@ -156,6 +157,11 @@ struct TSContext
     // a throw cannot: `unwind` already means its invoke destination, which is a different
     // question with a different answer.
     OpSideTable<bool> leavesCatch{"leavesCatch"};
+    // Windows: the id a try's catch landing pad goes by, so that the pads of a try inside that
+    // catch clause can name it as the funclet they are nested in - see tagPad in TryOpLowering
+    // and ts.internal.eh_pad in Win32ExceptionPass. Ids are unique within the module.
+    OpSideTable<int> catchPadIdOf{"catchPadIdOf"};
+    int nextCatchPadId = 0;
     mlir::Block *returnBlock;
 };
 

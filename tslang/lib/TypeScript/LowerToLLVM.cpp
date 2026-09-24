@@ -4736,11 +4736,37 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         Location loc = landingPadOp.getLoc();
+
+        // the funclet nesting TryOpLowering worked out, for Win32ExceptionPass: a call right
+        // after the pad, ts.internal.eh_pad(this catch pad's id, id of the catch it is nested
+        // in), 0 for none. The pass reads it and removes it.
+        auto padId = landingPadOp->getAttrOfType<mlir::IntegerAttr>(EH_PAD_ID_ATTR_NAME);
+        auto padParent = landingPadOp->getAttrOfType<mlir::IntegerAttr>(EH_PAD_PARENT_ATTR_NAME);
+        auto tagPad = [&](LLVM::LandingpadOp newLandingPadOp) {
+            if (!padId && !padParent)
+            {
+                return;
+            }
+
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(landingPadOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            CodeLogicHelper clh(landingPadOp, rewriter);
+
+            auto ehPadFunc = ch.getOrInsertFunction(
+                "ts.internal.eh_pad", th.getFunctionType(th.getVoidType(), {th.getI32Type(), th.getI32Type()}));
+
+            mlir::OpBuilder::InsertionGuard guard(rewriter);
+            rewriter.setInsertionPointAfter(newLandingPadOp);
+            rewriter.create<LLVM::CallOp>(loc, ehPadFunc,
+                                          ValueRange{clh.createI32ConstantOf(padId ? padId.getInt() : 0),
+                                                     clh.createI32ConstantOf(padParent ? padParent.getInt() : 0)});
+        };
+
         if (!landingPadOp.getCleanup())
         {
             auto catch1 = transformed.getCatches().front();
             mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
-            rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+            tagPad(rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1}));
         }
         else
         {
@@ -4754,8 +4780,8 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
             auto cleanupMarker = transformed.getCatches().front();
 
             mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
-            rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, true,
-                                                            ValueRange{cleanupMarker});
+            tagPad(rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, true,
+                                                                   ValueRange{cleanupMarker}));
         }
 
         return success();
