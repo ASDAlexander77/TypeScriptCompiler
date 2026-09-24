@@ -392,6 +392,7 @@ tslang_add_test(NAME test-compile-00-throw-inlined COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-try-catch-sequence-and-nesting COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_sequence_and_nesting.ts")
 tslang_add_test(NAME test-compile-00-try-in-catch-with-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_in_catch_with_finally.ts")
 tslang_add_test(NAME test-compile-00-throw-number-untyped-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
+tslang_add_test(NAME test-compile-00-throw-in-block-debug-info COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_block_debug_info.ts")
 tslang_add_test(NAME test-compile-00-catch-untyped-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-compile-00-throw-bool-bigint COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-compile-00-throw-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
@@ -825,6 +826,7 @@ tslang_add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-try-catch-sequence-and-nesting COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_sequence_and_nesting.ts")
 tslang_add_test(NAME test-jit-00-try-in-catch-with-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_in_catch_with_finally.ts")
 tslang_add_test(NAME test-jit-00-throw-number-untyped-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_number_untyped_catch.ts")
+tslang_add_test(NAME test-jit-00-throw-in-block-debug-info COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_block_debug_info.ts")
 tslang_add_test(NAME test-jit-00-catch-untyped-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00catch_untyped_value.ts")
 tslang_add_test(NAME test-jit-00-throw-bool-bigint COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_bool_bigint.ts")
 tslang_add_test(NAME test-jit-00-throw-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_f32.ts")
@@ -1737,6 +1739,7 @@ set(TSLANG_CORPUS
     00throw_bool_bigint.ts
     00throw_f32.ts
     00throw_u32.ts
+    00throw_in_block_debug_info.ts
     00throw_inlined.ts
     00throw_number_untyped_catch.ts
     00to_primitive_ops.ts

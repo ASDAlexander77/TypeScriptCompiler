@@ -1083,6 +1083,21 @@ namespace mlirgen
         GenContext thunkGenContext{};
         thunkGenContext.funcOp = funcOp;
 
+        // A function of its own to the debugger as well. `location` is the throw or catch
+        // statement's, and carries that statement's debug scope - a lexical block of the
+        // function around it when the statement sits in a braced block. Left on the thunk and
+        // its body, LLVM rejected the module: the thunk got a subprogram of its own while its
+        // instructions still pointed into the other function's block. Same steps as
+        // mlirGenFunctionLikeDeclaration: a subprogram for the thunk, the body scoped under it.
+        DITableScopeT debugFuncScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            auto plainLocation = stripMetadata(location);
+            funcOp->setLoc(mdi.getSubprogram(plainLocation, name, name, plainLocation));
+            location = locFuseWithScope(plainLocation);
+        }
+
         auto &entryBlock = *funcOp.addEntryBlock();
         builder.setInsertionPointToStart(&entryBlock);
 
