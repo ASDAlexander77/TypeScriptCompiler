@@ -1295,17 +1295,35 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
         auto parentTryOp = tsContext->parentTryOp.lookup(tryOp.getOperation());
-        mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf.lookup(parentTryOp) : nullptr;
-        auto parentCatchesThis = parentTryOpLandingPad && tsContext->inParentTryBody.lookup(tryOp.getOperation());
 
         // Where an exception this try does not catch has to go next within the function: the
         // parent's landing pad for a try in the parent's body, the parent's finally for one in
         // the parent's catch clause (whose exceptions the parent does not catch, but whose
-        // finally still has to run), and nowhere - the caller - otherwise.
-        mlir::Block *enclosingHandler = parentCatchesThis ? parentTryOpLandingPad : nullptr;
-        if (!enclosingHandler && parentTryOp && tsContext->inParentTryCatch.lookup(tryOp.getOperation()))
+        // finally still has to run), and nowhere - the caller - when no try around it takes it.
+        //
+        // Not just the parent: a try in the parent's catch clause (with no parent finally) or in
+        // the parent's finally hands its exception on to wherever the *parent's* would go, and
+        // so on up. Looking one level only, such a try sent it to the parent's own landing pad -
+        // the handler already running, which on Windows caught it again, forever - or, finding
+        // no finally, to the caller, past a try around the parent that was there to catch it.
+        // Every try around this one has been lowered by now, so their blocks are known.
+        mlir::Block *enclosingHandler = nullptr;
+        for (Operation *child = tryOp.getOperation(), *parent = parentTryOp; parent;
+             child = parent, parent = tsContext->parentTryOp.lookup(parent))
         {
-            enclosingHandler = tsContext->finallyBlockOf.lookup(parentTryOp);
+            if (tsContext->inParentTryBody.lookup(child))
+            {
+                enclosingHandler = tsContext->landingBlockOf.lookup(parent);
+            }
+            else if (tsContext->inParentTryCatch.lookup(child))
+            {
+                enclosingHandler = tsContext->finallyBlockOf.lookup(parent);
+            }
+
+            if (enclosingHandler)
+            {
+                break;
+            }
         }
 
         MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
@@ -1675,7 +1693,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // linuxHasCleanups block at the end of this method. That rethrow needs a catch-all pad,
         // same as the nested-finally case beside it.
         auto linuxCleanupOnlyChainsToParent =
-            linuxHasCleanups && !catchHasOps && !finallyHasOps && parentTryOpLandingPad;
+            linuxHasCleanups && !catchHasOps && !finallyHasOps && enclosingHandler;
 
         // A typed catch whose exception may belong to someone else in this same function - the
         // try's own finally, or the try around it - has to be entered for every exception, not
@@ -1689,7 +1707,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                      !linuxHasCleanups && (enclosingHandler || finallyHasOps);
 
         mlir::Value catchAll;
-        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
+        if (enclosingHandler && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
             linuxCleanupOnlyChainsToParent || linuxTypedCatchChains)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
@@ -1731,7 +1749,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // own to hand the unwind to. Leaving unwindDests empty here is what tells
             // EndCleanupOp to resume unwinding instead of branching to a block that does not
             // exist - the Linux cleanup-only case below already relies on the same fallback
-            // chain, catchesBlock -> finallyBlock -> parentTryOpLandingPad -> resume.
+            // chain, catchesBlock -> finallyBlock -> enclosingHandler -> resume.
             if (catchesBlock)
             {
                 unwindDests.push_back(catchesBlock);
@@ -1740,9 +1758,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             {
                 unwindDests.push_back(finallyBlock);
             }
-            else if (parentTryOpLandingPad)
+            else if (enclosingHandler)
             {
-                unwindDests.push_back(parentTryOpLandingPad);
+                unwindDests.push_back(enclosingHandler);
             }
 
             auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
@@ -1781,8 +1799,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // The same goes for this try's own `finally`, which a mismatched exception has to
             // run on its way out: without the edge the catchswitch unwinds straight past it.
             //
-            // Only a try in its parent's body has an edge to add (parentCatchesThis): one in the
-            // parent's catch or finally is already inside the handler that pad leads to.
+            // The enclosing pad is enclosingHandler: never the parent's own pad for a try in the
+            // parent's catch or finally, which is already inside the handler that pad leads to.
             auto windowsNeedsParentEdge = tsContext->compileOptions.isWindows && (enclosingHandler || finallyHasOps);
             if (rttih.hasType() && (!tsContext->compileOptions.isWindows || windowsNeedsParentEdge))
             {
@@ -1858,9 +1876,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
                 mlir::SmallVector<mlir::Block *> unwindDests;
-                if (parentTryOpLandingPad)
+                if (enclosingHandler)
                 {
-                    unwindDests.push_back(parentTryOpLandingPad);
+                    unwindDests.push_back(enclosingHandler);
                 }
 
                 auto resultOpFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
@@ -1868,7 +1886,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
             else
             {
-                if (!parentTryOpLandingPad)
+                if (!enclosingHandler)
                 {
                     rewriter.setInsertionPointToStart(linuxHasCleanupsForFinally ? cleanupBlock : finallyBlock);
 
@@ -1884,10 +1902,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                     rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
                     mlir::SmallVector<mlir::Block *> unwindDests;
-                    if (parentTryOpLandingPad)
-                    {
-                        unwindDests.push_back(parentTryOpLandingPad);
-                    }
 
                     if (catchHasOps)
                     {
@@ -1920,7 +1934,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                     auto resultOpOfFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
                     auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpOfFinally, nullVal);
-                    tsContext->unwind[throwOp] = parentTryOpLandingPad;
+                    tsContext->unwind[throwOp] = enclosingHandler;
                 }
                 // cleanup end
             }
@@ -1948,30 +1962,26 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // instead of falling through to normal post-try control flow.
             auto *rethrowBlock = rewriter.createBlock(continuationBrCmp);
             rewriter.setInsertionPointToStart(rethrowBlock);
-            if (linuxTypedCatchChains)
+            if (!tsContext->compileOptions.isWindows)
             {
-                // __cxa_rethrow needs the exception to have been caught first
+                // __cxa_rethrow needs the exception to have been caught first. With a `using` in
+                // the try (linuxHasCleanups) the pad is a catch-all too, and its rethrow used to
+                // run with nothing caught: "terminate called without an active exception".
                 rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), cmpValue.getDefiningOp()->getOperand(0));
             }
 
             auto rethrowVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
             auto rethrowOp = rewriter.create<mlir_ts::ThrowOp>(loc, rethrowVal);
-            if (tsContext->compileOptions.isWindows || linuxTypedCatchChains)
+            // see windowsNeedsParentEdge / linuxTypedCatchChains: the finally's pad comes before
+            // any enclosing try's. It went to the parent's pad even for a try in the parent's
+            // catch clause, which is the handler already running.
+            if (finallyHasOps)
             {
-                // see windowsNeedsParentEdge / linuxTypedCatchChains: the finally's pad comes
-                // before any enclosing try's
-                if (finallyHasOps)
-                {
-                    tsContext->unwind[rethrowOp] = finallyBlock;
-                }
-                else if (enclosingHandler)
-                {
-                    tsContext->unwind[rethrowOp] = enclosingHandler;
-                }
+                tsContext->unwind[rethrowOp] = finallyBlock;
             }
-            else if (parentTryOpLandingPad)
+            else if (enclosingHandler)
             {
-                tsContext->unwind[rethrowOp] = parentTryOpLandingPad;
+                tsContext->unwind[rethrowOp] = enclosingHandler;
             }
 
             rewriter.setInsertionPointAfterValue(lastCmpValue);
@@ -2044,7 +2054,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
                 auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpCleanup, nullVal);
-                tsContext->unwind[throwOp] = parentTryOpLandingPad;
+                tsContext->unwind[throwOp] = enclosingHandler;
             }
             else
             {
