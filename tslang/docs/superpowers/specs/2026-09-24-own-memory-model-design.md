@@ -19,7 +19,7 @@ point, and it is why it is a separate model rather than an optimisation of `rc`.
 Decisions taken in the design conversation (do not re-litigate):
 
 | Question | Decision |
-|---|---|
+| --- | --- |
 | Goal | No runtime counting |
 | Shape | Separate model `-mm=own`, not an elision stage inside `rc` |
 | When ownership cannot be proven | Compile error (Rust), not warning+leak, not per-value rc |
@@ -182,7 +182,7 @@ locations. Its output is IR with **zero** retain ops left, or errors.
 
 ### 3.6 Data flow
 
-```
+```text
 MLIRGen (unchanged)
   -> OwnedReturnConsumptionPass          (every model, as today)
   -> LowerToAffine*                      (scopes become CFG, unwind edges become edges)
@@ -244,7 +244,7 @@ structural immunity of the ~2,800 gc tests to this work.
 One `emitError` at the aliasing point, `attachNote`s at the reason, in the language of the rules:
 
 | Rule | Error | Notes |
-|---|---|---|
+| --- | --- | --- |
 | use-after-move | `'x' is used here after its value was moved` | `value moved here` |
 | borrow outlives owner | `'y' borrows 'x' but is used here after 'x' is released` | `'x' released here` |
 | borrow across dropping mutation | `'e' borrows an element of 'arr' but 'arr.pop()' here may destroy it` | `borrowed here` |
