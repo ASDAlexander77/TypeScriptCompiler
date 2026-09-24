@@ -69,6 +69,13 @@ constexpr const auto *pointerTypeInfoName = "_ZTVN10__cxxabiv119__pointer_type_i
 // or a typed catch of the class) emits the same thunk, so the linkonce_odr copies agree.
 constexpr const auto *boxThunkPrefix = ".eh.copy.box.";
 constexpr int boxThunkField = 4;
+// Only tslang's own __pointer_type_info has that field, so it says so in __flags - a bit
+// libstdc++ leaves alone (it defines the low qualifier bits only, and compares a throw's flags
+// with a catch's, which are emitted here alike). Any other pointer exception - a C++
+// `throw "text"` (`_ZTIPKc`), a pointer to a C++ class, a type_info from before the field -
+// ends after the pointee, and reading the field there called whatever came next.
+constexpr int flagsField = 2;
+constexpr int boxThunkFlag = 0x40000000;
 } // namespace ClassType
 
 } // namespace linux

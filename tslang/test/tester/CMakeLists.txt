@@ -299,6 +299,7 @@ tslang_add_test(NAME test-compile-00-const-array-to-array-elements COMMAND test-
 tslang_add_test(NAME test-compile-00-array-widen-elements-now COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-compile-00-const-array-nested-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
 tslang_add_test(NAME test-compile-00-const-array-mutation COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
+tslang_add_test(NAME test-compile-00-nested-array-literal-mutation COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_array_literal_mutation.ts")
 tslang_add_test(NAME test-compile-00-array-move-wide-elements COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-compile-00-bigint-struct-layout COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bigint_struct_layout.ts")
 tslang_add_test(NAME test-compile-00-union-member-padding COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_member_padding.ts")
@@ -736,6 +737,7 @@ tslang_add_test(NAME test-jit-00-const-array-to-array-elements COMMAND test-runn
 tslang_add_test(NAME test-jit-00-array-widen-elements-now COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_widen_elements_now.ts")
 tslang_add_test(NAME test-jit-00-const-array-nested-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_nested_elements.ts")
 tslang_add_test(NAME test-jit-00-const-array-mutation COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_mutation.ts")
+tslang_add_test(NAME test-jit-00-nested-array-literal-mutation COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_array_literal_mutation.ts")
 tslang_add_test(NAME test-jit-00-array-move-wide-elements COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_move_wide_elements.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_generic.ts")
 tslang_add_test(NAME test-jit-00-funcs-expression-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_expression_iterator.ts")
@@ -1482,6 +1484,7 @@ set(TSLANG_CORPUS
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
     00const_array_nested_elements.ts
+    00nested_array_literal_mutation.ts
     00const_array_to_array_elements.ts
     00array_widen_elements_now.ts
     00owned_array_splice.ts
@@ -2218,7 +2221,8 @@ set(call_arity_cases
     "closure|Expected 2 arguments, but got 1\\."
     "declared|Expected 2 arguments, but got 1\\."
     "varargs|Expected at least 1 arguments, but got 0\\."
-    "optional_call|Expected 2 arguments, but got 1\\.")
+    "optional_call|Expected 2 arguments, but got 1\\."
+    "optional_call_value|Expected 2 arguments, but got 1\\.")
 foreach(call_arity_case ${call_arity_cases})
     string(FIND "${call_arity_case}" "|" call_arity_sep)
     string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)
@@ -2468,4 +2472,19 @@ endif()
 if (NOT WIN32)
     tslang_add_test(NAME test-compile-00-try-mismatch-in-catch-clause-using COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause_using.ts")
     tslang_add_test(NAME test-jit-00-try-mismatch-in-catch-clause-using COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_mismatch_in_catch_clause_using.ts")
+endif()    
+# An untyped catch of a C++ exception tslang did not throw (Itanium only: the box thunk field of
+# a __pointer_type_info is a Linux mechanism). foreign_throw.cpp throws a `const char*`, a
+# pointer to a C++ struct and an int; the catch must box each without calling into the type_info.
+if (NOT WIN32)
+    add_library(tslang_foreign_throw SHARED foreign-throw/foreign_throw.cpp)
+    add_dependencies(tslang_foreign_throw TypeScriptRuntime)
+    add_test(NAME test-jit-foreign-throw-catch
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     --shared-libs=$<TARGET_FILE:tslang_foreign_throw>
+                     "${PROJECT_SOURCE_DIR}/test/tester/foreign-throw/catch.ts")
+    set_tests_properties(test-jit-foreign-throw-catch
+                         PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Segmentation|assertion failed")
 endif()

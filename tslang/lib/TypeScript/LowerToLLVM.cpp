@@ -5174,26 +5174,42 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
                 [&](OpBuilder &, Location) -> mlir::Value {
                     auto pointerTypeInfoType = LLVM::LLVMStructType::getLiteral(
                         ctx, {ptrTy, ptrTy, th.getI32Type(), ptrTy, ptrTy}, false);
-                    auto thunkAddress = rewriter.create<LLVM::GEPOp>(
+                    // only a type_info whose flags say so has the thunk field - see boxThunkFlag;
+                    // the field is not read for any other, since it may lie past the object's end
+                    auto flagsAddress = rewriter.create<LLVM::GEPOp>(
                         loc, ptrTy, pointerTypeInfoType, typeInfo,
-                        ArrayRef<LLVM::GEPArg>{0, ::typescript::linux::ClassType::boxThunkField});
-                    auto thunk = rewriter.create<LLVM::LoadOp>(loc, ptrTy, thunkAddress);
-                    auto hasThunk = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, thunk,
-                                                                  rewriter.create<LLVM::ZeroOp>(loc, ptrTy));
+                        ArrayRef<LLVM::GEPArg>{0, ::typescript::linux::ClassType::flagsField});
+                    auto flags = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), flagsAddress);
+                    auto flagBit = rewriter.create<LLVM::ConstantOp>(
+                        loc, th.getI32Type(), rewriter.getI32IntegerAttr(::typescript::linux::ClassType::boxThunkFlag));
+                    auto flagged = rewriter.create<LLVM::ICmpOp>(
+                        loc, LLVM::ICmpPredicate::ne, rewriter.create<LLVM::AndOp>(loc, flags, flagBit),
+                        rewriter.create<LLVM::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0)));
                     return clh.conditionalExpressionLowering(
-                        loc, ptrTy, hasThunk,
+                        loc, ptrTy, flagged,
                         [&](OpBuilder &, Location) -> mlir::Value {
-                            auto anyType = mlir_ts::AnyType::get(ctx);
-                            auto boxSlot = rewriter.create<mlir_ts::VariableOp>(
-                                loc, mlir_ts::RefType::get(anyType), mlir::Value(), rewriter.getBoolAttr(false),
-                                rewriter.getIndexAttr(0));
-                            auto boxSlotPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxSlot);
-                            // void thunk(ref<any> dest, ref<class> src); exceptionInfo is the
-                            // address of the thrown pointer
-                            auto thunkType = LLVM::LLVMFunctionType::get(th.getVoidType(), {ptrTy, ptrTy});
-                            rewriter.create<LLVM::CallOp>(loc, thunkType, ValueRange{thunk, boxSlotPtr, exceptionInfo});
-                            auto boxed = rewriter.create<mlir_ts::LoadOp>(loc, anyType, boxSlot);
-                            return rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxed);
+                            auto thunkAddress = rewriter.create<LLVM::GEPOp>(
+                                loc, ptrTy, pointerTypeInfoType, typeInfo,
+                                ArrayRef<LLVM::GEPArg>{0, ::typescript::linux::ClassType::boxThunkField});
+                            auto thunk = rewriter.create<LLVM::LoadOp>(loc, ptrTy, thunkAddress);
+                            auto hasThunk = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, thunk,
+                                                                          rewriter.create<LLVM::ZeroOp>(loc, ptrTy));
+                            return clh.conditionalExpressionLowering(
+                                loc, ptrTy, hasThunk,
+                                [&](OpBuilder &, Location) -> mlir::Value {
+                                    auto anyType = mlir_ts::AnyType::get(ctx);
+                                    auto boxSlot = rewriter.create<mlir_ts::VariableOp>(
+                                        loc, mlir_ts::RefType::get(anyType), mlir::Value(), rewriter.getBoolAttr(false),
+                                        rewriter.getIndexAttr(0));
+                                    auto boxSlotPtr = rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxSlot);
+                                    // void thunk(ref<any> dest, ref<class> src); exceptionInfo is the
+                                    // address of the thrown pointer
+                                    auto thunkType = LLVM::LLVMFunctionType::get(th.getVoidType(), {ptrTy, ptrTy});
+                                    rewriter.create<LLVM::CallOp>(loc, thunkType, ValueRange{thunk, boxSlotPtr, exceptionInfo});
+                                    auto boxed = rewriter.create<mlir_ts::LoadOp>(loc, anyType, boxSlot);
+                                    return rewriter.create<mlir_ts::DialectCastOp>(loc, ptrTy, boxed);
+                                },
+                                [&](OpBuilder &, Location) { return boxThrown(mlir_ts::OpaqueType::get(ctx)); });
                         },
                         [&](OpBuilder &, Location) { return boxThrown(mlir_ts::OpaqueType::get(ctx)); });
                 },
