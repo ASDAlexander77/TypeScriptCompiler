@@ -291,15 +291,12 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
 
 #define CMAKE_FOLDER_PATH "cmake"
 
-const auto CMAKE_LISTS_TXT_DATA = R"raw(cmake_minimum_required(VERSION 3.20)
+const auto CMAKE_LISTS_TXT_DATA = R"raw(cmake_minimum_required(VERSION 3.21)
 
 # Make CMake find ts-language modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-project(<<PROJECT>> CXX)
-
-# Enable TS-language
-enable_language(TSLANG)
+project(<<PROJECT>> CXX TSLANG)
 
 # Include folders
 include_directories(${CMAKE_TSLANG_DIR}/defaultlib)
@@ -331,10 +328,7 @@ endif()
 # program is compiled for one model and linked against another model's default lib.
 set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -mm=${TSLANG_MEMORY_MODEL}") # global
 
-if(WIN32)
-else()
-    set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -relocation-model=pic") # global
-endif()
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # .ts files compile with TSLANG command; .cpp with the C++ compiler.
 add_executable(${PROJECT_NAME}
@@ -363,7 +357,7 @@ const auto CMAKE_PRESETS_JSON_DATA = R"raw({
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 20,
+    "minor": 21,
     "patch": 0
   },
   "configurePresets": [
