@@ -54,13 +54,12 @@ public static class PeakWs {
 $bin  = "I:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/bin"
 $lib  = "I:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/lib"
 $lld  = "I:/TypeScriptCompiler/tslang/../3rdParty/llvm/x64/release/bin"
-$llvmlib = "I:/TypeScriptCompiler/tslang/../3rdParty/llvm/x64/release/lib"
 $gclib = "I:/TypeScriptCompiler/3rdParty/gc/x64/release/lib"
 $vclib = "C:/Program Files/Microsoft Visual Studio/18/Professional/VC/Tools/MSVC/14.51.36231/lib/x64"
 $sdk   = "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/x64"
 $ucrt  = "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/ucrt/x64"
 
-$libs = "libcmt.lib libvcruntime.lib libucrt.lib ntdll.lib TypeScriptAsyncRuntime.lib gc.lib LLVMSupport.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"
+$libs = "libcmt.lib libvcruntime.lib libucrt.lib ntdll.lib TypeScriptAsyncRuntime.lib gc.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($Source)
 $work = Join-Path $env:TEMP "measure-$stem"
@@ -84,7 +83,7 @@ foreach ($m in $Models) {
     }
 
     $link = & "$lld/lld.exe" -flavor link $objs "/out:$exe" $libs.Split(' ') `
-        "/libpath:$gclib" "/libpath:$llvmlib" "/libpath:$lib" "/libpath:$vclib" "/libpath:$sdk" "/libpath:$ucrt" 2>&1
+        "/libpath:$gclib" "/libpath:$lib" "/libpath:$vclib" "/libpath:$sdk" "/libpath:$ucrt" 2>&1
     if ($LASTEXITCODE -ne 0) { "{0,-5} LINK FAILED ({1})" -f $m, $LASTEXITCODE; $link | Select-Object -Last 3; continue }
 
     $p = Start-Process -FilePath $exe -PassThru -NoNewWindow -RedirectStandardOutput "$work\$stem-$m.out" -RedirectStandardError "$work\$stem-$m.err"

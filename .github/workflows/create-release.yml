@@ -184,8 +184,8 @@ jobs:
           GC_SHARED_LIB_PATH: ${{github.workspace}}/3rdParty/gcdll/x64/release/lib
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
           TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
-          # This package ships only release-CRT (/MT) builds of TypeScriptAsyncRuntime.lib, gc.lib
-          # and LLVMSupport.lib, so the debug archive has to be /MT too or a `--di` program cannot
+          # This package ships only release-CRT (/MT) builds of TypeScriptAsyncRuntime.lib and
+          # gc.lib, so the debug archive has to be /MT too or a `--di` program cannot
           # link with them (LNK2038). It keeps its debug info. See DefaultLib's build_core.bat.
           TSLANG_DEBUG_CRT: /MT
         run: |
@@ -230,7 +230,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
-          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -435,8 +435,6 @@ jobs:
           cp ./gc/ninja/release/libgc.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
-          cp ../3rdParty/llvm/release/lib/libLLVMSupport.a ./__stage/
-          cp ../3rdParty/llvm/release/lib/libLLVMDemangle.a ./__stage/
           # Add the default library as a whole tree so its per-build, per-memory-model
           # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
