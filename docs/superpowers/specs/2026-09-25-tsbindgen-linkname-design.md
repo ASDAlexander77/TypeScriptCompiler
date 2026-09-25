@@ -36,6 +36,7 @@ Probed with `__build/tslang/windows-msbuild-2026-release` (built 2026-09-25),
 | `(a: Opaque, b: Opaque) => i32` parameter | Lowers to `{ ptr, ptr, ptr }` (hybrid function), not a C function pointer. |
 | `cmp as Opaque` passed to an `Opaque` parameter | Lowers to bare `ptr @cmp`, a valid C function pointer. |
 | `@varargs declare function printf(format: string);` | C varargs (existing test `02funcs_vararg.ts`). `...args: any[]` instead passes an array struct. |
+| `type S = [a: i8, b: i32, c: i64]`, `f(ReferenceOf(s))` to `declare function f(s: Reference<S>)` | Storage is `alloca { i8, i32, i64 }`, fields in declared order (C's layout). `f` gets the variable's own storage, and a later `s[1]` reads from it, so C writes are visible. |
 
 ### Two findings that reduced scope
 
@@ -88,7 +89,10 @@ rename (the `renamedGlobals` loop, which already uses
 | Yes, different function type | Error: `'a' binds symbol 'sym' with type T1, but 'b' declares it with type T2`. |
 
 "Same function type" compares the `mlir_ts::FunctionType` of the two ops,
-including the varargs flag.
+including the varargs flag. It is deliberately stricter than comparing the
+LLVM types (`string` and `Opaque` both lower to `ptr`): at the point of the
+rename the call ops are still TS-typed, so redirecting a call to a callee with
+a different TS signature would fail the verifier unless casts were inserted.
 
 `ExportFixPass`'s `DLL_NAME` branch stays as a fallback for any function
 attribute still set after MLIR lowering; once the MLIR rename runs, it never
@@ -149,16 +153,19 @@ The `-shared` cross-module tests import re-parsed declarations that carry
 ```text
 tsbindgen <input.h|.c|.cpp> [-I<dir>]... [-D<name>[=v]]... [--target <triple>]
           [--filter <glob>]... [--namespace <N> [--strip-prefix <P>]]
-          [-o <out.d.ts>] [-- <extra clang args>...]
+          [--resource-dir <dir>] [-o <out.d.ts>] [-- <extra clang args>...]
 ```
 
 - `--target` defaults to the host triple. Type widths come from clang's
   `ASTContext` for that target.
 - A `.cpp` input is parsed as C++; only functions with C language linkage are
   taken.
-- clang's resource directory is located relative to the executable
-  (`<exe dir>/../lib/clang/<ver>`), falling back to the one the build used.
-  Without it, `stddef.h`/`stdint.h` fail to resolve.
+- clang's resource directory (its `stddef.h`/`stdint.h`; without it they fail
+  to resolve) is found in this order: `--resource-dir <dir>` if given;
+  `<exe dir>/lib/clang/<ver>` (the release package layout, where `tsbindgen`
+  sits at the package root next to `tslang`); `<exe dir>/../lib/clang/<ver>`
+  (an LLVM-style install); the directory the build was configured with. None
+  found is an error naming the paths tried.
 
 ### What gets emitted
 
@@ -182,7 +189,7 @@ declarations, so this rule is essential.
 | function pointer | `Opaque`, with a trailing comment giving the C signature (`// (a: i32) => i32`). |
 | complete struct of mappable fields | named tuple `type S = [a: T1, b: T2];`, as `tm` in `core.os.d.ts` |
 | C `enum` | TS `enum` with the same names and values |
-| C++ `enum : u8` (fixed non-`int` underlying type) | `type E = u8;` plus `const E_A = 1;` per enumerator |
+| C++ `enum : u8` (fixed non-`int` underlying type) | `type E = u8;` plus `const A = 1;` per enumerator, using the enumerator's own name (`A`, as C code spells it for an unscoped enum; `E_A` for an `enum class`, which has no unqualified name) |
 | `...` | fixed parameters only, plus `@varargs` |
 | `#define N 42` / `1.5` / `"s"` | `const N = 42;` (integer, float and string literal object-like macros only) |
 | `typedef` | `type` alias, unless it names a struct already emitted under the same name |
@@ -202,6 +209,12 @@ Each of these is left out of the `.d.ts`, with
 - a function-like macro;
 - a `static inline` function (no symbol to link against);
 - any other type the mapper does not handle.
+
+A skipped struct does not take its users with it. It is still emitted as
+`type S = Opaque;`, so a function that takes or returns `S*` is emitted with
+an `S` (that is, `Opaque`) parameter, exactly like an incomplete struct. Only
+a function that uses a skipped type **by value** is skipped itself. Without
+this rule a single union in a header would remove most of its API.
 
 A skip never stops generation. The exit code is `0` if the file was written,
 `1` for a clang parse error or I/O failure (clang's diagnostics are printed
@@ -255,17 +268,27 @@ declaration that starts with it; the `@linkname` keeps the C name.
 
 - `create-release.yml`: add `tsbindgen.exe` and
   `3rdParty/llvm/x64/release/lib/clang/<ver>/include` (placed at
-  `lib/clang/<ver>/include` in the package) to the Windows `Compress-Archive`
-  list; the equivalent `cp` lines for each Linux package.
+  `lib/clang/<ver>/include` in the package, next to `tsbindgen` at the
+  package root — the second lookup location above) to the Windows
+  `Compress-Archive` list; the equivalent `cp` lines for each Linux package.
 - A smoke step in each packaging job: from the unpacked package, run
   `tsbindgen --version` and generate the fixture header from PR 2's test.
 
 ## Open issues
 
-- **CI LLVM package contents.** The Windows CI LLVM zip must contain the clang
-  Frontend/Sema/Tooling libraries and `lib/clang/<ver>/include`. The local
-  install does; confirm the zip does at the start of PR 2. If it does not,
-  re-upload it and bump `CACHE_VERSION` (see the earlier `/MT` re-upload).
+- **CI LLVM package contents.** The LLVM packages used by both the Windows
+  and Linux CI must contain the clang Frontend/Sema/Tooling libraries and
+  `lib/clang/<ver>/include`. The local Windows install does; confirm both CI
+  packages do at the start of PR 2. If one does not, re-upload it and bump
+  `CACHE_VERSION` (see the earlier `/MT` re-upload).
+- **C-owned `char*` returned as `string`.** A tslang string carries an 8-byte
+  header before its characters (string constants in the IR start with
+  `\FF` × 8, and call sites pass `ptr + 8`); a `char*` returned by C has
+  none. The default lib already returns C strings as `string`
+  (`regexp_match_results_format`) and this works under `-mm=gc`, so v1 maps
+  them the same way. Under `-mm=rc` a release of such a pointer is undefined;
+  record it with the rc model's open items, and revisit if rc becomes a
+  supported target for bindings.
 - **Struct by value.** Skipped in v1. Before v2 generates wrappers for them,
   measure whether tslang's lowering of a named tuple parameter already
   matches clang's ABI for struct sizes 1/2/4/8/9/16/17 on both targets
