@@ -81,7 +81,6 @@ const auto TASKS_JSON_DATA = R"raw(
             "type": "shell",
             "args": [
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--di",
@@ -104,7 +103,6 @@ const auto TASKS_JSON_DATA = R"raw(
             "type": "shell",
             "args": [
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--opt",
@@ -127,7 +125,6 @@ const auto TASKS_JSON_DATA = R"raw(
             "type": "shell",
             "args": [
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--di",
@@ -150,7 +147,6 @@ const auto TASKS_JSON_DATA = R"raw(
             "type": "shell",
             "args": [
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--opt",
@@ -216,7 +212,6 @@ const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
             "args": [
                 "--shared-libs=<<TSLANG_LIB_PATH>>\\TypeScriptRuntime.dll",
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--no-default-lib",
@@ -278,7 +273,6 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
             "args": [
                 "--shared-libs=<<TSLANG_LIB_PATH>>/libTypeScriptRuntime.so",
                 "--gc-lib-path=<<GC_LIB_PATH>>",
-                "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tslang-lib-path=<<TSLANG_LIB_PATH>>",
                 "--default-lib-path=<<DEFAULT_LIB_PATH>>",
                 "--opt",
