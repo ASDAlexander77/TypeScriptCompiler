@@ -22,7 +22,6 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
 string getExecutablePath(const char *);
 string fixpath(string, const SmallVectorImpl<char>&);
 string getGCLibPath();
-string getLLVMLibPath();
 string getTslangLibPath();
 string getDefaultLibPath();
 
@@ -66,7 +65,6 @@ int createCMakeFolder(int argc, char **argv)
 
     auto tslangCmd = fixpath(driverPath, appPath);
     auto gcLibPath = fixpath(getGCLibPath(), appPath);
-    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
     auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
     auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
     // hint for finding tslang app (same logic as in createVSCodeFolder)
@@ -74,7 +72,6 @@ int createCMakeFolder(int argc, char **argv)
 
     vals["TSLANG_CMD"] = tslangCmd;
     vals["GC_LIB_PATH"] = gcLibPath;
-    vals["LLVM_LIB_PATH"] = llvmLibPath;
     vals["TSLANG_LIB_PATH"] = tslangLibPath;
     vals["DEFAULT_LIB_PATH"] = defaultLibPath;
     vals["TSLANG_APP_PATH"] = tslangAppPath;
