@@ -2305,6 +2305,29 @@ set_tests_properties(test-compile-linkname-declare-not-exported
                      PROPERTIES PASS_REGULAR_EXPRESSION "declare i64 @strlen\\(ptr\\)"
                                 FAIL_REGULAR_EXPRESSION "declare dllexport|Stack dump|Assertion failed")
 
+# C code expects an 8- or 16-bit integer (and a bool) extended to 32 bits by whoever hands it
+# over: the caller for an argument, the callee for a result. On x86-64 SysV clang relies on it,
+# so without `signext`/`zeroext` a call like take_s8(-5) passed garbage upper bits (tsbindgen's
+# `narrow` row read 251). A `declare`d function gets the attributes; `i32` is left alone.
+set(small_int_ext_names s8 s16 u8 u16 bool s32 result_s8 result_u16)
+set(small_int_ext_patterns
+    "declare i32 @take_s8\\(i8 signext\\)"
+    "declare i32 @take_s16\\(i16 signext\\)"
+    "declare i32 @take_u8\\(i8 zeroext\\)"
+    "declare i32 @take_u16\\(i16 zeroext\\)"
+    "declare i32 @take_bool\\(i1 zeroext\\)"
+    "declare i32 @take_s32\\(i32\\)"
+    "declare signext i8 @give_s8\\(\\)"
+    "declare zeroext i16 @give_u16\\(\\)")
+foreach(small_int_ext_name small_int_ext_pattern IN ZIP_LISTS small_int_ext_names small_int_ext_patterns)
+    add_test(NAME test-compile-small-int-ext-${small_int_ext_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/small-int-ext/declare.ts" -o -)
+    set_tests_properties(test-compile-small-int-ext-${small_int_ext_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${small_int_ext_pattern}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # A statement's condition that produces no value is an error, not a statement generated
 # without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty
 # block" error from `while`). The void call
