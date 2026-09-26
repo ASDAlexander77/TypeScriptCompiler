@@ -1492,6 +1492,31 @@ struct ReturnInternalOpLowering : public TsLlvmPattern<mlir_ts::ReturnInternalOp
     }
 };
 
+// `llvm.signext` for s8/s16, `llvm.zeroext` for u8/u16 and boolean; empty for anything else,
+// including signless i8/i16, whose extension no type says.
+static StringRef getIntegerExtensionAttrName(mlir::Type type)
+{
+    if (isa<mlir_ts::BooleanType>(type))
+    {
+        return LLVM::LLVMDialect::getZExtAttrName();
+    }
+
+    if (auto intType = dyn_cast<mlir::IntegerType>(type); intType && intType.getWidth() < 32)
+    {
+        if (intType.isSigned())
+        {
+            return LLVM::LLVMDialect::getSExtAttrName();
+        }
+
+        if (intType.isUnsigned())
+        {
+            return LLVM::LLVMDialect::getZExtAttrName();
+        }
+    }
+
+    return {};
+}
+
 struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
@@ -1527,6 +1552,30 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         auto convertedFuncType = rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes());
         auto newFuncOp = rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{}, argDictAttrs);
+
+        // C expects an 8- or 16-bit integer or a bool extended to 32 bits by whoever hands it
+        // over: the caller for an argument, the callee for a result, and clang-compiled code
+        // relies on it (x86-64 SysV). A declaration - implemented elsewhere, usually in C - says
+        // so. A definition does not: a `signext` parameter makes the callee trust its caller, and
+        // tslang's indirect calls carry no call-site attributes.
+        if (funcOp.getBody().empty())
+        {
+            for (auto [index, type] : llvm::enumerate(fnType.getInputs()))
+            {
+                if (auto extension = getIntegerExtensionAttrName(type); !extension.empty())
+                {
+                    newFuncOp.setArgAttr(index, extension, rewriter.getUnitAttr());
+                }
+            }
+
+            for (auto [index, type] : llvm::enumerate(fnType.getResults()))
+            {
+                if (auto extension = getIntegerExtensionAttrName(type); !extension.empty())
+                {
+                    newFuncOp.setResultAttr(index, extension, rewriter.getUnitAttr());
+                }
+            }
+        }
 
         for (const auto &namedAttr : funcOp->getAttrs())
         {
