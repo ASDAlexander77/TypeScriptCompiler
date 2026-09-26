@@ -26,6 +26,8 @@ struct ExportFixPassCode
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Function: " << F.getName());
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Dump Before: ...\n" << F << "\n";);
 
+        // TypeScriptToLLVMLoweringPass renames @dllname/@linkname functions in MLIR, where a
+        // taken name can be merged or reported; this only catches an attribute added after it
         if (F.hasFnAttribute(DLL_NAME))
         {
             auto dllName = F.getFnAttribute(DLL_NAME).getValueAsString().str();

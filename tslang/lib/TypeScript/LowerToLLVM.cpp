@@ -7529,6 +7529,107 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SymbolTable::setSymbolName(globalOp, dllName);
     }
 
+    // @dllname/@linkname on a function: renamed here rather than in ExportFixPass, where LLVM's
+    // setName silently makes a taken name unique ("strlen.1") and the call binds nothing.
+    // Several TS declarations may bind one C symbol; the ones with the same TS type collapse into
+    // one op. The type is compared as the TS type, not the LLVM one: string and Opaque both lower
+    // to ptr, but the calls are still TS-typed here, and redirecting one to a callee of another
+    // signature would fail the verifier.
+    SmallVector<mlir_ts::FuncOp> renamedFuncs;
+    m.walk([&](mlir_ts::FuncOp funcOp) {
+        auto dllName = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
+        if (!dllName)
+        {
+            return;
+        }
+
+        // naming the symbol the function already has is a no-op; dropped up front so the loop
+        // below never meets a still-attributed op under the target name
+        if (dllName == funcOp.getSymNameAttr())
+        {
+            funcOp->removeAttr(DLL_NAME);
+            return;
+        }
+
+        renamedFuncs.push_back(funcOp);
+    });
+
+    for (auto funcOp : renamedFuncs)
+    {
+        auto dllName = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
+        funcOp->removeAttr(DLL_NAME);
+
+        auto existingSymbol = SymbolTable::lookupSymbolIn(m, dllName);
+        if (existingSymbol)
+        {
+            auto existingFunc = dyn_cast<mlir_ts::FuncOp>(existingSymbol);
+            if (!existingFunc)
+            {
+                funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
+                                      << "', which is not a function";
+                signalPassFailure();
+                return;
+            }
+
+            // an op still carrying the attribute is itself about to move away from this name
+            if (existingFunc->hasAttr(DLL_NAME))
+            {
+                funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
+                                      << "', which @dllname/@linkname renames to '"
+                                      << existingFunc->getAttrOfType<mlir::StringAttr>(DLL_NAME).getValue() << "'";
+                signalPassFailure();
+                return;
+            }
+
+            if (existingFunc.getFunctionType() != funcOp.getFunctionType())
+            {
+                funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
+                                      << "' with type " << funcOp.getFunctionType() << ", but '"
+                                      << existingFunc.getSymName() << "' declares it with type "
+                                      << existingFunc.getFunctionType();
+                signalPassFailure();
+                return;
+            }
+
+            if (!funcOp.isExternal() && !existingFunc.isExternal())
+            {
+                funcOp.emitError("'") << funcOp.getSymName() << "' and '" << existingFunc.getSymName()
+                                      << "' both define symbol '" << dllName.getValue() << "'";
+                signalPassFailure();
+                return;
+            }
+
+            if (failed(SymbolTable::replaceAllSymbolUses(funcOp, dllName, m)))
+            {
+                funcOp.emitError("can't rename function to @dllname '") << dllName.getValue() << "'";
+                signalPassFailure();
+                return;
+            }
+
+            // keep whichever of the two has the body
+            if (funcOp.isExternal())
+            {
+                funcOp.erase();
+            }
+            else
+            {
+                existingFunc.erase();
+                SymbolTable::setSymbolName(funcOp, dllName);
+            }
+
+            continue;
+        }
+
+        if (failed(SymbolTable::replaceAllSymbolUses(funcOp, dllName, m)))
+        {
+            funcOp.emitError("can't rename function to @dllname '") << dllName.getValue() << "'";
+            signalPassFailure();
+            return;
+        }
+
+        SymbolTable::setSymbolName(funcOp, dllName);
+    }
+
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering. For this lowering, we are only targeting
     // the LLVM dialect.

@@ -924,7 +924,12 @@ namespace mlirgen
         isPublic |= 
             ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
-            || funcProto->getName() == MAIN_ENTRY_NAME;
+            || funcProto->getName() == MAIN_ENTRY_NAME
+            // @dllname/@linkname: the function defines a symbol that something else binds by that
+            // name - a `declare` in this module, or another object. Private, SymbolDCE may erase it
+            // before TypeScriptToLLVMLoweringPass gives it the name (--opt inlines its callers
+            // first), and the declaration then binds nothing.
+            || funcOp->hasAttr(DLL_NAME);
 
         // if explicit public/protected - set public visibility
         if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::PublicKeyword) 

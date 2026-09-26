@@ -1289,6 +1289,8 @@ tslang_add_test(NAME test-compile-shared-export-import-dllname COMMAND test-runn
 tslang_add_test(NAME test-compile-shared-export-import-linkname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_linkname.ts")
 tslang_add_test(NAME test-compile-declare-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
 tslang_add_test(NAME test-jit-declare-linkname COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
+tslang_add_test(NAME test-compile-declare-linkname-shared-symbol COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+tslang_add_test(NAME test-jit-declare-linkname-shared-symbol COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
 tslang_add_test(NAME test-compile-shared-export-import-type-alias COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
 tslang_add_test(NAME test-compile-shared-export-import-interface-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
 # FIXED (2026-07-22): the -shared declaration-reconstruction path never printed real
@@ -2258,7 +2260,10 @@ endforeach()
 # something else or making the name unique.
 set(linkname_cases
     "conflicting-decorators|conflicting @dllname/@linkname: 'strlen' vs 'wcslen'"
-    "conflicting-decorators-variable|conflicting @dllname/@linkname: 'linkname_var_a' vs 'linkname_var_b'")
+    "conflicting-decorators-variable|conflicting @dllname/@linkname: 'linkname_var_a' vs 'linkname_var_b'"
+    "type-mismatch|binds symbol 'strlen' with type"
+    "two-definitions|both define symbol 'linkname_dup'"
+    "not-a-function|binds symbol 'linkname_counter', which is not a function")
 foreach(linkname_case ${linkname_cases})
     string(FIND "${linkname_case}" "|" linkname_sep)
     string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)
