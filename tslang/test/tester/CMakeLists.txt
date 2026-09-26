@@ -2354,6 +2354,54 @@ foreach(small_int_ext_name small_int_ext_pattern IN ZIP_LISTS small_int_ext_name
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A file reached a second way is generated once: a .d.ts two `/// <reference path>`s lead to, one
+# the program and a module it imports both reference, a module imported directly and through
+# another. Each used to be generated again, and the module verifier rejected the second copy of
+# every symbol ("redefinition of symbol named ..."). A reference cycle or a file referencing
+# itself never finished loading, and an import cycle never finished generating: the TIMEOUT is
+# what fails those if that comes back.
+foreach(reference_path_name diamond twice spelled cycle self program)
+    tslang_add_test(NAME test-jit-reference-path-${reference_path_name}
+                    COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts")
+    tslang_add_test(NAME test-compile-reference-path-${reference_path_name}
+                    COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts")
+    set_tests_properties(test-jit-reference-path-${reference_path_name} test-compile-reference-path-${reference_path_name}
+                         PROPERTIES TIMEOUT 120)
+endforeach()
+
+set(reference_path_import_names import_and_reference two_imports import_diamond import_cycle)
+# the modules each program links against, comma-separated
+set(reference_path_import_modules
+    "module_left"
+    "module_left,module_right"
+    "plain_module,via_module"
+    "cycle_module_a,cycle_module_b")
+foreach(reference_path_name reference_path_modules IN ZIP_LISTS reference_path_import_names reference_path_import_modules)
+    string(REPLACE "," ";" reference_path_modules "${reference_path_modules}")
+    set(reference_path_module_files "")
+    foreach(reference_path_module ${reference_path_modules})
+        list(APPEND reference_path_module_files "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_module}.ts")
+    endforeach()
+    string(REPLACE "_" "-" reference_path_test_name "${reference_path_name}")
+    tslang_add_test(NAME test-compile-reference-path-${reference_path_test_name}
+                    COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts"
+                            ${reference_path_module_files})
+    set_tests_properties(test-compile-reference-path-${reference_path_test_name} PROPERTIES TIMEOUT 120)
+endforeach()
+
+# The same for a shared library: imported directly and through a source module - see
+# shared-import-reimport.cmake.
+if (WIN32)
+    add_test(NAME test-compile-reference-path-shared-reimport
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/reference-path"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/reference-path-shared-reimport"
+                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-import-reimport.cmake")
+endif()
+
 # A statement's condition that produces no value is an error, not a statement generated
 # without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty
 # block" error from `while`). The void call

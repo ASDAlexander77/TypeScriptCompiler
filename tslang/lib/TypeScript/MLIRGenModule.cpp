@@ -18,6 +18,7 @@
 #include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/Support/FileUtilities.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -81,7 +82,28 @@ namespace mlirgen
         auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
                     sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
         return loadSourceBuf(sourceFileLoc, sourceBuf, true);
-    }        
+    }
+
+    std::string MLIRGenImpl::canonicalFilePath(StringRef filePath)
+    {
+        // real_path also folds a Windows spelling that differs only in case
+        SmallString<256> canonical;
+        if (!sys::fs::real_path(filePath, canonical))
+        {
+            return canonical.str().str();
+        }
+
+        // no such file: the path made absolute, with `.` and `..` removed
+        canonical = filePath;
+        sys::fs::make_absolute(canonical);
+        sys::path::remove_dots(canonical, /*remove_dot_dot=*/true);
+        return canonical.str().str();
+    }
+
+    static std::string fileKey(SourceFile sourceFile)
+    {
+        return convertWideToUTF8(sourceFile->resolvedPath);
+    }
 
     std::pair<SourceFile, std::vector<SourceFile>> MLIRGenImpl::loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain)
     {
@@ -105,7 +127,8 @@ namespace mlirgen
             fullPathW, 
             stows(sourceBuf->getBuffer().str()), 
             ScriptTarget::Latest);
-        sourceFile->resolvedPath = fullPathW;
+        auto sourceFilePath = canonicalFilePath(fullPath);
+        sourceFile->resolvedPath = convertUTF8toWide(sourceFilePath);
 
         // add default lib
         if (isMain)
@@ -137,19 +160,31 @@ namespace mlirgen
             filesToProcess.push_back(refFile.fileName);
         }
 
-        while (filesToProcess.size() > 0)
-        {
-            auto includeFileName = filesToProcess.back();
+        // Every file referenced, directly or through another, is loaded once, and comes after the
+        // files it references, so a declaration precedes its uses: for a diamond (b and c both
+        // reference common) that is common, b, c. The file being loaded is already seen, so a
+        // reference back to it, or a reference cycle, ends there.
+        llvm::StringSet<> seenFiles;
+        seenFiles.insert(sourceFilePath);
+
+        std::function<void(const string &)> loadReferencedFile = [&](const string &includeFileName) {
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
-            filesToProcess.pop_back();
 
             std::string actualFilePath;
-            auto id = sourceMgr.AddIncludeFile(std::string(includeFileNameUtf8), SMLoc(), actualFilePath);
-            if (!id)
+            auto includeBuf = sourceMgr.OpenIncludeFile(includeFileNameUtf8, actualFilePath);
+            if (!includeBuf)
             {
-                emitError(location, "can't open file: ") << fullPath;
-                continue;
+                emitError(location, "can't open file: ") << includeFileNameUtf8;
+                return;
             }
+
+            auto includeFilePath = canonicalFilePath(actualFilePath);
+            if (!seenFiles.insert(includeFilePath).second)
+            {
+                return;
+            }
+
+            auto id = sourceMgr.AddNewSourceBuffer(std::move(*includeBuf), SMLoc());
 
             SmallString<256> fullPath;
             if (!sys::path::has_root_path(actualFilePath))
@@ -169,17 +204,20 @@ namespace mlirgen
                     actualFilePathW, 
                     stows(sourceBuf->getBuffer().str()), 
                     ScriptTarget::Latest);
-            includeFile->resolvedPath = actualFilePathW;
+            includeFile->resolvedPath = convertUTF8toWide(includeFilePath);
 
             for (auto refFile : includeFile->referencedFiles)
             {
-                filesToProcess.push_back(refFile.fileName);
+                loadReferencedFile(refFile.fileName);
             }
 
             includeFiles.push_back(includeFile);
-        }
+        };
 
-        std::reverse(includeFiles.begin(), includeFiles.end());
+        for (auto &fileToProcess : filesToProcess)
+        {
+            loadReferencedFile(fileToProcess);
+        }
 
         return {sourceFile, includeFiles};
     }
@@ -225,6 +263,9 @@ namespace mlirgen
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
         SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+
+        // an imported module importing the program back does not generate the program again
+        filesInProgress.insert(fileKey(module));
 
         stage = Stages::Discovering;
         auto storeDebugInfo = compileOptions.generateDebugInfo;
@@ -739,6 +780,11 @@ namespace mlirgen
 
         for (auto includeFile : includeFiles)
         {
+            if (emittedFiles.contains(fileKey(includeFile)))
+            {
+                continue;
+            }
+
             SourceFileScope sourceFileScope(*this, includeFile);
 
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
@@ -746,6 +792,8 @@ namespace mlirgen
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
+
+            emittedFiles.insert(fileKey(includeFile));
         }
 
         auto notResolved = processStatements(module->statements, genContextPartial);
@@ -790,8 +838,14 @@ namespace mlirgen
         genContext.rootContext = &genContext;
         genContext.postponedMessages = &postponedMessages;
 
+        // a file the program, or another import, already emitted into this module is skipped
         for (auto includeFile : includeFiles)
         {
+            if (emittedFiles.contains(fileKey(includeFile)))
+            {
+                continue;
+            }
+
             SourceFileScope sourceFileScope(*this, includeFile);
 
             if (failed(mlirGen(includeFile->statements, genContext)))
@@ -799,6 +853,8 @@ namespace mlirgen
                 outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
+
+            emittedFiles.insert(fileKey(includeFile));
         }
 
         auto anyGlobalCode = hasGlobalCode(module->statements);
@@ -953,10 +1009,25 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGenInclude(mlir::Location location, StringRef filePath, const GenContext &genContext)
     {
+        auto fullPath = includeFilePath(filePath);
+        auto canonicalPath = canonicalFilePath(fullPath);
+
+        // Already in this module - referenced with `/// <reference path>`, or imported directly
+        // and through another module - so its declarations are all there. Or an import cycle back
+        // to a file still being generated: generating it again would never end; what the cycle
+        // needs from it and it has not declared yet stays unresolved.
+        if (emittedFiles.contains(canonicalPath) || filesInProgress.contains(canonicalPath))
+        {
+            return mlir::success();
+        }
+
+        filesInProgress.insert(canonicalPath);
+        auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
+
         MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
 
-        auto [importSource, importIncludeFiles] = loadIncludeFile(location, filePath);
+        auto [importSource, importIncludeFiles] = loadIncludeFile(location, fullPath);
         if (!importSource)
         {
             return mlir::failure();
@@ -973,6 +1044,9 @@ namespace mlirgen
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
         {
+            // only now: an import that failed is tried again on the next pass, and must fail
+            // again rather than find itself already done
+            emittedFiles.insert(canonicalPath);
             return mlir::success();
         }
 
@@ -981,6 +1055,14 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext)
     {
+        // Imported into this module already - directly and through another module, say: it is
+        // loaded, and its declarations are here. A second copy of them redefines every symbol.
+        auto canonicalPath = canonicalFilePath(filePath);
+        if (emittedFiles.contains(canonicalPath))
+        {
+            return mlir::success();
+        }
+
         // A library built for another architecture or OS (an i686 DLL for this x64 compiler)
         // cannot be loaded into this process. Its declarations are then read from the file; the
         // program still loads it at run time, through the global constructor below.
@@ -1226,8 +1308,11 @@ namespace mlirgen
             }
         }
 
+        // only now: an import that failed is tried again on the next pass, and must fail again
+        // rather than find itself already done
+        emittedFiles.insert(canonicalPath);
         return mlir::success();
-    }    
+    }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
     {
