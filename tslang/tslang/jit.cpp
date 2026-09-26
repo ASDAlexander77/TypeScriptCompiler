@@ -11,6 +11,7 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/DynamicLibrary.h"
@@ -56,6 +57,7 @@ extern cl::opt<bool> dumpObjectFile;
 extern cl::opt<std::string> objectFilename;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
+extern cl::list<std::string> programArgs;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -353,6 +355,105 @@ static void jitCxxThrowException(void *exceptionObject, void *throwInfo)
 extern "C" EXCEPTION_DISPOSITION __CxxFrameHandler3(struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *,
                                                     struct _DISPATCHER_CONTEXT *);
 #endif
+
+#define JIT_ENTRY_THUNK_NAME "__tslang_jit_main"
+using JitEntryThunkFn = int (*)(int, char **);
+
+// The entry point keeps whatever signature its TS declaration lowered to - `void @main()`,
+// `double @main()`, `i32 @main(i32, { ptr, i64 })`, ... - and calling it through a C++ function
+// pointer of the wrong type reads garbage arguments. So give the JIT one signature to call, the C
+// entry point's, and let this thunk adapt it in IR, where the entry's own types are known: `argc`
+// converted to the first parameter's type, `argv` and `argc` as the `string[]` (data, length) of the
+// second or `argv` alone for a `Ref<string>`, and the result converted to the exit code. LowerToAffineLoops has already refused any
+// other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
+static llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
+{
+    auto *entry = llvmModule.getFunction(entryName);
+    if (!entry)
+    {
+        return llvm::createStringError("entry point '" + entryName + "' not found");
+    }
+
+    auto unsupported = [&]() {
+        return llvm::createStringError("entry point '" + entryName +
+                                       "' must be '(argc?: i32 | number, argv?: string[] | Ref<string>) => void | i32 | number'");
+    };
+
+    auto &context = llvmModule.getContext();
+    auto *i32Type = llvm::Type::getInt32Ty(context);
+    auto *thunk = llvm::Function::Create(
+        llvm::FunctionType::get(i32Type, {i32Type, llvm::PointerType::getUnqual(context)}, false),
+        llvm::Function::ExternalLinkage, JIT_ENTRY_THUNK_NAME, llvmModule);
+    // the entry may throw through it; Win64 can only unwind a frame it has unwind info for
+    thunk->setUWTableKind(llvm::UWTableKind::Async);
+
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(context, "entry", thunk));
+    auto *argc = thunk->getArg(0);
+    auto *argv = thunk->getArg(1);
+
+    auto *entryType = entry->getFunctionType();
+    if (entryType->getNumParams() > 2)
+    {
+        thunk->eraseFromParent();
+        return unsupported();
+    }
+
+    llvm::SmallVector<llvm::Value *> args;
+    for (auto [index, paramType] : llvm::enumerate(entryType->params()))
+    {
+        auto *arrayType = llvm::dyn_cast<llvm::StructType>(paramType);
+        if (index == 0 && paramType->isIntegerTy())
+        {
+            args.push_back(builder.CreateSExtOrTrunc(argc, paramType));
+        }
+        else if (index == 0 && paramType->isFloatingPointTy())
+        {
+            args.push_back(builder.CreateSIToFP(argc, paramType));
+        }
+        else if (index == 1 && paramType->isPointerTy())
+        {
+            // `Ref<string>`: the C `char **` as it is
+            args.push_back(argv);
+        }
+        else if (index == 1 && arrayType && arrayType->getNumElements() == 2 &&
+                 arrayType->getElementType(0)->isPointerTy() && arrayType->getElementType(1)->isIntegerTy())
+        {
+            llvm::Value *array = llvm::UndefValue::get(arrayType);
+            array = builder.CreateInsertValue(array, argv, 0);
+            array = builder.CreateInsertValue(array, builder.CreateSExtOrTrunc(argc, arrayType->getElementType(1)), 1);
+            args.push_back(array);
+        }
+        else
+        {
+            thunk->eraseFromParent();
+            return unsupported();
+        }
+    }
+
+    auto *call = builder.CreateCall(entryType, entry, args);
+    call->setCallingConv(entry->getCallingConv());
+
+    auto *resultType = entryType->getReturnType();
+    if (resultType->isVoidTy())
+    {
+        builder.CreateRet(builder.getInt32(0));
+    }
+    else if (resultType->isIntegerTy())
+    {
+        builder.CreateRet(builder.CreateSExtOrTrunc(call, i32Type));
+    }
+    else if (resultType->isFloatingPointTy())
+    {
+        builder.CreateRet(builder.CreateFPToSI(call, i32Type));
+    }
+    else
+    {
+        thunk->eraseFromParent();
+        return unsupported();
+    }
+
+    return llvm::Error::success();
+}
 
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
@@ -653,6 +754,14 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return -1;
     }
 
+    // after the optimizer, so it cannot inline an entry with debug info into a thunk without any
+    if (auto err = addEntryThunk(*llvmModule, mainFuncName.getValue()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
     auto maybeJit =
         llvm::orc::LLJITBuilder()
             .setJITTargetMachineBuilder(std::move(*tmBuilderOrError))
@@ -806,10 +915,27 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return -1;
     }
 
-    if (invoke(mainFuncName.getValue()) != 0)
+    auto entryThunk = jit->lookup(JIT_ENTRY_THUNK_NAME);
+    if (!entryThunk)
     {
+        auto err = entryThunk.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
         return -1;
     }
+
+    // as a C runtime passes them: the program (here the input file) first, and a null after the last
+    llvm::SmallVector<char *> programArgv;
+    programArgv.push_back(const_cast<char *>(inputFilename.getValue().c_str()));
+    for (auto &programArg : programArgs)
+    {
+        programArgv.push_back(const_cast<char *>(programArg.c_str()));
+    }
+
+    auto programArgc = static_cast<int>(programArgv.size());
+    programArgv.push_back(nullptr);
+
+    auto exitCode = entryThunk->toPtr<JitEntryThunkFn>()(programArgc, programArgv.data());
 
     // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
     // registers process-level atexit glue that faults during teardown (exception
@@ -840,7 +966,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // Must stay unconditional: without it release builds crash (0xC0000005) or
     // deadlock in teardown after async tests — the AsyncRuntime static destructor
     // waits on thread-pool workers during DLL_PROCESS_DETACH (see above).
-    TerminateProcess(GetCurrentProcess(), 0);
+    TerminateProcess(GetCurrentProcess(), exitCode);
 #endif
-    return 0;
+    return exitCode;
 }

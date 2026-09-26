@@ -322,6 +322,7 @@ tslang_add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_
 tslang_add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
 tslang_add_test(NAME test-compile-00-globals-entry-point COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
+tslang_add_test(NAME test-compile-00-main-argc-argv COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
 tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -758,6 +759,10 @@ tslang_add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE
 tslang_add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
 tslang_add_test(NAME test-jit-00-globals-entry-point COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
+tslang_add_test(NAME test-jit-00-main-argc-argv COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
+# JIT only: a compiled `main(argc: number): number` is called by the C runtime with an int argc
+# where it reads a double, and its double result is not an exit code
+tslang_add_test(NAME test-jit-00-main-number-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_number_result.ts")
 tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")

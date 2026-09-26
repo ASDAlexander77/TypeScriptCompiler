@@ -74,6 +74,8 @@ cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
 cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=exe and -emit=dll)");
 
 cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
+// must stay declared after inputFilename: positional options match in declaration order, and an unbounded list has to be last
+cl::list<std::string> programArgs(cl::Positional, cl::desc("<program arguments>... (--emit=jit: passed to 'main' after the input file, which is argv[0]; put them after '--' if they start with '-')"), cl::ZeroOrMore, cl::cat(TypeScriptCompilerCategory));
 cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desired"),
@@ -99,7 +101,7 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
                                        cl::init(RunJIT),
                                        cl::cat(TypeScriptCompilerCategory));
 
-cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations (on by default with --emit=jit, unless --opt_level=0 or --di; --opt=false turns it off)"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3), cl::cat(TypeScriptCompilerCategory)};
 cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
@@ -371,6 +373,22 @@ int main(int argc, char **argv)
     cl::AddExtraVersionPrinter(llvm::TargetRegistry::printRegisteredTargetsForVersion);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
+
+    // Before program arguments existed a second positional was an error; keep it one wherever
+    // nothing would receive it
+    if (!programArgs.empty() && (emitAction != Action::RunJIT || newVSCodeFolder || newCMakeFolder || installDefaultLibCmd))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "program arguments are only used with --emit=jit, got '" << programArgs.front() << "'\n";
+        return -1;
+    }
+
+    // A JIT run is running the program, not building it, so it optimizes (at --opt_level, 3 unless
+    // given) without being asked. Not when asked otherwise: an explicit --opt either way wins, and
+    // --opt_level=0 or --di mean an unoptimized run - --opt would strip the debug info.
+    if (emitAction == Action::RunJIT && !enableOpt.getNumOccurrences() && optLevel != 0 && !generateDebugInfo)
+    {
+        enableOpt.setValue(true);
+    }
 
     if (newVSCodeFolder.getValue())
     {
