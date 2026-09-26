@@ -1,11 +1,3 @@
-# Include dir + lib location come from the BDWgc::gc imported target (find_package
-# in the top-level CMakeLists), so no hardcoded include_directories/link_directories.
-if(MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR")
-else()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
-endif()
-
 # On Windows the runtime takes Boehm from gc.dll rather than linking it in: under the JIT this
 # DLL shares the process with the default library's DLL and with user shared libraries, and a
 # second static collector frees what the others still hold. See the top-level CMakeLists and

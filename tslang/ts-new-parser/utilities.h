@@ -1829,7 +1829,8 @@ inline auto isClassMemberModifier(SyntaxKind idToken) -> boolean
 
 inline static auto isNamedDeclaration(Node node) -> boolean
 {
-    return !!node.is<NamedDeclaration>(); // A 'name' property should always be a DeclarationName.
+    // A 'name' property should always be a DeclarationName; RTTI-free via virtual dispatch.
+    return !!node && !!node->getDeclarationName();
 }
 
 inline static auto isPropertyName(Node node) -> boolean

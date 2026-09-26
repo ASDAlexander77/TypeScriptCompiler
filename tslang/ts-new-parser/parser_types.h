@@ -223,6 +223,12 @@ struct Node : TextRange
     {
     }
 
+    // RTTI-free structural check used by isNamedDeclaration(); overridden by NamedDeclaration.
+    virtual auto getDeclarationName() -> PTR(DeclarationName)
+    {
+        return PTR(DeclarationName)();
+    }
+
     Node() = default;
     Node(SyntaxKind kind, pos_type pos, number end) : TextRange{pos, end}, _kind(kind)
     {
@@ -370,6 +376,11 @@ struct Declaration : DeclarationStatement {
 struct NamedDeclaration : Declaration
 {
     PTR(DeclarationName) name;
+
+    auto getDeclarationName() -> PTR(DeclarationName) override
+    {
+        return name;
+    }
 };
 
 struct ClassElement : NamedDeclaration
