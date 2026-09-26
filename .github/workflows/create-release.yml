@@ -227,10 +227,14 @@ jobs:
         #   defaultlib/*.d.ts, defaultlib/generics/
         # plus the shared collector in its own folder, because its import library is also named
         # gc.lib: gcdll/gc.lib + gcdll/gc.dll, for programs that load a tslang shared library.
+        # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>
+        # (findResourceDir's "release package" candidate), so stage that layout too.
         run: |
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
-          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
+          New-Item -ItemType Directory -Force -Path .\resourcedir_stage\lib | Out-Null
+          Copy-Item -Path ..\3rdParty\llvm\x64\release\lib\clang -Destination .\resourcedir_stage\lib -Recurse -ErrorAction Stop
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\tsbindgen.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage, .\resourcedir_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -431,6 +435,7 @@ jobs:
           rm -rf ./__stage
           mkdir -p ./__stage
           cp ./tslang/ninja/release/bin/tslang ./__stage/
+          cp ./tslang/ninja/release/bin/tsbindgen ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptRuntime.so ./__stage/
           cp ./gc/ninja/release/libgc.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
@@ -439,6 +444,10 @@ jobs:
           # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
+          # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>
+          # (findResourceDir's "release package" candidate).
+          mkdir -p ./__stage/lib
+          cp -r ../3rdParty/llvm/release/lib/clang ./__stage/lib/
           tar -czvhf ../${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
