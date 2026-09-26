@@ -54,6 +54,10 @@ class TypeMapper
     // than int; anything else is a type alias plus constants.
     bool isPlainEnum(const clang::EnumDecl *enumDecl);
 
+    // Whether a struct can have a TS declaration of its own: in C, any; in C++, not one inside a
+    // namespace or a class, and not a template or a template specialization (std::cmatch).
+    bool isDeclarable(const clang::RecordDecl *record);
+
     // Every struct and enum a mapped type has named, by key. The AST traversal does not reach a
     // struct first named inside a prototype (`void f(struct S *s);`), so the parser adds these.
     const std::vector<std::pair<std::string, const clang::TagDecl *>> &referencedTags() const

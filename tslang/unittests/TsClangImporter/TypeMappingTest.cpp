@@ -71,6 +71,23 @@ TEST(TypeMapping, PointerToCxxClassIsOpaque)
     EXPECT_THAT(out, HasSubstr("declare function engine_power(e: Engine): s32;"));
 }
 
+// A class in a namespace or a template specialization has no file-scope TS declaration to name
+// (found in the default library: regexp_* take a std::cmatch *), so a pointer to one is plain
+// Opaque, with the C++ type in a comment - never a name the output does not declare.
+TEST(TypeMapping, PointerToANamespacedOrTemplateClassIsPlainOpaque)
+{
+    auto out = generate("namespace ns { class Engine { public: virtual ~Engine(); }; }\n"
+                        "template <typename T> struct Box { T value; };\n"
+                        "typedef Box<char> CharBox;\n"
+                        "extern \"C\" int use(ns::Engine *e, Box<int> *b, CharBox *c);\n",
+                        {}, windowsTarget, {}, "c++")
+                   .text;
+    EXPECT_THAT(out, HasSubstr("declare function use(e: Opaque /* ns::Engine */, b: Opaque /* Box<int> */, "
+                               "c: Opaque /* CharBox */): s32;"));
+    EXPECT_THAT(out, Not(HasSubstr("type Engine")));
+    EXPECT_THAT(out, Not(HasSubstr("type Box")));
+}
+
 TEST(TypeMapping, FunctionPointerIsOpaqueWithItsSignature)
 {
     auto out = text("int apply(int (*fn)(int, const char *), int v);\ntypedef void (*callback_t)(void *);\n"

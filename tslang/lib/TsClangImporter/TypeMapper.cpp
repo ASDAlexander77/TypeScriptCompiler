@@ -1,6 +1,7 @@
 #include "TsClangImporter/TypeMapper.h"
 
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -97,6 +98,23 @@ std::string TypeMapper::referTo(const clang::TagDecl *tag)
     return key;
 }
 
+bool TypeMapper::isDeclarable(const clang::RecordDecl *record)
+{
+    if (!context.getLangOpts().CPlusPlus)
+    {
+        return true; // in C, a struct declared inside another is still file-scoped
+    }
+
+    if (!record->getDeclContext()->getRedeclContext()->isTranslationUnit())
+    {
+        return false;
+    }
+
+    auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record);
+    return !cxxRecord ||
+           (!cxxRecord->getDescribedClassTemplate() && !llvm::isa<clang::ClassTemplateSpecializationDecl>(cxxRecord));
+}
+
 bool TypeMapper::isSystem(const clang::Decl *decl)
 {
     auto &sourceManager = context.getSourceManager();
@@ -170,6 +188,11 @@ TsType TypeMapper::map(clang::QualType type, Use use)
         if (use == Use::Parameter || use == Use::Result)
         {
             return TsType::skip(record->isUnion() ? "union passed by value" : "struct passed by value");
+        }
+
+        if (!isDeclarable(record))
+        {
+            return TsType::skip("C++ class '" + canonical.getAsString() + "'");
         }
 
         auto name = tagName(record);
@@ -267,6 +290,12 @@ TsType TypeMapper::mapPointer(const clang::PointerType *pointer, Use use)
 
     if (auto *record = canonicalPointee->getAsRecordDecl())
     {
+        // there is no declaration a name could refer to, so no name: the C++ type is a comment
+        if (!isDeclarable(record))
+        {
+            return TsType::builtin("Opaque", pointee.getUnqualifiedType().getAsString());
+        }
+
         if (tagName(record).empty())
         {
             return TsType::skip("pointer to an anonymous struct");

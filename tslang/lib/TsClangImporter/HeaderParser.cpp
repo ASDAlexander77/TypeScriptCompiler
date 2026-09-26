@@ -218,14 +218,8 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
 
     bool VisitRecordDecl(clang::RecordDecl *record)
     {
-        if (record->isImplicit() || !atFileScope(record))
-        {
-            return true;
-        }
-
-        if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record);
-            cxxRecord && (cxxRecord->getDescribedClassTemplate() ||
-                          llvm::isa<clang::ClassTemplateSpecializationDecl>(cxxRecord)))
+        // the mapper spells a pointer to anything else as plain Opaque, so nothing names it
+        if (record->isImplicit() || !mapper.isDeclarable(record))
         {
             return true;
         }
