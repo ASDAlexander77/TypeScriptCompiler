@@ -1145,6 +1145,10 @@ tslang_add_test(NAME test-compile-import-component COMMAND test-runner "${PROJEC
 # in both fails to link. Only the program half is given --entry-point.
 tslang_add_test(NAME test-compile-export-import-root-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_root_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_root_var.ts")
 tslang_add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# @linkname across a static link - the mode it is named for; the second is the live guard for an
+# imported `export declare` binding while its -shared twin is DISABLED (see below)
+tslang_add_test(NAME test-compile-export-import-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_linkname.ts")
+tslang_add_test(NAME test-compile-export-import-declare-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_declare_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_declare_linkname.ts")
 # Item 5al: an imported function's returned reference is taken over rather than retained
 # again. Registered statically as well as shared, and under every memory model - the
 # static two-module form had no rc/none coverage at all, which is why the leak it fixes
@@ -2273,7 +2277,8 @@ set(linkname_cases
     "conflicting-decorators-variable|conflicting @dllname/@linkname: 'linkname_var_a' vs 'linkname_var_b'"
     "type-mismatch|binds symbol 'strlen' with type"
     "two-definitions|both define symbol 'linkname_dup'"
-    "not-a-function|binds symbol 'linkname_counter', which is not a function")
+    "not-a-function|binds symbol 'linkname_counter', which is not a function"
+    "chain|'a' binds symbol 'linkname_chain_b', which @dllname/@linkname renames to 'linkname_chain_c'")
 foreach(linkname_case ${linkname_cases})
     string(FIND "${linkname_case}" "|" linkname_sep)
     string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)

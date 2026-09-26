@@ -7536,6 +7536,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // to ptr, but the calls are still TS-typed here, and redirecting one to a callee of another
     // signature would fail the verifier.
     SmallVector<mlir_ts::FuncOp> renamedFuncs;
+    // every name a rename moves a function away from, and where it goes: binding one of these
+    // would bind whichever function holds the name when the loop gets there, so it is an error
+    // whatever the order of the two declarations
+    llvm::DenseMap<mlir::StringAttr, mlir::StringAttr> vacatedNames;
     m.walk([&](mlir_ts::FuncOp funcOp) {
         auto dllName = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
         if (!dllName)
@@ -7552,12 +7556,22 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         }
 
         renamedFuncs.push_back(funcOp);
+        vacatedNames[funcOp.getSymNameAttr()] = dllName;
     });
 
     for (auto funcOp : renamedFuncs)
     {
         auto dllName = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
         funcOp->removeAttr(DLL_NAME);
+
+        auto vacated = vacatedNames.find(dllName);
+        if (vacated != vacatedNames.end())
+        {
+            funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
+                                  << "', which @dllname/@linkname renames to '" << vacated->second.getValue() << "'";
+            signalPassFailure();
+            return;
+        }
 
         auto existingSymbol = SymbolTable::lookupSymbolIn(m, dllName);
         if (existingSymbol)
@@ -7567,16 +7581,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
             {
                 funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
                                       << "', which is not a function";
-                signalPassFailure();
-                return;
-            }
-
-            // an op still carrying the attribute is itself about to move away from this name
-            if (existingFunc->hasAttr(DLL_NAME))
-            {
-                funcOp.emitError("'") << funcOp.getSymName() << "' binds symbol '" << dllName.getValue()
-                                      << "', which @dllname/@linkname renames to '"
-                                      << existingFunc->getAttrOfType<mlir::StringAttr>(DLL_NAME).getValue() << "'";
                 signalPassFailure();
                 return;
             }
