@@ -127,6 +127,7 @@
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"
+#define LINK_NAME "linkname"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

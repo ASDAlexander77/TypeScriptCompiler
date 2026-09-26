@@ -322,6 +322,7 @@ tslang_add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_
 tslang_add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
 tslang_add_test(NAME test-compile-00-globals-entry-point COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
+tslang_add_test(NAME test-compile-00-main-argc-argv COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
 tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -758,6 +759,10 @@ tslang_add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE
 tslang_add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
 tslang_add_test(NAME test-jit-00-globals-entry-point COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals_entry_point.ts")
+tslang_add_test(NAME test-jit-00-main-argc-argv COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_argc_argv.ts")
+# JIT only: a compiled `main(argc: number): number` is called by the C runtime with an int argc
+# where it reads a double, and its double result is not an exit code
+tslang_add_test(NAME test-jit-00-main-number-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00main_number_result.ts")
 tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
@@ -1140,6 +1145,10 @@ tslang_add_test(NAME test-compile-import-component COMMAND test-runner "${PROJEC
 # in both fails to link. Only the program half is given --entry-point.
 tslang_add_test(NAME test-compile-export-import-root-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_root_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_root_var.ts")
 tslang_add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# @linkname across a static link - the mode it is named for; the second is the live guard for an
+# imported `export declare` binding while its -shared twin is DISABLED (see below)
+tslang_add_test(NAME test-compile-export-import-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_linkname.ts")
+tslang_add_test(NAME test-compile-export-import-declare-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_declare_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_declare_linkname.ts")
 # Item 5al: an imported function's returned reference is taken over rather than retained
 # again. Registered statically as well as shared, and under every memory model - the
 # static two-module form had no rc/none coverage at all, which is why the leak it fixes
@@ -1281,6 +1290,21 @@ tslang_add_test(NAME test-compile-shared-export-import-function-generic COMMAND 
 tslang_add_test(NAME test-compile-shared-export-import-type-alias-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
 tslang_add_test(NAME test-compile-shared-export-import-function COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
 tslang_add_test(NAME test-compile-shared-export-import-dllname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_dllname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_dllname.ts")
+tslang_add_test(NAME test-compile-shared-export-import-linkname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_linkname.ts")
+tslang_add_test(NAME test-compile-declare-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
+tslang_add_test(NAME test-jit-declare-linkname COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
+tslang_add_test(NAME test-compile-declare-linkname-shared-symbol COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+tslang_add_test(NAME test-jit-declare-linkname-shared-symbol COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+# DISABLED: importing a module's `export declare function` bound to a C runtime function crashes,
+# and did before @linkname (the same with @dllname on a 2026-09-23 build). The importer re-prints
+# the declaration as `@dllimport @dllname("strlen")` and looks `strlen` up at startup in the loaded
+# libraries (tslang_search_for_address_of_symbol); the exporting DLL never contains it - an unused
+# declaration is dropped - so the lookup returns null and the call faults. Enable once that is fixed.
+tslang_add_test(NAME test-compile-shared-export-import-declare-linkname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_declare_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_declare_linkname.ts")
+set_tests_properties(test-compile-shared-export-import-declare-linkname PROPERTIES DISABLED TRUE)
+if (TSLANG_X86_TWIN)
+    set_tests_properties(${TSLANG_X86_TWIN} PROPERTIES DISABLED TRUE)
+endif()
 tslang_add_test(NAME test-compile-shared-export-import-type-alias COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
 tslang_add_test(NAME test-compile-shared-export-import-interface-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
 # FIXED (2026-07-22): the -shared declaration-reconstruction path never printed real
@@ -2244,6 +2268,42 @@ foreach(call_arity_case ${call_arity_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
+# case is a program the compiler must reject with the given message instead of binding
+# something else or making the name unique.
+set(linkname_cases
+    "conflicting-decorators|conflicting @dllname/@linkname: 'strlen' vs 'wcslen'"
+    "conflicting-decorators-variable|conflicting @dllname/@linkname: 'linkname_var_a' vs 'linkname_var_b'"
+    "type-mismatch|binds symbol 'strlen' with type"
+    "two-definitions|both define symbol 'linkname_dup'"
+    "not-a-function|binds symbol 'linkname_counter', which is not a function"
+    "chain|'a' binds symbol 'linkname_chain_b', which @dllname/@linkname renames to 'linkname_chain_c'")
+foreach(linkname_case ${linkname_cases})
+    string(FIND "${linkname_case}" "|" linkname_sep)
+    string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)
+    math(EXPR linkname_sep "${linkname_sep} + 1")
+    string(SUBSTRING "${linkname_case}" ${linkname_sep} -1 linkname_message)
+    add_test(NAME test-compile-linkname-${linkname_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/linkname/${linkname_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/linkname-${linkname_name}.obj")
+    # PASS_REGULAR_EXPRESSION alone ignores the exit code, so a crash after printing the
+    # expected message would still pass; FAIL_REGULAR_EXPRESSION catches that.
+    set_tests_properties(test-compile-linkname-${linkname_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${linkname_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# `export declare function` makes a declaration visible to importers; it must not mark the C
+# function it binds dllexport, which made an exe re-export the CRT's strlen. ExportFixPass
+# adds dllexport only for MSVC targets, so off Windows this passes either way.
+add_test(NAME test-compile-linkname-declare-not-exported
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/linkname/export-declare.ts" -o -)
+set_tests_properties(test-compile-linkname-declare-not-exported
+                     PROPERTIES PASS_REGULAR_EXPRESSION "declare i64 @strlen\\(ptr\\)"
+                                FAIL_REGULAR_EXPRESSION "declare dllexport|Stack dump|Assertion failed")
 
 # A statement's condition that produces no value is an error, not a statement generated
 # without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty

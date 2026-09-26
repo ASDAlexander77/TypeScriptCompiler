@@ -2707,14 +2707,33 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
 
     // We only lower the main function as we expect that all other functions have been inlined.
+    // The JIT calls `main` through a thunk with the C entry point's signature (see jit.cpp), which
+    // can only adapt the shapes a C `main` has: `argc` as an integer or a number, `argv` as a
+    // `string[]` or as the C `char **` itself, a `Ref<string>`, and an exit code that is an integer
+    // or a number.
     if (tsContext.compileOptions.isJit && function.getName() == MAIN_ENTRY_NAME)
     {
-        auto voidType = mlir_ts::VoidType::get(function.getContext());
-        // Verify that the given main has no inputs and results.
-        if (function.getNumArguments() ||
-            llvm::any_of(function.getFunctionType().getResults(), [&](mlir::Type type) { return type != voidType; }))
+        auto isArgc = [](mlir::Type type) { return isa<mlir::IntegerType>(type) || isa<mlir_ts::NumberType>(type); };
+        auto isArgv = [](mlir::Type type) {
+            if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+            {
+                return isa<mlir_ts::StringType>(refType.getElementType());
+            }
+
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(type);
+            return arrayType && isa<mlir_ts::StringType>(arrayType.getElementType());
+        };
+        auto isExitCode = [&](mlir::Type type) { return isa<mlir_ts::VoidType>(type) || isArgc(type); };
+
+        auto inputs = function.getFunctionType().getInputs();
+        auto results = function.getFunctionType().getResults();
+        auto validInputs = inputs.size() <= 2
+            && (inputs.size() < 1 || isArgc(inputs[0]))
+            && (inputs.size() < 2 || isArgv(inputs[1]));
+        auto validResults = results.size() <= 1 && llvm::all_of(results, isExitCode);
+        if (!validInputs || !validResults)
         {
-            function.emitError("expected 'main' to have 0 inputs and 0 results");
+            function.emitError("expected 'main' to be 'main(argc?: i32 | number, argv?: string[] | Ref<string>): void | i32 | number'");
             return signalPassFailure();
         }
     }
