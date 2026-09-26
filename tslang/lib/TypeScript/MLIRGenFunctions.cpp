@@ -366,6 +366,11 @@ namespace mlirgen
         auto suppressExportForGenericInstantiation =
             functionLikeDeclarationBaseAST->typeParameters.size() > 0 && !genContext.typeParamsWithArgs.empty();
 
+        if (mlir::failed(checkLinkNameDecorators(location, functionLikeDeclarationBaseAST, genContext)))
+        {
+            return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
+        }
+
         SmallVector<mlir::NamedAttribute> attrs;
         auto dllExport = processFunctionAttributes(location, fullName, functionLikeDeclarationBaseAST, attrs, funcProtoGenContext,
             suppressExportForGenericInstantiation);

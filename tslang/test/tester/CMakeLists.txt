@@ -1286,6 +1286,9 @@ tslang_add_test(NAME test-compile-shared-export-import-function-generic COMMAND 
 tslang_add_test(NAME test-compile-shared-export-import-type-alias-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias_generic.ts")
 tslang_add_test(NAME test-compile-shared-export-import-function COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function.ts")
 tslang_add_test(NAME test-compile-shared-export-import-dllname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_dllname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_dllname.ts")
+tslang_add_test(NAME test-compile-shared-export-import-linkname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_linkname.ts")
+tslang_add_test(NAME test-compile-declare-linkname COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
+tslang_add_test(NAME test-jit-declare-linkname COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
 tslang_add_test(NAME test-compile-shared-export-import-type-alias COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
 tslang_add_test(NAME test-compile-shared-export-import-interface-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
 # FIXED (2026-07-22): the -shared declaration-reconstruction path never printed real
@@ -2247,6 +2250,28 @@ foreach(call_arity_case ${call_arity_cases})
     # expected message would still pass; FAIL_REGULAR_EXPRESSION catches that.
     set_tests_properties(test-compile-call-arity-${call_arity_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "${call_arity_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
+# case is a program the compiler must reject with the given message instead of binding
+# something else or making the name unique.
+set(linkname_cases
+    "conflicting-decorators|conflicting @dllname/@linkname: 'strlen' vs 'wcslen'"
+    "conflicting-decorators-variable|conflicting @dllname/@linkname: 'linkname_var_a' vs 'linkname_var_b'")
+foreach(linkname_case ${linkname_cases})
+    string(FIND "${linkname_case}" "|" linkname_sep)
+    string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)
+    math(EXPR linkname_sep "${linkname_sep} + 1")
+    string(SUBSTRING "${linkname_case}" ${linkname_sep} -1 linkname_message)
+    add_test(NAME test-compile-linkname-${linkname_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/linkname/${linkname_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/linkname-${linkname_name}.obj")
+    # PASS_REGULAR_EXPRESSION alone ignores the exit code, so a crash after printing the
+    # expected message would still pass; FAIL_REGULAR_EXPRESSION catches that.
+    set_tests_properties(test-compile-linkname-${linkname_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${linkname_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 

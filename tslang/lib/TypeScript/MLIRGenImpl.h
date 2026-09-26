@@ -11596,9 +11596,49 @@ class MLIRGenImpl
             if (expr == SyntaxKind::Identifier)
             {
                 auto name = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
+                // @linkname is @dllname under the name that fits a static link; every reader
+                // of DLL_NAME takes both
+                if (name == LINK_NAME)
+                {
+                    name = DLL_NAME;
+                }
+
                 functor(name, args);
             }
         }
+    }
+
+    // Two @dllname/@linkname decorators naming different symbols leave it ambiguous which one
+    // the declaration binds, so that is an error rather than last-one-wins. An error only
+    // reaches the user from a statement that fails (outputDiagnostics), so callers must
+    // return this result.
+    mlir::LogicalResult checkLinkNameDecorators(mlir::Location location, Node node, const GenContext &genContext)
+    {
+        StringRef first;
+        StringRef second;
+        iterateDecorators(node, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            if (name != DLL_NAME || args.empty())
+            {
+                return;
+            }
+
+            if (first.empty())
+            {
+                first = args.front();
+            }
+            else if (second.empty() && args.front() != first)
+            {
+                second = args.front();
+            }
+        });
+
+        if (!second.empty())
+        {
+            emitError(location) << "conflicting @dllname/@linkname: '" << first << "' vs '" << second << "'";
+            return mlir::failure();
+        }
+
+        return mlir::success();
     }
 
     bool isAddedToExport(mlir::Type type)

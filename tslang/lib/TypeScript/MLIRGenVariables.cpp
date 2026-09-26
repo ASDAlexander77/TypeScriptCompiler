@@ -938,6 +938,11 @@ namespace mlirgen
                     varClass.invariant = true;
                 }
             });
+
+            if (mlir::failed(checkLinkNameDecorators(loc(variableDeclarationListAST), variableDeclarationListAST->parent, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         // An exported module-level const is a variable, as an exported `let` is. A const may be
