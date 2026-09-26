@@ -203,12 +203,6 @@ template <typename T> struct ptr_t
         return U(instance);
     }
 
-    template <typename U, typename D = typename U::data> inline auto is() -> boolean
-    {
-        // TODO: review and simplify using Kind
-        return !!std::dynamic_pointer_cast<D>(instance);
-    }
-
     REF_TYPE(T) instance;
 };
 
