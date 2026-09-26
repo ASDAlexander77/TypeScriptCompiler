@@ -2226,6 +2226,25 @@ if (TSLANG_TEST_X86)
                           LABELS x86)
 endif()
 
+# tsbindgen: bindings generated from test/bindgen/fixture.h call the C library compiled from
+# fixture.c, linked (--emit=exe) and under the JIT; `namespace` does it again through
+# --namespace/--strip-prefix, which @linkname binds. And the command line's exit codes.
+foreach(bindgen_mode plain namespace)
+    add_test(NAME test-bindgen-${bindgen_mode}
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${bindgen_mode}"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSBINDGEN=$<TARGET_FILE:tsbindgen>"
+                     "-DCLANG=${LLVM_TOOLS_BINARY_DIR}/clang${CMAKE_EXECUTABLE_SUFFIX}"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/bindgen"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/bindgen-${bindgen_mode}"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DOPT=${defaultlib_collector_opt}"
+                     -P "${PROJECT_SOURCE_DIR}/test/bindgen/run-bindgen-test.cmake")
+endforeach()
 add_test(NAME test-bindgen-cli
          COMMAND ${CMAKE_COMMAND}
                  "-DTSBINDGEN=$<TARGET_FILE:tsbindgen>"

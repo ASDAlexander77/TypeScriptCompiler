@@ -1,0 +1,14 @@
+macros 42 1.5 fixture
+add 5
+scale 3
+narrow -5 65535 -5 false true
+len 5
+greet hello from C
+divmod 3 2
+counter 2
+point 7
+box -7 30 -40 2.5 true
+list 8
+color 6
+apply 42
+sum 6
