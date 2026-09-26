@@ -1,6 +1,9 @@
 add_mlir_unittest(TsClangImporterTests
   BindingModelTest.cpp
   TypeMappingTest.cpp
+  SkipTest.cpp
+  SelectionTest.cpp
+  NamingTest.cpp
   ParseErrorTest.cpp
 )
 
