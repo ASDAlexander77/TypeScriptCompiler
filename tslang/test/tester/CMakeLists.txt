@@ -2226,6 +2226,13 @@ if (TSLANG_TEST_X86)
                           LABELS x86)
 endif()
 
+add_test(NAME test-bindgen-cli
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSBINDGEN=$<TARGET_FILE:tsbindgen>"
+                 "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/bindgen"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/bindgen-cli"
+                 -P "${PROJECT_SOURCE_DIR}/test/bindgen/run-cli-test.cmake")
+
 set(TSLANG_OWNERSHIP_SHARDS 8)
 math(EXPR ownership_last "${TSLANG_OWNERSHIP_SHARDS} - 1")
 foreach(ownership_shard RANGE ${ownership_last})
