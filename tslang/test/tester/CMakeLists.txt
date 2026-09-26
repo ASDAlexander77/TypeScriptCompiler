@@ -2354,6 +2354,83 @@ foreach(small_int_ext_name small_int_ext_pattern IN ZIP_LISTS small_int_ext_name
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A file reached a second way is generated once: a .d.ts two `/// <reference path>`s lead to, one
+# the program and a module it imports both reference, a module imported directly and through
+# another. Each used to be generated again, and the module verifier rejected the second copy of
+# every symbol ("redefinition of symbol named ..."). A reference cycle or a file referencing
+# itself never finished loading, and an import cycle never finished generating: the TIMEOUT is
+# what fails those if that comes back.
+# nested_reference: a reference is relative to the file it is in, not to the program.
+foreach(reference_path_name diamond twice spelled cycle self program nested_reference)
+    string(REPLACE "_" "-" reference_path_test_name "${reference_path_name}")
+    tslang_add_test(NAME test-jit-reference-path-${reference_path_test_name}
+                    COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts")
+    tslang_add_test(NAME test-compile-reference-path-${reference_path_test_name}
+                    COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts")
+    set_tests_properties(test-jit-reference-path-${reference_path_test_name} test-compile-reference-path-${reference_path_test_name}
+                         PROPERTIES TIMEOUT 120)
+endforeach()
+
+# A referenced file that is not there is an error at its reference, and the compile fails. It
+# used to print "can't open file" naming the main file, and compile the program anyway.
+set(reference_path_missing_names missing missing_nested)
+set(reference_path_missing_patterns
+    "missing\\.ts:3:1: error: can't open file: no_such_file\\.d\\.ts"
+    "missing_inner\\.d\\.ts:1:1: error: can't open file: not_here\\.d\\.ts")
+foreach(reference_path_name reference_path_pattern IN ZIP_LISTS reference_path_missing_names reference_path_missing_patterns)
+    string(REPLACE "_" "-" reference_path_test_name "${reference_path_name}")
+    add_test(NAME test-compile-reference-path-${reference_path_test_name}-error
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                     "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts" -o -)
+    set_tests_properties(test-compile-reference-path-${reference_path_test_name}-error
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${reference_path_pattern}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    add_test(NAME test-compile-reference-path-${reference_path_test_name}-fails
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                     "${PROJECT_SOURCE_DIR}/test/tester/reference-path/${reference_path_name}.ts" -o -)
+    set_tests_properties(test-compile-reference-path-${reference_path_test_name}-fails PROPERTIES WILL_FAIL TRUE)
+endforeach()
+
+# tslang_add_import_tests(<name> <dir> <program> <modules>...): <program> linked against the
+# modules it imports - each an object of its own, and all of them in the one library
+# test-runner -shared links them into, compiled and under the JIT.
+function(tslang_add_import_tests name dir program)
+    set(module_files "")
+    foreach(module ${ARGN})
+        list(APPEND module_files "${dir}/${module}.ts")
+    endforeach()
+    tslang_add_test(NAME test-compile-${name} COMMAND test-runner "${dir}/${program}.ts" ${module_files})
+    tslang_add_test(NAME test-compile-shared-${name} COMMAND test-runner -shared "${dir}/${program}.ts" ${module_files})
+    tslang_add_test(NAME test-jit-shared-${name} COMMAND test-runner -jit -shared "${dir}/${program}.ts" ${module_files})
+    set_tests_properties(test-compile-${name} test-compile-shared-${name} test-jit-shared-${name} PROPERTIES TIMEOUT 120)
+endfunction()
+
+# In the one library a module imported by another used to be declared twice: the importer's
+# __decls carried what it imported as well as its own.
+set(reference_path_dir "${PROJECT_SOURCE_DIR}/test/tester/reference-path")
+tslang_add_import_tests(reference-path-import-and-reference "${reference_path_dir}" import_and_reference module_left)
+tslang_add_import_tests(reference-path-two-imports "${reference_path_dir}" two_imports module_left module_right)
+tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
+tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
+
+# `import { a as b }` and `import * as M` - each used to be "can't resolve name".
+set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
+tslang_add_import_tests(import-bindings-renamed "${import_bindings_dir}" import_renamed names_module)
+tslang_add_import_tests(import-bindings-namespace "${import_bindings_dir}" import_namespace names_module)
+
+# The same for a shared library: imported directly and through a source module - see
+# shared-import-reimport.cmake.
+if (WIN32)
+    add_test(NAME test-compile-reference-path-shared-reimport
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/reference-path"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/reference-path-shared-reimport"
+                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-import-reimport.cmake")
+endif()
+
 # A statement's condition that produces no value is an error, not a statement generated
 # without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty
 # block" error from `while`). The void call

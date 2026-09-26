@@ -1221,7 +1221,14 @@ namespace mlirgen
             {
                 return interfaceInfo->interfaceType;
             }
-        }        
+        }
+
+        // `import { T as U }`: U is T - one step, so `import { a as b, b as a }` cannot loop
+        if (auto target = resolveImportAlias(name); !target.empty() && !resolvingImportAlias)
+        {
+            MLIRValueGuard<bool> aliasGuard(resolvingImportAlias, true);
+            return resolveTypeByNameInNamespace(location, target, genContext);
+        }
 
         return mlir::Type();
     }
@@ -1321,6 +1328,15 @@ namespace mlirgen
             }
         }
 
+        // `import { a as b }`: b is a - one step, so `import { a as b, b as a }` cannot loop.
+        // Before the type lookup below, which follows the alias too and would make an aliased
+        // enum or class the type rather than the value.
+        if (auto target = resolveImportAlias(name); !target.empty() && !resolvingImportAlias)
+        {
+            MLIRValueGuard<bool> aliasGuard(resolvingImportAlias, true);
+            return resolveIdentifierInNamespace(location, target, genContext);
+        }
+
         auto type = resolveTypeByNameInNamespace(location, name, genContext);
         if (type)
         {
@@ -1337,7 +1353,7 @@ namespace mlirgen
             }
 
             return builder.create<mlir_ts::TypeRefOp>(location, type);
-        }        
+        }
 
         return mlir::Value();
     }

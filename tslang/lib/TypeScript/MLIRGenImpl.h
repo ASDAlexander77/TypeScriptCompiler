@@ -55,6 +55,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -207,6 +208,15 @@ class MLIRGenImpl
 
     std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain = false);
 
+    // The one name of a file, however it was spelled: `./x.d.ts`, `sub/../x.d.ts` and `x.d.ts`
+    // are the same file. Keys `emittedFiles` and `filesInProgress`.
+    static std::string canonicalFilePath(StringRef filePath);
+
+    // "<stem>_<hash>" naming a module's exported symbols (__decls_..., __tsmm_...): the hash is of
+    // its canonical path and the same in every process, so an importer can work out which
+    // module a library's declarations came from.
+    static std::string moduleSymbolSuffix(StringRef filePath);
+
     mlir::LogicalResult showMessages(SourceFile module, std::vector<SourceFile> includeFiles);
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles);
@@ -262,6 +272,11 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext);
+
+    mlir::LogicalResult mlirGenImportBindings(ImportClause importClause);
+
+    // the name an `import { a as b }` alias stands for, or empty
+    StringRef resolveImportAlias(StringRef name);
 
     boolean isStatement(SyntaxKind kind)
     {
@@ -10906,8 +10921,11 @@ class MLIRGenImpl
     class DiscoveryModuleScope
     {
       public:
+        // A fresh module holds none of the files emitted so far, so it starts with an empty
+        // `emittedFiles`: discovery has to see every declaration to resolve against it.
         DiscoveryModuleScope(MLIRGenImpl &mlirGenImpl)
-            : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder)
+            : moduleGuard(mlirGenImpl.theModule), insertGuard(mlirGenImpl.builder),
+              emittedFilesGuard(mlirGenImpl.emittedFiles, {})
         {
             discoveryModule =
                 mlir::ModuleOp::create(mlirGenImpl.theModule.getLoc(), mlir::StringRef("discovery_module"));
@@ -10924,6 +10942,7 @@ class MLIRGenImpl
       private:
         MLIRValueGuard<mlir::ModuleOp> moduleGuard;
         mlir::OpBuilder::InsertionGuard insertGuard;
+        MLIRValueGuard<llvm::StringSet<>> emittedFilesGuard;
         mlir::ModuleOp discoveryModule;
     };
 
@@ -12383,6 +12402,11 @@ class MLIRGenImpl
         return currentNamespace->importEqualsMap;
     }
 
+    auto getImportAliasMap() -> llvm::StringMap<mlir::StringRef> &
+    {
+        return currentNamespace->importAliasMap;
+    }
+
     auto getGenericFunctionInfoByFullName(StringRef fullName) -> GenericFunctionInfo::TypePtr
     {
         return fullNameGenericFunctionsMap.lookup(fullName);
@@ -12584,8 +12608,8 @@ class MLIRGenImpl
         return convertWideToUTF8(ss.str());
     }    
 
-    // TODO: fix issue with cercular reference of include files
-    std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
+    // The file an `import` of a local source module names: next to the main file, `.ts` added.
+    std::string includeFilePath(StringRef fileName)
     {
         SmallString<256> fileNameStr(fileName);
 
@@ -12610,9 +12634,13 @@ class MLIRGenImpl
         }
 
         sys::path::append(fullPath, fileNameStr);
+        return fullPath.str().str();
+    }
 
+    std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fullPath)
+    {
         std::string ignored;
-        auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
+        auto id = sourceMgr.AddIncludeFile(fullPath.str(), SMLoc(), ignored);
         if (!id)
         {
             emitError(location, "can't open file: ") << fullPath;
@@ -12644,6 +12672,29 @@ class MLIRGenImpl
     mlir::StringRef mainSourceFileName;
 
     mlir::StringRef path;
+
+    // What was emitted into theModule, by two kinds of key:
+    // - files (canonicalFilePath) whose top-level statements were emitted: included with
+    //   `/// <reference path>`, or imported (as source, or as a shared library);
+    // - modules' declaration symbols (__decls_<moduleSymbolSuffix>, and the _generic_ one): a
+    //   library's, once its declarations were parsed, and a source import's, so that a library
+    //   holding that module declares it once either way round.
+    // A file or module reached a second way - two references to one .d.ts, a .d.ts both the
+    // program and an imported module refer to, a module imported directly and through another,
+    // or both as source and inside a library - is skipped: emitting it again redefines every
+    // symbol it declares. A key is added only once its emission succeeded: a failed import is
+    // tried again on the next pass and has to fail again, not look done. Belongs to theModule, so
+    // DiscoveryModuleScope swaps in an empty one. TempModuleScope does not: it evaluates an
+    // expression, and an import or a reference is only ever at a file's top.
+    llvm::StringSet<> emittedFiles;
+
+    // Files on the current generation stack: the program and every `import` being generated
+    // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b
+    // imports a) stops instead of recursing until the stack overflows.
+    llvm::StringSet<> filesInProgress;
+
+    // set while an `import { a as b }` alias is resolved to its target (resolveImportAlias)
+    bool resolvingImportAlias = false;
 
     /// An allocator used for alias names.
     llvm::BumpPtrAllocator stringAllocator;
