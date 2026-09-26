@@ -2667,7 +2667,10 @@ class MLIRGenImpl
         auto dllExport = !suppressExport
             && (getExportModifier(functionLikeDeclarationBaseAST)
                 || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport));
-        if (dllExport)
+        // a declaration has no body to export: `export declare function` only makes it visible
+        // to importers, which the return value decides (__decls), while the attribute made the
+        // exe re-export the C function the declaration binds
+        if (dllExport && functionLikeDeclarationBaseAST->body)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
         }

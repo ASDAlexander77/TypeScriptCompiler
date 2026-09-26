@@ -1291,6 +1291,16 @@ tslang_add_test(NAME test-compile-declare-linkname COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-jit-declare-linkname COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
 tslang_add_test(NAME test-compile-declare-linkname-shared-symbol COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
 tslang_add_test(NAME test-jit-declare-linkname-shared-symbol COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+# DISABLED: importing a module's `export declare function` bound to a C runtime function crashes,
+# and did before @linkname (the same with @dllname on a 2026-09-23 build). The importer re-prints
+# the declaration as `@dllimport @dllname("strlen")` and looks `strlen` up at startup in the loaded
+# libraries (tslang_search_for_address_of_symbol); the exporting DLL never contains it - an unused
+# declaration is dropped - so the lookup returns null and the call faults. Enable once that is fixed.
+tslang_add_test(NAME test-compile-shared-export-import-declare-linkname COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_declare_linkname.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_declare_linkname.ts")
+set_tests_properties(test-compile-shared-export-import-declare-linkname PROPERTIES DISABLED TRUE)
+if (TSLANG_X86_TWIN)
+    set_tests_properties(${TSLANG_X86_TWIN} PROPERTIES DISABLED TRUE)
+endif()
 tslang_add_test(NAME test-compile-shared-export-import-type-alias COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_type_alias.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_type_alias.ts")
 tslang_add_test(NAME test-compile-shared-export-import-interface-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_interface_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_interface_generic.ts")
 # FIXED (2026-07-22): the -shared declaration-reconstruction path never printed real
@@ -2279,6 +2289,16 @@ foreach(linkname_case ${linkname_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${linkname_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# `export declare function` makes a declaration visible to importers; it must not mark the C
+# function it binds dllexport, which made an exe re-export the CRT's strlen. ExportFixPass
+# adds dllexport only for MSVC targets, so off Windows this passes either way.
+add_test(NAME test-compile-linkname-declare-not-exported
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/linkname/export-declare.ts" -o -)
+set_tests_properties(test-compile-linkname-declare-not-exported
+                     PROPERTIES PASS_REGULAR_EXPRESSION "declare i64 @strlen\\(ptr\\)"
+                                FAIL_REGULAR_EXPRESSION "declare dllexport|Stack dump|Assertion failed")
 
 # A statement's condition that produces no value is an error, not a statement generated
 # without its test (an `if` that vanished, an endless `for`, a segfault in `do`, an "empty
