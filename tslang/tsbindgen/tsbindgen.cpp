@@ -105,6 +105,12 @@ bool isCxx(llvm::StringRef path)
            extension == ".hh" || extension == ".hxx";
 }
 
+std::string executablePath(const char *argv0)
+{
+    // any function in this binary will do; ISO C++ forbids taking main's address (-Wpedantic)
+    return llvm::sys::fs::getMainExecutable(argv0, reinterpret_cast<void *>(&executablePath));
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -147,7 +153,7 @@ int main(int argc, char **argv)
     }
 
     std::vector<std::string> tried;
-    auto exePath = llvm::sys::fs::getMainExecutable(argv[0], reinterpret_cast<void *>(&main));
+    auto exePath = executablePath(argv[0]);
     auto foundResourceDir = findResourceDir(exePath, tried);
     if (!foundResourceDir)
     {
