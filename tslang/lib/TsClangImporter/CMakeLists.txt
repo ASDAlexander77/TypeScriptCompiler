@@ -6,4 +6,14 @@ set(LLVM_LINK_COMPONENTS
 
 add_llvm_library(TsClangImporter
   BindingModel.cpp
+  TypeMapper.cpp
+  HeaderParser.cpp
+  BindingPrinter.cpp
+
+  LINK_LIBS
+  clangTooling
+  clangFrontend
+  clangAST
+  clangLex
+  clangBasic
   )
