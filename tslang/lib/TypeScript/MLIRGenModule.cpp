@@ -19,6 +19,7 @@
 #include "mlir/Support/FileUtilities.h"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/xxhash.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -100,6 +101,14 @@ namespace mlirgen
         return canonical.str().str();
     }
 
+    std::string MLIRGenImpl::moduleSymbolSuffix(StringRef filePath)
+    {
+        std::string suffix(llvm::sys::path::stem(llvm::sys::path::filename(filePath)));
+        suffix.append("_");
+        suffix.append(to_string(llvm::xxh3_64bits(canonicalFilePath(filePath))));
+        return suffix;
+    }
+
     static std::string fileKey(SourceFile sourceFile)
     {
         return convertWideToUTF8(sourceFile->resolvedPath);
@@ -155,11 +164,6 @@ namespace mlirgen
             }
         }
 
-        for (auto refFile : sourceFile->referencedFiles)
-        {
-            filesToProcess.push_back(refFile.fileName);
-        }
-
         // Every file referenced, directly or through another, is loaded once, and comes after the
         // files it references, so a declaration precedes its uses: for a diamond (b and c both
         // reference common) that is common, b, c. The file being loaded is already seen, so a
@@ -167,14 +171,48 @@ namespace mlirgen
         llvm::StringSet<> seenFiles;
         seenFiles.insert(sourceFilePath);
 
-        std::function<void(const string &)> loadReferencedFile = [&](const string &includeFileName) {
+        // A file that is not there fails the load: the program would otherwise be compiled
+        // without the declarations it asked for.
+        auto anyMissing = false;
+
+        // `referencing` holds the reference (null for the default lib), in the directory
+        // `referencingDir`: a relative path is that file's, as in TypeScript, so it is looked for
+        // there first. Then as before - the working directory, the main file's directory, the
+        // default lib's - which a reference relative to the main file from a file elsewhere
+        // still relies on.
+        std::function<void(const string &, SourceFile, const ts::data::FileReference *, StringRef)> loadReferencedFile =
+            [&](const string &includeFileName, SourceFile referencing, const ts::data::FileReference *reference, StringRef referencingDir) {
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
 
             std::string actualFilePath;
-            auto includeBuf = sourceMgr.OpenIncludeFile(includeFileNameUtf8, actualFilePath);
+            llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> includeBuf = std::make_error_code(std::errc::no_such_file_or_directory);
+            if (!sys::path::has_root_path(includeFileNameUtf8) && !referencingDir.empty())
+            {
+                SmallString<256> besideReferencing(referencingDir);
+                sys::path::append(besideReferencing, includeFileNameUtf8);
+                if (sys::fs::is_regular_file(besideReferencing))
+                {
+                    includeBuf = sourceMgr.OpenIncludeFile(besideReferencing.str().str(), actualFilePath);
+                }
+            }
+
             if (!includeBuf)
             {
-                emitError(location, "can't open file: ") << includeFileNameUtf8;
+                includeBuf = sourceMgr.OpenIncludeFile(includeFileNameUtf8, actualFilePath);
+            }
+
+            if (!includeBuf)
+            {
+                mlir::Location referenceLocation = location;
+                if (reference)
+                {
+                    auto start = reference->pos.textPos > 0 ? reference->pos.textPos : reference->pos.pos;
+                    referenceLocation = loc2(referencing, convertWideToUTF8(referencing->fileName), start,
+                                             static_cast<int>(reference->_end) - start);
+                }
+
+                emitError(referenceLocation, "can't open file: ") << includeFileNameUtf8;
+                anyMissing = true;
                 return;
             }
 
@@ -201,14 +239,16 @@ namespace mlirgen
             Parser parser;
             auto includeFile =
                 parser.parseSourceFile(
-                    actualFilePathW, 
-                    stows(sourceBuf->getBuffer().str()), 
+                    actualFilePathW,
+                    stows(sourceBuf->getBuffer().str()),
                     ScriptTarget::Latest);
             includeFile->resolvedPath = convertUTF8toWide(includeFilePath);
 
-            for (auto refFile : includeFile->referencedFiles)
+            // the directory of the file opened, which is where its own references are
+            auto includeFileDir = sys::path::parent_path(actualFilePath).str();
+            for (auto &refFile : includeFile->referencedFiles)
             {
-                loadReferencedFile(refFile.fileName);
+                loadReferencedFile(refFile.fileName, includeFile, &refFile, includeFileDir);
             }
 
             includeFiles.push_back(includeFile);
@@ -216,7 +256,18 @@ namespace mlirgen
 
         for (auto &fileToProcess : filesToProcess)
         {
-            loadReferencedFile(fileToProcess);
+            loadReferencedFile(fileToProcess, sourceFile, nullptr, StringRef());
+        }
+
+        auto sourceFileDir = sys::path::parent_path(fullPath).str();
+        for (auto &refFile : sourceFile->referencedFiles)
+        {
+            loadReferencedFile(refFile.fileName, sourceFile, &refFile, sourceFileDir);
+        }
+
+        if (anyMissing)
+        {
+            return {SourceFile(), {}};
         }
 
         return {sourceFile, includeFiles};
@@ -424,9 +475,7 @@ namespace mlirgen
 
         std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
         varName.append("_");
-        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
-        varName.append("_");
-        varName.append(to_string(hash_value(mainSourceFileName)));
+        varName.append(moduleSymbolSuffix(mainSourceFileName));
         
         auto varNameRef = StringRef(varName).copy(stringAllocator);
         
@@ -472,9 +521,7 @@ namespace mlirgen
         std::string varName(SHARED_LIB_MEMORY_MODEL);
         varName.append(modelName);
         varName.append("_");
-        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
-        varName.append("_");
-        varName.append(to_string(hash_value(mainSourceFileName)));
+        varName.append(moduleSymbolSuffix(mainSourceFileName));
 
         auto varNameRef = StringRef(varName).copy(stringAllocator);
 
@@ -512,9 +559,7 @@ namespace mlirgen
         // two apart and parse each with the right file_d_ts flag.
         std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
         varName.append("_generic_");
-        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
-        varName.append("_");
-        varName.append(to_string(hash_value(mainSourceFileName)));
+        varName.append(moduleSymbolSuffix(mainSourceFileName));
 
         auto varNameRef = StringRef(varName).copy(stringAllocator);
 
@@ -1021,11 +1066,42 @@ namespace mlirgen
             return mlir::success();
         }
 
+        // Declared by a library already imported: one built from several modules carries each
+        // one's declarations (mlirGenImportSharedLib), this one's among them.
+        auto suffix = moduleSymbolSuffix(fullPath);
+        auto declSymbol = std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_") + suffix;
+        auto genericDeclSymbol = std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE "_generic_") + suffix;
+        if (emittedFiles.contains(declSymbol) || emittedFiles.contains(genericDeclSymbol))
+        {
+            return mlir::success();
+        }
+
         filesInProgress.insert(canonicalPath);
         auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
 
         MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
+
+        // What the imported module exports is its own to export: it is compiled separately, with
+        // its declarations in its own __decls. Added to this module's too, a library holding both
+        // (test-runner -shared links every module into one) declared them twice in one import.
+        // It also must not reset what this module has collected (mlirCodeGenModule starts a fresh
+        // declExports). So the export state is set aside and put back; a type the import
+        // declared is added again if one of this module's own exports depends on it.
+        auto savedDeclExports = declExports.str();
+        auto savedGenericDeclExports = genericDeclExports.str();
+        auto savedExportedTypes = exportedTypes;
+        auto savedExportCheckedDependenciesTypes = exportCheckedDependenciesTypes;
+        auto restoreExports = llvm::make_scope_exit([&]() {
+            declExports.str("");
+            declExports.clear();
+            declExports << savedDeclExports;
+            genericDeclExports.str("");
+            genericDeclExports.clear();
+            genericDeclExports << savedGenericDeclExports;
+            exportedTypes = savedExportedTypes;
+            exportCheckedDependenciesTypes = savedExportCheckedDependenciesTypes;
+        });
 
         auto [importSource, importIncludeFiles] = loadIncludeFile(location, fullPath);
         if (!importSource)
@@ -1045,8 +1121,11 @@ namespace mlirgen
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
         {
             // only now: an import that failed is tried again on the next pass, and must fail
-            // again rather than find itself already done
+            // again rather than find itself already done. Its library declarations, if a
+            // library holding it is imported later, are then not declared again either.
             emittedFiles.insert(canonicalPath);
+            emittedFiles.insert(declSymbol);
+            emittedFiles.insert(genericDeclSymbol);
             return mlir::success();
         }
 
@@ -1239,8 +1318,19 @@ namespace mlirgen
             addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 
+        // A library can hold several modules (test-runner -shared links them all into one), each
+        // with its own __decls_<module>. A module already in this module - imported as source,
+        // or through another library - is not declared again; see mlirGenInclude.
+        SmallVector<StringRef> declaredSymbols;
         for (auto declSymbol : symbols)
         {
+            if (emittedFiles.contains(declSymbol))
+            {
+                continue;
+            }
+
+            declaredSymbols.push_back(declSymbol);
+
             // TODO: for now, we have code in TS to load methods from DLL/Shared libs
             const char *declText = nullptr;
             std::optional<std::string> declTextFromFile;
@@ -1311,6 +1401,11 @@ namespace mlirgen
         // only now: an import that failed is tried again on the next pass, and must fail again
         // rather than find itself already done
         emittedFiles.insert(canonicalPath);
+        for (auto declSymbol : declaredSymbols)
+        {
+            emittedFiles.insert(declSymbol);
+        }
+
         return mlir::success();
     }
 
@@ -1357,10 +1452,67 @@ namespace mlirgen
             auto dynamic = !MLIRHelper::hasDecorator(importDeclarationAST, "static");
 
             // this is shared lib.
-            return mlirGenImportSharedLib(location, fullPath, dynamic, genContext);    
+            if (mlir::failed(mlirGenImportSharedLib(location, fullPath, dynamic, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+        else if (mlir::failed(mlirGenInclude(location, stringVal, genContext)))
+        {
+            return mlir::failure();
         }
 
-        return mlirGenInclude(location, stringVal, genContext);
+        return mlirGenImportBindings(importDeclarationAST->importClause);
+    }
+
+    // An imported module's declarations are generated at this module's top level, whatever the
+    // import names - there is no per-module scope - so `import { a }` and `import './m'` need
+    // nothing more. `import { a as b }` makes b another name for a. `import * as M` makes M a
+    // namespace of its own with nothing in it: a name looked for in it is then looked for at the
+    // top level (resolveIdentifier, resolveTypeByName), which is where the module's declarations
+    // are, and M.a is the module's a. Symbol names do not change, so the module's own object
+    // file still provides the bodies. M.x also finds a top-level x of another file; code that
+    // TypeScript accepts means the same.
+    mlir::LogicalResult MLIRGenImpl::mlirGenImportBindings(ImportClause importClause)
+    {
+        if (!importClause || !importClause->namedBindings)
+        {
+            return mlir::success();
+        }
+
+        auto namedBindings = importClause->namedBindings;
+        if (namedBindings == SyntaxKind::NamespaceImport)
+        {
+            auto namespaceName = MLIRHelper::getName(namedBindings.as<NamespaceImport>()->name, stringAllocator);
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namespaceName);
+            return mlir::success();
+        }
+
+        if (namedBindings == SyntaxKind::NamedImports)
+        {
+            for (auto element : namedBindings.as<NamedImports>()->elements)
+            {
+                if (!element->propertyName)
+                {
+                    continue;
+                }
+
+                auto target = MLIRHelper::getName(element->propertyName, stringAllocator);
+                auto alias = MLIRHelper::getName(element->name, stringAllocator);
+                if (alias != target)
+                {
+                    getImportAliasMap()[alias] = target;
+                }
+            }
+        }
+
+        return mlir::success();
+    }
+
+    StringRef MLIRGenImpl::resolveImportAlias(StringRef name)
+    {
+        return getImportAliasMap().lookup(name);
     }
 
 } // namespace mlirgen

@@ -1145,6 +1145,9 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir::StringRef> importEqualsMap;
 
+    // `import { a as b }`: b -> a, a name the imported module declares
+    llvm::StringMap<mlir::StringRef> importAliasMap;
+
     llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
 
     llvm::StringMap<ClassInfo::TypePtr> classesMap;

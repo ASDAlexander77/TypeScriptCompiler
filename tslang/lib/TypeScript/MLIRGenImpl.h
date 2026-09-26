@@ -212,6 +212,11 @@ class MLIRGenImpl
     // are the same file. Keys `emittedFiles` and `filesInProgress`.
     static std::string canonicalFilePath(StringRef filePath);
 
+    // "<stem>_<hash>" naming a module's exported symbols (__decls_..., __tsmm_...): the hash is of
+    // its canonical path and the same in every process, so an importer can work out which
+    // module a library's declarations came from.
+    static std::string moduleSymbolSuffix(StringRef filePath);
+
     mlir::LogicalResult showMessages(SourceFile module, std::vector<SourceFile> includeFiles);
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles);
@@ -267,6 +272,11 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext);
+
+    mlir::LogicalResult mlirGenImportBindings(ImportClause importClause);
+
+    // the name an `import { a as b }` alias stands for, or empty
+    StringRef resolveImportAlias(StringRef name);
 
     boolean isStatement(SyntaxKind kind)
     {
@@ -12392,6 +12402,11 @@ class MLIRGenImpl
         return currentNamespace->importEqualsMap;
     }
 
+    auto getImportAliasMap() -> llvm::StringMap<mlir::StringRef> &
+    {
+        return currentNamespace->importAliasMap;
+    }
+
     auto getGenericFunctionInfoByFullName(StringRef fullName) -> GenericFunctionInfo::TypePtr
     {
         return fullNameGenericFunctionsMap.lookup(fullName);
@@ -12658,20 +12673,28 @@ class MLIRGenImpl
 
     mlir::StringRef path;
 
-    // Files (canonicalFilePath) whose top-level statements were emitted into theModule: included
-    // with `/// <reference path>`, or imported (as source, or as a shared library). A file reached
-    // a second way - two references to one .d.ts, a .d.ts both the program and an imported module
-    // refer to, a module imported directly and through another - is skipped: emitting it again
-    // redefines every symbol it declares. A file is added only once it has been emitted: a
-    // failed import is tried again on the next pass and has to fail again, not look done.
-    // Belongs to theModule, so DiscoveryModuleScope swaps in an empty one. TempModuleScope does
-    // not: it evaluates an expression, and an import or a reference is only ever at a file's top.
+    // What was emitted into theModule, by two kinds of key:
+    // - files (canonicalFilePath) whose top-level statements were emitted: included with
+    //   `/// <reference path>`, or imported (as source, or as a shared library);
+    // - modules' declaration symbols (__decls_<moduleSymbolSuffix>, and the _generic_ one): a
+    //   library's, once its declarations were parsed, and a source import's, so that a library
+    //   holding that module declares it once either way round.
+    // A file or module reached a second way - two references to one .d.ts, a .d.ts both the
+    // program and an imported module refer to, a module imported directly and through another,
+    // or both as source and inside a library - is skipped: emitting it again redefines every
+    // symbol it declares. A key is added only once its emission succeeded: a failed import is
+    // tried again on the next pass and has to fail again, not look done. Belongs to theModule, so
+    // DiscoveryModuleScope swaps in an empty one. TempModuleScope does not: it evaluates an
+    // expression, and an import or a reference is only ever at a file's top.
     llvm::StringSet<> emittedFiles;
 
     // Files on the current generation stack: the program and every `import` being generated
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
+
+    // set while an `import { a as b }` alias is resolved to its target (resolveImportAlias)
+    bool resolvingImportAlias = false;
 
     /// An allocator used for alias names.
     llvm::BumpPtrAllocator stringAllocator;

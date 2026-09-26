@@ -87,6 +87,12 @@ mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromMainSource(const mlir::MLIRContext 
     auto path = llvm::sys::path::parent_path(fileName);
     mlirgen::MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
     auto [sourceFile, includeFiles] = mlirGenImpl.loadMainSourceFile();
+    if (!sourceFile)
+    {
+        // a referenced file is missing; the error is reported
+        return nullptr;
+    }
+
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 
@@ -96,6 +102,12 @@ mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &con
     auto path = llvm::sys::path::parent_path(fileName);
     mlirgen::MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
     auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(smLoc);
+    if (!sourceFile)
+    {
+        // a referenced file is missing; the error is reported
+        return nullptr;
+    }
+
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 
