@@ -5894,3 +5894,12 @@ script clears only the model directory it is writing, so they survive until dele
 > **§9.7's larger case is closed by §9.77.** The default lib is now built per model and a
 > program links the one matching its own `-mm=`. What remains of §9.7 is the general mixed-link
 > question for *user* libraries, where the policy is unchanged: allow, warn, and leak.
+
+### 9.78 A C string returned through generated bindings (open)
+
+tsbindgen maps a C function's `char *` / `const char *` result to `string`, as the default library
+already does by hand (`regexp_match_results_format`). A tslang string carries an 8-byte header before
+its characters; a C-owned `char *` has none. Under `-mm=gc` that is harmless - nothing reads the
+header. Under `-mm=rc` a release of such a value reads a count that is not there, which is undefined.
+Not fixed: tsbindgen v1 targets `gc`. Revisit if rc becomes a supported model for bindings - the
+likely shape is a distinct C-string type in the compiler that is never released.

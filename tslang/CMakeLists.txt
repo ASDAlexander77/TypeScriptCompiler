@@ -201,6 +201,7 @@ add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(test)
 add_subdirectory(tslang)
+add_subdirectory(tsbindgen)
 add_subdirectory(ts-new-parser)
 
 if (NOT DEFINED TYPESCRIPT_IGNORE_UNIT_TESTS)

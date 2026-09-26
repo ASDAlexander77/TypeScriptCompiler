@@ -21,3 +21,4 @@ set_Options()
 
 add_subdirectory(Example)
 add_subdirectory(MLIRGen)
+add_subdirectory(TsClangImporter)

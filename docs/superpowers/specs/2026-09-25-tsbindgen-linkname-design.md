@@ -3,9 +3,9 @@
 Design for binding C (and `extern "C"` C++) code from tslang without writing
 `.d.ts` declarations by hand. It covers two items: a `@linkname` decorator for
 declaring a C function under a different TS name, and `tsbindgen`, a generator
-that turns C headers into `.d.ts` declarations.
+that turns C headers into tslang binding files (`.ts`).
 
-Status: approved design, not implemented. Refines Option A of
+Status: PR 1 and PR 2 implemented; PR 3 (packaging) not started. Refines Option A of
 `docs/c-cpp-header-import.md`; C++ wrapper generation (that doc's "C++ 2"
 route) is v2 and gets its own spec once v1 has merged.
 
@@ -141,7 +141,7 @@ The `-shared` cross-module tests import re-parsed declarations that carry
     plus `PPCallbacks` for macros) and returns plain records: functions,
     records, enums, typedefs, macros, each with its source location.
   - `TypeMapper`: C type → tslang type text, or a skip reason.
-  - `DtsPrinter`: records → `.d.ts` text.
+  - `BindingPrinter`: records → `.ts` text (see "As built" below: not `.d.ts`).
 - `tslang/tsbindgen/` — CLI executable over the library.
 - Links against clang libraries from the in-tree LLVM install
   (`clangTooling`, `clangFrontend`, `clangAST`, `clangSema`, `clangLex`,
@@ -153,7 +153,7 @@ The `-shared` cross-module tests import re-parsed declarations that carry
 ```text
 tsbindgen <input.h|.c|.cpp> [-I<dir>]... [-D<name>[=v]]... [--target <triple>]
           [--filter <glob>]... [--namespace <N> [--strip-prefix <P>]]
-          [--resource-dir <dir>] [-o <out.d.ts>] [-- <extra clang args>...]
+          [--resource-dir <dir>] [-o <out.ts>] [-- <extra clang args>...]
 ```
 
 - `--target` defaults to the host triple. Type widths come from clang's
@@ -179,14 +179,14 @@ declarations, so this rule is essential.
 
 | C | tslang |
 | --- | --- |
-| integer types | exact width `i8`…`i64` / `u8`…`u64` from the target. Never `int`/`long`: tslang `long` is 64-bit, but C `long` is 32-bit on Windows. |
+| integer types | exact width, signed `s8`…`s64` / unsigned `u8`…`u64`, from the target (tslang's `i8`…`i64` are signless). Never `int`/`long`: tslang `long` is 64-bit, but C `long` is 32-bit on Windows. |
 | `size_t`, `ssize_t`, `ptrdiff_t`, `intptr_t`, `uintptr_t` | `index` |
 | `float` / `double` / `_Bool`, `bool` | `f32` / `f64` / `boolean` |
 | `char*`, `const char*` | `string` |
 | `char**` | `Reference<string>` |
 | `T*`, T a scalar or complete struct | `Reference<T>` |
 | `void*`; pointer to an incomplete struct or a C++ class | `Opaque`. A named incomplete struct `S` also gets `type S = Opaque;` and parameters use `S`. |
-| function pointer | `Opaque`, with a trailing comment giving the C signature (`// (a: i32) => i32`). |
+| function pointer | `Opaque`, with the C signature in a comment: `fn: Opaque /* (p0: s32) => s32 */` for a parameter or field, a trailing `// ...` for a `typedef`. |
 | complete struct of mappable fields | named tuple `type S = [a: T1, b: T2];`, as `tm` in `core.os.d.ts` |
 | C `enum` | TS `enum` with the same names and values |
 | C++ `enum : u8` (fixed non-`int` underlying type) | `type E = u8;` plus `const A = 1;` per enumerator, using the enumerator's own name (`A`, as C code spells it for an unscoped enum; `E_A` for an `enum class`, which has no unqualified name) |
@@ -199,7 +199,7 @@ Parameter names are taken from the header; an unnamed parameter becomes
 
 ### Skipped declarations
 
-Each of these is left out of the `.d.ts`, with
+Each of these is left out of the output, with
 `// skipped: <name> — <reason>` in its place and a warning on stderr:
 
 - a union, or a struct with a bitfield or an unmappable field;
@@ -219,6 +219,25 @@ this rule a single union in a header would remove most of its API.
 A skip never stops generation. The exit code is `0` if the file was written,
 `1` for a clang parse error or I/O failure (clang's diagnostics are printed
 as-is), `2` for bad arguments.
+
+### As built (2026-09-26)
+
+Measured while implementing PR 2 (see `docs/superpowers/plans/2026-09-26-tsbindgen.md`); where this
+section and the text above disagree, this section is what was built.
+
+Each of these was found by running generated bindings through tslang; the spec's version does not work.
+
+| Spec says | Plan does | Why (measured) |
+| --- | --- | --- |
+| Output is a `.d.ts` (`-o <out.d.ts>`) | Output is a `.ts` file, included with `/// <reference path="fixture.ts" />`; `-o` defaults to stdout; a `-o x.d.ts` gets a warning | In a `.d.ts` — and in any file pulled in with `import` — a `const` is an ambient declaration with no value: `const FIXTURE_ANSWER = 42;` fails with `LNK2019: unresolved external symbol FIXTURE_ANSWER` (exe) and `Symbols not found: [ FIXTURE_ANSWER ]` (JIT). The same text in a `.ts` included by `/// <reference path>` works in both. `import "./fixture"` is also wrong for another reason: when `fixture.dll` exists it loads that as a tslang library (`MLIRGenModule.cpp`, `mlirGen(ImportDeclaration)`). |
+| Signed C integers map to `i8`…`i64` | Signed → `s8`…`s64`, unsigned → `u8`…`u64` | tslang's `iN` are **signless** (`MLIRGenTypes.cpp`: `{"i32", builder.getIntegerType(32)}` vs `{"s32", builder.getIntegerType(32, true)}`): an `int8_t` -5 prints `251`, an `int16_t` -3 prints `65533`, an `int32_t` -5 prints `4294967291`. With `sN` all print correctly. |
+| `struct Node { struct Node *next; }` → `next: Reference<Node>` | A pointer field that leads back to its own struct — directly, through another struct, or through a typedef — is `Opaque`, with `/* Reference<Node>: a type cannot refer to itself */` | tslang dies on a self-referencing type alias: `type Node = [value: i32, next: Reference<Node>]; function main() { let n: Node = [1, null]; }` exits 127 with no message, even at `--emit=mlir`. That is a compiler bug to file separately; tsbindgen must not emit a cycle meanwhile. |
+| Function-pointer parameters get a trailing `// (a: i32) => i32` | Inline `fn: Opaque /* (p0: s32) => s32 */` for parameters and fields; trailing `//` for a `typedef` | A declaration can have several callbacks; one trailing comment cannot say which is which. Parameter names inside the signature are `p0…`: a C function type carries no names. The file header says once that a callback must have no captures and is passed as `fn as Opaque` (spec open issue "Callback lifetime"). |
+| `runToolOnCodeWithArgs`-style parsing (implied) | `ToolInvocation` with our own diagnostic consumer | `runToolOnCodeWithArgs` ignores errors in the clang command line itself: `tsbindgen fixture.h -- --bogus-flag` printed `error: unknown argument` and still exited 0 with output. |
+| (silent) | An object-like macro that is not a literal (`#define FLAGS (1 << 3)`, `#define API __declspec(dllexport)`) is skipped with `macro is not a literal`; one with no tokens (include guards) is ignored | The skip list names function-like macros only; a silent drop would hide API. |
+| (silent) | `--strip-prefix` never produces a name that is empty, starts with a digit, or is taken: it keeps the C name and warns; a stripped reserved word gets `_` | `fx_len` stripping to `len` when `len` exists would declare two functions `len`. |
+| (silent) | A struct whose clang layout is not natural field-after-field (packed, `#pragma pack`, over-aligned) is skipped: `packed or over-aligned layout` | A named tuple is laid out naturally; the spec's measured baseline covers only natural layouts. |
+| (silent) | Nothing selected is a warning | `tsbindgen umbrella.h` where `umbrella.h` only `#include`s others emits an empty file; the warning says to use `--filter`. |
 
 ### Naming
 
@@ -253,7 +272,7 @@ declaration that starts with it; the `@linkname` keeps the C name.
      out, an out-parameter, an opaque handle, a struct passed by pointer, an
      enum, a literal macro, a callback, a varargs function.
    - At test time: compile `fixture.c` with the in-tree clang to an object and
-     a shared library, run `tsbindgen fixture.h -o fixture.d.ts`, compile
+     a shared library, run `tsbindgen fixture.h -o fixture.ts`, compile
      `bindgen_test.ts` against it, link with `-obj=` and run it; then run the
      same program under `--emit=jit` with `-shared-libs=` pointing at the
      shared library. Both runs must print the expected output.
