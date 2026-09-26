@@ -74,8 +74,10 @@ function(expect_output what)
     message(STATUS "${what}: as expected")
 endfunction()
 
-run("clang -c fixture.c" "${CLANG}" -c ${clang_pic} fixture.c -o "fixture${obj_suffix}")
-run("clang -shared fixture.c" "${CLANG}" -shared ${clang_pic} fixture.c -o "${fixture_library}")
+# -O2 as a real library would be built: at -O0 clang re-extends a narrow parameter inside the callee,
+# which would hide a caller that does not extend it (the `narrow` line, on the SysV ABI)
+run("clang -c fixture.c" "${CLANG}" -O2 -c ${clang_pic} fixture.c -o "fixture${obj_suffix}")
+run("clang -shared fixture.c" "${CLANG}" -O2 -shared ${clang_pic} fixture.c -o "${fixture_library}")
 run("tsbindgen" "${TSBINDGEN}" fixture.h ${bindgen_args} -o "${bindings}")
 
 run("--emit=exe" "${TSLANG}" --emit=exe ${common} "${program}" "--obj=fixture${obj_suffix}" -o "bindgen_test${exe_suffix}")

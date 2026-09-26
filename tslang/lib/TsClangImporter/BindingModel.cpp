@@ -93,4 +93,26 @@ std::string escapeReserved(std::string name)
     return name;
 }
 
+bool isTsBuiltinTypeName(const std::string &name)
+{
+    // MLIRGenTypes.cpp's native type table, and the TS types tslang knows by name
+    static const char *const builtins[] = {
+        "byte",    "short",   "ushort",  "int",     "uint",    "index",  "long",   "ulong",   "char",
+        "i8",      "i16",     "i32",     "i64",     "u8",      "u16",    "u32",    "u64",     "s8",
+        "s16",     "s32",     "s64",     "f16",     "f32",     "f64",    "f128",   "half",    "float",
+        "double",  "boolean", "number",  "string",  "bigint",  "any",    "void",   "never",   "unknown",
+        "object",  "symbol",  "undefined", "null",  "Opaque",  "Reference", "TypeOf", "Array", "String",
+        "Number",  "Boolean", "Object",  "Function"};
+
+    for (auto *builtin : builtins)
+    {
+        if (name == builtin)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 } // namespace tsbindgen

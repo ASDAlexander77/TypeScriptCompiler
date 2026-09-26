@@ -184,3 +184,24 @@ TEST(TypeMapping, ParameterNames)
     EXPECT_THAT(text("void f(int, int delete, int function, int value);\n"),
                 HasSubstr("declare function f(p0: s32, delete_: s32, function_: s32, value: s32): void;"));
 }
+
+// tslang ignores a `type` alias whose name is one of its own types - `typedef int boolean` (libjpeg)
+// would bind an int result as boolean's one bit - so such a typedef is looked through and never
+// emitted, and a struct of such a name is renamed
+TEST(TypeMapping, BuiltinTypeNamesAreNeverRedeclared)
+{
+    auto out = text("typedef int boolean;\nboolean is_ok(double n);\nstruct string { int len; };\n"
+                    "void use(struct string *s);\n");
+    EXPECT_THAT(out, Not(HasSubstr("type boolean")));
+    EXPECT_THAT(out, HasSubstr("declare function is_ok(n: f64): s32;"));
+    EXPECT_THAT(out, HasSubstr("type string_ = [len: s32];"));
+    EXPECT_THAT(out, HasSubstr("declare function use(s: Reference<string_>): void;"));
+}
+
+// an enum that is declared but never defined has no enumerators to emit: its values are integers
+TEST(TypeMapping, EnumWithoutDefinitionIsItsInteger)
+{
+    auto out = generate("enum Mode : short;\nextern \"C\" void set_mode(Mode m);\n", {}, windowsTarget, {}, "c++").text;
+    EXPECT_THAT(out, HasSubstr("declare function set_mode(m: s16): void;"));
+    EXPECT_THAT(out, Not(HasSubstr("Mode")));
+}

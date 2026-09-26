@@ -139,6 +139,14 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
             }
         }
 
+        // a legal C name TS reserves (`int new(void)`), and a type named like one of tslang's own,
+        // which tslang would ignore in favour of its own type (`struct string`), get a `_`
+        name = escapeReserved(name);
+        if (decl.kind != DeclKind::Function && decl.kind != DeclKind::Macro && isTsBuiltinTypeName(name))
+        {
+            name += "_";
+        }
+
         taken[name] = decl.name;
         tsNames[decl.key] = name;
     }
@@ -245,9 +253,12 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
                 }
 
                 std::string decorators = decl.varargs ? "@varargs " : "";
-                if (inNamespace)
+                // a namespace qualifies the symbol, and a TS name can differ from the C one
+                // (stripped, escaped) or the C name from the symbol (an asm label)
+                auto symbol = decl.symbol.empty() ? decl.name : decl.symbol;
+                if (inNamespace || tsName != symbol)
                 {
-                    decorators += "@linkname(\"" + decl.name + "\") ";
+                    decorators += "@linkname(\"" + symbol + "\") ";
                 }
 
                 line(decorators + exported + "declare function " + tsName + "(" + parameters +

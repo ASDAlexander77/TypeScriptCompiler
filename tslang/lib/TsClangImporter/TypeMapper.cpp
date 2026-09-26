@@ -140,8 +140,9 @@ TsType TypeMapper::map(clang::QualType type, Use use)
         }
 
         // a system header's typedefs (int32_t, uint8_t, ...) are looked through: their widths are
-        // what matter, and the header is not emitted
-        if (isSystem(typedefDecl))
+        // what matter, and the header is not emitted. So is one named like a tslang type
+        // (`typedef int boolean;`): tslang would ignore the alias and use its own type.
+        if (isSystem(typedefDecl) || isTsBuiltinTypeName(typedefDecl->getName().str()))
         {
             return map(typedefDecl->getUnderlyingType(), use);
         }
@@ -174,6 +175,18 @@ TsType TypeMapper::map(clang::QualType type, Use use)
     if (auto *enumType = canonical->getAs<clang::EnumType>())
     {
         auto *enumDecl = enumType->getDecl()->getDefinitionOrSelf();
+        // declared, never defined (`enum E : short;`): no enumerators to emit, only its integer
+        if (!enumDecl->getDefinition())
+        {
+            auto integer = enumDecl->getIntegerType();
+            if (integer.isNull())
+            {
+                return TsType::skip("incomplete enum '" + tagName(enumDecl) + "'");
+            }
+
+            return mapBuiltin(integer.getCanonicalType(), use);
+        }
+
         if (tagName(enumDecl).empty())
         {
             // an anonymous enum's values are plain integers of its underlying type

@@ -66,3 +66,19 @@ TEST(Naming, HeaderLinesComeFirst)
               "\n"
               "declare function f(): s32;\n");
 }
+
+// legal C names that TS reserves: the TS name gets a `_`, and @linkname keeps the symbol
+TEST(Naming, ReservedWordDeclarationNamesAreEscaped)
+{
+    auto out = text("int new(void);\nint class(int in);\nstruct export { int x; };\n");
+    EXPECT_THAT(out, HasSubstr("@linkname(\"new\") declare function new_(): s32;"));
+    EXPECT_THAT(out, HasSubstr("@linkname(\"class\") declare function class_(in_: s32): s32;"));
+    EXPECT_THAT(out, HasSubstr("type export_ = [x: s32];"));
+}
+
+// an asm label is the symbol the function links as (glibc's __REDIRECT: stat -> stat64)
+TEST(Naming, AsmLabelIsTheSymbol)
+{
+    EXPECT_THAT(text("int f(int x) __asm__(\"real_f\");\n"),
+                HasSubstr("@linkname(\"real_f\") declare function f(x: s32): s32;"));
+}

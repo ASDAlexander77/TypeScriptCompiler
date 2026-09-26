@@ -76,7 +76,9 @@ std::string literalValue(clang::Preprocessor &preprocessor, llvm::ArrayRef<clang
 
     if (!tokens.empty() && llvm::all_of(tokens, [](const clang::Token &token) { return token.is(clang::tok::string_literal); }))
     {
-        clang::StringLiteralParser literal(tokens, preprocessor);
+        // no diagnostics engine: a macro body clang never expands is not clang's error
+        clang::StringLiteralParser literal(tokens, preprocessor.getSourceManager(), preprocessor.getLangOpts(),
+                                           preprocessor.getTargetInfo(), nullptr);
         if (literal.hadError || !literal.isOrdinary())
         {
             return "";
@@ -104,9 +106,13 @@ std::string literalValue(clang::Preprocessor &preprocessor, llvm::ArrayRef<clang
         return "";
     }
 
+    // `#define VERSION 1.2.3` is fine C until something expands it; reported into clang's own
+    // engine it would fail the whole header, so the parser gets an engine that drops everything
+    clang::DiagnosticOptions quietOptions;
+    clang::DiagnosticsEngine quiet(clang::DiagnosticIDs::create(), quietOptions, new clang::IgnoringDiagConsumer());
+    quiet.setSourceManager(&preprocessor.getSourceManager());
     clang::NumericLiteralParser literal(spelling, tokens.front().getLocation(), preprocessor.getSourceManager(),
-                                        preprocessor.getLangOpts(), preprocessor.getTargetInfo(),
-                                        preprocessor.getDiagnostics());
+                                        preprocessor.getLangOpts(), preprocessor.getTargetInfo(), quiet);
     if (literal.hadError)
     {
         return "";
@@ -290,9 +296,10 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
 
     bool VisitTypedefNameDecl(clang::TypedefNameDecl *typedefDecl)
     {
-        if (isSystem(typedefDecl) || !atFileScope(typedefDecl) || TypeMapper::namesItsTag(typedefDecl))
+        if (isSystem(typedefDecl) || !atFileScope(typedefDecl) || TypeMapper::namesItsTag(typedefDecl) ||
+            isTsBuiltinTypeName(typedefDecl->getName().str()))
         {
-            return true;
+            return true; // the mapper looks through all of these
         }
 
         auto name = typedefDecl->getName();
@@ -348,6 +355,22 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
         {
             decl.skipReason = "function without a prototype";
             return true;
+        }
+
+        // tslang calls a declaration with the C convention; a callee that cleans its own stack
+        // (__stdcall on 32-bit Windows) or takes arguments elsewhere would be called wrongly
+        if (prototype->getCallConv() != clang::CC_C)
+        {
+            decl.skipReason = "calling convention " + clang::FunctionType::getNameForCallConv(prototype->getCallConv()).str();
+            return true;
+        }
+
+        // `int f(int) __asm__("real_f")` (glibc's __REDIRECT): the symbol is the label
+        if (auto *asmLabel = function->getAttr<clang::AsmLabelAttr>())
+        {
+            llvm::StringRef label = asmLabel->getLabel();
+            label.consume_front("\x01"); // the "use this name verbatim" marker
+            decl.symbol = label.str();
         }
 
         decl.varargs = prototype->isVariadic();

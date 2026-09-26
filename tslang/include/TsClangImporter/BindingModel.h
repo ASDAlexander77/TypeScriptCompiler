@@ -49,6 +49,10 @@ std::string nameFromKey(const std::string &key);
 // A name that is a TS reserved word gets a `_` suffix: `delete` -> `delete_`.
 std::string escapeReserved(std::string name);
 
+// A type tslang itself defines (`boolean`, `string`, `index`, `s32`, ...). tslang ignores a `type`
+// alias of such a name and keeps its own type, so a C type of that name must never be declared under it.
+bool isTsBuiltinTypeName(const std::string &name);
+
 struct Field
 {
     std::string name;
@@ -77,6 +81,7 @@ struct Decl
     DeclKind kind = DeclKind::Function;
     std::string key;  // unique within the model: "<kind>:<C name>"
     std::string name; // the C name
+    std::string symbol; // Function: the symbol it links as, when an asm label makes it differ from the name
     bool inMainFile = false;
     bool inSystemHeader = false;
     std::string skipReason; // non-empty: left out, with a `// skipped:` line in its place

@@ -81,3 +81,22 @@ TEST(Skip, ASkipDoesNotStopGeneration)
     EXPECT_THAT(out, HasSubstr("declare function before(): s32;"));
     EXPECT_THAT(out, HasSubstr("declare function after(): s32;"));
 }
+
+// a macro body is never checked by clang unless used, so a malformed number skips the macro,
+// never the whole header
+TEST(Skip, MalformedNumericMacroIsSkippedNotAnError)
+{
+    auto out = text("#define VERSION 1.2.3\n#define OCT 08\nint f(void);\n");
+    EXPECT_THAT(out, HasSubstr("// skipped: VERSION \xE2\x80\x94 macro is not a literal"));
+    EXPECT_THAT(out, HasSubstr("// skipped: OCT \xE2\x80\x94 macro is not a literal"));
+    EXPECT_THAT(out, HasSubstr("declare function f(): s32;"));
+}
+
+// tslang calls a declared function with the C convention; a callee that cleans its own stack
+// (__stdcall on 32-bit Windows) would corrupt it
+TEST(Skip, NonDefaultCallingConventionIsSkipped)
+{
+    auto out = generate("int __stdcall f(int x);\nint __cdecl g(int x);\n", {}, "i686-pc-windows-msvc").text;
+    EXPECT_THAT(out, HasSubstr("// skipped: f \xE2\x80\x94 calling convention stdcall"));
+    EXPECT_THAT(out, HasSubstr("declare function g(x: s32): s32;"));
+}
