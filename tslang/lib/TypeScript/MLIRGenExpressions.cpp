@@ -688,6 +688,7 @@ namespace mlirgen
         if (!staticCondition.value_or(false))
         {
             SymbolTableScopeT varScope(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             if (elseSafeCase.safeType)
             {
                 addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);

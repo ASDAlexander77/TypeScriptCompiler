@@ -4593,6 +4593,7 @@ class MLIRGenImpl
             else
             {
                 SymbolTableScopeT varScope(symbolTable);
+                SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
                 if (elseSafeCase.safeType)
                 {
                     addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
