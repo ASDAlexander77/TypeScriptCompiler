@@ -13,9 +13,9 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v10
-  LLVM_VERSION: 22
-  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/ym6xvv8ib6yyewgf47ene/llvm_22_1_8_release.tgz?rlkey=jwkrrp82lql46qd1oysg9p736&st=p828hd39&dl=1"
+  # The official LLVM release package, installed where a custom LLVM build would be - see
+  # scripts/install_llvm_prebuilt_release.sh.
+  LLVM_FULL_VERSION: "22.1.8"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
 
@@ -34,27 +34,8 @@ jobs:
 
     - uses: actions/checkout@v4
 
-    - name: Cache Build 3rd Party
-      id: cache-3rd-party
-      uses: actions/cache@v4
-      with:
-        path: __build/llvm/ninja
-        key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-    - name: Cache 3rd Party binaries
-      id: cache-3rd-party-binary
-      uses: actions/cache@v4
-      with:
-        path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-    - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
-      id: cache-3rd-party-binary-llvm-release
-      uses: actions/cache@v4
-      with:
-        path: llvm_${{ env.LLVM_VERSION }}_release.tgz
-        key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
-
+    # No 3rdParty cache: the LLVM prefix is about 9.6 GB, too big for the cache, and downloading it
+    # from GitHub each run is quick; GC is rebuilt every run anyway.
     - name: Delete __Build TS folders
       continue-on-error: true
       run: rm -R ./__build/tslang/ninja/release
@@ -64,21 +45,11 @@ jobs:
       run: mkdir -p ./__build/tslang/ninja/release; mkdir -p ./__build/gc/ninja/release
       shell: sh
 
-    - name: Download 3rd party - LLVM
-      continue-on-error: true
-      shell: sh
-      run: |
-        if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-            curl --insecure -L "${{ env.LLVM_TARGZFILE }}" --output llvm_${{ env.LLVM_VERSION }}_release.tgz
-        fi
-
-    - name: UnZip 3rd party - LLVM
+    # Downloads and unpacks the official LLVM package - nothing is compiled.
+    - name: Install 3rd party - LLVM ${{ env.LLVM_FULL_VERSION }}
       continue-on-error: false
       shell: sh
-      run:  |
-        if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-            file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
-        fi      
+      run: sh ./scripts/install_llvm_prebuilt_release.sh ${{ env.LLVM_FULL_VERSION }} && df -h .
 
     - name: Download 3rd party source - GC
       continue-on-error: true
@@ -105,10 +76,11 @@ jobs:
       shell: sh
       run:  cp -a ./3rdParty/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}/ ./3rdParty/gc-${{ env.GC_VERSION }}/libatomic_ops/
 
-    - name: Install Ninja
+    # zlib, zstd and libxml2: the official LLVM package's CMake targets link against them.
+    - name: Install Ninja and LLVM's link dependencies
       continue-on-error: false
       shell: sh
-      run: sudo apt install ninja-build
+      run: sudo apt-get update && sudo apt-get install -y ninja-build zlib1g-dev libzstd-dev libxml2-dev
 
 #    - name: Install Clang 12
 #      continue-on-error: false

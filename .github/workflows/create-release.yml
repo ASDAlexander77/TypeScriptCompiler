@@ -13,11 +13,9 @@ env:
   # tslang-v0.0-pre-alpha83-windows-x64.zip, tslang-v0.0-pre-alpha83-ubuntu-24.04-x64.tar.gz
   ASSET_NAME: tslang-${{ github.ref_name }}
   CACHE_VERSION: v10
-  LLVM_VERSION: 22
-  # Windows: the official LLVM release package plus a prebuilt MLIR archive, installed where a
-  # custom LLVM build would be - see scripts/install_llvm_prebuilt_release.ps1.
+  # The official LLVM release package (plus, on Windows, a prebuilt MLIR archive), installed where
+  # a custom LLVM build would be - see scripts/install_llvm_prebuilt_release.{ps1,sh}.
   LLVM_FULL_VERSION: "22.1.8"
-  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/ym6xvv8ib6yyewgf47ene/llvm_22_1_8_release.tgz?rlkey=jwkrrp82lql46qd1oysg9p736&st=p828hd39&dl=1"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
 
@@ -244,28 +242,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # keyed by the Ubuntu release, not just the OS: 3rdParty holds the GC built on that release
-      - name: Cache Build 3rd Party
-        id: cache-3rd-party
-        uses: actions/cache@v4
-        with:
-          path: __build/llvm/ninja
-          key: ${{ matrix.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-      - name: Cache 3rd Party binaries
-        id: cache-3rd-party-binary
-        uses: actions/cache@v4
-        with:
-          path: 3rdParty
-          key: ${{ matrix.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-      - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
-        id: cache-3rd-party-binary-llvm-release
-        uses: actions/cache@v4
-        with:
-          path: llvm_${{ env.LLVM_VERSION }}_release.tgz
-          key: ${{ matrix.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
-
+      # No 3rdParty cache: the LLVM prefix is about 9.6 GB, too big for the cache, and downloading
+      # it from GitHub each run is quick; GC is rebuilt every run anyway.
       - name: Retrieve version
         run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
         id: version
@@ -279,21 +257,11 @@ jobs:
         run: mkdir -p ./__build/tslang/ninja/release; mkdir -p ./__build/gc/ninja/release
         shell: sh
       
-      - name: Download 3rd party - LLVM
-        continue-on-error: true
-        shell: sh
-        run: |
-            if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-                curl --insecure -L "${{ env.LLVM_TARGZFILE }}" --output llvm_${{ env.LLVM_VERSION }}_release.tgz
-            fi
-
-      - name: UnZip 3rd party - LLVM
+      # Downloads and unpacks the official LLVM package - nothing is compiled.
+      - name: Install 3rd party - LLVM ${{ env.LLVM_FULL_VERSION }}
         continue-on-error: false
         shell: sh
-        run:  |
-            if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-                file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
-            fi
+        run: sh ./scripts/install_llvm_prebuilt_release.sh ${{ env.LLVM_FULL_VERSION }} && df -h .
 
       - name: Download 3rd party source - GC
         continue-on-error: true
@@ -323,7 +291,8 @@ jobs:
       - name: Install Ninja
         continue-on-error: false
         shell: sh
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev
+        # zlib, zstd and libxml2: the official LLVM package's CMake targets link against them.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libcurl4-openssl-dev zlib1g-dev libzstd-dev libxml2-dev
 
   #    - name: Install Clang 12
   #      continue-on-error: false
@@ -431,9 +400,10 @@ jobs:
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
           # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>
-          # (findResourceDir's "release package" candidate).
-          mkdir -p ./__stage/lib
-          cp -r ../3rdParty/llvm/release/lib/clang ./__stage/lib/
+          # (findResourceDir's "release package" candidate) - its headers only: the official LLVM
+          # package also puts compiler-rt's libraries under lib/clang/<major>/lib, which neither
+          # tsbindgen nor tslang uses.
+          for d in ../3rdParty/llvm/release/lib/clang/*/; do v=$(basename "$d"); mkdir -p "./__stage/lib/clang/$v"; cp -r "$d/include" "./__stage/lib/clang/$v/"; done
           tar -czvhf ../${{ env.ASSET_NAME }}-${{ matrix.os }}-x64.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
