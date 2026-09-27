@@ -173,6 +173,8 @@ namespace mlirgen
         auto location = loc(blockAST);
 
         SymbolTableScopeT varScope(symbolTable);
+        // a narrowing made in the block (after an early exit) ends with it
+        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
         GenContext genContextUsing(genContext);
         genContextUsing.parentBlockContext = &genContext;
 
@@ -245,6 +247,7 @@ namespace mlirgen
             builder.setInsertionPointToStart(&tryOp.getBody().front());
 
             SymbolTableScopeT varScope(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             GenContext tryBodyGenContext(tryGenContext);
             tryBodyGenContext.parentBlockContext = &tryGenContext;
 
@@ -489,6 +492,38 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // whether control never runs past the statement: it returns, throws, breaks or continues on
+    // every path. Conservative - a statement it cannot tell about does not count.
+    static bool statementAlwaysExits(Statement statement)
+    {
+        switch ((SyntaxKind)statement)
+        {
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::ThrowStatement:
+        case SyntaxKind::BreakStatement:
+        case SyntaxKind::ContinueStatement:
+            return true;
+        case SyntaxKind::Block:
+            for (auto blockStatement : statement.as<ts::Block>()->statements)
+            {
+                if (statementAlwaysExits(blockStatement))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        case SyntaxKind::IfStatement:
+        {
+            auto ifStatement = statement.as<IfStatement>();
+            return ifStatement->elseStatement && statementAlwaysExits(ifStatement->thenStatement)
+                && statementAlwaysExits(ifStatement->elseStatement);
+        }
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGen(IfStatement ifStatementAST, const GenContext &genContext)
     {
         auto location = loc(ifStatementAST);
@@ -518,6 +553,9 @@ namespace mlirgen
         // narrowed to `string` by `typeof x === "string"`. Under --di the narrowed variable's debug record
         // keeps such a cast alive into LLVM lowering even though the branch body was skipped.
         ElseSafeCase elseSafeCase{};
+        // `if (x === null) return;` narrows x for the rest of the block, as an else branch would
+        auto thenExits = !hasElse && !literalValue.has_value() && genContext.funcOp
+            && statementAlwaysExits(ifStatementAST->thenStatement);
         {
             SymbolTableScopeT varScope(symbolTable);
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
@@ -526,7 +564,7 @@ namespace mlirgen
             if (processIf)
             {
                 // check if we do safe-cast here
-                checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
+                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits ? &elseSafeCase : nullptr, genContext);
 
                 auto result = mlirGen(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
@@ -555,6 +593,11 @@ namespace mlirgen
         }
 
         builder.setInsertionPointAfter(ifOp);
+
+        if (thenExits && elseSafeCase.safeType)
+        {
+            addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+        }
 
         return mlir::success();
     }

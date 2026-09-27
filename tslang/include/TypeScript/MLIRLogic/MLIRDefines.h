@@ -50,6 +50,6 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 using BoundRefCacheScopeT = llvm::ScopedHashTableScope<mlir::Value, mlir::Value>;
 
 typedef std::pair<mlir::Type, StringRef> SafeTypeKeyType;
-using SafeTypesMapScopeT = llvm::ScopedHashTableScope<SafeTypeKeyType, mlir::Value>;
+using SafeTypesMapScopeT = llvm::ScopedHashTableScope<SafeTypeKeyType, mlir::Type>;
 
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRDEFINES_H_
