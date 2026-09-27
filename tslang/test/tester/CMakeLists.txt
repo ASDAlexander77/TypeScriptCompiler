@@ -553,6 +553,7 @@ tslang_add_test(NAME test-compile-00-try-catch-return-dispose COMMAND test-runne
 tslang_add_test(NAME test-compile-01-try-catch-return-dispose COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch_return_dispose.ts")
 tslang_add_test(NAME test-compile-00-property-access-conditional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00property_access_cond.ts")
 tslang_add_test(NAME test-compile-00-method-access-conditional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00method_access_cond.ts")
+tslang_add_test(NAME test-compile-00-method-this-param COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00method_this_param.ts")
 tslang_add_test(NAME test-compile-01-method-access-conditional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01method_access_cond.ts")
 tslang_add_test(NAME test-compile-00-question-question COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00question_question.ts")
 tslang_add_test(NAME test-compile-00-spread-assignment COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread_assignment.ts")
@@ -998,6 +999,7 @@ tslang_add_test(NAME test-jit-01-try-catch-return-dispose COMMAND test-runner -j
 tslang_add_test(NAME test-jit-00-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 tslang_add_test(NAME test-jit-00-property-access-conditional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00property_access_cond.ts")
 tslang_add_test(NAME test-jit-00-method-access-conditional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00method_access_cond.ts")
+tslang_add_test(NAME test-jit-00-method-this-param COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00method_this_param.ts")
 tslang_add_test(NAME test-jit-01-method-access-conditional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01method_access_cond.ts")
 tslang_add_test(NAME test-jit-00-question-question COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00question_question.ts")
 tslang_add_test(NAME test-jit-00-spread-assignment COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread_assignment.ts")
@@ -1686,6 +1688,7 @@ set(TSLANG_CORPUS
     00length.ts
     00map.ts
     00method_access_cond.ts
+    00method_this_param.ts
     00mixed_type_ops.ts
     00names_conflict.ts
     00nested_catch.ts
@@ -2275,6 +2278,7 @@ set(call_arity_cases
     "plain|Expected 2 arguments, but got 1\\."
     "optional|Expected 2\\-3 arguments, but got 1\\."
     "method|Expected 2 arguments, but got 1\\."
+    "method_this|Expected 2 arguments, but got 1\\."
     "constructor|Expected 2 arguments, but got 1\\."
     "closure|Expected 2 arguments, but got 1\\."
     "declared|Expected 2 arguments, but got 1\\."
