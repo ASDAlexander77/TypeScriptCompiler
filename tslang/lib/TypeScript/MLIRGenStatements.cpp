@@ -537,6 +537,8 @@ namespace mlirgen
         {
             builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
             SymbolTableScopeT varScope(symbolTable);
+            // the else narrowing maps a field to a value of this region; it must not outlive it
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
 
             auto processIf = !literalValue.has_value() || !literalValue.value();
             if (processIf)

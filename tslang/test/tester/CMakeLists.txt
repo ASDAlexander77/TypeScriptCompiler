@@ -530,6 +530,7 @@ tslang_add_test(NAME test-compile-00-safe-cast-while COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-01-safe-cast-while COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01safe_cast_while.ts")
 tslang_add_test(NAME test-compile-00-safe-cast-field-access COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_field_access.ts")
 tslang_add_test(NAME test-compile-00-safe-cast-null-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_null_field.ts")
+tslang_add_test(NAME test-compile-00-safe-cast-else-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_else_scope.ts")
 tslang_add_test(NAME test-compile-00-safe-cast-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_bug.ts")
 tslang_add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 tslang_add_test(NAME test-compile-01-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
@@ -973,6 +974,7 @@ tslang_add_test(NAME test-jit-00-safe-cast-while COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-01-safe-cast-while COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01safe_cast_while.ts")
 tslang_add_test(NAME test-jit-00-safe-cast-field-access COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_field_access.ts")
 tslang_add_test(NAME test-jit-00-safe-cast-null-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_null_field.ts")
+tslang_add_test(NAME test-jit-00-safe-cast-else-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_else_scope.ts")
 tslang_add_test(NAME test-jit-00-safe-cast-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast_bug.ts")
 tslang_add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 tslang_add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
@@ -1758,6 +1760,7 @@ set(TSLANG_CORPUS
     00safe_cast_bug.ts
     00safe_cast_field_access.ts
     00safe_cast_null_field.ts
+    00safe_cast_else_scope.ts
     00safe_cast_typeof.ts
     00safe_cast_while.ts
     00safe_cast.ts
