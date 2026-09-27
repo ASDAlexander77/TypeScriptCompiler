@@ -128,16 +128,16 @@ if (WIN32)
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${LLVM_TOOLS_BINARY_DIR}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${LLVM_LIBRARY_DIR}\"")
 else()
     target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_LIBPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GC_SHARED_BINPATH=\"${TEST_GC_SHARED_PREFIX}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${LLVM_TOOLS_BINARY_DIR}\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${LLVM_LIBRARY_DIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_COMPILER=\"${CMAKE_CXX_COMPILER}\"")
 endif()
 
@@ -2141,7 +2141,7 @@ if (WIN32)
                      "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/gc-shared-auto"
                      "-DGC_LIB=${TEST_GC_LIBDIR}"
                      "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib"
-                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      "-DOPT=${gc_shared_auto_opt}"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-collector-auto.cmake")
@@ -2158,7 +2158,7 @@ if (WIN32)
                          "-DTSLANG=$<TARGET_FILE:tslang>"
                          "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
                          "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/foreign-target-import-${foreign_import_mode}"
-                         "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                         "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
                          "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                          -P "${CMAKE_CURRENT_SOURCE_DIR}/foreign-target-import.cmake")
     endforeach()
@@ -2173,11 +2173,10 @@ if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
 else()
     set(defaultlib_collector_opt "--di;--opt_level=0")
 endif()
+set(defaultlib_collector_llvm_lib "${LLVM_LIBRARY_DIR}")
 if (WIN32)
-    set(defaultlib_collector_llvm_lib "${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib")
     set(defaultlib_collector_gc_shared "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib")
 else()
-    set(defaultlib_collector_llvm_lib "${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/lib")
     set(defaultlib_collector_gc_shared "")
 endif()
 foreach(defaultlib_collector_mode jit compile)
@@ -2429,7 +2428,7 @@ if (WIN32)
                      "-DTSLANG=$<TARGET_FILE:tslang>"
                      "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/reference-path"
                      "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/reference-path-shared-reimport"
-                     "-DLLVM_LIB=${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/shared-import-reimport.cmake")
 endif()

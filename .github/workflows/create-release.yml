@@ -14,7 +14,9 @@ env:
   ASSET_NAME: tslang-${{ github.ref_name }}
   CACHE_VERSION: v10
   LLVM_VERSION: 22
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/q6o011dlgw7n2ebzo176q/llvm_22_1_8_release_vs2026.zip?rlkey=s2h7c64nrmyz9bire0zr3ctzh&st=3nqb99qb&dl=1"
+  # Windows: the official LLVM release package plus a prebuilt MLIR archive, installed where a
+  # custom LLVM build would be - see scripts/install_llvm_prebuilt_release.ps1.
+  LLVM_FULL_VERSION: "22.1.8"
   LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/ym6xvv8ib6yyewgf47ene/llvm_22_1_8_release.tgz?rlkey=jwkrrp82lql46qd1oysg9p736&st=p828hd39&dl=1"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
@@ -30,26 +32,12 @@ jobs:
       - name: Build project # This would actually build your project, using zip for an example artifact
         run: echo 'SELECTED_COLOR=green Build project (Windows)' >> "$GITHUB_OUTPUT"
 
-      - name: Cache Build 3rd Party
-        id: cache-3rd-party
-        uses: actions/cache@v4
-        with:
-          path: __build/llvm
-          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
         uses: actions/cache@v4
         with:
           path: 3rdParty
-          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-      - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
-        id: cache-3rd-party-binary-llvm-release
-        uses: actions/cache@v4
-        with:
-          path: llvm_${{ env.LLVM_VERSION }}_release.zip
-          key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_FULL_VERSION }}-${{ env.CACHE_VERSION }}-${{ hashFiles('scripts/install_llvm_prebuilt_release.ps1', 'scripts/llvm_prebuilt_common.ps1') }}
 
       - name: Retrieve version
         run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> "$GITHUB_OUTPUT"
@@ -63,17 +51,14 @@ jobs:
         shell: pwsh
 
       - name: Create __Build Folders
-        run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+        run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
         shell: pwsh
       
-      - name: Download 3rd party - LLVM
-        continue-on-error: true
-        shell: pwsh
-        run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "${{ env.LLVM_ZIPFILE }}" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
-
-      - name: UnZip 3rd party - LLVM
+      # Downloads and unpacks the official LLVM package and the prebuilt MLIR archive - nothing is
+      # compiled. Skips itself when the cached 3rdParty already has them.
+      - name: Install 3rd party - LLVM ${{ env.LLVM_FULL_VERSION }} + MLIR
         continue-on-error: false
-        run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
+        run: ./scripts/install_llvm_prebuilt_release.ps1 -Version ${{ env.LLVM_FULL_VERSION }}
         shell: pwsh
 
       - name: Download 3rd party source - GC
@@ -228,12 +213,13 @@ jobs:
         # plus the shared collector in its own folder, because its import library is also named
         # gc.lib: gcdll/gc.lib + gcdll/gc.dll, for programs that load a tslang shared library.
         # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>
-        # (findResourceDir's "release package" candidate), so stage that layout too.
+        # (findResourceDir's "release package" candidate), so stage that layout too - its headers
+        # only: the official LLVM package also puts compiler-rt's libraries under
+        # lib/clang/<major>/lib, which neither tsbindgen nor tslang uses.
         run: |
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
-          New-Item -ItemType Directory -Force -Path .\resourcedir_stage\lib | Out-Null
-          Copy-Item -Path ..\3rdParty\llvm\x64\release\lib\clang -Destination .\resourcedir_stage\lib -Recurse -ErrorAction Stop
+          Get-ChildItem -Path ..\3rdParty\llvm\x64\release\lib\clang -Directory | ForEach-Object { $dest = ".\resourcedir_stage\lib\clang\$($_.Name)"; New-Item -ItemType Directory -Force -Path $dest | Out-Null; Copy-Item -Path (Join-Path $_.FullName "include") -Destination $dest -Recurse -ErrorAction Stop }
           Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\tsbindgen.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage, .\resourcedir_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
         shell: pwsh
 

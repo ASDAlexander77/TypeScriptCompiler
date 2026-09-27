@@ -13,9 +13,11 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v10
+  CACHE_VERSION: v11
   LLVM_VERSION: 22
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/q6o011dlgw7n2ebzo176q/llvm_22_1_8_release_vs2026.zip?rlkey=s2h7c64nrmyz9bire0zr3ctzh&st=3nqb99qb&dl=1"
+  # The official LLVM release package plus a prebuilt MLIR archive, installed where a custom LLVM
+  # build would be - see scripts/install_llvm_prebuilt_release.ps1.
+  LLVM_FULL_VERSION: "22.1.8"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
   
@@ -34,26 +36,12 @@ jobs:
 
     - uses: actions/checkout@v4
 
-    - name: Cache Build 3rd Party
-      id: cache-3rd-party
-      uses: actions/cache@v4
-      with:
-        path: __build/llvm
-        key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
       uses: actions/cache@v4
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
-
-    - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
-      id: cache-3rd-party-binary-llvm-release
-      uses: actions/cache@v4
-      with:
-        path: llvm_${{ env.LLVM_VERSION }}_release.zip
-        key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_FULL_VERSION }}-${{ env.CACHE_VERSION }}-${{ hashFiles('scripts/install_llvm_prebuilt_release.ps1', 'scripts/llvm_prebuilt_common.ps1') }}
 
     - name: Delete __Build TS folders
       continue-on-error: true
@@ -61,17 +49,14 @@ jobs:
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+      run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
       shell: pwsh
 
-    - name: Download 3rd party - LLVM
-      continue-on-error: true
-      shell: pwsh
-      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "${{ env.LLVM_ZIPFILE }}" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
-
-    - name: UnZip 3rd party - LLVM
+    # Downloads and unpacks the official LLVM package and the prebuilt MLIR archive - nothing is
+    # compiled. Skips itself when the cached 3rdParty already has them.
+    - name: Install 3rd party - LLVM ${{ env.LLVM_FULL_VERSION }} + MLIR
       continue-on-error: false
-      run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
+      run: ./scripts/install_llvm_prebuilt_release.ps1 -Version ${{ env.LLVM_FULL_VERSION }}
       shell: pwsh
 
     - name: Download 3rd party source - GC
