@@ -66,6 +66,7 @@
 #define EH_PAD_ID_ATTR_NAME "__eh_pad_id"
 #define EH_PAD_PARENT_ATTR_NAME "__eh_pad_parent"
 #define UNDEFINED_NAME "undefined"
+#define NULL_NAME "null"
 #define INFINITY_NAME "Infinity"
 #define NAN_NAME "NaN"
 #define THIS_NAME "this"

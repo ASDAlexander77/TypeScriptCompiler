@@ -139,6 +139,21 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
     }
 };
 
+// A string that is null reads as "null" where its text is used, as it prints and concatenates in
+// JS; handed to puts/strlen as it is, it was a crash. The conversion to string keeps it null, so
+// `let s: string = maybeNull` is still null afterwards.
+static mlir::Value nullStringAsText(mlir::Location loc, mlir::Value text, ConversionPatternRewriter &rewriter,
+                                    TypeConverterHelper &tch)
+{
+    auto ptrType = text.getType();
+    auto strType = mlir_ts::StringType::get(rewriter.getContext());
+    mlir::Value nullText = rewriter.create<mlir_ts::DialectCastOp>(
+        loc, tch.convertType(strType), rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(NULL_NAME)));
+    auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
+    auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, text, nullPtr);
+    return rewriter.create<LLVM::SelectOp>(loc, isNull, nullText, text);
+}
+
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 {
   public:
@@ -208,7 +223,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         else
         {
             mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, values.front());
-            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, nullStringAsText(loc, valueAsPtr, rewriter, tch));
         }
 
         // Notify the rewriter that this operation has been removed.
@@ -786,9 +801,15 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         auto strcpyFuncOp = ch.getOrInsertFunction("strcpy", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
         auto strcatFuncOp = ch.getOrInsertFunction("strcat", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
 
+        SmallVector<mlir::Value> opers;
+        for (auto oper : transformed.getOps())
+        {
+            opers.push_back(nullStringAsText(loc, oper, rewriter, tch));
+        }
+
         mlir::Value size = clh.createIndexConstantOf(llvmIndexType, 1);
         // calc size
-        for (auto oper : transformed.getOps())
+        for (auto oper : opers)
         {
             auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper);
             size = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{size, size1.getResult()});
@@ -803,7 +824,7 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         // copy
         auto concat = false;
         auto result = newStringValue;
-        for (auto oper : transformed.getOps())
+        for (auto oper : opers)
         {
             if (concat)
             {

@@ -1281,6 +1281,13 @@ namespace mlirgen
             {
                 return castFromUnion(location, type, value, genContext);
             }
+
+            if (isa<mlir_ts::StringType>(type)
+                && isa<mlir_ts::ClassType>(baseType)
+                && llvm::any_of(unionType.getTypes(), [](auto subType) { return isa<mlir_ts::NullType>(subType); }))
+            {
+                return castNullableToString(location, type, value, baseType, genContext);
+            }
         }
 
         // TODO: issue is with casting to Boolean type from union type for example, you need to cast optional type to boolean to check value
@@ -1897,7 +1904,38 @@ namespace mlirgen
         }
 
         return mlir::failure();
-    }    
+    }
+
+    // A union of a class and null needs no tag: it is the object's pointer, null when the union
+    // holds null. A plain cast to string read that pointer as the text - the object's bytes, or a
+    // crash for null - so test it first, as `??` does, and give the object its toString. (A null
+    // `string` stays null when converted; it reads as "null" where it is printed or concatenated,
+    // see nullStringAsText in LowerToLLVM.)
+    ValueOrLogicalResult MLIRGenImpl::castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext)
+    {
+        CAST_A(opaqueValue, location, getOpaqueType(), value, genContext);
+
+        auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), opaqueValue,
+            nullVal);
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{type}, isNull, true);
+
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto nullText = builder.create<mlir_ts::ConstantOp>(location, type, builder.getStringAttr(NULL_NAME));
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{nullText});
+
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+        // the union as the class: the same pointer, now known not to be null
+        auto baseValue = V(builder.create<mlir_ts::CastOp>(location, baseType, value));
+        CAST_A(text, location, type, baseValue, genContext);
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{text});
+
+        builder.setInsertionPointAfter(ifOp);
+
+        return V(ifOp.getResults().front());
+    }
 
     ValueOrLogicalResult MLIRGenImpl::castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext)

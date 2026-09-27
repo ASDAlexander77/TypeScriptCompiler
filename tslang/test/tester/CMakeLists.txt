@@ -372,6 +372,7 @@ tslang_add_test(NAME test-compile-00-union-bin-ops COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-union-bin-ops-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_bin_ops2.ts")
 tslang_add_test(NAME test-compile-00-union-to-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-compile-00-union-errors COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
+tslang_add_test(NAME test-compile-00-union-null-to-string COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
 tslang_add_test(NAME test-compile-00-intersection-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-compile-00-intersection-type-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
 tslang_add_test(NAME test-compile-00-length COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length.ts")
@@ -813,6 +814,7 @@ tslang_add_test(NAME test-jit-00-union-bin-ops COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-union-bin-ops-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_bin_ops2.ts")
 tslang_add_test(NAME test-jit-00-union-to-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-jit-00-union-errors COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
+tslang_add_test(NAME test-jit-00-union-null-to-string COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
 tslang_add_test(NAME test-jit-00-union-global-init COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_global_init.ts")
 tslang_add_test(NAME test-jit-00-intersection-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-jit-00-intersection-type-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
@@ -1802,6 +1804,7 @@ set(TSLANG_CORPUS
     00union_bin_ops.ts
     00union_bin_ops2.ts
     00union_errors.ts
+    00union_null_to_string.ts
     00union_ops.ts
     00union_to_any.ts
     00union_type.ts
