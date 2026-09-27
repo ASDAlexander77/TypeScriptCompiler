@@ -2677,3 +2677,19 @@ if (NOT WIN32)
                          PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Segmentation|assertion failed")
 endif()
+
+# An exception nothing catches ends a JIT run with an error, not with LLVM's crash handler
+# reporting a crash of the compiler. Windows only: that is where the JIT catches it.
+if (WIN32)
+    foreach(uncaught_name throw_string throw_class)
+        foreach(uncaught_model gc rc none)
+            add_test(NAME test-jit-${uncaught_model}-uncaught-${uncaught_name}
+                     COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${uncaught_model}
+                             --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                             "${PROJECT_SOURCE_DIR}/test/tester/uncaught/${uncaught_name}.ts")
+            set_tests_properties(test-jit-${uncaught_model}-uncaught-${uncaught_name}
+                                 PROPERTIES PASS_REGULAR_EXPRESSION "error: uncaught exception"
+                                            FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
+        endforeach()
+    endforeach()
+endif()

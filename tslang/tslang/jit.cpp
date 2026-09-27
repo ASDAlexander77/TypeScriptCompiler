@@ -359,6 +359,30 @@ extern "C" EXCEPTION_DISPOSITION __CxxFrameHandler3(struct _EXCEPTION_RECORD *, 
 #define JIT_ENTRY_THUNK_NAME "__tslang_jit_main"
 using JitEntryThunkFn = int (*)(int, char **);
 
+// Calls the program's entry point; false when an exception nothing in the program catches came
+// out of it. Left alone, that exception reaches LLVM's crash handler, which reports it as a crash
+// of the compiler, with a stack dump and a request for a bug report. Windows only: SEH rather
+// than try/catch, which is also why this is a function of its own - __try can't share one with
+// C++ destructors.
+static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, int &exitCode)
+{
+#ifdef _WIN32
+    constexpr DWORD cxxExceptionCode = 0xE06D7363; // 'msc' | 0xE0000000
+    __try
+    {
+        exitCode = entryThunk(argc, argv);
+        return true;
+    }
+    __except (GetExceptionCode() == cxxExceptionCode ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+    {
+        return false;
+    }
+#else
+    exitCode = entryThunk(argc, argv);
+    return true;
+#endif
+}
+
 // The entry point keeps whatever signature its TS declaration lowered to - `void @main()`,
 // `double @main()`, `i32 @main(i32, { ptr, i64 })`, ... - and calling it through a C++ function
 // pointer of the wrong type reads garbage arguments. So give the JIT one signature to call, the C
@@ -935,7 +959,13 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto programArgc = static_cast<int>(programArgv.size());
     programArgv.push_back(nullptr);
 
-    auto exitCode = entryThunk->toPtr<JitEntryThunkFn>()(programArgc, programArgv.data());
+    auto exitCode = 0;
+    if (!callEntryThunk(entryThunk->toPtr<JitEntryThunkFn>(), programArgc, programArgv.data(), exitCode))
+    {
+        fflush(stdout);
+        llvm::WithColor::error(llvm::errs(), "tslang") << "uncaught exception\n";
+        exitCode = 1;
+    }
 
     // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
     // registers process-level atexit glue that faults during teardown (exception
