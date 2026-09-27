@@ -51,6 +51,13 @@ namespace mlirgen
                 namePtr = getArgumentName(index);
             }
 
+            // A written `this:` on a method only annotates the receiver the method already has; as a
+            // parameter of its own it shifted every argument by one slot.
+            if (namePtr == THIS_NAME && !params.empty() && params.front()->getName() == THIS_NAME)
+            {
+                continue;
+            }
+
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
