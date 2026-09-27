@@ -1141,6 +1141,10 @@ namespace mlirgen
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
                        llvm::dbgs() << "\n";);
 
+            // generated in full even inside an imported file; see the overload below
+            MLIRValueGuard<bool> declarationModeGuard(declarationMode);
+            declarationMode = false;
+
             // create new instance of interface with TypeArguments
             if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
@@ -1216,6 +1220,13 @@ namespace mlirgen
                 // s += "'. Circular initialization is detected.";
                 // llvm_unreachable(s.c_str());
             }
+
+            // A specialization belongs to every module that uses it (its members are linkonce_odr),
+            // so it is generated in full even while an imported file is only being declared: the
+            // module keeps this copy for its own uses too, and must not depend on the imported
+            // module's object happening to keep the members it needs.
+            MLIRValueGuard<bool> declarationModeGuard(declarationMode);
+            declarationMode = false;
 
             auto res = std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext));
             count--;
