@@ -372,6 +372,7 @@ tslang_add_test(NAME test-compile-00-union-bin-ops COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-union-bin-ops-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_bin_ops2.ts")
 tslang_add_test(NAME test-compile-00-union-to-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-compile-00-union-errors COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
+tslang_add_test(NAME test-compile-00-union-null-to-string COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
 tslang_add_test(NAME test-compile-00-intersection-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-compile-00-intersection-type-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
 tslang_add_test(NAME test-compile-00-length COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length.ts")
@@ -813,6 +814,7 @@ tslang_add_test(NAME test-jit-00-union-bin-ops COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-union-bin-ops-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_bin_ops2.ts")
 tslang_add_test(NAME test-jit-00-union-to-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-jit-00-union-errors COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
+tslang_add_test(NAME test-jit-00-union-null-to-string COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
 tslang_add_test(NAME test-jit-00-union-global-init COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_global_init.ts")
 tslang_add_test(NAME test-jit-00-intersection-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-jit-00-intersection-type-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
@@ -1802,6 +1804,7 @@ set(TSLANG_CORPUS
     00union_bin_ops.ts
     00union_bin_ops2.ts
     00union_errors.ts
+    00union_null_to_string.ts
     00union_ops.ts
     00union_to_any.ts
     00union_type.ts
@@ -2673,4 +2676,20 @@ if (NOT WIN32)
     set_tests_properties(test-jit-foreign-throw-catch
                          PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Segmentation|assertion failed")
+endif()
+
+# An exception nothing catches ends a JIT run with an error, not with LLVM's crash handler
+# reporting a crash of the compiler. Windows only: that is where the JIT catches it.
+if (WIN32)
+    foreach(uncaught_name throw_string throw_class)
+        foreach(uncaught_model gc rc none)
+            add_test(NAME test-jit-${uncaught_model}-uncaught-${uncaught_name}
+                     COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${uncaught_model}
+                             --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                             "${PROJECT_SOURCE_DIR}/test/tester/uncaught/${uncaught_name}.ts")
+            set_tests_properties(test-jit-${uncaught_model}-uncaught-${uncaught_name}
+                                 PROPERTIES PASS_REGULAR_EXPRESSION "error: uncaught exception"
+                                            FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit")
+        endforeach()
+    endforeach()
 endif()

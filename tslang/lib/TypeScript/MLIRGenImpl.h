@@ -11181,6 +11181,8 @@ class MLIRGenImpl
     // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
 
+    ValueOrLogicalResult castNullableToString(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type baseType, const GenContext &genContext);
+
     ValueOrLogicalResult castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 
