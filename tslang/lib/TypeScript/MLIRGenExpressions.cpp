@@ -1051,6 +1051,39 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
 
+        // `const m: Map<string, number[]> = new Map()`: a generic class written without type
+        // arguments takes them from the type it is given to, when that is the same class. Its
+        // type parameter defaults (`Map<K = any, V = any>`) made Map<any, any> otherwise, a
+        // different layout, and the cast to the declared type crashed at run time.
+        if (newExpression->typeArguments.size() == 0 && genContext.receiverType)
+        {
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(value.getType()))
+            {
+                // the generic itself, or its specialization by the defaults
+                auto genericClassType = mlir_ts::ClassType();
+                if (getGenericClassInfoByFullName(classType.getName().getValue()))
+                {
+                    genericClassType = classType;
+                }
+                else if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()))
+                {
+                    genericClassType = classInfo->originClassType;
+                }
+
+                auto receiverClassType = dyn_cast<mlir_ts::ClassType>(mth.stripOptionalType(genContext.receiverType));
+                if (genericClassType && receiverClassType && receiverClassType != classType)
+                {
+                    auto receiverClassInfo = getClassInfoByFullName(receiverClassType.getName().getValue());
+                    if (receiverClassInfo && receiverClassInfo->originClassType == genericClassType)
+                    {
+                        value = builder.create<mlir_ts::ClassRefOp>(
+                            location, receiverClassType,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), receiverClassType.getName().getValue()));
+                    }
+                }
+            }
+        }
+
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(value.getType()))
         {
             return NewArray(location, arrayType, newExpression->arguments, genContext);
