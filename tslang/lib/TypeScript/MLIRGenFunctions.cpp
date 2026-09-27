@@ -580,6 +580,16 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
     {
+        // Outside an ambient context (`declare`, a .d.ts) a function without a body is an overload
+        // signature, and the implementation that follows it is the function. Registering the
+        // signature too made the implementation take its parameter list.
+        auto isAmbient = (functionDeclarationAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient
+            || hasModifier(functionDeclarationAST, SyntaxKind::DeclareKeyword);
+        if (!functionDeclarationAST->body && !isAmbient)
+        {
+            return mlir::success();
+        }
+
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         // declaring function which is nested and object should not have this context (unless it is part of object declaration)

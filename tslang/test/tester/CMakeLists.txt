@@ -274,6 +274,7 @@ tslang_add_test(NAME test-compile-00-global-const-object-method COMMAND test-run
 tslang_add_test(NAME test-compile-00-funcs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 tslang_add_test(NAME test-compile-00-funcs-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 tslang_add_test(NAME test-compile-00-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")
+tslang_add_test(NAME test-compile-00-function-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 # printf is avaliable in JIT only, C has snprintf
 #tslang_add_test(NAME test-compile-02-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
@@ -717,6 +718,7 @@ tslang_add_test(NAME test-jit-00-global-const-object-method COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-funcs COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 tslang_add_test(NAME test-jit-00-funcs-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 tslang_add_test(NAME test-jit-00-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")
+tslang_add_test(NAME test-jit-00-function-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-jit-01-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 tslang_add_test(NAME test-jit-02-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
 tslang_add_test(NAME test-jit-00-funcs-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_bindings.ts")
@@ -1636,6 +1638,7 @@ set(TSLANG_CORPUS
     00funcs_typed_generic_iterator.ts
     00funcs_typeless_function_as_generic.ts
     00funcs_vararg.ts
+    00function_overloads.ts
     00funcs.ts
     00generator_manual_next.ts
     00generator_manual_next2.ts

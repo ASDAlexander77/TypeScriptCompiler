@@ -2099,8 +2099,19 @@ genContext);
 
         auto location = loc(classMember);
 
-        auto accessLevel = getAccessLevel(classMember);        
+        auto accessLevel = getAccessLevel(classMember);
         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+
+        // an overload signature of a method or a constructor, as for a function: the implementation
+        // that follows it is the member
+        auto isAmbientMember = newClassPtr->isDeclaration || newClassPtr->isImport
+            || (classMember->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
+        if (!funcLikeDeclaration->body && !classMethodMemberInfo.isAbstract && !isAmbientMember
+            && (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor))
+        {
+            return mlir::success();
+        }
+
         if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
             funcLikeDeclaration, 
