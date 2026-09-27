@@ -15,7 +15,7 @@ env:
   BUILD_TYPE: Release
   CACHE_VERSION: v11
   LLVM_VERSION: 22
-  # The official LLVM release package plus MLIR built against it, installed where a custom LLVM
+  # The official LLVM release package plus a prebuilt MLIR archive, installed where a custom LLVM
   # build would be - see scripts/install_llvm_prebuilt_release.ps1.
   LLVM_FULL_VERSION: "22.1.8"
   GC_VERSION: "8.2.12"
@@ -41,7 +41,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_FULL_VERSION }}-${{ env.CACHE_VERSION }}-${{ hashFiles('scripts/install_llvm_prebuilt_release.ps1') }}
+        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_FULL_VERSION }}-${{ env.CACHE_VERSION }}-${{ hashFiles('scripts/install_llvm_prebuilt_release.ps1', 'scripts/llvm_prebuilt_common.ps1') }}
 
     - name: Delete __Build TS folders
       continue-on-error: true
@@ -52,8 +52,8 @@ jobs:
       run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
       shell: pwsh
 
-    # Skips itself when the cached 3rdParty already has MLIR; otherwise downloads the official
-    # package and builds MLIR (the only part that takes a while).
+    # Downloads and unpacks the official LLVM package and the prebuilt MLIR archive - nothing is
+    # compiled. Skips itself when the cached 3rdParty already has them.
     - name: Install 3rd party - LLVM ${{ env.LLVM_FULL_VERSION }} + MLIR
       continue-on-error: false
       run: ./scripts/install_llvm_prebuilt_release.ps1 -Version ${{ env.LLVM_FULL_VERSION }}
