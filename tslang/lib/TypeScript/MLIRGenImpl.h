@@ -3619,10 +3619,10 @@ class MLIRGenImpl
             auto isConst = false;
             mlir::Attribute value;
             isConst = isConstValue(constVal);
-            if (isConst)
+            // null and undefined are const values too, but not literals a discriminant field can hold
+            auto constantOp = isConst ? constVal.getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+            if (constantOp)
             {
-                auto constantOp = constVal.getDefiningOp<mlir_ts::ConstantOp>();
-                assert(constantOp);
                 auto valueAttr = constantOp.getValueAttr();
 
                 MLIRCodeLogic mcl(builder, compileOptions);
@@ -3633,6 +3633,11 @@ class MLIRGenImpl
                     if (auto tupleType = dyn_cast<mlir_ts::TupleType>(unionSubType))
                     {
                         auto fieldIndex = tupleType.getIndex(fieldNameAttr);
+                        if (fieldIndex < 0)
+                        {
+                            continue;
+                        }
+
                         auto fieldType = tupleType.getType(fieldIndex);
                         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(fieldType))
                         {
@@ -3657,6 +3662,11 @@ class MLIRGenImpl
                         if (auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
                         {
                             auto fieldInfo = interfaceInfo->findField(fieldNameAttr);
+                            if (!fieldInfo)
+                            {
+                                continue;
+                            }
+
                             if (auto literalType = dyn_cast<mlir_ts::LiteralType>(fieldInfo->type))
                             {
                                 if (literalType.getValue() == valueAttr)
