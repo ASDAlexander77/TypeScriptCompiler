@@ -2435,6 +2435,15 @@ tslang_add_import_tests(reference-path-import-and-reference "${reference_path_di
 tslang_add_import_tests(reference-path-two-imports "${reference_path_dir}" two_imports module_left module_right)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
 tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
+# Static linking only: a -shared library of these two modules declares Node twice to its importer
+# ("redefinition of symbol named 'Node..new'"), a separate gap.
+tslang_add_test(NAME test-compile-reference-path-import-cycle-class COMMAND test-runner "${reference_path_dir}/import_cycle_class.ts" "${reference_path_dir}/cycle_class_node.ts" "${reference_path_dir}/cycle_class_text.ts")
+# The first attempt at an import in a cycle fails and is tried again; its errors were printed
+# although the compile succeeded.
+add_test(NAME test-compile-reference-path-import-cycle-quiet
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib
+                 "${reference_path_dir}/cycle_class_node.ts" -o "${CMAKE_CURRENT_BINARY_DIR}/cycle_class_node.obj")
+set_tests_properties(test-compile-reference-path-import-cycle-quiet PROPERTIES FAIL_REGULAR_EXPRESSION "error:")
 
 # `import { a as b }` and `import * as M` - each used to be "can't resolve name".
 set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")

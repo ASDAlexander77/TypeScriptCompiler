@@ -783,8 +783,15 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                                           int notResolved)
     {
-        // print errors
-        if (notResolved)
+        // print errors, or hand them to the importer of this file
+        if (notResolved && importDiagnostics)
+        {
+            for (auto &diag : postponedMessages)
+            {
+                importDiagnostics->push_back(std::move(diag));
+            }
+        }
+        else if (notResolved)
         {
             printDiagnostics(sourceMgrHandler, postponedMessages, compileOptions.disableWarnings);
         }
@@ -1117,8 +1124,26 @@ namespace mlirgen
         // we need to override filename to track it in DBG info
         SourceFileScope sourceFileScope(*this, importSource);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
-            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
+        // An import cycle (a imports b imports a) fails b on its first attempt: a has not declared
+        // what b needs yet. a's processStatements tries the import again once it has, so b's errors
+        // are the importer's to report, and only if the import still fails.
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> diagnostics;
+        auto generated = false;
+        {
+            MLIRValueGuard<mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *> diagnosticsGuard(importDiagnostics);
+            importDiagnostics = &diagnostics;
+
+            generated = mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
+                mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false));
+        }
+
+        // the import's own diagnostic handlers are gone: these reach the importer's
+        for (auto &diag : diagnostics)
+        {
+            builder.getContext()->getDiagEngine().emit(std::move(*diag));
+        }
+
+        if (generated)
         {
             // only now: an import that failed is tried again on the next pass, and must fail
             // again rather than find itself already done. Its library declarations, if a

@@ -12743,6 +12743,11 @@ class MLIRGenImpl
     // next pass; see mlirGen(FunctionDeclaration)
     std::map<std::string, std::pair<FunctionDeclaration, mlir::Operation *>> declaredFunctions;
 
+    // Set while an imported source file is generated (mlirGenInclude): the errors of the file go
+    // here instead of being printed, and the import hands them to the importer, whose
+    // processStatements tries a failed import again and prints only what the last attempt left.
+    mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *importDiagnostics = nullptr;
+
     // set while an `import { a as b }` alias is resolved to its target (resolveImportAlias)
     bool resolvingImportAlias = false;
 
