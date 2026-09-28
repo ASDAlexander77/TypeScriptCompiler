@@ -327,6 +327,16 @@ static void jitAssertFailed(const char *message, const char *file, unsigned line
     _exit(3);
 }
 
+#ifndef _WIN32
+// glibc's `__assert_fail`, which the lowering calls off Windows, ends in abort(). tslang's own
+// crash handler takes that SIGABRT for a compiler crash and prints a "Stack dump" after the
+// message. Report it as on Windows instead.
+static void jitGlibcAssertFail(const char *assertion, const char *file, unsigned line, const char * /*function*/)
+{
+    jitAssertFailed(assertion, file, line);
+}
+#endif
+
 #ifdef _WIN64
 // MSVC x64 C++ EH encodes throw-site type information as image-relative offsets.
 // vcruntime's _CxxThrowException recovers the base with RtlPcToFileHeader on the
@@ -900,6 +910,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(crtOverrides))))
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+    }
+#else
+    // see jitGlibcAssertFail above
+    {
+        llvm::orc::MangleAndInterner interner(jit->getExecutionSession(), jit->getDataLayout());
+        llvm::orc::SymbolMap assertOverrides;
+        assertOverrides[interner("__assert_fail")] = {
+            llvm::orc::ExecutorAddr::fromPtr(&jitGlibcAssertFail), llvm::JITSymbolFlags::Exported};
+        if (auto err = jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(assertOverrides))))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define the assert handler, error: " << err << "\n";
             llvm::consumeError(std::move(err));
             return -1;
         }
