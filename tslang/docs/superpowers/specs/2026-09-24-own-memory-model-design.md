@@ -1,6 +1,7 @@
 # `-mm=own`: a single-owner memory model
 
-Date: 2026-09-24. Status: design approved in conversation, awaiting written review.
+Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
+amendments folded in. Phase-0 plan pending the scope decision of §10.6.
 
 ## 1. Purpose
 
@@ -158,7 +159,8 @@ locations. Its output is IR with **zero** retain ops left, or errors.
 
 - `RetainOpLowering`, `RetainSlotOpLowering`, `RetainCellOpLowering`: unreachable under own. If
   one survives, `emitError` ("ownership inference left a retain behind") and fail - never
-  silently erase.
+  silently erase. This is the backstop only; the gate is `OwnershipInferencePass` (§3.3), which
+  in phase 0 is a stub that reports every retain at its source location and fails (§10.2).
 - `Release*` lowerings call `OwnershipRoutineLogic` as today; `OwnershipRoutineLogic` gains an
   own flavour where `emitIfLastReference` becomes "load header; if not immortal, run the body"
   - one load, no read-modify-write - and the per-type `tsrel_`/`tsrelv_` routines are
@@ -318,3 +320,65 @@ Phase 0 is shippable behind the flag; 1-3 make the model usable; 4-5 make real p
 - Making every TypeScript program compile under `own`.
 - Any new syntax. `Shared<T>` and `WeakRef<T>` are ordinary generic types.
 - Thread safety of ownership; revisit with threading, not before.
+
+## 10. Written review, 2026-09-28
+
+Checked against `main` at #397 (`6cb9eecf`). The references in §3 still hold: the six
+`ts.Retain*`/`ts.Release*` ops, `OWNED_LOCAL_CONSUMED_ATTR_NAME`, the `__tsmm_` marker,
+`memoryModelName()`, `optVariantSuffix()`, the verifier's slot in `transform.cpp`, and
+21 `isRefCounted()` call sites plus its definition. Six amendments:
+
+### 10.1 A lowering error does not fail the compile (prerequisite, every model)
+
+`runMLIRPasses` (`tslang/transform.cpp`) collects every diagnostic and prints it, but its
+result reflects only `pm.run()`. A pattern that calls `emitError` and still returns success -
+`CastLogicHelper.h`'s "cast from ... is not supported" is the example that was found - prints
+`error:` and the program is then emitted and run anyway: `<string><any>(number[] | null)`
+under `--emit=jit` prints the error and crashes with 0xC0000005. §3.4's backstop would
+inherit the hole: a surviving retain would print an error and ship a double free. Fix,
+before phase 0 and in every model: an error-severity diagnostic fails the compile. It may
+surface latent errors the suite tolerates today; each is a real bug.
+
+### 10.2 The phase-0 gate is a pass, not the lowering
+
+Phase 0 schedules `OwnershipInferencePass` as a stub: under own it walks each `ts.FuncOp` at
+the verifier's slot, reports every surviving `ts.Retain*` at the location MLIRGen gave it
+("... takes a second reference; ownership inference cannot prove a move or borrow yet"), and
+signals failure. Lowering has lost the slot names by then; the pass has not. Phase 1 grows the
+same pass. The lowering `emitError` of §3.4 stays as the backstop.
+
+### 10.3 Default library
+
+`exe.cpp` and `jit.cpp` resolve the default library directory by `memoryModelName()`, so
+`-mm=own` without `--no-default-lib` fails with "no default library built for -mm=own" rather
+than linking a GC-built library whose objects `free()` would destroy. That is the right
+answer until §8's import-boundary marking exists; own tests run `--no-default-lib` as rc's do.
+
+### 10.4 The header word still needs its store
+
+§3.4 says `_MemoryAlloc` under own leaves the header "zero after the memset". The memset runs
+on wasm only (`useCalloc`/`zeroing`); a native block's header is whatever `malloc` returned.
+The own flavour of the free path reads the header to skip immortal blocks, so `_MemoryAlloc`
+keeps its store of 0 under own - the same single store rc makes, meaning "mortal" rather than
+"count 0". What own drops is the read-modify-write on every retain and release.
+
+### 10.5 Expected-error tests use the existing ctest pattern
+
+§3.5's `// @error:` runner mode is not needed: `test/tester/CMakeLists.txt` already tests
+compile errors with plain `add_test` + `PASS_REGULAR_EXPRESSION` + `FAIL_REGULAR_EXPRESSION`
+(`call_arity_cases`). The runner's compile scripts do not capture the compiler's diagnostics,
+so a runner mode would have to re-invoke tslang itself; own's negative tests follow the
+call-arity pattern instead.
+
+### 10.6 Almost every retain is a birth reference, not an alias
+
+Blocks are born unowned (count 0, rc §9.24), so the first owner of *every* fresh value - a
+local's declaration, a temporary passed to `print`, a `new` - takes it with a `ts.Retain` or
+`ts.RetainSlot`. Measured on `main` with `--emit=mlir-affine -mm=rc --no-default-lib`:
+`print(i)` for an `s32` is `Cast {__owned_result}` + `Retain` + `Print` + `Release`;
+`const s = "item " + i` is two retains and a release; only programs that allocate nothing are
+retain-free. A phase-0 gate that rejects every retain therefore compiles only heap-free
+programs, and §7's "alias-free programs compile, run and reclaim" is not reachable without
+the move verdict for a fresh value's single acquisition - which depends on each producer's
++0/+1 convention (`__owned_result`, the retaining return of rc §9.24/§9.25, pop/shift). How
+phase 0 and phase 1 split around this is decided in the plan.
