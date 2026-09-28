@@ -1,8 +1,8 @@
 # `-mm=own`: a single-owner memory model
 
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
-amendments folded in. Phase 0 includes the birth take (§10.6); plan:
-`docs/superpowers/plans/2026-09-28-own-phase-0.md`.
+amendments folded in. Phase 0 implemented on branch `own-phase-0` (2026-09-29, results §11);
+plan: `docs/superpowers/plans/2026-09-28-own-phase-0.md`.
 
 ## 1. Purpose
 
@@ -383,3 +383,63 @@ programs, and §7's "alias-free programs compile, run and reclaim" is not reacha
 the move verdict for a fresh value's single acquisition - which depends on each producer's
 +0/+1 convention (`__owned_result`, the retaining return of rc §9.24/§9.25, pop/shift). How
 phase 0 and phase 1 split around this is decided in the plan.
+
+## 11. Phase 0 results, 2026-09-29
+
+Branch `own-phase-0`, stacked on PR #398. `-mm=own` compiles a program in which every heap
+block has one owner and rejects every other ownership shape at its source location. Its LLVM
+output references neither `__tslang_inc_ref` nor `__tslang_dec_ref`: a release is one header
+load, an immortal check and the destroy.
+
+### 11.1 What phase 0 accepts
+
+A retain is erased when its value is fresh and has exactly one acquisition in the function,
+counting births and retains: rc's count for that block provably never exceeds one. Fresh means
+made by `ts.New`, `ts.CreateArray`, `ts.NewArray`, `ts.StringConcat` or `ts.CharToString`,
+carrying `__owned_result`, or a cast of a constant (a string literal or a constant array). The
+last of these was added during implementation, because `let s = "abc"` and `v: number[] = []`
+were rejected. A cast constant is the immortal global, which a release skips, or a copy with
+one owner, which a release destroys, so it is correct either way when acquired once.
+
+Everything else is an error. That covers a retain of a loaded or unknown value, two
+acquisitions of one fresh value, any `ts.RetainCell`, a `RetainSlot` on a variable hoisted in
+front of a `try`, and a captured variable holding a heap value. A retain that reaches LLVM
+lowering is a backstop error, never erased.
+
+The plan's "released but never owned" rule was dropped. The ownership verifier checks a
+stricter form of it and is green over the whole corpus, so no program reaches it.
+
+### 11.2 Measured
+
+`test/tester/tools/measure.ps1` builds each program AOT at `-O3` and reads the peak working set
+from the process handle after exit:
+
+| Program | gc | rc | none | own |
+| --- | --- | --- | --- | --- |
+| `own_fresh_string` (1M strings) | 5.8 | 4.2 | 80.9 | 4.2 |
+| `own_return_new` (1M instances via a factory) | 5.8 | 4.2 | 50.2 | 4.2 |
+| `own_try_local` (100k throws holding an array) | 5.9 | 6.5 | 6.5 | 6.5 |
+| `own_fresh_array` | 5.6 | 4.2 | 4.2 | 4.2 |
+| `own_literals` | 5.6 | 4.1 | 4.1 | 4.1 |
+
+All figures are MB. Own holds flat exactly where rc does. In `own_fresh_array` and
+`own_literals`, LLVM removes the allocations at `-O3`, so none does not grow and the rows show
+nothing about reclamation. `own_try_local`'s throw path does not release its local under any
+model, which is rc's leak too.
+
+### 11.3 The count is load-bearing
+
+Tested both ways:
+
+- With every retain kept, all 15 positive checks fail at the backstop.
+- With the rule loosened to two acquisitions, `own_err_two_owners.ts` (a fresh array stored
+  into a field and a local) compiles and segfaults under own, while rc runs it correctly. It
+  is now a negative test.
+
+### 11.4 Known limits (the input to phase 1)
+
+- An owned local declared inside a `try` body is rejected, because its storage is hoisted.
+- A class field initialized from a parameter, an alias through `let`, and a store of a local
+  into a field are all rejected (a retain of a load).
+- Closures that capture heap values are rejected.
+- Results of runtime helpers and `declare`d functions are rejected.
