@@ -1,7 +1,8 @@
 # `-mm=own`: a single-owner memory model
 
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
-amendments folded in. Phase-0 plan pending the scope decision of §10.6.
+amendments folded in. Phase 0 includes the birth take (§10.6); plan:
+`docs/superpowers/plans/2026-09-28-own-phase-0.md`.
 
 ## 1. Purpose
 
