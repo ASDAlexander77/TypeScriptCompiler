@@ -386,6 +386,7 @@ tslang_add_test(NAME test-compile-00-sizeof COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-01-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 tslang_add_test(NAME test-compile-02-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 tslang_add_test(NAME test-compile-00-new-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+tslang_add_test(NAME test-compile-00-new-generic-from-receiver COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_generic_from_receiver.ts")
 tslang_add_test(NAME test-compile-00-owned-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 # The JIT variants are the ones that matter here: this shape was a JIT-only miscompile until
 # the catchable-type size was fixed (see the file header). Kept in all three models, since the
@@ -834,6 +835,7 @@ tslang_add_test(NAME test-jit-00-sizeof COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-01-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01sizeof.ts")
 tslang_add_test(NAME test-jit-02-sizeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02sizeof.ts")
 tslang_add_test(NAME test-jit-00-new-delete COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
+tslang_add_test(NAME test-jit-00-new-generic-from-receiver COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_generic_from_receiver.ts")
 tslang_add_test(NAME test-jit-00-owned-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 tslang_add_test(NAME test-jit-00-throw-in-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_in_catch.ts")
 tslang_add_test(NAME test-jit-00-throw-inlined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_inlined.ts")
@@ -1704,6 +1706,7 @@ set(TSLANG_CORPUS
     00try_mismatch_in_catch_clause.ts
     00try_mismatch_in_catch_clause_using.ts
     00new_delete.ts
+    00new_generic_from_receiver.ts
     00ns_bug.ts
     00ns.ts
     00ns2.ts
