@@ -3441,8 +3441,19 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            CAST_A(result, location, safeType, exprValue, genContext);
-            castedValue = V(result);
+            // A type guard narrows an A to an unrelated class B (`isB(a)`) where the value is
+            // checked at run time to be one - TypeScript narrows it to A & B. The cast that
+            // a plain assignment would be refused is right here.
+            std::string mismatch;
+            if (areIncompatibleUnrelatedClasses(location, safeType, exprValue.getType(), mismatch))
+            {
+                castedValue = builder.create<mlir_ts::CastOp>(location, safeType, exprValue);
+            }
+            else
+            {
+                CAST_A(result, location, safeType, exprValue, genContext);
+                castedValue = V(result);
+            }
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type: [" << parameterName << "] is [" << safeType << "]\n");
@@ -11268,6 +11279,8 @@ class MLIRGenImpl
     // wrong casts
     // TODO: put it into Cast::Verify
     mlir::LogicalResult verifyCastCompatibility(mlir::Location location, mlir::Type type, mlir::Type valueType);
+    mlir::LogicalResult verifyUnrelatedClassCast(mlir::Location location, mlir::Type type, mlir::Type valueType);
+    bool areIncompatibleUnrelatedClasses(mlir::Location location, mlir::Type type, mlir::Type valueType, std::string &mismatch);
 
     ValueOrLogicalResult castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext);
 

@@ -605,6 +605,7 @@ tslang_add_test(NAME test-compile-01-symbol COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-00-as COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00as.ts")
 tslang_add_test(NAME test-compile-00-as-const COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00as_const.ts")
 tslang_add_test(NAME test-compile-00-type-guard-function COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_guard_function.ts")
+tslang_add_test(NAME test-compile-00-class-cast-structural COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_structural.ts")
 tslang_add_test(NAME test-compile-00-names-conflict COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00names_conflict.ts")
 tslang_add_test(NAME test-compile-00-generic-arguments-name-conflict COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arguments_name_conflict.ts")
 tslang_add_test(NAME test-compile-00-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00decorators.ts")
@@ -1063,6 +1064,7 @@ tslang_add_test(NAME test-jit-01-symbol COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-00-as COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00as.ts")
 tslang_add_test(NAME test-jit-00-as-const COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00as_const.ts")
 tslang_add_test(NAME test-jit-00-type-guard-function COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00type_guard_function.ts")
+tslang_add_test(NAME test-jit-00-class-cast-structural COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_cast_structural.ts")
 tslang_add_test(NAME test-jit-00-names-conflict COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00names_conflict.ts")
 tslang_add_test(NAME test-jit-00-generic-arguments-name-conflict COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arguments_name_conflict.ts")
 tslang_add_test(NAME test-jit-00-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00decorators.ts")
@@ -1825,6 +1827,7 @@ set(TSLANG_CORPUS
     00tuple.ts
     00type_aliases_in_generics.ts
     00type_guard_function.ts
+    00class_cast_structural.ts
     00typed_array.ts
     00typeof_function_narrowing.ts
     00typeof_static_fold.ts
@@ -2562,6 +2565,15 @@ add_test(NAME test-compile-export-all-no-locals
 set_tests_properties(test-compile-export-all-no-locals
                      PROPERTIES PASS_REGULAR_EXPRESSION "let moduleLevel"
                                 FAIL_REGULAR_EXPRESSION "namespace [.]f_|Stack dump|error:")
+
+# A cast between unrelated classes whose fields do not fit is an error; it compiled and crashed.
+add_test(NAME test-compile-class-cast-unrelated-error
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/class-cast/unrelated.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/class-cast-unrelated.obj")
+set_tests_properties(test-compile-class-cast-unrelated-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "type A is not assignable to type B: 'v' is number, not string"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
