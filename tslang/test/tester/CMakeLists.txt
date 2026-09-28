@@ -2339,16 +2339,16 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
-# An error reported by a pass that still returns success - a lowering pattern that cannot cast,
-# says so and carries on - fails the compile. It used to be printed and then ignored: the object
+# An error reported by a pass that still returns success - a lowering pattern that cannot build a
+# value, says so and carries on - fails the compile. It used to be printed and then ignored: the object
 # file was written, and under --emit=jit the program ran and crashed. Two tests because one
 # property cannot say both things: the message is the error we meant, and the exit code is not 0.
-set(lowering_error_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/cast_not_supported.ts")
+set(lowering_error_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/array_literal_element_type.ts")
 add_test(NAME test-compile-lowering-error-message
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-message.obj")
 set_tests_properties(test-compile-lowering-error-message
-                     PROPERTIES PASS_REGULAR_EXPRESSION "cast from '!ts.array<!ts.number>' to '!ts.string' is not supported"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "source array and destination array have different types"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-lowering-error-exit
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
