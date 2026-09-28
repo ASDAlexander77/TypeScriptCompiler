@@ -127,6 +127,7 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
                                        cl::values(clEnumValN(MemoryModelGC, "gc", "garbage collection (default)")),
                                        cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting, no collector (in development; cycles and anything the counts miss leak)")),
                                        cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
+                                       cl::values(clEnumValN(MemoryModelOwn, "own", "single ownership inferred at compile time, no counting (in development; ownership that cannot be proven is a compile error)")),
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));

@@ -161,7 +161,11 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compilenone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitnone.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilednone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilenone.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitnone.sh"
-    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh")
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compileown.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitown.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledown.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdown.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compileown.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitown.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledown.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdown.sh")
 # and the 32-bit variants (`-x86`), every one of which ends in "x86"
 file(GLOB TSLANG_X86_CACHED_SCRIPTS "${CMAKE_CURRENT_BINARY_DIR}/compile*x86.bat")
 if (TSLANG_X86_CACHED_SCRIPTS)
@@ -2354,6 +2358,12 @@ add_test(NAME test-compile-lowering-error-exit
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-exit.obj")
 set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
+
+# -mm=own is accepted. Phase 0: a program that allocates nothing compiles and runs under it.
+add_test(NAME test-own-flag-accepted
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
+set_tests_properties(test-own-flag-accepted PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding
