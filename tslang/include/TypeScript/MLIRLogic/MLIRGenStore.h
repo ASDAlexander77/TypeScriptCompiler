@@ -781,6 +781,8 @@ struct ClassInfo
     ProcessingStages processing;
     // the module `processing` was reached in: a discovery module is thrown away with what it holds
     mlir::Operation *processingModule = nullptr;
+    // and the declaration it was reached from
+    ClassLikeDeclaration processingDeclaration;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
