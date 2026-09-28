@@ -1565,7 +1565,107 @@ namespace mlirgen
             }
         }
 
+        if (mlir::failed(verifyUnrelatedClassCast(location, type, valueType)))
+        {
+            return mlir::failure();
+        }
+
         return mlir::success();
+    }
+
+    // Two classes where neither extends the other are compatible by their members, as in
+    // TypeScript: `const b: B = new A()` with `A { v: number }` and `B { v: string }` compiled to a
+    // plain cast, and reading `b.v` read a number as a string and crashed. Like an assertion, the
+    // cast needs one side's fields to be found in the other with types that extend them.
+    mlir::LogicalResult MLIRGenImpl::verifyUnrelatedClassCast(mlir::Location location, mlir::Type type, mlir::Type valueType)
+    {
+        std::string mismatch;
+        if (areIncompatibleUnrelatedClasses(location, type, valueType, mismatch))
+        {
+            emitError(location, "type ") << to_print(valueType) << " is not assignable to type " << to_print(type) << ": " << mismatch;
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
+    bool MLIRGenImpl::areIncompatibleUnrelatedClasses(mlir::Location location, mlir::Type type, mlir::Type valueType, std::string &mismatch)
+    {
+        auto classType = dyn_cast<mlir_ts::ClassType>(type);
+        auto valueClassType = dyn_cast<mlir_ts::ClassType>(valueType);
+        if (!classType || !valueClassType || classType == valueClassType
+            || mth.isGenericType(classType) || mth.isGenericType(valueClassType))
+        {
+            return false;
+        }
+
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        auto valueClassInfo = getClassInfoByFullName(valueClassType.getName().getValue());
+        if (!classInfo || !valueClassInfo
+            || classInfo->hasBase(valueClassType) || valueClassInfo->hasBase(classType)
+            // two specializations of one generic compare by their type arguments
+            || (classInfo->originClassType && classInfo->originClassType == valueClassInfo->originClassType))
+        {
+            return false;
+        }
+
+        // the data fields, inherited ones included; not the internal ones (.vtbl) nor the storage
+        // a derived class embeds for its base
+        std::function<void(ClassInfo::TypePtr, llvm::StringMap<mlir::Type> &)> collectFields =
+            [&](ClassInfo::TypePtr info, llvm::StringMap<mlir::Type> &fields) {
+                for (auto &base : info->baseClasses)
+                {
+                    collectFields(base, fields);
+                }
+
+                auto storageType = dyn_cast<mlir_ts::ClassStorageType>(info->classType.getStorageType());
+                if (!storageType)
+                {
+                    return;
+                }
+
+                for (auto &field : storageType.getFields())
+                {
+                    auto strId = dyn_cast_or_null<mlir::StringAttr>(field.id);
+                    if (!strId || strId.getValue().starts_with(".")
+                        || llvm::any_of(info->baseClasses, [&](auto &base) { return strId.getValue() == base->fullName; }))
+                    {
+                        continue;
+                    }
+
+                    fields[strId.getValue()] = field.type;
+                }
+            };
+
+        llvm::StringMap<mlir::Type> fields;
+        llvm::StringMap<mlir::Type> valueFields;
+        collectFields(classInfo, fields);
+        collectFields(valueClassInfo, valueFields);
+
+        // every field of `to` is in `from`, of a type that extends it
+        auto fits = [&](llvm::StringMap<mlir::Type> &from, llvm::StringMap<mlir::Type> &to, std::string &mismatch) {
+            for (auto &field : to)
+            {
+                auto found = from.find(field.getKey());
+                if (found == from.end())
+                {
+                    mismatch = "'" + field.getKey().str() + "' is missing";
+                    return false;
+                }
+
+                llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+                if (!isTrue(mth.extendsType(location, found->getValue(), field.getValue(), typeParamsWithArgs)))
+                {
+                    mismatch = "'" + field.getKey().str() + "' is " + to_print(found->getValue()) + ", not " + to_print(field.getValue());
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        std::string reverseMismatch;
+        return !fits(valueFields, fields, mismatch) && !fits(fields, valueFields, reverseMismatch);
     }
 
     ValueOrLogicalResult MLIRGenImpl::castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
