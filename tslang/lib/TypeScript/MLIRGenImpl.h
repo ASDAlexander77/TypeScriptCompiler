@@ -1858,7 +1858,7 @@ class MLIRGenImpl
             // reference the object will later give back. The store is where it has to happen:
             // this is the object's field gaining a value, which is the same debt `obj.f = x`
             // carries. See docs/reference-counting-evaluation.md section 9.50.
-            if (variableDeclarationInfo.allocateInContextThis && compileOptions.isRefCounted() &&
+            if (variableDeclarationInfo.allocateInContextThis && compileOptions.tracksOwnership() &&
                 mth.ownsHeapMemory(location, variableDeclarationInfo.type))
             {
                 if (producesOwnedReference(variableDeclarationInfo.initial))
@@ -9516,7 +9516,7 @@ class MLIRGenImpl
             // the bound function (§9.33); this is the object-shaped half of that, and the half a
             // generator's state object needs, since a generator is an object literal the compiler
             // wrote. See docs/reference-counting-evaluation.md section 9.52.
-            if (compileOptions.isRefCounted() && capturedValue)
+            if (compileOptions.tracksOwnership() && capturedValue)
             {
                 builder.create<mlir_ts::RetainCellOp>(location, capturedValue);
             }

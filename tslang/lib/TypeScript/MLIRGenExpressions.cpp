@@ -472,7 +472,7 @@ namespace mlirgen
                         // Same two cases as a local's declaration: a value that already carries a
                         // reference hands it over, anything else is retained. Either way the slot
                         // is the owner from here, and the awaiting scope gives that reference back.
-                        if (compileOptions.isRefCounted() && mth.ownsHeapMemory(location, resultType))
+                        if (compileOptions.tracksOwnership() && mth.ownsHeapMemory(location, resultType))
                         {
                             if (producesOwnedReference(value))
                             {
@@ -1191,7 +1191,7 @@ namespace mlirgen
         // wherever the allocator has since put that memory. Whether that faults depends on what
         // was allocated in between, which is why `00class_static.ts` needed two `print` calls
         // between the delete and the end of the function to show it.
-        if (compileOptions.isRefCounted())
+        if (compileOptions.tracksOwnership())
         {
             // `delete new C()` and `delete c`, where `c` is a `const` the compiler kept as a
             // value rather than storage: the reference is one nobody has claimed, and §9.30

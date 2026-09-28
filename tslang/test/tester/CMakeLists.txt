@@ -2365,6 +2365,14 @@ add_test(NAME test-own-flag-accepted
                  "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 set_tests_properties(test-own-flag-accepted PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
+# Under own MLIRGen emits exactly what it emits under rc: an awaited, deleted or captured value
+# still carries its ownership ops for the inference pass to judge. Checked on `delete`, whose
+# claim (MLIRGenExpressions.cpp) is one of the four MLIRGen sites.
+add_test(NAME test-own-mlirgen-matches-rc
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_delete.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-mlirgen-matches-rc.cmake")
+
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding
 # something else or making the name unique.

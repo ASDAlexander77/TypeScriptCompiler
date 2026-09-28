@@ -439,7 +439,7 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
@@ -479,7 +479,7 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
@@ -519,7 +519,7 @@ class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseCellOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseCell(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(),
@@ -648,7 +648,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         //
         // Only where an element owns something, and only under -mm=rc: nothing reads an
         // unwritten slot in the other models, and the memset is not free.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
             if (mth.ownsHeapMemory(loc, elementType))
@@ -1484,7 +1484,7 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
         // reaching an undef pointer's block header is undefined behaviour. An iterator's final
         // `{ value: undefined, done: true }` is built exactly this way, and the caller retains
         // the result before it looks at `done`.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
             if (mth.ownsHeapMemory(op.getLoc(), op.getType()))
@@ -2406,6 +2406,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // is born unowned because a receiver is about to take it (§9.24), a cell is born
             // owned: the frame is its first owner, and the frame's scope exit is what gives that
             // reference back. A box is the one heap variable with no frame owner, and says so.
+            // Under own the frame owns the cell outright; there is no count to start at one.
             if (tsLlvmContext->compileOptions.isRefCounted() && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
             {
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -2447,7 +2448,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto value = transformed.getInitializer();
         auto isUnwrittenCell = isCaptured && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
-        if (!value && tsLlvmContext->compileOptions.isRefCounted() &&
+        if (!value && tsLlvmContext->compileOptions.tracksOwnership() &&
             (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || isUnwrittenCell))
         {
             // An owned local with no initializer here is one whose storage was hoisted out in
@@ -3427,7 +3428,7 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
         // Under reference counting `delete` drops a reference rather than freeing outright:
         // the object goes only if this was the last one, and what it owns is released with it.
         // That also keeps `delete` off an immortal block, which a bare free would not.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());

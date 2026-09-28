@@ -322,7 +322,7 @@ class OwnershipRoutineLogic
     void emitReleaseArrayElements(mlir::Type elementType, mlir::Value dataPtr, mlir::Value startIndex,
                                   mlir::Value count)
     {
-        if (!compileOptions.isRefCounted())
+        if (!compileOptions.tracksOwnership())
         {
             return;
         }
