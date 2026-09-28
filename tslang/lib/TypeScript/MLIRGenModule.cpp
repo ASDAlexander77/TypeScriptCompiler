@@ -1343,6 +1343,14 @@ namespace mlirgen
             addGlobalConstructor(location, fullInitGlobalFuncName);
         }
 
+        // Generics first: a declaration elsewhere names their specializations (a field typed
+        // `Box<Tree>`), and the symbols come sorted, which put __decls_<module> before
+        // __decls_generic_<module> - "generic type Box can't be found". Registering a generic
+        // only records it, so one naming a class declared after it is fine.
+        std::stable_partition(symbols.begin(), symbols.end(), [](StringRef symbol) {
+            return symbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
+        });
+
         // A library can hold several modules (test-runner -shared links them all into one), each
         // with its own __decls_<module>. A module already in this module - imported as source,
         // or through another library - is not declared again; see mlirGenInclude.

@@ -27,6 +27,7 @@ namespace typescript
         MLIRPrinter mp{};
         mp.printBoxedObjectTypes = true;
         mp.quoteNonIdentifierFieldNames = true;
+        mp.getClassSpecialization = getClassSpecialization;
         mp.printType<raw_ostream>(os, type);
     }
     

@@ -35,6 +35,12 @@ class MLIRPrinter
     // the whole declaration. Off for diagnostics.
     bool quoteNonIdentifierFieldNames = false;
 
+    // a specialization of a generic class printed the way it is written, `Box<Tree>`, rather
+    // than by its internal name `Box<!ts.class<Tree, ...>>`, which does not parse back. Gives
+    // the generic's name and the type arguments in order; the printer has no class registry, so
+    // declaration text (__decls) supplies it. Unset for diagnostics.
+    std::function<bool(mlir_ts::ClassType, std::string &, SmallVectorImpl<mlir::Type> &)> getClassSpecialization;
+
     template <typename T>
     void printFieldName(T &out, mlir::Attribute id)
     {
@@ -357,6 +363,27 @@ class MLIRPrinter
                 printType(out, t.getElementType());
             })
             .template Case<mlir_ts::ClassType>([&](auto t) {
+                std::string genericName;
+                SmallVector<mlir::Type> typeArgs;
+                if (getClassSpecialization && getClassSpecialization(t, genericName, typeArgs))
+                {
+                    out << genericName.c_str() << "<";
+                    auto first = true;
+                    for (auto typeArg : typeArgs)
+                    {
+                        if (!first)
+                        {
+                            out << ", ";
+                        }
+
+                        first = false;
+                        printType(out, typeArg);
+                    }
+
+                    out << ">";
+                    return;
+                }
+
                 out << t.getName().getValue().str().c_str();
             })
             .template Case<mlir_ts::ClassStorageType>([&](auto t) {

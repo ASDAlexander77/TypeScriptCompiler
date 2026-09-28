@@ -14,7 +14,11 @@ namespace typescript
         raw_ostream &os;
 
     public:
-        MLIRDeclarationPrinter(raw_ostream &os) : os(os) {};
+        // see MLIRPrinter::getClassSpecialization
+        using ClassSpecializationFn = std::function<bool(mlir_ts::ClassType, std::string &, SmallVectorImpl<mlir::Type> &)>;
+
+        MLIRDeclarationPrinter(raw_ostream &os, ClassSpecializationFn getClassSpecialization = {})
+            : os(os), getClassSpecialization(std::move(getClassSpecialization)) {};
 
         void printTypeDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type);
         void printEnum(StringRef, NamespaceInfo::TypePtr, mlir::DictionaryAttr);
@@ -25,6 +29,8 @@ namespace typescript
         void printGenericClass(NamespaceInfo::TypePtr, StringRef);
 
     protected:
+        ClassSpecializationFn getClassSpecialization;
+
         void newline();
         void printBeforeDeclaration();
         void printAsFieldName(mlir::Attribute);
