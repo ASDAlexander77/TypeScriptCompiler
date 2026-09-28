@@ -2555,6 +2555,14 @@ if (WIN32)
                                     FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
 endif()
 
+# --export=all exports the module's variables, not the locals of its functions.
+add_test(NAME test-compile-export-all-no-locals
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib --export=all
+                 "${PROJECT_SOURCE_DIR}/test/tester/export-all/locals.ts")
+set_tests_properties(test-compile-export-all-no-locals
+                     PROPERTIES PASS_REGULAR_EXPRESSION "let moduleLevel"
+                                FAIL_REGULAR_EXPRESSION "namespace [.]f_|Stack dump|error:")
+
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
 # these run. The file pairs are the default model's, verbatim.

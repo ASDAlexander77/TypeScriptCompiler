@@ -954,11 +954,14 @@ namespace mlirgen
             // we need it for support "undefined type" in 'let' without initialization
             item->parent = variableDeclarationListAST;
 
-            // --export filters by name, and one statement can declare several names
+            // --export filters by name, and one statement can declare several names. Only a
+            // variable of the module or a namespace can be exported: a filter such as `all` matched
+            // every function's locals too, and declared them to importers as `@dllimport` globals
+            // in a `.f_<function>` namespace, which no library defines.
             auto itemVarClass = varClass;
             if (variableDeclarationListAST->parent && !exportByDecorator)
             {
-                itemVarClass.isExport = getExportModifier(
+                itemVarClass.isExport = !genContext.funcOp && getExportModifier(
                     variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
             }
 
