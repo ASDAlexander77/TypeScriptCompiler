@@ -54,6 +54,15 @@ class AssertLogic
 #endif
     }
 
+    // `_assert` and `__assert_fail` abort, which flushes no stream: what the program printed before
+    // the failure was lost whenever stdout was not a console (a pipe, a file, the test runner)
+    void flushOutput()
+    {
+        auto fflushFuncOp = ch.getOrInsertFunction("fflush", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType()}));
+        mlir::Value allStreams = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        rewriter.create<LLVM::CallOp>(loc, fflushFuncOp, ValueRange{allStreams});
+    }
+
     // a null string shows the constant message instead
     mlir::Value messageOrConstant(mlir::Value message, mlir::Value msgCst)
     {
@@ -109,6 +118,7 @@ class AssertLogic
 
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
 
+        flushOutput();
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
         // rewriter.create<LLVM::UnreachableOp>(loc);
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
@@ -163,6 +173,7 @@ class AssertLogic
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
         mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
 
+        flushOutput();
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);

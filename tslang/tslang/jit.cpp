@@ -312,6 +312,9 @@ static void *jitSearchForAddressOfSymbol(const char *symbolName)
 // instead. The lowering passes the source position along, so this says more than the box did.
 static void jitAssertFailed(const char *message, const char *file, unsigned line)
 {
+    // what the program printed before failing comes first, and _exit below flushes nothing
+    fflush(stdout);
+
     if (file != nullptr && *file != '\0')
     {
         fprintf(stderr, "%s:%u: ", file, line);
@@ -641,6 +644,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addSym("calloc", (void*)&calloc);
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
+        addSym("fflush", (void*)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
         // unattended run cannot answer
         addSym("_assert", (void*)&jitAssertFailed);
@@ -874,6 +878,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         addOverride("calloc", (void *)&calloc);
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
+        addOverride("fflush", (void *)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
         // unattended run cannot answer
         addOverride("_assert", (void *)&jitAssertFailed);

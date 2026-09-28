@@ -2538,12 +2538,12 @@ set_tests_properties(test-compile-specialization-cast-pair-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "is not assignable to type Pair<!ts.number,!ts.string>"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
-# A failing assert shows a message known only at run time.
+# A failing assert shows a message known only at run time, after the output printed before it.
 add_test(NAME test-jit-assert-message-failing
          COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
                  "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
 set_tests_properties(test-jit-assert-message-failing
-                     PROPERTIES PASS_REGULAR_EXPRESSION "assertion failed: n is 7"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
 
 # The shared-component tier under the other two models. A shared library records the model
