@@ -893,14 +893,29 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
-        if (!isa<mlir::IndexType>(startValue.getType()))
-        {
-            startValue = castFn(location, mlir::IndexType::get(builder.getContext()), startValue, genContext, false);
-        }
+        // The lowering reads start and delete count as signed (a negative start counts from the
+        // end), so they go to index through a signed 64-bit integer: straight from s32 to index
+        // is a zero extension, and -1 arrived as 4294967295.
+        auto toSignedIndex = [&](mlir::Value value) -> mlir::Value {
+            if (isa<mlir::IndexType>(value.getType()))
+            {
+                return value;
+            }
 
-        if (!isa<mlir::IndexType>(deleteCountValue.getType()))
+            auto si64Type = mlir::IntegerType::get(builder.getContext(), 64, mlir::IntegerType::Signed);
+            if (value.getType() != si64Type)
+            {
+                value = castFn(location, si64Type, value, genContext, false);
+            }
+
+            return castFn(location, mlir::IndexType::get(builder.getContext()), value, genContext, false);
+        };
+
+        startValue = toSignedIndex(startValue);
+        deleteCountValue = toSignedIndex(deleteCountValue);
+        if (!startValue || !deleteCountValue)
         {
-            deleteCountValue = castFn(location, mlir::IndexType::get(builder.getContext()), deleteCountValue, genContext, false);
+            return mlir::failure();
         }
 
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
@@ -936,7 +951,20 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
-        return mlirGenArraySplice(location, operands.front(), operands[1], operands[2], operands.slice(3), castFn, genContext);
+        if (operands.size() < 2)
+        {
+            emitError(location) << "splice needs the index to start at";
+            return mlir::failure();
+        }
+
+        // a left-out delete count removes everything from start on; the lowering clamps it to
+        // what is there (INT32_MAX stays positive in a 32-bit index too)
+        auto deleteCountValue = operands.size() > 2
+            ? operands[2]
+            : builder.create<mlir_ts::ConstantOp>(location, builder.getIndexType(), builder.getIndexAttr(INT32_MAX)).getResult();
+
+        return mlirGenArraySplice(location, operands.front(), operands[1], deleteCountValue,
+                                  operands.size() > 3 ? operands.slice(3) : ArrayRef<mlir::Value>(), castFn, genContext);
     }    
 
     ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,

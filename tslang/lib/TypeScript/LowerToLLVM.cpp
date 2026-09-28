@@ -3218,8 +3218,29 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto startIndexAsIndexType = spliceOp.getStart();
         auto decSizeAsIndexType = spliceOp.getDeleteCount();
 
-        auto startIndexAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, startIndexAsIndexType);
+        mlir::Value startIndexAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, startIndexAsIndexType);
         mlir::Value decSizeAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, decSizeAsIndexType);
+
+        // Start and delete count arrive signed (mlirGenArraySplice). As JavaScript has it, a
+        // negative start counts from the end and stops at 0, a start past the end is the end, and
+        // a negative delete count deletes nothing. `a.splice(-1, 1)` used to take -1 as the largest
+        // unsigned index and fault.
+        {
+            auto zero = clh.createIndexConstantOf(llvmIndexType, 0);
+            auto startIsNegative =
+                rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, startIndexAsLLVMType, zero);
+            auto fromEnd = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{startIndexAsLLVMType, countAsIndexType});
+            auto fromEndIsNegative = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, fromEnd, zero);
+            auto negativeStart = rewriter.create<LLVM::SelectOp>(loc, fromEndIsNegative, zero, fromEnd);
+            auto startPastEnd =
+                rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, startIndexAsLLVMType, countAsIndexType);
+            auto positiveStart = rewriter.create<LLVM::SelectOp>(loc, startPastEnd, countAsIndexType, startIndexAsLLVMType);
+            startIndexAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, startIsNegative, negativeStart, positiveStart);
+
+            auto deleteIsNegative =
+                rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, decSizeAsLLVMType, zero);
+            decSizeAsLLVMType = rewriter.create<LLVM::SelectOp>(loc, deleteIsNegative, zero, decSizeAsLLVMType);
+        }
 
         auto incSizeAsLLVMType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
 
