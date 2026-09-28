@@ -588,8 +588,27 @@ class OwnershipRoutineLogic
                                       ValueRange{payloadPtr});
     }
 
+    // Is this block mortal - that is, not HEAP_BLOCK_IMMORTAL? Inline rather than a helper: it
+    // is one load and one compare, and it is the whole of what a release costs under own.
+    mlir::Value emitIsMortal(mlir::Value payloadPtr)
+    {
+        TypeConverterHelper tch(typeConverter);
+        TypeHelper th(rewriter);
+        LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+        auto loc = op->getLoc();
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+        auto header = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        auto immortal = rewriter.create<LLVM::ConstantOp>(
+            loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL));
+        return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, header, immortal);
+    }
+
     // Runs `thenBody` -- the destroy half: release what the value owns, then free it -- only
-    // when `payloadPtr` is non-null and the reference being dropped was the last one.
+    // when `payloadPtr` is non-null and the reference being dropped was the last one. Under
+    // own there is no count: the one owner is giving the block up, so it goes unless it is
+    // immortal (a literal, a `typeof` tag).
     void emitIfLastReference(mlir::Value payloadPtr, llvm::function_ref<void()> thenBody)
     {
         TypeHelper th(rewriter);
@@ -605,7 +624,7 @@ class OwnershipRoutineLogic
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToEnd(decBlock);
-        auto wasLast = emitDecRef(payloadPtr);
+        auto wasLast = compileOptions.memoryModel == MemoryModelOwn ? emitIsMortal(payloadPtr) : emitDecRef(payloadPtr);
         rewriter.create<LLVM::CondBrOp>(loc, wasLast, thenBlock, continuationBlock);
 
         rewriter.setInsertionPointToEnd(currentBlock);

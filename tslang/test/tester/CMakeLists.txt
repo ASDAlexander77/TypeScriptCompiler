@@ -2373,6 +2373,15 @@ add_test(NAME test-own-mlirgen-matches-rc
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_delete.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-mlirgen-matches-rc.cmake")
 
+# The lowering backstop: a retain that reaches LLVM lowering under own is an error, never
+# silently erased. Checked with the inference pass switched off, which only this test does.
+add_test(NAME test-own-lowering-backstop
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=own --own-skip-inference
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts")
+set_tests_properties(test-own-lowering-backstop
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ownership inference left a retain behind"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding
 # something else or making the name unique.

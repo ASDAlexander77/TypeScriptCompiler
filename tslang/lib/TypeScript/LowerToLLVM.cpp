@@ -398,7 +398,12 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
         // symbol has to exist before the global is built
         OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(descriptorType);
+        // Under own nothing retains: the descriptor's retain slot is read only from inside
+        // retain routines (retainViaDescriptor), none of which can run, and building one would
+        // bring `__tslang_inc_ref` into a model that promises it is never referenced.
+        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
+                                     ? std::string()
+                                     : orl.getOrCreateRetainRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
@@ -420,6 +425,13 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -460,6 +472,13 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -500,6 +519,13 @@ class RetainCellOpLowering : public TsLlvmPattern<mlir_ts::RetainCellOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainCellOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -2485,9 +2511,19 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // (`isOwningSlot`). So the first value has to be taken too, unless the frame has
             // already taken it - which is what an owned local's mark says, and what a captured
             // parameter's storage is precisely missing, the argument being the caller's.
-            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+            if (isCaptured && tsLlvmContext->compileOptions.tracksOwnership() &&
                 !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
             {
+                // The value is someone else's - a parameter's is the caller's - and a cell that
+                // destroyed it would free it under them. Own has no count to take here: closures
+                // are phase 5.
+                if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                    MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions)
+                        .ownsHeapMemory(location, referenceType.getElementType()))
+                {
+                    return varOp.emitError("a captured variable cannot own its value under -mm=own yet");
+                }
+
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
                 orl.emitRetainSlot(referenceType.getElementType(), allocated);
             }

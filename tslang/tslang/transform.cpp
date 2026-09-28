@@ -78,6 +78,7 @@ extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
+extern cl::opt<bool> ownSkipInference;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
