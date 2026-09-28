@@ -597,6 +597,32 @@ namespace mlirgen
             return mlir::success();
         }
 
+        // A declared function binds one external symbol, and that has one signature: a second
+        // declaration of it with another was "redefinition of symbol" from the verifier. The same
+        // declaration again - one C function in two .d.ts files - is left to the first.
+        if (!functionDeclarationAST->body)
+        {
+            auto [fullName, name] = getNameOfFunction(functionDeclarationAST, genContext);
+            auto declared = declaredFunctions.find(fullName);
+            if (declared == declaredFunctions.end() || declared->second.second != theModule.getOperation())
+            {
+                declaredFunctions[fullName] = {functionDeclarationAST, theModule.getOperation()};
+            }
+            else if (declared->second.first != functionDeclarationAST)
+            {
+                if (print(declared->second.first) == print(functionDeclarationAST))
+                {
+                    return mlir::success();
+                }
+
+                emitError(loc(functionDeclarationAST))
+                    << "'" << name << "' is declared again with another signature: a declared function is one external "
+                    << "symbol, so it can't have overloads. Declare it once, with optional or union parameters, or "
+                    << "give each signature a name of its own and bind them with @linkname";
+                return mlir::failure();
+            }
+        }
+
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         // declaring function which is nested and object should not have this context (unless it is part of object declaration)
