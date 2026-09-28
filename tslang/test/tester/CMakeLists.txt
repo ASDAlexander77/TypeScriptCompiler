@@ -2435,6 +2435,12 @@ set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
 tslang_add_import_tests(import-bindings-renamed "${import_bindings_dir}" import_renamed names_module)
 tslang_add_import_tests(import-bindings-namespace "${import_bindings_dir}" import_namespace names_module)
 
+# A generic class specialized while its module was imported lost its members (#231).
+set(import_specialization_dir "${PROJECT_SOURCE_DIR}/test/tester/import-specialization")
+# Static linking only: through a -shared library the importer cannot name Box yet ("generic type
+# Box can't be found"), a separate gap.
+tslang_add_test(NAME test-compile-import-specialization COMMAND test-runner "${import_specialization_dir}/import_specialization.ts" "${import_specialization_dir}/box_module.ts")
+
 # The same for a shared library: imported directly and through a source module - see
 # shared-import-reimport.cmake.
 if (WIN32)

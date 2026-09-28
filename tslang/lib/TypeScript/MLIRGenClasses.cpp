@@ -115,10 +115,19 @@ namespace mlirgen
 
             // do not process specialized class second time;
             // TODO: investigate why classType is provided already for class
-            if (testProcessingState(newClassPtr, ProcessingStages::Processing, genContext))
+            // Not across modules, though: an import met during discovery is generated in full, but
+            // into the discovery module, which is erased. The members of a specialization made there
+            // are gone, and the module that uses it has to have its own.
+            if (testProcessingState(newClassPtr, ProcessingStages::Processing, genContext)
+                && (genContext.allowPartialResolve || newClassPtr->processingModule == theModule.getOperation()))
             {
                 return {mlir::success(), newClassPtr->classType.getName().getValue()};
             }
+        }
+
+        if (!genContext.allowPartialResolve)
+        {
+            newClassPtr->processingModule = theModule.getOperation();
         }
 
         setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);

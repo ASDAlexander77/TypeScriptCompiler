@@ -779,6 +779,8 @@ struct ClassInfo
     bool hasRTTI;
     ProcessingStages processingAtEvaluation;
     ProcessingStages processing;
+    // the module `processing` was reached in: a discovery module is thrown away with what it holds
+    mlir::Operation *processingModule = nullptr;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
