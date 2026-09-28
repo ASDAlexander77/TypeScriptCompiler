@@ -2382,6 +2382,14 @@ set_tests_properties(test-own-lowering-backstop
                      PROPERTIES PASS_REGULAR_EXPRESSION "ownership inference left a retain behind"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# After inference under own, no retain survives in a program of single owners.
+add_test(NAME test-own-inference-erases-birth-takes
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts")
+set_tests_properties(test-own-inference-erases-birth-takes
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ts.Release"
+                                FAIL_REGULAR_EXPRESSION "ts\\.Retain|error|Stack dump")
+
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding
 # something else or making the name unique.

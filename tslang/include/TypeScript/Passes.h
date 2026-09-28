@@ -31,6 +31,10 @@ std::unique_ptr<mlir::Pass> createRelocateConstantPass();
 /// and in every memory model - the ownership ops survive to there regardless of model.
 std::unique_ptr<mlir::Pass> createOwnershipVerifierPass();
 
+/// Ownership inference for -mm=own: erases the retains it can prove are a fresh value's single
+/// acquisition and reports every other one. Runs at the affine level under own only.
+std::unique_ptr<mlir::Pass> createOwnershipInferencePass();
+
 /// Lets a call take over the reference its callee returned instead of retaining a second one.
 /// Runs on the whole module, after MLIRGen, because deciding which callees retain their result
 /// needs every function to be present - see docs/reference-counting-evaluation.md section 9.27.
