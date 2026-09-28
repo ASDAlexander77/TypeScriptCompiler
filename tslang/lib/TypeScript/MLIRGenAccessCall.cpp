@@ -169,8 +169,14 @@ namespace mlirgen
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mlirGenPropertyAccessExpressionBaseLogic: union type " << baseType << "\n";);
                 actualType = baseType;
+                // The value is the base type as well: a union of object types sharing one layout
+                // (`{ kind: "a", r: number } | { kind: "b", r: number }`) is stored as it. Left a
+                // union, the field was read through the union's reference - a PropertyRef the
+                // verifier rejects.
+                objectValue = builder.create<mlir_ts::CastOp>(location, baseType, objectValue);
+                cl.setExpression(objectValue);
             }
-        }        
+        }
 
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {

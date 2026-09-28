@@ -1325,7 +1325,13 @@ class MLIRPropertyAccessCodeLogic
         {
             name = strAttr.getValue();
         }
-    }    
+    }
+
+    // the object is accessed as another value of it - a union as its base type
+    void setExpression(mlir::Value newExpression)
+    {
+        expression = newExpression;
+    }
 
     mlir::Value Enum(mlir_ts::EnumType enumType)
     {
