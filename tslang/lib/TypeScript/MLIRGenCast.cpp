@@ -1515,6 +1515,30 @@ namespace mlirgen
             }
         }
 
+        // Two specializations of one generic class keep fields of different types in the same
+        // place: `const b: Box<string> = new Box<number>(1)` read a number as a string and crashed.
+        // One's type arguments have to extend the other's - Box<Derived> as Box<Base>, or back as
+        // a downcast - which is TypeScript's rule for a type assertion as well.
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+        {
+            if (auto valueClassType = dyn_cast<mlir_ts::ClassType>(valueType))
+            {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                auto valueClassInfo = getClassInfoByFullName(valueClassType.getName().getValue());
+                if (classInfo && valueClassInfo && classInfo->originClassType
+                    && classInfo->originClassType == valueClassInfo->originClassType)
+                {
+                    llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+                    if (!isTrue(mth.extendsType(location, valueType, type, typeParamsWithArgs))
+                        && !isTrue(mth.extendsType(location, type, valueType, typeParamsWithArgs)))
+                    {
+                        emitError(location, "type ") << to_print(valueType) << " is not assignable to type " << to_print(type);
+                        return mlir::failure();
+                    }
+                }
+            }
+        }
+
         if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::InterfaceType>(type))
         {
             if (isa<mlir_ts::NumberType>(valueType)
