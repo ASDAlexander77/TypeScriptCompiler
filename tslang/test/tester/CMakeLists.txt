@@ -2391,6 +2391,41 @@ set_tests_properties(test-own-inference-erases-birth-takes
                      PROPERTIES PASS_REGULAR_EXPRESSION "ts.Release"
                                 FAIL_REGULAR_EXPRESSION "ts\\.Retain|error|Stack dump")
 
+# -mm=own, phase 0 (docs/superpowers/plans/2026-09-28-own-phase-0.md). Positive programs run
+# under JIT and ahead of time; each owns every block once.
+foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals)
+    tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
+    tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
+    # The promise: no counting at all in what own emits.
+    add_test(NAME test-own-no-counting-${own_test}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts" -o -)
+    set_tests_properties(test-own-no-counting-${own_test}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "define"
+                                    FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error|Stack dump")
+endforeach()
+
+# Each negative program has one shape phase 0 cannot prove, and must be rejected with this text.
+set(own_error_cases
+    "own_err_alias|takes a second reference"
+    "own_err_field_alias|takes a second reference"
+    "own_err_closure|closures that capture a heap value are not supported"
+    "own_err_unknown_producer|takes a second reference"
+    "own_err_two_owners|takes a second reference")
+foreach(own_error_case ${own_error_cases})
+    string(FIND "${own_error_case}" "|" own_error_sep)
+    string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
+    math(EXPR own_error_sep "${own_error_sep} + 1")
+    string(SUBSTRING "${own_error_case}" ${own_error_sep} -1 own_error_message)
+    add_test(NAME test-own-err-${own_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/own-err-${own_error_name}.obj")
+    set_tests_properties(test-own-err-${own_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding
 # something else or making the name unique.

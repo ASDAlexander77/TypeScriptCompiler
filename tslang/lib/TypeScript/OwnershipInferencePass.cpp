@@ -6,7 +6,6 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
-#include "TypeScript/OwnershipOps.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -37,7 +36,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // variable it initializes)
         llvm::DenseMap<mlir::Value, llvm::SmallVector<mlir::Operation *, 2>> acquirers;
         llvm::SmallVector<mlir::Operation *> unattributed;
-        llvm::SmallVector<mlir_ts::ReleaseSlotOp> slotReleases;
 
         f.walk([&](mlir::Operation *op) {
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
@@ -63,10 +61,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 op->emitError("closures that capture a heap value are not supported by -mm=own yet");
                 signalPassFailure();
             }
-            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
-            {
-                slotReleases.push_back(releaseSlotOp);
-            }
         });
 
         for (auto *op : unattributed)
@@ -90,23 +84,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
         }
 
-        for (auto releaseOp : slotReleases)
-        {
-            auto varOp = releaseOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
-            if (!varOp || mlir_ts::isHandOver(releaseOp))
-            {
-                continue;
-            }
-
-            auto init = varOp.getInitializer();
-            auto owned = varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) || (init && acquirers.count(init));
-            if (!owned)
-            {
-                releaseOp.emitError("'") << varName(varOp) << "' is released but never owned";
-                signalPassFailure();
-            }
-        }
-
         for (auto *op : toErase)
         {
             op->erase();
@@ -122,9 +99,19 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return false; // a block argument: a parameter, or a value merged from branches
         }
 
-        return def->hasAttr(OWNED_RESULT_ATTR_NAME) ||
+        return def->hasAttr(OWNED_RESULT_ATTR_NAME) || isLiteral(def) ||
                mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
                          mlir_ts::CharToStringOp>(def);
+    }
+
+    // A string literal or a constant array cast to its value type. The result is either the
+    // immortal global itself, which a release skips, or a copy nobody else holds, which a
+    // release destroys - so, acquired once, it has one owner either way. Acquired twice it is
+    // still an error: which of the two it is depends on the cast.
+    static bool isLiteral(mlir::Operation *def)
+    {
+        auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def);
+        return castOp && castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
     }
 
     // 1 when the value arrived with a reference the callee took (the retaining return, rc
