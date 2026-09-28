@@ -206,9 +206,14 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
             return;
         }
 
+        // The allocator's own state is inaccessible memory it reads and writes, as LLVM declares
+        // malloc: `memory(inaccessiblemem: readwrite)`. `allockind` alone no longer stops the
+        // merge - with this LLVM two GC_malloc(8) calls, the storage of two empty arrays, became
+        // one call, both arrays grew through GC_realloc of the same block, and the heap was
+        // corrupted (`s += x` produced an empty string further on, only with optimization).
         auto *context = funcOp->getContext();
         auto memoryEffects = LLVM::MemoryEffectsAttr::get(context, LLVM::ModRefInfo::Mod, LLVM::ModRefInfo::NoModRef,
-                                                            LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
+                                                            LLVM::ModRefInfo::ModRef, LLVM::ModRefInfo::NoModRef,
                                                             LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
         funcOp.setMemoryEffectsAttr(memoryEffects);
 
