@@ -1365,8 +1365,198 @@ namespace mlirgen
             functionName, 
             typeArgs,
             operands, 
-            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); }, 
+            [this](mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck) { return cast(location, type, value, genContext, disableStrictNullCheck); },
             genContext);
+    }
+
+    // `a.push(...xs)`, `a.unshift(...xs)`, `a.splice(start, count, ...xs)`. The builtins take one
+    // operand per item, and a spread, whose length is known only at run time, has none to give:
+    // it reached ArrayPush as the array itself and failed to verify. Every item argument, spread
+    // or not, goes into one array literal instead (a literal spreads at run time), and its elements
+    // go in one at a time through the same builtin with no spread, so the casts and the retains
+    // stay the builtin's.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenArrayInsertWithSpread(
+        mlir::Location location, mlir::Value funcResult, NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        auto thisSymbolRefOp = funcResult.getDefiningOp<mlir_ts::ThisSymbolRefOp>();
+        if (!thisSymbolRefOp || !mth.isBuiltinFunctionType(funcResult)
+            || llvm::none_of(arguments, [](auto argument) { return argument == SyntaxKind::SpreadElement; }))
+        {
+            return std::nullopt;
+        }
+
+        auto calleeName = thisSymbolRefOp->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
+        auto functionName = calleeName ? calleeName.getValue() : StringRef();
+        auto isPush = functionName == "__array_push";
+        auto isSplice = functionName == "__array_splice";
+        if (!isPush && !isSplice && functionName != "__array_unshift")
+        {
+            return std::nullopt;
+        }
+
+        auto thisValue = thisSymbolRefOp.getThisVal();
+        auto arrayType = dyn_cast<mlir_ts::ArrayType>(thisValue.getType());
+        if (!arrayType)
+        {
+            return std::nullopt;
+        }
+
+        auto generate = [&]() -> ValueOrLogicalResult {
+            MLIRCodeLogic mcl(builder, compileOptions);
+            auto arrayRef = mcl.GetReferenceFromValue(location, thisValue);
+            if (!arrayRef)
+            {
+                emitError(location) << "Can't get reference of the array, ensure const array is not used";
+                return mlir::failure();
+            }
+
+            // splice's start and delete count are positions, not items, and come first
+            auto itemsFrom = isSplice ? 2 : 0;
+            SmallVector<mlir::Value, 2> positions;
+            for (auto index = 0; index < itemsFrom; index++)
+            {
+                if (index >= (int)arguments.size() || arguments[index] == SyntaxKind::SpreadElement)
+                {
+                    emitError(location) << "splice with spread items needs its start and delete count as arguments of their own";
+                    return mlir::failure();
+                }
+
+                auto result = mlirGen(arguments[index], genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto value = V(result);
+                CAST(value, location, getNumberType(), value, genContext);
+                positions.push_back(value);
+            }
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            NodeArray<Expression> itemArguments;
+            for (auto index = itemsFrom; index < (int)arguments.size(); index++)
+            {
+                itemArguments.push_back(arguments[index]);
+            }
+
+            GenContext itemsGenContext(genContext);
+            itemsGenContext.clearReceiverTypes();
+            itemsGenContext.receiverType = arrayType;
+            auto itemsResult = mlirGen(nf.createArrayLiteralExpression(itemArguments), itemsGenContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(itemsResult)
+            auto items = V(itemsResult);
+            if (items.getType() != arrayType)
+            {
+                CAST(items, location, arrayType, items, genContext);
+            }
+
+            if (isPush)
+            {
+                if (mlir::failed(mlirGenAppendArrayByEachElement(location, arrayRef, items, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+            else
+            {
+                SymbolTableScopeT varScope(symbolTable);
+
+                auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayType, location);
+                dstArrayVarDecl->setReadWriteAccess(true);
+                DECLARE(dstArrayVarDecl, arrayRef);
+
+                auto itemsVarDecl = std::make_shared<VariableDeclarationDOM>(".items", arrayType, location);
+                DECLARE(itemsVarDecl, items);
+
+                auto _dst_array = nf.createIdentifier(S(".dst_array"));
+                auto _items = nf.createIdentifier(S(".items"));
+                auto _at = nf.createIdentifier(S(".at"));
+                auto _i = nf.createIdentifier(S(".i"));
+                auto _length = [&](Identifier array) {
+                    return nf.createPropertyAccessExpression(array, nf.createIdentifier(S(LENGTH_FIELD_NAME)));
+                };
+                auto _splice = [&](Expression start, Expression count, Expression item) {
+                    NodeArray<Expression> spliceArguments;
+                    spliceArguments.push_back(start);
+                    spliceArguments.push_back(count);
+                    if (item)
+                    {
+                        spliceArguments.push_back(item);
+                    }
+
+                    return nf.createExpressionStatement(nf.createCallExpression(
+                        nf.createPropertyAccessExpression(_dst_array, nf.createIdentifier(S("splice"))), undefined, spliceArguments));
+                };
+                auto _assign = [&](Expression value) {
+                    return nf.createExpressionStatement(nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::EqualsToken), value));
+                };
+                auto _zero = [&]() { return nf.createNumericLiteral(S("0")); };
+
+                // let .at = 0 (unshift), or splice's start where JavaScript puts it: a negative one
+                // counts from the end and stops at 0, one past the end is the end
+                NodeArray<VariableDeclaration> atDeclarations;
+                if (isSplice)
+                {
+                    auto startVarDecl = std::make_shared<VariableDeclarationDOM>(".start", getNumberType(), location);
+                    DECLARE(startVarDecl, positions[0]);
+                    auto countVarDecl = std::make_shared<VariableDeclarationDOM>(".count", getNumberType(), location);
+                    DECLARE(countVarDecl, positions[1]);
+
+                    auto _start = nf.createIdentifier(S(".start"));
+                    atDeclarations.push_back(nf.createVariableDeclaration(_at, undefined, undefined, _start));
+                    if (mlir::failed(mlirGen(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(atDeclarations, NodeFlags::Let)), genContext)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    // if (.at < 0) { .at = .at + .dst_array.length; if (.at < 0) .at = 0; }
+                    // else if (.at > .dst_array.length) .at = .dst_array.length;
+                    NodeArray<Statement> fromEnd;
+                    fromEnd.push_back(_assign(nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::PlusToken), _length(_dst_array))));
+                    fromEnd.push_back(nf.createIfStatement(
+                        nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::LessThanToken), _zero()), _assign(_zero())));
+                    auto normalize = nf.createIfStatement(
+                        nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::LessThanToken), _zero()),
+                        nf.createBlock(fromEnd),
+                        nf.createIfStatement(
+                            nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::GreaterThanToken), _length(_dst_array)),
+                            _assign(_length(_dst_array))));
+                    if (mlir::failed(mlirGen(normalize, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    // the delete runs first; everything before .at stays where it is
+                    if (mlir::failed(mlirGen(_splice(_start, nf.createIdentifier(S(".count")), undefined), genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+                else
+                {
+                    atDeclarations.push_back(nf.createVariableDeclaration(_at, undefined, undefined, _zero()));
+                    if (mlir::failed(mlirGen(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(atDeclarations, NodeFlags::Let)), genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                // for (let .i = 0; .i < .items.length; ++.i) .dst_array.splice(.at + .i, 0, .items[.i]);
+                NodeArray<VariableDeclaration> declarations;
+                declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, _zero()));
+                auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+                auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), _length(_items));
+                auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+                auto insert = _splice(
+                    nf.createBinaryExpression(_at, nf.createToken(SyntaxKind::PlusToken), _i), _zero(), nf.createElementAccessExpression(_items, _i));
+                if (mlir::failed(mlirGen(nf.createForStatement(initVars, cond, incr, insert), genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            auto loadedArray = builder.create<mlir_ts::LoadOp>(location, arrayType, arrayRef);
+            return V(builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), loadedArray));
+        };
+
+        return generate();
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,

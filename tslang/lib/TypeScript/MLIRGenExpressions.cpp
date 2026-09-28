@@ -1032,6 +1032,11 @@ namespace mlirgen
             mth.isGenericType(funcResult.getType()) 
             && callExpression->typeArguments.size() == 0;
 
+        if (auto spreadResult = mlirGenArrayInsertWithSpread(location, funcResult, callExpression->arguments, genContext))
+        {
+            return *spreadResult;
+        }
+
         SmallVector<mlir::Value, 4> operands;
         auto offsetArgs = isa<mlir_ts::BoundFunctionType>(funcType) || isa<mlir_ts::ExtensionFunctionType>(funcType) ? 1 : 0;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))

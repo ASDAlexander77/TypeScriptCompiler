@@ -2302,13 +2302,13 @@ def TypeScript_BodyResultInternalOp : TypeScript_YieldOpBase<"BodyResultInternal
   let summary = "termination operation";
 }
 
-def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
-    RangedTypesMatchWith<"array element type match all items types",
-                "op", "items",
-                "TypeRange((cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType()))">
-]> {
+def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs Index:$new_size);
+
+  // every item is of the element type (a RangedTypesMatchWith against a one-type range
+  // accepted only a single item)
+  let hasVerifier = 1;
 }
 
 def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [

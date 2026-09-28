@@ -1063,6 +1063,24 @@ LogicalResult mlir_ts::FuncOp::verify()
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayPushOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult mlir_ts::ArrayPushOp::verify()
+{
+    auto elementType = mlir::cast<mlir_ts::ArrayType>(mlir::cast<mlir_ts::RefType>(getOp().getType()).getElementType()).getElementType();
+    for (auto item : getItems())
+    {
+        if (item.getType() != elementType)
+        {
+            return emitOpError("item of type ") << item.getType() << " does not match array element type " << elementType;
+        }
+    }
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
 // InvokeOp
 //===----------------------------------------------------------------------===//
 
