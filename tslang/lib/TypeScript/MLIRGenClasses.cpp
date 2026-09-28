@@ -125,9 +125,22 @@ namespace mlirgen
             }
         }
 
+        // One library of several modules can declare an imported class more than once: a module
+        // whose export depends on a class of another module declares that class too (a derived
+        // class's base), so the importer reads `Base` from both modules' __decls. The second is
+        // the same external class again, and generating it again redefined `Base..new`.
+        if (!isGenericClass && newClassPtr->isImport
+            && newClassPtr->processingDeclaration && newClassPtr->processingDeclaration != classDeclarationAST
+            && newClassPtr->processingModule == theModule.getOperation()
+            && testProcessingState(newClassPtr, ProcessingStages::Processed, genContext))
+        {
+            return {mlir::success(), newClassPtr->classType.getName().getValue()};
+        }
+
         if (!genContext.allowPartialResolve)
         {
             newClassPtr->processingModule = theModule.getOperation();
+            newClassPtr->processingDeclaration = classDeclarationAST;
         }
 
         setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);

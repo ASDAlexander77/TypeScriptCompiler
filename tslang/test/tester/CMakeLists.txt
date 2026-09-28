@@ -2438,9 +2438,16 @@ tslang_add_import_tests(reference-path-import-and-reference "${reference_path_di
 tslang_add_import_tests(reference-path-two-imports "${reference_path_dir}" two_imports module_left module_right)
 tslang_add_import_tests(reference-path-import-diamond "${reference_path_dir}" import_diamond plain_module via_module)
 tslang_add_import_tests(reference-path-import-cycle "${reference_path_dir}" import_cycle cycle_module_a cycle_module_b)
-# Static linking only: a -shared library of these two modules declares Node twice to its importer
-# ("redefinition of symbol named 'Node..new'"), a separate gap.
-tslang_add_test(NAME test-compile-reference-path-import-cycle-class COMMAND test-runner "${reference_path_dir}/import_cycle_class.ts" "${reference_path_dir}/cycle_class_node.ts" "${reference_path_dir}/cycle_class_text.ts")
+# Through a -shared library of these two modules the importer read Node twice ("redefinition of
+# symbol named 'Node..new'"), and then called its methods through the wrong vtable slots - see
+# shared-class-members below.
+tslang_add_import_tests(reference-path-import-cycle-class "${reference_path_dir}" import_cycle_class cycle_class_node cycle_class_text)
+
+# A -shared library's class, imported: declared twice when another module of the library extends
+# it, and with its vtable built in another order than the library's when an accessor comes before
+# a method.
+set(shared_class_members_dir "${PROJECT_SOURCE_DIR}/test/tester/shared-class-members")
+tslang_add_import_tests(shared-class-members "${shared_class_members_dir}" class_members base_module derived_module)
 # The first attempt at an import in a cycle fails and is tried again; its errors were printed
 # although the compile succeeded.
 add_test(NAME test-compile-reference-path-import-cycle-quiet

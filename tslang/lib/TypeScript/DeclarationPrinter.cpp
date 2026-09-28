@@ -1,6 +1,7 @@
 #include "TypeScript/MLIRLogic/MLIRDeclarationPrinter.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
 
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/Debug.h"
@@ -558,6 +559,27 @@ namespace typescript
             printIndexer(indexInfo.indexSignature.getInput(0), indexInfo.indexSignature.getResult(0));
         }
 
+        auto printAccessorGet = [&](auto &accessor) {
+            printAccessor(
+                accessor.isStatic, "get", accessor.name, accessor.getAccessLevel,
+                accessor.get.funcType.getParams(),
+                accessor.get.funcType.getNumResults() > 0 ? accessor.get.funcType.getResult(0) : mlir::Type(),
+                classType->classType,
+                accessor.get.dllName);
+        };
+
+        auto printAccessorSet = [&](auto &accessor) {
+            printAccessor(
+                accessor.isStatic, "set", accessor.name, accessor.setAccessLevel,
+                accessor.set.funcType.getParams(),
+                mlir::Type(),
+                classType->classType,
+                accessor.set.dllName);
+        };
+
+        // accessor halves printed in the methods loop, where their functions sit
+        llvm::StringSet<> printedAccessorFuncs;
+
         // methods (including static)
         for (auto method : classType->methods)
         {
@@ -566,13 +588,41 @@ namespace typescript
 
             // get/set accessors are ALSO registered here under their mangled
             // "get_x"/"set_x" funcOp name (so same-file/JIT compiles can find them as
-            // ordinary methods) - but that mangled form is printed separately below,
-            // via classType->accessors, using real `get`/`set` syntax. Printing it
-            // again here as a plain method would make the importer register it as an
-            // ordinary MethodDeclaration instead of a GetAccessor/SetAccessor, so
+            // ordinary methods) - but that mangled form is printed with real `get`/`set`
+            // syntax instead. Printed as a plain method, the importer would register it
+            // as an ordinary MethodDeclaration instead of a GetAccessor/SetAccessor, so
             // property-style access (`obj.x`, `super.x`) would never populate the
             // reconstructed class's accessors list and fail to resolve.
-            if (llvm::any_of(classType->accessors, [&](auto &accessor) {
+            //
+            // And printed here, at its place among the methods, not after all of them:
+            // the importer builds the vtable in the order it reads the members, and this
+            // list is the order the exporting module built it in. With the accessors
+            // last, `get textContent()` written before `addText()` swapped their slots,
+            // and the importer's `addText` call ran the getter.
+            auto accessorPrinted = false;
+            for (auto &accessor : classType->accessors)
+            {
+                if (filterName(accessor.name))
+                    continue;
+
+                if (accessor.get && accessor.get.name == method.funcName)
+                {
+                    printAccessorGet(accessor);
+                    printedAccessorFuncs.insert(accessor.get.name);
+                    accessorPrinted = true;
+                    break;
+                }
+
+                if (accessor.set && accessor.set.name == method.funcName)
+                {
+                    printAccessorSet(accessor);
+                    printedAccessorFuncs.insert(accessor.set.name);
+                    accessorPrinted = true;
+                    break;
+                }
+            }
+
+            if (accessorPrinted || llvm::any_of(classType->accessors, [&](auto &accessor) {
                     return (accessor.get && accessor.get.name == method.funcName) ||
                            (accessor.set && accessor.set.name == method.funcName);
                 }))
@@ -613,30 +663,20 @@ namespace typescript
             newline();
         }
 
-        // accessors
+        // accessors whose functions are not among the methods
         for (auto accessor : classType->accessors)
         {
             if (filterName(accessor.name))
                 continue;
 
-            if (accessor.get)
+            if (accessor.get && !printedAccessorFuncs.contains(accessor.get.name))
             {
-                printAccessor(
-                    accessor.isStatic, "get", accessor.name, accessor.getAccessLevel,
-                    accessor.get.funcType.getParams(),
-                    accessor.get.funcType.getNumResults() > 0 ? accessor.get.funcType.getResult(0) : mlir::Type(),
-                    classType->classType,
-                    accessor.get.dllName);
+                printAccessorGet(accessor);
             }
 
-            if (accessor.set)
+            if (accessor.set && !printedAccessorFuncs.contains(accessor.set.name))
             {
-                printAccessor(
-                    accessor.isStatic, "set", accessor.name, accessor.setAccessLevel,
-                    accessor.set.funcType.getParams(),
-                    mlir::Type(),
-                    classType->classType,
-                    accessor.set.dllName);
+                printAccessorSet(accessor);
             }
         }
 
