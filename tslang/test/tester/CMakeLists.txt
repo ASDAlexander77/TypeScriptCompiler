@@ -2377,7 +2377,8 @@ add_test(NAME test-own-mlirgen-matches-rc
 # silently erased. Checked with the inference pass switched off, which only this test does.
 add_test(NAME test-own-lowering-backstop
          COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=own --own-skip-inference
-                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts")
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/own-lowering-backstop.ll")
 set_tests_properties(test-own-lowering-backstop
                      PROPERTIES PASS_REGULAR_EXPRESSION "ownership inference left a retain behind"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
