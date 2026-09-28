@@ -13,6 +13,10 @@
             "path": "./tslang/tslang"
         },
         {
+            "name": "TypeScript Bind Generator",
+            "path": "./tslang/tsbindgen"
+        },
+        {
             "name": "TypeScript Compiler Tests",
             "path": "./tslang/test"
         },

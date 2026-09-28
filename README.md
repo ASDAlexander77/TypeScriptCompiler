@@ -27,6 +27,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
   - [Debugging JIT code with GDB (Linux)](#debugging-jit-code-with-gdb-linux)
   - [As a native executable](#compile-as-binary-executable)
   - [As WebAssembly](#compiling-as-wasm)
+- [C bindings with tsbindgen](#c-bindings-with-tsbindgen)
 - [Memory models](#memory-models)
 - [Building from source](#build)
 - [Community](#chat-room)
@@ -474,6 +475,121 @@ Run ``run.html``
 ```
 
 </details>
+
+## C bindings with tsbindgen
+
+`tsbindgen` reads a C header (or `.c` file) with clang and prints the matching tslang declarations.
+
+```text
+tsbindgen <input.h|.c|.cpp> [options] [-- extra clang args]
+
+  -o out.ts          write to a file (default: stdout)
+  -I dir, -D name=v  include directories and macros, as for clang
+  --filter <glob>    emit the declarations whose C name matches (repeatable)
+  --namespace N      wrap the output in `namespace N`
+  --strip-prefix P   remove P from the TS names (needs --namespace)
+  --target triple    target triple (default: the host)
+```
+
+Given `simple.c`:
+
+```c
+#include <stdint.h>
+#define MAX_ITEMS 16
+typedef struct { int32_t x; int32_t y; } Point;
+int add(int a, int b) { return a + b; }
+static int helper(int a) { return a; }
+double dist(const Point *p);
+```
+
+`tsbindgen simple.c -o simple.ts` writes:
+
+```typescript
+const MAX_ITEMS = 16;
+type Point = [x: s32, y: s32];
+declare function add(a: s32, b: s32): s32;
+// skipped: helper — static function: no symbol to link against
+declare function dist(p: Reference<Point>): f64;
+```
+
+Include the result with `/// <reference path="simple.ts" />`, not `import`. Name it `.ts`, not `.d.ts`: a `.d.ts` file is read as declarations only, so its constants would have no value.
+
+### When nothing is emitted
+
+- **Declarations from `#include`d headers are emitted only with `--filter`.** Without it, only what the input file itself declares is printed; a file that only includes headers prints nothing but the warning `nothing to emit`. Pick what you need by name:
+
+  ```bat
+  tsbindgen inc.c --filter puts --filter printf
+  ```
+
+  ```typescript
+  declare function puts(_Buffer: string): s32;
+  @varargs declare function printf(_Format: string): s32;
+  ```
+
+- **`static` and `static inline` functions are skipped**: there is no symbol to link against.
+- **Function-like macros and macros that are not literals are skipped.**
+
+### "function without a prototype"
+
+```c
+extern int test_func();
+```
+
+gives `// skipped: test_func — function without a prototype`. Before C23, empty parentheses do not mean "no arguments": they leave the arguments unspecified, and clang parses C17 by default. Either write `(void)`:
+
+```c
+extern int test_func(void);
+```
+
+or, for a header you cannot change, parse it as C23 (everything after `--` goes to clang):
+
+```bat
+tsbindgen test.c -o test.ts -- -std=c23
+```
+
+Both give:
+
+```typescript
+declare function test_func(): s32;
+```
+
+### C++ headers
+
+`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh` and `.hxx` files are parsed as C++; a `.h` file is parsed as C, so a C++ header named `.h` needs `-x c++` after `--`:
+
+```bat
+tsbindgen mylib.h -o mylib.ts -- -x c++
+```
+
+Given `mylib.h`:
+
+```cpp
+#include <cstdint>
+namespace lib { class Widget { public: int size() const; }; int helper(int); }
+struct Point { int32_t x; int32_t y; };
+enum class Mode : int { A = 1, B = 2 };
+#ifdef __cplusplus
+extern "C" {
+#endif
+int add(int a, int b);
+double dist(const Point *p);
+#ifdef __cplusplus
+}
+#endif
+int cxx_only(int a);
+```
+
+it writes:
+
+```typescript
+type Point = [x: s32, y: s32];
+enum Mode { A = 1, B = 2 }
+declare function add(a: s32, b: s32): s32;
+declare function dist(p: Reference<Point>): f64;
+```
+
+Only plain structs, enums and `extern "C"` functions are emitted. Classes, namespace members (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning: their symbol names are mangled, so tslang cannot link to them. To bind a C++ API, expose it through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
 
 ## Memory models
 
