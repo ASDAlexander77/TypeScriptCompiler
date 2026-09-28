@@ -1455,8 +1455,17 @@ class MLIRGenImpl
             // mutating methods silently did nothing (they mutated a copy nobody kept)
             // and `arr[i] = v` segfaulted (write into read-only constant data).
             // Force the same real-storage + widening path as `let` for this case too.
+            //
+            // A `const` already typed `!ts.array<T>` (`const a: number[] = [1, 2]`, or an array
+            // returned by a call) needs it as well: push/pop/splice grow the array in place
+            // through a reference to it, and a bare SSA value has none. A ConstRef already
+            // aliases the storage it was read from, so it keeps that, and a narrowed view
+            // (addSafeCastStatement, a SafeCastOp) is the narrowed variable seen through
+            // another type, not an array of its own.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
-            needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type);
+            needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
+                || (isa<mlir_ts::ArrayType>(type) && !(varClass == VariableType::ConstRef)
+                    && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
             {
                 return mlir::success();
