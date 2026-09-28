@@ -200,6 +200,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         result = 4;
     }
 
+    // A pass can report an error and still succeed - a lowering pattern that cannot cast says so
+    // and carries on with a value that is not one - so the run's result alone is not the answer.
+    // Without this the error was printed and the module compiled, linked and run anyway.
+    if (llvm::any_of(postponedMessages, [](auto &diag) { return diag->getSeverity() == mlir::DiagnosticSeverity::Error; }))
+    {
+        result = 4;
+    }
+
     SourceMgrDiagnosticHandlerEx sourceMgrHandler(sourceMgr, &context);
     printDiagnostics(sourceMgrHandler, postponedMessages, disableWarnings);
     return result;
