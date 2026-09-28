@@ -2472,8 +2472,8 @@ tslang_add_import_tests(import-bindings-namespace "${import_bindings_dir}" impor
 # A generic class specialized while its module was imported lost its members (#231).
 set(import_specialization_dir "${PROJECT_SOURCE_DIR}/test/tester/import-specialization")
 # Through a -shared library the specialization was declared by its internal name
-# (`class Box<!ts.class<@Tree, ...>>`), and before the generic it is made from ("generic type Box
-# can't be found").
+# (`class Box<!ts.class<Tree, ...>>`), and before the generic it is made from ("generic type Box
+# can't be found"). On Linux the name had an `@` (`@Tree`), which ld reads as a symbol version.
 tslang_add_import_tests(import-specialization "${import_specialization_dir}" import_specialization box_module)
 
 # The same for a shared library: imported directly and through a source module - see

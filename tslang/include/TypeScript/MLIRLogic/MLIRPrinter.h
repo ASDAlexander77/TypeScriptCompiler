@@ -36,7 +36,7 @@ class MLIRPrinter
     bool quoteNonIdentifierFieldNames = false;
 
     // a specialization of a generic class printed the way it is written, `Box<Tree>`, rather
-    // than by its internal name `Box<!ts.class<@Tree, ...>>`, which does not parse back. Gives
+    // than by its internal name `Box<!ts.class<Tree, ...>>`, which does not parse back. Gives
     // the generic's name and the type arguments in order; the printer has no class registry, so
     // declaration text (__decls) supplies it. Unset for diagnostics.
     std::function<bool(mlir_ts::ClassType, std::string &, SmallVectorImpl<mlir::Type> &)> getClassSpecialization;

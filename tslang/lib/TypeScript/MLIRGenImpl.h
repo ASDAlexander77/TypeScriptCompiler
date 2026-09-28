@@ -9983,6 +9983,46 @@ class MLIRGenImpl
     std::pair<mlir::LogicalResult, mlir::StringRef> mlirGen(ClassLikeDeclaration classDeclarationAST,
                                                             const GenContext &genContext);
 
+    // A type argument in a specialization's name (Box<!ts.class<Tree, ...>>), which becomes the name
+    // of its symbols. MLIR prints a class or interface as a symbol reference, `@Tree`, but an `@`
+    // in an ELF symbol name is read as its version (`name@VERSION`), and ld fails to link a
+    // shared library that exports it. The `@` before a symbol reference is left out; one inside a
+    // quoted string (a literal type) is written as MLIR's escape `\40`, so no two names meet.
+    static void appendTypeToSymbolName(std::string &name, mlir::Type type)
+    {
+        std::string printed;
+        llvm::raw_string_ostream s(printed);
+        s << type;
+
+        auto quoted = false;
+        for (size_t i = 0; i < printed.size(); i++)
+        {
+            auto c = printed[i];
+            if (quoted && c == '\\' && i + 1 < printed.size())
+            {
+                name.push_back(c);
+                name.push_back(printed[++i]);
+                continue;
+            }
+
+            if (c == '"')
+            {
+                quoted = !quoted;
+            }
+            else if (c == '@')
+            {
+                if (quoted)
+                {
+                    name.append("\\40");
+                }
+
+                continue;
+            }
+
+            name.push_back(c);
+        }
+    }
+
     void appendSpecializedTypeNames(std::string &name, llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
                                     const GenContext &genContext)
     {
@@ -9998,8 +10038,7 @@ class MLIRGenImpl
             auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
             if (type)
             {
-                llvm::raw_string_ostream s(name);
-                s << type;
+                appendTypeToSymbolName(name, type);
             }
             else
             {
@@ -10751,8 +10790,7 @@ class MLIRGenImpl
             auto type = getType(typeParam, genContext);
             if (type)
             {
-                llvm::raw_string_ostream s(name);
-                s << type;
+                appendTypeToSymbolName(name, type);
             }
             else
             {
@@ -12012,7 +12050,7 @@ class MLIRGenImpl
         // A specialization (Box<Tree>, the type of an exported class's field) is not declared on
         // its own: the importer makes it from the generic, as a use in its own source would, and
         // names it `Box<Tree>` (classSpecializationNamer). Declared, it came out as
-        // `class Box<!ts.class<@Tree, ...>>`, which does not parse. What it needs is the generic
+        // `class Box<!ts.class<Tree, ...>>`, which does not parse. What it needs is the generic
         // - exported here when it is this module's own, even if not marked `export` - and its
         // type arguments.
         SmallVector<mlir::Type> typeArgs;
