@@ -895,16 +895,38 @@ namespace mlirgen
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
         auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression)).copy(stringAllocator);
 
-        // check if we have safe type mapped value
-        auto safeTypedValue = safeTypesMap.lookup({ expressionValue.getType(), propAccessStrRef });
-        if (safeTypedValue)
+        auto fieldResult = mlirGenPropertyAccessExpression(location, expressionValue, namePtr,
+                                                           !!propertyAccessExpression->questionDotToken, genContext);
+
+        // a narrowed field: read as it is now, cast to the type the test narrowed it to
+        auto safeType = safeTypesMap.lookup({ expressionValue.getType(), propAccessStrRef });
+        if (safeType && !fieldResult.failed_or_no_value() && V(fieldResult).getType() != safeType)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t " 
-                << propAccessStrRef << "." << namePtr << "type: " << expressionValue.getType() << " = " << safeTypedValue;);
-            return safeTypedValue;
+            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t "
+                << propAccessStrRef << "." << namePtr << "type: " << expressionValue.getType() << " = " << safeType;);
+            auto fieldValue = V(fieldResult);
+            auto castValue = castToNarrowedType(location, fieldValue, safeType, genContext);
+            if (!castValue)
+            {
+                return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::SafeCastOp>(location, safeType, castValue, fieldValue));
         }
 
-        return mlirGenPropertyAccessExpression(location, expressionValue, namePtr,
+        return fieldResult;
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mlirGenAssignedPropertyAccess(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
+    {
+        // what an assignment writes is the field itself, never the value a narrowing cast from it
+        auto location = loc(propertyAccessExpression);
+
+        auto result = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+
+        auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
+        return mlirGenPropertyAccessExpression(location, V(result), namePtr,
                                                !!propertyAccessExpression->questionDotToken, genContext);
     }
 

@@ -3308,7 +3308,7 @@ class MLIRGenImpl
                         auto propAccess = expr.as<PropertyAccessExpression>();
                         auto objType = evaluate(propAccess->expression, genContext);
                         LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << nameStr << " of " << objType << " is [" << safeValue.getType() << "]\n");
-                        safeTypesMap.insert({ objType, nameStr }, safeValue);
+                        safeTypesMap.insert({ objType, nameStr }, safeValue.getType());
                     }
                 }
             }
@@ -3316,6 +3316,34 @@ class MLIRGenImpl
 
         return result2;
     }    
+
+    // the value a narrowing to `safeType` gives `exprValue`, cast the way addSafeCastStatement casts it
+    mlir::Value castToNarrowedType(mlir::Location location, mlir::Value exprValue, mlir::Type safeType, const GenContext &genContext)
+    {
+        auto exprType = exprValue.getType();
+        if (isa<mlir_ts::AnyType>(exprType))
+        {
+            return builder.create<mlir_ts::UnboxOp>(location, safeType, exprValue);
+        }
+
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(exprType))
+        {
+            if (optType.getElementType() == safeType)
+            {
+                return builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
+            }
+        }
+
+        if (isa<mlir_ts::UnionType>(exprType))
+        {
+            return isa<mlir_ts::UnionType>(safeType)
+                ? builder.create<mlir_ts::CastOp>(location, safeType, exprValue).getResult()
+                : builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue).getResult();
+        }
+
+        auto result = cast(location, safeType, exprValue, genContext);
+        return result.failed_or_no_value() ? mlir::Value() : V(result);
+    }
 
     mlir::LogicalResult addSafeCastStatement(mlir::Location location, StringRef parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
@@ -5459,7 +5487,9 @@ class MLIRGenImpl
                                           genContext);
         }
 
-        auto result = mlirGen(leftExpression, genContext);
+        auto result = leftExpression == SyntaxKind::PropertyAccessExpression
+            ? mlirGenAssignedPropertyAccess(leftExpression.as<PropertyAccessExpression>(), genContext)
+            : mlirGen(leftExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
@@ -6377,6 +6407,8 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(QualifiedName qualifiedName, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenAssignedPropertyAccess(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
                                                          mlir::StringRef name, const GenContext &genContext);
@@ -12792,7 +12824,9 @@ class MLIRGenImpl
 
     llvm::ScopedHashTable<StringRef, mlir::LLVM::DIScopeAttr> debugScope;
 
-    llvm::ScopedHashTable<SafeTypeKeyType, mlir::Value> safeTypesMap;
+    // a narrowed field (`this.head` after `this.head !== null`) and the type it is narrowed to; a
+    // read of it loads the field again and casts it, so no value outlives the region it is in
+    llvm::ScopedHashTable<SafeTypeKeyType, mlir::Type> safeTypesMap;
 
     // helper to get line number
     Parser parser;
