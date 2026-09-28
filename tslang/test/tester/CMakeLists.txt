@@ -2546,17 +2546,14 @@ set_tests_properties(test-compile-specialization-cast-pair-error
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A failing assert shows a message known only at run time, after the output printed before it.
-# Windows only: that is where the JIT reports a failed assert; on Linux abort() reaches LLVM's
-# crash handler.
-if (WIN32)
-    add_test(NAME test-jit-assert-message-failing
-             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
-                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
-                     "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
-    set_tests_properties(test-jit-assert-message-failing
-                         PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
-                                    FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
-endif()
+# The JIT reports it itself on every platform, so on Linux abort() never reaches the crash handler.
+add_test(NAME test-jit-assert-message-failing
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                 --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                 "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
+set_tests_properties(test-jit-assert-message-failing
+                     PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
 
 # --export=all exports the module's variables, not the locals of its functions.
 add_test(NAME test-compile-export-all-no-locals
