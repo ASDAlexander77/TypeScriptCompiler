@@ -2539,12 +2539,17 @@ set_tests_properties(test-compile-specialization-cast-pair-error
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A failing assert shows a message known only at run time, after the output printed before it.
-add_test(NAME test-jit-assert-message-failing
-         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
-                 "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
-set_tests_properties(test-jit-assert-message-failing
-                     PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
-                                FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
+# Windows only: that is where the JIT reports a failed assert; on Linux abort() reaches LLVM's
+# crash handler.
+if (WIN32)
+    add_test(NAME test-jit-assert-message-failing
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
+    set_tests_properties(test-jit-assert-message-failing
+                         PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
+endif()
 
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
