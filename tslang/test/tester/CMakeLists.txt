@@ -274,6 +274,7 @@ tslang_add_test(NAME test-compile-00-global-const-object-method COMMAND test-run
 tslang_add_test(NAME test-compile-00-funcs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 tslang_add_test(NAME test-compile-00-funcs-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 tslang_add_test(NAME test-compile-00-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")
+tslang_add_test(NAME test-compile-00-declare-function-twice COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-compile-00-function-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 # printf is avaliable in JIT only, C has snprintf
@@ -720,6 +721,7 @@ tslang_add_test(NAME test-jit-00-global-const-object-method COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-funcs COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 tslang_add_test(NAME test-jit-00-funcs-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 tslang_add_test(NAME test-jit-00-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")
+tslang_add_test(NAME test-jit-00-declare-function-twice COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-jit-00-function-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-jit-01-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 tslang_add_test(NAME test-jit-02-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
@@ -2464,6 +2466,16 @@ endforeach()
 # The calls the check must still accept: an omitted optional, default-valued or void
 # parameter, and varargs with and without extra arguments.
 tslang_add_test(NAME test-compile-call-arity-positive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/call-arity/positive.ts")
+
+# A declared function with a second signature: one external symbol has one signature, and the
+# error says so (it was "redefinition of symbol").
+add_test(NAME test-compile-declare-overloads-error
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/declare-overloads/overload.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/declare-overloads.obj")
+set_tests_properties(test-compile-declare-overloads-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "'abs' is declared again with another signature"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|redefinition of symbol")
 
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what

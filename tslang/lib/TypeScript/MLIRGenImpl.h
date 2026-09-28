@@ -12706,6 +12706,11 @@ class MLIRGenImpl
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
 
+    // the declaration (no body) each declared function's full name came from, and the module it was
+    // generated into - discovery's is thrown away, and a library's __decls is parsed again for the
+    // next pass; see mlirGen(FunctionDeclaration)
+    std::map<std::string, std::pair<FunctionDeclaration, mlir::Operation *>> declaredFunctions;
+
     // set while an `import { a as b }` alias is resolved to its target (resolveImportAlias)
     bool resolvingImportAlias = false;
 
