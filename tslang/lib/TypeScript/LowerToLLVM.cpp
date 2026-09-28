@@ -135,7 +135,7 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
     {
         TypeConverterHelper tch(getTypeConverter());
         AssertLogic al(op, rewriter, tch, op->getLoc(), tsLlvmContext->compileOptions);
-        return al.logic(transformed.getArg(), op.getMsg().str());
+        return al.logic(transformed.getArg(), op.getMsg().str(), transformed.getMessage());
     }
 };
 
