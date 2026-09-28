@@ -44,16 +44,39 @@ class AssertLogic
         typeOfValueType = th.getPtrType();
     }
 
-    mlir::LogicalResult logic(mlir::Value condValue, std::string msg)
+    // `message`, when given, is the text known only at run time and is shown instead of `msg`
+    mlir::LogicalResult logic(mlir::Value condValue, std::string msg, mlir::Value message = mlir::Value())
     {
 #ifdef WIN32
-        return logicWin32(condValue, msg);
+        return logicWin32(condValue, msg, message);
 #else
-        return logicUnix(condValue, msg);
+        return logicUnix(condValue, msg, message);
 #endif
     }
 
-    mlir::LogicalResult logicWin32(mlir::Value condValue, std::string msg)
+    // `_assert` and `__assert_fail` abort, which flushes no stream: what the program printed before
+    // the failure was lost whenever stdout was not a console (a pipe, a file, the test runner)
+    void flushOutput()
+    {
+        auto fflushFuncOp = ch.getOrInsertFunction("fflush", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType()}));
+        mlir::Value allStreams = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        rewriter.create<LLVM::CallOp>(loc, fflushFuncOp, ValueRange{allStreams});
+    }
+
+    // a null string shows the constant message instead
+    mlir::Value messageOrConstant(mlir::Value message, mlir::Value msgCst)
+    {
+        if (!message)
+        {
+            return msgCst;
+        }
+
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, message.getType());
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, message, nullPtr);
+        return rewriter.create<LLVM::SelectOp>(loc, isNull, msgCst, message);
+    }
+
+    mlir::LogicalResult logicWin32(mlir::Value condValue, std::string msg, mlir::Value message)
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
@@ -95,7 +118,8 @@ class AssertLogic
 
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
 
-        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
+        flushOutput();
+        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
         // rewriter.create<LLVM::UnreachableOp>(loc);
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 
@@ -106,7 +130,7 @@ class AssertLogic
         return success();
     }
 
-    mlir::LogicalResult logicUnix(mlir::Value condValue, std::string msg)
+    mlir::LogicalResult logicUnix(mlir::Value condValue, std::string msg, mlir::Value message)
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
@@ -149,7 +173,8 @@ class AssertLogic
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
         mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
 
-        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
+        flushOutput();
+        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 

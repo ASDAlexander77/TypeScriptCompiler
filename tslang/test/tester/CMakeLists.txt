@@ -277,6 +277,7 @@ tslang_add_test(NAME test-compile-00-funcs-vararg COMMAND test-runner "${PROJECT
 tslang_add_test(NAME test-compile-00-declare-function-twice COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-compile-00-function-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-compile-00-gc-allocations-distinct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
+tslang_add_test(NAME test-compile-00-assert-message COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
 tslang_add_test(NAME test-compile-01-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 # printf is avaliable in JIT only, C has snprintf
 #tslang_add_test(NAME test-compile-02-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
@@ -731,6 +732,7 @@ tslang_add_test(NAME test-jit-00-funcs-vararg COMMAND test-runner -jit "${PROJEC
 tslang_add_test(NAME test-jit-00-declare-function-twice COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00declare_function_twice.ts")
 tslang_add_test(NAME test-jit-00-function-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00function_overloads.ts")
 tslang_add_test(NAME test-jit-00-gc-allocations-distinct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00gc_allocations_distinct.ts")
+tslang_add_test(NAME test-jit-00-assert-message COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert_message.ts")
 tslang_add_test(NAME test-jit-01-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_vararg.ts")
 tslang_add_test(NAME test-jit-02-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_vararg.ts")
 tslang_add_test(NAME test-jit-00-funcs-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_bindings.ts")
@@ -1662,6 +1664,7 @@ set(TSLANG_CORPUS
     00funcs_vararg.ts
     00function_overloads.ts
     00gc_allocations_distinct.ts
+    00assert_message.ts
     00funcs.ts
     00generator_manual_next.ts
     00generator_manual_next2.ts
@@ -2538,6 +2541,19 @@ add_test(NAME test-compile-specialization-cast-pair-error
 set_tests_properties(test-compile-specialization-cast-pair-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "is not assignable to type Pair<!ts.number,!ts.string>"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# A failing assert shows a message known only at run time, after the output printed before it.
+# Windows only: that is where the JIT reports a failed assert; on Linux abort() reaches LLVM's
+# crash handler.
+if (WIN32)
+    add_test(NAME test-jit-assert-message-failing
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     "${PROJECT_SOURCE_DIR}/test/tester/assert-message/failing.ts")
+    set_tests_properties(test-jit-assert-message-failing
+                         PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
+endif()
 
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what

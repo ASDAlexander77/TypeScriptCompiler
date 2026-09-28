@@ -424,9 +424,9 @@ def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
     ```
   }];
 
-  let arguments = (ins TypeScript_Boolean:$arg, StrAttr:$msg);
-
-  
+  // `message`, when present, is a message known only at run time (`assert(ok, what + " failed")`)
+  // and is shown instead of `msg`
+  let arguments = (ins TypeScript_Boolean:$arg, Optional<TypeScript_String>:$message, StrAttr:$msg);
 
   let hasCanonicalizer = 1;
 }

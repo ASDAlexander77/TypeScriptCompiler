@@ -580,28 +580,36 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
+        // The message: a constant string is kept as text, anything else - `what + " failed"` - is
+        // shown as it is at run time. Such a message used to be erased as if it were a constant,
+        // with its other uses still there ("operation's operand is unlinked").
         auto msg = StringRef("assert");
+        mlir::Value message;
         if (operands.size() > 1)
         {
-            for (auto opIndex = 1; opIndex < operands.size(); opIndex++)
+            auto param2 = operands[1];
+            auto constantOp = param2.getDefiningOp<mlir_ts::ConstantOp>();
+            auto type = constantOp ? constantOp.getType() : mlir::Type();
+            if (auto literalType = dyn_cast_or_null<mlir_ts::LiteralType>(type))
             {
-                auto param2 = operands[opIndex];
-                auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
-                if (constantOp)
-                {
-                    auto type = constantOp.getType();
-                    if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
-                    {
-                        type = literalType.getElementType();
-                    }
+                type = literalType.getElementType();
+            }
 
-                    if (isa<mlir_ts::StringType>(type))
+            if (constantOp && isa<mlir_ts::StringType>(type))
+            {
+                msg = cast<mlir::StringAttr>(constantOp.getValue()).getValue();
+            }
+            else
+            {
+                message = param2;
+                if (!isa<mlir_ts::StringType>(message.getType()))
+                {
+                    message = castFn(location, mlir_ts::StringType::get(builder.getContext()), message, genContext, false);
+                    if (!message)
                     {
-                        msg = cast<mlir::StringAttr>(constantOp.getValue()).getValue();
+                        return mlir::failure();
                     }
                 }
-
-                param2.getDefiningOp()->erase();
             }
         }
 
@@ -612,7 +620,7 @@ class MLIRCustomMethods
         }
 
         auto assertOp =
-            builder.create<mlir_ts::AssertOp>(location, op, mlir::StringAttr::get(builder.getContext(), msg));
+            builder.create<mlir_ts::AssertOp>(location, op, message, mlir::StringAttr::get(builder.getContext(), msg));
 
         return mlir::success();
     }
