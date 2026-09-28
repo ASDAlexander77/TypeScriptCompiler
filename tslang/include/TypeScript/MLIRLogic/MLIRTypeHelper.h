@@ -2894,24 +2894,36 @@ class MLIRTypeHelper
 
                             if (auto genericClass = getGenericClassInfoByFullName(srcClassInfo->originClassType.getName().getValue()))
                             {
+                                // every type argument has to extend, not only the first:
+                                // Pair<number, number> is not a Pair<number, string>
+                                auto result = ExtendsResult::True;
                                 for (auto &typeParam : genericClass->typeParams)
                                 {
                                     auto name = typeParam->getName();
                                     auto srcFound = srcClassInfo->typeParamsWithArgs.find(name);
                                     auto extFound = extClassInfo->typeParamsWithArgs.find(name);
-                                    if (srcFound != srcClassInfo->typeParamsWithArgs.end() && 
-                                        extFound != extClassInfo->typeParamsWithArgs.end())
-                                    {
-                                        auto srcType = srcFound->getValue().second;
-                                        auto extType = extFound->getValue().second;
-
-                                        return extendsType(location, srcType, extType, typeParamsWithArgs);
-                                    }
-                                    else
+                                    if (srcFound == srcClassInfo->typeParamsWithArgs.end() ||
+                                        extFound == extClassInfo->typeParamsWithArgs.end())
                                     {
                                         return ExtendsResult::False;
                                     }
+
+                                    auto srcType = srcFound->getValue().second;
+                                    auto extType = extFound->getValue().second;
+
+                                    auto argResult = extendsType(location, srcType, extType, typeParamsWithArgs);
+                                    if (!isTrue(argResult))
+                                    {
+                                        return argResult;
+                                    }
+
+                                    if (argResult == ExtendsResult::Any)
+                                    {
+                                        result = argResult;
+                                    }
                                 }
+
+                                return result;
                             }
 
                             // default behavior - false, because something is different
