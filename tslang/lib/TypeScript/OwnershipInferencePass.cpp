@@ -319,37 +319,21 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     bool tryBorrow(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> ends, llvm::StringRef owner,
                    llvm::SetVector<mlir::Operation *> &toErase)
     {
-        auto slot = borrower.getResult();
         auto name = varName(borrower);
         llvm::SmallVector<mlir::Operation *> uses;
         llvm::SmallVector<mlir::Operation *> bookkeeping;
-        for (auto *user : slot.getUsers())
+        if (auto *kept = collectBorrowerUses(borrower, uses, bookkeeping))
         {
-            if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
+            if (isAssignmentOf(kept, borrower))
             {
-                bookkeeping.push_back(user);
-                continue;
+                reportBorrowerAssigned(kept, name, owner);
             }
-
-            if (mlir::isa<mlir_ts::StoreOp>(user))
-            {
-                reportBorrowerAssigned(user, name, owner);
-                return false;
-            }
-
-            auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
-            if (!readOp)
-            {
-                reportBorrowEscapes(user, name, owner);
-                return false;
-            }
-
-            uses.push_back(user);
-            if (auto *kept = walkBorrowed(readOp.getResult(), uses))
+            else
             {
                 reportBorrowEscapes(kept, name, owner);
-                return false;
             }
+
+            return false;
         }
 
         for (auto *end : ends)
@@ -366,6 +350,43 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         toErase.insert(bookkeeping.begin(), bookkeeping.end());
         return true;
+    }
+
+    // A borrowing `let`'s slot: each read, and everything it leads to (walkBorrowed), joins
+    // `uses`; its `ts.RetainSlot` and `ts.ReleaseSlot`s are `bookkeeping`, which a borrow erases.
+    // Answers the first use that would keep what the slot holds - an assignment, or anything
+    // else that is not a read - or null.
+    mlir::Operation *collectBorrowerUses(mlir_ts::VariableOp borrower, llvm::SmallVectorImpl<mlir::Operation *> &uses,
+                                         llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping)
+    {
+        for (auto *user : borrower.getResult().getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
+            {
+                bookkeeping.push_back(user);
+                continue;
+            }
+
+            auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!readOp)
+            {
+                return user;
+            }
+
+            uses.push_back(user);
+            if (auto *kept = walkBorrowed(readOp.getResult(), uses))
+            {
+                return kept;
+            }
+        }
+
+        return nullptr;
+    }
+
+    static bool isAssignmentOf(mlir::Operation *op, mlir_ts::VariableOp varOp)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+        return storeOp && storeOp.getReference() == varOp.getResult();
     }
 
     // What `use` hands the very value it uses on to, as that value: a cast or a view of it, the
@@ -762,29 +783,46 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         });
     }
 
-    // The uses of what `read` returned and of everything it produces that may still point into
-    // the block (walkBorrowed). A retain or a taking use is reported and answers false.
-    bool collectReadUses(mlir_ts::LoadOp read, llvm::StringRef name, llvm::StringRef place,
-                         llvm::SmallVectorImpl<mlir::Operation *> &uses)
-    {
-        if (auto *kept = walkBorrowed(read.getResult(), uses))
-        {
-            reportPlaceBorrowEscapes(kept, name, place);
-            return false;
-        }
-
-        return true;
-    }
-
-    // A read out of a container is a borrow of it (spec 2.3). Reports and returns false when it
-    // is kept, or used after something that may destroy it.
+    // A read out of a container is a borrow of it (spec 2.3), and so is a `let` declared from one:
+    // its retain and releases go when the check passes, as for any borrowing `let` (phase 2).
+    // Reports and returns false when the read is kept, or used after something that may destroy
+    // it.
     bool checkPlaceRead(mlir_ts::LoadOp read, llvm::SetVector<mlir::Operation *> &toErase)
     {
-        auto name = ownerName(read.getResult());
         auto place = describePlace(read.getReference());
+        llvm::StringRef name = ownerName(read.getResult());
         llvm::SmallVector<mlir::Operation *> uses;
-        if (!collectReadUses(read, name, place, uses))
+        llvm::SmallVector<mlir::Operation *> bookkeeping;
+        mlir_ts::VariableOp letKeeps;
+        mlir::Operation *letKept = nullptr;
+        auto *kept = walkBorrowed(read.getResult(), uses, [&](mlir::Operation *user) {
+            auto borrower = borrowerOf(user);
+            if (!borrower || borrower.getOperation() != user)
+            {
+                return false;
+            }
+
+            name = varName(borrower);
+            if (auto *keeps = collectBorrowerUses(borrower, uses, bookkeeping); keeps && !letKept)
+            {
+                letKept = keeps;
+                letKeeps = borrower;
+            }
+
+            return true;
+        });
+
+        if (kept || letKept)
         {
+            if (!kept && isAssignmentOf(letKept, letKeeps))
+            {
+                reportPlaceBorrowerAssigned(letKept, varName(letKeeps), place);
+            }
+            else
+            {
+                reportPlaceBorrowEscapes(kept ? kept : letKept, name, place);
+            }
+
             return false;
         }
 
@@ -819,6 +857,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
         }
 
+        toErase.insert(bookkeeping.begin(), bookkeeping.end());
         return true;
     }
 
@@ -1724,6 +1763,17 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         auto diag = use->emitError("'") << name << "' borrows " << place
                                         << " but is used here after it may be released or overwritten";
         diag.attachNote(drop->getLoc()) << "it may be released or overwritten here";
+        signalPassFailure();
+    }
+
+    void reportPlaceBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << name << "' borrows " << place << " and cannot be assigned; -mm=own cannot prove that yet";
         signalPassFailure();
     }
 
