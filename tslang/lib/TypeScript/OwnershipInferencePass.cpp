@@ -191,15 +191,34 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         decideSlotReceivers(slot, receivers, owner, toErase);
     }
 
-    // More than one receiver of one owning local: phase 1's verdict for each (Task 2 replaces it).
+    // More than one receiver of one owning local. Each has to borrow: a borrow pins the owner, so
+    // none may move it. A receiver that is not a `let` reports its move error - another
+    // receiver's reads come after it - or, if its move alone would pass, that a borrow pins it.
     void decideSlotReceivers(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::StringRef owner,
                              llvm::SetVector<mlir::Operation *> &toErase)
     {
+        auto ends = slotEnds(slot);
+        mlir_ts::VariableOp someBorrower;
         for (auto &receiver : receivers)
         {
-            if (checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase))
+            if (auto borrower = borrowerOf(receiver.retain))
             {
-                toErase.insert(receiver.retain);
+                someBorrower = borrower;
+                tryBorrow(borrower, ends, owner, toErase);
+            }
+        }
+
+        for (auto &receiver : receivers)
+        {
+            if (borrowerOf(receiver.retain))
+            {
+                continue;
+            }
+
+            llvm::SetVector<mlir::Operation *> unused;
+            if (checkSlotMove(receiver.retain, receiver.value, receiver.load, unused))
+            {
+                reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : "another variable");
             }
         }
     }
@@ -1030,6 +1049,18 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         auto diag = use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
                                         << "' is released or overwritten";
         diag.attachNote(end->getLoc()) << "'" << owner << "' is released or overwritten here";
+        signalPassFailure();
+    }
+
+    void reportMovedWhileBorrowed(mlir::Operation *op, llvm::StringRef owner, llvm::StringRef borrower)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << owner << "' is moved here while '" << borrower
+                           << "' borrows it; a borrowed value cannot be moved";
         signalPassFailure();
     }
 

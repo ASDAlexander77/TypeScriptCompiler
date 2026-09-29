@@ -2403,7 +2403,8 @@ set_tests_properties(test-own-inference-erases-birth-takes
 foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals
                  own_move_const_branch own_move_let own_move_field own_move_return own_move_loop_body
                  own_literal_reuse own_move_control_flow
-                 own_borrow_inner_let own_borrow_loop own_borrow_branch)
+                 own_borrow_inner_let own_borrow_loop own_borrow_branch
+                 own_borrow_two_lets)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2425,7 +2426,7 @@ set_tests_properties(test-own-verify-ownership PROPERTIES FAIL_REGULAR_EXPRESSIO
 # scope-fused location, and the error reads it.
 add_test(NAME test-own-err-names-the-variable
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own --di
-                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_let_twice.ts"
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_const_alias_field.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/own-err-names-the-variable.obj")
 set_tests_properties(test-own-err-names-the-variable
                      PROPERTIES PASS_REGULAR_EXPRESSION "'a' is used here after its value was moved"
@@ -2436,7 +2437,7 @@ set(own_error_cases
     "own_err_assign_after_move|borrows .* but is used here after .* is released or overwritten"
     "own_err_borrow_escape|borrows .* and cannot be stored, returned or captured"
     "own_err_move_some_paths_field|is moved here on some paths only"
-    "own_err_let_twice|is used here after its value was moved"
+    "own_err_borrow_and_move|is moved here while .* borrows it"
     "own_err_const_alias_move|borrows .* and cannot be assigned"
     "own_err_const_alias_field|is used here after its value was moved"
     "own_err_field_alias|is used here after its value was moved"
