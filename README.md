@@ -228,6 +228,26 @@ Result
 Hello World!
 ```
 
+### JIT cache
+
+The JIT compiles the program and each `.ts` module it imports into an object file of its own and
+keeps it in a `__jit` folder next to the source file. On the next run it loads those objects
+instead of compiling the files again, as long as nothing they were compiled from has changed: the
+file itself, the files it references or imports, `lib.d.ts`, the options, or the `tslang` build.
+An edited module is recompiled together with every file that imports it.
+
+```text
+hello.ts
+__jit/hello.ts.<hash>.o        the object
+__jit/hello.ts.<hash>.o.deps   what it was compiled from
+```
+
+- `--jit-cache-dir=<folder>` keeps all the objects in one folder instead;
+- `--jit-cache=false` turns the cache off: everything is compiled into one module on every run.
+
+A program whose imports form a cycle is compiled into one object. Its modules can't be compiled
+one by one, which is also true for `--emit=obj`.
+
 ## Debugging JIT code with GDB (Linux)
 
 JIT-compiled TypeScript can be debugged at source level with GDB — breakpoints on `.ts` lines,

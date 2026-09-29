@@ -2629,6 +2629,20 @@ set(import_source_dir "${PROJECT_SOURCE_DIR}/test/tester/import-source")
 tslang_add_test(NAME test-jit-import-source-new-imported-class COMMAND test-runner -jit "${import_source_dir}/new_imported_class.ts")
 tslang_add_import_tests(import-source-new-imported-class "${import_source_dir}" new_imported_class imported_class_module)
 
+# The JIT cache (--emit=jit, on by default): each .ts module imported is an object of its own,
+# loaded beside the program's - imported through two others and initialized first; and a program
+# in an import cycle, compiled as one module. jit-cache.cmake: the cache is used, and compiled
+# again when a source changes.
+set(jit_cache_dir "${PROJECT_SOURCE_DIR}/test/tester/jit-cache")
+tslang_add_test(NAME test-jit-cache-imports-diamond COMMAND test-runner -jit "${jit_cache_dir}/imports_diamond.ts")
+tslang_add_test(NAME test-jit-cache-import-cycle COMMAND test-runner -jit "${jit_cache_dir}/cycle_main.ts")
+add_test(NAME test-jit-cache-reuse-and-invalidate
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE_DIR=${jit_cache_dir}"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jit-cache-reuse"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/jit-cache.cmake")
+
 # `import { a as b }` and `import * as M` - each used to be "can't resolve name".
 set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
 tslang_add_import_tests(import-bindings-renamed "${import_bindings_dir}" import_renamed names_module)
