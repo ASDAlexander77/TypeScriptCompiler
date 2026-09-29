@@ -996,10 +996,10 @@ class MLIRGenImpl
     }
 
     // The same question from a receiver after which nothing reads the value - a `return`, a
-    // `delete` - which may take over a folded `const`'s reference too.
+    // `delete` - which may take over a folded `const`'s reference too, on every path.
     bool producesOwnedReferenceAtLastUse(mlir::Value value)
     {
-        return carriesUnclaimedReference(value);
+        return mayTakeOverReferenceAtLastUse(value);
     }
 
     // Records that a receiver has taken over the reference this value carried, so nothing later

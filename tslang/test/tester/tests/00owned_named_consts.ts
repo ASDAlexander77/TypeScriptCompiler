@@ -183,6 +183,33 @@ function chainedAssignment() {
     return h.c.v.length + h.c.x;
 }
 
+// A name returned on two paths. Each `return` is the last use on its own path, so each hands the
+// reference over; one that retained instead would give its caller a second reference, a leak no
+// assertion here can see - `-mm=own` and the ownership verifier are what notice that. This pins
+// that both paths still hand back a live value.
+function returnedOnTwoPaths(x: boolean) {
+    const c = new C(3);
+    c.v.push(1);
+    if (x) return c;
+    return c;
+}
+
+// the same for a named call result, which the pass after MLIRGen settles
+function callResultReturnedOnTwoPaths(x: boolean) {
+    const r = filled(2);
+    if (x) return r;
+    return r;
+}
+
+function returns() {
+    const a = returnedOnTwoPaths(true);
+    const b = returnedOnTwoPaths(false);
+    const c = callResultReturnedOnTwoPaths(true);
+    const d = callResultReturnedOnTwoPaths(false);
+    churn();
+    return a.x + b.x + c.v.length + d.v.length;
+}
+
 function main() {
     assert(innerLetThenName() == 7, "a name outlives an inner `let` of it");
     assert(innerLetInLoop() == 8, "a name outlives a `let` of it in a loop");
@@ -192,6 +219,7 @@ function main() {
     assert(fieldStoreInLoop() == 1, "a string stored into a field in a loop survives the overwrites");
     assert(callResultThenName() == 7, "a named call result outlives an inner `let` of it");
     assert(chainedAssignment() == 6, "a field and a local assigned one `new` are two holders");
+    assert(returns() == 10, "a name returned on either of two paths is handed back alive");
 
     print("done.");
 }

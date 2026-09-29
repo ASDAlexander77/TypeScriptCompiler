@@ -52,7 +52,8 @@
 // is the operation's own result, and a receiver cannot tell whether this mention is the last.
 // None that stores it may take the reference over; each retains, and the reference the producer
 // carried is given back where §9.30 gives back any other unclaimed one. A `return` or a `delete`
-// still takes it over: nothing after either reads the name. See MLIROwnedReference.h.
+// still takes it over, on every path it appears on: nothing after either reads the name. See
+// MLIROwnedReference.h.
 #define OWNED_RESULT_NAMED_ATTR_NAME "__owned_result_named"
 
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,

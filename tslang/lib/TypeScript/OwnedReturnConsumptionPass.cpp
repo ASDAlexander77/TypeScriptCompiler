@@ -169,11 +169,12 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
-            if (auto *retain = findReceiverRetain(result))
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
             {
                 callOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                 callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
-                toErase.push_back(retain);
+                toErase.append(retains.begin(), retains.end());
                 return;
             }
 
@@ -290,10 +291,11 @@ class OwnedReturnConsumptionPass
 
             ifOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
 
-            if (auto *retain = findReceiverRetain(result))
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
             {
                 ifOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
-                toErase.push_back(retain);
+                toErase.append(retains.begin(), retains.end());
             }
         });
 
@@ -916,33 +918,43 @@ class OwnedReturnConsumptionPass
     // store, a literal capturing it, a return passing it on), and a `ts.RetainSlot` on the
     // storage of a local declared from it.
     //
-    // Returning null is the ordinary answer for a result nobody took - `f();` on its own, or
+    // Returning none is the ordinary answer for a result nobody took - `f();` on its own, or
     // `f().n` - and it is left exactly as it is. Consuming a reference no receiver balances
     // would free the value while the expression is still using it.
     //
     // A folded `const` (OWNED_RESULT_NAMED_ATTR_NAME) is the exception: its name is this very
     // value, so the one receiver that may take its reference over is a `return`, after which
     // nothing reads the name. Any other receiver keeps its retain, and the call's +1 is given
-    // back as a temporary like any other nobody took.
-    static mlir::Operation *findReceiverRetain(mlir::Value result)
+    // back as a temporary like any other nobody took. Every `return` of it takes it over, since
+    // each is on a path of its own - `if (x) return r; return r;` - and one left retaining would
+    // hand its caller two references.
+    static llvm::SmallVector<mlir::Operation *> findReceiverRetains(mlir::Value result)
     {
         auto *definingOp = result.getDefiningOp();
-        auto named = definingOp && definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME);
+        if (definingOp && definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+        {
+            llvm::SmallVector<mlir::Operation *> returned;
+            for (auto *user : result.getUsers())
+            {
+                auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(user);
+                if (retainOp && retainOp.getReference() == result && retainFeedsReturn(retainOp, result))
+                {
+                    returned.push_back(user);
+                }
+            }
+
+            return returned;
+        }
 
         for (auto *user : result.getUsers())
         {
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(user))
             {
-                if (retainOp.getReference() == result && (!named || retainFeedsReturn(retainOp, result)))
+                if (retainOp.getReference() == result)
                 {
-                    return retainOp.getOperation();
+                    return {retainOp.getOperation()};
                 }
             }
-        }
-
-        if (named)
-        {
-            return nullptr;
         }
 
         for (auto *user : result.getUsers())
@@ -961,12 +973,12 @@ class OwnedReturnConsumptionPass
                     // the declaration becomes the acquisition, which is what keeps the
                     // ownership verifier able to pair the release still to come
                     varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp.getContext()));
-                    return retainSlotOp.getOperation();
+                    return {retainSlotOp.getOperation()};
                 }
             }
         }
 
-        return nullptr;
+        return {};
     }
 };
 

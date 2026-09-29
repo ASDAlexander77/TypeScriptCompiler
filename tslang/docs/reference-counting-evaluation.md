@@ -5934,12 +5934,18 @@ the producer carries a reference, no receiver took it yet, and it is not a folde
 MLIRGen marks a folded `const`'s producer `__owned_result_named` where the name is bound. A named
 value is retained by each receiver instead, and its own reference is given back at the end of
 its block like any unclaimed temporary (§9.30). A `return` and a `delete` still take it over -
-nothing reads the name after either - through `carriesUnclaimedReference`, which leaves out only
-the naming check. §9.27's pass keeps a named result's retain unless it is the one a `return`
-took.
+nothing reads the name after either - through `mayTakeOverReferenceAtLastUse`, on every path:
+`if (x) return c; return c;` has two, and whichever runs is the last use. (The first version of
+this fix let only the first `return` take it over and made the second retain, which leaked on
+that path: 1M calls went from 4.7 MB to 20.1 MB.) §9.27's pass likewise keeps a named result's
+retains except those a `return` took, and now takes every one of those rather than the first.
 
 Cost: a retain and a release for `const a = new C(); arr.push(a)`, which used to be free.
 
 Under `-mm=own` the extra pair is a move, not a second owner: one taker plus the temporary's
 release later in the same block is one owner, and the inference pass erases both. A million
 `const p = make(); let q = p;` iterations peak at 4.2 MB under both `rc` and `own` (`none` 50.3).
+
+**Open, and older than this:** `const c = new C(); if (x) return c; print(c.x);` leaks `c` on the
+path that does not return. The `return` marks the producer consumed, which is what stops §9.30
+releasing it, and that mark is per operation, not per path.

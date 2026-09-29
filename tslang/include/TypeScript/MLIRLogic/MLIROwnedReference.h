@@ -16,8 +16,8 @@ namespace typescript
 // reach two receivers: `let b = h.c = new C()` offers the same `new` to the field and then to the
 // local.
 //
-// This is the whole question for a receiver after which nothing reads the value - a `return`, a
-// `delete`. Every other receiver asks mayTakeOverReference.
+// A receiver that stores the value asks mayTakeOverReference, and one after which nothing reads
+// it - a `return`, a `delete` - asks mayTakeOverReferenceAtLastUse.
 inline bool carriesUnclaimedReference(mlir::Value value)
 {
     auto *definingOp = value ? value.getDefiningOp() : nullptr;
@@ -37,6 +37,20 @@ inline bool carriesUnclaimedReference(mlir::Value value)
 inline bool mayTakeOverReference(mlir::Value value)
 {
     return carriesUnclaimedReference(value) && !value.getDefiningOp()->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME);
+}
+
+// May a `return` or a `delete` take the reference over? Nothing reads the value after either.
+//
+// A folded `const` may be taken over even when already marked consumed: no storing receiver
+// takes a named value, so what consumed it can only be another `return` or `delete`, on a path
+// that excludes this one - `if (x) return c; return c;`. Retaining here instead would hand the
+// caller two references on the second path.
+inline bool mayTakeOverReferenceAtLastUse(mlir::Value value)
+{
+    auto *definingOp = value ? value.getDefiningOp() : nullptr;
+    return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
+           (definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME) ||
+            !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME));
 }
 
 } // namespace typescript
