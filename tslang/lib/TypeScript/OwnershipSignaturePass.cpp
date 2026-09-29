@@ -56,7 +56,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         });
 
         findOpen(module);
-        computeResultBorrows();
+        computeFacts();
         computeDrops();
 
         for (auto &call : calls)
@@ -103,10 +103,33 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // the symbol that is not a call this pass resolves - and why, for the error in their body.
     llvm::DenseMap<mlir::Operation *, const char *> open;
 
-    // The parameter each function's result borrows, from its body (local) and as its callers see
-    // it (effective: closed, and agreed by every family it is in).
-    llvm::DenseMap<mlir::Operation *, int> borrowsLocal;
-    llvm::DenseMap<mlir::Operation *, int> borrowsEffective;
+    // The parameter a function's result borrows and the parameters it keeps (spec 2.4); absent is
+    // rc's convention.
+    struct Facts
+    {
+        int borrows = -1;
+        llvm::SmallVector<int32_t> owned;
+
+        bool empty() const
+        {
+            return borrows < 0 && owned.empty();
+        }
+
+        bool operator==(const Facts &other) const
+        {
+            return borrows == other.borrows && owned == other.owned;
+        }
+
+        bool operator!=(const Facts &other) const
+        {
+            return !(*this == other);
+        }
+    };
+
+    // Each function's facts, from its body (local) and as its callers see them (effective: closed,
+    // and agreed by every family it is in).
+    llvm::DenseMap<mlir::Operation *, Facts> factsLocal;
+    llvm::DenseMap<mlir::Operation *, Facts> factsEffective;
 
     // Functions that destroy nothing their caller can reach.
     llvm::DenseSet<mlir::Operation *> noDrops;
@@ -502,56 +525,147 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return found;
     }
 
-    // A result that borrows an argument only holds where every caller knows it, so the fact
-    // survives only on a closed function whose every family agrees, and families are demoted
-    // until they do: a member that loses it can make another family disagree. A caller that
-    // returns what such a call returns borrows too, so the facts are recomputed with the calls
-    // pinned until nothing changes; if that does not settle, nobody gets one.
-    void computeResultBorrows()
+    // ---- Parameters the callee keeps ----
+
+    // Does `user` take `used` - a read of a parameter - into something that outlives the call: a
+    // store into a field, an element or a global, an insertion into an array, or a call that keeps
+    // it in turn? A local that holds it, and the result it is returned as, do not count: the first
+    // is a borrow, the second a borrowed result.
+    static bool keeps(mlir::Operation *user, mlir::Value used)
     {
-        llvm::DenseMap<mlir::Operation *, int> pinned;
+        // a number, a boolean, a string literal: nothing to keep
+        if (holdsNoBlock(used))
+        {
+            return false;
+        }
+
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+        {
+            auto ref = storeOp.getReference();
+            return storeOp.getValue() == used && (isPlace(ref) || ref.getDefiningOp<mlir_ts::AddressOfOp>());
+        }
+
+        if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
+        {
+            return llvm::is_contained(pushOp.getItems(), used);
+        }
+
+        if (auto unshiftOp = mlir::dyn_cast<mlir_ts::ArrayUnshiftOp>(user))
+        {
+            return llvm::is_contained(unshiftOp.getItems(), used);
+        }
+
+        if (auto spliceOp = mlir::dyn_cast<mlir_ts::ArraySpliceOp>(user))
+        {
+            return llvm::is_contained(spliceOp.getItems(), used);
+        }
+
+        if (isCall(user))
+        {
+            auto args = callArgs(user);
+            return llvm::any_of(ownedParams(user), [&](int32_t index) {
+                return static_cast<size_t>(index) < args.size() && args[index] == used;
+            });
+        }
+
+        return false;
+    }
+
+    // The parameters the body keeps (spec 2.4, owned-by-callee): a read of the parameter's slot -
+    // never assigned - that something keeps.
+    static llvm::SmallVector<int32_t> localOwnedParams(mlir_ts::FuncOp funcOp)
+    {
+        llvm::SmallVector<int32_t> owned;
+        if (funcOp.getBody().empty())
+        {
+            return owned;
+        }
+
+        for (auto argument : funcOp.getBody().front().getArguments())
+        {
+            auto kept = false;
+            for (auto *user : argument.getUsers())
+            {
+                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                auto index = -1;
+                if (!varOp || !isParameterSlot(varOp, index))
+                {
+                    continue;
+                }
+
+                for (auto *slotUser : varOp.getResult().getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                    {
+                        forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
+                            kept = kept || keeps(use, used);
+                        });
+                    }
+                }
+            }
+
+            if (kept)
+            {
+                owned.push_back(argument.getArgNumber());
+            }
+        }
+
+        return owned;
+    }
+
+    // ---- The facts callers must know ----
+
+    // Owned parameters and a result that borrows only hold where every caller knows them, so the
+    // facts survive only on a closed function whose every family agrees, and families are
+    // demoted until they do: a member that loses its facts can make another family disagree. A
+    // caller that returns what such a call returns, or passes a parameter on to a kept one, gets
+    // the fact too, so the facts are recomputed with the calls pinned until nothing changes; if
+    // that does not settle, nobody gets any.
+    void computeFacts()
+    {
+        llvm::DenseMap<mlir::Operation *, Facts> pinned;
         for (auto round = 0; round < 16; ++round)
         {
             for (auto &entry : functions)
             {
                 if (!entry.second.isDeclaration())
                 {
-                    borrowsLocal[entry.second] = localResultBorrows(entry.second);
+                    factsLocal[entry.second] = {localResultBorrows(entry.second), localOwnedParams(entry.second)};
                 }
             }
 
-            meetResultBorrows();
+            meetFacts();
 
-            llvm::DenseMap<mlir::Operation *, int> next;
+            llvm::DenseMap<mlir::Operation *, Facts> next;
             for (auto &call : calls)
             {
-                if (auto index = callResultBorrows(call.callees); index >= 0)
+                if (auto facts = callFacts(call.callees); !facts.empty())
                 {
-                    next[call.op] = index;
+                    next[call.op] = facts;
                 }
             }
 
             auto settled = next == pinned;
             pinned = std::move(next);
-            pinResultBorrows(pinned);
+            pinFacts(pinned);
             if (settled)
             {
                 return;
             }
         }
 
-        borrowsEffective.clear();
-        pinResultBorrows(llvm::DenseMap<mlir::Operation *, int>());
+        factsEffective.clear();
+        pinFacts(llvm::DenseMap<mlir::Operation *, Facts>());
     }
 
-    void meetResultBorrows()
+    void meetFacts()
     {
-        borrowsEffective.clear();
-        for (auto &[funcOp, index] : borrowsLocal)
+        factsEffective.clear();
+        for (auto &[funcOp, facts] : factsLocal)
         {
-            if (index >= 0 && !open.contains(funcOp))
+            if (!facts.empty() && !open.contains(funcOp))
             {
-                borrowsEffective[funcOp] = index;
+                factsEffective[funcOp] = facts;
             }
         }
 
@@ -560,11 +674,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             changed = false;
             for (auto &[key, members] : families)
             {
-                llvm::SmallVector<int> seen;
+                llvm::SmallVector<Facts> seen;
                 for (auto member : members)
                 {
                     auto funcOp = functions.lookup(member.getValue());
-                    seen.push_back(funcOp ? borrowsEffective.lookup_or(funcOp, -1) : -1);
+                    seen.push_back(funcOp ? factsEffective.lookup(funcOp) : Facts());
                 }
 
                 if (llvm::all_equal(seen))
@@ -574,7 +688,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
                 for (auto member : members)
                 {
-                    if (auto funcOp = functions.lookup(member.getValue()); funcOp && borrowsEffective.erase(funcOp))
+                    if (auto funcOp = functions.lookup(member.getValue()); funcOp && factsEffective.erase(funcOp))
                     {
                         changed = true;
                     }
@@ -583,51 +697,56 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
     }
 
-    int callResultBorrows(const Callees &callees)
+    Facts callFacts(const Callees &callees)
     {
         if (!callees.known || callees.instanceOf || callees.funcs.empty())
         {
-            return -1;
+            return {};
         }
 
-        auto index = borrowsEffective.lookup_or(callees.funcs.front(), -1);
+        auto facts = factsEffective.lookup(callees.funcs.front());
         auto agree = llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp callee) {
-            return borrowsEffective.lookup_or(callee, -1) == index;
+            return factsEffective.lookup(callee) == facts;
         });
-        return agree ? index : -1;
+        return agree ? facts : Facts();
+    }
+
+    static void setFacts(mlir::Operation *op, const Facts &facts)
+    {
+        auto *context = op->getContext();
+        op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+        op->removeAttr(OWN_PARAMS_ATTR_NAME);
+        if (facts.borrows >= 0)
+        {
+            op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME,
+                        mlir::IntegerAttr::get(mlir::IntegerType::get(context, 32), facts.borrows));
+        }
+
+        if (!facts.owned.empty())
+        {
+            op->setAttr(OWN_PARAMS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, facts.owned));
+        }
     }
 
     // The calls get the facts their callees agree on; each function gets its own, or the reason it
-    // lost one its body has, for the error there.
-    void pinResultBorrows(const llvm::DenseMap<mlir::Operation *, int> &pinned)
+    // lost those its body has, for the error there.
+    void pinFacts(const llvm::DenseMap<mlir::Operation *, Facts> &pinned)
     {
-        auto *context = &getContext();
-        auto i32 = mlir::IntegerType::get(context, 32);
         for (auto &call : calls)
         {
-            if (auto found = pinned.find(call.op); found != pinned.end())
-            {
-                call.op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::IntegerAttr::get(i32, found->second));
-            }
-            else
-            {
-                call.op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
-            }
+            setFacts(call.op, pinned.lookup(call.op));
         }
 
-        for (auto &[funcOp, local] : borrowsLocal)
+        for (auto &[funcOp, local] : factsLocal)
         {
-            funcOp->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+            auto effective = factsEffective.lookup(funcOp);
+            setFacts(funcOp, effective);
             funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
-            if (auto index = borrowsEffective.lookup_or(funcOp, -1); index >= 0)
-            {
-                funcOp->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::IntegerAttr::get(i32, index));
-            }
-            else if (local >= 0)
+            if (effective.empty() && !local.empty())
             {
                 auto *why = open.lookup(funcOp);
                 funcOp->setAttr(OWN_FACTS_LOST_ATTR_NAME,
-                                mlir::StringAttr::get(context, why ? why : "an override in its class family disagrees"));
+                                mlir::StringAttr::get(&getContext(), why ? why : "an override in its class family disagrees"));
             }
         }
     }

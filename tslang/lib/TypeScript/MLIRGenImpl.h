@@ -1070,17 +1070,17 @@ class MLIRGenImpl
         return isa<mlir_ts::NumberType, mlir_ts::CharType>(valueType) || valueType.isIntOrIndex();
     }
 
-    // Gives a freshly built string the same standing as every other producer of a new heap
-    // value: the retain makes the reference real, and the mark says a receiver may take it over
-    // rather than adding one of its own - which is also what lets §9.30 give it back where
-    // nothing receives it at all.
+    // Gives a freshly built string, or a freshly made `any` box, the same standing as every other
+    // producer of a new heap value: the retain makes the reference real, and the mark says a
+    // receiver may take it over rather than adding one of its own - which is also what lets §9.30
+    // give it back where nothing receives it at all.
     //
     // Both halves are needed together, and the retain is what makes this safe to be generous
     // with: a value wrongly counted as fresh gains a reference and a release for it, which is
     // balanced, where a mark on its own would hand a receiver a reference nobody took.
-    void markFreshStringOwned(mlir::Location location, mlir::Value value)
+    void markFreshBlockOwned(mlir::Location location, mlir::Value value)
     {
-        if (!value || !isa<mlir_ts::StringType>(value.getType()))
+        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType>(value.getType()))
         {
             return;
         }
@@ -6212,9 +6212,9 @@ class MLIRGenImpl
             // `ts.StringConcat`, which builds a new string. A receiver takes that reference
             // over; `("a" + b).length`, where there is no receiver, gives it back at the end of
             // the block instead of leaking (§9.37).
-            if (opCode == SyntaxKind::PlusToken)
+            if (opCode == SyntaxKind::PlusToken && isa<mlir_ts::StringType>(result.getType()))
             {
-                markFreshStringOwned(location, result);
+                markFreshBlockOwned(location, result);
             }
 
             break;

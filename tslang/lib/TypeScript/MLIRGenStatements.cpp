@@ -1158,6 +1158,13 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // The catch object the runtime copies into holds what it is given: a box made here carries
+        // a reference of its own, which goes with it rather than back at the end of the thunk.
+        if (producesOwnedReference(V(result)))
+        {
+            consumeOwnedReference(V(result));
+        }
+
         builder.create<mlir_ts::StoreOp>(location, V(result), arguments[0]);
         builder.create<mlir_ts::ExitOp>(location, mlir::Value());
 

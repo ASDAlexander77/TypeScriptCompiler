@@ -60,6 +60,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // reads out of fields and elements, and results that borrow an argument, and what may
         // destroy what they read (spec 2.3, 2.4)
         llvm::SmallVector<mlir::Operation *> placeReads;
+        // calls whose callee keeps an argument: each such argument moves into the call
+        llvm::SmallVector<mlir::Operation *> keepingCalls;
         drops.clear();
         derivedCache.clear();
         returnsBorrowOf = resultBorrows(f);
@@ -120,6 +122,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 {
                     placeReads.push_back(op);
                 }
+
+                if (!ownedParams(op).empty())
+                {
+                    keepingCalls.push_back(op);
+                }
             }
 
             for (auto result : op->getResults())
@@ -155,6 +162,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // Receivers of each owning local are decided together: one may move it, but where there
         // are several, each borrows it, since a borrow pins its owner.
         llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> slotReceivers;
+        llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> paramReceivers;
         for (auto *op : retains)
         {
             auto value = retainedValue(op);
@@ -167,6 +175,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             if (value && placeReadOf(value))
             {
                 continue; // a read out of a container: checkPlaceRead decided it
+            }
+
+            // rc's reference for what keeps a parameter this function keeps
+            if (auto load = value ? keptParamLoadOf(value) : mlir_ts::LoadOp())
+            {
+                paramReceivers[load.getReference()].push_back({op, value, load});
+                continue;
             }
 
             // rc's reference for the caller, on a parameter this function returns a borrow of
@@ -186,15 +201,58 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 continue;
             }
 
+            if (value && isReadOutOfException(value))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             if (!value || isFresh(value) == false)
             {
                 reportSecondReference(op);
             }
         }
 
+        // An argument a callee keeps moves into the call (spec 2.4): out of an owning local or a
+        // parameter this function keeps, like any other taker; a fresh value is decided with the
+        // other takers of it, a read out of a container by its own check. Anything else is not
+        // this function's to give.
+        for (auto *call : keepingCalls)
+        {
+            auto args = callArgs(call);
+            for (auto index : ownedParams(call))
+            {
+                if (static_cast<size_t>(index) >= args.size() || holdsNoBlock(args[index]) ||
+                    isImmortalLiteral(args[index]))
+                {
+                    continue;
+                }
+
+                auto arg = args[index];
+                auto root = rootOf(arg);
+                if (auto load = slotLoadOf(arg))
+                {
+                    slotReceivers[load.getReference()].push_back({call, root, load});
+                }
+                else if (auto load = keptParamLoadOf(arg))
+                {
+                    paramReceivers[load.getReference()].push_back({call, root, load});
+                }
+                else if (!isFresh(root) && !placeReadOf(root))
+                {
+                    reportGivenNotOwned(call, arg);
+                }
+            }
+        }
+
         for (auto &entry : slotReceivers)
         {
             decideSlot(entry.first, entry.second, toErase);
+        }
+
+        for (auto &entry : paramReceivers)
+        {
+            decideParam(entry.first, entry.second, toErase);
         }
 
         for (auto *op : toErase)
@@ -256,7 +314,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             auto &receiver = receivers.front();
             if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); }))
             {
-                toErase.insert(receiver.retain);
+                // rc's retain goes with the move; a call that keeps the argument is the move itself
+                if (!isCall(receiver.retain))
+                {
+                    toErase.insert(receiver.retain);
+                }
+
                 return;
             }
 
@@ -271,6 +334,71 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         decideSlotReceivers(slot, receivers, owner, toErase);
+    }
+
+    // A parameter this function keeps (`__own_params`): its caller moved the argument in, and this
+    // function has no release for it, so exactly one taker must move it on, on every way out of
+    // the function, and nothing may read it after that.
+    void decideParam(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto name = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
+        auto &receiver = receivers.front();
+        auto *taker = takerOf(receiver.retain, receiver.value);
+        if (receivers.size() > 1)
+        {
+            auto &second = receivers[1];
+            auto *secondTaker = takerOf(second.retain, second.value);
+            reportUseAfterMove(secondTaker ? secondTaker : second.retain, taker ? taker : receiver.retain, name);
+            return;
+        }
+
+        if (!checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase))
+        {
+            return;
+        }
+
+        auto &body = getFunction().getBody();
+        auto *moved = body.findAncestorOpInRegion(*taker);
+        auto everyPath = true;
+        getFunction().walk([&](mlir_ts::ReturnInternalOp returnOp) {
+            auto *exit = body.findAncestorOpInRegion(*returnOp);
+            if (everyPath && (!moved || !exit || !dominance->dominates(moved, exit)))
+            {
+                reportKeptOnSomePaths(taker, returnOp, name);
+                everyPath = false;
+            }
+        });
+
+        if (everyPath && mlir::isa<mlir_ts::RetainOp>(receiver.retain))
+        {
+            toErase.insert(receiver.retain);
+        }
+    }
+
+    // The thrown value, read out of the exception object by a catch's copy thunk (`.eh.copy.*`,
+    // which the C++ runtime calls to copy the exception into the catch). rc retains it for the
+    // copy; own moves it: the exception object never gives its reference back (a throw hands the
+    // thrower's reference to it, and nothing releases it - rc leaks it the same way), and each
+    // exception is copied into one catch, since a TypeScript rethrow is a new throw.
+    bool isReadOutOfException(mlir::Value value)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        auto argument = loadOp ? mlir::dyn_cast<mlir::BlockArgument>(loadOp.getReference()) : mlir::BlockArgument();
+        return argument && argument.getOwner()->isEntryBlock() && getFunction().getSymName().starts_with(".eh.copy.");
+    }
+
+    // The read of a parameter this function keeps, through its views. None for anything else.
+    mlir_ts::LoadOp keptParamLoadOf(mlir::Value value)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto index = -1;
+        if (!varOp || !isParameterSlot(varOp, index) || !llvm::is_contained(ownedParams(getFunction()), index))
+        {
+            return {};
+        }
+
+        return loadOp;
     }
 
     // More than one receiver of one owning local. Each has to borrow: a borrow pins the owner, so
@@ -819,9 +947,10 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                     }
                     else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
                     {
-                        forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value) {
+                        forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
                             auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(use);
-                            if (mlir::isa<mlir_ts::RetainOp>(use) || (varOp && isOwningVariable(varOp)))
+                            if (mlir::isa<mlir_ts::RetainOp>(use) || (varOp && isOwningVariable(varOp)) ||
+                                (isCall(use) && isKeptArgument(use, used)))
                             {
                                 ends.push_back(use);
                             }
@@ -1110,8 +1239,15 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         toErase.insert(bookkeeping.begin(), bookkeeping.end());
     }
 
-    // `'first'`'s result, for a call whose result borrows an argument.
+    // `the result of 'first'`, for a call whose result borrows an argument.
     static std::string describeCall(mlir::Operation *call)
+    {
+        auto callee = calleeName(call);
+        return callee.empty() ? "a call's result" : "the result of '" + callee + "'";
+    }
+
+    // The function a call names - directly, or the method it calls through a vtable - or empty.
+    static std::string calleeName(mlir::Operation *call)
     {
         mlir::StringAttr callee;
         if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(call))
@@ -1139,7 +1275,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
         }
 
-        return callee ? "the result of '" + callee.getValue().str() + "'" : "a call's result";
+        return callee ? callee.getValue().str() : std::string();
     }
 
     // `'h.c'`, `'arr[]'`, `'h.c.v'` - or `a field`, `an element` when the root has no name (a
@@ -1331,12 +1467,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1);
         }
 
-        // arguments are borrowed; a callee that keeps one retains it, and that retain is its own
-        // error
-        if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp,
-                      mlir_ts::CallHybridInternalOp>(user))
+        // arguments are borrowed, but one the callee keeps (`__own_params`) is taken; a callee
+        // with no facts that keeps one retains it, and that retain is its own error
+        if (isCall(user))
         {
-            return true;
+            return !isKeptArgument(user, value);
         }
 
         // the array being pushed onto is written, not taken; what is inserted is taken
@@ -1362,6 +1497,15 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return false;
+    }
+
+    // Is `value` an argument the call's callee keeps?
+    static bool isKeptArgument(mlir::Operation *call, mlir::Value value)
+    {
+        auto args = callArgs(call);
+        return llvm::any_of(ownedParams(call), [&](int32_t index) {
+            return static_cast<size_t>(index) < args.size() && args[index] == value;
+        });
     }
 
     // The moves out of a fresh or unknown SSA value. Each taking use (spec 11.1) is a move:
@@ -1647,6 +1791,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return retainSlotOp.getSlot().getDefiningOp();
         }
 
+        // a call that keeps the argument: rc's retain for it is in the callee
+        if (isCall(retain))
+        {
+            return retain;
+        }
+
         mlir::Operation *taker = nullptr;
         auto several = false;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
@@ -1793,6 +1943,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // release; moving the instance into it would leave nothing to release it at all.
     static bool takerAcquires(mlir::Operation *taker, mlir::Value value)
     {
+        // a callee that keeps its argument retained it in its own body under rc
+        if (isCall(taker))
+        {
+            return true;
+        }
+
         if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(taker))
         {
             return llvm::any_of(varOp.getResult().getUsers(),
@@ -1886,6 +2042,44 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             diag.attachNote(f.getLoc()) << "'" << f.getSymName() << "' could return a borrow or keep a parameter, but "
                                         << why.getValue();
         }
+    }
+
+    void reportKeptOnSomePaths(mlir::Operation *move, mlir::Operation *exit, llvm::StringRef name)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        auto diag = move->emitError("'") << name
+                                         << "' is moved here on some paths only; -mm=own cannot release it "
+                                            "on the others yet";
+        diag.attachNote(exit->getLoc()) << "returns here without moving it; the caller gave it up";
+        signalPassFailure();
+    }
+
+    void reportGivenNotOwned(mlir::Operation *call, mlir::Value arg)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        llvm::StringRef name = ownerName(arg);
+        if (auto loadOp = rootOf(arg).getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>())
+            {
+                name = varName(varOp);
+            }
+        }
+
+        auto callee = calleeName(call);
+        auto diag = call->emitError("argument '") << name << "' is given to '" << (callee.empty() ? "a function" : callee)
+                                                  << "', which keeps it, but -mm=own cannot move it here: this "
+                                                     "function does not own it";
+        noteLostFacts(diag);
+        signalPassFailure();
     }
 
     void reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
