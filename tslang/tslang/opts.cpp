@@ -30,6 +30,8 @@ extern cl::opt<bool> entryPoint;
 extern cl::opt<bool> strictNullChecks;
 extern cl::opt<bool> embedExportDeclarationsAction;
 extern cl::opt<bool> enableFastMath;
+extern cl::opt<bool> jitCache;
+extern cl::opt<bool> dumpObjectFile;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -66,6 +68,9 @@ CompileOptions prepareOptions()
     compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     compileOptions.strictNullChecks = strictNullChecks.getValue();
     compileOptions.enableFastMath = enableFastMath.getValue();
+    // Not for a program read from stdin, which has no folder to keep it in, nor for
+    // --dump-object-file, which writes the object the JIT makes of the one module.
+    compileOptions.jitCache = compileOptions.isJit && jitCache.getValue() && inputFilename != "-" && !dumpObjectFile;
 
     if (!outputFilename.empty())
     {

@@ -1068,8 +1068,14 @@ namespace mlirgen
         // and through another module - so its declarations are all there. Or an import cycle back
         // to a file still being generated: generating it again would never end; what the cycle
         // needs from it and it has not declared yet stays unresolved.
-        if (emittedFiles.contains(canonicalPath) || filesInProgress.contains(canonicalPath))
+        if (emittedFiles.contains(canonicalPath))
         {
+            return mlir::success();
+        }
+
+        if (filesInProgress.contains(canonicalPath))
+        {
+            compileOptions.importCycle = true;
             return mlir::success();
         }
 
@@ -1087,12 +1093,13 @@ namespace mlirgen
         auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
 
         // An import that points to a .ts file: compiled, it is a declaration - the module is
-        // compiled into an object of its own, and the objects are linked into one program. Under
-        // the JIT there is no other object, so it is included with its bodies, as a referenced
-        // file is. (An import that points to a library is mlirGenImportSharedLib.) A .d.ts is
-        // read as declarations either way.
+        // compiled into an object of its own, and the objects are linked into one program. The
+        // JIT does the same with its cache (the module's object is loaded beside the program's);
+        // without it there is no other object, so it is included with its bodies, as a
+        // referenced file is. (An import that points to a library is mlirGenImportSharedLib.) A
+        // .d.ts is read as declarations either way.
         MLIRValueGuard<bool> vg(declarationMode);
-        declarationMode = !compileOptions.isJit;
+        declarationMode = !compileOptions.isJit || compileOptions.jitCache;
 
         // What the imported module exports is its own to export: it is compiled separately, with
         // its declarations in its own __decls. Added to this module's too, a library holding both
@@ -1156,6 +1163,16 @@ namespace mlirgen
             emittedFiles.insert(canonicalPath);
             emittedFiles.insert(declSymbol);
             emittedFiles.insert(genericDeclSymbol);
+
+            // the object the JIT has to load for it; after the ones it imports, which were
+            // generated inside it. A pass generated again (discovery, then the module) finds it
+            // listed already.
+            if (!StringRef(canonicalPath).ends_with(".d.ts") &&
+                !llvm::is_contained(compileOptions.sourceImports, canonicalPath))
+            {
+                compileOptions.sourceImports.push_back(canonicalPath);
+            }
+
             return mlir::success();
         }
 
@@ -1439,6 +1456,11 @@ namespace mlirgen
         // only now: an import that failed is tried again on the next pass, and must fail again
         // rather than find itself already done
         emittedFiles.insert(canonicalPath);
+        if (!llvm::is_contained(compileOptions.sharedLibraryImports, canonicalPath))
+        {
+            compileOptions.sharedLibraryImports.push_back(canonicalPath);
+        }
+
         for (auto declSymbol : declaredSymbols)
         {
             emittedFiles.insert(declSymbol);

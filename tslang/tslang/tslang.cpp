@@ -67,6 +67,7 @@ int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
 int declarationInline(int, char **, mlir::MLIRContext &, llvm::SourceMgr &, llvm::StringRef, CompileOptions&, std::string&);
 int buildExe(int, char **, std::string, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
+int runJitCached(int, char **, CompileOptions&);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
@@ -116,6 +117,9 @@ cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITt
         "-object-filename (<input file>.o by default)."), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
+
+cl::opt<bool> jitCache{"jit-cache", cl::desc("--emit=jit: compile the program and each .ts module it imports into an object of its own, kept in a cache folder and loaded from there while its sources do not change (on by default; --jit-cache=false compiles everything into one module every run)"), cl::init(true), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<std::string> jitCacheDir{"jit-cache-dir", cl::desc("--emit=jit: the folder the JIT cache keeps its objects in (default: '__jit' beside each source file)"), cl::value_desc("folder"), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> verbose{"verbose", cl::Hidden, cl::desc("Verbose output"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 cl::opt<bool> printOp{"print-op", cl::Hidden, cl::desc("Print Op on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
@@ -295,6 +299,31 @@ static int ReportWarningWithoutBreak(int reportType, char *message, int *returnV
 }
 #endif
 
+// A context with every dialect the compiler generates and lowers through loaded.
+std::unique_ptr<mlir::MLIRContext> createMLIRContext()
+{
+    mlir::DialectRegistry registry;
+    registerAllExtensions(registry);
+
+    auto mlirContext = std::make_unique<mlir::MLIRContext>(registry);
+    // Load our Dialect in this MLIR Context.
+    mlirContext->getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
+    mlirContext->getOrLoadDialect<mlir::arith::ArithDialect>();
+    mlirContext->getOrLoadDialect<mlir::math::MathDialect>();
+    mlirContext->getOrLoadDialect<mlir::index::IndexDialect>();
+    mlirContext->getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    mlirContext->getOrLoadDialect<mlir::func::FuncDialect>();
+    mlirContext->getOrLoadDialect<mlir::DLTIDialect>();
+    mlirContext->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+#ifdef ENABLE_ASYNC
+    mlirContext->getOrLoadDialect<mlir::async::AsyncDialect>();
+#endif
+
+    mlirContext->printOpOnDiagnostic(printOp.getValue());
+    mlirContext->printStackTraceOnDiagnostic(printStackTrace.getValue());
+    return mlirContext;
+}
+
 int main(int argc, char **argv)
 {
 #if _MSC_VER && _DEBUG
@@ -412,33 +441,22 @@ int main(int argc, char **argv)
         return dumpAST();
     }
 
-    // If we aren't dumping the AST, then we are compiling with/to MLIR.
-    mlir::DialectRegistry registry;
-    registerAllExtensions(registry);
-
-    mlir::MLIRContext mlirContext(registry);
-    // Load our Dialect in this MLIR Context.
-    mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
-    mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();
-    mlirContext.getOrLoadDialect<mlir::math::MathDialect>();
-    mlirContext.getOrLoadDialect<mlir::index::IndexDialect>();
-    mlirContext.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-    mlirContext.getOrLoadDialect<mlir::func::FuncDialect>();
-    mlirContext.getOrLoadDialect<mlir::DLTIDialect>();
-    mlirContext.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-#ifdef ENABLE_ASYNC
-    mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
-#endif
-
-    mlirContext.printOpOnDiagnostic(printOp.getValue());
-    mlirContext.printStackTraceOnDiagnostic(printStackTrace.getValue());
-
     auto compileOptions = prepareOptions();
 
     if (!prepareDefaultLib(compileOptions))
     {
         return 0;
     }
+
+    // The JIT with its cache compiles each file it needs by itself, and only if it has to.
+    if (emitAction == Action::RunJIT && compileOptions.jitCache)
+    {
+        return runJitCached(argc, argv, compileOptions);
+    }
+
+    // If we aren't dumping the AST, then we are compiling with/to MLIR.
+    auto mlirContextPtr = createMLIRContext();
+    auto &mlirContext = *mlirContextPtr;
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
