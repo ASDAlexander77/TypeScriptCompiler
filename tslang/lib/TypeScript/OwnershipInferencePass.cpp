@@ -113,8 +113,20 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             if (value && proven.contains(value))
             {
                 toErase.insert(op);
+                continue;
             }
-            else if (!value || isFresh(value) == false)
+
+            if (auto load = value ? slotLoadOf(value) : mlir_ts::LoadOp())
+            {
+                if (checkSlotMove(op, value, load, toErase))
+                {
+                    toErase.insert(op);
+                }
+
+                continue;
+            }
+
+            if (!value || isFresh(value) == false)
             {
                 reportSecondReference(op);
             }
@@ -183,11 +195,18 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
     // A string literal or a constant array cast to its value type. The result is either the
     // immortal global itself, which a release skips, or a copy nobody else holds, which a
-    // release destroys - so, owned once, it has one owner either way.
+    // release destroys - so, owned once, it has one owner either way. `null` and `undefined`
+    // widened to a nullable type (`c: C | null = null`) hold no block at all.
     static bool isLiteral(mlir::Operation *def)
     {
         auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def);
-        return castOp && castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
+        if (!castOp)
+        {
+            return false;
+        }
+
+        auto *in = castOp.getIn().getDefiningOp();
+        return in && mlir::isa<mlir_ts::ConstantOp, mlir_ts::NullOp, mlir_ts::UndefOp>(in);
     }
 
     // A use that reads the value without keeping it. Kept deliberately short: anything not listed
@@ -440,6 +459,147 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return false;
     }
 
+    // The load of an owning local that `value` was read from, through casts that keep the same
+    // block (a class widened to a union with null, an upcast). None when the value is anything
+    // else - a parameter, a field, a boxing cast - which phase 1 does not move out of.
+    static mlir_ts::LoadOp slotLoadOf(mlir::Value value)
+    {
+        while (value)
+        {
+            auto *def = value.getDefiningOp();
+            if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def))
+            {
+                if (!mlir::isa<mlir_ts::ClassType, mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                {
+                    return {};
+                }
+
+                value = castOp.getIn();
+                continue;
+            }
+
+            auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+            if (!loadOp)
+            {
+                return {};
+            }
+
+            auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (!varOp || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false))
+            {
+                return {};
+            }
+
+            return loadOp;
+        }
+
+        return {};
+    }
+
+    // The use that takes `value` for this retain: the declaration a `ts.RetainSlot` belongs to,
+    // or the one use of the value after a `ts.Retain` that is not a read.
+    static mlir::Operation *takerOf(mlir::Operation *retain, mlir::Value value)
+    {
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(retain))
+        {
+            return retainSlotOp.getSlot().getDefiningOp();
+        }
+
+        mlir::Operation *taker = nullptr;
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainOp>(user) || isBorrow(user, value))
+            {
+                continue;
+            }
+
+            if (taker)
+            {
+                return nullptr; // two takers of one read: not a move this phase proves
+            }
+
+            taker = user;
+        }
+
+        return taker;
+    }
+
+    // A move out of an owning local: `let b = a`, `h.c = a`, `return a`. rc read the slot and
+    // retained what it read for the receiver; the move erases that retain and every release of
+    // the slot the move reaches, which must be dominated by it. Any other use of the slot the
+    // move reaches - a read, an assignment - is a use after the move. Reports and returns false
+    // when it is not a move.
+    bool checkSlotMove(mlir::Operation *retain, mlir::Value value, mlir_ts::LoadOp load,
+                       llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto slot = load.getReference();
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        auto name = varName(varOp);
+
+        auto *taker = takerOf(retain, value);
+        if (!taker)
+        {
+            reportSecondReference(retain);
+            return false;
+        }
+
+        // the move's own read, met again around a loop the slot was declared outside of
+        if (reachableAfter(taker, load, varOp))
+        {
+            reportMovedInLoop(taker, name);
+            return false;
+        }
+
+        for (auto *use : slot.getUsers())
+        {
+            if (use == load.getOperation() || mlir::isa<mlir_ts::ReleaseSlotOp>(use))
+            {
+                continue;
+            }
+
+            if (reachableAfter(taker, use, varOp))
+            {
+                reportUseAfterMove(use, taker, name);
+                return false;
+            }
+        }
+
+        for (auto *use : value.getUsers())
+        {
+            if (use == retain || use == taker || mlir::isa<mlir_ts::RetainOp>(use))
+            {
+                continue;
+            }
+
+            if (reachableAfter(taker, use, load))
+            {
+                reportUseAfterMove(use, taker, name);
+                return false;
+            }
+        }
+
+        auto *acquire = mlir::isa<mlir_ts::RetainSlotOp>(retain) ? taker : retain;
+        llvm::SmallVector<mlir::Operation *> moved;
+        for (auto *use : slot.getUsers())
+        {
+            if (!mlir::isa<mlir_ts::ReleaseSlotOp>(use) || !reachableAfter(acquire, use, varOp))
+            {
+                continue;
+            }
+
+            if (!dominance->properlyDominates(acquire, use))
+            {
+                reportMovedOnSomePaths(taker, use, name);
+                return false;
+            }
+
+            moved.push_back(use);
+        }
+
+        toErase.insert(moved.begin(), moved.end());
+        return true;
+    }
+
     // Where rc takes the receiver's reference: its `ts.Retain` of the value, when that comes
     // first in the taker's block, else the taker itself (a declaration, whose `ts.RetainSlot`
     // follows it). A release between the two - a `return`'s scope exit runs after its retain
@@ -478,15 +638,26 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         });
     }
 
-    // The declaration's name survives only as debug metadata (`--di`), the way LowerToLLVM's
-    // VariableOp lowering reads it. Without it the error still points at the right place.
+    // The declaration's name survives only as debug metadata (`--di`). At this level MLIRGen's
+    // form of it is a NameLoc first inside the location fused with the scope - what LowerToLLVM's
+    // preserveTypesForDebugInfo reads - and after that pass it is a DILocalVariable. Without
+    // `--di` the error still points at the right place.
     static llvm::StringRef varName(mlir_ts::VariableOp varOp)
     {
-        if (auto fused = mlir::dyn_cast<mlir::FusedLocWith<mlir::LLVM::DILocalVariableAttr>>(varOp.getLoc()))
+        auto location = varOp.getLoc();
+        if (auto fused = mlir::dyn_cast<mlir::FusedLocWith<mlir::LLVM::DILocalVariableAttr>>(location))
         {
             if (auto name = fused.getMetadata().getName())
             {
                 return name.getValue();
+            }
+        }
+
+        if (auto scoped = mlir::dyn_cast<mlir::FusedLocWith<mlir::LLVM::DIScopeAttr>>(location))
+        {
+            if (auto named = mlir::dyn_cast_or_null<mlir::NameLoc>(scoped.getLocations().front()))
+            {
+                return named.getName().getValue();
             }
         }
 
