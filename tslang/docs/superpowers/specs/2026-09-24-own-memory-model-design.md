@@ -410,6 +410,14 @@ The rule as built:
   non-owning declaration, `--di`'s `ts.DebugVariable`, and the retain/release bookkeeping.
 - **Owners** of V are its taking uses, plus one if V is released as a temporary. There must be
   at most one owner. Zero is a leak, as under rc.
+- **A move out of a temporary.** One taking use and one temporary release count as one owner
+  when the release comes after the taker in the same block and rc gave the taker a reference of
+  its own (a `ts.Retain` of V in front of it, or the `ts.RetainSlot` of an owning `let`). The
+  value moves into the taker, and the release is erased with the retains. This is the shape of
+  a folded `const` handed on, `const a = new C(); let b = a;`, since rc stopped letting a
+  receiver take a named `const`'s reference over (that let one reference have several holders
+  under rc: `00owned_named_consts.ts`). A
+  taker rc gives no reference, such as `ts.NewInterface`, is still a second owner.
 - **Locality**: the taking use is in V's defining block, and nothing uses V after it. That one
   check rejects a move inside a loop (§2.6), a move on one branch, and use after move, with no
   liveness analysis. Phase 1 relaxes it.
@@ -477,3 +485,5 @@ Tested both ways:
   value the callee does not own; spec §2.4's owned-by-callee parameter is phase 4), and a move
   out of the value's own block are all rejected.
 - Results of runtime helpers and `declare`d functions are rejected.
+- A field initialized from an array literal of eight numbers is rejected ("takes a second
+  reference" at the literal); four are accepted. Not yet diagnosed.

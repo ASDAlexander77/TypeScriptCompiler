@@ -5903,3 +5903,43 @@ its characters; a C-owned `char *` has none. Under `-mm=gc` that is harmless - n
 header. Under `-mm=rc` a release of such a value reads a count that is not there, which is undefined.
 Not fixed: tsbindgen v1 targets `gc`. Revisit if rc becomes a supported model for bindings - the
 likely shape is a distinct C-string type in the compiler that is never released.
+
+### 9.79 A folded `const` was taken over by every receiver that met it
+
+Found by the review of `-mm=own` phase 0, which crashed on these programs and so asked why `rc`
+did not. `rc` did: the same programs double-free or read freed memory under `rc` today, and
+only luck in what the allocator reused next had hidden it. `00owned_named_consts.ts` collects
+eight of them. Under `rc` each failed on its own - four read a block `churn()` had since
+claimed (999, 1006 where 5 and 7 belong, a string compare gone false), two corrupted the heap
+(JIT exit 127, AOT `0xC0000374`).
+
+**The cause.** `const a = new C()` gets no storage: the name is folded into the `new`'s own
+result. Every later mention of `a` is that one SSA value, marked `__owned_result`, and every
+receiver of §9.25 asked only that question. So each one took the reference over:
+
+- `{ let b = a; } ... a.v` - the inner `let` took it and gave it back at its scope exit, and `a`
+  read freed memory.
+- `let b = a; let c = a;`, and `arr.push(a); let d = a;` - two holders, one count.
+- `for (...) { arr.push(a) }`, `for (...) { h.s = s }` - one reference taken on every iteration;
+  the field store's overwrite released the very string it was storing.
+- `const r = make(); { let b = r; }` - the same through §9.27's pass, which took the first
+  receiver's retain for the call's +1.
+
+And one without a name: `let b = h.c = new C()` offers one `new` to the field and then the local.
+Only the array push (§9.74) asked whether the reference had been taken already; no other
+receiver did.
+
+**The fix.** One question for every receiver, `mayTakeOverReference` in `MLIROwnedReference.h`:
+the producer carries a reference, no receiver took it yet, and it is not a folded `const`.
+MLIRGen marks a folded `const`'s producer `__owned_result_named` where the name is bound. A named
+value is retained by each receiver instead, and its own reference is given back at the end of
+its block like any unclaimed temporary (§9.30). A `return` and a `delete` still take it over -
+nothing reads the name after either - through `carriesUnclaimedReference`, which leaves out only
+the naming check. §9.27's pass keeps a named result's retain unless it is the one a `return`
+took.
+
+Cost: a retain and a release for `const a = new C(); arr.push(a)`, which used to be free.
+
+Under `-mm=own` the extra pair is a move, not a second owner: one taker plus the temporary's
+release later in the same block is one owner, and the inference pass erases both. A million
+`const p = make(); let q = p;` iterations peak at 4.2 MB under both `rc` and `own` (`none` 50.3).

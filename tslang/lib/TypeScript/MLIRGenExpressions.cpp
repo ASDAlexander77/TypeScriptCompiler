@@ -1196,7 +1196,7 @@ namespace mlirgen
             // `delete new C()` and `delete c`, where `c` is a `const` the compiler kept as a
             // value rather than storage: the reference is one nobody has claimed, and §9.30
             // releases those at the end of the block. This is the claim.
-            if (producesOwnedReference(expr))
+            if (producesOwnedReferenceAtLastUse(expr))
             {
                 consumeOwnedReference(expr);
             }

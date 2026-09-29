@@ -90,18 +90,23 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // two consuming declarations without a single retain (the result of an indirect call
         // taken by `let b = a; let c = a;`). Only a fresh value's retains can be erased.
         llvm::DenseSet<mlir::Value> proven;
+        llvm::SmallVector<mlir::Operation *> toErase;
         for (auto value : candidates)
         {
-            if (hasOneOwner(value) && isFresh(value))
+            mlir::Operation *movedRelease = nullptr;
+            if (hasOneOwner(value, movedRelease) && isFresh(value))
             {
                 proven.insert(value);
+                if (movedRelease)
+                {
+                    toErase.push_back(movedRelease);
+                }
             }
         }
 
         // What is proven loses its retains; any other retain is a second reference nobody
         // proved safe - of a loaded value, a parameter, an unknown producer, or of a fresh value
         // whose own check was reported above.
-        llvm::SmallVector<mlir::Operation *> toErase;
         for (auto *op : retains)
         {
             auto value = retainedValue(op);
@@ -236,12 +241,19 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
     // One owner, taken where the value was made, and no use after the taking. Reports and returns
     // false otherwise.
-    bool hasOneOwner(mlir::Value value)
+    //
+    // A taker and the temporary's own release are one owner, not two, when the release is the
+    // only one and comes after the taker in the same block: the value moves into the taker, so
+    // the release has nothing left to give back and is returned in `movedRelease` to be erased.
+    // That is the shape of a folded `const` handed on - `const a = new C(); let b = a;` - where rc
+    // retains for the `let` and gives the name's reference back at the end of the block. Only a
+    // taker rc gave a reference of its own can receive the move (see takerAcquires).
+    bool hasOneOwner(mlir::Value value, mlir::Operation *&movedRelease)
     {
         auto *home = value.getParentBlock();
 
         mlir::Operation *taker = nullptr;
-        auto released = false;
+        llvm::SmallVector<mlir::Operation *> releases;
         for (auto *user : value.getUsers())
         {
             if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -251,7 +263,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
             if (mlir::isa<mlir_ts::ReleaseOp>(user))
             {
-                released = true;
+                releases.push_back(user);
                 continue;
             }
 
@@ -282,17 +294,23 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return true; // the temporary is the one owner, or nobody is and it leaks as under rc
         }
 
-        if (released)
+        if (!releases.empty())
         {
-            reportSecondReference(taker);
-            return false;
+            if (releases.size() != 1 || releases.front()->getBlock() != home ||
+                !taker->isBeforeInBlock(releases.front()) || !takerAcquires(taker, value))
+            {
+                reportSecondReference(taker);
+                return false;
+            }
+
+            movedRelease = releases.front();
         }
 
         // Every other use must come first. A use in another block runs after the whole of this
         // one, and so after the move.
         for (auto *user : value.getUsers())
         {
-            if (user == taker || mlir::isa<mlir_ts::RetainOp>(user))
+            if (user == taker || user == movedRelease || mlir::isa<mlir_ts::RetainOp>(user))
             {
                 continue;
             }
@@ -306,6 +324,25 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return true;
+    }
+
+    // Did rc give this taker a reference of its own - a `ts.Retain` of the value in front of it,
+    // or the `ts.RetainSlot` of an owning local declared from it? Only then is there a release on
+    // the taker's side to give the value back once it has moved. `ts.NewInterface` is a taker to
+    // this pass but a view to rc, which retains nothing for it and relies on the instance's own
+    // release; moving the instance into it would leave nothing to release it at all.
+    static bool takerAcquires(mlir::Operation *taker, mlir::Value value)
+    {
+        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(taker))
+        {
+            return llvm::any_of(varOp.getResult().getUsers(),
+                                [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainSlotOp>(user); });
+        }
+
+        return llvm::any_of(value.getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
+                   user->isBeforeInBlock(taker);
+        });
     }
 
     // The declaration's name survives only as debug metadata (`--di`), the way LowerToLLVM's

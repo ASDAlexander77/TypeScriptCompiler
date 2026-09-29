@@ -50,7 +50,7 @@ namespace mlirgen
                 // Cast first, for the reason spelled out at the return statement below.
                 EXIT_IF_FAILED(castToDeclaredReturnType(loc(body), resultValue, genContext))
 
-                mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue});
+                mlirGenRetainCaptured(loc(body), mlir::ValueRange{resultValue}, /*atLastUse=*/true);
 
                 return mlirGenReturnValue(loc(body), resultValue, false, genContext);
             }
@@ -479,7 +479,7 @@ namespace mlirgen
             // interface builds a heap block the tuple's own reference says nothing about.
             EXIT_IF_FAILED(castToDeclaredReturnType(location, expressionValue, genContext))
 
-            mlirGenRetainCaptured(location, mlir::ValueRange{expressionValue});
+            mlirGenRetainCaptured(location, mlir::ValueRange{expressionValue}, /*atLastUse=*/true);
 
             EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 

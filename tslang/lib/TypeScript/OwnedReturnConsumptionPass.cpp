@@ -5,6 +5,7 @@
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIROwnedReference.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -263,8 +264,7 @@ class OwnedReturnConsumptionPass
             // branch borrows, the receiver's retain is already the right and only answer.
             auto carriesOwned = [&](mlir_ts::ResultOp resultOp) {
                 auto *definingOp = resultOp->getOperand(0).getDefiningOp();
-                return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
-                       !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
+                return ::typescript::mayTakeOverReference(resultOp->getOperand(0)) &&
                        definingOp->getParentRegion() == resultOp->getParentRegion();
             };
 
@@ -891,6 +891,26 @@ class OwnedReturnConsumptionPass
         return false;
     }
 
+    // Is this retain the one a `return` of `result` took? Scope exit may release other locals
+    // between the two, but nothing else may use the value before it is returned.
+    static bool retainFeedsReturn(mlir_ts::RetainOp retainOp, mlir::Value result)
+    {
+        for (auto *op = retainOp->getNextNode(); op; op = op->getNextNode())
+        {
+            if (mlir::isa<mlir_ts::ReturnValOp>(op))
+            {
+                return op->getNumOperands() > 0 && op->getOperand(0) == result;
+            }
+
+            if (llvm::is_contained(op->getOperands(), result))
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     // The retain a receiver put on this call's result, if it took one. Two shapes, matching the
     // two ways §9.25's receivers acquire: a `ts.Retain` on the value itself (a field or element
     // store, a literal capturing it, a return passing it on), and a `ts.RetainSlot` on the
@@ -899,17 +919,30 @@ class OwnedReturnConsumptionPass
     // Returning null is the ordinary answer for a result nobody took - `f();` on its own, or
     // `f().n` - and it is left exactly as it is. Consuming a reference no receiver balances
     // would free the value while the expression is still using it.
+    //
+    // A folded `const` (OWNED_RESULT_NAMED_ATTR_NAME) is the exception: its name is this very
+    // value, so the one receiver that may take its reference over is a `return`, after which
+    // nothing reads the name. Any other receiver keeps its retain, and the call's +1 is given
+    // back as a temporary like any other nobody took.
     static mlir::Operation *findReceiverRetain(mlir::Value result)
     {
+        auto *definingOp = result.getDefiningOp();
+        auto named = definingOp && definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME);
+
         for (auto *user : result.getUsers())
         {
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(user))
             {
-                if (retainOp.getReference() == result)
+                if (retainOp.getReference() == result && (!named || retainFeedsReturn(retainOp, result)))
                 {
                     return retainOp.getOperation();
                 }
             }
+        }
+
+        if (named)
+        {
+            return nullptr;
         }
 
         for (auto *user : result.getUsers())

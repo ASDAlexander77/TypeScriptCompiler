@@ -986,15 +986,20 @@ class MLIRGenImpl
     // runtime helper, or a function from a module built before returns retained their result,
     // hands back a heap value with no retain behind it, and consuming one of those would skip a
     // retain nobody performed. Answering "no" for something that was in fact owned only leaks.
+    //
+    // Asked by a receiver that stores the value, so a reference some other receiver already
+    // took, or one a folded `const` still needs for its later mentions, is not there to take -
+    // see mayTakeOverReference.
     bool producesOwnedReference(mlir::Value value)
     {
-        if (!value)
-        {
-            return false;
-        }
+        return mayTakeOverReference(value);
+    }
 
-        auto *definingOp = value.getDefiningOp();
-        return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME);
+    // The same question from a receiver after which nothing reads the value - a `return`, a
+    // `delete` - which may take over a folded `const`'s reference too.
+    bool producesOwnedReferenceAtLastUse(mlir::Value value)
+    {
+        return carriesUnclaimedReference(value);
     }
 
     // Records that a receiver has taken over the reference this value carried, so nothing later
@@ -1023,7 +1028,10 @@ class MLIRGenImpl
     //
     // A record-shaped value retains through its own routine, which walks its owning fields, so
     // the boxed-literal case needs one of these on the whole tuple rather than one per field.
-    void mlirGenRetainCaptured(mlir::Location location, mlir::ValueRange values)
+    //
+    // `atLastUse` is for a `return`: nothing after it reads the value, so a folded `const`'s
+    // reference can go out with it rather than being retained here and given back as a temporary.
+    void mlirGenRetainCaptured(mlir::Location location, mlir::ValueRange values, bool atLastUse = false)
     {
         for (auto value : values)
         {
@@ -1034,7 +1042,7 @@ class MLIRGenImpl
 
             // a value that already carries a reference for its receiver is taken over rather
             // than retained again (§9.25) - `[new C()]`, and `return new C()` alike
-            if (producesOwnedReference(value))
+            if (atLastUse ? producesOwnedReferenceAtLastUse(value) : producesOwnedReference(value))
             {
                 consumeOwnedReference(value);
             }
