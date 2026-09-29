@@ -276,7 +276,7 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
         }
 
         image->base = imageBase;
-        image->end = std::max(image->end, reinterpret_cast<uint64_t>(addr) + size);
+        image->end = (std::max)(image->end, reinterpret_cast<uint64_t>(addr) + size);
 #endif
     }
 
