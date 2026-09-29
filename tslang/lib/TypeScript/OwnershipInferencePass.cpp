@@ -299,23 +299,45 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
 
             uses.push_back(user);
-            llvm::SmallVector<mlir::Value> values{readOp.getResult()};
+
+            // The borrowed value itself - the read and the casts that keep it the same block - must
+            // not be kept anywhere. What it produces - a field reference, a value loaded through
+            // one, a bound method, a catch clause's non-owning local - still points into the
+            // borrowed block, so each of its uses is a use of the borrower too. A value that
+            // cannot point anywhere (a number, a boolean) ends the walk.
+            llvm::SmallVector<std::pair<mlir::Value, bool>> values{{readOp.getResult(), true}};
+            llvm::SmallPtrSet<mlir::Value, 16> seen;
             while (!values.empty())
             {
-                auto current = values.pop_back_val();
+                auto [current, borrowed] = values.pop_back_val();
                 for (auto *valueUser : current.getUsers())
                 {
                     uses.push_back(valueUser);
-                    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(valueUser))
+                    if (borrowed)
                     {
-                        values.push_back(castOp.getResult());
-                        continue;
+                        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(valueUser))
+                        {
+                            if (mayPointInto(castOp.getResult()) && seen.insert(castOp.getResult()).second)
+                            {
+                                values.push_back({castOp.getResult(), true});
+                            }
+
+                            continue;
+                        }
+
+                        if (mlir::isa<mlir_ts::RetainOp>(valueUser) || !isBorrow(valueUser, current))
+                        {
+                            reportBorrowEscapes(valueUser, name, owner);
+                            return false;
+                        }
                     }
 
-                    if (mlir::isa<mlir_ts::RetainOp>(valueUser) || !isBorrow(valueUser, current))
+                    for (auto result : valueUser->getResults())
                     {
-                        reportBorrowEscapes(valueUser, name, owner);
-                        return false;
+                        if (mayPointInto(result) && seen.insert(result).second)
+                        {
+                            values.push_back({result, false});
+                        }
                     }
                 }
             }
@@ -335,6 +357,16 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         toErase.insert(bookkeeping.begin(), bookkeeping.end());
         return true;
+    }
+
+    // Can a value of this type point into a heap block - a reference into one, a block of its own,
+    // or a method bound to one? A number or a boolean read out of a borrowed block cannot.
+    bool mayPointInto(mlir::Value value)
+    {
+        auto type = value.getType();
+        return mlir::isa<mlir_ts::RefType, mlir_ts::BoundRefType, mlir_ts::ValueRefType, mlir_ts::BoundFunctionType,
+                         mlir_ts::HybridFunctionType, mlir_ts::ExtensionFunctionType, mlir_ts::OpaqueType>(type) ||
+               ownsHeap(value);
     }
 
     // The name of a temporary that owns: a folded `const` has no ts.Variable, but under --di it

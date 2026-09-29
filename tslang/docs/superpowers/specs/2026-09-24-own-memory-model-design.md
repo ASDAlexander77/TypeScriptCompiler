@@ -588,9 +588,14 @@ A borrow is sound while both of these hold:
 
 - **No use of the borrower can run after any end of the owner.** The ends are a local owner's
   `ts.ReleaseSlot`s and assignments (`ts.Store` into its slot), or a temporary owner's
-  `ts.Release`s. The uses are every read of the borrower's slot and every user of what a read
-  returned, through casts. A path back to a use through the borrower's own declaration is a new
-  borrow: `for (...) { let b = a; ...; a = new C(); }` is fine.
+  `ts.Release`s. The uses are every read of the borrower's slot and every use of anything derived
+  from a read that can still point into the block: casts that keep the block, field and element
+  references and values loaded through them, bound methods, and a catch or finally clause's
+  non-owning local. The walk stops at a number or a boolean. The final review found the first
+  version, which followed only casts, compiling `const f = b.m; a = new C(); f()`, a `for...of`
+  over `b.v`, and a catch local of `b` into reads of freed memory. A path back to a use through
+  the borrower's own declaration is a new borrow: `for (...) { let b = a; ...; a = new C(); }` is
+  fine.
 - **Nothing the borrower holds is kept.** It must not be retained, taken by a non-borrowing use
   (stored, pushed, returned, declared into another owning `let`), or assigned.
 
@@ -616,8 +621,8 @@ through its `ts.DebugVariable`:
 
 ### 13.3 Teeth
 
-With each borrower's releases kept (only its retain erased), 8 of 8 borrow checks fail. The
-borrower's release destroys what the owner still holds.
+With each borrower's releases kept (only its retain erased), 10 of 10 borrow checks fail
+(`own_borrow_nullable` included). The borrower's release destroys what the owner still holds.
 
 ### 13.4 Changed tests
 
@@ -632,7 +637,10 @@ Other negatives:
 
 - `own_err_move_some_paths_field` keeps "some paths" covered (a field store cannot borrow).
 - `own_err_assign_after_move` and `own_err_const_alias_move` now report the borrow's error.
-- New: `own_err_borrow_escape`, `own_err_borrow_and_move`.
+- New: `own_err_borrow_escape`, `own_err_borrow_and_move`, and from the final review
+  `own_err_borrow_bound_method`, `own_err_borrow_catch_local`, `own_err_borrow_finally_local`,
+  `own_err_borrow_derived_ref`, with `own_borrow_nullable` (`if (b)` on a nullable borrower was
+  a false escape).
 
 ### 13.5 Known limits (the input to phase 3)
 
