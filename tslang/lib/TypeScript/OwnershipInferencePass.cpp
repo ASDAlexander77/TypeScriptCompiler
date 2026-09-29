@@ -264,7 +264,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         returnedParams.clear();
         f.walk([](mlir::Operation *op) {
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_NO_DROPS_ATTR_NAME,
-                               OWN_FACTS_LOST_ATTR_NAME})
+                               OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME})
             {
                 op->removeAttr(name);
             }
@@ -1466,7 +1466,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
         {
-            return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1);
+            return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1) ||
+                   isBoundForCall(castOp);
         }
 
         // arguments are borrowed, but one the callee keeps (`__own_params`) is taken; a callee
@@ -1499,6 +1500,37 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return false;
+    }
+
+    // `ts.CreateBoundFunction(ts.Cast(object), method)` split straight back into `ts.GetThis` and
+    // `ts.GetMethod` for a call: a method of another module's class - its constructor, when it is
+    // built with `new` - called on an object here. It reads the object as `ts.ThisSymbolRef` does
+    // for a method of this module; nothing else may use the cast or the bound function, and the
+    // object comes out again only as a call's argument, which is a borrow of its own.
+    static bool isBoundForCall(mlir_ts::CastOp castOp)
+    {
+        if (!mlir::isa<mlir_ts::OpaqueType>(castOp.getType()) || castOp->use_empty())
+        {
+            return false;
+        }
+
+        return llvm::all_of(castOp->getUses(), [](mlir::OpOperand &use) {
+            auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(use.getOwner());
+            if (!boundOp || boundOp.getThisVal() != use.get())
+            {
+                return false;
+            }
+
+            return llvm::all_of(boundOp->getUsers(), [](mlir::Operation *boundUser) {
+                if (mlir::isa<mlir_ts::GetMethodOp>(boundUser))
+                {
+                    return true;
+                }
+
+                return mlir::isa<mlir_ts::GetThisOp>(boundUser) &&
+                       llvm::all_of(boundUser->getUsers(), [](mlir::Operation *thisUser) { return isCall(thisUser); });
+            });
+        });
     }
 
     // Is `value` an argument the call's callee keeps?

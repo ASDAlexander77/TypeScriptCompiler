@@ -791,8 +791,11 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
                  std::string(argv[index]) == "-mm=none" || std::string(argv[index]) == "-mm=own")
         {
             memoryModel = std::string(argv[index]).substr(4);
-            tslang_opt_ext += " ";
-            tslang_opt_ext += argv[index];
+            // into tslang_opt, like -x86's triple: every file of a multi-file test is built under
+            // the model, the program as well as its library. In tslang_opt_ext it reached only
+            // the library, and every `-shared -mm=...` test built its program under gc.
+            tslang_opt += " ";
+            tslang_opt += argv[index];
         }
         else if (exists(argv[index]))
         {
