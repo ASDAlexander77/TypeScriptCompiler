@@ -15,6 +15,10 @@
 #include <sys/time.h>
 #else
 #include "malloc.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif // _WIN32
 
 #include <cinttypes>
@@ -32,14 +36,45 @@ namespace mlir
 namespace runtime
 {
 
-extern "C" void *Alloc(uint64_t size) { return malloc(size); }
+// The heap these hand out: the release CRT's, on the process heap, which is also what JIT-compiled
+// code gets as `malloc` and `free` (tslang/jit.cpp, jitHeapFunction) - a coroutine frame this
+// allocates, the program frees with plain `free`. This DLL's own `malloc` need not be that heap:
+// linked against the prebuilt LLVM, LLVMSupport makes it rpmalloc (see
+// scripts/llvm_prebuilt_common.ps1), and a block of one freed by the other corrupts the heap. A
+// debug build keeps its own, as the JIT does: the debug CRT puts a header in front of each block.
+#if defined(_WIN32) && !defined(_DEBUG)
+template <typename F> static F crtFunction(const char *name, F ownFunction)
+{
+  static auto ucrt = LoadLibraryW(L"ucrtbase.dll");
+  auto function = ucrt ? reinterpret_cast<F>(GetProcAddress(ucrt, name)) : nullptr;
+  return function ? function : ownFunction;
+}
+
+static void *heapMalloc(size_t size)
+{
+  static auto function = crtFunction<void *(*)(size_t)>("malloc", &malloc);
+  return function(size);
+}
+
+static void heapFree(void *ptr)
+{
+  static auto function = crtFunction<void (*)(void *)>("free", &free);
+  function(ptr);
+}
+#else
+static void *heapMalloc(size_t size) { return malloc(size); }
+
+static void heapFree(void *ptr) { free(ptr); }
+#endif
+
+extern "C" void *Alloc(uint64_t size) { return heapMalloc(size); }
 
 // What MSVC's `malloc` guarantees: enough for any fundamental type, 16 bytes on x64.
 static constexpr uint64_t kMallocAlignment = 2 * sizeof(void *);
 
 extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
 #ifdef _WIN32
-  // Everything here comes from `malloc`, so the block can go back through either `free` or
+  // Everything here comes from `heapMalloc`, so the block can go back through either `free` or
   // AlignedFree and both are right. `malloc`'s own guarantee covers every request anything
   // makes - the coroutine frame asks for 8. A stricter request cannot be served and stay
   // `free`-compatible at the same time, and silently handing back under-aligned memory is the
@@ -50,7 +85,7 @@ extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
             alignment, kMallocAlignment);
   }
 
-  return malloc(size);
+  return heapMalloc(size);
 #else
   void *result = nullptr;
   (void)::posix_memalign(&result, alignment, size);
@@ -58,9 +93,9 @@ extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
 #endif
 }
 
-extern "C" void Free(void *ptr) { free(ptr); }
+extern "C" void Free(void *ptr) { heapFree(ptr); }
 
-extern "C" void AlignedFree(void *ptr) { free(ptr); }
+extern "C" void AlignedFree(void *ptr) { heapFree(ptr); }
 
 } // namespace runtime
 } // namespace mlir

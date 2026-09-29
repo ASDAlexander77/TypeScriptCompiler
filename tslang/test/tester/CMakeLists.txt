@@ -2447,6 +2447,12 @@ endforeach()
 # Windows, checked against a library that lists nothing (own-shared-no-drops.cmake).
 tslang_add_test(NAME test-jit-own-shared-no-drops COMMAND test-runner -jit -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_no_drops.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_no_drops.ts")
 tslang_add_test(NAME test-compile-own-shared-no-drops COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_no_drops.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_no_drops.ts")
+# An importer builds and uses objects of an own library's classes; under every model, since the pair
+# is ordinary TypeScript.
+foreach(class_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${class_mm}-shared-import-class COMMAND test-runner -jit -shared -mm=${class_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_class.ts")
+    tslang_add_test(NAME test-compile-${class_mm}-shared-import-class COMMAND test-runner -shared -mm=${class_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_class.ts")
+endforeach()
 if (WIN32)
     add_test(NAME test-own-shared-no-drops-listed
              COMMAND ${CMAKE_COMMAND}

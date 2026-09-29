@@ -45,6 +45,10 @@ foreach(library_model own rc)
         "${TSLANG}" --emit=dll -mm=${library_model} --no-default-lib
         "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
         "${SOURCE_DIR}/export_own_no_drops.ts" -o export_own_no_drops.dll)
+    compile("${dir}" "--emit=dll -mm=${library_model} export_own_class" ok
+        "${TSLANG}" --emit=dll -mm=${library_model} --no-default-lib
+        "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
+        "${SOURCE_DIR}/export_own_class.ts" -o export_own_class.dll)
 endforeach()
 
 # `import './export_own_no_drops'` finds the DLL in the working directory before the source
@@ -57,4 +61,12 @@ compile("${WORK_DIR}/own" "import_own_err_imported_drops against the own library
 compile("${WORK_DIR}/rc" "import_own_no_drops against the rc library" "${borrow_ended}"
     "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_no_drops.ts" -o import.obj)
 
-message(STATUS "an own library's __own_no_drops reaches its importer, and only what it lists")
+# `new H()` of an own library's class is a fresh object this module owns; of an rc library's, whose
+# blocks carry a count their module holds, it is not, and a borrow under it ends at any unknown call
+compile("${WORK_DIR}/own" "import_own_class against the own library" ok
+    "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts" -o import.obj)
+
+compile("${WORK_DIR}/rc" "import_own_class against the rc library" "${borrow_ended}"
+    "${TSLANG}" --emit=obj -mm=own --no-default-lib "${SOURCE_DIR}/import_own_class.ts" -o import.obj)
+
+message(STATUS "an own library's __own_no_drops reaches its importer, and only what it lists; its classes can be built")

@@ -964,13 +964,36 @@ borrow of a parameter's field across calls to `total` and `M.first`. On Windows,
 rejected, because `shrink` removes an element and is not listed. And the same program is rejected
 against the library built under rc, which lists nothing: that is the fact's teeth.
 
+Until the fix below, test-runner's `-shared` mode passed `-mm=` to the library only, and the
+program was built under gc. Every `-shared -mm=rc`, `-mm=none` and `-mm=own` test ran a mixed
+link. So, before it, the two runner tests above showed only that the pair works; the Windows
+script was the one checking the fact. The flag now goes to every file, and all 302 `-shared`
+tests pass with it.
+
+**Objects of an imported class.** `new H()` of a class from a library builds its object with the
+library's `H..new` and runs `H.constructor` through a method bound to it:
+`ts.CreateBoundFunction(ts.Cast(h to !ts.opaque), ctor)`, split back into `ts.GetThis` and
+`ts.GetMethod` for the call. The cast read as taking `h`, so every later use of `h` was "used after
+its value was moved". The cast is now a borrow when it has only that use, and when the object comes
+out again only as a call's argument, as `ts.ThisSymbolRef` is for a method of this module.
+
+The object is also fresh, and owned here, when the library was built under own. Its `..new` is
+listed among the library's `__own_no_drops`, and the signature pass marks such a call
+`__own_fresh_result`, which `isFresh` reads. Nothing else makes an imported call's result fresh.
+A library built under rc lists nothing, and its blocks carry a count their own module holds. There,
+a borrow under the object still ends at any unknown call. `import_own_class.ts` and
+`export_own_class.ts` run as a `-shared` pair under every model, AOT and JIT. The Windows script
+checks that the program is rejected against the rc library.
+
 ### 15.7 Known limits (the input to phase 5 and later)
 
 - An exported function, or a method of an exported class, gets no owned or borrowed facts (§15.8
   says why they cannot be exported), and a virtual call on one gets no `__own_no_drops`. That is
   sound and restrictive for `-shared` modules.
-- An importer under own cannot yet build an object of an imported class: `new H()` through the
-  library reports `'this value' is used here after its value was moved`.
+- A value an importer under own receives from a library built under rc (a call's result, now an
+  object it builds with `new` too) is destroyed at the end of its owner's scope. Own's release
+  skips only immortal blocks. So if the library kept a reference of its own, that is a
+  use-after-free, where the mixed-link policy promises a leak.
 - A parameter kept on some paths only (needs drop elaboration: a release on the others).
 - A borrowed result's places are a wildcard, so any field overwrite between the call and the use
   drops it, even of an unrelated object.

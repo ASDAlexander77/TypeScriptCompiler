@@ -34,6 +34,11 @@ namespace mlir_ts = mlir::typescript;
 // On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
 // result that borrows): why, for the error the body gets instead.
 #define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"
+// A call of another module's `<class>..new`, from a library built under own: it allocates the
+// object and hands it over, so the result is fresh (isFresh). Only such a library says so - it lists
+// the function among its `__own_no_drops` - and only its blocks are ones this module may destroy:
+// a block made under rc still carries a count its own module holds.
+#define OWN_FRESH_RESULT_ATTR_NAME "__own_fresh_result"
 
 // The arguments of a call, without the callee value of an indirect one.
 inline mlir::OperandRange callArgs(mlir::Operation *op)
@@ -166,8 +171,9 @@ inline bool isLiteral(mlir::Operation *def)
 // Made here and held by nobody else: an allocation, a literal cast to its value type, an
 // operation rc marks as arriving with a reference, or a direct call of a function this module
 // defines (every function returns its result retained, rc 9.24; the call's own mark does not
-// survive the affine lowering). A declared callee, an indirect call, a parameter, a load, a
-// value merged from branches, or a result that borrows an argument is not fresh.
+// survive the affine lowering), or another own module's `..new` (OWN_FRESH_RESULT_ATTR_NAME). A
+// declared callee, an indirect call, a parameter, a load, a value merged from branches, or a result
+// that borrows an argument is not fresh.
 inline bool isFresh(mlir::Value value)
 {
     auto *def = value.getDefiningOp();
@@ -186,6 +192,11 @@ inline bool isFresh(mlir::Value value)
     {
         auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, callOp.getCalleeAttr());
         return callee && !callee.isDeclaration();
+    }
+
+    if (def->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
+    {
+        return true;
     }
 
     if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(def))

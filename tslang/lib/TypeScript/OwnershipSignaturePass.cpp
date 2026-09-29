@@ -94,6 +94,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 call.op->setAttr(OWN_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
+
+            // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
+            if (call.callees.imported && call.callees.importedName.ends_with("." NEW_METHOD_NAME) &&
+                call.op->getNumResults() == 1)
+            {
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
         }
 
         exportNoDrops();
@@ -108,6 +115,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool known = false;
         bool instanceOf = false;
         bool imported = false;
+        // the name the imported function is exported under
+        llvm::StringRef importedName;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
     };
 
@@ -291,6 +300,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         callees.imported = true;
+        callees.importedName = symbol.getValue();
         return true;
     }
 
@@ -333,6 +343,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         callees.imported = true;
+        callees.importedName = name.getValue();
         return true;
     }
 

@@ -348,6 +348,30 @@ static void jitAssertFailed(const char *message, const char *file, unsigned line
     _exit(3);
 }
 
+#ifdef _WIN32
+// The allocator JIT'd code gets, as `malloc`, `calloc`, `realloc` and `free`. A block it allocates
+// can be freed by another module and the other way round - an object of a library's class under
+// -mm=rc or -mm=own is made in the library and destroyed by the program - so it has to be the
+// allocator those modules use. Every one of them links the static release CRT, whose heap is the
+// process heap: a library tslang builds, TypeScriptRuntime.dll. tslang.exe's own `malloc` need not
+// be: the prebuilt LLVM brings rpmalloc as the process malloc of whatever links LLVMSupport (see
+// scripts/llvm_prebuilt_common.ps1), and a block of one freed by the other faults. ucrtbase.dll's
+// are the release CRT's, on the process heap.
+//
+// Not in a debug build: a debug CRT puts a header of its own in front of every block, and the
+// libraries a debug tslang builds link the debug CRT too.
+static void *jitHeapFunction(const char *name, void *ownFunction)
+{
+#ifdef _DEBUG
+    return ownFunction;
+#else
+    static auto ucrt = LoadLibraryW(L"ucrtbase.dll");
+    auto function = ucrt ? reinterpret_cast<void *>(GetProcAddress(ucrt, name)) : nullptr;
+    return function ? function : ownFunction;
+#endif
+}
+#endif
+
 #ifndef _WIN32
 // glibc's `__assert_fail`, which the lowering calls off Windows, ends in abort(). tslang's own
 // crash handler takes that SIGABRT for a compiler crash and prints a "Stack dump" after the
@@ -675,10 +699,10 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         };
         addSym("puts", (void*)&puts);
         addSym("printf", (void*)&printf);
-        addSym("malloc", (void*)&malloc);
-        addSym("free", (void*)&free);
-        addSym("realloc", (void*)&realloc);
-        addSym("calloc", (void*)&calloc);
+        addSym("malloc", jitHeapFunction("malloc", (void *)&malloc));
+        addSym("free", jitHeapFunction("free", (void *)&free));
+        addSym("realloc", jitHeapFunction("realloc", (void *)&realloc));
+        addSym("calloc", jitHeapFunction("calloc", (void *)&calloc));
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
         addSym("fflush", (void*)&fflush);
@@ -835,10 +859,10 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         };
         addOverride("puts", (void *)&puts);
         addOverride("printf", (void *)&printf);
-        addOverride("malloc", (void *)&malloc);
-        addOverride("free", (void *)&free);
-        addOverride("realloc", (void *)&realloc);
-        addOverride("calloc", (void *)&calloc);
+        addOverride("malloc", jitHeapFunction("malloc", (void *)&malloc));
+        addOverride("free", jitHeapFunction("free", (void *)&free));
+        addOverride("realloc", jitHeapFunction("realloc", (void *)&realloc));
+        addOverride("calloc", jitHeapFunction("calloc", (void *)&calloc));
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
         addOverride("fflush", (void *)&fflush);
