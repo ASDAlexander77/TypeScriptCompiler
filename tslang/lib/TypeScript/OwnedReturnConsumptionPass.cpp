@@ -1,4 +1,5 @@
 #include "mlir/Pass/Pass.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -10,6 +11,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "pass"
@@ -181,6 +183,49 @@ class OwnedReturnConsumptionPass
             // Nobody took it. The +1 stands with no owner, which is the leak §9.30 closes -
             // marked here, released below once every consumer has had its say.
             callOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+        });
+
+        // A getter read is a call as well - `h.cc` becomes `H.get_cc(h)` in the affine lowering,
+        // and the getter retains what it returns like any other function - so its result is
+        // settled the same way. Left out, `h.cc.x` kept the getter's reference and nobody gave
+        // it back: every temporary read through a getter leaked.
+        module.walk([&](mlir::Operation *op) {
+            if (!isGetterRead(op) || op->hasAttr(OWNED_RESULT_ATTR_NAME))
+            {
+                return;
+            }
+
+            auto result = op->getResult(0);
+            if (!mth.ownsHeapMemory(op->getLoc(), result.getType()))
+            {
+                return;
+            }
+
+            // Assigning through an accessor builds a getter read first and a setter after it
+            // (MLIRGen's assignment rebuilds the op with the value to set); the read is left with
+            // no use, for the canonicalizer to delete. A release would be a use, and would keep a
+            // call the program never made.
+            if (!hasLiveUse(result))
+            {
+                return;
+            }
+
+            if (anyUnclassifiedOwningReturn &&
+                !getterReturnsOwned(op, returnsOwned, methodsByMemberName, vtableSlots))
+            {
+                return;
+            }
+
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
+            {
+                op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                op->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                toErase.append(retains.begin(), retains.end());
+                return;
+            }
+
+            op->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
         });
 
         for (auto *op : toErase)
@@ -698,7 +743,14 @@ class OwnedReturnConsumptionPass
             return false;
         }
 
-        auto identifier = virtualRefOp.getIdentifier();
+        return everyOverrideReturnsOwned(virtualRefOp.getIdentifier(), returnsOwned, methodsByMemberName);
+    }
+
+    // Does every method that can be in the slot `identifier` was written against return owned?
+    static bool everyOverrideReturnsOwned(mlir::StringRef identifier,
+                                          const llvm::DenseSet<mlir::StringRef> &returnsOwned,
+                                          const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName)
+    {
         auto dot = identifier.rfind('.');
         if (dot == mlir::StringRef::npos || dot + 1 >= identifier.size())
         {
@@ -755,6 +807,15 @@ class OwnedReturnConsumptionPass
             return false;
         }
 
+        return interfaceMemberReturnsOwned(interfaceRefOp, returnsOwned, vtableSlots);
+    }
+
+    // Does every implementation in the vtables of the interface `interfaceRefOp` reads return
+    // owned?
+    static bool interfaceMemberReturnsOwned(mlir_ts::InterfaceSymbolRefOp interfaceRefOp,
+                                            const llvm::DenseSet<mlir::StringRef> &returnsOwned,
+                                            const llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> &vtableSlots)
+    {
         auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(interfaceRefOp.getInterfaceVal().getType());
         if (!interfaceType)
         {
@@ -784,6 +845,88 @@ class OwnedReturnConsumptionPass
         }
 
         return sawCandidate;
+    }
+
+    // `h.cc`, `h[i]` through a `get` accessor: the ops that call a getter and have its result.
+    static bool isGetterRead(mlir::Operation *op)
+    {
+        return op->getNumResults() == 1 &&
+               mlir::isa<mlir_ts::AccessorOp, mlir_ts::ThisAccessorOp, mlir_ts::ThisIndirectAccessorOp,
+                         mlir_ts::ThisIndexAccessorOp, mlir_ts::ThisIndirectIndexAccessorOp,
+                         mlir_ts::BoundIndirectAccessorOp, mlir_ts::BoundIndirectIndexAccessorOp>(op);
+    }
+
+    // Is anything going to read this value? A use that is itself dead - a `ts.Cast` of it that
+    // nothing reads - is not one: the canonicalizer deletes the pair.
+    static bool hasLiveUse(mlir::Value value)
+    {
+        for (auto *user : value.getUsers())
+        {
+            if (!mlir::isOpTriviallyDead(user))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The getter a getter read calls, by the same rules as calleeNameOf and the two
+    // candidate-set questions: named outright, a virtual slot (every method of that member
+    // name), or an interface slot (what the vtables put there). A getter given as anything
+    // else - `ts.Undef` when there is only a setter - is unclassified.
+    static bool getterReturnsOwned(mlir::Operation *op, const llvm::DenseSet<mlir::StringRef> &returnsOwned,
+                                   const llvm::StringMap<llvm::SmallVector<mlir::StringRef>> &methodsByMemberName,
+                                   const llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> &vtableSlots)
+    {
+        auto named = [&](mlir::FlatSymbolRefAttr getter) {
+            return getter && returnsOwned.contains(getter.getValue());
+        };
+
+        auto throughValue = [&](mlir::Value getter) {
+            auto *definingOp = getter.getDefiningOp();
+            if (!definingOp)
+            {
+                return false;
+            }
+
+            if (auto symbolRefOp = mlir::dyn_cast<mlir_ts::SymbolRefOp>(definingOp))
+            {
+                return returnsOwned.contains(symbolRefOp.getIdentifier());
+            }
+
+            if (auto thisSymbolRefOp = mlir::dyn_cast<mlir_ts::ThisSymbolRefOp>(definingOp))
+            {
+                return returnsOwned.contains(thisSymbolRefOp.getIdentifier());
+            }
+
+            if (auto virtualSymbolRefOp = mlir::dyn_cast<mlir_ts::VirtualSymbolRefOp>(definingOp))
+            {
+                return everyOverrideReturnsOwned(virtualSymbolRefOp.getIdentifier(), returnsOwned,
+                                                 methodsByMemberName);
+            }
+
+            if (auto thisVirtualSymbolRefOp = mlir::dyn_cast<mlir_ts::ThisVirtualSymbolRefOp>(definingOp))
+            {
+                return everyOverrideReturnsOwned(thisVirtualSymbolRefOp.getIdentifier(), returnsOwned,
+                                                 methodsByMemberName);
+            }
+
+            if (auto interfaceRefOp = mlir::dyn_cast<mlir_ts::InterfaceSymbolRefOp>(definingOp))
+            {
+                return interfaceMemberReturnsOwned(interfaceRefOp, returnsOwned, vtableSlots);
+            }
+
+            return false;
+        };
+
+        return llvm::TypeSwitch<mlir::Operation *, bool>(op)
+            .Case<mlir_ts::AccessorOp, mlir_ts::ThisAccessorOp, mlir_ts::ThisIndexAccessorOp>(
+                [&](auto accessorOp) { return named(accessorOp.getGetAccessorAttr()); })
+            .Case<mlir_ts::ThisIndirectAccessorOp, mlir_ts::ThisIndirectIndexAccessorOp,
+                  mlir_ts::BoundIndirectAccessorOp, mlir_ts::BoundIndirectIndexAccessorOp>(
+                [&](auto accessorOp) { return throughValue(accessorOp.getGetAccessor()); })
+            .Default([](mlir::Operation *) { return false; });
     }
 
     // Is `vtableName` a vtable for `interfaceName`? Both shapes spell the interface as a whole

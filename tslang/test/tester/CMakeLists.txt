@@ -2402,6 +2402,11 @@ set_tests_properties(test-own-inference-erases-birth-takes
                      PROPERTIES PASS_REGULAR_EXPRESSION "ts.Release"
                                 FAIL_REGULAR_EXPRESSION "ts\\.Retain|error|Stack dump")
 
+# A getter read is settled like a call: its temporary released, its receiver taking it over.
+foreach(getter_mm rc gc none)
+    tslang_add_test(NAME test-jit-${getter_mm}-getter-temporary COMMAND test-runner -jit -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
+    tslang_add_test(NAME test-compile-${getter_mm}-getter-temporary COMMAND test-runner -mm=${getter_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/rc_getter_temporary.ts")
+endforeach()
 # Under rc, a call through an interface carries the result its implementation retained: no
 # `ts.CallIndirect` returning a C through an interface slot is left without `__owned_result`
 # (`__owned_result_named` alone only says it initialises a `const`).

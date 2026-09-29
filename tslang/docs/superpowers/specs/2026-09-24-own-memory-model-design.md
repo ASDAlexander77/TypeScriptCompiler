@@ -873,12 +873,15 @@ AOT, `measure.ps1`, at `-O3` and `-O1` (identical within 1%), in MB:
 | program | gc | rc | none | own |
 | --- | --- | --- | --- | --- |
 | `own_param_kept` | 6.5 | 4.8 | 1657.7 | 4.8 |
-| `own_getter_borrow` | 6.5 | 12.6 | 1653.3 | 4.8 |
+| `own_getter_borrow` | 6.5 | 4.8 (was 12.6) | 1653.3 | 4.8 |
 | `own_any_box` | 6.5 | 4.8 | 558.9 | 4.8 |
 | `own_call_no_drops` | 6.5 | 4.8 | 1100.7 | 4.8 |
 
-rc climbs in `own_getter_borrow`: it never releases a getter's result used as a temporary
-(`h.cc.x`: the `ts.CallInternal` result has no `ts.Release`). Own has no reference to give back.
+rc climbed in `own_getter_borrow`: it never released a getter's result used as a temporary
+(`h.cc.x`). The getter retains its result like any function, but `OwnedReturnConsumptionPass`
+only settled `ts.CallIndirect`, and a getter read is an accessor op until the affine lowering.
+The pass now classifies accessor reads the way it classifies calls (`rc_getter_temporary.ts`).
+Own has no reference to give back.
 §14.5's `const a: any = new C(i)` loop reads 4.6 MB under all four models, at both levels. `none`
 does not grow, so LLVM removes the allocation and that program shows nothing about reclamation.
 
@@ -939,11 +942,6 @@ of 3226.
   exported, so the virtual call to `area` has candidates this module cannot see, and it may drop
   (`own_err_exported_virtual_call` is the same shape). The error does not yet say why: the note
   on lost facts is attached to escapes and second references, not to drops.
-- rc: a getter's result used as a temporary is never released (§15.3).
-- Every model: `<B>anyValue` segfaults when `B` implements an interface.
-  `mlirGenInstanceOfOpaque` calls vtable slot 0 as `..instanceOf`, but such a class keeps the
-  interface's vtable there (`B..vtbl = {I, .instanceOf, ...}`). Fixing it changes the vtable
-  layout, so it is left for its own PR.
 - From §14.6: a read reached through an interface, borrow chains through assigned borrowers,
   moves after the last use of every borrower, and a temporary taken by a `let` and consumed
   elsewhere.
