@@ -1,4 +1,5 @@
 #include "mlir/Pass/Pass.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 
 #include "TypeScript/TypeScriptDialect.h"
@@ -8,6 +9,7 @@
 #include "TypeScript/Defines.h"
 
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 #define DEBUG_TYPE "own"
@@ -17,8 +19,8 @@ namespace mlir_ts = mlir::typescript;
 namespace
 {
 
-// Ownership inference for -mm=own, phase 0. See
-// docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 10.6 and 11.
+// Ownership inference for -mm=own, phases 0 and 1. See
+// docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
 //
 // A fresh heap value may have at most one owner: one use that takes it - a local's
 // declaration, a store into a field, element, global or return slot, an insertion into an
@@ -28,10 +30,11 @@ namespace
 // transfers ownership by *consuming* a value (`__owned_consumed`, a push, a field store),
 // which leaves no retain behind to count.
 //
-// Phase 0 also keeps the move trivially safe: every taking use sits in the block that made the
-// value, and nothing uses the value after it. That one rule rules out a move inside a loop
-// (spec 2.6), a move on one branch, and use after move, without a liveness analysis. Anything
-// else is an error at its location.
+// A move is decided by reachability on the affine CFG (spec 4.2 step 3): nothing may use the value
+// after its taker, a taker that control comes back to without the value being made again is a
+// move on every loop iteration (2.6), and each release the move reaches must be dominated by it
+// and is erased. A release the move cannot reach stays - the owner on the paths that did not
+// move. Anything else is an error at its location.
 class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, TypeScriptFunctionPass>
 {
   public:
@@ -40,6 +43,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     void runOnFunction() override
     {
         auto f = getFunction();
+        mlir::DominanceInfo dominanceInfo(f);
+        dominance = &dominanceInfo;
 
         // every value some ownership operation names, in the order the walk meets them
         llvm::SetVector<mlir::Value> candidates;
@@ -90,17 +95,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // two consuming declarations without a single retain (the result of an indirect call
         // taken by `let b = a; let c = a;`). Only a fresh value's retains can be erased.
         llvm::DenseSet<mlir::Value> proven;
-        llvm::SmallVector<mlir::Operation *> toErase;
+        llvm::SetVector<mlir::Operation *> toErase;
         for (auto value : candidates)
         {
-            mlir::Operation *movedRelease = nullptr;
-            if (hasOneOwner(value, movedRelease) && isFresh(value))
+            if (checkValueMoves(value, toErase) && isFresh(value))
             {
                 proven.insert(value);
-                if (movedRelease)
-                {
-                    toErase.push_back(movedRelease);
-                }
             }
         }
 
@@ -112,7 +112,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             auto value = retainedValue(op);
             if (value && proven.contains(value))
             {
-                toErase.push_back(op);
+                toErase.insert(op);
             }
             else if (!value || isFresh(value) == false)
             {
@@ -127,6 +127,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     }
 
   private:
+    mlir::DominanceInfo *dominance = nullptr;
+
     // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer.
     // None for a variable with no initializer - its storage was hoisted in front of a try and its
     // value arrives by a store this phase does not follow.
@@ -239,21 +241,20 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return false;
     }
 
-    // One owner, taken where the value was made, and no use after the taking. Reports and returns
-    // false otherwise.
-    //
-    // A taker and the temporary's own release are one owner, not two, when the release is the
-    // only one and comes after the taker in the same block: the value moves into the taker, so
-    // the release has nothing left to give back and is returned in `movedRelease` to be erased.
-    // That is the shape of a folded `const` handed on - `const a = new C(); let b = a;` - where rc
-    // retains for the `let` and gives the name's reference back at the end of the block. Only a
-    // taker rc gave a reference of its own can receive the move (see takerAcquires).
-    bool hasOneOwner(mlir::Value value, mlir::Operation *&movedRelease)
+    // The moves out of a fresh or unknown SSA value. Each taking use (spec 11.1) is a move:
+    //   - nothing else may use the value after it - another taker included - and a taker that
+    //     control comes back to without the value being made again is a move on every iteration
+    //     of a loop (spec 2.6);
+    //   - where the temporary is also released (`__owned_result` rc gives back at block end), the
+    //     taker must be one rc gave its own reference (takerAcquires), and each release the move
+    //     reaches must be dominated by it - that release then has nothing to give back and is
+    //     erased. A release the move cannot reach stays: it is the owner on the other paths.
+    // Reports and returns false otherwise.
+    bool checkValueMoves(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
-        auto *home = value.getParentBlock();
-
-        mlir::Operation *taker = nullptr;
+        llvm::SmallVector<mlir::Operation *> takers;
         llvm::SmallVector<mlir::Operation *> releases;
+        llvm::SmallVector<mlir::Operation *> reads;
         for (auto *user : value.getUsers())
         {
             if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -264,66 +265,198 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             if (mlir::isa<mlir_ts::ReleaseOp>(user))
             {
                 releases.push_back(user);
-                continue;
             }
-
-            if (isBorrow(user, value))
+            else if (isBorrow(user, value))
             {
-                continue;
+                reads.push_back(user);
             }
-
-            if (user->getBlock() != home)
+            else
             {
-                user->emitError("'") << describe(value) << "' is given an owner in another block (a loop or a branch); "
-                                                           "-mm=own cannot prove a move here yet";
-                signalPassFailure();
+                takers.push_back(user);
+            }
+        }
+
+        auto *definition = value.getDefiningOp();
+        auto name = describe(value);
+        llvm::SmallVector<mlir::Operation *> moved;
+        for (auto *taker : takers)
+        {
+            if (takerLoops(taker, definition))
+            {
+                reportMovedInLoop(taker, name);
                 return false;
             }
 
-            if (taker)
+            for (auto *use : llvm::concat<mlir::Operation *const>(takers, reads))
             {
-                reportSecondReference(taker->isBeforeInBlock(user) ? user : taker);
-                return false;
+                if (use != taker && reachableAfter(taker, use, definition))
+                {
+                    reportUseAfterMove(use, taker, name);
+                    return false;
+                }
             }
 
-            taker = user;
-        }
+            if (releases.empty())
+            {
+                continue; // rc handed the taker the value's own reference: nothing to cancel
+            }
 
-        if (!taker)
-        {
-            return true; // the temporary is the one owner, or nobody is and it leaks as under rc
-        }
-
-        if (!releases.empty())
-        {
-            if (releases.size() != 1 || releases.front()->getBlock() != home ||
-                !taker->isBeforeInBlock(releases.front()) || !takerAcquires(taker, value))
+            if (!takerAcquires(taker, value))
             {
                 reportSecondReference(taker);
                 return false;
             }
 
-            movedRelease = releases.front();
+            auto *acquire = acquirePoint(taker, value);
+            for (auto *release : releases)
+            {
+                if (!reachableAfter(acquire, release, definition))
+                {
+                    continue;
+                }
+
+                if (!dominance->properlyDominates(acquire, release))
+                {
+                    reportMovedOnSomePaths(taker, release, name);
+                    return false;
+                }
+
+                moved.push_back(release);
+            }
         }
 
-        // Every other use must come first. A use in another block runs after the whole of this
-        // one, and so after the move.
-        for (auto *user : value.getUsers())
+        toErase.insert(moved.begin(), moved.end());
+        return true;
+    }
+
+    // Does control come back round to `taker` without making the value again? Only then is it a
+    // move on every iteration of a loop.
+    bool takerLoops(mlir::Operation *taker, mlir::Operation *definition)
+    {
+        auto &body = getFunction().getBody();
+        auto *top = body.findAncestorOpInRegion(*taker);
+        if (!top)
         {
-            if (user == taker || user == movedRelease || mlir::isa<mlir_ts::RetainOp>(user))
+            return true;
+        }
+
+        auto *kill = definition ? body.findAncestorOpInRegion(*definition) : nullptr;
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work(top->getBlock()->getSuccessors().begin(),
+                                               top->getBlock()->getSuccessors().end());
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (!seen.insert(block).second)
             {
                 continue;
             }
 
-            if (user->getBlock() != home || taker->isBeforeInBlock(user))
+            if (kill && kill->getBlock() == block &&
+                (block != top->getBlock() || kill->isBeforeInBlock(top)))
             {
-                user->emitError("'") << describe(value) << "' is used after its value was moved";
-                signalPassFailure();
-                return false;
+                continue; // the value is made again before the taker runs again
+            }
+
+            if (block == top->getBlock())
+            {
+                return true;
+            }
+
+            work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+        }
+
+        return false;
+    }
+
+    // Can control reach `to` after `from` has run, without passing `kill` on the way? `kill` is
+    // the source's definition - the producer of an SSA value, or a local's `ts.Variable` - and a
+    // path through it is a new value, not this one. Straight-line order within a block, then the
+    // CFG from the block's successors; a path back into `from`'s own block reaches every op in it.
+    //
+    // Ops nested in a region that is not the function body (an `async.execute` body, a lambda)
+    // are compared by their ancestors in the body. That answers "reachable" whenever the two
+    // share an ancestor, which can only turn a program into an error.
+    bool reachableAfter(mlir::Operation *from, mlir::Operation *to, mlir::Operation *kill)
+    {
+        auto &body = getFunction().getBody();
+        from = body.findAncestorOpInRegion(*from);
+        to = body.findAncestorOpInRegion(*to);
+        if (kill)
+        {
+            kill = body.findAncestorOpInRegion(*kill);
+        }
+
+        if (!from || !to)
+        {
+            return true;
+        }
+
+        if (from == to)
+        {
+            // Two distinct ops that share one ancestor statement: the order inside it is not
+            // known here, and "reachable" can only turn a program into an error.
+            return true;
+        }
+
+        auto *fromBlock = from->getBlock();
+        auto *toBlock = to->getBlock();
+        auto killIn = [&](mlir::Block *block) { return kill && kill->getBlock() == block; };
+
+        if (fromBlock == toBlock && from->isBeforeInBlock(to))
+        {
+            return !(killIn(fromBlock) && from->isBeforeInBlock(kill) && kill->isBeforeInBlock(to));
+        }
+
+        // every way out of this block runs `kill` first
+        if (killIn(fromBlock) && from->isBeforeInBlock(kill))
+        {
+            return false;
+        }
+
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work(fromBlock->getSuccessors().begin(), fromBlock->getSuccessors().end());
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (!seen.insert(block).second)
+            {
+                continue;
+            }
+
+            if (block == toBlock && (!killIn(block) || to->isBeforeInBlock(kill)))
+            {
+                return true;
+            }
+
+            if (killIn(block))
+            {
+                continue;
+            }
+
+            work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+        }
+
+        return false;
+    }
+
+    // Where rc takes the receiver's reference: its `ts.Retain` of the value, when that comes
+    // first in the taker's block, else the taker itself (a declaration, whose `ts.RetainSlot`
+    // follows it). A release between the two - a `return`'s scope exit runs after its retain
+    // and before the store into the return slot - is after the move.
+    static mlir::Operation *acquirePoint(mlir::Operation *taker, mlir::Value value)
+    {
+        mlir::Operation *first = taker;
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
+                user->isBeforeInBlock(first))
+            {
+                first = user;
             }
         }
 
-        return true;
+        return first;
     }
 
     // Did rc give this taker a reference of its own - a `ts.Retain` of the value in front of it,
@@ -389,6 +522,30 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         op->emitError("'") << name << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
+        signalPassFailure();
+    }
+
+    void reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
+    {
+        auto diag = use->emitError("'") << name << "' is used here after its value was moved";
+        diag.attachNote(move->getLoc()) << "value moved here";
+        signalPassFailure();
+    }
+
+    void reportMovedInLoop(mlir::Operation *move, llvm::StringRef name)
+    {
+        move->emitError("'") << name
+                             << "' is moved inside a loop but was made outside it; only a borrow could do "
+                                "that, and -mm=own cannot prove one yet";
+        signalPassFailure();
+    }
+
+    void reportMovedOnSomePaths(mlir::Operation *move, mlir::Operation *release, llvm::StringRef name)
+    {
+        auto diag = move->emitError("'") << name
+                                         << "' is moved here on some paths only; -mm=own cannot release it "
+                                            "on the others yet";
+        diag.attachNote(release->getLoc()) << "released here on every path";
         signalPassFailure();
     }
 };

@@ -2400,7 +2400,8 @@ set_tests_properties(test-own-inference-erases-birth-takes
 
 # -mm=own, phase 0 (docs/superpowers/plans/2026-09-28-own-phase-0.md). Positive programs run
 # under JIT and ahead of time; each owns every block once.
-foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals)
+foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals
+                 own_move_const_branch)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2424,12 +2425,13 @@ set(own_error_cases
     "own_err_field_alias|takes a second reference"
     "own_err_closure|closures that capture a variable are not supported"
     "own_err_unknown_producer|takes a second reference"
-    "own_err_two_owners|takes a second reference"
-    "own_err_const_twice|takes a second reference"
-    "own_err_push_let|takes a second reference"
-    "own_err_push_loop|is given an owner in another block"
-    "own_err_field_loop|is given an owner in another block"
-    "own_err_use_after_move|is used after its value was moved"
+    "own_err_two_owners|is used here after its value was moved"
+    "own_err_const_twice|is used here after its value was moved"
+    "own_err_push_let|is used here after its value was moved"
+    "own_err_push_loop|is moved inside a loop"
+    "own_err_field_loop|is moved inside a loop"
+    "own_err_move_some_paths|is moved here on some paths only"
+    "own_err_use_after_move|is used here after its value was moved"
     "own_err_interface|takes a second reference"
     "own_err_delete|'delete' is not supported by -mm=own yet")
 foreach(own_error_case ${own_error_cases})
