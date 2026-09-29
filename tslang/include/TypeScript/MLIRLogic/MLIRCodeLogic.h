@@ -7,6 +7,7 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRDefines.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
+#include "TypeScript/MLIRLogic/MLIROwnedReference.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "llvm/ADT/APSInt.h"
@@ -761,11 +762,13 @@ class MLIRCustomMethods
             // first freed an element the other still held. Nothing to do with `splice` - it
             // reproduces with no splice anywhere - but §9.74's release is what made it visible,
             // because until then an array that outlived its elements never gave them back.
-            auto *definingOp = value.getDefiningOp();
-            if (definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
-                !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME))
+            //
+            // And the same one array receiving it again in a loop, from a `const` made once
+            // before the loop, is the same mistake repeated: mayTakeOverReference turns away a
+            // folded `const` for that reason (see OWNED_RESULT_NAMED_ATTR_NAME).
+            if (mayTakeOverReference(value))
             {
-                definingOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
+                value.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, builder.getUnitAttr());
                 continue;
             }
 

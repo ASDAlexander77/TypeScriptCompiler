@@ -423,6 +423,7 @@ tslang_add_test(NAME test-compile-00-owned-array-ops COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-owned-inline-records COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
 tslang_add_test(NAME test-compile-00-owned-transfer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
 tslang_add_test(NAME test-compile-00-owned-call-results COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+tslang_add_test(NAME test-compile-00-owned-named-consts COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_named_consts.ts")
 tslang_add_test(NAME test-compile-00-owned-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
 tslang_add_test(NAME test-compile-00-owned-interfaces COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
 tslang_add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
@@ -876,6 +877,7 @@ tslang_add_test(NAME test-jit-00-owned-array-ops COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-owned-inline-records COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_inline_records.ts")
 tslang_add_test(NAME test-jit-00-owned-transfer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
 tslang_add_test(NAME test-jit-00-owned-call-results COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+tslang_add_test(NAME test-jit-00-owned-named-consts COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_named_consts.ts")
 tslang_add_test(NAME test-jit-00-owned-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
 tslang_add_test(NAME test-jit-00-owned-interfaces COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
 tslang_add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
@@ -1468,6 +1470,8 @@ tslang_add_test(NAME test-jit-rc-owned-transfer COMMAND test-runner -jit -mm=rc 
 tslang_add_test(NAME test-jit-none-owned-transfer COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_transfer.ts")
 tslang_add_test(NAME test-jit-rc-owned-call-results COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
 tslang_add_test(NAME test-jit-none-owned-call-results COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_call_results.ts")
+tslang_add_test(NAME test-jit-rc-owned-named-consts COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_named_consts.ts")
+tslang_add_test(NAME test-jit-none-owned-named-consts COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_named_consts.ts")
 tslang_add_test(NAME test-jit-rc-owned-temporaries COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
 tslang_add_test(NAME test-jit-none-owned-temporaries COMMAND test-runner -jit -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_temporaries.ts")
 tslang_add_test(NAME test-jit-rc-owned-interfaces COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_interfaces.ts")
@@ -1774,6 +1778,7 @@ set(TSLANG_CORPUS
     00owned_iteration.ts
     00owned_literals.ts
     00owned_locals.ts
+    00owned_named_consts.ts
     00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts
@@ -2032,6 +2037,7 @@ set(TSLANG_CORPUS_RC_NAMED
     00owned_iteration.ts
     00owned_literals.ts
     00owned_locals.ts
+    00owned_named_consts.ts
     00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts
@@ -2074,6 +2080,7 @@ set(TSLANG_CORPUS_NONE_NAMED
     00owned_interfaces.ts
     00owned_iteration.ts
     00owned_literals.ts
+    00owned_named_consts.ts
     00owned_nested_captures.ts
     00owned_strings.ts
     00owned_temporaries.ts

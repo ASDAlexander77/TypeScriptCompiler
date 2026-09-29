@@ -47,6 +47,15 @@
 // and then dropped, which is what expression-shaped code is made of. See §9.30.
 #define OWNED_RESULT_CONSUMED_ATTR_NAME "__owned_result_consumed"
 
+// Marks the producer of a `const` that was folded into its value rather than given storage -
+// `const a = new C()`. The name and the value are one SSA value, so every later mention of `a`
+// is the operation's own result, and a receiver cannot tell whether this mention is the last.
+// None that stores it may take the reference over; each retains, and the reference the producer
+// carried is given back where §9.30 gives back any other unclaimed one. A `return` or a `delete`
+// still takes it over, on every path it appears on: nothing after either reads the name. See
+// MLIROwnedReference.h.
+#define OWNED_RESULT_NAMED_ATTR_NAME "__owned_result_named"
+
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
 // rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
 // only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of

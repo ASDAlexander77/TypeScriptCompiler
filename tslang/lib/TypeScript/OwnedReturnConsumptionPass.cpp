@@ -5,6 +5,7 @@
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIROwnedReference.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -168,11 +169,12 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
-            if (auto *retain = findReceiverRetain(result))
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
             {
                 callOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                 callOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
-                toErase.push_back(retain);
+                toErase.append(retains.begin(), retains.end());
                 return;
             }
 
@@ -263,8 +265,7 @@ class OwnedReturnConsumptionPass
             // branch borrows, the receiver's retain is already the right and only answer.
             auto carriesOwned = [&](mlir_ts::ResultOp resultOp) {
                 auto *definingOp = resultOp->getOperand(0).getDefiningOp();
-                return definingOp && definingOp->hasAttr(OWNED_RESULT_ATTR_NAME) &&
-                       !definingOp->hasAttr(OWNED_RESULT_CONSUMED_ATTR_NAME) &&
+                return ::typescript::mayTakeOverReference(resultOp->getOperand(0)) &&
                        definingOp->getParentRegion() == resultOp->getParentRegion();
             };
 
@@ -290,10 +291,11 @@ class OwnedReturnConsumptionPass
 
             ifOp->setAttr(OWNED_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
 
-            if (auto *retain = findReceiverRetain(result))
+            auto retains = findReceiverRetains(result);
+            if (!retains.empty())
             {
                 ifOp->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
-                toErase.push_back(retain);
+                toErase.append(retains.begin(), retains.end());
             }
         });
 
@@ -325,7 +327,8 @@ class OwnedReturnConsumptionPass
     // Two things disqualify a value, and both simply leave it leaking as before:
     //
     //  - a user outside the producer's block, so the value outlives the block or is used on a
-    //    path this cannot see;
+    //    path this cannot see - the body of a statement written in the block is not outside it
+    //    (runsWithinBlock);
     //  - a user that is a terminator, since a value handed to a successor as a block argument is
     //    still live after the point this would release it;
     //  - a `ts.StateLabel` after the definition, which is a generator's resume point: the state
@@ -397,9 +400,10 @@ class OwnedReturnConsumptionPass
             // the path that falls through (section 9.60).
             //
             // Only exits that come after the definition in this block are covered, because only
-            // those are dominated by it. Nothing else has to be checked: a temporary whose value
-            // is used from another block is excluded by allUsesReleasableInOwnBlock above, so a
-            // nested exit cannot be returning this value or reading it.
+            // those are dominated by it. A nested exit may read the value - a branch that reads a
+            // `const` and returns - but it cannot return it: a `return` of the value takes it over
+            // and marks it consumed, which keeps it out of this set. The release goes in front of
+            // the exit, after everything the branch read.
             //
             // A `return` leaves for good wherever it is written. A `break` or `continue` only
             // sometimes does, and which it is decides between a leak and a double release:
@@ -510,14 +514,38 @@ class OwnedReturnConsumptionPass
         return false;
     }
 
+    // Does `user` run before control reaches the op that follows its ancestor in `block`? True
+    // for `block`'s own ops, and for ops nested in structured statements only.
+    static bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
+    {
+        for (auto *op = user; op->getBlock() != block; op = op->getParentOp())
+        {
+            auto *parent = op->getParentOp();
+            if (!parent || !mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
+                                      mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Can a release at the end of this value's own block give its reference back safely? See
     // releaseDiscardedTemporaries for what disqualifies a use and why.
+    //
+    // A user inside the body of an `if`, a loop, a `switch`, a label or a `try` written in this
+    // block is not outside it: those regions run to completion before the op after them does, so
+    // the end of the block still follows every use. A folded `const` read inside a branch -
+    // `const a = new C(); if (x) { let b = a; }` - is exactly that, and leaked before this. Any
+    // other region is: a nested function or an `async.execute` body runs later, from somewhere
+    // else.
     static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         for (auto *user : op->getResult(0).getUsers())
         {
-            if (user->getBlock() != block || user->hasTrait<mlir::OpTrait::IsTerminator>())
+            if (user->hasTrait<mlir::OpTrait::IsTerminator>() || !runsWithinBlock(user, block))
             {
                 return false;
             }
@@ -891,23 +919,66 @@ class OwnedReturnConsumptionPass
         return false;
     }
 
+    // Is this retain the one a `return` of `result` took? Scope exit may release other locals
+    // between the two, but nothing else may use the value before it is returned.
+    static bool retainFeedsReturn(mlir_ts::RetainOp retainOp, mlir::Value result)
+    {
+        for (auto *op = retainOp->getNextNode(); op; op = op->getNextNode())
+        {
+            if (mlir::isa<mlir_ts::ReturnValOp>(op))
+            {
+                return op->getNumOperands() > 0 && op->getOperand(0) == result;
+            }
+
+            if (llvm::is_contained(op->getOperands(), result))
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     // The retain a receiver put on this call's result, if it took one. Two shapes, matching the
     // two ways §9.25's receivers acquire: a `ts.Retain` on the value itself (a field or element
     // store, a literal capturing it, a return passing it on), and a `ts.RetainSlot` on the
     // storage of a local declared from it.
     //
-    // Returning null is the ordinary answer for a result nobody took - `f();` on its own, or
+    // Returning none is the ordinary answer for a result nobody took - `f();` on its own, or
     // `f().n` - and it is left exactly as it is. Consuming a reference no receiver balances
     // would free the value while the expression is still using it.
-    static mlir::Operation *findReceiverRetain(mlir::Value result)
+    //
+    // A folded `const` (OWNED_RESULT_NAMED_ATTR_NAME) is the exception: its name is this very
+    // value, so the one receiver that may take its reference over is a `return`, after which
+    // nothing reads the name. Any other receiver keeps its retain, and the call's +1 is given
+    // back as a temporary like any other nobody took. Every `return` of it takes it over, since
+    // each is on a path of its own - `if (x) return r; return r;` - and one left retaining would
+    // hand its caller two references.
+    static llvm::SmallVector<mlir::Operation *> findReceiverRetains(mlir::Value result)
     {
+        auto *definingOp = result.getDefiningOp();
+        if (definingOp && definingOp->hasAttr(OWNED_RESULT_NAMED_ATTR_NAME))
+        {
+            llvm::SmallVector<mlir::Operation *> returned;
+            for (auto *user : result.getUsers())
+            {
+                auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(user);
+                if (retainOp && retainOp.getReference() == result && retainFeedsReturn(retainOp, result))
+                {
+                    returned.push_back(user);
+                }
+            }
+
+            return returned;
+        }
+
         for (auto *user : result.getUsers())
         {
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(user))
             {
                 if (retainOp.getReference() == result)
                 {
-                    return retainOp.getOperation();
+                    return {retainOp.getOperation()};
                 }
             }
         }
@@ -928,12 +999,12 @@ class OwnedReturnConsumptionPass
                     // the declaration becomes the acquisition, which is what keeps the
                     // ownership verifier able to pair the release still to come
                     varOp->setAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(varOp.getContext()));
-                    return retainSlotOp.getOperation();
+                    return {retainSlotOp.getOperation()};
                 }
             }
         }
 
-        return nullptr;
+        return {};
     }
 };
 

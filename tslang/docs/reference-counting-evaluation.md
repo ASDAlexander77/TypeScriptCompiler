@@ -5903,3 +5903,58 @@ its characters; a C-owned `char *` has none. Under `-mm=gc` that is harmless - n
 header. Under `-mm=rc` a release of such a value reads a count that is not there, which is undefined.
 Not fixed: tsbindgen v1 targets `gc`. Revisit if rc becomes a supported model for bindings - the
 likely shape is a distinct C-string type in the compiler that is never released.
+
+### 9.79 A folded `const` was taken over by every receiver that met it
+
+Found by the review of `-mm=own` phase 0, which crashed on these programs and so asked why `rc`
+did not. `rc` did: the same programs double-free or read freed memory under `rc` today, and
+only luck in what the allocator reused next had hidden it. `00owned_named_consts.ts` collects
+eight of them. Under `rc` each failed on its own - four read a block `churn()` had since
+claimed (999, 1006 where 5 and 7 belong, a string compare gone false), two corrupted the heap
+(JIT exit 127, AOT `0xC0000374`).
+
+**The cause.** `const a = new C()` gets no storage: the name is folded into the `new`'s own
+result. Every later mention of `a` is that one SSA value, marked `__owned_result`, and every
+receiver of §9.25 asked only that question. So each one took the reference over:
+
+- `{ let b = a; } ... a.v` - the inner `let` took it and gave it back at its scope exit, and `a`
+  read freed memory.
+- `let b = a; let c = a;`, and `arr.push(a); let d = a;` - two holders, one count.
+- `for (...) { arr.push(a) }`, `for (...) { h.s = s }` - one reference taken on every iteration;
+  the field store's overwrite released the very string it was storing.
+- `const r = make(); { let b = r; }` - the same through §9.27's pass, which took the first
+  receiver's retain for the call's +1.
+
+And one without a name: `let b = h.c = new C()` offers one `new` to the field and then the local.
+Only the array push (§9.74) asked whether the reference had been taken already; no other
+receiver did.
+
+**The fix.** One question for every receiver, `mayTakeOverReference` in `MLIROwnedReference.h`:
+the producer carries a reference, no receiver took it yet, and it is not a folded `const`.
+MLIRGen marks a folded `const`'s producer `__owned_result_named` where the name is bound. A named
+value is retained by each receiver instead, and its own reference is given back at the end of
+its block like any unclaimed temporary (§9.30). A `return` and a `delete` still take it over -
+nothing reads the name after either - through `mayTakeOverReferenceAtLastUse`, on every path:
+`if (x) return c; return c;` has two, and whichever runs is the last use. (The first version of
+this fix let only the first `return` take it over and made the second retain, which leaked on
+that path: 1M calls went from 4.7 MB to 20.1 MB.) §9.27's pass likewise keeps a named result's
+retains except those a `return` took, and now takes every one of those rather than the first.
+
+Cost: a retain and a release for `const a = new C(); arr.push(a)`, which used to be free.
+
+Under `-mm=own` the extra pair is a move, not a second owner: one taker plus the temporary's
+release later in the same block is one owner, and the inference pass erases both. A million
+`const p = make(); let q = p;` iterations peak at 4.2 MB under both `rc` and `own` (`none` 50.3).
+
+**And a leak the fix exposed.** §9.30 gave a temporary back only if every use was in its own
+block, and the body of an `if` or a loop is a region of an op in that block, not the block. Once
+the `let` in `const a = new C(); if (x) { let b = a; }` retained instead of taking over, nothing
+gave `a`'s own reference back: 1M calls of such a function reached 89.2 MB at `-O1` (`none` 89.2,
+and `-O3` hid it by removing the allocation). A use nested in an `if`, loop, `switch`, label or
+`try` body now counts as in the block (`runsWithinBlock`), since those bodies finish before the
+next op runs; a nested function or an `async.execute` body still does not. After: 4.7 MB. It
+also releases a `const` that is only *read* in a branch, which leaked before this arc.
+
+**Open, and older than this:** `const c = new C(); if (x) return c; print(c.x);` leaks `c` on the
+path that does not return. The `return` marks the producer consumed, which is what stops §9.30
+releasing it, and that mark is per operation, not per path.

@@ -211,6 +211,19 @@ namespace mlirgen
                 if (variableDeclarationInfo.needsIdentityStorage
                     && mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
                     return mlir::Type();
+
+                // Folded: from here the name *is* this value, so a receiver meeting it later
+                // cannot know whether it is the last mention - see OWNED_RESULT_NAMED_ATTR_NAME.
+                // A ConstRef's initial is a reference to storage and owns nothing of its own.
+                if (!variableDeclarationInfo.needsIdentityStorage && compileOptions.tracksOwnership()
+                    && variableDeclarationInfo.initial
+                    && mth.ownsHeapMemory(location, variableDeclarationInfo.initial.getType()))
+                {
+                    if (auto *definingOp = variableDeclarationInfo.initial.getDefiningOp())
+                    {
+                        definingOp->setAttr(OWNED_RESULT_NAMED_ATTR_NAME, builder.getUnitAttr());
+                    }
+                }
             } else if (mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
                 return mlir::Type();
         }
