@@ -144,6 +144,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         // either erases a retain or reports it, and a program it reports stops here.
         if (compileOptions.memoryModel == MemoryModelOwn && !ownSkipInference)
         {
+            pm.addPass(mlir::typescript::createOwnershipSignaturePass());
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
         }
 

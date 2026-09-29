@@ -35,6 +35,11 @@ std::unique_ptr<mlir::Pass> createOwnershipVerifierPass();
 /// acquisition and reports every other one. Runs at the affine level under own only.
 std::unique_ptr<mlir::Pass> createOwnershipInferencePass();
 
+/// The callee facts -mm=own infers across the module - a parameter the callee keeps, a result that
+/// borrows an argument, a callee that destroys nothing its caller can reach - pinned on each call it
+/// resolves. Runs just before OwnershipInferencePass, under own only.
+std::unique_ptr<mlir::Pass> createOwnershipSignaturePass();
+
 /// Lets a call take over the reference its callee returned instead of retaining a second one.
 /// Runs on the whole module, after MLIRGen, because deciding which callees retain their result
 /// needs every function to be present - see docs/reference-counting-evaluation.md section 9.27.

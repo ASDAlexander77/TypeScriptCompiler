@@ -677,7 +677,17 @@ namespace mlirgen
         // time (§9.37).
         if (isa<mlir_ts::StringType>(type) && castToStringAllocates(valueType))
         {
-            markFreshStringOwned(location, castResult);
+            markFreshBlockOwned(location, castResult);
+        }
+
+        // Boxing into `any` allocates the box, and the cast handed it back with no reference at
+        // all: a box a `let` holds was retained by the `let` and freed, but one held by a folded
+        // `const`, or passed straight to a call, was never released (1M `const a: any = new C()`:
+        // rc 66 MB, gc 6 MB). The box takes the payload's reference above; this is the box's own.
+        // An `any` cast to `any` is the same box, and allocates nothing.
+        if (isa<mlir_ts::AnyType>(type) && !isa<mlir_ts::AnyType>(valueType))
+        {
+            markFreshBlockOwned(location, castResult);
         }
 
         return V(castResult);

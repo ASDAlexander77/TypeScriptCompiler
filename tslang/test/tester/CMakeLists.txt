@@ -2408,7 +2408,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_union_nullable own_union_tagged own_union_optional
                  own_field_borrow own_element_borrow own_container_loop
                  own_optional_access own_borrow_merge
-                 own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call)
+                 own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call
+                 own_call_no_drops own_getter_borrow own_param_kept own_any_box)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2473,6 +2474,20 @@ set(own_error_cases
     "own_err_container_read_stored|borrows .* and cannot be stored, returned or captured"
     "own_err_field_let_overwritten|borrows .* but is used here after it may be released or overwritten"
     "own_err_field_let_assigned|borrows .* and cannot be assigned"
+    "own_err_call_drops_indirectly|borrows .* but is used here after it may be released or overwritten"
+    "own_err_call_given_borrow|borrows .* but is used here after it may be released or overwritten"
+    "own_err_call_this_borrow|borrows .* but is used here after it may be released or overwritten"
+    "own_err_exported_virtual_call|borrows .* but is used here after it may be released or overwritten"
+    "own_err_borrowed_result_stored|borrows the result of 'firstOf' and cannot be stored, returned or captured"
+    "own_err_borrowed_result_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
+    "own_err_borrowed_result_let_outlives|borrows the result of 'H.first' but is used here after it may be released or overwritten"
+    "own_err_borrowed_result_escapes|could return a borrow or keep a parameter, but it is used other than by a call"
+    "own_err_borrowed_result_family|an override in its class family disagrees"
+    "own_err_param_kept_used|is used here after its value was moved"
+    "own_err_any_unboxed_outlives|borrows the result of '___unbox<.*>' but is used here after it may be released or overwritten"
+    "own_err_param_kept_some_paths|is moved here on some paths only"
+    "own_err_param_kept_loop|is moved inside a loop"
+    "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_delete|'delete' is not supported by -mm=own yet")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
