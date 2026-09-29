@@ -942,10 +942,6 @@ of 3226.
   exported, so the virtual call to `area` has candidates this module cannot see, and it may drop
   (`own_err_exported_virtual_call` is the same shape). The error does not yet say why: the note
   on lost facts is attached to escapes and second references, not to drops.
-- Every model: `<B>anyValue` segfaults when `B` implements an interface.
-  `mlirGenInstanceOfOpaque` calls vtable slot 0 as `..instanceOf`, but such a class keeps the
-  interface's vtable there (`B..vtbl = {I, .instanceOf, ...}`). Fixing it changes the vtable
-  layout, so it is left for its own PR.
 - From §14.6: a read reached through an interface, borrow chains through assigned borrowers,
   moves after the last use of every borrower, and a temporary taken by a `let` and consumed
   elsewhere.
