@@ -3,8 +3,8 @@
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
 amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) merged as #402
-(results §13); phase 3 (containers and unions) on branch `own-phase-3` (results §14). Plans in
-`docs/superpowers/plans/`.
+(results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
+signatures and `any`) on branch `own-phase-4` (results §15). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -295,7 +295,8 @@ Each phase is a PR series leaving `main` green.
 3. **Containers**: stores as moves, reads as borrows; `any`/union boxing. As built (§14): unions
    and reads; `any` moved to phase 4.
 4. **Signature pass**: owned-by-callee parameters, borrowed-from-argument results, export beside
-   the marker and import on the other side.
+   the marker and import on the other side. As built (§15): the facts, drop-free callees and
+   `any`; export and import deferred.
 5. **Closures**: escaping vs non-escaping, cells.
 6. **Corpus report and diagnostics polish**: refine the shapes the histogram says matter.
 7. **Generators and async**: the state object as owner.
@@ -787,3 +788,162 @@ reference.
   `ts.PropertyRef` and is not bounded yet.
 - From §13.5: borrow chains through assigned borrowers, moves after the last use of every
   borrower, and a temporary taken by a `let` and consumed elsewhere.
+
+## 15. Phase 4 results, 2026-09-29
+
+Plan: `docs/superpowers/plans/2026-09-29-own-phase-4.md`. New: `OwnershipSignaturePass.cpp` and
+`OwnershipFacts.h` (the helpers both passes read the ops with). Changed:
+`OwnershipInferencePass.cpp`, and two MLIRGen sites for `any` (§15.4).
+
+### 15.1 The signature pass
+
+A module pass, own only, just before inference. It resolves every call it can, computes three
+facts per function, and pins on each resolved call the facts its candidates agree on:
+
+- `__own_no_drops`: the callee destroys nothing its caller can reach. That means no overwrite of a
+  field or element whose root it did not make, no global assignment, no removal from an array it
+  did not make, no `delete`, and no call that may drop. It is a least fixpoint. A constructor
+  filling its own `this` is not a drop.
+- `__own_result_borrows = K`: every heap value the function returns is parameter `K`'s. That is
+  seen through views, `!ts.opaque` casts, `ts.Unbox`, field and element reads, the object a method
+  is called on, and results that borrow. `null` agrees with any.
+- `__own_params`: the parameters the body keeps. A kept parameter is stored into a field, element
+  or global, pushed, or passed to a kept parameter.
+
+**Resolving a call.** The candidates are found as follows:
+
+- a direct call has one candidate;
+- a virtual call reaches every entry at its index under its method name in any class `..vtbl`.
+  This is its family, and every member must be private and defined here;
+- a call through the vtable's first slot is only built to reach a generated `..instanceOf`,
+  which drops nothing (§15.7 has the bug this found);
+- anything else (a closure, a function read from a field, an interface) is unknown.
+
+**The closed world.** `__own_no_drops` goes one way: an unknown call may drop, which can only add
+an error. The other two facts are relied on by the callee's body. A caller that does not know them
+borrows the argument and releases it, or releases a result it does not own, a double free either
+way. So a function has them only if all of these hold:
+
+- it is private;
+- every use of its symbol is a direct call, a class vtable entry, or a method reference used only
+  as a callee;
+- every family it is in agrees.
+
+A function that loses them keeps rc's convention. The error in its body gets a note saying why:
+`'firstOf' could return a borrow or keep a parameter, but it is used other than by a call` (or
+`it can be called from another module`, `an override in its class family disagrees`,
+`an override may be defined in another module`). The facts are recomputed with the calls pinned
+until nothing changes, so a method returning another's borrow, and a function forwarding a
+parameter to one that keeps it, get the fact too.
+
+`mlir::SymbolTable::getSymbolUses(module)` does not look inside the module, which is a symbol
+table. The first version saw no uses, so every function was closed. `own_err_borrowed_result_escapes`
+compiled until the walk used the module's body region.
+
+### 15.2 What the inference accepts
+
+- **Calls that drop.** A call drops a borrow only if its callee may drop (`__own_no_drops` absent).
+  `` `${this.color} area=${this.area()}` `` compiles again. Phase 3 skipped a call's own arguments
+  ("read before it runs"). That was unsound: `f(h.c)` compiled where `f` resets `h.c` through a
+  global and then reads its parameter. Now a call given a borrow uses it for as long as the callee
+  runs. Two things are exempt, because they are read as the call starts: the function value an
+  indirect call goes through, and the object a field-held method is bound to (`o.m()`).
+- **Results that borrow.** A call with `__own_result_borrows` is a borrow read like a field read.
+  Its places are a wildcard, so any overwrite of any field or element, and any removal, drops it.
+  Its roots are the argument's. Its temporary release and a consuming `let`'s releases are erased.
+  In the callee, the retain rc made for the caller goes, and the return is a use, not an escape.
+- **Kept parameters.** In the callee, the take is a move out of the parameter's slot. It must be
+  the last use, not loop, and dominate every return. The callee has no release for the parameter,
+  so `if (f) h.c = c` is an error. In the caller, the call is a taker of each kept argument, and rc's
+  retain for it is in the callee. It can move a fresh value, an owning `let` or a kept parameter. A
+  parameter, a global or a field it does not own is
+  `argument 'x' is given to 'keep', which keeps it, but -mm=own cannot move it here`.
+- **A thrown value read by a catch's copy thunk** (`.eh.copy.*`) is a move. A throw hands the
+  thrower's reference to the exception object, and nothing gives it back (rc leaks it the same
+  way). A TypeScript rethrow is a new throw, so each exception is copied into one catch.
+  `___unbox`'s failure path throws a string, so every unboxing needs this.
+
+A bug the positive tests found: a move whose acquisition is the call itself was "erased with its
+retain". The call to `forward(h, a)` vanished, and the program read uninitialised memory.
+
+### 15.3 Measured
+
+AOT, `measure.ps1`, at `-O3` and `-O1` (identical within 1%), in MB:
+
+| program | gc | rc | none | own |
+| --- | --- | --- | --- | --- |
+| `own_param_kept` | 6.5 | 4.8 | 1657.7 | 4.8 |
+| `own_getter_borrow` | 6.5 | 12.6 | 1653.3 | 4.8 |
+| `own_any_box` | 6.5 | 4.8 | 558.9 | 4.8 |
+| `own_call_no_drops` | 6.5 | 4.8 | 1100.7 | 4.8 |
+
+rc climbs in `own_getter_borrow`: it never releases a getter's result used as a temporary
+(`h.cc.x`: the `ts.CallInternal` result has no `ts.Release`). Own has no reference to give back.
+§14.5's `const a: any = new C(i)` loop reads 4.6 MB under all four models, at both levels. `none`
+does not grow, so LLVM removes the allocation and that program shows nothing about reclamation.
+
+### 15.4 `any`
+
+The boxing cast now carries its birth reference (`__owned_result` + `ts.Retain`), as a printed
+number does (`markFreshStringOwned` became `markFreshBlockOwned`). That is rc's §14.5 leak fix:
+a box held by a folded `const`, or passed straight to a call, was never released. Under own it
+makes the box a fresh value with one owner. An `any` cast to `any` allocates nothing and is not
+marked. The fix broke rc's catch copy thunks at first: the thunk's plain store into the catch slot
+let the box's new reference go back at the end of the thunk, so the catch read a freed box (10
+suite failures). The store now takes it over. The catch slot is runtime memory.
+
+`<C>a` is `___unbox<C>(a)`. With `___unbox`'s borrowed result (through `ts.Unbox`) and its
+drop-free `.instanceOf` call, the payload is borrowed for as long as the box lives.
+
+### 15.5 Teeth
+
+- With the releases a kept argument's move erases kept, `own_param_kept` fails under JIT and AOT.
+- With a borrowed result's temporary release kept, `own_getter_borrow` and `own_any_box` fail.
+- Keeping the callee's retain for a borrowed return makes the same two fail at compile time: the
+  retain reads as an escape. So it proves nothing about the runtime. At runtime it would be a leak,
+  not a double free.
+- `own_call_no_drops` erases nothing. Its teeth are the negatives.
+
+### 15.6 Tests and the corpus
+
+- **Positives:** `own_call_no_drops`, `own_getter_borrow` (getter, method, free function, a method
+  forwarding another's borrow, a field-or-`null` result, a returned parameter), `own_param_kept`
+  (field, forwarding, method into `this`, push, constructor parameter property), `own_any_box`.
+- **Negatives:**
+  - calls that drop: `own_err_call_drops_indirectly`, `own_err_call_given_borrow`,
+    `own_err_call_this_borrow`, `own_err_exported_virtual_call`;
+  - borrowed results: `own_err_borrowed_result_stored`, `own_err_borrowed_result_outlives`,
+    `own_err_borrowed_result_let_outlives`, `own_err_borrowed_result_escapes`,
+    `own_err_borrowed_result_family`;
+  - kept parameters: `own_err_param_kept_used`, `own_err_param_kept_some_paths`,
+    `own_err_param_kept_loop`, `own_err_param_kept_not_owned`;
+  - `any`: `own_err_any_unboxed_outlives`.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`): 272 of 564 compiled before,
+303 after, and none stopped. "Takes a second reference" fell from 189 files to 149. About half of
+the new ones throw or catch (the copy thunks); several more cast out of `any`. Release suite: 3226
+of 3226.
+
+### 15.7 Known limits (the input to phase 5 and later)
+
+- Export and import of the facts (§3.2). An exported function, or a method of an exported class,
+  gets no owned or borrowed facts, and a virtual call on one gets no `__own_no_drops`. That is sound
+  and restrictive for `-shared` modules.
+- A parameter kept on some paths only (needs drop elaboration: a release on the others).
+- A borrowed result's places are a wildcard, so any field overwrite between the call and the use
+  drops it, even of an unrelated object.
+- Interface calls (`ts.InterfaceSymbolRef`) are unresolved: no facts, and they drop.
+- A virtual family is matched by method name and index, so an unrelated class's method at the
+  same index can only take facts away.
+- The three corpus files §14.4 lost (`export_class_abstract*`) stay rejected. Their class is
+  exported, so the virtual call to `area` has candidates this module cannot see, and it may drop
+  (`own_err_exported_virtual_call` is the same shape). The error does not yet say why: the note
+  on lost facts is attached to escapes and second references, not to drops.
+- rc: a getter's result used as a temporary is never released (§15.3).
+- Every model: `<B>anyValue` segfaults when `B` implements an interface.
+  `mlirGenInstanceOfOpaque` calls vtable slot 0 as `..instanceOf`, but such a class keeps the
+  interface's vtable there (`B..vtbl = {I, .instanceOf, ...}`). Fixing it changes the vtable
+  layout, so it is left for its own PR.
+- From §14.6: a read reached through an interface, borrow chains through assigned borrowers,
+  moves after the last use of every borrower, and a temporary taken by a `let` and consumed
+  elsewhere.

@@ -336,8 +336,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     }
 
     // `ts.Cast(ts.VTableOffsetRef(ts.VTableOffsetRef(object, 0), 0))`: the first slot of the
-    // vtable an object's first word points to. Every class vtable keeps its generated
-    // `..instanceOf` there, a string compare that destroys nothing. `___unbox` asks it.
+    // vtable an object's first word points to. Only mlirGenInstanceOfOpaque (`instanceof` on an
+    // opaque object, as in `___unbox`) builds a call through it, to reach the class's generated
+    // `..instanceOf`, a string compare that destroys nothing. A class that implements an
+    // interface keeps the interface's vtable there instead, and that call crashes under every
+    // model - a bug of its own; it destroys nothing either way.
     static bool isInstanceOfSlot(mlir::Operation *def)
     {
         auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
