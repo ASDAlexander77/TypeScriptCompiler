@@ -3031,6 +3031,7 @@ class MLIRGenImpl
                                             int firstParam = 0, bool isPublic = false);
 
     mlir::LogicalResult mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source, mlir::Type target);
+    MethodInfo mlirGenNoInstanceOfFunction(mlir::Location location);
 
     void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
 
@@ -4894,6 +4895,42 @@ class MLIRGenImpl
     // test, so `<C>anyValue` compiled into a cast that always throws, with no error shown.
     ValueOrLogicalResult mlirGenInstanceOfOpaque(mlir::Location location, mlir::Value thisPtrValue, mlir::Value classRefVal, const GenContext &genContext)
     {
+        // an instance's first word is its class's vtable
+        auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
+                                                                    thisPtrValue, 0 /*VTABLE index*/);
+        return mlirGenInstanceOfThroughVTable(location, vtablePtr, thisPtrValue, classRefVal, genContext);
+    }
+
+    // `i instanceof C` for an interface value: its own vtable answers, since what it holds may be
+    // an object literal, which has no class vtable to ask (INTERFACE_VTABLE_HEADER_SLOTS). A null
+    // interface is an instance of nothing.
+    ValueOrLogicalResult mlirGenInstanceOfInterface(mlir::Location location, mlir::Value interfaceValue, mlir::Value classRefVal, const GenContext &genContext)
+    {
+        auto isSet = cast(location, getBooleanType(), interfaceValue, genContext);
+        if (isSet.failed_or_no_value())
+        {
+            return mlir::failure();
+        }
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        return mclh.conditionalValue(
+            V(isSet),
+            [&]() {
+                auto vtable = builder.create<mlir_ts::ExtractInterfaceVTableOp>(location, getOpaqueType(), interfaceValue);
+                auto thisPtr = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
+                return mlirGenInstanceOfThroughVTable(location, vtable, thisPtr, classRefVal, genContext);
+            },
+            [&](mlir::Type) {
+                return ValueOrLogicalResult(
+                    builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false)));
+            });
+    }
+
+    // Asks `thisPtrValue` whether it is a `classRefVal` through slot 0 of `vtablePtr`: the class's
+    // `.instanceOf` for a class vtable, and the implementer's for an interface vtable.
+    ValueOrLogicalResult mlirGenInstanceOfThroughVTable(mlir::Location location, mlir::Value vtablePtr, mlir::Value thisPtrValue,
+                                                        mlir::Value classRefVal, const GenContext &genContext)
+    {
         auto classType = dyn_cast<mlir_ts::ClassType>(classRefVal.getType());
         if (!classType)
         {
@@ -4901,13 +4938,9 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // get VTable we can use VTableOffset
-        auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
-                                                                    thisPtrValue, 0 /*VTABLE index*/);
-
-        // get InstanceOf method, this is 0 index in vtable
+        // `.instanceOf` is slot 0 of a class vtable and of an interface vtable alike
         auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
-            location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
+            location, getOpaqueType(), vtablePtr, INTERFACE_VTABLE_INSTANCEOF_SLOT);
 
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
 
@@ -5037,6 +5070,11 @@ class MLIRGenImpl
             if (isa<mlir_ts::OpaqueType>(resultLeftfType))
             {
                 return mlirGenInstanceOfOpaque(location, resultLeftValue, resultRightValue, genContext);
+            }
+
+            if (isa<mlir_ts::InterfaceType>(resultLeftfType))
+            {
+                return mlirGenInstanceOfInterface(location, resultLeftValue, resultRightValue, genContext);
             }
         }
 #endif
@@ -11223,7 +11261,9 @@ class MLIRGenImpl
     ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);
 
-    ValueOrLogicalResult castFieldsToClass(mlir::Location location, mlir::Value value, 
+    ValueOrLogicalResult castInterfaceToClass(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType,
+                                              const GenContext &genContext);
+    ValueOrLogicalResult castFieldsToClass(mlir::Location location, mlir::Value value,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, 
         mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);
 

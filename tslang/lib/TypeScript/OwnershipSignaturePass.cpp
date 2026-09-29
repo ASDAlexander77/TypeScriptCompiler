@@ -335,18 +335,29 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         callees.known = callees.known && llvm::all_of(callees.funcs, [](mlir_ts::FuncOp funcOp) { return funcOp.isPrivate(); });
     }
 
-    // `ts.Cast(ts.VTableOffsetRef(ts.VTableOffsetRef(object, 0), 0))`: the first slot of the
-    // vtable an object's first word points to. Only mlirGenInstanceOfOpaque (`instanceof` on an
-    // opaque object, as in `___unbox`) builds a call through it, to reach the class's generated
-    // `..instanceOf`, a string compare that destroys nothing. A class that implements an
-    // interface keeps the interface's vtable there instead, and that call crashes under every
-    // model - a bug of its own; it destroys nothing either way.
+    // `ts.Cast(ts.VTableOffsetRef(vtable, 0))`, where `vtable` is the one an object's first word
+    // points to or an interface value's own: slot 0 of either is `.instanceOf` - a class's
+    // generated one, a string compare, or `.instanceOf.none` for an object literal behind an
+    // interface. Only mlirGenInstanceOfThroughVTable builds a call through it. Neither destroys
+    // anything.
     static bool isInstanceOfSlot(mlir::Operation *def)
     {
         auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
         auto slot = castOp ? castOp.getIn().getDefiningOp<mlir_ts::VTableOffsetRefOp>() : mlir_ts::VTableOffsetRefOp();
-        auto vtable = slot ? slot.getVtable().getDefiningOp<mlir_ts::VTableOffsetRefOp>() : mlir_ts::VTableOffsetRefOp();
-        return vtable && slot.getIndex() == 0 && vtable.getIndex() == 0;
+        if (!slot || slot.getIndex() != INTERFACE_VTABLE_INSTANCEOF_SLOT)
+        {
+            return false;
+        }
+
+        // a class vtable, read out of an object's first word, or an interface's own vtable,
+        // whose slot 0 is its implementer's `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS)
+        auto *vtable = slot.getVtable().getDefiningOp();
+        if (auto classVTable = mlir::dyn_cast_or_null<mlir_ts::VTableOffsetRefOp>(vtable))
+        {
+            return classVTable.getIndex() == 0;
+        }
+
+        return mlir::isa_and_nonnull<mlir_ts::ExtractInterfaceVTableOp>(vtable);
     }
 
     // Is every use of this function value the callee of a call - through `ts.GetMethod`, with

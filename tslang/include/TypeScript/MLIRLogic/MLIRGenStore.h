@@ -2,6 +2,7 @@
 #define MLIR_TYPESCRIPT_MLIRGENSTORE_H_
 
 #include "TypeScript/DOM.h"
+#include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/ADT/StringMap.h"
@@ -895,8 +896,21 @@ struct ClassInfo
             base->getVirtualTable(vtable, methodSlots, interfaceSlots);
         }
 
-        // TODO: we need to process .Rtti first
-        // TODO: then we need to process .instanceOf next
+        // `.instanceOf` is slot 0 of every class vtable: an object reached with no static type (an
+        // `any` being unboxed, `x instanceof C` on an opaque value) is asked through that slot
+        // (mlirGenInstanceOfOpaque). A root class puts it there ahead of its interfaces, and a
+        // derived class overrides it in place. Before this, a root class that implemented an
+        // interface kept the interface's vtable in slot 0, and `<B>anyValue` called it.
+        if (baseClasses.empty())
+        {
+            auto instanceOf = std::find_if(methods.begin(), methods.end(),
+                                           [](auto &method) { return method.name == INSTANCEOF_NAME; });
+            if (instanceOf != methods.end() && instanceOf->isVirtual && !methodSlots.contains(instanceOf->name))
+            {
+                methodSlots[instanceOf->name] = vtable.size();
+                vtable.push_back({*instanceOf, false});
+            }
+        }
 
         // do vtable for current class
         for (auto &implement : implements)

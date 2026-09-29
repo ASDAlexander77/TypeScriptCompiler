@@ -89,6 +89,15 @@
 #define SIZE_NAME ".size"
 #define INSTANCEOF_NAME ".instanceOf"
 #define INSTANCEOF_PARAM_NAME "rttiParam"
+// Every interface vtable starts with the `.instanceOf` of what implements it, ahead of the
+// interface's own members: a class's own `.instanceOf`, or, for an object literal, which is no
+// instance of any class, INSTANCEOF_NONE_NAME, which answers false. That lets `i instanceof C`
+// and `<C>anyHoldingAnInterface` ask an interface value what it is. An interface member's slot
+// (InterfaceSymbolRefOp's index) is its index among the members, so the vtable slot is that plus
+// INTERFACE_VTABLE_HEADER_SLOTS.
+#define INTERFACE_VTABLE_INSTANCEOF_SLOT 0
+#define INTERFACE_VTABLE_HEADER_SLOTS 1
+#define INSTANCEOF_NONE_NAME ".instanceOf.none"
 #define MAIN_ENTRY_NAME "main"
 #define TS_NEST_ATTRIBUTE "ts.nest"
 #define THIS_TEMPVAR_NAME ".this"

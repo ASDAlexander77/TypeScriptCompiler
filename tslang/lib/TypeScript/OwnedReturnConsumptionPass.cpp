@@ -783,7 +783,7 @@ class OwnedReturnConsumptionPass
     // The vtables say it exactly. An interface value is built by `ts.NewInterface` over one of
     // them, and every vtable in the module is a global: a class implementing `Thing` gets
     // `Sphere.Thing..vtbl`, an object literal gets `Thing.<hash>..vtbl`, and the interface's own
-    // name is a component of both. So the candidates for slot `index` of interface `I` are that
+    // name is a component of both. So the candidates for member `index` of interface `I` are its
     // slot in every vtable global naming `I`, and a slot that is absent - not initialised from a
     // symbol - makes the whole call unclassifiable rather than being skipped.
     static bool interfaceCallReturnsOwned(mlir_ts::CallIndirectOp callOp,
@@ -823,7 +823,9 @@ class OwnedReturnConsumptionPass
         }
 
         auto interfaceName = interfaceType.getName().getValue();
-        auto index = (int64_t)interfaceRefOp.getIndex();
+        // The op's index is the member's, and the vtable global has the `.instanceOf` header in
+        // front of the members: read at the index itself, the call looked at its neighbour.
+        auto index = (int64_t)interfaceRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS;
 
         auto sawCandidate = false;
         for (auto &vtable : vtableSlots)
