@@ -2402,6 +2402,18 @@ set_tests_properties(test-own-inference-erases-birth-takes
                      PROPERTIES PASS_REGULAR_EXPRESSION "ts.Release"
                                 FAIL_REGULAR_EXPRESSION "ts\\.Retain|error|Stack dump")
 
+# Under rc, a call through an interface carries the result its implementation retained: no
+# `ts.CallIndirect` returning a C through an interface slot is left without `__owned_result`
+# (`__owned_result_named` alone only says it initialises a `const`).
+tslang_add_test(NAME test-jit-rc-interface-call-owned-result COMMAND test-runner -jit -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/own/rc_interface_call_owned_result.ts")
+tslang_add_test(NAME test-compile-rc-interface-call-owned-result COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/own/rc_interface_call_owned_result.ts")
+add_test(NAME test-rc-interface-call-owned-result-marked
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/rc_interface_call_owned_result.ts")
+set_tests_properties(test-rc-interface-call-owned-result-marked
+                     PROPERTIES PASS_REGULAR_EXPRESSION "__owned_result"
+                                FAIL_REGULAR_EXPRESSION "CallIndirect\"\\([^)]*\\) ({__owned_result_named} )?: \\(!ts\\.func<!ts\\.opaque, !ts\\.class<@C|error|Stack dump")
+
 # -mm=own, phase 0 (docs/superpowers/plans/2026-09-28-own-phase-0.md). Positive programs run
 # under JIT and ahead of time; each owns every block once.
 foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals
