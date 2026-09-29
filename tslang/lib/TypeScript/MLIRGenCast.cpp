@@ -3,6 +3,10 @@
 #include "MLIRGenImpl.h"
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 
+// the RTTI helper undefines it on the way out
+#undef DEBUG_TYPE
+#define DEBUG_TYPE "mlir"
+
 namespace typescript
 {
 namespace mlirgen
