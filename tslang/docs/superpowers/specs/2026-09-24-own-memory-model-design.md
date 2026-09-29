@@ -873,12 +873,15 @@ AOT, `measure.ps1`, at `-O3` and `-O1` (identical within 1%), in MB:
 | program | gc | rc | none | own |
 | --- | --- | --- | --- | --- |
 | `own_param_kept` | 6.5 | 4.8 | 1657.7 | 4.8 |
-| `own_getter_borrow` | 6.5 | 12.6 | 1653.3 | 4.8 |
+| `own_getter_borrow` | 6.5 | 4.8 (was 12.6) | 1653.3 | 4.8 |
 | `own_any_box` | 6.5 | 4.8 | 558.9 | 4.8 |
 | `own_call_no_drops` | 6.5 | 4.8 | 1100.7 | 4.8 |
 
-rc climbs in `own_getter_borrow`: it never releases a getter's result used as a temporary
-(`h.cc.x`: the `ts.CallInternal` result has no `ts.Release`). Own has no reference to give back.
+rc climbed in `own_getter_borrow`: it never released a getter's result used as a temporary
+(`h.cc.x`). The getter retains its result like any function, but `OwnedReturnConsumptionPass`
+only settled `ts.CallIndirect`, and a getter read is an accessor op until the affine lowering.
+The pass now classifies accessor reads the way it classifies calls (`rc_getter_temporary.ts`).
+Own has no reference to give back.
 §14.5's `const a: any = new C(i)` loop reads 4.6 MB under all four models, at both levels. `none`
 does not grow, so LLVM removes the allocation and that program shows nothing about reclamation.
 
