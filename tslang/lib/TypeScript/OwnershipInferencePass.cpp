@@ -10,6 +10,8 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
+#include "OwnershipFacts.h"
+
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -22,6 +24,8 @@ namespace mlir_ts = mlir::typescript;
 
 namespace
 {
+
+using namespace own_facts;
 
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
@@ -361,6 +365,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     {
         mlir::Operation *op;
         llvm::SmallVector<mlir::Operation *, 2> kills;
+        // the function value an indirect call goes through: read when the call starts, not while
+        // the callee runs
+        bool callee = false;
     };
 
     // A borrowing `let`'s slot: each read, and everything it leads to (walkBorrowed), joins
@@ -492,7 +499,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             for (auto &use : pending.value.getUses())
             {
                 auto *user = use.getOwner();
-                uses.push_back({user, pending.kills});
+                uses.push_back({user, pending.kills, isCall(user) && isCalleeOperand(use)});
                 if (pending.borrowed)
                 {
                     llvm::SmallVector<mlir::Value> same;
@@ -534,6 +541,31 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return nullptr;
     }
 
+    // Is this what an indirect call goes through: its callee value, or, for a method read out of
+    // a field of an object (`o.m()`, `m` a field holding a function), the object it is bound to,
+    // which is the container of what was read, not what was borrowed. A method of a class bound
+    // to a borrowed instance (`h.c.m()`) is not one: its `this` is the borrow.
+    static bool isCalleeOperand(mlir::OpOperand &use)
+    {
+        auto *user = use.getOwner();
+        if (!mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::CallHybridInternalOp>(user))
+        {
+            return false;
+        }
+
+        if (use.getOperandNumber() == 0)
+        {
+            return true;
+        }
+
+        auto getThisOp = use.get().getDefiningOp<mlir_ts::GetThisOp>();
+        auto getMethodOp = user->getOperand(0).getDefiningOp<mlir_ts::GetMethodOp>();
+        auto methodField = getThisOp ? getThisOp.getOperand().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        return use.getOperandNumber() == 1 && getMethodOp && methodField &&
+               getThisOp.getOperand() == getMethodOp.getBoundFunc() &&
+               mlir::isa<mlir_ts::BoundRefType>(methodField.getReference().getType());
+    }
+
     // Can a value of this type point into a heap block - a reference into one, a block of its own,
     // or a method bound to one? A number or a boolean read out of a borrowed block cannot.
     bool mayPointInto(mlir::Value value)
@@ -551,17 +583,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // may destroy it (spec 2.2's dropping mutations): an overwrite of a place on the way from the
     // read up to its root, an array op that removes elements, an end of the root itself, or a call
     // that may reach the root. A path back to a use through the read itself is a new borrow.
-
-    static bool isCall(mlir::Operation *op)
-    {
-        return mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp,
-                         mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(op);
-    }
-
-    static bool isPlace(mlir::Value ref)
-    {
-        return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(ref.getDefiningOp());
-    }
 
     // A read of a heap value out of a field or an element, seen through its views. None for
     // anything else.
@@ -661,47 +682,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return chain;
-    }
-
-    // The values the branches into its block pass for `argument`, each seen through its views.
-    // False, adding nothing, when a way in is not a branch that passes one - the entry block's
-    // parameters, a region's arguments.
-    static bool mergedInto(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir::Value> &values)
-    {
-        auto *block = argument.getOwner();
-        if (block->isEntryBlock())
-        {
-            return false;
-        }
-
-        llvm::SmallVector<mlir::Value> found;
-        for (auto *predecessor : block->getPredecessors())
-        {
-            auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(predecessor->getTerminator());
-            if (!branchOp)
-            {
-                return false;
-            }
-
-            for (unsigned index = 0; index < branchOp->getNumSuccessors(); ++index)
-            {
-                if (branchOp->getSuccessor(index) != block)
-                {
-                    continue;
-                }
-
-                auto passed = branchOp.getSuccessorOperands(index)[argument.getArgNumber()];
-                if (!passed)
-                {
-                    return false;
-                }
-
-                found.push_back(rootOf(passed));
-            }
-        }
-
-        values.append(found.begin(), found.end());
-        return true;
     }
 
     // Where the roots stop holding what the chain reads: a local's releases and assignments and
@@ -844,9 +824,10 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // May this op of the function's drops destroy what the chain reads? An overwrite of a place
     // on it, matched by position and type (two references to one field of one object always
     // agree on both; an unrelated field that happens to agree only adds an error); an array op
-    // that removes elements of the type of an element on it; a call - any call, for a root this
-    // function does not own, since the owner may be a global the callee assigns; else one given
-    // something derived from the root that the read did not produce.
+    // that removes elements of the type of an element on it; a call whose callee may destroy
+    // anything (`__own_no_drops`, phase 4) - any such call, for a root this function does not
+    // own, since the owner may be a global the callee assigns; else one given something derived
+    // from the root that the read did not produce.
     bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir_ts::LoadOp read)
     {
         if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop))
@@ -865,6 +846,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         if (isCall(drop))
         {
+            if (callNoDrops(drop))
+            {
+                return false;
+            }
+
             if (!chain.owned())
             {
                 return true;
@@ -939,11 +925,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         auto chain = chainOf(read);
+        // A call given the borrow is a use of it for as long as the callee runs, so a call that
+        // may destroy it is a use after that, whatever the order of its arguments. The function
+        // value it goes through is only read as it starts.
         auto outlives = [&](mlir::Operation *drop) {
             for (auto &use : uses)
             {
-                // a call's own arguments are read before it runs
-                if (use.op != drop && reachableAfter(drop, use.op, use.kills))
+                if ((use.op != drop || !use.callee) && reachableAfter(drop, use.op, use.kills))
                 {
                     reportPlaceBorrowOutlives(use.op, drop, name, place);
                     return true;
@@ -1103,69 +1091,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return name;
     }
 
-    // An op whose result is the very block its operand holds: a class widened to a union or an
-    // optional or narrowed back, a union made from its payload or read back from it. rc's retain
-    // or release of either is one of the block, so the pass looks through them. A cast that
-    // converts (a number printed into a string) or boxes (into `any`) makes a new block and is
-    // not one.
-    static bool isView(mlir::Operation *op)
-    {
-        if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
-                                  mlir_ts::OptionalValueOp, mlir_ts::ValueOp>(op))
-        {
-            return true;
-        }
-
-        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(op);
-        if (!castOp)
-        {
-            return false;
-        }
-
-        auto keeps = [](mlir::Type type) {
-            return mlir::isa<mlir_ts::ClassType, mlir_ts::UnionType, mlir_ts::OptionalType>(type);
-        };
-        return keeps(castOp.getIn().getType()) && keeps(castOp.getType());
-    }
-
-    // The block a value is a view of.
-    static mlir::Value rootOf(mlir::Value value)
-    {
-        while (auto *def = value.getDefiningOp())
-        {
-            if (!isView(def))
-            {
-                break;
-            }
-
-            value = def->getOperand(0);
-        }
-
-        return value;
-    }
-
-    // Every user of `root` and of the views of it, with the value it uses. A view itself is not a
-    // use.
-    static void forEachUse(mlir::Value root, llvm::function_ref<void(mlir::Operation *, mlir::Value)> each)
-    {
-        llvm::SmallVector<mlir::Value> values{root};
-        while (!values.empty())
-        {
-            auto value = values.pop_back_val();
-            for (auto &use : value.getUses())
-            {
-                auto *user = use.getOwner();
-                if (isView(user) && use.getOperandNumber() == 0)
-                {
-                    values.push_back(user->getResult(0));
-                    continue;
-                }
-
-                each(user, value);
-            }
-        }
-    }
-
     // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer,
     // seen through its views. None for a variable with no initializer - its storage was hoisted
     // in front of a try and its value arrives by a store this phase does not follow.
@@ -1178,44 +1103,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         auto varOp = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot().getDefiningOp<mlir_ts::VariableOp>();
         return varOp && varOp.getInitializer() ? rootOf(varOp.getInitializer()) : mlir::Value();
-    }
-
-    static bool isOwningVariable(mlir_ts::VariableOp varOp)
-    {
-        return varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME);
-    }
-
-    // Made here and held by nobody else: an allocation, a literal cast to its value type, an
-    // operation rc marks as arriving with a reference, or a direct call of a function this module
-    // defines (every function returns its result retained, rc 9.24; the call's own mark does not
-    // survive the affine lowering). A declared callee, an indirect call, a parameter, a load or a
-    // value merged from branches is not fresh.
-    static bool isFresh(mlir::Value value)
-    {
-        auto *def = value.getDefiningOp();
-        if (!def)
-        {
-            return false;
-        }
-
-        if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
-                      mlir_ts::CharToStringOp>(def))
-        {
-            return true;
-        }
-
-        if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(def))
-        {
-            auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, callOp.getCalleeAttr());
-            return callee && !callee.isDeclaration();
-        }
-
-        if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(def))
-        {
-            return false;
-        }
-
-        return def->hasAttr(OWNED_RESULT_ATTR_NAME) || isLiteral(def);
     }
 
     // Does a value of this type own a block that a release would destroy?
@@ -1231,28 +1118,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         auto castOp = rootOf(value).getDefiningOp<mlir_ts::CastOp>();
         return castOp && mlir::isa<mlir_ts::StringType>(castOp.getType()) &&
                castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
-    }
-
-    // A string literal or a constant array cast to its value type. The result is either the
-    // immortal global itself, which a release skips, or a copy nobody else holds, which a
-    // release destroys - so, owned once, it has one owner either way. `null` and `undefined`
-    // widened to a nullable type (`c: C | null = null`), and an empty optional
-    // (`u: C | undefined = undefined`), hold no block at all.
-    static bool isLiteral(mlir::Operation *def)
-    {
-        if (mlir::isa<mlir_ts::OptionalUndefOp>(def))
-        {
-            return true;
-        }
-
-        auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def);
-        if (!castOp)
-        {
-            return false;
-        }
-
-        auto *in = castOp.getIn().getDefiningOp();
-        return in && mlir::isa<mlir_ts::ConstantOp, mlir_ts::NullOp, mlir_ts::UndefOp>(in);
     }
 
     // A use that reads the value without keeping it. Kept deliberately short: anything not listed
@@ -1590,26 +1455,6 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return false;
-    }
-
-    // The load of an owning local that `value` was read from, through its views (a class widened
-    // to a union with null, an upcast, a union made from it). None when the value is anything
-    // else - a parameter, a field, a boxing cast - which phase 1 does not move out of.
-    static mlir_ts::LoadOp slotLoadOf(mlir::Value value)
-    {
-        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
-        if (!loadOp)
-        {
-            return {};
-        }
-
-        auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
-        if (!varOp || !isOwningVariable(varOp) || varOp.getCaptured().value_or(false))
-        {
-            return {};
-        }
-
-        return loadOp;
     }
 
     // The use that takes `value` for this retain: the declaration a `ts.RetainSlot` belongs to,
