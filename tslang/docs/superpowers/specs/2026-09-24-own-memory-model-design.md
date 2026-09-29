@@ -2,8 +2,9 @@
 
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
 amendments folded in. Phase 0 merged as #399 (results §11); phase 1
-(moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) on branch
-`own-phase-2` (results §13). Plans in `docs/superpowers/plans/`.
+(moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) merged as #402
+(results §13); phase 3 (containers and unions) on branch `own-phase-3` (results §14). Plans in
+`docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -291,7 +292,8 @@ Each phase is a PR series leaving `main` green.
    compile, run and reclaim with no counting. First measured numbers.
 1. **Move inference** (§4.2 step 3, first verdict) and use-after-move.
 2. **Borrow inference** for locals and temporaries: tenures, dropping mutations, loop rule.
-3. **Containers**: stores as moves, reads as borrows; `any`/union boxing.
+3. **Containers**: stores as moves, reads as borrows; `any`/union boxing. As built (§14): unions
+   and reads; `any` moved to phase 4.
 4. **Signature pass**: owned-by-callee parameters, borrowed-from-argument results, export beside
    the marker and import on the other side.
 5. **Closures**: escaping vs non-escaping, cells.
@@ -655,3 +657,119 @@ Other negatives:
   temporary release there is nothing to bound a borrow, so it is still an error.
 - From §12.5: moves on some paths only, and a `const` alias of a `let` held across an assignment
   of the `let` (rc has the same bug).
+
+## 14. Phase 3 results, 2026-09-29
+
+Plan: `docs/superpowers/plans/2026-09-29-own-phase-3.md`. Only `OwnershipInferencePass.cpp`
+changed.
+
+### 14.1 What phase 3 accepts
+
+**Views.** An op whose result is the block its operand holds is transparent. The pass strips it to
+its root wherever it names a value, and looks through it wherever it lists a value's uses. The
+views are:
+
+- a `ts.Cast` between class, union and optional types;
+- `ts.CreateUnionInstance` and `ts.GetValueFromUnionOp`;
+- `ts.OptionalValue` and `ts.Value`.
+
+So `let u: C | null = new C(i)`, `let u: C | string = c` and `let u: C | undefined = ...` are one
+owner, not a second reference. An empty optional (`u = undefined`, `ts.OptionalUndef`) holds no
+block, like `null` widened. Testing a value is a read, not a taker: `if (d)`, `d?.x`, `typeof u`,
+and a cast to `boolean`.
+
+**Reads out of containers are borrows (§2.3).** `const c = h.c`, `arr[i]`, and every temporary
+read of a heap value through a `ts.PropertyRef` or `ts.ElementRef` own nothing. Before phase 3
+nothing bounded them, and `const c = h.c; h.c = new C(); c.x` compiled into a read of freed
+memory. rc has the same hole.
+
+A read may not be kept: storing, pushing, returning or retaining it is
+`'c' borrows 'h.c' and cannot be stored, returned or captured`. None of its uses, and no use of
+anything it produces, may be reachable from a *drop*:
+
+- an overwrite (`ts.ReleaseSlot`) of any place on the way from the read to its root. Places are
+  matched by position and reference type, which two references to one field of one object always
+  share; an unrelated field that happens to match only adds an error;
+- a `pop`, `shift`, `splice` or `length =` of an array whose element type is on the way;
+- an end of the root: a local's releases, assignments, and every declaration or retain that may
+  move it away; a made value's releases and every use that takes it; a global's assignments;
+- a call. A call drops the read if it is given something derived from the root that the read did
+  not produce (`reset(h)` drops `h.c`; `use(c)` does not). Where the root is a parameter, `this`
+  or a global, **any** call drops it: the callee may reach the owner through a global.
+
+A path back to a use through the read itself is a new borrow, so reading `h.c` at the top of a
+loop body and overwriting it at the bottom is fine. The error is
+`'c' borrows 'h.c' but is used here after it may be released or overwritten`, with a note at the
+drop.
+
+A borrow is followed through what hands the same value on. That covers casts and views, the
+argument of a block a branch passes it to (`n.c ?? m.c`), and the reads of a local that owns
+nothing and is assigned it (`for (x of arr)` into an outer `let x` declared without a value).
+
+**A `let` declared from a read borrows it**, as phase 2's borrowers do: `let c = h.c`,
+`let e = arr[j]`. Its `ts.RetainSlot` and `ts.ReleaseSlot`s go, and its reads join the read's
+uses. Assigning it is `'c' borrows 'h.c' and cannot be assigned`.
+
+### 14.2 Measured
+
+1M iterations (100K calls), AOT, `measure.ps1`, at `-O3` and `-O1` (identical within 4%):
+
+| program | gc | rc | none | own |
+| --- | --- | --- | --- | --- |
+| `own_field_borrow` | 6.5 | 4.8 | 562.2 | 4.8 |
+| `own_field_let_borrow` | 6.5 | 4.8 | 546.6 | 4.8 |
+| `own_union_nullable` | 6.6 | 4.8 | 546.6 | 4.8 |
+| `own_union_tagged` | 6.6 | 4.8 | 546.6 | 4.8 |
+| `own_element_borrow` (10K) | 6.5 | 4.7 | 11.0 | 4.7 |
+
+### 14.3 Teeth
+
+- With a move's releases kept, the three union positives fail with heap corruption (6 of 6 runs).
+- With a place-read `let`'s releases kept, both `let` positives fail the same way (4 of 4).
+- A folded `const` read erases nothing, so it has nothing to disable. Its teeth are the negatives,
+  which compiled before this phase: five of them read freed memory under rc and own (`999` for
+  `0`).
+
+### 14.4 Tests and the corpus
+
+- **Positives:** `own_union_nullable`, `own_union_tagged`, `own_union_optional`,
+  `own_optional_access`, `own_field_borrow`, `own_element_borrow`, `own_container_loop`,
+  `own_borrow_merge`, `own_field_let_borrow`, `own_element_let_borrow`.
+- **Negatives:** `own_err_union_moved`, `own_err_field_read_overwritten`,
+  `own_err_element_read_overwritten`, `own_err_element_read_popped`,
+  `own_err_element_read_loop_pop`, `own_err_field_read_owner_assigned`,
+  `own_err_field_read_owner_moved`, `own_err_field_read_call`, `own_err_param_read_call`,
+  `own_err_global_read_assigned`, `own_err_merge_read_overwritten`, `own_err_alias_read_popped`,
+  `own_err_container_read_stored`, `own_err_field_let_overwritten`, `own_err_field_let_assigned`.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`): 252 of 564 compiled before,
+272 after. 23 files now compile. 3 stopped:
+
+- `export_class_abstract`;
+- `export_class_abstract_virtual_dispatch`;
+- `export_class_implements_interface_abstract`.
+
+Each has ``${this.color} area=${this.area()}``, a read of a field of `this` that is still used
+after a call: the any-call rule above.
+
+### 14.5 Deferred: `any`
+
+§7 put `any` boxing in phase 3; it moves to phase 4. Unboxing is a call to a generated
+`___unbox<T>`, which retains the payload inside and returns it +1. `___cast<U, T>` allocates on one
+branch and returns the payload on the other. Treating either as a borrow is phase 4's
+borrowed-from-argument result.
+
+An rc bug found here belongs with it: `const a: any = new C(i)` never releases the box
+(`measure.ps1`: rc 66.2 MB, gc 6.1 MB). The boxing cast is +0, and a folded `const` takes no
+reference.
+
+### 14.6 Known limits (the input to phase 4)
+
+- Reads of a parameter's or `this`'s fields across any call, including
+  ``${this.color} ${this.area()}``. Callee facts decide which calls may reach the owner.
+- Returning a field (`get c() { return this.c; }`): a borrowed-from-argument result.
+- `any` boxing and unboxing (§14.5).
+- A read out of a container reached through an interface (`ts.InterfaceSymbolRef`), which is not a
+  `ts.PropertyRef` and is not bounded yet.
+- From §13.5: borrow chains through assigned borrowers, moves after the last use of every
+  borrower, and a temporary taken by a `let` and consumed elsewhere.
