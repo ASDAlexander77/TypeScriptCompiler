@@ -1,6 +1,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -52,6 +53,10 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // every value some ownership operation names, in the order the walk meets them
         llvm::SetVector<mlir::Value> candidates;
         llvm::SmallVector<mlir::Operation *> retains;
+        // reads out of fields and elements, and what may destroy what they read (spec 2.3)
+        llvm::SmallVector<mlir_ts::LoadOp> placeReads;
+        drops.clear();
+        derivedCache.clear();
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -85,6 +90,27 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 op->emitError("'delete' is not supported by -mm=own yet");
                 signalPassFailure();
             }
+            else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(op))
+            {
+                if (placeReadOf(loadOp.getResult()))
+                {
+                    placeReads.push_back(loadOp);
+                }
+            }
+            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+            {
+                if (mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(
+                        releaseSlotOp.getSlot().getDefiningOp()))
+                {
+                    drops.push_back(op);
+                }
+            }
+            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp,
+                               mlir_ts::SetLengthOfOp>(op) ||
+                     isCall(op))
+            {
+                drops.push_back(op);
+            }
 
             for (auto result : op->getResults())
             {
@@ -108,6 +134,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
         }
 
+        for (auto read : placeReads)
+        {
+            checkPlaceRead(read, toErase);
+        }
+
         // What is proven loses its retains; any other retain is a second reference nobody
         // proved safe - of a loaded value, a parameter, an unknown producer, or of a fresh value
         // whose own check was reported above.
@@ -121,6 +152,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             {
                 toErase.insert(op);
                 continue;
+            }
+
+            if (value && placeReadOf(value))
+            {
+                continue; // a read out of a container: checkPlaceRead decided it
             }
 
             if (auto load = value ? slotLoadOf(value) : mlir_ts::LoadOp())
@@ -148,6 +184,14 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
   private:
     mlir::DominanceInfo *dominance = nullptr;
+
+    // What in this function may destroy a value held by a field or an element: an overwrite of a
+    // field or an element, an array op that removes elements, a call.
+    llvm::SmallVector<mlir::Operation *> drops;
+
+    // derivedFrom's answer for each value it was asked about in this function; held by pointer, so
+    // an answer stays put while the next one is added
+    llvm::DenseMap<mlir::Value, std::shared_ptr<llvm::DenseSet<mlir::Value>>> derivedCache;
 
     // While non-zero, verdicts are tried without reporting: the next verdict gets its turn first.
     unsigned quiet = 0;
@@ -301,48 +345,10 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
 
             uses.push_back(user);
-
-            // The borrowed value itself - the read and the casts that keep it the same block - must
-            // not be kept anywhere. What it produces - a field reference, a value loaded through
-            // one, a bound method, a catch clause's non-owning local - still points into the
-            // borrowed block, so each of its uses is a use of the borrower too. A value that
-            // cannot point anywhere (a number, a boolean) ends the walk.
-            llvm::SmallVector<std::pair<mlir::Value, bool>> values{{readOp.getResult(), true}};
-            llvm::SmallPtrSet<mlir::Value, 16> seen;
-            while (!values.empty())
+            if (auto *kept = walkBorrowed(readOp.getResult(), uses))
             {
-                auto [current, borrowed] = values.pop_back_val();
-                for (auto *valueUser : current.getUsers())
-                {
-                    uses.push_back(valueUser);
-                    if (borrowed)
-                    {
-                        if (mlir::isa<mlir_ts::CastOp>(valueUser) || isView(valueUser))
-                        {
-                            auto result = valueUser->getResult(0);
-                            if (mayPointInto(result) && seen.insert(result).second)
-                            {
-                                values.push_back({result, true});
-                            }
-
-                            continue;
-                        }
-
-                        if (mlir::isa<mlir_ts::RetainOp>(valueUser) || !isBorrow(valueUser, current))
-                        {
-                            reportBorrowEscapes(valueUser, name, owner);
-                            return false;
-                        }
-                    }
-
-                    for (auto result : valueUser->getResults())
-                    {
-                        if (mayPointInto(result) && seen.insert(result).second)
-                        {
-                            values.push_back({result, false});
-                        }
-                    }
-                }
+                reportBorrowEscapes(kept, name, owner);
+                return false;
             }
         }
 
@@ -362,6 +368,109 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return true;
     }
 
+    // What `use` hands the very value it uses on to, as that value: a cast or a view of it, the
+    // argument of the block a branch passes it to (a merge: `a ?? b`), or the reads of a local
+    // that owns nothing and is assigned it (`for (x of arr)` into an outer `let x`). Answers
+    // whether the use is one of those, even where nothing comes out of it.
+    static bool passesOn(mlir::OpOperand &use, llvm::SmallVectorImpl<mlir::Value> &values)
+    {
+        auto *user = use.getOwner();
+        if (mlir::isa<mlir_ts::CastOp>(user) || isView(user))
+        {
+            values.push_back(user->getResult(0));
+            return true;
+        }
+
+        if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+        {
+            if (auto argument = branchOp.getSuccessorBlockArgument(use.getOperandNumber()))
+            {
+                values.push_back(*argument);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == use.get())
+        {
+            if (auto varOp = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                varOp && !isOwningVariable(varOp) && !varOp.getCaptured().value_or(false))
+            {
+                for (auto *varUser : varOp.getResult().getUsers())
+                {
+                    if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(varUser))
+                    {
+                        values.push_back(loadOp.getResult());
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Where a borrowed value goes. Every use of it, and of what it produces that may still point
+    // into the block, joins `uses`. The value itself - through what passesOn hands it on to - must
+    // not be kept anywhere; what it produces - a field reference, a value loaded through one, a
+    // bound method, a catch clause's non-owning local - still points into the borrowed block, so
+    // each of its uses is a use of the borrow too. A value that cannot point anywhere (a number, a
+    // boolean) ends the walk. `isBorrower` accepts a use of the value itself that the caller
+    // follows on its own (a borrowing `let`). Answers the first use that would keep the value.
+    mlir::Operation *walkBorrowed(mlir::Value start, llvm::SmallVectorImpl<mlir::Operation *> &uses,
+                                  llvm::function_ref<bool(mlir::Operation *)> isBorrower = nullptr)
+    {
+        llvm::SmallVector<std::pair<mlir::Value, bool>> values{{start, true}};
+        llvm::SmallPtrSet<mlir::Value, 16> seen{start};
+        while (!values.empty())
+        {
+            auto [current, borrowed] = values.pop_back_val();
+            for (auto &use : current.getUses())
+            {
+                auto *user = use.getOwner();
+                uses.push_back(user);
+                if (borrowed)
+                {
+                    llvm::SmallVector<mlir::Value> same;
+                    if (passesOn(use, same))
+                    {
+                        for (auto value : same)
+                        {
+                            if (mayPointInto(value) && seen.insert(value).second)
+                            {
+                                values.push_back({value, true});
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    if (isBorrower && isBorrower(user))
+                    {
+                        continue;
+                    }
+
+                    if (mlir::isa<mlir_ts::RetainOp>(user) || !isBorrow(user, current))
+                    {
+                        return user;
+                    }
+                }
+
+                for (auto result : user->getResults())
+                {
+                    if (mayPointInto(result) && seen.insert(result).second)
+                    {
+                        values.push_back({result, false});
+                    }
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
     // Can a value of this type point into a heap block - a reference into one, a block of its own,
     // or a method bound to one? A number or a boolean read out of a borrowed block cannot.
     bool mayPointInto(mlir::Value value)
@@ -370,6 +479,462 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return mlir::isa<mlir_ts::RefType, mlir_ts::BoundRefType, mlir_ts::ValueRefType, mlir_ts::BoundFunctionType,
                          mlir_ts::HybridFunctionType, mlir_ts::ExtensionFunctionType, mlir_ts::OpaqueType>(type) ||
                ownsHeap(value);
+    }
+
+    // ---- Reads out of containers (spec 2.3, phase 3) ----
+    //
+    // `h.c` and `arr[i]` read a value the container owns. Such a read is a borrow: it may not be
+    // kept, and none of its uses - nor any use of what it produces - may run after something that
+    // may destroy it (spec 2.2's dropping mutations): an overwrite of a place on the way from the
+    // read up to its root, an array op that removes elements, an end of the root itself, or a call
+    // that may reach the root. A path back to a use through the read itself is a new borrow.
+
+    static bool isCall(mlir::Operation *op)
+    {
+        return mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp,
+                         mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(op);
+    }
+
+    static bool isPlace(mlir::Value ref)
+    {
+        return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(ref.getDefiningOp());
+    }
+
+    // A read of a heap value out of a field or an element, seen through its views. None for
+    // anything else.
+    mlir_ts::LoadOp placeReadOf(mlir::Value value)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || !isPlace(loadOp.getReference()) || !ownsHeap(loadOp.getResult()))
+        {
+            return {};
+        }
+
+        return loadOp;
+    }
+
+    // The places from a read up to its root, and the root: the value the function reached the
+    // first container through.
+    struct Chain
+    {
+        enum Kind
+        {
+            Slot,    // an owning local, or a value-type local reached by reference
+            Owned,   // a value this function made
+            NotOwned // a parameter, `this`, a global, anything else
+        };
+
+        // a field's position and reference type; an element is position -1
+        llvm::SmallVector<std::pair<int64_t, mlir::Type>> places;
+        mlir::Value root;
+        Kind kind = NotOwned;
+    };
+
+    Chain chainOf(mlir_ts::LoadOp read)
+    {
+        Chain chain;
+        auto ref = read.getReference();
+        while (true)
+        {
+            mlir::Value base;
+            if (auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                chain.places.push_back({propertyRefOp.getPosition(), propertyRefOp.getType()});
+                base = propertyRefOp.getObjectRef();
+            }
+            else
+            {
+                auto elementRefOp = ref.getDefiningOp<mlir_ts::ElementRefOp>();
+                chain.places.push_back({-1, elementRefOp.getType()});
+                base = elementRefOp.getArray();
+            }
+
+            base = rootOf(base);
+            if (isPlace(base))
+            {
+                ref = base; // a field of a value-type field: the same object
+                continue;
+            }
+
+            if (auto loadOp = base.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+            {
+                ref = loadOp.getReference();
+                continue;
+            }
+
+            chain.root = base;
+            if (base.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                chain.kind = Chain::Slot;
+            }
+            else if (auto slotLoad = slotLoadOf(base))
+            {
+                chain.root = slotLoad.getReference();
+                chain.kind = Chain::Slot;
+            }
+            else if (isFresh(base))
+            {
+                chain.kind = Chain::Owned;
+            }
+
+            return chain;
+        }
+    }
+
+    // Where the root stops holding what the chain reads: a local's releases and assignments and
+    // every declaration or retain that may move it away; a made value's releases and every use
+    // that takes it; a global's assignments.
+    llvm::SmallVector<mlir::Operation *> rootEnds(const Chain &chain)
+    {
+        llvm::SmallVector<mlir::Operation *> ends;
+        if (chain.kind == Chain::Slot)
+        {
+            for (auto *user : chain.root.getUsers())
+            {
+                if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::StoreOp>(user))
+                {
+                    ends.push_back(user);
+                }
+                else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    forEachUse(loadOp.getResult(), [&](mlir::Operation *use, mlir::Value) {
+                        auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(use);
+                        if (mlir::isa<mlir_ts::RetainOp>(use) || (varOp && isOwningVariable(varOp)))
+                        {
+                            ends.push_back(use);
+                        }
+                    });
+                }
+            }
+        }
+        else if (chain.kind == Chain::Owned)
+        {
+            forEachUse(chain.root, [&](mlir::Operation *use, mlir::Value used) {
+                if (mlir::isa<mlir_ts::ReleaseOp, mlir_ts::RetainOp>(use) || !isBorrow(use, used))
+                {
+                    ends.push_back(use);
+                }
+            });
+        }
+        else if (auto loadOp = chain.root.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto global = loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>())
+            {
+                getFunction().walk([&](mlir::Operation *op) {
+                    mlir::Value slot;
+                    if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+                    {
+                        slot = releaseSlotOp.getSlot();
+                    }
+                    else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+                    {
+                        slot = storeOp.getReference();
+                    }
+
+                    auto other = slot ? slot.getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+                    if (other && other.getGlobalName() == global.getGlobalName())
+                    {
+                        ends.push_back(op);
+                    }
+                });
+            }
+        }
+
+        return ends;
+    }
+
+    // What a call has to be given to reach the root: the root, and where the root is a local
+    // declared from another (a borrow, or a move that left the other dead), that one too.
+    static llvm::SmallVector<mlir::Value> rootSources(const Chain &chain)
+    {
+        llvm::SmallVector<mlir::Value> sources{chain.root};
+        auto value = chain.root;
+        while (auto varOp = value.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            if (!varOp.getInitializer() || sources.size() > 8)
+            {
+                break;
+            }
+
+            auto initializer = rootOf(varOp.getInitializer());
+            auto slotLoad = slotLoadOf(initializer);
+            value = slotLoad ? slotLoad.getReference() : initializer;
+            sources.push_back(value);
+        }
+
+        return sources;
+    }
+
+    // Everything that may point into what `start` points to: the forward closure over users'
+    // results that may point anywhere. A call's result is not followed: the call hands back a
+    // value it owns.
+    const llvm::DenseSet<mlir::Value> &derivedFrom(mlir::Value start)
+    {
+        if (auto found = derivedCache.find(start); found != derivedCache.end())
+        {
+            return *found->second;
+        }
+
+        auto &slot = derivedCache[start];
+        slot = std::make_shared<llvm::DenseSet<mlir::Value>>();
+        auto &derived = *slot;
+        llvm::SmallVector<mlir::Value> work{start};
+        while (!work.empty())
+        {
+            auto value = work.pop_back_val();
+            if (!derived.insert(value).second)
+            {
+                continue;
+            }
+
+            for (auto &use : value.getUses())
+            {
+                auto *user = use.getOwner();
+                if (isCall(user))
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<mlir::Value> next(user->getResults().begin(), user->getResults().end());
+                passesOn(use, next);
+                for (auto result : next)
+                {
+                    if (mayPointInto(result))
+                    {
+                        work.push_back(result);
+                    }
+                }
+            }
+        }
+
+        return derived;
+    }
+
+    // May this op of the function's drops destroy what the chain reads? An overwrite of a place
+    // on it, matched by position and type (two references to one field of one object always
+    // agree on both; an unrelated field that happens to agree only adds an error); an array op
+    // that removes elements of the type of an element on it; a call - any call, for a root this
+    // function does not own, since the owner may be a global the callee assigns; else one given
+    // something derived from the root that the read did not produce.
+    bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir_ts::LoadOp read)
+    {
+        if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop))
+        {
+            auto slot = releaseSlotOp.getSlot();
+            int64_t position = -1;
+            if (auto propertyRefOp = slot.getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                position = propertyRefOp.getPosition();
+            }
+
+            return llvm::any_of(chain.places, [&](auto &place) {
+                return place.first == position && place.second == slot.getType();
+            });
+        }
+
+        if (isCall(drop))
+        {
+            if (chain.kind == Chain::NotOwned)
+            {
+                return true;
+            }
+
+            auto &fromRead = derivedFrom(read.getResult());
+            auto sources = rootSources(chain);
+            return llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
+                return !fromRead.contains(operand) && llvm::any_of(sources, [&](mlir::Value source) {
+                           return derivedFrom(source).contains(operand);
+                       });
+            });
+        }
+
+        // pop, shift, splice, `length =`
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(drop->getOperand(0).getType());
+        auto arrayType = refType ? mlir::dyn_cast<mlir_ts::ArrayType>(refType.getElementType()) : mlir_ts::ArrayType();
+        if (!arrayType)
+        {
+            return true;
+        }
+
+        return llvm::any_of(chain.places, [&](auto &place) {
+            auto placeType = mlir::dyn_cast<mlir_ts::RefType>(place.second);
+            return place.first == -1 && placeType && placeType.getElementType() == arrayType.getElementType();
+        });
+    }
+
+    // The uses of what `read` returned and of everything it produces that may still point into
+    // the block (walkBorrowed). A retain or a taking use is reported and answers false.
+    bool collectReadUses(mlir_ts::LoadOp read, llvm::StringRef name, llvm::StringRef place,
+                         llvm::SmallVectorImpl<mlir::Operation *> &uses)
+    {
+        if (auto *kept = walkBorrowed(read.getResult(), uses))
+        {
+            reportPlaceBorrowEscapes(kept, name, place);
+            return false;
+        }
+
+        return true;
+    }
+
+    // A read out of a container is a borrow of it (spec 2.3). Reports and returns false when it
+    // is kept, or used after something that may destroy it.
+    bool checkPlaceRead(mlir_ts::LoadOp read, llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto name = ownerName(read.getResult());
+        auto place = describePlace(read.getReference());
+        llvm::SmallVector<mlir::Operation *> uses;
+        if (!collectReadUses(read, name, place, uses))
+        {
+            return false;
+        }
+
+        auto chain = chainOf(read);
+        auto outlives = [&](mlir::Operation *drop) {
+            for (auto *use : uses)
+            {
+                // a call's own arguments are read before it runs
+                if (use != drop && reachableAfter(drop, use, read))
+                {
+                    reportPlaceBorrowOutlives(use, drop, name, place);
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        for (auto *end : rootEnds(chain))
+        {
+            if (outlives(end))
+            {
+                return false;
+            }
+        }
+
+        for (auto *drop : drops)
+        {
+            if (dropsChain(drop, chain, read) && outlives(drop))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // `'h.c'`, `'arr[]'`, `'h.c.v'` - or `a field`, `an element` when the root has no name (a
+    // temporary, or no --di).
+    std::string describePlace(mlir::Value ref)
+    {
+        auto path = pathOf(ref);
+        if (path.empty())
+        {
+            return ref.getDefiningOp<mlir_ts::ElementRefOp>() ? "an element" : "a field";
+        }
+
+        return "'" + path + "'";
+    }
+
+    std::string pathOf(mlir::Value ref)
+    {
+        mlir::Value base;
+        std::string step;
+        if (auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>())
+        {
+            auto field = fieldName(propertyRefOp);
+            if (field.empty())
+            {
+                return {};
+            }
+
+            base = propertyRefOp.getObjectRef();
+            step = "." + field;
+        }
+        else if (auto elementRefOp = ref.getDefiningOp<mlir_ts::ElementRefOp>())
+        {
+            base = elementRefOp.getArray();
+            step = "[]";
+        }
+        else
+        {
+            return {};
+        }
+
+        base = rootOf(base);
+        std::string prefix;
+        if (isPlace(base))
+        {
+            prefix = pathOf(base);
+        }
+        else if (auto loadOp = base.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            auto from = loadOp.getReference();
+            if (isPlace(from))
+            {
+                prefix = pathOf(from);
+            }
+            else if (auto varOp = from.getDefiningOp<mlir_ts::VariableOp>())
+            {
+                prefix = varName(varOp).str();
+            }
+            else if (auto global = from.getDefiningOp<mlir_ts::AddressOfOp>())
+            {
+                prefix = global.getGlobalName().str();
+            }
+        }
+        else if (auto varOp = base.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            prefix = varName(varOp).str();
+        }
+        else
+        {
+            prefix = ownerName(base).str();
+        }
+
+        // a name MLIRGen made up (`.a`, the array a `for...of` walks) means nothing to the reader
+        if (prefix.empty() || prefix == "this value" || prefix.front() == '.')
+        {
+            return {};
+        }
+
+        return prefix + step;
+    }
+
+    static std::string fieldName(mlir_ts::PropertyRefOp propertyRefOp)
+    {
+        auto type = propertyRefOp.getObjectRef().getType();
+        if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+        {
+            type = refType.getElementType();
+        }
+
+        if (auto classType = mlir::dyn_cast<mlir_ts::ClassType>(type))
+        {
+            type = classType.getStorageType();
+        }
+
+        auto position = propertyRefOp.getPosition();
+        mlir::Attribute id;
+        if (auto storageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(type); storageType && position < storageType.size())
+        {
+            id = storageType.getId(position);
+        }
+        else if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type); tupleType && position < tupleType.size())
+        {
+            id = tupleType.getId(position);
+        }
+
+        if (auto name = mlir::dyn_cast_or_null<mlir::StringAttr>(id))
+        {
+            return name.str();
+        }
+
+        if (auto name = mlir::dyn_cast_or_null<mlir::FlatSymbolRefAttr>(id))
+        {
+            return name.getValue().str();
+        }
+
+        return {};
     }
 
     // The name of a temporary that owns: a folded `const` has no ts.Variable, but under --di it
@@ -557,6 +1122,18 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return true;
         }
 
+        // a test - `if (d)`, `d?.x`, `typeof u` - asks about the value, and keeps nothing
+        if (mlir::isa<mlir_ts::HasValueOp, mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::TypeOfOp,
+                      mlir_ts::TypeOfAnyOp>(user))
+        {
+            return true;
+        }
+
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
+        {
+            return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1);
+        }
+
         // arguments are borrowed; a callee that keeps one retains it, and that retain is its own
         // error
         if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp,
@@ -603,8 +1180,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     {
         // Nothing to move: a number owns no block, and a string literal is the immortal global,
         // which any number of places may hold. Under --opt, CSE merges identical literals before
-        // this pass, so one such value is routinely stored into several places.
-        if (!ownsHeap(value) || isImmortalLiteral(value))
+        // this pass, so one such value is routinely stored into several places. A read out of a
+        // container owns nothing either: checkPlaceRead decides it.
+        if (!ownsHeap(value) || isImmortalLiteral(value) || placeReadOf(value))
         {
             return true;
         }
@@ -1132,6 +1710,31 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         auto diag = use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
                                         << "' is released or overwritten";
         diag.attachNote(end->getLoc()) << "'" << owner << "' is released or overwritten here";
+        signalPassFailure();
+    }
+
+    void reportPlaceBorrowOutlives(mlir::Operation *use, mlir::Operation *drop, llvm::StringRef name,
+                                   llvm::StringRef place)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        auto diag = use->emitError("'") << name << "' borrows " << place
+                                        << " but is used here after it may be released or overwritten";
+        diag.attachNote(drop->getLoc()) << "it may be released or overwritten here";
+        signalPassFailure();
+    }
+
+    void reportPlaceBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << name << "' borrows " << place << " and cannot be stored, returned or captured";
         signalPassFailure();
     }
 

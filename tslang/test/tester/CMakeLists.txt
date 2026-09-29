@@ -2405,7 +2405,9 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_literal_reuse own_move_control_flow
                  own_borrow_inner_let own_borrow_loop own_borrow_branch
                  own_borrow_two_lets own_borrow_nullable
-                 own_union_nullable own_union_tagged own_union_optional)
+                 own_union_nullable own_union_tagged own_union_optional
+                 own_field_borrow own_element_borrow own_container_loop
+                 own_optional_access own_borrow_merge)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2454,6 +2456,18 @@ set(own_error_cases
     "own_err_field_loop|is moved inside a loop"
     "own_err_interface|takes a second reference"
     "own_err_union_moved|is used here after its value was moved"
+    "own_err_field_read_overwritten|borrows .* but is used here after it may be released or overwritten"
+    "own_err_element_read_overwritten|borrows .* but is used here after it may be released or overwritten"
+    "own_err_element_read_popped|borrows .* but is used here after it may be released or overwritten"
+    "own_err_element_read_loop_pop|borrows .* but is used here after it may be released or overwritten"
+    "own_err_field_read_owner_assigned|borrows .* but is used here after it may be released or overwritten"
+    "own_err_field_read_owner_moved|borrows .* but is used here after it may be released or overwritten"
+    "own_err_field_read_call|borrows .* but is used here after it may be released or overwritten"
+    "own_err_param_read_call|borrows .* but is used here after it may be released or overwritten"
+    "own_err_global_read_assigned|borrows .* but is used here after it may be released or overwritten"
+    "own_err_merge_read_overwritten|borrows .* but is used here after it may be released or overwritten"
+    "own_err_alias_read_popped|borrows .* but is used here after it may be released or overwritten"
+    "own_err_container_read_stored|borrows .* and cannot be stored, returned or captured"
     "own_err_delete|'delete' is not supported by -mm=own yet")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
