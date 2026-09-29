@@ -2598,11 +2598,12 @@ add_test(NAME test-compile-reference-path-import-cycle-quiet
                  "${reference_path_dir}/cycle_class_node.ts" -o "${CMAKE_CURRENT_BINARY_DIR}/cycle_class_node.obj")
 set_tests_properties(test-compile-reference-path-import-cycle-quiet PROPERTIES FAIL_REGULAR_EXPRESSION "error:")
 
-# An import pointing to a .ts file includes it with its bodies: a program run on its own found no
-# `S..new` for the imported class, which was only declared.
+# Under the JIT an import pointing to a .ts file includes it with its bodies: a program run on its
+# own found no `S..new` for the imported class, which was only declared. Compiled, the import is a
+# declaration and the module's own object is linked beside it.
 set(import_source_dir "${PROJECT_SOURCE_DIR}/test/tester/import-source")
 tslang_add_test(NAME test-jit-import-source-new-imported-class COMMAND test-runner -jit "${import_source_dir}/new_imported_class.ts")
-tslang_add_test(NAME test-compile-import-source-new-imported-class COMMAND test-runner "${import_source_dir}/new_imported_class.ts")
+tslang_add_import_tests(import-source-new-imported-class "${import_source_dir}" new_imported_class imported_class_module)
 
 # `import { a as b }` and `import * as M` - each used to be "can't resolve name".
 set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
