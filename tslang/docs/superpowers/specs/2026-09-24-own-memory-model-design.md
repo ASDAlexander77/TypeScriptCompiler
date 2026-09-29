@@ -393,21 +393,51 @@ load, an immortal check and the destroy.
 
 ### 11.1 What phase 0 accepts
 
-A retain is erased when its value is fresh and has exactly one acquisition in the function,
-counting births and retains: rc's count for that block provably never exceeds one. Fresh means
-made by `ts.New`, `ts.CreateArray`, `ts.NewArray`, `ts.StringConcat` or `ts.CharToString`,
-carrying `__owned_result`, or a cast of a constant (a string literal or a constant array). The
-last of these was added during implementation, because `let s = "abc"` and `v: number[] = []`
-were rejected. A cast constant is the immortal global, which a release skips, or a copy with
-one owner, which a release destroys, so it is correct either way when acquired once.
+Owners are counted from the uses of a heap value, not from rc's retains. rc also transfers
+ownership by *consuming* a value, which leaves no retain behind: a declaration marked
+`__owned_consumed`, a push, a field store. The first implementation counted retain ops, and the
+whole-branch review found programs that compiled and then double-freed: `const c = new C()`
+pushed in a loop, pushed and then held by a `let`, or taken by two `let`s. `delete` was a
+further problem, because it destroys a value that its slot releases again at scope exit.
 
-Everything else is an error. That covers a retain of a loaded or unknown value, two
-acquisitions of one fresh value, any `ts.RetainCell`, a `RetainSlot` on a variable hoisted in
-front of a `try`, and a captured variable holding a heap value. A retain that reaches LLVM
-lowering is a backstop error, never erased.
+The rule as built:
 
-The plan's "released but never owned" rule was dropped. The ownership verifier checks a
-stricter form of it and is green over the whole corpus, so no program reaches it.
+- A **taking use** of a value V is one of these: a declaration marked `__owned` or
+  `__owned_consumed` whose initializer is V; a `ts.Store` of V into any reference (a field, an
+  element, a global or a return slot); an insertion of V by push, unshift or splice; a return;
+  and any use not on a short borrow list. The borrow list is print, calls, property and element
+  references, `length`, method and `this` references, arithmetic, comparison, concatenation, a
+  non-owning declaration, `--di`'s `ts.DebugVariable`, and the retain/release bookkeeping.
+- **Owners** of V are its taking uses, plus one if V is released as a temporary. There must be
+  at most one owner. Zero is a leak, as under rc.
+- **Locality**: the taking use is in V's defining block, and nothing uses V after it. That one
+  check rejects a move inside a loop (§2.6), a move on one branch, and use after move, with no
+  liveness analysis. Phase 1 relaxes it.
+- A **fresh** V is made by `ts.New`, `ts.CreateArray`, `ts.NewArray`, `ts.StringConcat` or
+  `ts.CharToString`, by a non-call op marked `__owned_result`, by a cast of a constant, or by a
+  direct call of a function defined in this module. Every function returns its result retained
+  (rc §9.24), and the call's own `__owned_result` mark does not survive the affine lowering.
+  Only a fresh V's retains are erased. A retain of anything else is an error, and so is a
+  retain of a variable hoisted in front of a `try`.
+- A cast of a constant is the immortal global, which a release skips, or a copy with one owner,
+  which a release destroys. It was added because `let s = "abc"` and `v: number[] = []` were
+  rejected.
+- `delete`, `ts.RetainCell` (any captured variable, even a number) and a captured variable
+  holding a heap value are errors in phase 0. A retain that reaches LLVM lowering is a
+  backstop error.
+
+Interface and `any` boxing count as a second owner beside the temporary, so they are rejected.
+That is phase 3.
+
+The planned "released but never owned" rule was dropped on the premise that no program reaches
+it. The premise was wrong: rc's latent over-releases are reachable through consumption and
+`delete`, as shown above. What closes them is counting consumptions as owners and rejecting
+`delete`, not that rule. The ownership verifier now runs *before* inference under own, so
+`--verify-ownership` checks rc's pairing on the IR as MLIRGen made it.
+
+Every probe from the review (32 programs) is now either rejected or produces gc's output under
+own AOT. Several of them also mis-run under `-mm=rc`, so the rc model has latent
+over-releases of its own; they are listed in the final report for a separate fix.
 
 ### 11.2 Measured
 
@@ -441,5 +471,9 @@ Tested both ways:
 - An owned local declared inside a `try` body is rejected, because its storage is hoisted.
 - A class field initialized from a parameter, an alias through `let`, and a store of a local
   into a field are all rejected (a retain of a load).
-- Closures that capture heap values are rejected.
+- Closures are rejected, whatever they capture: every captured variable's cell gets a
+  `ts.RetainCell`.
+- Interface and `any` boxing, `delete`, a callee that keeps its parameter (`g = c` retains a
+  value the callee does not own; spec §2.4's owned-by-callee parameter is phase 4), and a move
+  out of the value's own block are all rejected.
 - Results of runtime helpers and `declare`d functions are rejected.

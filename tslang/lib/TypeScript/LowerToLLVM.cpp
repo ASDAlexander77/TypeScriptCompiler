@@ -5728,7 +5728,10 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         // generated first: the descriptor's initializer takes their addresses
         OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+        // under own nothing retains: see TypeDescriptorOpLowering
+        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
+                                     ? std::string()
+                                     : orl.getOrCreateRetainRoutine(thisType);
 
         LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),

@@ -134,16 +134,17 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         // Ahead of the optimisation passes, so it checks what MLIRGen and the affine lowering
         // actually produced rather than what the inliner left of it, and after the lowering,
         // because that is what turns unwind paths into ordinary CFG edges.
-        // Under own, before the verifier so it checks the IR that will be lowered: inference
+        if (verifyOwnership)
+        {
+            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipVerifierPass());
+        }
+
+        // Under own, after the verifier: the verifier pairs rc's acquisitions with their
+        // releases, and inference erases the acquisitions it proves are the one owner's. Inference
         // either erases a retain or reports it, and a program it reports stops here.
         if (compileOptions.memoryModel == MemoryModelOwn && !ownSkipInference)
         {
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
-        }
-
-        if (verifyOwnership)
-        {
-            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipVerifierPass());
         }
 
 #ifdef ENABLE_OPT_PASSES

@@ -2405,13 +2405,26 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error|Stack dump")
 endforeach()
 
+# The ownership verifier runs under own too, on the IR before inference erases its birth takes.
+add_test(NAME test-own-verify-ownership
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own --verify-ownership
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_array.ts")
+set_tests_properties(test-own-verify-ownership PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
 # Each negative program has one shape phase 0 cannot prove, and must be rejected with this text.
 set(own_error_cases
     "own_err_alias|takes a second reference"
     "own_err_field_alias|takes a second reference"
-    "own_err_closure|closures that capture a heap value are not supported"
+    "own_err_closure|closures that capture a variable are not supported"
     "own_err_unknown_producer|takes a second reference"
-    "own_err_two_owners|takes a second reference")
+    "own_err_two_owners|takes a second reference"
+    "own_err_const_twice|takes a second reference"
+    "own_err_push_let|takes a second reference"
+    "own_err_push_loop|is given an owner in another block"
+    "own_err_field_loop|is given an owner in another block"
+    "own_err_use_after_move|is used after its value was moved"
+    "own_err_interface|takes a second reference"
+    "own_err_delete|'delete' is not supported by -mm=own yet")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
