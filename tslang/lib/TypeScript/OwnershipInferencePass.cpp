@@ -653,14 +653,16 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // `bookkeeping`, not `uses`, and the return itself is a use, not a keep.
     struct Keeping
     {
-        llvm::SmallVectorImpl<mlir::Operation *> *bookkeeping = nullptr;
-        bool returns = false;
+        // no default member initializers: GCC rejects them in a default argument of the class
+        // that encloses the struct
+        llvm::SmallVectorImpl<mlir::Operation *> *bookkeeping;
+        bool returns;
     };
 
     mlir::Operation *walkBorrowed(
         mlir::Value start, llvm::ArrayRef<mlir::Operation *> kills, llvm::SmallVectorImpl<BorrowUse> &uses,
         llvm::function_ref<bool(mlir::Operation *, llvm::ArrayRef<mlir::Operation *>)> isBorrower = nullptr,
-        Keeping keeping = {})
+        Keeping keeping = Keeping{nullptr, false})
     {
         struct Pending
         {
