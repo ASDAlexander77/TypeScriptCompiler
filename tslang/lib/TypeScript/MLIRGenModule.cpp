@@ -1086,8 +1086,11 @@ namespace mlirgen
         filesInProgress.insert(canonicalPath);
         auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
 
+        // An import that points to a .ts file includes it with its bodies, as a referenced file
+        // is; only an import that points to a library (mlirGenImportSharedLib) takes the bodies
+        // from the library. A .d.ts is read as declarations either way.
         MLIRValueGuard<bool> vg(declarationMode);
-        declarationMode = true;
+        declarationMode = false;
 
         // What the imported module exports is its own to export: it is compiled separately, with
         // its declarations in its own __decls. Added to this module's too, a library holding both
