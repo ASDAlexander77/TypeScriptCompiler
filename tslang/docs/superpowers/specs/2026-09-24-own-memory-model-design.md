@@ -508,7 +508,10 @@ statements are already `cf.br`/`cf.cond_br` between blocks.
   store would leave that release alive.
 - **Use after move.** Any other use of the source reachable from the taker, without passing the
   source's definition (its producer, or the slot's `ts.Variable`), is an error: `'a' is used here
-  after its value was moved`, with a note at the move. For a slot that includes an assignment.
+  after its value was moved`, with a note at the move. For a slot that includes an assignment, and
+  every use of what *any* read of the slot returned: `const b = a` is folded into a `ts.Load` of
+  `a`'s slot, so `b.x` after `a` moves reads the moved value through a load that came before the
+  move (found by the final review: it compiled and read freed memory).
 - **Loops (§2.6).** A taker control comes back to without the value being made again is `moved
   inside a loop but was made outside it`. A move out of a `let` declared in the loop body is fine:
   each iteration passes the declaration.
@@ -520,7 +523,11 @@ statements are already `cf.br`/`cf.cond_br` between blocks.
   a second owner (§11.1).
 
 Also changed: a cast of `null` or `undefined` counts as a literal, so `c: C | null = null`
-compiles; and under `--di` the errors name the variable, read from MLIRGen's `NameLoc`.
+compiles; under `--di` the errors name the variable, read from MLIRGen's `NameLoc`; and only a
+value whose type owns heap memory is a candidate, while a string literal (the immortal global)
+may be held by any number of places. Under `--opt`, and so under the JIT, CSE merges identical
+literals before inference; one merged `0` stored into a variable inside a loop and before it was
+reported as a move inside a loop.
 
 ### 12.2 Measured
 
@@ -550,7 +557,11 @@ after the move. The loop cases report `is moved inside a loop`.
 ### 12.5 Known limits (the input to phase 2)
 
 - Borrows (§2.2 verdict 2): a value read after it was stored into a field or a local, a value
-  made outside a loop and used as an owner inside it.
+  made outside a loop and used as an owner inside it, and a `const` alias of a `let` held across
+  the `let`'s move (`const b = a; let c = a; ... b.x`).
+- A `const` alias of a `let` held across an *assignment* of the `let` (`const b = a; a = new C();
+  b.x`) is not caught: the assignment is not a move, and it destroys what `b` reads. rc has the
+  same bug today (it prints garbage); own inherits it until phase 2's dropping-mutation rule.
 - A move on some paths only: needs drop elaboration, releasing on the paths that did not move.
 - Assigning a moved `let`: rc's assignment releases what the slot holds, the moved value.
 - Moves out of fields, parameters, and through boxing casts; moves into a nested region's op

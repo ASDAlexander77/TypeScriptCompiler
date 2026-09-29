@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -84,7 +85,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
             for (auto result : op->getResults())
             {
-                if (isFresh(result))
+                if (isFresh(result) && ownsHeap(result))
                 {
                     candidates.insert(result);
                 }
@@ -193,6 +194,21 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         return def->hasAttr(OWNED_RESULT_ATTR_NAME) || isLiteral(def);
     }
 
+    // Does a value of this type own a block that a release would destroy?
+    bool ownsHeap(mlir::Value value)
+    {
+        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        return mth.ownsHeapMemory(value.getLoc(), value.getType());
+    }
+
+    // A string constant cast to `string` is the global itself, which a release skips.
+    static bool isImmortalLiteral(mlir::Value value)
+    {
+        auto castOp = value.getDefiningOp<mlir_ts::CastOp>();
+        return castOp && mlir::isa<mlir_ts::StringType>(castOp.getType()) &&
+               castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
+    }
+
     // A string literal or a constant array cast to its value type. The result is either the
     // immortal global itself, which a release skips, or a copy nobody else holds, which a
     // release destroys - so, owned once, it has one owner either way. `null` and `undefined`
@@ -271,6 +287,14 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // Reports and returns false otherwise.
     bool checkValueMoves(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
+        // Nothing to move: a number owns no block, and a string literal is the immortal global,
+        // which any number of places may hold. Under --opt, CSE merges identical literals before
+        // this pass, so one such value is routinely stored into several places.
+        if (!ownsHeap(value) || isImmortalLiteral(value))
+        {
+            return true;
+        }
+
         llvm::SmallVector<mlir::Operation *> takers;
         llvm::SmallVector<mlir::Operation *> releases;
         llvm::SmallVector<mlir::Operation *> reads;
@@ -550,31 +574,29 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return false;
         }
 
+        // Every read of the slot is a use of `a`, and so is every use of what a read returned: a
+        // `const b = a` is folded into its load, so `b.x` after the move reads the moved value
+        // through a load that came before it.
         for (auto *use : slot.getUsers())
         {
-            if (use == load.getOperation() || mlir::isa<mlir_ts::ReleaseSlotOp>(use))
+            if (mlir::isa<mlir_ts::ReleaseSlotOp>(use))
             {
                 continue;
             }
 
-            if (reachableAfter(taker, use, varOp))
+            if (use != load.getOperation() && reachableAfter(taker, use, varOp))
             {
                 reportUseAfterMove(use, taker, name);
                 return false;
             }
-        }
 
-        for (auto *use : value.getUsers())
-        {
-            if (use == retain || use == taker || mlir::isa<mlir_ts::RetainOp>(use))
+            if (auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(use))
             {
-                continue;
-            }
-
-            if (reachableAfter(taker, use, load))
-            {
-                reportUseAfterMove(use, taker, name);
-                return false;
+                if (auto *late = readUsedAfter(readOp, retain, taker, varOp))
+                {
+                    reportUseAfterMove(late, taker, name);
+                    return false;
+                }
             }
         }
 
@@ -598,6 +620,38 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         toErase.insert(moved.begin(), moved.end());
         return true;
+    }
+
+    // A use of what `read` returned - directly or through casts - that the move at `taker` can
+    // reach, other than the move's own retain and taker. None if there is none.
+    mlir::Operation *readUsedAfter(mlir_ts::LoadOp read, mlir::Operation *retain, mlir::Operation *taker,
+                                   mlir::Operation *kill)
+    {
+        llvm::SmallVector<mlir::Value> values{read.getResult()};
+        while (!values.empty())
+        {
+            auto current = values.pop_back_val();
+            for (auto *user : current.getUsers())
+            {
+                if (user == retain || user == taker || mlir::isa<mlir_ts::RetainOp>(user))
+                {
+                    continue;
+                }
+
+                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
+                {
+                    values.push_back(castOp.getResult());
+                    continue;
+                }
+
+                if (reachableAfter(taker, user, kill))
+                {
+                    return user;
+                }
+            }
+        }
+
+        return nullptr;
     }
 
     // Where rc takes the receiver's reference: its `ts.Retain` of the value, when that comes
