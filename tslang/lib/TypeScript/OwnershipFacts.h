@@ -380,10 +380,19 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
     }
 
     auto *def = value.getDefiningOp();
+    // out of an opaque pointer, out of an interface (its `this`), or reading an interface value
+    // back out of an `any` box: the same block
     if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
-        castOp && mlir::isa<mlir_ts::OpaqueType>(castOp.getIn().getType()))
+        castOp && (mlir::isa<mlir_ts::OpaqueType, mlir_ts::InterfaceType>(castOp.getIn().getType()) ||
+                   (mlir::isa<mlir_ts::AnyType>(castOp.getIn().getType()) &&
+                    mlir::isa<mlir_ts::InterfaceType>(castOp.getType()))))
     {
         return borrowedParam(castOp.getIn(), depth + 1);
+    }
+
+    if (auto extractOp = mlir::dyn_cast_or_null<mlir_ts::ExtractInterfaceThisOp>(def))
+    {
+        return borrowedParam(extractOp.getOperand(), depth + 1);
     }
 
     if (auto unboxOp = mlir::dyn_cast_or_null<mlir_ts::UnboxOp>(def))

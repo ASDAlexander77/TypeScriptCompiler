@@ -1675,6 +1675,19 @@ genContext);
             return result;
         }
 
+        // slot 0: the class's own `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS), ahead of the
+        // interface's members, so an interface value can be asked what class it holds. A class
+        // with no `.instanceOf` (no vtable of its own) is an instance of nothing it can answer for.
+        if (auto *instanceOf = newClassPtr->findMethod(INSTANCEOF_NAME))
+        {
+            virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(*instanceOf));
+        }
+        else
+        {
+            auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
+            virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
+        }
+
         // a method implementing this interface can itself be owned by a dynamically imported
         // class (not just a base of it) - such a slot can't be a link-time constant SymbolRefOp
         // and must be resolved at runtime instead (see the dynamic-import handling in the method

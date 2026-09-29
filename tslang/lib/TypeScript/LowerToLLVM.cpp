@@ -5605,8 +5605,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                              MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        auto methodOrFieldPtr =
-            rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex());
+        // the vtable starts with the implementer's `.instanceOf` - see INTERFACE_VTABLE_HEADER_SLOTS
+        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
+            loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
 
         if (auto boundFunc = dyn_cast<mlir_ts::BoundFunctionType>(interfaceSymbolRefOp.getType()))
         {
