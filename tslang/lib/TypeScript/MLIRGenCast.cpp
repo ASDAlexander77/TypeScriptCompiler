@@ -1,6 +1,7 @@
 // Cast-family methods of MLIRGenImpl (see MLIRGenImpl.h).
 
 #include "MLIRGenImpl.h"
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 
 namespace typescript
 {
@@ -270,7 +271,66 @@ namespace mlirgen
         return NewClassInstanceWithSettingFields(location, classType, fields, values, genContext);
     }    
 
-    ValueOrLogicalResult MLIRGenImpl::castFieldsToClass(mlir::Location location, mlir::Value value, 
+    // `<C>i`, `i as C`, or narrowing by `i instanceof C`: the interface holds an object, and if that
+    // object is a C, the result is that very object - asked through slot 0 of the interface's
+    // vtable (INTERFACE_VTABLE_HEADER_SLOTS). If it is not (another class, or an object literal),
+    // there is no C to hand back, and the cast throws, as `<C>anyValue` does. It used to build a
+    // new C out of the interface's fields, which crashed the compiler for any class with a field
+    // the interface does not name - `class B implements I` with a field `x` was enough.
+    ValueOrLogicalResult MLIRGenImpl::castInterfaceToClass(mlir::Location location, mlir::Value value,
+        mlir_ts::ClassType classType, const GenContext &genContext)
+    {
+        // Where every field of the class is a field of the interface, the old conversion - a new
+        // C filled from the interface's fields - still answers for what is not a C, as before.
+        auto fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
+        auto interfaceInfo = getInterfaceInfoByFullName(mlir::cast<mlir_ts::InterfaceType>(value.getType()).getName().getValue());
+        auto fieldsInInterface = interfaceInfo && llvm::all_of(fields, [&](auto &field) {
+            auto name = dyn_cast_or_null<mlir::StringAttr>(field.id);
+            return (name && name.getValue().starts_with(".")) || interfaceInfo->findField(field.id);
+        });
+
+        auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
+            location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
+        auto isInstance = mlirGenInstanceOfInterface(location, value, classRefVal, genContext);
+        if (isInstance.failed_or_no_value())
+        {
+            return mlir::failure();
+        }
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        return mclh.conditionalValue(
+            V(isInstance),
+            [&]() {
+                auto thisPtr = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), value);
+                return ValueOrLogicalResult(builder.create<mlir_ts::CastOp>(location, classType, thisPtr));
+            },
+            [&](mlir::Type) {
+                if (fieldsInInterface)
+                {
+                    return castFieldsToClass(location, value, fields, classType, genContext);
+                }
+
+                auto message = builder.create<mlir_ts::ConstantOp>(location, getStringType(),
+                                                                   getStringAttr("Can't cast from interface"));
+                builder.create<mlir_ts::ThrowOp>(location, message);
+
+                MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
+                setCatchCopyThunkBuilder(rtti);
+                if (!rtti.setRTTIForType(location, message.getType(), [&](StringRef classFullName) {
+                        return getClassInfoByFullName(classFullName);
+                    }))
+                {
+                    emitError(location, "Not supported type in throw");
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                // not reached; the branch still needs a value of the class type
+                auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                return ValueOrLogicalResult(builder.create<mlir_ts::CastOp>(location, classType, nullValue));
+            });
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::castFieldsToClass(mlir::Location location, mlir::Value value,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, 
         mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning)
     {
@@ -1177,8 +1237,7 @@ namespace mlirgen
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
-                return castFieldsToClass(location, value, fields, classType, genContext);
+                return castInterfaceToClass(location, value, classType, genContext);
             }
         }
 
@@ -1691,7 +1750,7 @@ namespace mlirgen
 
         StringMap<boolean> typeOfs;
         SmallVector<mlir::Type> classInstances;
-        ss << S("function __unbox<T>(a: any) : T {\n");
+        ss << S("function __unbox<T>(a: any) : T {\nconst b = a;\n");
         auto subType = type;
         auto hasUnsupportedType = false;
         mlir::TypeSwitch<mlir::Type>(subType)
@@ -1749,6 +1808,24 @@ namespace mlirgen
                 }
 
                 ss << S(" }\n");
+
+                // An `any` holding an interface value holds an object behind it, which may be one
+                // of these classes: the interface's vtable answers (INTERFACE_VTABLE_HEADER_SLOTS).
+                // `b` is `a` before `typeof` narrowed it to the first word of the box.
+                if (!typeOfs.contains("interface"))
+                {
+                    ss << S(" else if (typeof a == 'interface') { const i = <TYPE_ANY_INTERFACE_ALIAS>b;\n");
+                    for (auto [index, _] : enumerate(classInstances))
+                    {
+                        ss << S("if (i instanceof TYPE_INST_ALIAS");
+                        ss << index;
+                        ss << S(") return <TYPE_INST_ALIAS");
+                        ss << index;
+                        ss << S(">i;\n");
+                    }
+
+                    ss << S(" }\n");
+                }
             }
             else
             {
@@ -1830,17 +1907,24 @@ namespace mlirgen
             funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
         }
 
+        // Any interface type will do to read an interface value back out of the box: they all
+        // lower to one layout, and nothing but the vtable and `this` is read from it. A private
+        // name of its own keeps it from being looked up as a declared interface.
+        funcCallGenContext.typeAliasMap.insert(
+            {"TYPE_ANY_INTERFACE_ALIAS",
+             mlir_ts::InterfaceType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), ".any_interface"))});
+
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
         return mlirGenCallExpression(
-            location, 
-            funcResult, 
-            { 
-                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()), 
-            }, 
-            operands, 
+            location,
+            funcResult,
+            {
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()),
+            },
+            operands,
             funcCallGenContext);
     }
 

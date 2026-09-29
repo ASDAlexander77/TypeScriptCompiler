@@ -288,8 +288,8 @@ namespace mlirgen
                     LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
                                             << "\n\t object method ref: " << V(methodRef) << "\n\n";);
 
-                    // where to save
-                    auto combinedVirtualIndex = method.virtualIndex + vtableOffset;
+                    // where to save; the vtable starts with `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS)
+                    auto combinedVirtualIndex = method.virtualIndex + vtableOffset + INTERFACE_VTABLE_HEADER_SLOTS;
                     auto fieldInfoVT = mth.getFieldInfoByIndex(vtableType, combinedVirtualIndex);
                     auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, combinedVirtualIndex);
 
@@ -307,6 +307,47 @@ namespace mlirgen
         }
 
         return mlir::failure();
+    }
+
+    // The `.instanceOf` of an object literal cast to an interface: it is an instance of no class.
+    // One per module, private, with the same signature as a class's `.instanceOf` reached through
+    // a vtable (`this`, the asked class's rtti) - see INTERFACE_VTABLE_HEADER_SLOTS.
+    MethodInfo MLIRGenImpl::mlirGenNoInstanceOfFunction(mlir::Location location)
+    {
+        MethodInfo methodInfo;
+        methodInfo.name = INSTANCEOF_NAME;
+        methodInfo.funcName = INSTANCEOF_NONE_NAME;
+        methodInfo.funcType = getFunctionType({getOpaqueType(), getStringType()}, {getBooleanType()}, false);
+        methodInfo.isStatic = false;
+        methodInfo.isVirtual = true;
+        methodInfo.isAbstract = false;
+        methodInfo.virtualIndex = INTERFACE_VTABLE_INSTANCEOF_SLOT;
+        methodInfo.orderWeight = 0;
+        methodInfo.accessLevel = mlir_ts::AccessLevel::Public;
+
+        if (theModule.lookupSymbol(INSTANCEOF_NONE_NAME))
+        {
+            return methodInfo;
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+
+        // compiler glue with no source to step through: no location, so no debug scope to get
+        // wrong (the caller's location is inside whatever function the cast is in)
+        auto noLocation = mlir::UnknownLoc::get(builder.getContext());
+        auto funcOp = mlir_ts::FuncOp::create(noLocation, INSTANCEOF_NONE_NAME, methodInfo.funcType);
+        funcOp.setPrivate();
+        funcOp->setAttr("internal_linkage", builder.getUnitAttr());
+
+        auto &entryBlock = *funcOp.addEntryBlock();
+        builder.setInsertionPointToStart(&entryBlock);
+        auto entryOp = builder.create<mlir_ts::EntryOp>(noLocation, mlir_ts::RefType::get(getBooleanType()));
+        auto falseValue = builder.create<mlir_ts::ConstantOp>(noLocation, getBooleanType(), builder.getBoolAttr(false));
+        builder.create<mlir_ts::ReturnValOp>(noLocation, falseValue, entryOp.getReference());
+        builder.create<mlir_ts::ExitOp>(noLocation, entryOp.getReference());
+
+        theModule.push_back(funcOp);
+        return methodInfo;
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location,
@@ -333,6 +374,15 @@ namespace mlirgen
         {
             return result;
         }
+
+        // slot 0: an object literal is an instance of no class (INTERFACE_VTABLE_HEADER_SLOTS)
+        auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
+        if (!noInstanceOf.funcType)
+        {
+            return mlir::failure();
+        }
+
+        virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
 
         // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
@@ -475,15 +525,21 @@ namespace mlirgen
                             location, virtTuple, castedPtr, vtableValue,
                             MLIRHelper::getStructIndex(builder, fieldIndex));
                     }
+                    else if (!methodOrField.methodInfo.funcName.empty())
+                    {
+                        // the `.instanceOf` slot this function puts first. Every other entry is
+                        // a field: getInterfaceVirtualTableForObject hardcodes methodsAsFields.
+                        auto methodValueRef = builder.create<mlir_ts::SymbolRefOp>(
+                            location, methodOrField.methodInfo.funcType,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), methodOrField.methodInfo.funcName));
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, methodValueRef, vtableValue,
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
                     else
                     {
-                        // unreachable: getInterfaceVirtualTableForObject (this function's
-                        // only caller of newInterfacePtr->getVirtualTable) hardcodes
-                        // methodsAsFields=true, so every entry in `virtualTable` is
-                        // guaranteed isField=true - this branch (a real method reaching
-                        // here as something other than a field) can never be taken for
-                        // an object's interface vtable. Fail gracefully rather than crash
-                        // in case that invariant is ever violated by a future caller.
+                        // unreachable: see above. Fail gracefully rather than crash in case that
+                        // invariant is ever violated by a future caller.
                         emitError(location, "interface method could not be resolved for this object");
                         return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
                     }
