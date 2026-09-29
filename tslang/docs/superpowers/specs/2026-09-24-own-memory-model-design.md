@@ -705,6 +705,18 @@ drop.
 A borrow is followed through what hands the same value on. That covers casts and views, the
 argument of a block a branch passes it to (`n.c ?? m.c`), and the reads of a local that owns
 nothing and is assigned it (`for (x of arr)` into an outer `let x` declared without a value).
+Past a merge or such a local, the value is made again where that is replaced: the merge's block,
+or the local's assignments. The branch or store that hands it on is itself a use, bounded by the
+read. The final review found the first version, which kept the read as the only point where the
+value is made again, wrong both ways:
+
+- It compiled a local assigned on one iteration and read on the next, after the overwrite, into a
+  read of freed memory.
+- It rejected `c ? h.c : h.d` after any earlier call, through the other branch.
+
+A container reached through a merge (`(i > 0 ? a : b).c`) has each merged value as a root, and
+each root's ends bound the read. The first version saw one root it did not own, with no ends, and
+compiled `a = z` between the read and its use into a read of freed memory.
 
 **A `let` declared from a read borrows it**, as phase 2's borrowers do: `let c = h.c`,
 `let e = arr[j]`. Its `ts.RetainSlot` and `ts.ReleaseSlot`s go, and its reads join the read's
@@ -734,13 +746,15 @@ uses. Assigning it is `'c' borrows 'h.c' and cannot be assigned`.
 
 - **Positives:** `own_union_nullable`, `own_union_tagged`, `own_union_optional`,
   `own_optional_access`, `own_field_borrow`, `own_element_borrow`, `own_container_loop`,
-  `own_borrow_merge`, `own_field_let_borrow`, `own_element_let_borrow`.
+  `own_borrow_merge`, `own_field_let_borrow`, `own_element_let_borrow`, and from the final review
+  `own_borrow_merge_after_call` (also a push onto the array a `for...of` walks).
 - **Negatives:** `own_err_union_moved`, `own_err_field_read_overwritten`,
   `own_err_element_read_overwritten`, `own_err_element_read_popped`,
   `own_err_element_read_loop_pop`, `own_err_field_read_owner_assigned`,
   `own_err_field_read_owner_moved`, `own_err_field_read_call`, `own_err_param_read_call`,
   `own_err_global_read_assigned`, `own_err_merge_read_overwritten`, `own_err_alias_read_popped`,
-  `own_err_container_read_stored`, `own_err_field_let_overwritten`, `own_err_field_let_assigned`.
+  `own_err_container_read_stored`, `own_err_field_let_overwritten`, `own_err_field_let_assigned`,
+  and from the final review `own_err_alias_read_stale`, `own_err_merge_root_assigned`.
 
 Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`): 252 of 564 compiled before,
 272 after. 23 files now compile. 3 stopped:
