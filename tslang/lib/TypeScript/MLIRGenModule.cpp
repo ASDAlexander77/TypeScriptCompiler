@@ -530,6 +530,38 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // The names in a library's SHARED_LIB_OWN_FACTS text, one per line, added to the ones this
+    // module already has from other libraries.
+    void MLIRGenImpl::addImportedOwnNoDrops(StringRef factsText)
+    {
+        llvm::SmallVector<mlir::Attribute> names;
+        llvm::StringSet<> seen;
+        if (auto existing = theModule->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_OWN_NO_DROPS_ATTR_NAME))
+        {
+            for (auto name : existing.getAsRange<mlir::StringAttr>())
+            {
+                seen.insert(name.getValue());
+                names.push_back(name);
+            }
+        }
+
+        llvm::SmallVector<StringRef> lines;
+        factsText.split(lines, '\n', -1, false);
+        for (auto line : lines)
+        {
+            line = line.trim();
+            if (!line.empty() && seen.insert(line).second)
+            {
+                names.push_back(builder.getStringAttr(line));
+            }
+        }
+
+        if (!names.empty())
+        {
+            theModule->setAttr(SHARED_LIB_OWN_NO_DROPS_ATTR_NAME, builder.getArrayAttr(names));
+        }
+    }
+
     mlir::LogicalResult MLIRGenImpl::createGenericClassDeclarationExportGlobalVar(const GenContext &genContext)
     {
         if (!genericDeclExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
@@ -1249,6 +1281,8 @@ namespace mlirgen
         StringRef mlirGctors;
         // every symbol the library exports
         SmallVector<StringRef> symbolsAll;
+        // "__tsown_<file>_<hash>", one per module in the library built under own
+        SmallVector<StringRef> ownFactsSymbols;
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // loading Binary to get list of symbols
         Dump::getSymbols(filePath, symbolsAll, stringAllocator);
@@ -1263,6 +1297,10 @@ namespace mlirgen
             else if (symbol.starts_with(SHARED_LIB_MEMORY_MODEL))
             {
                 memoryModelSymbol = symbol;
+            }
+            else if (symbol.starts_with(SHARED_LIB_OWN_FACTS))
+            {
+                ownFactsSymbols.push_back(symbol);
             }
             else if (symbol == MLIR_GCTORS)
             {
@@ -1451,6 +1489,33 @@ namespace mlirgen
             {
                 emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
             }
+        }
+
+        // What a library built under own says about its functions (SHARED_LIB_OWN_FACTS). Kept in
+        // every model, so MLIRGen emits the same under own as under rc; only own reads it.
+        for (auto factsSymbol : ownFactsSymbols)
+        {
+            std::optional<std::string> factsText;
+            if (loadIntoCompiler)
+            {
+                if (auto addrOfFacts = dynLib.getAddressOfSymbol(factsSymbol.str().c_str()))
+                {
+                    factsText = std::string(*(const char **)addrOfFacts);
+                }
+            }
+            else
+            {
+                factsText = Dump::readExportedCString(filePath, factsSymbol);
+            }
+
+            if (!factsText)
+            {
+                emitError(location) << "shared library '" << filePath << "' exports " << factsSymbol
+                                    << " but it could not be read from the file";
+                return mlir::failure();
+            }
+
+            addImportedOwnNoDrops(*factsText);
         }
 
         // only now: an import that failed is tried again on the next pass, and must fail again

@@ -143,6 +143,15 @@
 // see docs/reference-counting-evaluation.md section 4. A missing marker means a module built
 // before this existed, which is always garbage-collected.
 #define SHARED_LIB_MEMORY_MODEL "__tsmm_"
+// A library built under -mm=own also exports "__tsown_<file>_<hash>": the names of its exported
+// functions that destroy nothing a caller can reach (`__own_no_drops`), one per line. The importer
+// reads it beside the marker and keeps the names on its module (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME),
+// for the ownership signature pass. Only this fact crosses: a missing one just makes an importer
+// under own report more, while the facts a callee's body relies on cannot be seen by an importer
+// that re-parses source, and would free twice there.
+#define SHARED_LIB_OWN_FACTS "__tsown_"
+// a module attribute, so it has to carry the dialect's prefix
+#define SHARED_LIB_OWN_NO_DROPS_ATTR_NAME "ts.own_imported_no_drops"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"

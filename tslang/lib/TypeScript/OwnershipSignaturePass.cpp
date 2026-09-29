@@ -37,6 +37,11 @@ using namespace own_facts;
 // argument and releases it, or releases a result it does not own, a double free either way. So a
 // function has those only when every call that can reach it is one this pass resolved (the closed
 // world, see `open`).
+//
+// `__own_no_drops` alone crosses a module boundary: a library built under own exports the names of
+// its exported functions that have it (SHARED_LIB_OWN_FACTS), and a module importing it calls them
+// knowing it. The other two cannot: a module linking the library statically re-parses its source
+// and sees no facts at all, and a caller that does not know them frees twice.
 class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, mlir::OperationPass<mlir::ModuleOp>>
 {
   public:
@@ -46,6 +51,24 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     {
         auto module = getOperation();
         module.walk([&](mlir_ts::FuncOp funcOp) { functions[funcOp.getSymName()] = funcOp; });
+        module.walk([&](mlir_ts::GlobalOp globalOp) { globals[globalOp.getSymName()] = globalOp; });
+        module.walk([&](mlir_ts::AddressOfOp addressOfOp) {
+            auto onlyLoaded = llvm::all_of(addressOfOp->getUsers(), [](mlir::Operation *user) {
+                return mlir::isa<mlir_ts::LoadOp>(user);
+            });
+            if (!onlyLoaded)
+            {
+                writtenGlobals.insert(addressOfOp.getGlobalName());
+            }
+        });
+        if (auto names = module->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_OWN_NO_DROPS_ATTR_NAME))
+        {
+            for (auto name : names.getAsRange<mlir::StringAttr>())
+            {
+                importedNoDrops.insert(name.getValue());
+            }
+        }
+
         collectClassVTables(module);
 
         module.walk([&](mlir::Operation *op) {
@@ -66,21 +89,25 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
-            if (call.callees.instanceOf ||
+            if (call.callees.instanceOf || call.callees.imported ||
                 llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) { return noDrops.contains(callee); }))
             {
                 call.op->setAttr(OWN_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
         }
+
+        exportNoDrops();
     }
 
   private:
     // What a call may reach: known, when every candidate is a function defined in this module (or
-    // the call goes through the `.instanceOf` slot); else anything.
+    // the call goes through the `.instanceOf` slot, or reaches a function another module says
+    // destroys nothing); else anything.
     struct Callees
     {
         bool known = false;
         bool instanceOf = false;
+        bool imported = false;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
     };
 
@@ -91,7 +118,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     };
 
     llvm::StringMap<mlir_ts::FuncOp> functions;
+    llvm::StringMap<mlir_ts::GlobalOp> globals;
+    // Globals whose address is used other than to load from it: what they hold may change.
+    llvm::StringSet<> writtenGlobals;
     llvm::SmallVector<Call> calls;
+
+    // Functions of imported libraries that destroy nothing a caller can reach, by the name they
+    // are exported under (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME).
+    llvm::StringSet<> importedNoDrops;
 
     // Class names, from their vtables, to split a method's symbol into class and method name.
     llvm::StringSet<> classNames;
@@ -246,16 +280,74 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return true;
     }
 
+    // A function declared here and defined in a library that exported its `__own_no_drops`: one
+    // linked with this module, through its import library.
+    bool addImported(mlir::StringAttr symbol, Callees &callees)
+    {
+        auto funcOp = functions.lookup(symbol.getValue());
+        if (!funcOp || !funcOp.isDeclaration() || !importedNoDrops.contains(symbol.getValue()))
+        {
+            return false;
+        }
+
+        callees.imported = true;
+        return true;
+    }
+
+    // `ts.Load(ts.AddressOf @f)`, where the global `f` holds the address of a function exported
+    // by a library loaded at run time, looked up by name: that function, if the library exported
+    // its `__own_no_drops`.
+    bool addImportedByAddress(mlir::Value callee, Callees &callees)
+    {
+        auto loadOp = callee.getDefiningOp<mlir_ts::LoadOp>();
+        auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+        if (!addressOfOp)
+        {
+            return false;
+        }
+
+        auto globalOp = globals.lookup(addressOfOp.getGlobalName());
+        if (!globalOp || writtenGlobals.contains(addressOfOp.getGlobalName()))
+        {
+            return false;
+        }
+
+        // the global is never anything but that address: `Cast(SearchForAddressOfSymbol(name))`
+        auto &region = globalOp.getInitializerRegion();
+        if (!region.hasOneBlock())
+        {
+            return false;
+        }
+
+        auto resultOp = mlir::dyn_cast<mlir_ts::GlobalResultOp>(region.front().getTerminator());
+        auto castOp = resultOp && resultOp->getNumOperands() == 1
+                          ? resultOp->getOperand(0).getDefiningOp<mlir_ts::CastOp>()
+                          : mlir_ts::CastOp();
+        auto searchOp = castOp ? castOp.getIn().getDefiningOp<mlir_ts::SearchForAddressOfSymbolOp>()
+                               : mlir_ts::SearchForAddressOfSymbolOp();
+        auto nameOp = searchOp ? searchOp->getOperand(0).getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
+        auto name = nameOp ? mlir::dyn_cast<mlir::StringAttr>(nameOp.getValue()) : mlir::StringAttr();
+        if (!name || !importedNoDrops.contains(name.getValue()))
+        {
+            return false;
+        }
+
+        callees.imported = true;
+        return true;
+    }
+
     Callees resolve(mlir::Operation *op)
     {
         Callees callees;
         if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
         {
-            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees);
+            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees) ||
+                            addImported(callOp.getCalleeAttr().getAttr(), callees);
         }
         else if (auto callOp = mlir::dyn_cast<mlir_ts::CallOp>(op))
         {
-            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees);
+            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees) ||
+                            addImported(callOp.getCalleeAttr().getAttr(), callees);
         }
         else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp>(op))
         {
@@ -275,6 +367,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // interface's method - is unknown.
     void resolveValue(mlir::Value callee, Callees &callees)
     {
+        if (addImportedByAddress(callee, callees))
+        {
+            callees.known = true;
+            return;
+        }
+
         if (auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>())
         {
             callee = getMethodOp.getBoundFunc();
@@ -315,7 +413,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         if (index < 0)
         {
-            callees.known = addDefined(identifier, callees);
+            callees.known = addDefined(identifier, callees) || addImported(identifier, callees);
             return;
         }
 
@@ -818,8 +916,65 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return true;
         }
 
-        return !callees.instanceOf &&
+        return !callees.instanceOf && !callees.imported &&
                llvm::any_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return !noDrops.contains(callee); });
+    }
+
+    // ---- Export ----
+
+    // A library says, beside its memory-model marker, which of its exported functions destroy
+    // nothing (SHARED_LIB_OWN_FACTS). The global is a copy of the marker `__tsmm_own_<module>`
+    // under another name and with another value, so it is exported exactly as the marker is, and
+    // MLIRGen emits the same under own as under rc. No marker, nothing is exported.
+    void exportNoDrops()
+    {
+        auto markerPrefix = std::string(SHARED_LIB_MEMORY_MODEL) + "own_";
+        mlir_ts::GlobalOp marker;
+        for (auto &entry : globals)
+        {
+            if (entry.getKey().starts_with(markerPrefix))
+            {
+                marker = entry.second;
+                break;
+            }
+        }
+
+        if (!marker)
+        {
+            return;
+        }
+
+        llvm::SmallVector<llvm::StringRef> names;
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (!funcOp.isDeclaration() && !funcOp.isPrivate() && noDrops.contains(funcOp))
+            {
+                names.push_back(funcOp.getSymName());
+            }
+        }
+
+        llvm::sort(names);
+        std::string text;
+        for (auto name : names)
+        {
+            text += name.str();
+            text += '\n';
+        }
+
+        auto suffix = marker.getSymName().drop_front(markerPrefix.size());
+        auto name = (llvm::Twine(SHARED_LIB_OWN_FACTS) + suffix).str();
+
+        mlir::OpBuilder builder(marker);
+        builder.setInsertionPointAfter(marker);
+        auto factsOp = mlir::cast<mlir_ts::GlobalOp>(builder.clone(*marker.getOperation()));
+        factsOp.setSymName(name);
+        factsOp.getInitializerRegion().walk([&](mlir_ts::ConstantOp constantOp) {
+            if (mlir::isa<mlir::StringAttr>(constantOp.getValue()))
+            {
+                constantOp.setValueAttr(builder.getStringAttr(text));
+            }
+        });
     }
 
     // Does the body itself destroy something a caller may reach: overwrite a field or an element

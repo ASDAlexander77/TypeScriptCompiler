@@ -271,6 +271,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext);
 
+    void addImportedOwnNoDrops(StringRef factsText);
+
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenImportBindings(ImportClause importClause);

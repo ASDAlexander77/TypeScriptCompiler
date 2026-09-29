@@ -2442,6 +2442,22 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error|Stack dump")
 endforeach()
 
+# Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
+# across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
+# Windows, checked against a library that lists nothing (own-shared-no-drops.cmake).
+tslang_add_test(NAME test-jit-own-shared-no-drops COMMAND test-runner -jit -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_no_drops.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_no_drops.ts")
+tslang_add_test(NAME test-compile-own-shared-no-drops COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/import_own_no_drops.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/export_own_no_drops.ts")
+if (WIN32)
+    add_test(NAME test-own-shared-no-drops-listed
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/own"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-shared-no-drops"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-shared-no-drops.cmake")
+endif()
+
 # The ownership verifier runs under own too, on the IR before inference erases its birth takes.
 add_test(NAME test-own-verify-ownership
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own --verify-ownership

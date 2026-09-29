@@ -90,7 +90,8 @@ Two Rust rules are ported as *inference*, never as annotation:
 Both are intra-module facts. A callee without facts - declared, imported from a module that
 does not export them, a virtual call whose candidates disagree - defaults to borrowed parameters
 and an owned result, the leak-side default `OwnedReturnConsumptionPass` already uses. A module
-built under `own` exports its facts beside the existing `__tsmm_own_*` marker.
+built under `own` exports one fact, `__own_no_drops`, beside the existing `__tsmm_own_*` marker
+(§15.8); the two above stay intra-module.
 
 ### 2.5 Closures
 
@@ -146,9 +147,10 @@ Computes the interprocedural facts of §2.4 and pins them on each `FuncOp` as at
 - `__own_result_borrows`: the parameter index (or `this`) the result borrows from, if any.
 
 Runs to a fixpoint over the call graph (a function that returns what a callee returns depends
-on the callee's fact). Unknown callees default as in §2.4. For a `-shared` build the facts are
-serialised into an exported symbol beside the marker; the importer reads them during the symbol
-enumeration it already does for `__tsmm_` and applies them to the declared `FuncOp`s.
+on the callee's fact). Unknown callees default as in §2.4. A library built under own exports
+`__own_no_drops` into a symbol beside the marker, and the importer reads it during the symbol
+enumeration it already does for `__tsmm_` (§15.8). The other two facts are not exported: a module
+linking the library statically sees none, and a caller that does not know them frees twice.
 
 ### 3.3 `OwnershipInferencePass` (per `ts.FuncOp`)
 
@@ -296,7 +298,7 @@ Each phase is a PR series leaving `main` green.
    and reads; `any` moved to phase 4.
 4. **Signature pass**: owned-by-callee parameters, borrowed-from-argument results, export beside
    the marker and import on the other side. As built (§15): the facts, drop-free callees and
-   `any`; export and import deferred.
+   `any`; only `__own_no_drops` is exported and imported (§15.8).
 5. **Closures**: escaping vs non-escaping, cells.
 6. **Corpus report and diagnostics polish**: refine the shapes the histogram says matter.
 7. **Generators and async**: the state object as owner.
@@ -927,11 +929,48 @@ Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`): 272 of 564 c
 the new ones throw or catch (the copy thunks); several more cast out of `any`. Release suite: 3226
 of 3226.
 
+### 15.8 Export and import of `__own_no_drops`
+
+A library built under own writes, beside its marker `__tsmm_own_<module>`, a second exported string
+`__tsown_<module>`. It lists the exported functions that destroy nothing a caller can reach, one
+name per line, by the name they are exported under. The signature pass writes it: it is a copy of
+the marker global under another name and value. So it is exported exactly as the marker is on
+every platform, and MLIRGen emits the same under own as under rc (`test-own-mlirgen-matches-rc`).
+
+The importer reads it in `mlirGenImportSharedLib`, beside the marker, from the loaded library or
+from the file. It keeps the names on its module as `ts.own_imported_no_drops`. That happens in every
+model, for the same reason, and only own's signature pass reads it. A call resolves to such a
+function in either of two forms:
+
+- a declaration linked through the import library;
+- `ts.Load(ts.AddressOf @f)`, where the global `f` is `SearchForAddressOfSymbol("<name>")` (a
+  library loaded at run time).
+
+The call is then known and drop-free, like the `.instanceOf` slot. A virtual call to a method of
+an imported class stays unknown, because an override may be defined in the importer.
+
+Only this fact crosses, and only in one direction of trust:
+
+- A missing `__own_no_drops` only makes the importer report more. So a module that links the
+  library statically is sound without it: it re-parses the library's source and sees no facts.
+- `__own_params` and `__own_result_borrows` change the callee's body: its retains are gone. An
+  importer that does not know them releases a moved argument or frees a borrowed result. The static
+  importer above is such an importer, and under own there is no counting to adapt a call with.
+
+Tests: `test-jit-own-shared-no-drops` and `test-compile-own-shared-no-drops` run
+`import_own_no_drops.ts` against `export_own_no_drops.ts` as a `-shared` pair. The importer holds a
+borrow of a parameter's field across calls to `total` and `M.first`. On Windows,
+`own-shared-no-drops.cmake` also checks two things. `import_own_err_imported_drops.ts` is still
+rejected, because `shrink` removes an element and is not listed. And the same program is rejected
+against the library built under rc, which lists nothing: that is the fact's teeth.
+
 ### 15.7 Known limits (the input to phase 5 and later)
 
-- Export and import of the facts (§3.2). An exported function, or a method of an exported class,
-  gets no owned or borrowed facts, and a virtual call on one gets no `__own_no_drops`. That is sound
-  and restrictive for `-shared` modules.
+- An exported function, or a method of an exported class, gets no owned or borrowed facts (§15.8
+  says why they cannot be exported), and a virtual call on one gets no `__own_no_drops`. That is
+  sound and restrictive for `-shared` modules.
+- An importer under own cannot yet build an object of an imported class: `new H()` through the
+  library reports `'this value' is used here after its value was moved`.
 - A parameter kept on some paths only (needs drop elaboration: a release on the others).
 - A borrowed result's places are a wildcard, so any field overwrite between the call and the use
   drops it, even of an unrelated object.
