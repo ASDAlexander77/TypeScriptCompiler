@@ -1086,8 +1086,13 @@ namespace mlirgen
         filesInProgress.insert(canonicalPath);
         auto inProgress = llvm::make_scope_exit([&]() { filesInProgress.erase(canonicalPath); });
 
+        // An import that points to a .ts file: compiled, it is a declaration - the module is
+        // compiled into an object of its own, and the objects are linked into one program. Under
+        // the JIT there is no other object, so it is included with its bodies, as a referenced
+        // file is. (An import that points to a library is mlirGenImportSharedLib.) A .d.ts is
+        // read as declarations either way.
         MLIRValueGuard<bool> vg(declarationMode);
-        declarationMode = true;
+        declarationMode = !compileOptions.isJit;
 
         // What the imported module exports is its own to export: it is compiled separately, with
         // its declarations in its own __decls. Added to this module's too, a library holding both

@@ -686,7 +686,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     if (jitRun)
     {
         // one extra "../" because we run from the per-test working directory
-        batFile << "$TSLANGEXEPATH/tslang --emit=jit " << tslang_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
+        // the library is not passed with --shared-libs: `import './<stem>'` loads it at run time
+        batFile << "$TSLANGEXEPATH/tslang --emit=jit " << tslang_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
                 << std::endl;
     }
     else
