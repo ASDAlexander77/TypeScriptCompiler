@@ -782,12 +782,12 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
             fastMath = true;
             tslang_opt_ext += " --fast-math";
         }
-        // `-mm=gc` is accepted as well as the two that change behaviour, and it is not a no-op:
-        // it names the default explicitly, which is what anyone comparing the three models types.
+        // `-mm=gc` is accepted as well as the three that change behaviour, and it is not a no-op:
+        // it names the default explicitly, which is what anyone comparing the models types.
         // It gets its own cached script like the others - the suffix is what keeps two runners
         // with different flags from sharing one - so passing it costs a script and nothing else.
         else if (std::string(argv[index]) == "-mm=gc" || std::string(argv[index]) == "-mm=rc" ||
-                 std::string(argv[index]) == "-mm=none")
+                 std::string(argv[index]) == "-mm=none" || std::string(argv[index]) == "-mm=own")
         {
             memoryModel = std::string(argv[index]).substr(4);
             tslang_opt_ext += " ";

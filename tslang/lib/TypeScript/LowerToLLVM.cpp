@@ -398,7 +398,12 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
         // symbol has to exist before the global is built
         OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(descriptorType);
+        // Under own nothing retains: the descriptor's retain slot is read only from inside
+        // retain routines (retainViaDescriptor), none of which can run, and building one would
+        // bring `__tslang_inc_ref` into a model that promises it is never referenced.
+        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
+                                     ? std::string()
+                                     : orl.getOrCreateRetainRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
@@ -420,6 +425,13 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -439,7 +451,7 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseValue(op.getReference().getType(), transformed.getReference());
@@ -460,6 +472,13 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -479,7 +498,7 @@ class ReleaseSlotOpLowering : public TsLlvmPattern<mlir_ts::ReleaseSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
@@ -500,6 +519,13 @@ class RetainCellOpLowering : public TsLlvmPattern<mlir_ts::RetainCellOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainCellOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // Under own, ownership inference erased every retain it could prove, and reported the
+        // rest; one that reaches here was neither, and erasing it would ship a double free.
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            return op.emitError("ownership inference left a retain behind");
+        }
+
         if (tsLlvmContext->compileOptions.isRefCounted())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -519,7 +545,7 @@ class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
     LogicalResult matchAndRewrite(mlir_ts::ReleaseCellOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseCell(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(),
@@ -648,7 +674,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         //
         // Only where an element owns something, and only under -mm=rc: nothing reads an
         // unwritten slot in the other models, and the memset is not free.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
             if (mth.ownsHeapMemory(loc, elementType))
@@ -1484,7 +1510,7 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
         // reaching an undef pointer's block header is undefined behaviour. An iterator's final
         // `{ value: undefined, done: true }` is built exactly this way, and the caller retains
         // the result before it looks at `done`.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
             if (mth.ownsHeapMemory(op.getLoc(), op.getType()))
@@ -2406,6 +2432,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // is born unowned because a receiver is about to take it (§9.24), a cell is born
             // owned: the frame is its first owner, and the frame's scope exit is what gives that
             // reference back. A box is the one heap variable with no frame owner, and says so.
+            // Under own the frame owns the cell outright; there is no count to start at one.
             if (tsLlvmContext->compileOptions.isRefCounted() && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
             {
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -2447,7 +2474,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto value = transformed.getInitializer();
         auto isUnwrittenCell = isCaptured && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
-        if (!value && tsLlvmContext->compileOptions.isRefCounted() &&
+        if (!value && tsLlvmContext->compileOptions.tracksOwnership() &&
             (varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) || isUnwrittenCell))
         {
             // An owned local with no initializer here is one whose storage was hoisted out in
@@ -2484,9 +2511,19 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // (`isOwningSlot`). So the first value has to be taken too, unless the frame has
             // already taken it - which is what an owned local's mark says, and what a captured
             // parameter's storage is precisely missing, the argument being the caller's.
-            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+            if (isCaptured && tsLlvmContext->compileOptions.tracksOwnership() &&
                 !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
             {
+                // The value is someone else's - a parameter's is the caller's - and a cell that
+                // destroyed it would free it under them. Own has no count to take here: closures
+                // are phase 5.
+                if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                    MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions)
+                        .ownsHeapMemory(location, referenceType.getElementType()))
+                {
+                    return varOp.emitError("a captured variable cannot own its value under -mm=own yet");
+                }
+
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
                 orl.emitRetainSlot(referenceType.getElementType(), allocated);
             }
@@ -3427,7 +3464,7 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
         // Under reference counting `delete` drops a reference rather than freeing outright:
         // the object goes only if this was the last one, and what it owns is released with it.
         // That also keeps `delete` off an immortal block, which a bare free would not.
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.tracksOwnership())
         {
             OwnershipRoutineLogic orl(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseValue(deleteOp.getReference().getType(), transformed.getReference());
@@ -5691,7 +5728,10 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         // generated first: the descriptor's initializer takes their addresses
         OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
-        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+        // under own nothing retains: see TypeDescriptorOpLowering
+        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
+                                     ? std::string()
+                                     : orl.getOrCreateRetainRoutine(thisType);
 
         LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),

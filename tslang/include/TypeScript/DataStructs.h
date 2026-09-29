@@ -73,6 +73,14 @@ struct CompileOptions
     {
         return memoryModel == MemoryModelRC;
     }
+
+    // Whether the ownership operations are live and lower to code - retains and releases under
+    // `rc`, releases that destroy under `own`. Where only the count itself matters, the
+    // question is isRefCounted().
+    bool tracksOwnership() const
+    {
+        return memoryModel == MemoryModelRC || memoryModel == MemoryModelOwn;
+    }
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_

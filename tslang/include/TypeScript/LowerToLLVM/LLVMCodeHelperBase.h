@@ -381,7 +381,7 @@ class LLVMCodeHelperBase
             }
         }
 
-        if (compileOptions.isRefCounted())
+        if (compileOptions.tracksOwnership())
         {
             // The block starts *unowned*. Whoever first takes it - a local's declaration, a
             // field or element store, a literal capturing it, a push - is what brings the count
@@ -398,9 +398,13 @@ class LLVMCodeHelperBase
             // HEAP_BLOCK_IMMORTAL, so the block leaks instead of being freed out from under a
             // live reference.
             //
+            // Under `-mm=own` there is no count, and the same 0 only says "mortal": the free path
+            // reads the word to skip immortal blocks, and a native `malloc` block's header is
+            // otherwise whatever the allocator left there (the zeroing above is wasm only).
+            //
             // Written after the zeroing above, which covers the header along with the payload.
-            // Only under `-mm=rc` -- under `gc` nothing reads the word, and a store per
-            // allocation on the hot path is not worth paying for dead code.
+            // Only under `-mm=rc` and `-mm=own` -- under `gc` nothing reads the word, and a store
+            // per allocation on the hot path is not worth paying for dead code.
             rewriter.create<LLVM::StoreOp>(
                 loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0)),
                 blockPtr);

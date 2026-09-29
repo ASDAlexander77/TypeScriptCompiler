@@ -1087,7 +1087,7 @@ class CastLogicHelper
             // pointer's block header is undefined behaviour. An iterator's final
             // `{ value: undefined, done: true }` is built exactly this way, and the caller
             // retains the result before it looks at `done`.
-            if (compileOptions.isRefCounted())
+            if (compileOptions.tracksOwnership())
             {
                 return rewriter.create<LLVM::ZeroOp>(loc, llvmRtArrayStructType).getResult();
             }

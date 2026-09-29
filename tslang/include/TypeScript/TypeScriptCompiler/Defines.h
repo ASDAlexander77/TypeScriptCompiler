@@ -30,7 +30,11 @@ enum MemoryModel
     // covered - leaks rather than being swept up. See sections 9.6 and 9.28.
     MemoryModelRC,
     // No reclamation at all.
-    MemoryModelNone
+    MemoryModelNone,
+    // Single ownership, inferred at compile time: every mortal block has exactly one owner,
+    // which destroys it. No count is kept; a program whose ownership cannot be proven is a
+    // compile error. See docs/superpowers/specs/2026-09-24-own-memory-model-design.md.
+    MemoryModelOwn
 };
 
 // The spelling used both by the `-mm=` flag and by the shared-library marker symbol, so the
@@ -43,6 +47,8 @@ inline const char *memoryModelName(enum MemoryModel model)
         return "rc";
     case MemoryModelNone:
         return "none";
+    case MemoryModelOwn:
+        return "own";
     default:
         return "gc";
     }

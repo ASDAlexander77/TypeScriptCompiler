@@ -552,7 +552,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // can be bound to a local that takes a reference, so the same header word has to sit in
         // front of the data, marked immortal - exactly as it does for a string literal. Without
         // it a retain reads, and a release writes, the word before a read-only global.
-        auto withHeader = compileOptions.isRefCounted();
+        auto withHeader = compileOptions.tracksOwnership();
         auto headerSize = getHeapBlockHeaderSize();
 
         // Create the global at the entry of the module.
@@ -722,7 +722,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 // field (a generator's state object is built exactly this way), and walking an
                 // undef pointer to reach its header is undefined behaviour, which the optimizer
                 // is entitled to - and does - fold the whole caller away for.
-                auto unspecifiedFieldIsOwning = compileOptions.isRefCounted() &&
+                auto unspecifiedFieldIsOwning = compileOptions.tracksOwnership() &&
                                                 MLIRTypeHelper(rewriter.getContext(), compileOptions).ownsHeapMemory(loc, type);
 
                 mlir::Value itemValue = unspecifiedFieldIsOwning

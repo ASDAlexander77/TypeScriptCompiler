@@ -161,7 +161,11 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compilenone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitnone.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilednone.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.bat"
     "${CMAKE_CURRENT_BINARY_DIR}/compilenone.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitnone.sh"
-    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh")
+    "${CMAKE_CURRENT_BINARY_DIR}/compilednone.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdnone.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compileown.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitown.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledown.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitdown.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compileown.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitown.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiledown.sh" "${CMAKE_CURRENT_BINARY_DIR}/jitdown.sh")
 # and the 32-bit variants (`-x86`), every one of which ends in "x86"
 file(GLOB TSLANG_X86_CACHED_SCRIPTS "${CMAKE_CURRENT_BINARY_DIR}/compile*x86.bat")
 if (TSLANG_X86_CACHED_SCRIPTS)
@@ -2339,21 +2343,101 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
-# An error reported by a pass that still returns success - a lowering pattern that cannot cast,
-# says so and carries on - fails the compile. It used to be printed and then ignored: the object
+# An error reported by a pass that still returns success - a lowering pattern that cannot build a
+# value, says so and carries on - fails the compile. It used to be printed and then ignored: the object
 # file was written, and under --emit=jit the program ran and crashed. Two tests because one
 # property cannot say both things: the message is the error we meant, and the exit code is not 0.
-set(lowering_error_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/cast_not_supported.ts")
+set(lowering_error_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/array_literal_element_type.ts")
 add_test(NAME test-compile-lowering-error-message
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-message.obj")
 set_tests_properties(test-compile-lowering-error-message
-                     PROPERTIES PASS_REGULAR_EXPRESSION "cast from '!ts.array<!ts.number>' to '!ts.string' is not supported"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "source array and destination array have different types"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-lowering-error-exit
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-exit.obj")
 set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
+
+# -mm=own is accepted. Phase 0: a program that allocates nothing compiles and runs under it.
+add_test(NAME test-own-flag-accepted
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
+set_tests_properties(test-own-flag-accepted PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# Under own MLIRGen emits exactly what it emits under rc: an awaited, deleted or captured value
+# still carries its ownership ops for the inference pass to judge. Checked on `delete`, whose
+# claim (MLIRGenExpressions.cpp) is one of the four MLIRGen sites.
+add_test(NAME test-own-mlirgen-matches-rc
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_mlirgen_delete.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-mlirgen-matches-rc.cmake")
+
+# The lowering backstop: a retain that reaches LLVM lowering under own is an error, never
+# silently erased. Checked with the inference pass switched off, which only this test does.
+add_test(NAME test-own-lowering-backstop
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=own --own-skip-inference
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/own-lowering-backstop.ll")
+set_tests_properties(test-own-lowering-backstop
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ownership inference left a retain behind"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# After inference under own, no retain survives in a program of single owners.
+add_test(NAME test-own-inference-erases-birth-takes
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_print_number.ts")
+set_tests_properties(test-own-inference-erases-birth-takes
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ts.Release"
+                                FAIL_REGULAR_EXPRESSION "ts\\.Retain|error|Stack dump")
+
+# -mm=own, phase 0 (docs/superpowers/plans/2026-09-28-own-phase-0.md). Positive programs run
+# under JIT and ahead of time; each owns every block once.
+foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals)
+    tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
+    tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
+    # The promise: no counting at all in what own emits.
+    add_test(NAME test-own-no-counting-${own_test}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts" -o -)
+    set_tests_properties(test-own-no-counting-${own_test}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "define"
+                                    FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error|Stack dump")
+endforeach()
+
+# The ownership verifier runs under own too, on the IR before inference erases its birth takes.
+add_test(NAME test-own-verify-ownership
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own --verify-ownership
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_array.ts")
+set_tests_properties(test-own-verify-ownership PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# Each negative program has one shape phase 0 cannot prove, and must be rejected with this text.
+set(own_error_cases
+    "own_err_alias|takes a second reference"
+    "own_err_field_alias|takes a second reference"
+    "own_err_closure|closures that capture a variable are not supported"
+    "own_err_unknown_producer|takes a second reference"
+    "own_err_two_owners|takes a second reference"
+    "own_err_const_twice|takes a second reference"
+    "own_err_push_let|takes a second reference"
+    "own_err_push_loop|is given an owner in another block"
+    "own_err_field_loop|is given an owner in another block"
+    "own_err_use_after_move|is used after its value was moved"
+    "own_err_interface|takes a second reference"
+    "own_err_delete|'delete' is not supported by -mm=own yet")
+foreach(own_error_case ${own_error_cases})
+    string(FIND "${own_error_case}" "|" own_error_sep)
+    string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
+    math(EXPR own_error_sep "${own_error_sep} + 1")
+    string(SUBSTRING "${own_error_case}" ${own_error_sep} -1 own_error_message)
+    add_test(NAME test-own-err-${own_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/${own_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/own-err-${own_error_name}.obj")
+    set_tests_properties(test-own-err-${own_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${own_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 
 # @dllname and @linkname are one decorator under two names, and a symbol is bound once: each
 # case is a program the compiler must reject with the given message instead of binding

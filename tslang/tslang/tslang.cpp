@@ -127,9 +127,11 @@ cl::opt<enum MemoryModel> memoryModelOpt("mm", cl::desc("Memory management of co
                                        cl::values(clEnumValN(MemoryModelGC, "gc", "garbage collection (default)")),
                                        cl::values(clEnumValN(MemoryModelRC, "rc", "reference counting, no collector (in development; cycles and anything the counts miss leak)")),
                                        cl::values(clEnumValN(MemoryModelNone, "none", "no reclamation, leak everything")),
+                                       cl::values(clEnumValN(MemoryModelOwn, "own", "single ownership inferred at compile time, no counting (in development; ownership that cannot be proven is a compile error)")),
                                        cl::init(MemoryModelGC), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> verifyOwnership("verify-ownership", cl::desc("Check that every slot taking a reference gives it back on every path out of the function, unwind paths included"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> ownSkipInference("own-skip-inference", cl::Hidden, cl::desc("Under -mm=own, skip ownership inference so the lowering backstop can be tested"), cl::cat(TypeScriptCompilerDebugCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
 cl::list<std::string> exportFilters("export", cl::desc("Export Symbols, comma separated: 'all', 'none', names or globs (short or namespaced, e.g. 'add' or 'M.*') to export, '!name' to exclude. Without an including filter the 'export' keyword decides. (Useful to compile the same code into 'lib' (static library) and/or 'dll/so' (dynamic library))"),

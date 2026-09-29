@@ -78,6 +78,7 @@ extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
+extern cl::opt<bool> ownSkipInference;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
@@ -136,6 +137,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         if (verifyOwnership)
         {
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipVerifierPass());
+        }
+
+        // Under own, after the verifier: the verifier pairs rc's acquisitions with their
+        // releases, and inference erases the acquisitions it proves are the one owner's. Inference
+        // either erases a retain or reports it, and a program it reports stops here.
+        if (compileOptions.memoryModel == MemoryModelOwn && !ownSkipInference)
+        {
+            pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
         }
 
 #ifdef ENABLE_OPT_PASSES
