@@ -21,6 +21,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -37,6 +38,8 @@
 #include "llvm/Support/ManagedStatic.h"
 
 #include "TypeScript/Defines.h"
+
+#include "jitcache.h"
 
 // From TypeScript/ObjDumper.h, which cannot be included here: its llvm/BinaryFormat/COFF.h
 // collides with the IMAGE_* macros <windows.h> defines above.
@@ -118,9 +121,15 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
 }
 
 #ifdef _WIN64
-// Image base of the JIT'd module (tslang JITs a single module per run), needed by
-// the _CxxThrowException shim below. Filled in by JitSectionMemoryManager.
-static uint64_t jitImageBase = 0;
+// The JIT'd objects' address ranges and image bases, needed by the _CxxThrowException shim
+// below: one for the program, and under the JIT cache one more for each module it imports, each
+// with the base RTDyld resolved that object's RVAs against. Filled in by JitSectionMemoryManager.
+struct JitImage
+{
+    uint64_t base;
+    uint64_t end;
+};
+static std::deque<JitImage> jitImages;
 #endif
 
 // A SectionMemoryManager that makes JIT'd code behave like AOT'd code:
@@ -177,7 +186,7 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
                                  llvm::StringRef sectionName) override
     {
         auto *addr = llvm::SectionMemoryManager::allocateCodeSection(size, alignment, sectionID, sectionName);
-        noteSectionAddress(addr);
+        noteSectionAddress(addr, size);
         return addr;
     }
 
@@ -193,7 +202,7 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
 #endif
 
         auto *addr = llvm::SectionMemoryManager::allocateDataSection(size, alignment, sectionID, sectionName, isReadOnly);
-        noteSectionAddress(addr);
+        noteSectionAddress(addr, size);
         if (!isReadOnly && addr != nullptr)
         {
             if (auto addRoots = reinterpret_cast<GCRootsFn>(
@@ -246,7 +255,7 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
     }
 
   private:
-    void noteSectionAddress(uint8_t *addr)
+    void noteSectionAddress(uint8_t *addr, uintptr_t size)
     {
         if (addr == nullptr)
         {
@@ -256,13 +265,25 @@ class JitSectionMemoryManager : public llvm::SectionMemoryManager
         if (imageBase == 0 || reinterpret_cast<uint64_t>(addr) < imageBase)
         {
             imageBase = reinterpret_cast<uint64_t>(addr);
-#ifdef _WIN64
-            jitImageBase = imageBase;
-#endif
         }
+
+#ifdef _WIN64
+        // a memory manager serves one object: its image is the span of its sections
+        if (image == nullptr)
+        {
+            jitImages.push_back({imageBase, imageBase});
+            image = &jitImages.back();
+        }
+
+        image->base = imageBase;
+        image->end = (std::max)(image->end, reinterpret_cast<uint64_t>(addr) + size);
+#endif
     }
 
     uint64_t imageBase = 0;
+#ifdef _WIN64
+    JitImage *image = nullptr;
+#endif
     mlir::SmallVector<std::pair<uint8_t *, uintptr_t>> gcRootSections;
 #ifdef _WIN64
     mlir::SmallVector<PRUNTIME_FUNCTION> functionTables;
@@ -356,10 +377,27 @@ static void jitCxxThrowException(void *exceptionObject, void *throwInfo)
         RtlPcToFileHeader(throwInfo, &moduleBase);
     }
 
+    // otherwise the JIT'd object the ThrowInfo is in
+    if (moduleBase == nullptr)
+    {
+        auto address = reinterpret_cast<uint64_t>(throwInfo);
+        for (auto &image : jitImages)
+        {
+            if (address >= image.base && address < image.end)
+            {
+                moduleBase = reinterpret_cast<void *>(image.base);
+                break;
+            }
+        }
+    }
+
+    if (moduleBase == nullptr && !jitImages.empty())
+    {
+        moduleBase = reinterpret_cast<void *>(jitImages.front().base);
+    }
+
     ULONG_PTR args[] = {cxxMagicNumber, reinterpret_cast<ULONG_PTR>(exceptionObject),
-                        reinterpret_cast<ULONG_PTR>(throwInfo),
-                        moduleBase != nullptr ? reinterpret_cast<ULONG_PTR>(moduleBase)
-                                              : static_cast<ULONG_PTR>(jitImageBase)};
+                        reinterpret_cast<ULONG_PTR>(throwInfo), reinterpret_cast<ULONG_PTR>(moduleBase)};
     RaiseException(cxxExceptionCode, EXCEPTION_NONCONTINUABLE, 4, args);
 }
 
@@ -403,7 +441,7 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
 // converted to the first parameter's type, `argv` and `argc` as the `string[]` (data, length) of the
 // second or `argv` alone for a `Ref<string>`, and the result converted to the exit code. LowerToAffineLoops has already refused any
 // other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
-static llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
+llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
 {
     auto *entry = llvmModule.getFunction(entryName);
     if (!entry)
@@ -492,11 +530,12 @@ static llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entry
     return llvm::Error::success();
 }
 
-int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
+
+// tslang.exe is an x64 process: it cannot execute i386 or wasm code in-process. Refused up front
+// rather than left to LLJIT, whose failure for this is a relocation or "symbol not found" error
+// deep in the session that never mentions the triple as the cause.
+static bool checkInProcessJit(CompileOptions &compileOptions)
 {
-    // tslang.exe is an x64 process: it cannot execute i386 or wasm code in-process. Refused up
-    // front rather than left to LLJIT, whose failure for this is a relocation or "symbol not
-    // found" error deep in the session that never mentions the triple as the cause.
     if (!compileOptions.targetInfo.supportsInProcessJit)
     {
         llvm::WithColor::error(llvm::errs(), "tslang")
@@ -504,28 +543,16 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             << llvm::sys::getDefaultTargetTriple() << ", so it cannot run code built for "
             << compileOptions.moduleTargetTriple
             << ". Build it instead with --emit=exe or --emit=obj.\n";
-        return -1;
+        return false;
     }
 
-    // to avoid false positive memory leak reports in release builds
-    // Print a stack trace if we signal out.
-    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+    return true;
+}
 
-    llvm::PrettyStackTraceProgram X(argc, argv);
-    llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
-
-    llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
-
-    // No leaks until here
-
-    registerMLIRDialects(module);
-
-    // Initialize LLVM targets.
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
-
+// The libraries the program runs against - the default library, the GC runtime - added to
+// --shared-libs, and on Windows the CRT entry points bound to this process's own CRT.
+static int prepareJitProcess(CompileOptions &compileOptions)
+{
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
     // engine. Otherwise we'll pass library directly to the execution engine.
@@ -668,64 +695,13 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 #endif
 
-    if (dumpObjectFile)
-    {
-        // Compile-and-dump only, no execution: the stock MLIR engine is enough.
-        mlir::SmallVector<mlir::StringRef> sharedLibPaths;
-        sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
+    return 0;
+}
 
-        mlir::ExecutionEngineOptions engineOptions;
-        engineOptions.transformer = optPipeline;
-        engineOptions.enableObjectDump = true;
-        engineOptions.enableGDBNotificationListener = !enableOpt;
-        engineOptions.sharedLibPaths = sharedLibPaths;
-        if (enableOpt.getValue())
-        {
-            engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
-        }
-
-        auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-        if (!maybeEngine)
-        {
-            auto err = maybeEngine.takeError();
-            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << err << "\n";
-            llvm::consumeError(std::move(err));
-            return -1;
-        }
-        auto &engine = maybeEngine.get();
-
-        auto expectedFPtr = engine->lookup(mainFuncName);
-        if (!expectedFPtr)
-        {
-            auto err = expectedFPtr.takeError();
-            llvm::WithColor::error(llvm::errs(), "tslang") << err;
-            llvm::consumeError(std::move(err));
-            return -1;
-        }
-
-        llvm::Triple TheTriple;
-        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-        if (!TargetTriple.empty())
-        {
-            targetTriple = llvm::Triple::normalize(TargetTriple);
-        }
-
-        TheTriple = llvm::Triple(targetTriple);
-
-        engine->dumpToObjectFile(
-            objectFilename.empty()
-                ? inputFilename + ((TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o")
-                : objectFilename);
-
-        return 0;
-    }
-
-    // Run path: build our own LLJIT instead of mlir::ExecutionEngine — the stock
-    // engine hard-codes a plain SectionMemoryManager, which neither registers GC
-    // roots for JIT'd globals nor Win64 unwind info (see JitSectionMemoryManager).
-
-    // Load the shared libraries into the process; the JIT resolves external
-    // symbols from their export tables via the current-process generator below.
+// Load the shared libraries into the process; the JIT resolves external symbols from their
+// export tables via the current-process generator (see createJit).
+static int loadJitSharedLibraries(bool &needsGCEnableThreadsStandIn)
+{
     for (auto &libPathStr : clSharedLibs)
     {
         std::string errMsg;
@@ -748,24 +724,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // the answer decides whether to shadow a real definition: SearchForAddressOfSymbol sees the
     // export tables of everything loaded so far, which is exactly what the JIT's process generator
     // will see.
-    auto needsGCEnableThreadsStandIn =
+    needsGCEnableThreadsStandIn =
         llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("GC_enable_threads") == nullptr;
 
-    auto llvmContext = std::make_unique<llvm::LLVMContext>();
-    auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
-    if (!llvmModule)
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
-        return -1;
-    }
+    return 0;
+}
 
+// The host's target machine builder, at the optimization level asked for; the JIT and the JIT
+// cache compile with it, so a cached object is what the JIT itself would have made.
+llvm::Expected<llvm::orc::JITTargetMachineBuilder> getJitTargetMachineBuilder()
+{
     auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
     if (!tmBuilderOrError)
     {
-        auto err = tmBuilderOrError.takeError();
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
+        return tmBuilderOrError.takeError();
     }
 
     if (enableOpt.getValue())
@@ -773,39 +745,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         tmBuilderOrError->setCodeGenOptLevel((llvm::CodeGenOptLevel) optLevel.getValue());
     }
 
-    auto tmOrError = tmBuilderOrError->createTargetMachine();
-    if (!tmOrError)
-    {
-        auto err = tmOrError.takeError();
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
-    }
+    return tmBuilderOrError;
+}
 
-    llvmModule->setDataLayout((*tmOrError)->createDataLayout());
-    llvmModule->setTargetTriple((*tmOrError)->getTargetTriple());
-
-    if (auto err = optPipeline(llvmModule.get()))
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
-    }
-
-    // after the optimizer, so it cannot inline an entry with debug info into a thunk without any
-    if (auto err = addEntryThunk(*llvmModule, mainFuncName.getValue()))
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
-    }
-
+// Our own LLJIT instead of mlir::ExecutionEngine — the stock engine hard-codes a plain
+// SectionMemoryManager, which neither registers GC roots for JIT'd globals nor Win64 unwind info
+// (see JitSectionMemoryManager). Symbols the program does not define come from this process.
+static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBuilder tmBuilder, bool needsGCEnableThreadsStandIn)
+{
+    auto targetTriple = tmBuilder.getTargetTriple();
     auto maybeJit =
         llvm::orc::LLJITBuilder()
-            .setJITTargetMachineBuilder(std::move(*tmBuilderOrError))
-            .setDataLayout(llvmModule->getDataLayout())
+            .setJITTargetMachineBuilder(std::move(tmBuilder))
             .setObjectLinkingLayerCreator(
-                [targetTriple = llvmModule->getTargetTriple()](llvm::orc::ExecutionSession &session)
+                [targetTriple](llvm::orc::ExecutionSession &session)
                     -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
                     auto objectLayer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
                         session, [](const llvm::MemoryBuffer &) { return std::make_unique<JitSectionMemoryManager>(); });
@@ -834,10 +787,10 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto err = maybeJit.takeError();
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct the JIT engine, error: " << err << "\n";
         llvm::consumeError(std::move(err));
-        return -1;
+        return nullptr;
     }
 
-    auto &jit = maybeJit.get();
+    auto jit = std::move(maybeJit.get());
 
     // Resolve symbols from the current process, including the loaded shared
     // libraries and the AddSymbol overrides above.
@@ -847,7 +800,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto err = generator.takeError();
         llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a process symbol generator, error: " << err << "\n";
         llvm::consumeError(std::move(err));
-        return -1;
+        return nullptr;
     }
 
     jit->getMainJITDylib().addGenerator(std::move(*generator));
@@ -864,7 +817,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define the shared library loader, error: " << err << "\n";
             llvm::consumeError(std::move(err));
-            return -1;
+            return nullptr;
         }
     }
 
@@ -911,7 +864,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define CRT overrides, error: " << err << "\n";
             llvm::consumeError(std::move(err));
-            return -1;
+            return nullptr;
         }
     }
 #else
@@ -925,20 +878,21 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         {
             llvm::WithColor::error(llvm::errs(), "tslang") << "failed to define the assert handler, error: " << err << "\n";
             llvm::consumeError(std::move(err));
-            return -1;
+            return nullptr;
         }
     }
 #endif
 
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(llvmContext))))
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
-    }
+    return jit;
+}
 
+// Runs what was added to the JIT: the platform initializers, the objects' own initializers
+// (`initFunctions`, in the order given - an imported module's before its importer's), the
+// program's `__mlir_gctors` if it has one, then the entry point.
+static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod)
+{
     // run platform initializers (llvm.global_ctors etc.)
-    if (auto err = jit->initialize(jit->getMainJITDylib()))
+    if (auto err = jit.initialize(jit.getMainJITDylib()))
     {
         llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << err << "\n";
         llvm::consumeError(std::move(err));
@@ -946,7 +900,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     auto invoke = [&](llvm::StringRef name) {
-        auto sym = jit->lookup(name);
+        auto sym = jit.lookup(name);
         if (!sym)
         {
             // Streaming an Error only logs it - the payload survives, and ~Error then trips
@@ -963,12 +917,20 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return 0;
     };
 
-    if (module.lookupSymbol(MLIR_GCTORS) && invoke(MLIR_GCTORS) != 0)
+    for (auto &initFunction : initFunctions)
+    {
+        if (invoke(initFunction) != 0)
+        {
+            return -1;
+        }
+    }
+
+    if (hasGCtorsMethod && invoke(MLIR_GCTORS) != 0)
     {
         return -1;
     }
 
-    auto entryThunk = jit->lookup(JIT_ENTRY_THUNK_NAME);
+    auto entryThunk = jit.lookup(JIT_ENTRY_THUNK_NAME);
     if (!entryThunk)
     {
         auto err = entryThunk.takeError();
@@ -1028,4 +990,227 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     TerminateProcess(GetCurrentProcess(), exitCode);
 #endif
     return exitCode;
+}
+
+int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
+{
+    if (!checkInProcessJit(compileOptions))
+    {
+        return -1;
+    }
+
+    // to avoid false positive memory leak reports in release builds
+    // Print a stack trace if we signal out.
+    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+
+    llvm::PrettyStackTraceProgram X(argc, argv);
+    llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
+
+    llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
+
+    // No leaks until here
+
+    registerMLIRDialects(module);
+
+    // Initialize LLVM targets.
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
+
+    if (auto result = prepareJitProcess(compileOptions))
+    {
+        return result;
+    }
+
+    if (dumpObjectFile)
+    {
+        // Compile-and-dump only, no execution: the stock MLIR engine is enough.
+        mlir::SmallVector<mlir::StringRef> sharedLibPaths;
+        sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
+
+        mlir::ExecutionEngineOptions engineOptions;
+        engineOptions.transformer = optPipeline;
+        engineOptions.enableObjectDump = true;
+        engineOptions.enableGDBNotificationListener = !enableOpt;
+        engineOptions.sharedLibPaths = sharedLibPaths;
+        if (enableOpt.getValue())
+        {
+            engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
+        }
+
+        auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+        if (!maybeEngine)
+        {
+            auto err = maybeEngine.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+        auto &engine = maybeEngine.get();
+
+        auto expectedFPtr = engine->lookup(mainFuncName);
+        if (!expectedFPtr)
+        {
+            auto err = expectedFPtr.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << err;
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+
+        llvm::Triple TheTriple;
+        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+        if (!TargetTriple.empty())
+        {
+            targetTriple = llvm::Triple::normalize(TargetTriple);
+        }
+
+        TheTriple = llvm::Triple(targetTriple);
+
+        engine->dumpToObjectFile(
+            objectFilename.empty()
+                ? inputFilename + ((TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o")
+                : objectFilename);
+
+        return 0;
+    }
+
+    auto needsGCEnableThreadsStandIn = false;
+    if (auto result = loadJitSharedLibraries(needsGCEnableThreadsStandIn))
+    {
+        return result;
+    }
+
+    auto llvmContext = std::make_unique<llvm::LLVMContext>();
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
+    if (!llvmModule)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to emit LLVM IR\n";
+        return -1;
+    }
+
+    auto tmBuilderOrError = getJitTargetMachineBuilder();
+    if (!tmBuilderOrError)
+    {
+        auto err = tmBuilderOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    auto tmOrError = tmBuilderOrError->createTargetMachine();
+    if (!tmOrError)
+    {
+        auto err = tmOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    llvmModule->setDataLayout((*tmOrError)->createDataLayout());
+    llvmModule->setTargetTriple((*tmOrError)->getTargetTriple());
+
+    if (auto err = optPipeline(llvmModule.get()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to optimize LLVM IR, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    // after the optimizer, so it cannot inline an entry with debug info into a thunk without any
+    if (auto err = addEntryThunk(*llvmModule, mainFuncName.getValue()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    auto jit = createJit(std::move(*tmBuilderOrError), needsGCEnableThreadsStandIn);
+    if (!jit)
+    {
+        return -1;
+    }
+
+    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(llvmContext))))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add the module to the JIT engine, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    return runJitProgram(*jit, {}, module.lookupSymbol(MLIR_GCTORS) != nullptr);
+}
+
+// The JIT with its cache: the program and every .ts module it imports are each an object of
+// their own, compiled - or found already compiled - by buildJitUnits (jitcache.cpp), and loaded
+// side by side, as the objects of a compiled program are linked.
+int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
+{
+    if (!checkInProcessJit(compileOptions))
+    {
+        return -1;
+    }
+
+    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+
+    llvm::PrettyStackTraceProgram X(argc, argv);
+    llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
+
+    llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
+
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    if (auto result = prepareJitProcess(compileOptions))
+    {
+        return result;
+    }
+
+    auto needsGCEnableThreadsStandIn = false;
+    if (auto result = loadJitSharedLibraries(needsGCEnableThreadsStandIn))
+    {
+        return result;
+    }
+
+    auto tmBuilderOrError = getJitTargetMachineBuilder();
+    if (!tmBuilderOrError)
+    {
+        auto err = tmBuilderOrError.takeError();
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a JITTargetMachineBuilder for the host, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    std::vector<JitUnit> units;
+    if (auto result = buildJitUnits(argv[0], inputFilename.getValue(), compileOptions, *tmBuilderOrError, units))
+    {
+        return result;
+    }
+
+    auto jit = createJit(std::move(*tmBuilderOrError), needsGCEnableThreadsStandIn);
+    if (!jit)
+    {
+        return -1;
+    }
+
+    std::vector<std::string> initFunctions;
+    auto hasGCtorsMethod = false;
+    for (auto &unit : units)
+    {
+        if (auto err = jit->addObjectFile(std::move(unit.object)))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to add '" << unit.sourcePath << "' to the JIT engine, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+
+        if (!unit.initFunction.empty())
+        {
+            initFunctions.push_back(unit.initFunction);
+        }
+
+        hasGCtorsMethod |= unit.isMain && unit.hasGCtorsMethod;
+    }
+
+    return runJitProgram(*jit, initFunctions, hasGCtorsMethod);
 }

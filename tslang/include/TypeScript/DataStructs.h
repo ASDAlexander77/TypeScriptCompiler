@@ -54,6 +54,21 @@ struct CompileOptions
     // See docs/single-gc-collector-design.md.
     bool importsSharedLibrary = false;
 
+    // Under the JIT: every .ts module is compiled into an object of its own, kept in a cache
+    // folder (`__jit` beside the source), and the objects are loaded side by side - so an import
+    // pointing to a .ts file is a declaration, as it is compiled. Off (`--jit-cache=false`), the
+    // imported file is included with its bodies into the one module the JIT runs.
+    bool jitCache = false;
+
+    // Filled while the module is generated, for the JIT cache: the .ts files imported, directly
+    // or through another import, each after the ones it imports (canonical paths), and the
+    // shared libraries imported, whose declarations the module was generated against.
+    std::vector<std::string> sourceImports;
+    std::vector<std::string> sharedLibraryImports;
+    // an import led back to a file still being generated: the modules in the cycle cannot be
+    // compiled one by one (the JIT cache then compiles the program as one module)
+    bool importCycle = false;
+
     // Whether the Boehm runtime has to be present. Only `gc` needs it: it is the model whose
     // reclamation *is* the collector. `rc` frees through the reference counts it maintains and
     // `none` frees nothing, so both allocate straight from `malloc` and neither links libgc.
