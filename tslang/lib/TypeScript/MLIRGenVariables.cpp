@@ -1138,6 +1138,46 @@ namespace mlirgen
         return mlir::Value();
     }
 
+    // `type Node = { value: number, next: Node }`: the declaration names itself, and each mention
+    // expanded it again until the stack ran out. A type here has a fixed shape - a tuple holds its
+    // fields in place - so no alias can contain itself, not even behind `Reference<T>`, whose tuple
+    // type would have to name itself; an interface or a class is the recursive type. A generic
+    // alias is the same: `List<T>` inside `List<T>` expands without end, whatever its arguments.
+    //
+    // One error says it. Every error on the way back out of the expansion follows from it, and so
+    // does "can't find type" at each later mention of the alias; those are left out.
+    mlir::Type MLIRGenImpl::expandTypeAlias(mlir::Location location, StringRef name, llvm::function_ref<mlir::Type()> expand)
+    {
+        auto fullName = getFullNamespaceName(name).str();
+        if (!typeAliasesInProgress.insert(fullName).second)
+        {
+            reportingCircularTypeAlias = true;
+            emitError(location) << "type alias '" << name
+                                << "' circularly references itself; use an interface or a class for a recursive type";
+            reportingCircularTypeAlias = false;
+            circularTypeAliases.insert(name);
+            circularTypeAliasUnwinding = fullName;
+            return mlir::Type();
+        }
+
+        mlir::Type type;
+        {
+            mlir::ScopedDiagnosticHandler followOn(builder.getContext(), [&](mlir::Diagnostic &) {
+                return mlir::success(!circularTypeAliasUnwinding.empty() && !reportingCircularTypeAlias);
+            });
+
+            type = expand();
+        }
+
+        typeAliasesInProgress.erase(fullName);
+        if (circularTypeAliasUnwinding == fullName)
+        {
+            circularTypeAliasUnwinding.clear();
+        }
+
+        return type;
+    }
+
     mlir::Type MLIRGenImpl::resolveTypeByNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // support generic types
@@ -1166,14 +1206,10 @@ namespace mlirgen
             }
 
             assert(typeAliasInfo.second);
-            GenContext typeAliasGenContext(genContext);
-            auto type = getType(typeAliasInfo.second, typeAliasGenContext);
-            if (!type)
-            {
-                typeAliasInfo.first = type;
-            }
-
-            return type;
+            return expandTypeAlias(location, name, [&]() {
+                GenContext typeAliasGenContext(genContext);
+                return getType(typeAliasInfo.second, typeAliasGenContext);
+            });
         }
 
         if (getClassesMap().count(name))
@@ -1280,7 +1316,7 @@ namespace mlirgen
             }
         }    
 
-        if (!isEmbededType(name))
+        if (!isEmbededType(name) && !circularTypeAliases.contains(name))
             emitError(location, "can't find type by name: ") << name;
 
         return mlir::Type();    

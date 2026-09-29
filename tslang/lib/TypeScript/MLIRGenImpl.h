@@ -9666,6 +9666,8 @@ class MLIRGenImpl
 
     mlir::Value resolveFunctionNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext);
 
+    mlir::Type expandTypeAlias(mlir::Location location, StringRef name, llvm::function_ref<mlir::Type()> expand);
+
     mlir::Type resolveTypeByNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext);
 
     mlir::Type resolveTypeByName(mlir::Location location, StringRef name, const GenContext &genContext);
@@ -9941,11 +9943,13 @@ class MLIRGenImpl
             {
                 if (hasExportModifier)
                 {
-                    GenContext typeAliasGenContext(genContext);
-                    auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
+                    // registered unresolved first, so a mention of itself inside is found - and
+                    // found to be circular - as for an alias that is not exported
+                    getTypeAliasMap()[namePtr] = { mlir::Type(), typeAliasDeclarationAST->type };
+                    auto type = resolveTypeByNameInNamespace(loc(typeAliasDeclarationAST), namePtr, genContext);
                     if (type)
                     {
-                        getTypeAliasMap().insert({ namePtr, { type, undefined } });
+                        getTypeAliasMap()[namePtr] = { type, undefined };
                         addTypeDeclarationToExport(namePtr, currentNamespace, type);
                     }
                 }
@@ -12916,6 +12920,17 @@ class MLIRGenImpl
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
+
+    // Type aliases whose declaration is being turned into a type, by full name: one that meets
+    // itself on the way is circular (resolveTypeByNameInNamespace).
+    llvm::StringSet<> typeAliasesInProgress;
+    // Aliases reported circular, by name: that one error says it, and "can't find type" for each
+    // mention after it would only repeat it.
+    llvm::StringSet<> circularTypeAliases;
+    // The alias whose circularity was just reported, until the outermost expansion of it has
+    // unwound: every error on the way out follows from the one reported.
+    std::string circularTypeAliasUnwinding;
+    bool reportingCircularTypeAlias = false;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the
