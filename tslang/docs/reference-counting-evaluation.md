@@ -5946,6 +5946,15 @@ Under `-mm=own` the extra pair is a move, not a second owner: one taker plus the
 release later in the same block is one owner, and the inference pass erases both. A million
 `const p = make(); let q = p;` iterations peak at 4.2 MB under both `rc` and `own` (`none` 50.3).
 
+**And a leak the fix exposed.** §9.30 gave a temporary back only if every use was in its own
+block, and the body of an `if` or a loop is a region of an op in that block, not the block. Once
+the `let` in `const a = new C(); if (x) { let b = a; }` retained instead of taking over, nothing
+gave `a`'s own reference back: 1M calls of such a function reached 89.2 MB at `-O1` (`none` 89.2,
+and `-O3` hid it by removing the allocation). A use nested in an `if`, loop, `switch`, label or
+`try` body now counts as in the block (`runsWithinBlock`), since those bodies finish before the
+next op runs; a nested function or an `async.execute` body still does not. After: 4.7 MB. It
+also releases a `const` that is only *read* in a branch, which leaked before this arc.
+
 **Open, and older than this:** `const c = new C(); if (x) return c; print(c.x);` leaks `c` on the
 path that does not return. The `return` marks the producer consumed, which is what stops §9.30
 releasing it, and that mark is per operation, not per path.

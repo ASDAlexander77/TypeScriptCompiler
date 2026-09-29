@@ -327,7 +327,8 @@ class OwnedReturnConsumptionPass
     // Two things disqualify a value, and both simply leave it leaking as before:
     //
     //  - a user outside the producer's block, so the value outlives the block or is used on a
-    //    path this cannot see;
+    //    path this cannot see - the body of a statement written in the block is not outside it
+    //    (runsWithinBlock);
     //  - a user that is a terminator, since a value handed to a successor as a block argument is
     //    still live after the point this would release it;
     //  - a `ts.StateLabel` after the definition, which is a generator's resume point: the state
@@ -399,9 +400,10 @@ class OwnedReturnConsumptionPass
             // the path that falls through (section 9.60).
             //
             // Only exits that come after the definition in this block are covered, because only
-            // those are dominated by it. Nothing else has to be checked: a temporary whose value
-            // is used from another block is excluded by allUsesReleasableInOwnBlock above, so a
-            // nested exit cannot be returning this value or reading it.
+            // those are dominated by it. A nested exit may read the value - a branch that reads a
+            // `const` and returns - but it cannot return it: a `return` of the value takes it over
+            // and marks it consumed, which keeps it out of this set. The release goes in front of
+            // the exit, after everything the branch read.
             //
             // A `return` leaves for good wherever it is written. A `break` or `continue` only
             // sometimes does, and which it is decides between a leak and a double release:
@@ -512,14 +514,38 @@ class OwnedReturnConsumptionPass
         return false;
     }
 
+    // Does `user` run before control reaches the op that follows its ancestor in `block`? True
+    // for `block`'s own ops, and for ops nested in structured statements only.
+    static bool runsWithinBlock(mlir::Operation *user, mlir::Block *block)
+    {
+        for (auto *op = user; op->getBlock() != block; op = op->getParentOp())
+        {
+            auto *parent = op->getParentOp();
+            if (!parent || !mlir::isa<mlir_ts::IfOp, mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp,
+                                      mlir_ts::LabelOp, mlir_ts::SwitchOp, mlir_ts::TryOp>(parent))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Can a release at the end of this value's own block give its reference back safely? See
     // releaseDiscardedTemporaries for what disqualifies a use and why.
+    //
+    // A user inside the body of an `if`, a loop, a `switch`, a label or a `try` written in this
+    // block is not outside it: those regions run to completion before the op after them does, so
+    // the end of the block still follows every use. A folded `const` read inside a branch -
+    // `const a = new C(); if (x) { let b = a; }` - is exactly that, and leaked before this. Any
+    // other region is: a nested function or an `async.execute` body runs later, from somewhere
+    // else.
     static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         for (auto *user : op->getResult(0).getUsers())
         {
-            if (user->getBlock() != block || user->hasTrait<mlir::OpTrait::IsTerminator>())
+            if (user->hasTrait<mlir::OpTrait::IsTerminator>() || !runsWithinBlock(user, block))
             {
                 return false;
             }
