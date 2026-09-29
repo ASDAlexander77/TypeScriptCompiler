@@ -3,6 +3,7 @@
 
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
@@ -30,6 +31,9 @@ namespace mlir_ts = mlir::typescript;
 // The callee destroys nothing its caller can reach: no overwrite of a place it did not make, no
 // assignment of a global, no call that may.
 #define OWN_NO_DROPS_ATTR_NAME "__own_no_drops"
+// On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
+// result that borrows): why, for the error the body gets instead.
+#define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"
 
 // The arguments of a call, without the callee value of an indirect one.
 inline mlir::OperandRange callArgs(mlir::Operation *op)
@@ -162,12 +166,12 @@ inline bool isLiteral(mlir::Operation *def)
 // Made here and held by nobody else: an allocation, a literal cast to its value type, an
 // operation rc marks as arriving with a reference, or a direct call of a function this module
 // defines (every function returns its result retained, rc 9.24; the call's own mark does not
-// survive the affine lowering). A declared callee, an indirect call, a parameter, a load or a
-// value merged from branches is not fresh.
+// survive the affine lowering). A declared callee, an indirect call, a parameter, a load, a
+// value merged from branches, or a result that borrows an argument is not fresh.
 inline bool isFresh(mlir::Value value)
 {
     auto *def = value.getDefiningOp();
-    if (!def)
+    if (!def || resultBorrows(def) >= 0)
     {
         return false;
     }
@@ -262,6 +266,167 @@ inline mlir_ts::LoadOp slotLoadOf(mlir::Value value)
     }
 
     return loadOp;
+}
+
+// Does a value of this type own a block that a release would destroy?
+inline bool ownsHeap(mlir::Value value)
+{
+    MLIRTypeHelper mth(value.getContext(), CompileOptions{});
+    return mth.ownsHeapMemory(value.getLoc(), value.getType());
+}
+
+// Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.
+inline bool holdsNoBlock(mlir::Value value)
+{
+    auto *def = rootOf(value).getDefiningOp();
+    return !ownsHeap(value) || (def && isLiteral(def));
+}
+
+// Is this the slot of parameter `argument` - a local declared from it that owns nothing, is not
+// captured, and is never assigned, so every read of it is the argument?
+inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index)
+{
+    auto init = varOp.getInitializer();
+    auto argument = init ? mlir::dyn_cast<mlir::BlockArgument>(init) : mlir::BlockArgument();
+    if (!argument || !argument.getOwner()->isEntryBlock() ||
+        !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) || isOwningVariable(varOp) ||
+        varOp.getCaptured().value_or(false))
+    {
+        return false;
+    }
+
+    auto assigned = llvm::any_of(varOp.getResult().getUsers(), [&](mlir::Operation *user) {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+        return storeOp && storeOp.getReference() == varOp.getResult();
+    });
+    if (assigned)
+    {
+        return false;
+    }
+
+    index = argument.getArgNumber();
+    return true;
+}
+
+// The object a method call is made on: `ts.GetThis` of a method bound to it. Null otherwise.
+inline mlir::Value boundThis(mlir::Value value)
+{
+    auto getThisOp = value.getDefiningOp<mlir_ts::GetThisOp>();
+    auto *bound = getThisOp ? getThisOp.getOperand().getDefiningOp() : nullptr;
+    if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(bound))
+    {
+        return refOp.getThisVal();
+    }
+
+    if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(bound))
+    {
+        return refOp.getThisVal();
+    }
+
+    return {};
+}
+
+// The parameter whose argument `value` is a borrow of, or -1 (spec 2.4, borrowed-from-argument).
+// Seen through views, casts out of `!ts.opaque`, `ts.Unbox` (the payload an `any` box holds), the
+// object a method is called on,
+// reads out of fields and elements (the argument's block holds them), and results that borrow an
+// argument, down to a read of a parameter's slot or the parameter itself. Merged values must all
+// agree; one that holds no block (`null`) agrees with any. A value the function made, a local, a
+// global: -1.
+inline int borrowedParam(mlir::Value value, int depth = 0)
+{
+    if (depth > 32)
+    {
+        return -1;
+    }
+
+    value = rootOf(value);
+    if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+    {
+        if (argument.getOwner()->isEntryBlock())
+        {
+            return mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()) ? argument.getArgNumber() : -1;
+        }
+
+        llvm::SmallVector<mlir::Value> merged;
+        if (!mergedInto(argument, merged))
+        {
+            return -1;
+        }
+
+        auto found = -1;
+        for (auto passed : merged)
+        {
+            if (holdsNoBlock(passed))
+            {
+                continue;
+            }
+
+            auto index = borrowedParam(passed, depth + 1);
+            if (index < 0 || (found >= 0 && index != found))
+            {
+                return -1;
+            }
+
+            found = index;
+        }
+
+        return found;
+    }
+
+    if (auto object = boundThis(value))
+    {
+        return borrowedParam(object, depth + 1);
+    }
+
+    auto *def = value.getDefiningOp();
+    if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
+        castOp && mlir::isa<mlir_ts::OpaqueType>(castOp.getIn().getType()))
+    {
+        return borrowedParam(castOp.getIn(), depth + 1);
+    }
+
+    if (auto unboxOp = mlir::dyn_cast_or_null<mlir_ts::UnboxOp>(def))
+    {
+        return borrowedParam(unboxOp.getIn(), depth + 1);
+    }
+
+    if (auto propertyRefOp = mlir::dyn_cast_or_null<mlir_ts::PropertyRefOp>(def))
+    {
+        return borrowedParam(propertyRefOp.getObjectRef(), depth + 1);
+    }
+
+    if (auto elementRefOp = mlir::dyn_cast_or_null<mlir_ts::ElementRefOp>(def))
+    {
+        return borrowedParam(elementRefOp.getArray(), depth + 1);
+    }
+
+    if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
+    {
+        auto ref = loadOp.getReference();
+        if (isPlace(ref))
+        {
+            return borrowedParam(ref, depth + 1);
+        }
+
+        auto index = -1;
+        auto varOp = ref.getDefiningOp<mlir_ts::VariableOp>();
+        return varOp && isParameterSlot(varOp, index) ? index : -1;
+    }
+
+    if (auto varOp = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(def))
+    {
+        auto index = -1;
+        return isParameterSlot(varOp, index) ? index : -1;
+    }
+
+    if (def && isCall(def) && resultBorrows(def) >= 0 &&
+        static_cast<size_t>(resultBorrows(def)) < callArgs(def).size())
+    {
+        return borrowedParam(callArgs(def)[resultBorrows(def)], depth + 1);
+    }
+
+    return -1;
 }
 
 } // namespace own_facts

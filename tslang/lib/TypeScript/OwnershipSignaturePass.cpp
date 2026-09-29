@@ -56,6 +56,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         });
 
         findOpen(module);
+        computeResultBorrows();
         computeDrops();
 
         for (auto &call : calls)
@@ -98,9 +99,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // class vtable of the module: what a virtual call through that slot may reach.
     std::map<std::pair<int64_t, std::string>, llvm::SmallVector<mlir::StringAttr, 2>> families;
 
-    // Functions whose callers are not all known: a caller outside the module, or a reference to
-    // the symbol that is not a call this pass resolves.
-    llvm::DenseSet<mlir::Operation *> open;
+    // Functions whose callers are not all known - a caller outside the module, or a reference to
+    // the symbol that is not a call this pass resolves - and why, for the error in their body.
+    llvm::DenseMap<mlir::Operation *, const char *> open;
+
+    // The parameter each function's result borrows, from its body (local) and as its callers see
+    // it (effective: closed, and agreed by every family it is in).
+    llvm::DenseMap<mlir::Operation *, int> borrowsLocal;
+    llvm::DenseMap<mlir::Operation *, int> borrowsEffective;
 
     // Functions that destroy nothing their caller can reach.
     llvm::DenseSet<mlir::Operation *> noDrops;
@@ -290,8 +296,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return;
         }
 
-        // A class another module can see may be extended there, and its override is a candidate
-        // this module never sees.
+        resolveFamily(index, identifier, callees);
+    }
+
+    // A class another module can see may be extended there, and its override is a candidate this
+    // module never sees: every member has to be private and defined here.
+    void resolveFamily(int64_t index, mlir::StringAttr identifier, Callees &callees)
+    {
         callees.known = true;
         for (auto member : familyOf(index, identifier))
         {
@@ -350,17 +361,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         {
             if (!entry.second.isPrivate())
             {
-                open.insert(entry.second);
+                open.try_emplace(entry.second, "it can be called from another module");
             }
         }
 
-        auto uses = mlir::SymbolTable::getSymbolUses(module.getOperation());
+        // the module is a symbol table, which getSymbolUses does not look inside: walk its body
+        auto uses = mlir::SymbolTable::getSymbolUses(&module.getBodyRegion());
         if (!uses)
         {
             // an op this pass cannot read symbols through: nothing is closed
             for (auto &entry : functions)
             {
-                open.insert(entry.second);
+                open.try_emplace(entry.second, "its callers cannot all be found");
             }
 
             return;
@@ -386,15 +398,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
-            auto inFunction = !!user->getParentOfType<mlir_ts::FuncOp>();
-            if (inFunction && mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::VirtualSymbolRefOp,
-                                        mlir_ts::ThisSymbolRefOp, mlir_ts::SymbolRefOp>(user) &&
-                onlyCalled(user->getResult(0)))
-            {
-                continue;
-            }
-
-            open.insert(funcOp);
             int64_t index = -1;
             if (auto refOp = mlir::dyn_cast<mlir_ts::ThisVirtualSymbolRefOp>(user))
             {
@@ -405,15 +408,226 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 index = refOp.getIndex();
             }
 
-            if (index >= 0)
+            auto inFunction = !!user->getParentOfType<mlir_ts::FuncOp>();
+            if (inFunction && mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::VirtualSymbolRefOp,
+                                        mlir_ts::ThisSymbolRefOp, mlir_ts::SymbolRefOp>(user) &&
+                onlyCalled(user->getResult(0)))
             {
-                for (auto member : familyOf(index, symbol))
+                // a virtual call this pass cannot resolve reaches its family without the facts
+                if (index >= 0)
                 {
-                    if (auto memberOp = functions.lookup(member.getValue()))
+                    Callees callees;
+                    resolveFamily(index, symbol, callees);
+                    if (!callees.known)
                     {
-                        open.insert(memberOp);
+                        openFamily(index, symbol, "an override may be defined in another module");
                     }
                 }
+
+                continue;
+            }
+
+            open.try_emplace(funcOp, "it is used other than by a call");
+            if (index >= 0)
+            {
+                openFamily(index, symbol, "it is used other than by a call");
+            }
+        }
+    }
+
+    void openFamily(int64_t index, mlir::StringAttr symbol, const char *why)
+    {
+        for (auto member : familyOf(index, symbol))
+        {
+            if (auto memberOp = functions.lookup(member.getValue()))
+            {
+                open.try_emplace(memberOp, why);
+            }
+        }
+    }
+
+    // ---- Results that borrow an argument ----
+
+    // The values a function returns: what is stored into the local its returns read (MLIRGen's
+    // result slot), or what a return hands back directly.
+    static llvm::SmallVector<mlir::Value> returnedValues(mlir_ts::FuncOp funcOp)
+    {
+        llvm::SmallVector<mlir::Value> values;
+        funcOp.walk([&](mlir_ts::ReturnInternalOp returnOp) {
+            for (auto operand : returnOp.getRetOperands())
+            {
+                auto loadOp = operand.getDefiningOp<mlir_ts::LoadOp>();
+                auto slot = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                if (!slot || slot.getInitializer() || isOwningVariable(slot))
+                {
+                    values.push_back(operand);
+                    continue;
+                }
+
+                for (auto *user : slot.getResult().getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (storeOp && storeOp.getReference() == slot.getResult())
+                    {
+                        values.push_back(storeOp.getValue());
+                    }
+                }
+            }
+        });
+
+        return values;
+    }
+
+    // The parameter every heap value the function returns borrows, or -1 (spec 2.4). A result
+    // that holds no block (`null`, a number) agrees with any.
+    static int localResultBorrows(mlir_ts::FuncOp funcOp)
+    {
+        auto found = -1;
+        for (auto value : returnedValues(funcOp))
+        {
+            if (holdsNoBlock(value))
+            {
+                continue;
+            }
+
+            auto index = borrowedParam(value);
+            if (index < 0 || (found >= 0 && index != found))
+            {
+                return -1;
+            }
+
+            found = index;
+        }
+
+        return found;
+    }
+
+    // A result that borrows an argument only holds where every caller knows it, so the fact
+    // survives only on a closed function whose every family agrees, and families are demoted
+    // until they do: a member that loses it can make another family disagree. A caller that
+    // returns what such a call returns borrows too, so the facts are recomputed with the calls
+    // pinned until nothing changes; if that does not settle, nobody gets one.
+    void computeResultBorrows()
+    {
+        llvm::DenseMap<mlir::Operation *, int> pinned;
+        for (auto round = 0; round < 16; ++round)
+        {
+            for (auto &entry : functions)
+            {
+                if (!entry.second.isDeclaration())
+                {
+                    borrowsLocal[entry.second] = localResultBorrows(entry.second);
+                }
+            }
+
+            meetResultBorrows();
+
+            llvm::DenseMap<mlir::Operation *, int> next;
+            for (auto &call : calls)
+            {
+                if (auto index = callResultBorrows(call.callees); index >= 0)
+                {
+                    next[call.op] = index;
+                }
+            }
+
+            auto settled = next == pinned;
+            pinned = std::move(next);
+            pinResultBorrows(pinned);
+            if (settled)
+            {
+                return;
+            }
+        }
+
+        borrowsEffective.clear();
+        pinResultBorrows(llvm::DenseMap<mlir::Operation *, int>());
+    }
+
+    void meetResultBorrows()
+    {
+        borrowsEffective.clear();
+        for (auto &[funcOp, index] : borrowsLocal)
+        {
+            if (index >= 0 && !open.contains(funcOp))
+            {
+                borrowsEffective[funcOp] = index;
+            }
+        }
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &[key, members] : families)
+            {
+                llvm::SmallVector<int> seen;
+                for (auto member : members)
+                {
+                    auto funcOp = functions.lookup(member.getValue());
+                    seen.push_back(funcOp ? borrowsEffective.lookup_or(funcOp, -1) : -1);
+                }
+
+                if (llvm::all_equal(seen))
+                {
+                    continue;
+                }
+
+                for (auto member : members)
+                {
+                    if (auto funcOp = functions.lookup(member.getValue()); funcOp && borrowsEffective.erase(funcOp))
+                    {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    int callResultBorrows(const Callees &callees)
+    {
+        if (!callees.known || callees.instanceOf || callees.funcs.empty())
+        {
+            return -1;
+        }
+
+        auto index = borrowsEffective.lookup_or(callees.funcs.front(), -1);
+        auto agree = llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp callee) {
+            return borrowsEffective.lookup_or(callee, -1) == index;
+        });
+        return agree ? index : -1;
+    }
+
+    // The calls get the facts their callees agree on; each function gets its own, or the reason it
+    // lost one its body has, for the error there.
+    void pinResultBorrows(const llvm::DenseMap<mlir::Operation *, int> &pinned)
+    {
+        auto *context = &getContext();
+        auto i32 = mlir::IntegerType::get(context, 32);
+        for (auto &call : calls)
+        {
+            if (auto found = pinned.find(call.op); found != pinned.end())
+            {
+                call.op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::IntegerAttr::get(i32, found->second));
+            }
+            else
+            {
+                call.op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+            }
+        }
+
+        for (auto &[funcOp, local] : borrowsLocal)
+        {
+            funcOp->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+            funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
+            if (auto index = borrowsEffective.lookup_or(funcOp, -1); index >= 0)
+            {
+                funcOp->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::IntegerAttr::get(i32, index));
+            }
+            else if (local >= 0)
+            {
+                auto *why = open.lookup(funcOp);
+                funcOp->setAttr(OWN_FACTS_LOST_ATTR_NAME,
+                                mlir::StringAttr::get(context, why ? why : "an override in its class family disagrees"));
             }
         }
     }
@@ -520,6 +734,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto value = rootOf(work.pop_back_val());
             if (!seen.insert(value).second)
             {
+                continue;
+            }
+
+            if (auto object = boundThis(value))
+            {
+                work.push_back(object);
                 continue;
             }
 
