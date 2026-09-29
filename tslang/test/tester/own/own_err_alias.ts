@@ -1,7 +1,7 @@
-// -mm=own, phase 0 rejects: `b` would be a second owner of `a`'s array.
+// -mm=own, phase 1 rejects: `a`'s array moves into `b`, and `a` is read after that.
 function main() {
     let a: number[] = [1];
     let b = a;
-    print(b.length);
+    print(b.length, a.length);
     print("done.");
 }

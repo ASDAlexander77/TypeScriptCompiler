@@ -1,8 +1,8 @@
 # `-mm=own`: a single-owner memory model
 
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
-amendments folded in. Phase 0 implemented on branch `own-phase-0` (2026-09-29, results §11);
-plan: `docs/superpowers/plans/2026-09-28-own-phase-0.md`.
+amendments folded in. Phase 0 merged as #399 (results §11); phase 1
+(moves by reachability) on branch `own-phase-1` (results §12). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -487,3 +487,85 @@ Tested both ways:
 - Results of runtime helpers and `declare`d functions are rejected.
 - A field initialized from an array literal of eight numbers is rejected ("takes a second
   reference" at the literal); four are accepted. Not yet diagnosed.
+
+## 12. Phase 1 results, 2026-09-29
+
+Plan: `docs/superpowers/plans/2026-09-29-own-phase-1.md`. Only `OwnershipInferencePass.cpp`
+changed; MLIRGen and the lowering did not.
+
+### 12.1 What phase 1 accepts
+
+A move (§2.2, verdict 1) is decided by reachability on the affine CFG, where structured
+statements are already `cf.br`/`cf.cond_br` between blocks.
+
+- **Sources.** A fresh SSA value, as in phase 0, or an **owning local slot**: a `ts.Variable`
+  marked `__owned`, not captured, read with `ts.Load` through casts that keep the same block (a
+  class widened to a union with null, an upcast). Parameters, fields and boxing casts are not
+  sources yet.
+- **The move point** is where rc takes the receiver's reference: its `ts.Retain` of the value
+  when that comes first, else the taker. A `return` at this level is a `ts.Store` into the return
+  slot, with the retain *before* the source's scope-exit `ts.ReleaseSlot`, so measuring from the
+  store would leave that release alive.
+- **Use after move.** Any other use of the source reachable from the taker, without passing the
+  source's definition (its producer, or the slot's `ts.Variable`), is an error: `'a' is used here
+  after its value was moved`, with a note at the move. For a slot that includes an assignment, and
+  every use of what *any* read of the slot returned: `const b = a` is folded into a `ts.Load` of
+  `a`'s slot, so `b.x` after `a` moves reads the moved value through a load that came before the
+  move (found by the final review: it compiled and read freed memory).
+- **Loops (§2.6).** A taker control comes back to without the value being made again is `moved
+  inside a loop but was made outside it`. A move out of a `let` declared in the loop body is fine:
+  each iteration passes the declaration.
+- **Releases.** Each release of the source the move can reach must be dominated by the move, and
+  is erased. A release the move cannot reach stays: it is the owner on the paths that did not
+  move (`if (x) { let b = a; return ...; } use(a)`). A reachable release the move does not
+  dominate is `moved here on some paths only`.
+- **A taker rc gives no reference** (`ts.NewInterface`) with the temporary also released is still
+  a second owner (§11.1).
+
+Also changed: a cast of `null` or `undefined` counts as a literal, so `c: C | null = null`
+compiles; under `--di` the errors name the variable, read from MLIRGen's `NameLoc`; and only a
+value whose type owns heap memory is a candidate, while a string literal (the immortal global)
+may be held by any number of places. Under `--opt`, and so under the JIT, CSE merges identical
+literals before inference; one merged `0` stored into a variable inside a loop and before it was
+reported as a move inside a loop.
+
+### 12.2 Measured
+
+1M iterations, AOT, `measure.ps1`, both `-O3` and `-O1` (identical within 0.1 MB):
+
+| program | gc | rc | none | own |
+| --- | --- | --- | --- | --- |
+| `own_move_let` (`let b = a`) | 6.6 | 4.8 | 546.8 | 4.8 |
+| `own_move_return` (`return a`) | 6.6 | 4.8 | 546.8 | 4.8 |
+| `own_move_field` (`h.c = a`) | 6.5 | 4.8 | 546.8 | 4.8 |
+
+### 12.3 Teeth
+
+With the moved releases kept (both `toErase.insert(moved...)` lines disabled), 8 of the 10
+move checks fail. `own_move_loop_body` passed, because it read the value before either release
+ran and allocated nothing over it. It now keeps every value in an array past the loop and reads
+them after `churn()`, and fails too (JIT exit 127).
+
+### 12.4 Changed negative tests
+
+Two takers of one value are now a move followed by a use, so `own_err_const_twice`,
+`own_err_push_let`, `own_err_two_owners`, `own_err_use_after_move`, `own_err_field_alias` and
+`own_err_alias` report `is used here after its value was moved` instead of `takes a second
+reference`. `own_err_alias` was a bare `let b = a`, which phase 1 accepts; it now reads `a`
+after the move. The loop cases report `is moved inside a loop`.
+
+### 12.5 Known limits (the input to phase 2)
+
+- Borrows (§2.2 verdict 2): a value read after it was stored into a field or a local, a value
+  made outside a loop and used as an owner inside it, and a `const` alias of a `let` held across
+  the `let`'s move (`const b = a; let c = a; ... b.x`).
+- A `const` alias of a `let` held across an *assignment* of the `let` (`const b = a; a = new C();
+  b.x`) is not caught: the assignment is not a move, and it destroys what `b` reads. rc has the
+  same bug today (it prints garbage); own inherits it until phase 2's dropping-mutation rule.
+- A move on some paths only: needs drop elaboration, releasing on the paths that did not move.
+- Assigning a moved `let`: rc's assignment releases what the slot holds, the moved value.
+- Moves out of fields, parameters, and through boxing casts; moves into a nested region's op
+  (compared by the statement that holds them, which answers "reachable").
+- Everything in §11.4 not listed above as accepted: owned locals in a `try` body, closures,
+  interface and `any` boxing, `delete`, callee-owned parameters, runtime helpers and `declare`d
+  functions, the eight-element field literal.

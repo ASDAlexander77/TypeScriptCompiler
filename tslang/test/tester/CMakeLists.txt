@@ -2400,7 +2400,9 @@ set_tests_properties(test-own-inference-erases-birth-takes
 
 # -mm=own, phase 0 (docs/superpowers/plans/2026-09-28-own-phase-0.md). Positive programs run
 # under JIT and ahead of time; each owns every block once.
-foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals)
+foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals
+                 own_move_const_branch own_move_let own_move_field own_move_return own_move_loop_body
+                 own_literal_reuse own_move_control_flow)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2418,18 +2420,34 @@ add_test(NAME test-own-verify-ownership
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_array.ts")
 set_tests_properties(test-own-verify-ownership PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
+# Under --di a diagnostic names the variable: MLIRGen puts a NameLoc inside each local's
+# scope-fused location, and the error reads it.
+add_test(NAME test-own-err-names-the-variable
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=own --di
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_let_twice.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/own-err-names-the-variable.obj")
+set_tests_properties(test-own-err-names-the-variable
+                     PROPERTIES PASS_REGULAR_EXPRESSION "'a' is used here after its value was moved"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # Each negative program has one shape phase 0 cannot prove, and must be rejected with this text.
 set(own_error_cases
-    "own_err_alias|takes a second reference"
-    "own_err_field_alias|takes a second reference"
+    "own_err_alias|is used here after its value was moved"
+    "own_err_assign_after_move|is used here after its value was moved"
+    "own_err_let_twice|is used here after its value was moved"
+    "own_err_let_loop|is moved inside a loop"
+    "own_err_const_alias_move|is used here after its value was moved"
+    "own_err_const_alias_field|is used here after its value was moved"
+    "own_err_field_alias|is used here after its value was moved"
     "own_err_closure|closures that capture a variable are not supported"
     "own_err_unknown_producer|takes a second reference"
-    "own_err_two_owners|takes a second reference"
-    "own_err_const_twice|takes a second reference"
-    "own_err_push_let|takes a second reference"
-    "own_err_push_loop|is given an owner in another block"
-    "own_err_field_loop|is given an owner in another block"
-    "own_err_use_after_move|is used after its value was moved"
+    "own_err_two_owners|is used here after its value was moved"
+    "own_err_const_twice|is used here after its value was moved"
+    "own_err_push_let|is used here after its value was moved"
+    "own_err_push_loop|is moved inside a loop"
+    "own_err_field_loop|is moved inside a loop"
+    "own_err_move_some_paths|is moved here on some paths only"
+    "own_err_use_after_move|is used here after its value was moved"
     "own_err_interface|takes a second reference"
     "own_err_delete|'delete' is not supported by -mm=own yet")
 foreach(own_error_case ${own_error_cases})
