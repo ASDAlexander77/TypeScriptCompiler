@@ -9,6 +9,7 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -108,6 +109,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         // What is proven loses its retains; any other retain is a second reference nobody
         // proved safe - of a loaded value, a parameter, an unknown producer, or of a fresh value
         // whose own check was reported above.
+        // Receivers of each owning local are decided together: one may move it, but where there
+        // are several, each borrows it, since a borrow pins its owner.
+        llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> slotReceivers;
         for (auto *op : retains)
         {
             auto value = retainedValue(op);
@@ -119,11 +123,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
             if (auto load = value ? slotLoadOf(value) : mlir_ts::LoadOp())
             {
-                if (checkSlotMove(op, value, load, toErase))
-                {
-                    toErase.insert(op);
-                }
-
+                slotReceivers[load.getReference()].push_back({op, value, load});
                 continue;
             }
 
@@ -131,6 +131,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             {
                 reportSecondReference(op);
             }
+        }
+
+        for (auto &entry : slotReceivers)
+        {
+            decideSlot(entry.first, entry.second, toErase);
         }
 
         for (auto *op : toErase)
@@ -141,6 +146,243 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
   private:
     mlir::DominanceInfo *dominance = nullptr;
+
+    // While non-zero, verdicts are tried without reporting: the next verdict gets its turn first.
+    unsigned quiet = 0;
+
+    struct SlotReceiver
+    {
+        mlir::Operation *retain;
+        mlir::Value value;
+        mlir_ts::LoadOp load;
+    };
+
+    template <typename F> bool quietly(F check)
+    {
+        ++quiet;
+        auto result = check();
+        --quiet;
+        return result;
+    }
+
+    // Move, else borrow, else error (spec 2.2) for the receivers of one owning local.
+    void decideSlot(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto owner = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
+        if (receivers.size() == 1)
+        {
+            auto &receiver = receivers.front();
+            if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); }))
+            {
+                toErase.insert(receiver.retain);
+                return;
+            }
+
+            if (auto borrower = borrowerOf(receiver.retain))
+            {
+                tryBorrow(borrower, slotEnds(slot), owner, toErase);
+                return;
+            }
+
+            checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); // reports
+            return;
+        }
+
+        decideSlotReceivers(slot, receivers, owner, toErase);
+    }
+
+    // More than one receiver of one owning local. Each has to borrow: a borrow pins the owner, so
+    // none may move it. A receiver that is not a `let` reports its move error - another
+    // receiver's reads come after it - or, if its move alone would pass, that a borrow pins it.
+    void decideSlotReceivers(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::StringRef owner,
+                             llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto ends = slotEnds(slot);
+        mlir_ts::VariableOp someBorrower;
+        for (auto &receiver : receivers)
+        {
+            if (auto borrower = borrowerOf(receiver.retain))
+            {
+                someBorrower = borrower;
+                tryBorrow(borrower, ends, owner, toErase);
+            }
+        }
+
+        for (auto &receiver : receivers)
+        {
+            if (borrowerOf(receiver.retain))
+            {
+                continue;
+            }
+
+            llvm::SetVector<mlir::Operation *> unused;
+            if (checkSlotMove(receiver.retain, receiver.value, receiver.load, unused))
+            {
+                reportMovedWhileBorrowed(receiver.retain, owner, someBorrower ? varName(someBorrower) : "another variable");
+            }
+        }
+    }
+
+    // A `let` that could borrow: owning, declared from a value, holding a reference it took
+    // itself (a `ts.RetainSlot`, not the value's own consumed one), and not captured.
+    static mlir_ts::VariableOp borrowerOf(mlir::Operation *acquisition)
+    {
+        mlir_ts::VariableOp varOp;
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(acquisition))
+        {
+            varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+        }
+        else
+        {
+            varOp = mlir::dyn_cast<mlir_ts::VariableOp>(acquisition);
+        }
+
+        if (!varOp || !varOp.getInitializer() || !isOwningVariable(varOp) ||
+            varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME) || varOp.getCaptured().value_or(false))
+        {
+            return {};
+        }
+
+        auto retains = llvm::any_of(varOp.getResult().getUsers(),
+                                    [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainSlotOp>(user); });
+        return retains ? varOp : mlir_ts::VariableOp();
+    }
+
+    // Where an owning local stops holding its value: each release of its slot and each store
+    // into it.
+    static llvm::SmallVector<mlir::Operation *> slotEnds(mlir::Value slot)
+    {
+        llvm::SmallVector<mlir::Operation *> ends;
+        for (auto *user : slot.getUsers())
+        {
+            if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::StoreOp>(user))
+            {
+                ends.push_back(user);
+            }
+        }
+
+        return ends;
+    }
+
+    // A borrow (spec 2.2, verdict 2): `borrower` takes no reference and gives none back, so its
+    // retain and every release of its slot go, and the owner keeps its own. Sound while no use of
+    // the borrower can run after any of `ends` - the owner's releases and assignments - and while
+    // nothing it holds is kept: not stored, returned, retained or assigned. A path back to a use
+    // through the borrower's own declaration is a new borrow, not this one. Reports and returns
+    // false otherwise.
+    bool tryBorrow(mlir_ts::VariableOp borrower, llvm::ArrayRef<mlir::Operation *> ends, llvm::StringRef owner,
+                   llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto slot = borrower.getResult();
+        auto name = varName(borrower);
+        llvm::SmallVector<mlir::Operation *> uses;
+        llvm::SmallVector<mlir::Operation *> bookkeeping;
+        for (auto *user : slot.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
+            {
+                bookkeeping.push_back(user);
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::StoreOp>(user))
+            {
+                reportBorrowerAssigned(user, name, owner);
+                return false;
+            }
+
+            auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!readOp)
+            {
+                reportBorrowEscapes(user, name, owner);
+                return false;
+            }
+
+            uses.push_back(user);
+
+            // The borrowed value itself - the read and the casts that keep it the same block - must
+            // not be kept anywhere. What it produces - a field reference, a value loaded through
+            // one, a bound method, a catch clause's non-owning local - still points into the
+            // borrowed block, so each of its uses is a use of the borrower too. A value that
+            // cannot point anywhere (a number, a boolean) ends the walk.
+            llvm::SmallVector<std::pair<mlir::Value, bool>> values{{readOp.getResult(), true}};
+            llvm::SmallPtrSet<mlir::Value, 16> seen;
+            while (!values.empty())
+            {
+                auto [current, borrowed] = values.pop_back_val();
+                for (auto *valueUser : current.getUsers())
+                {
+                    uses.push_back(valueUser);
+                    if (borrowed)
+                    {
+                        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(valueUser))
+                        {
+                            if (mayPointInto(castOp.getResult()) && seen.insert(castOp.getResult()).second)
+                            {
+                                values.push_back({castOp.getResult(), true});
+                            }
+
+                            continue;
+                        }
+
+                        if (mlir::isa<mlir_ts::RetainOp>(valueUser) || !isBorrow(valueUser, current))
+                        {
+                            reportBorrowEscapes(valueUser, name, owner);
+                            return false;
+                        }
+                    }
+
+                    for (auto result : valueUser->getResults())
+                    {
+                        if (mayPointInto(result) && seen.insert(result).second)
+                        {
+                            values.push_back({result, false});
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto *end : ends)
+        {
+            for (auto *use : uses)
+            {
+                if (reachableAfter(end, use, borrower))
+                {
+                    reportBorrowOutlives(use, end, name, owner);
+                    return false;
+                }
+            }
+        }
+
+        toErase.insert(bookkeeping.begin(), bookkeeping.end());
+        return true;
+    }
+
+    // Can a value of this type point into a heap block - a reference into one, a block of its own,
+    // or a method bound to one? A number or a boolean read out of a borrowed block cannot.
+    bool mayPointInto(mlir::Value value)
+    {
+        auto type = value.getType();
+        return mlir::isa<mlir_ts::RefType, mlir_ts::BoundRefType, mlir_ts::ValueRefType, mlir_ts::BoundFunctionType,
+                         mlir_ts::HybridFunctionType, mlir_ts::ExtensionFunctionType, mlir_ts::OpaqueType>(type) ||
+               ownsHeap(value);
+    }
+
+    // The name of a temporary that owns: a folded `const` has no ts.Variable, but under --di it
+    // has a ts.DebugVariable, whose location carries the name.
+    static llvm::StringRef ownerName(mlir::Value value)
+    {
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+            {
+                return nameAt(user->getLoc());
+            }
+        }
+
+        return "this value";
+    }
 
     // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer.
     // None for a variable with no initializer - its storage was hoisted in front of a try and its
@@ -295,6 +537,51 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return true;
         }
 
+        if (quietly([&] { return movesOf(value, toErase); }))
+        {
+            return true;
+        }
+
+        // Not a move. Every taker a `let` that can borrow, and the temporary's own release the
+        // owner that bounds them (spec 2.2, verdict 2) - else the move's error stands.
+        llvm::SmallVector<mlir::Operation *> takers;
+        llvm::SmallVector<mlir::Operation *> releases;
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainOp>(user))
+            {
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::ReleaseOp>(user))
+            {
+                releases.push_back(user);
+            }
+            else if (!isBorrow(user, value))
+            {
+                takers.push_back(user);
+            }
+        }
+
+        if (!releases.empty() && !takers.empty() &&
+            llvm::all_of(takers, [](mlir::Operation *taker) { return !!borrowerOf(taker); }))
+        {
+            auto owner = ownerName(value);
+            auto ok = true;
+            for (auto *taker : takers)
+            {
+                ok = tryBorrow(borrowerOf(taker), releases, owner, toErase) && ok;
+            }
+
+            return ok;
+        }
+
+        return movesOf(value, toErase);
+    }
+
+    // The move verdict for an SSA value (phase 1). Reports and returns false when it is not one.
+    bool movesOf(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
+    {
         llvm::SmallVector<mlir::Operation *> takers;
         llvm::SmallVector<mlir::Operation *> releases;
         llvm::SmallVector<mlir::Operation *> reads;
@@ -698,7 +985,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // `--di` the error still points at the right place.
     static llvm::StringRef varName(mlir_ts::VariableOp varOp)
     {
-        auto location = varOp.getLoc();
+        return nameAt(varOp.getLoc());
+    }
+
+    static llvm::StringRef nameAt(mlir::Location location)
+    {
         if (auto fused = mlir::dyn_cast<mlir::FusedLocWith<mlir::LLVM::DILocalVariableAttr>>(location))
         {
             if (auto name = fused.getMetadata().getName())
@@ -733,6 +1024,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
     void reportSecondReference(mlir::Operation *op)
     {
+        if (quiet)
+        {
+            return;
+        }
+
         llvm::StringRef name = "this value";
         if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(op))
         {
@@ -752,6 +1048,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
     void reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
     {
+        if (quiet)
+        {
+            return;
+        }
+
         auto diag = use->emitError("'") << name << "' is used here after its value was moved";
         diag.attachNote(move->getLoc()) << "value moved here";
         signalPassFailure();
@@ -759,14 +1060,71 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
     void reportMovedInLoop(mlir::Operation *move, llvm::StringRef name)
     {
+        if (quiet)
+        {
+            return;
+        }
+
         move->emitError("'") << name
                              << "' is moved inside a loop but was made outside it; only a borrow could do "
                                 "that, and -mm=own cannot prove one yet";
         signalPassFailure();
     }
 
+    void reportBorrowOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef name, llvm::StringRef owner)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        auto diag = use->emitError("'") << name << "' borrows '" << owner << "' but is used here after '" << owner
+                                        << "' is released or overwritten";
+        diag.attachNote(end->getLoc()) << "'" << owner << "' is released or overwritten here";
+        signalPassFailure();
+    }
+
+    void reportMovedWhileBorrowed(mlir::Operation *op, llvm::StringRef owner, llvm::StringRef borrower)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << owner << "' is moved here while '" << borrower
+                           << "' borrows it; a borrowed value cannot be moved";
+        signalPassFailure();
+    }
+
+    void reportBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << name << "' borrows '" << owner << "' and cannot be stored, returned or captured";
+        signalPassFailure();
+    }
+
+    void reportBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
+    {
+        if (quiet)
+        {
+            return;
+        }
+
+        op->emitError("'") << name << "' borrows '" << owner << "' and cannot be assigned; -mm=own cannot prove that yet";
+        signalPassFailure();
+    }
+
     void reportMovedOnSomePaths(mlir::Operation *move, mlir::Operation *release, llvm::StringRef name)
     {
+        if (quiet)
+        {
+            return;
+        }
+
         auto diag = move->emitError("'") << name
                                          << "' is moved here on some paths only; -mm=own cannot release it "
                                             "on the others yet";

@@ -2,7 +2,8 @@
 
 Date: 2026-09-24. Status: design approved in conversation; written review 2026-09-28 (§10),
 amendments folded in. Phase 0 merged as #399 (results §11); phase 1
-(moves by reachability) on branch `own-phase-1` (results §12). Plans in `docs/superpowers/plans/`.
+(moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) on branch
+`own-phase-2` (results §13). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -569,3 +570,88 @@ after the move. The loop cases report `is moved inside a loop`.
 - Everything in §11.4 not listed above as accepted: owned locals in a `try` body, closures,
   interface and `any` boxing, `delete`, callee-owned parameters, runtime helpers and `declare`d
   functions, the eight-element field literal.
+
+## 13. Phase 2 results, 2026-09-29
+
+Plan: `docs/superpowers/plans/2026-09-29-own-phase-2.md`. Only `OwnershipInferencePass.cpp`
+changed.
+
+### 13.1 What phase 2 accepts
+
+The verdicts run in §2.2's order. Phase 1's move check runs first, quietly. When it fails, a
+receiver that is a `let` borrows (verdict 2). That means an owning `ts.Variable`, declared from
+the value, that took its own reference (a `ts.RetainSlot`, not `__owned_consumed`) and is not
+captured. Its retain and every `ts.ReleaseSlot` of its slot are erased, and the owner keeps all
+of its releases.
+
+A borrow is sound while both of these hold:
+
+- **No use of the borrower can run after any end of the owner.** The ends are a local owner's
+  `ts.ReleaseSlot`s and assignments (`ts.Store` into its slot), or a temporary owner's
+  `ts.Release`s. The uses are every read of the borrower's slot and every use of anything derived
+  from a read that can still point into the block: casts that keep the block, field and element
+  references and values loaded through them, bound methods, and a catch or finally clause's
+  non-owning local. The walk stops at a number or a boolean. The final review found the first
+  version, which followed only casts, compiling `const f = b.m; a = new C(); f()`, a `for...of`
+  over `b.v`, and a catch local of `b` into reads of freed memory. A path back to a use through
+  the borrower's own declaration is a new borrow: `for (...) { let b = a; ...; a = new C(); }` is
+  fine.
+- **Nothing the borrower holds is kept.** It must not be retained, taken by a non-borrowing use
+  (stored, pushed, returned, declared into another owning `let`), or assigned.
+
+Where an owner has **more than one receiver**, every one of them has to borrow: a borrow pins
+its owner. A field store beside a borrowing `let` is `'a' is moved here while 'b' borrows it`.
+
+The errors follow §5. Under `--di` they name both variables, and a folded `const` owner is named
+through its `ts.DebugVariable`:
+
+- `'b' borrows 'a' but is used here after 'a' is released or overwritten`, with a note at the end;
+- `'b' borrows 'a' and cannot be stored, returned or captured`;
+- `'b' borrows 'a' and cannot be assigned`.
+
+### 13.2 Measured
+
+1M iterations (100K calls), AOT, `measure.ps1`, at `-O3` and `-O1` (identical within 1.5%):
+
+| program | gc | rc | none | own |
+| --- | --- | --- | --- | --- |
+| `own_borrow_inner_let` | 6.6 | 4.8 | 1088.3 | 4.8 |
+| `own_borrow_loop` | 6.4 | 4.7 | 113.4 | 4.7 |
+| `own_borrow_two_lets` | 6.6 | 4.8 | 546.8 | 4.8 |
+
+### 13.3 Teeth
+
+With each borrower's releases kept (only its retain erased), 10 of 10 borrow checks fail
+(`own_borrow_nullable` included). The borrower's release destroys what the owner still holds.
+
+### 13.4 Changed tests
+
+These phase-1 negatives are legal now, and positives replace them:
+
+- `own_err_use_after_move`, `own_err_const_twice` → `own_borrow_inner_let`;
+- `own_err_alias`, `own_err_let_twice` → `own_borrow_two_lets`;
+- `own_err_let_loop` → `own_borrow_loop`;
+- `own_err_move_some_paths` → `own_borrow_branch`.
+
+Other negatives:
+
+- `own_err_move_some_paths_field` keeps "some paths" covered (a field store cannot borrow).
+- `own_err_assign_after_move` and `own_err_const_alias_move` now report the borrow's error.
+- New: `own_err_borrow_escape`, `own_err_borrow_and_move`, and from the final review
+  `own_err_borrow_bound_method`, `own_err_borrow_catch_local`, `own_err_borrow_finally_local`,
+  `own_err_borrow_derived_ref`, with `own_borrow_nullable` (`if (b)` on a nullable borrower was
+  a false escape).
+
+### 13.5 Known limits (the input to phase 3)
+
+- Reads out of containers as borrows (§2.3): `const e = arr[i]`, `const c = h.c`, bounded by the
+  container's tenure and its dropping mutations (`pop`, `shift`, `splice`, `length =`, an
+  overwrite).
+- Borrow chains (`let c = b` where `b` borrows) and borrowers that are assigned.
+- Borrows of parameters and of `this`, which need callee facts (phase 4).
+- A move after the last use of every borrower. It is rejected today, since any borrower pins
+  its owner.
+- A temporary taken by a `let` and also consumed elsewhere (`let b = h.c = new C()`): with no
+  temporary release there is nothing to bound a borrow, so it is still an error.
+- From §12.5: moves on some paths only, and a `const` alias of a `let` held across an assignment
+  of the `let` (rc has the same bug).
