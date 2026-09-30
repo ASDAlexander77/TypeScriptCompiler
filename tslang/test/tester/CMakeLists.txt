@@ -432,6 +432,7 @@ tslang_add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-string-length-resize COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
 tslang_add_test(NAME test-compile-00-array-length-grow-zeroed COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
+tslang_add_test(NAME test-compile-00-switch-char-string-cases COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 tslang_add_test(NAME test-compile-00-owned-generator-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
@@ -891,6 +892,7 @@ tslang_add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-string-length-resize COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
 tslang_add_test(NAME test-jit-00-array-length-grow-zeroed COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-jit-00-rest-args-pack-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
+tslang_add_test(NAME test-jit-00-switch-char-string-cases COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 tslang_add_test(NAME test-jit-00-owned-generator-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
@@ -1830,6 +1832,7 @@ set(TSLANG_CORPUS
     00string_length_resize.ts
     00strings.ts
     00switch.ts
+    00switch_char_string_cases.ts
     00symbol.ts
     00throw_in_catch.ts
     00throw_bool_bigint.ts

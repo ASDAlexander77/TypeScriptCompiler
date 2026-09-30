@@ -739,7 +739,7 @@ namespace mlirgen
         // not received by anything, so not a receiver's to release, and not marked, so not
         // §9.30's either. It is the plainest allocation in the language and it leaked every
         // time (§9.37).
-        if (isa<mlir_ts::StringType>(type) && castToStringAllocates(valueType))
+        if (isa<mlir_ts::StringType>(type) && mlir_ts::castToStringAllocates(valueType))
         {
             markFreshBlockOwned(location, castResult);
         }
