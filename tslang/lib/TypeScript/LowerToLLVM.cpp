@@ -1027,6 +1027,55 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                                 ConversionPatternRewriter &rewriter) const
     {
         auto i8PtrTy = th.getPtrType();
+
+        auto compareResultWith0 = [&](mlir::Value compareResult) -> mlir::Value {
+            auto const0 = clh.createI32ConstantOf(0);
+            switch (code)
+            {
+            case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult, const0);
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult, const0);
+            case SyntaxKind::GreaterThanToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, compareResult, const0);
+            case SyntaxKind::GreaterThanEqualsToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, compareResult, const0);
+            case SyntaxKind::LessThanToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, compareResult, const0);
+            case SyntaxKind::LessThanEqualsToken:
+                return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, compareResult, const0);
+            default:
+                op->emitError("unsupported 'any' comparison operator");
+                return mlir::Value();
+            }
+        };
+
+        // two strings compare by their text: their payload is a pointer, and comparing its bytes
+        // made two equal strings unequal unless they were the same literal
+        TypeConverterHelper tch(getTypeConverter());
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto bothStrings = rewriter.create<LLVM::AndOp>(loc, tdl.isKind(al.getTypeOfAny(op1), TYPE_KIND_STRING),
+                                                        tdl.isKind(al.getTypeOfAny(op2), TYPE_KIND_STRING));
+        return clh.conditionalExpressionLowering(
+            loc, th.getLLVMBoolType(), bothStrings,
+            [&](OpBuilder &, Location) {
+                auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy}));
+                auto compareResult = rewriter.create<LLVM::CallOp>(
+                    loc, strcmpFuncOp, ValueRange{al.UnboxAny(op1, i8PtrTy), al.UnboxAny(op2, i8PtrTy)});
+                return compareResultWith0(compareResult.getResult());
+            },
+            [&](OpBuilder &, Location) { return compareBytes(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); });
+    }
+
+    // the payloads' bytes: for everything but a string, whose payload is a pointer
+    mlir::Value compareBytes(mlir_ts::AnyCompareOp op, mlir::Value op1, mlir::Value op2, SyntaxKind code,
+                             mlir::Location loc, AnyLogic &al, CodeLogicHelper &clh, TypeHelper &th,
+                             LLVMCodeHelper &ch, LLVMTypeConverterHelper &llvmtch,
+                             ConversionPatternRewriter &rewriter) const
+    {
+        auto i8PtrTy = th.getPtrType();
         auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
 
         auto memcmpFuncOp = ch.getOrInsertFunction("memcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType}));
@@ -1256,27 +1305,76 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto op1 = transformed.getOp1();
         auto op2 = transformed.getOp2();
 
-        // only loose equality (==/!=) coerces across differing payload kinds; strict
-        // equality and ordering compare the underlying bytes as before.
-        if (code != SyntaxKind::EqualsEqualsToken && code != SyntaxKind::ExclamationEqualsToken)
-        {
-            auto result = sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter);
-            rewriter.replaceOp(op, result);
-            return success();
-        }
+        auto compareBoxes = [&]() -> mlir::Value {
+            // only loose equality (==/!=) coerces across differing payload kinds; strict
+            // equality and ordering compare the underlying bytes as before.
+            if (code != SyntaxKind::EqualsEqualsToken && code != SyntaxKind::ExclamationEqualsToken)
+            {
+                return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter);
+            }
 
-        auto tag1 = al.getTypeOfAny(op1);
-        auto tag2 = al.getTypeOfAny(op2);
+            auto tag1 = al.getTypeOfAny(op1);
+            auto tag2 = al.getTypeOfAny(op2);
 
-        auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
-        auto tagCmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag1, tag2});
-        auto const0 = clh.createI32ConstantOf(0);
-        auto tagsEqual = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, tagCmp.getResult(), const0);
+            auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
+            auto tagCmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag1, tag2});
+            auto const0 = clh.createI32ConstantOf(0);
+            auto tagsEqual = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, tagCmp.getResult(), const0);
+
+            return clh.conditionalExpressionLowering(
+                loc, th.getLLVMBoolType(), tagsEqual,
+                [&](OpBuilder &builder, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
+                [&](OpBuilder &builder, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
+        };
+
+        // `undefined` and `null` in an `any`, answered before any box is opened: `u == undefined`
+        // of an `any` holding undefined was false - the box's tag and bytes were compared against
+        // `undefined` or `null` turned into an `any`, which is a null pointer rather than a box,
+        // so its tag was read from address 8 - and a zeroed `any` slot is a null pointer too. A
+        // null pointer is undefined; otherwise the tag's kind says. Loosely, undefined and null
+        // equal each other and nothing else; strictly, each equals only itself.
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        TypeDescriptorLogic tdl(rewriter, tch, loc);
+        auto kindOf = [&](mlir::Value anyValue) {
+            auto isNullPtr = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, anyValue, nullPtr);
+            return clh.conditionalExpressionLowering(
+                loc, th.getI32Type(), isNullPtr,
+                [&](OpBuilder &, Location) { return (mlir::Value)clh.createI32ConstantOf(TYPE_KIND_UNDEFINED); },
+                [&](OpBuilder &, Location) { return tdl.getKindFromTag(al.getTypeOfAny(anyValue)); });
+        };
+
+        auto isNullish = [&](mlir::Value kind) {
+            auto isUndefined = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, kind, clh.createI32ConstantOf(TYPE_KIND_UNDEFINED));
+            auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, kind, clh.createI32ConstantOf(TYPE_KIND_NULL));
+            return (mlir::Value)rewriter.create<LLVM::OrOp>(loc, isUndefined, isNull);
+        };
+
+        auto kind1 = kindOf(op1);
+        auto kind2 = kindOf(op2);
+        auto nullish1 = isNullish(kind1);
+        auto nullish2 = isNullish(kind2);
+        auto eitherNullish = rewriter.create<LLVM::OrOp>(loc, nullish1, nullish2);
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getLLVMBoolType(), tagsEqual,
-            [&](OpBuilder &builder, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
-            [&](OpBuilder &builder, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
+            loc, th.getLLVMBoolType(), eitherNullish,
+            [&](OpBuilder &, Location) -> mlir::Value {
+                switch (code)
+                {
+                case SyntaxKind::EqualsEqualsToken:
+                    return rewriter.create<LLVM::AndOp>(loc, nullish1, nullish2);
+                case SyntaxKind::ExclamationEqualsToken:
+                    return rewriter.create<LLVM::XOrOp>(loc, rewriter.create<LLVM::AndOp>(loc, nullish1, nullish2),
+                                                        clh.createI1ConstantOf(true));
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                    return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, kind1, kind2);
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                    return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, kind1, kind2);
+                default:
+                    // an ordering against undefined or null: false, as before, without reading a box
+                    return clh.createI1ConstantOf(false);
+                }
+            },
+            [&](OpBuilder &, Location) { return compareBoxes(); });
 
         rewriter.replaceOp(op, result);
 

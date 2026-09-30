@@ -117,7 +117,9 @@ class UndefLogicHelper
 
             auto processUndefVale = [&](OpBuilder &builder, Location loc, mlir::Type t1, mlir::Value val1, mlir::Type t2,
                                         mlir::Value val2) {
-                if (isa<mlir_ts::InterfaceType>(t2) || isa<mlir_ts::ClassType>(t2))
+                // an `any` may hold undefined, so it is asked at run time (AnyCompareOp) rather
+                // than answered here: `u == undefined` of an `any` holding undefined was false
+                if (isa<mlir_ts::InterfaceType>(t2) || isa<mlir_ts::ClassType>(t2) || isa<mlir_ts::AnyType>(t2))
                 {
                     auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
