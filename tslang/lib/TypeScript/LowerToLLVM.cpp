@@ -666,47 +666,45 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        // `arr.length = n` on a grown array exposes slots the allocator has not written, and a
-        // store into one gives up what the slot held first (`isOwnedElementSlot`) - so the
-        // release reads whatever was last in that memory. `result.length = this.length` followed
-        // by `result[i] = ..` is exactly the default library's `Array.map`, which is why
-        // `arrS.map(e => e + "_")` crashed about one run in three (§9.37).
+        // `arr.length = n` on a grown array exposes slots the allocator has not written. They read
+        // as zero: the default library's Set and Map grow their `int[]` buckets this way and take
+        // an unwritten bucket for an empty one, and under rc and own a store into a slot gives up
+        // what the slot held first (`isOwnedElementSlot`), so the release would read whatever was
+        // last in that memory - `result.length = this.length` followed by `result[i] = ..` is the
+        // default library's `Array.map`, and `arrS.map(e => e + "_")` crashed about one run in
+        // three (§9.37).
         //
-        // Only where an element owns something, and only under -mm=rc: nothing reads an
-        // unwritten slot in the other models, and the memset is not free.
-        if (tsLlvmContext->compileOptions.tracksOwnership())
+        // Every model but gc, whose collector hands back cleared memory - also when a block
+        // shrunk in place grows again, GC_realloc having cleared what the shrink gave up.
+        if (!tsLlvmContext->compileOptions.needsGCRuntime())
         {
-            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
-            if (mth.ownsHeapMemory(loc, elementType))
-            {
-                auto oldBytes = rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(),
-                                                                    ValueRange{sizeOfTypeAsIndexType,
-                                                                               rewriter.create<mlir::index::CastUOp>(
-                                                                                   loc, th.getIndexType(), countAsIndexType)});
-                auto grew = rewriter.create<mlir::index::CmpOp>(loc, mlir::index::IndexCmpPredicate::UGT,
-                                                                multSizeOfTypeValue, oldBytes);
+            auto oldBytes = rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(),
+                                                                ValueRange{sizeOfTypeAsIndexType,
+                                                                           rewriter.create<mlir::index::CastUOp>(
+                                                                               loc, th.getIndexType(), countAsIndexType)});
+            auto grew = rewriter.create<mlir::index::CmpOp>(loc, mlir::index::IndexCmpPredicate::UGT,
+                                                            multSizeOfTypeValue, oldBytes);
 
-                auto *currentBlock = rewriter.getInsertionBlock();
-                auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
-                auto *zeroBlock = rewriter.createBlock(continuationBlock);
+            auto *currentBlock = rewriter.getInsertionBlock();
+            auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            auto *zeroBlock = rewriter.createBlock(continuationBlock);
 
-                rewriter.setInsertionPointToEnd(zeroBlock);
-                auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), allocated,
-                                                              ValueRange{rewriter.create<mlir::index::CastUOp>(
-                                                                  loc, llvmIndexType, oldBytes)});
-                auto tailBytes = rewriter.create<mlir::index::SubOp>(loc, th.getIndexType(),
-                                                                     multSizeOfTypeValue, oldBytes);
-                rewriter.create<LLVM::MemsetOp>(
-                    loc, tailStart,
-                    rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
-                    rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, tailBytes), /*isVolatile=*/false);
-                rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+            rewriter.setInsertionPointToEnd(zeroBlock);
+            auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), allocated,
+                                                          ValueRange{rewriter.create<mlir::index::CastUOp>(
+                                                              loc, llvmIndexType, oldBytes)});
+            auto tailBytes = rewriter.create<mlir::index::SubOp>(loc, th.getIndexType(),
+                                                                 multSizeOfTypeValue, oldBytes);
+            rewriter.create<LLVM::MemsetOp>(
+                loc, tailStart,
+                rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
+                rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, tailBytes), /*isVolatile=*/false);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
-                rewriter.setInsertionPointToEnd(currentBlock);
-                rewriter.create<LLVM::CondBrOp>(loc, grew, zeroBlock, continuationBlock);
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, grew, zeroBlock, continuationBlock);
 
-                rewriter.setInsertionPointToStart(continuationBlock);
-            }
+            rewriter.setInsertionPointToStart(continuationBlock);
         }
 
         auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
@@ -743,34 +741,46 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
     }
 };
 
-class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthOp>
+// A new block of `size` bytes with as much of the source as fits, its terminator included; the
+// source is read and nothing else. A null source is copied as the empty string.
+class StringResizeOpLowering : public TsLlvmPattern<mlir_ts::StringResizeOp>
 {
   public:
-    using TsLlvmPattern<mlir_ts::SetStringLengthOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::StringResizeOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SetStringLengthOp op, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::StringResizeOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        CodeLogicHelper clh(op, rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
-
-        // TODO implement str concat
         auto i8PtrTy = th.getPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        mlir::Value ptr = transformed.getOp();
+        auto strType = mlir_ts::StringType::get(rewriter.getContext());
+        mlir::Value source = transformed.getOp();
+        mlir::Value emptyText = rewriter.create<mlir_ts::DialectCastOp>(
+            loc, tch.convertType(strType), rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr("")));
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, source,
+                                                    rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy));
+        source = rewriter.create<LLVM::SelectOp>(loc, isNull, emptyText, source);
+
         mlir::Value size = transformed.getSize();
+        auto newStringValue = ch.MemoryAlloc(size);
 
-        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptr);
+        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
+        mlir::Value sourceBytes = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, ValueRange{source}).getResult();
+        sourceBytes = rewriter.create<LLVM::AddOp>(
+            loc, llvmIndexType,
+            ValueRange{sourceBytes, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1))});
+        auto fits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, sourceBytes, size);
+        auto copyBytes = rewriter.create<LLVM::SelectOp>(loc, fits, sourceBytes, size);
 
-        mlir::Value newStringValue = ch.MemoryRealloc(strPtr, size);
+        rewriter.create<LLVM::MemcpyOp>(loc, newStringValue, source, copyBytes, /*isVolatile=*/false);
 
-        rewriter.create<LLVM::StoreOp>(loc, newStringValue, ptr);
-        rewriter.eraseOp(op);
-
+        rewriter.replaceOp(op, ValueRange{newStringValue});
         return success();
     }
 };
@@ -4171,7 +4181,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 isa<mlir_ts::LoadLibraryPermanentlyOp>(op) || isa<mlir_ts::SearchForAddressOfSymbolOp>(op) ||
                 isa<mlir_ts::ArrayPushOp>(op) || isa<mlir_ts::ArrayUnshiftOp>(op) || isa<mlir_ts::ArraySpliceOp>(op) ||
                 isa<mlir_ts::ArrayPopOp>(op) || isa<mlir_ts::ArrayShiftOp>(op) || isa<mlir_ts::DeleteOp>(op) ||
-                isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::SetStringLengthOp>(op) ||
+                isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::StringResizeOp>(op) ||
                 isa<mlir_ts::StringConcatOp>(op) || isa<mlir_ts::CharToStringOp>(op) ||
                 // a tagged union's value goes in and out through memory (an alloca and a copy),
                 // which a global's initializer cannot hold
@@ -7819,7 +7829,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
-        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

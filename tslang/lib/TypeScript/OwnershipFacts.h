@@ -183,7 +183,7 @@ inline bool isFresh(mlir::Value value)
     }
 
     if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
-                  mlir_ts::CharToStringOp>(def))
+                  mlir_ts::StringResizeOp, mlir_ts::CharToStringOp>(def))
     {
         return true;
     }

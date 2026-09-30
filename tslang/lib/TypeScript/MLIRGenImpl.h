@@ -5525,17 +5525,18 @@ class MLIRGenImpl
         }
         else if (auto stringLength = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::StringLengthOp>())
         {
-            MLIRCodeLogic mcl(builder, compileOptions);
-            auto stringValueLoaded = mcl.GetReferenceFromValue(location, stringLength.getOp());
-            if (!stringValueLoaded)
-            {
-                emitError(location) << "Can't get reference of the string, ensure const string is not used";
-                return mlir::failure();
-            }
-
-            // special case to resize array
+            // A string is a value: resizing one makes a new string, copied at its new size and
+            // assigned as `s = s + t` would be, and whoever else held the old one still does - the
+            // caller whose string a `this: string` parameter borrowed, a temporary, another
+            // variable. Resizing in place reallocated the block, which freed it when it moved
+            // under every model but gc, and under rc the holder then released it again.
             syncSavingValue(stringLength.getResult().getType());
-            builder.create<mlir_ts::SetStringLengthOp>(location, stringValueLoaded, savingValue);
+            auto resized = builder.create<mlir_ts::StringResizeOp>(location, getStringType(), stringLength.getOp(),
+                                                                   savingValue);
+            markFreshBlockOwned(location, resized);
+
+            auto saved = mlirGenSaveLogicOneItem(location, stringLength.getOp(), resized, genContext);
+            EXIT_IF_FAILED(saved)
         }
         else
         {
@@ -7485,8 +7486,18 @@ class MLIRGenImpl
 
                     operands.pop_back_n(toIndex - fromIndex);
 
+                    auto packed = !varArgOperands.empty() || isa<mlir_ts::ArrayType>(varArgsType);
+
+                    // the data block about to be filled releases every element when it dies; without
+                    // this, `a.concat(["x"])` handed the callee an array nobody held, and its first
+                    // `for (const item of other)` freed it (§9.21, as for an array literal)
+                    if (packed)
+                    {
+                        mlirGenRetainCaptured(location, varArgOperands);
+                    }
+
                     // create array
-                    auto array = varArgOperands.empty() && !isa<mlir_ts::ArrayType>(varArgsType)
+                    auto array = !packed
                         ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
                         : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
                     operands.push_back(array);

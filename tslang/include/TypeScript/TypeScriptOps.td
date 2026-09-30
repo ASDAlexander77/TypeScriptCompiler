@@ -2354,9 +2354,11 @@ def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
   let results = (outs );
 }
 
-def TypeScript_SetStringLengthOp : TypeScript_Op<"SetStringLength"> {
-  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op, Index:$size);
-  let results = (outs );
+// A new string of `size` bytes holding the start of `op` - `s.length = n`, whose result is then
+// assigned to `s`. The source is left alone: whoever else holds it still does.
+def TypeScript_StringResizeOp : TypeScript_Op<"StringResize"> {
+  let arguments = (ins TypeScript_String:$op, Index:$size);
+  let results = (outs Res<TypeScript_String, "", [MemAlloc]>:$result);
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
