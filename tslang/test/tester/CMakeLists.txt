@@ -430,6 +430,7 @@ tslang_add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJE
 tslang_add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 tslang_add_test(NAME test-compile-00-string-length-resize COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
+tslang_add_test(NAME test-compile-00-array-length-grow-zeroed COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -888,6 +889,7 @@ tslang_add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJ
 tslang_add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
 tslang_add_test(NAME test-jit-00-string-length-resize COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
+tslang_add_test(NAME test-jit-00-array-length-grow-zeroed COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-jit-00-rest-args-pack-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -1577,6 +1579,7 @@ set(TSLANG_CORPUS
     00any.ts
     00array_assignment5.ts
     00array_cond_access.ts
+    00array_length_grow_zeroed.ts
     00array_move_wide_elements.ts
     00array_of.ts
     00array_shift.ts
