@@ -1336,6 +1336,16 @@ namespace mlirgen
                             return V(builder.create<mlir_ts::CastOp>(location, type, value));
                         }
                     }
+
+                    // one member and null (`{ k: number } | null`): what is not null is that member -
+                    // an object literal `{ k: 5 }`, whose field is an s32, is converted to it
+                    if (!isa<mlir_ts::NullType>(valueType) && types.size() == 2
+                        && llvm::any_of(types, [](mlir::Type subType) { return isa<mlir_ts::NullType>(subType); }))
+                    {
+                        auto memberType = isa<mlir_ts::NullType>(types[0]) ? types[1] : types[0];
+                        CAST(value, location, memberType, value, genContext);
+                        return V(builder.create<mlir_ts::CastOp>(location, type, value));
+                    }
                 }
                 else
                 {
@@ -1381,6 +1391,74 @@ namespace mlirgen
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
+    // `number | null`, `{ k: number } | null`: a value type or null is a union with a tag - one member
+    // and null. castFromUnion turns every member into the target type, and null is not most types
+    // ("can't cast from 'null' to 'boolean'"), nor does it know an object type at all. Tested for
+    // truth it is false when it holds null, as text it is "null"; read as anything else it is its
+    // member - what narrowing (`if (p) p.k`) reads - unchecked, as `p!` is.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castFromNullableUnion(mlir::Location location, mlir::Type type, mlir::Value value, mlir_ts::UnionType unionType, const GenContext &genContext)
+    {
+        if (isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type) || isa<mlir_ts::AnyType>(type)
+            || isa<mlir_ts::OptionalType>(type) || isa<mlir_ts::UnionType>(type))
+        {
+            return std::nullopt;
+        }
+
+        mlir::Type memberType;
+        auto hasNull = false;
+        for (auto subType : unionType.getTypes())
+        {
+            if (isa<mlir_ts::NullType>(subType))
+            {
+                hasNull = true;
+                continue;
+            }
+
+            if (memberType)
+            {
+                return std::nullopt;
+            }
+
+            memberType = subType;
+        }
+
+        if (!hasNull || !memberType)
+        {
+            return std::nullopt;
+        }
+
+        auto readMember = [&]() { return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, memberType, value)); };
+
+        if (!isa<mlir_ts::BooleanType>(type) && !isa<mlir_ts::StringType>(type))
+        {
+            auto member = readMember();
+            if (type == memberType)
+            {
+                return member;
+            }
+
+            return cast(location, type, member, genContext);
+        }
+
+        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), value, nullValue);
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        return mclh.conditionalValue(isNull,
+            [&]() -> ValueOrLogicalResult {
+                if (isa<mlir_ts::BooleanType>(type))
+                {
+                    return V(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false)));
+                }
+
+                return V(builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("null")));
+            },
+            [&](mlir::Type) -> ValueOrLogicalResult {
+                return cast(location, type, readMember(), genContext);
+            });
+    }
+
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
     {
         // union type to <basic type>
@@ -1391,6 +1469,11 @@ namespace mlirgen
             mlir::Type baseType;
             if (!toAny && mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
+                if (auto result = castFromNullableUnion(location, type, value, unionType, genContext))
+                {
+                    return *result;
+                }
+
                 return castFromUnion(location, type, value, genContext);
             }
 

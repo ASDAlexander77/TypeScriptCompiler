@@ -3629,8 +3629,34 @@ class MLIRGenImpl
             return addSafeCastStatement(exprVal, optType.getElementType(), inverse, elseSafeCase, genContext);
         }
 
+        // `number | null`, `{ k: number } | null`: a union with a tag and null. What is truthy is not
+        // null, as after `x !== null`; what is not may be null or a falsy value (0, ""), so only the
+        // branch where it is truthy is narrowed - the then branch of `if (x)`, the else of `if (!x)`
+        if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(exprEval))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(loc(exprVal), unionType, baseType)
+                && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); }))
+            {
+                if (!inverse)
+                {
+                    return addSafeCastStatement(exprVal, getNullType(), true, nullptr, genContext);
+                }
+
+                if (elseSafeCase)
+                {
+                    SmallVector<mlir::Type> members;
+                    llvm::copy_if(unionType.getTypes(), std::back_inserter(members),
+                        [](mlir::Type member) { return !isa<mlir_ts::NullType>(member); });
+                    elseSafeCase->expr = stripParenthesesAndUntangleEquals(exprVal);
+                    elseSafeCase->safeType = getUnionType(members);
+                    return mlir::success();
+                }
+            }
+        }
+
         return mlir::failure();
-    }    
+    }
 
     Expression stripParentheses(Expression exprVal)
     {
@@ -11399,6 +11425,7 @@ class MLIRGenImpl
 
     std::optional<ValueOrLogicalResult> castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castToNullableUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castFromNullableUnion(mlir::Location location, mlir::Type type, mlir::Value value, mlir_ts::UnionType unionType, const GenContext &genContext);
 
     // union or optional or any or opaque source type
     std::optional<ValueOrLogicalResult> castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
