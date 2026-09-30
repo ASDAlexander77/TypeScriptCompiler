@@ -2219,6 +2219,16 @@ add_test(NAME test-compile-debug-info-opt
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-opt.cmake)
 
+# A throw under the JIT without TypeScriptRuntime (which test-runner always passes), under every
+# model but gc - see jit-throw-without-runtime.cmake. Windows only: the symbol is MSVC's type_info vtable.
+if (WIN32)
+    add_test(NAME test-jit-throw-without-runtime
+             COMMAND ${CMAKE_COMMAND}
+                     -DTSLANG=$<TARGET_FILE:tslang>
+                     -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/jit-throw-without-runtime.cmake)
+endif()
+
 # tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
 if (WIN32)
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
