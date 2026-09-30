@@ -349,27 +349,32 @@ static void jitAssertFailed(const char *message, const char *file, unsigned line
 }
 
 #ifdef _WIN32
-// The allocator JIT'd code gets, as `malloc`, `calloc`, `realloc` and `free`. A block it allocates
-// can be freed by another module and the other way round - an object of a library's class under
-// -mm=rc or -mm=own is made in the library and destroyed by the program - so it has to be the
-// allocator those modules use. Every one of them links the static release CRT, whose heap is the
-// process heap: a library tslang builds, TypeScriptRuntime.dll. tslang.exe's own `malloc` need not
-// be: the prebuilt LLVM brings rpmalloc as the process malloc of whatever links LLVMSupport (see
-// scripts/llvm_prebuilt_common.ps1), and a block of one freed by the other faults. ucrtbase.dll's
-// are the release CRT's, on the process heap.
-//
-// Not in a debug build: a debug CRT puts a header of its own in front of every block, and the
-// libraries a debug tslang builds link the debug CRT too.
-static void *jitHeapFunction(const char *name, void *ownFunction)
+// The allocator JIT'd code gets. A block it allocates can be freed by another module and the other
+// way round - an object of a library's class under -mm=rc or -mm=own is made in the library and
+// destroyed by the program, a coroutine frame comes from TypeScriptRuntime.dll - so it is the one
+// every module tslang builds uses: the process heap (TypeScript/ProcessHeap.h). The program calls
+// it by the names ProcessHeapPass gives it; `malloc`, `calloc`, `realloc` and `free` are bound to
+// it as well, for whatever still calls those. tslang.exe's own would not do: with the prebuilt
+// LLVM its `malloc` is rpmalloc, and a debug CRT keeps its blocks per copy of the CRT.
+#include "../lib/ProcessHeapExports.inc"
+
+struct JitHeapFunction
 {
-#ifdef _DEBUG
-    return ownFunction;
-#else
-    static auto ucrt = LoadLibraryW(L"ucrtbase.dll");
-    auto function = ucrt ? reinterpret_cast<void *>(GetProcAddress(ucrt, name)) : nullptr;
-    return function ? function : ownFunction;
-#endif
-}
+    const char *name;
+    void *address;
+};
+
+static const JitHeapFunction jitHeapFunctions[] = {
+    {"malloc", (void *)&__tslang_heap_malloc},
+    {"calloc", (void *)&__tslang_heap_calloc},
+    {"realloc", (void *)&__tslang_heap_realloc},
+    {"free", (void *)&__tslang_heap_free},
+    {PROCESS_HEAP_MALLOC, (void *)&__tslang_heap_malloc},
+    {PROCESS_HEAP_CALLOC, (void *)&__tslang_heap_calloc},
+    {PROCESS_HEAP_REALLOC, (void *)&__tslang_heap_realloc},
+    {PROCESS_HEAP_FREE, (void *)&__tslang_heap_free},
+    {PROCESS_HEAP_ALIGNED_ALLOC, (void *)&__tslang_heap_aligned_alloc},
+};
 #endif
 
 #ifndef _WIN32
@@ -699,10 +704,10 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         };
         addSym("puts", (void*)&puts);
         addSym("printf", (void*)&printf);
-        addSym("malloc", jitHeapFunction("malloc", (void *)&malloc));
-        addSym("free", jitHeapFunction("free", (void *)&free));
-        addSym("realloc", jitHeapFunction("realloc", (void *)&realloc));
-        addSym("calloc", jitHeapFunction("calloc", (void *)&calloc));
+        for (auto &function : jitHeapFunctions)
+        {
+            addSym(function.name, function.address);
+        }
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
         addSym("fflush", (void*)&fflush);
@@ -859,10 +864,10 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         };
         addOverride("puts", (void *)&puts);
         addOverride("printf", (void *)&printf);
-        addOverride("malloc", jitHeapFunction("malloc", (void *)&malloc));
-        addOverride("free", jitHeapFunction("free", (void *)&free));
-        addOverride("realloc", jitHeapFunction("realloc", (void *)&realloc));
-        addOverride("calloc", jitHeapFunction("calloc", (void *)&calloc));
+        for (auto &function : jitHeapFunctions)
+        {
+            addOverride(function.name, function.address);
+        }
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
         addOverride("fflush", (void *)&fflush);

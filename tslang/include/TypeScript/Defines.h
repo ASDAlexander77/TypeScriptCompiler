@@ -152,6 +152,15 @@
 #define SHARED_LIB_OWN_FACTS "__tsown_"
 // a module attribute, so it has to carry the dialect's prefix
 #define SHARED_LIB_OWN_NO_DROPS_ATTR_NAME "ts.own_imported_no_drops"
+
+// The process-heap allocator of a Windows module (TypeScript/ProcessHeap.h), which ProcessHeapPass
+// calls instead of the C runtime's. Defined by the async runtime library a program links,
+// TypeScriptRuntime.dll and the JIT.
+#define PROCESS_HEAP_MALLOC "__tslang_heap_malloc"
+#define PROCESS_HEAP_CALLOC "__tslang_heap_calloc"
+#define PROCESS_HEAP_REALLOC "__tslang_heap_realloc"
+#define PROCESS_HEAP_FREE "__tslang_heap_free"
+#define PROCESS_HEAP_ALIGNED_ALLOC "__tslang_heap_aligned_alloc"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"
