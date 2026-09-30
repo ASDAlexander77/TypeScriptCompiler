@@ -21,30 +21,34 @@
 // registers can be freed underneath it. Hence the registration below.
 //
 // Only a `gc` build calls GC_enable_threads - the GC pass injects the call beside GC_init, and
-// that pass runs for no other model - so `rc` and `none` reach GCThreadRegistration with the flag
-// still false and do nothing, which is right: they never initialize the collector at all.
-// Boehm's own GC_is_init_called cannot stand in for the flag, because the collector initializes
-// itself on first use and so answers yes in programs that never meant to collect anything.
-
-#define GC_THREADS
-#include "gc.h"
+// that pass runs for no other model. Boehm's own GC_is_init_called cannot stand in for that,
+// because the collector initializes itself on first use and so answers yes in programs that never
+// meant to collect anything.
+//
+// Nothing here touches the collector itself: GC_enable_threads, and the registration it installs
+// as the hooks below, are in AsyncGCThreadsCommon.inc - an object file of its own, which only the
+// call to GC_enable_threads pulls in. Every async program links the scheduler; had the scheduler
+// called GC_register_my_thread itself, every `rc`, `none` and `own` program that awaits anything
+// would need the collector to link, and they do not link it.
 
 namespace typescript
 {
 namespace asyncgc
 {
 
-inline bool &threadsEnabledFlag()
+// Left null unless GC_enable_threads ran, which it does once, from the entry point, before any
+// coroutine can be handed to the pool.
+struct ThreadHooks
 {
-    static bool enabled = false;
-    return enabled;
-}
+    // true when this call registered the thread (and so has to unregister it)
+    bool (*registerThread)() = nullptr;
+    void (*unregisterThread)() = nullptr;
+};
 
-// Called once, from the entry point, before any coroutine can be handed to the pool.
-inline void enableThreads()
+inline ThreadHooks &threadHooks()
 {
-    GC_allow_register_threads();
-    threadsEnabledFlag() = true;
+    static ThreadHooks hooks;
+    return hooks;
 }
 
 // Registered per task rather than per thread because the pool offers no thread-entry hook.
@@ -55,15 +59,10 @@ class ThreadRegistration
   public:
     ThreadRegistration() : registered(false)
     {
-        if (!threadsEnabledFlag())
+        auto registerThread = threadHooks().registerThread;
+        if (registerThread != nullptr)
         {
-            return;
-        }
-
-        struct GC_stack_base sb;
-        if (GC_get_stack_base(&sb) == GC_SUCCESS)
-        {
-            registered = GC_register_my_thread(&sb) == GC_SUCCESS;
+            registered = registerThread();
         }
     }
 
@@ -71,7 +70,7 @@ class ThreadRegistration
     {
         if (registered)
         {
-            GC_unregister_my_thread();
+            threadHooks().unregisterThread();
         }
     }
 

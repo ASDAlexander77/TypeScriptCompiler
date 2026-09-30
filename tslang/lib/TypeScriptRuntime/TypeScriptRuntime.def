@@ -24,7 +24,7 @@ EXPORTS
     GC_gcollect=_mlir__GC_gcollect
 
     ; --- tells the collector it is multi-threaded and lets the async runtime's pool workers
-    ; --- register themselves (AsyncRuntime.cpp / AsyncGCThreads.h); injected beside GC_init
+    ; --- register themselves (AsyncGCThreads.cpp / AsyncGCThreads.h); injected beside GC_init
     GC_enable_threads
 
     ; --- memory runtime (MemRuntime.cpp, extern "C") ---
