@@ -743,34 +743,46 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
     }
 };
 
-class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthOp>
+// A new block of `size` bytes with as much of the source as fits, its terminator included; the
+// source is read and nothing else. A null source is copied as the empty string.
+class StringResizeOpLowering : public TsLlvmPattern<mlir_ts::StringResizeOp>
 {
   public:
-    using TsLlvmPattern<mlir_ts::SetStringLengthOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::StringResizeOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SetStringLengthOp op, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::StringResizeOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        CodeLogicHelper clh(op, rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
-
-        // TODO implement str concat
         auto i8PtrTy = th.getPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        mlir::Value ptr = transformed.getOp();
+        auto strType = mlir_ts::StringType::get(rewriter.getContext());
+        mlir::Value source = transformed.getOp();
+        mlir::Value emptyText = rewriter.create<mlir_ts::DialectCastOp>(
+            loc, tch.convertType(strType), rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr("")));
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, source,
+                                                    rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy));
+        source = rewriter.create<LLVM::SelectOp>(loc, isNull, emptyText, source);
+
         mlir::Value size = transformed.getSize();
+        auto newStringValue = ch.MemoryAlloc(size);
 
-        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptr);
+        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
+        mlir::Value sourceBytes = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, ValueRange{source}).getResult();
+        sourceBytes = rewriter.create<LLVM::AddOp>(
+            loc, llvmIndexType,
+            ValueRange{sourceBytes, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1))});
+        auto fits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, sourceBytes, size);
+        auto copyBytes = rewriter.create<LLVM::SelectOp>(loc, fits, sourceBytes, size);
 
-        mlir::Value newStringValue = ch.MemoryRealloc(strPtr, size);
+        rewriter.create<LLVM::MemcpyOp>(loc, newStringValue, source, copyBytes, /*isVolatile=*/false);
 
-        rewriter.create<LLVM::StoreOp>(loc, newStringValue, ptr);
-        rewriter.eraseOp(op);
-
+        rewriter.replaceOp(op, ValueRange{newStringValue});
         return success();
     }
 };
@@ -4171,7 +4183,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 isa<mlir_ts::LoadLibraryPermanentlyOp>(op) || isa<mlir_ts::SearchForAddressOfSymbolOp>(op) ||
                 isa<mlir_ts::ArrayPushOp>(op) || isa<mlir_ts::ArrayUnshiftOp>(op) || isa<mlir_ts::ArraySpliceOp>(op) ||
                 isa<mlir_ts::ArrayPopOp>(op) || isa<mlir_ts::ArrayShiftOp>(op) || isa<mlir_ts::DeleteOp>(op) ||
-                isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::SetStringLengthOp>(op) ||
+                isa<mlir_ts::SetLengthOfOp>(op) || isa<mlir_ts::StringResizeOp>(op) ||
                 isa<mlir_ts::StringConcatOp>(op) || isa<mlir_ts::CharToStringOp>(op) ||
                 // a tagged union's value goes in and out through memory (an alloca and a copy),
                 // which a global's initializer cannot hold
@@ -7819,7 +7831,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
-        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

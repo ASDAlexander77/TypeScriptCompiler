@@ -429,6 +429,7 @@ tslang_add_test(NAME test-compile-00-owned-interfaces COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-00-owned-closures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
 tslang_add_test(NAME test-compile-00-owned-any-boxing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-compile-00-owned-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+tslang_add_test(NAME test-compile-00-string-length-resize COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 tslang_add_test(NAME test-compile-00-owned-generator-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
@@ -885,6 +886,7 @@ tslang_add_test(NAME test-jit-00-owned-interfaces COMMAND test-runner -jit "${PR
 tslang_add_test(NAME test-jit-00-owned-closures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_closures.ts")
 tslang_add_test(NAME test-jit-00-owned-any-boxing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_any_boxing.ts")
 tslang_add_test(NAME test-jit-00-owned-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_strings.ts")
+tslang_add_test(NAME test-jit-00-string-length-resize COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_length_resize.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
 tslang_add_test(NAME test-jit-00-owned-generator-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generator_locals.ts")
@@ -1819,6 +1821,7 @@ set(TSLANG_CORPUS
     00spread.ts
     00stack_test.ts
     00str_null.ts
+    00string_length_resize.ts
     00strings.ts
     00switch.ts
     00symbol.ts
