@@ -1055,23 +1055,6 @@ class MLIRGenImpl
         }
     }
 
-    // Does building a `string` out of a value of this type allocate a new one?
-    //
-    // Only the printing conversions do: `ConvertLogic`'s itoa and f64ToString, and
-    // `ts.CharToString`, each allocate a buffer and write into it. Everything else that reaches
-    // the plain cast - a boolean, `undefined`, a string literal - hands back a global, which is
-    // immortal and owns nothing. A literal is asked about by its element type, since that is
-    // what the lowering unwraps it to before choosing.
-    static bool castToStringAllocates(mlir::Type valueType)
-    {
-        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(valueType))
-        {
-            valueType = literalType.getElementType();
-        }
-
-        return isa<mlir_ts::NumberType, mlir_ts::CharType>(valueType) || valueType.isIntOrIndex();
-    }
-
     // Gives a freshly built string, or a freshly made `any` box, the same standing as every other
     // producer of a new heap value: the retain makes the reference real, and the mark says a
     // receiver may take it over rather than adding one of its own - which is also what lets §9.30

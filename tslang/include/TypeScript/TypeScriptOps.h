@@ -58,6 +58,9 @@ void buildTerminatedBody(OpBuilder &builder, Location loc);
 bool isTrue(mlir::Region &);
 bool isEmpty(mlir::Region &);
 
+// Does a cast from this type to `string` build a new string (a number or a char printed into one)?
+bool castToStringAllocates(mlir::Type valueType);
+
 namespace detail
 {
 struct ObjectStorageTypeStorage : public ::mlir::TypeStorage

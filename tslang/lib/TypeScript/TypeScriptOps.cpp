@@ -76,6 +76,21 @@ bool mlir_ts::isEmpty(mlir::Region &condtion)
     return false;
 }
 
+// Only the printing conversions do: `ConvertLogic`'s itoa and f64ToString, and `ts.CharToString`,
+// each allocate a buffer and write into it. Everything else that reaches the plain cast - a
+// boolean, `undefined`, a string literal - hands back a global, which is immortal and owns
+// nothing. A literal is asked about by its element type, since that is what the lowering unwraps
+// it to before choosing.
+bool mlir_ts::castToStringAllocates(mlir::Type valueType)
+{
+    if (auto literalType = dyn_cast<mlir_ts::LiteralType>(valueType))
+    {
+        valueType = literalType.getElementType();
+    }
+
+    return isa<mlir_ts::NumberType, mlir_ts::CharType>(valueType) || valueType.isIntOrIndex();
+}
+
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
@@ -843,12 +858,17 @@ bool mlir_ts::CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
 // frees it) but it is an allocation being reported as pure either way. See
 // docs/reference-counting-evaluation.md section 9.48.
 //
+// A number or a char cast to `string` is the third: it prints into a new string. `switch (c)` on
+// a char with string cases casts `c` once per case, and merged into one, the first case's release
+// freed the string every later case then compared (RegExp's flags loop under `-mm=rc`).
+//
 // All other CastOp shapes are true value-preserving casts with no allocation, so they keep
 // reporting no effects.
 void mlir_ts::CastOp::getEffects(SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>> &effects)
 {
     auto allocates = (isa<mlir_ts::ConstArrayType>(getIn().getType()) && isa<mlir_ts::ArrayType>(getRes().getType())) ||
-                     isa<mlir_ts::AnyType>(getRes().getType());
+                     isa<mlir_ts::AnyType>(getRes().getType()) ||
+                     (isa<mlir_ts::StringType>(getRes().getType()) && castToStringAllocates(getIn().getType()));
     if (allocates)
     {
         auto result = cast<OpResult>(getRes());

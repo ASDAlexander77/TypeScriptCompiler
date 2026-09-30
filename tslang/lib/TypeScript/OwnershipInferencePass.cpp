@@ -1447,7 +1447,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                       mlir_ts::ThisSymbolRefOp, mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
                       mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp, mlir_ts::StringConcatOp,
-                      mlir_ts::StringResizeOp>(user))
+                      mlir_ts::StringResizeOp, mlir_ts::StringLengthOp>(user))
         {
             return true;
         }
