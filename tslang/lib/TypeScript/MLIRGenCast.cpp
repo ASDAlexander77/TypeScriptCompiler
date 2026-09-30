@@ -1392,14 +1392,14 @@ namespace mlirgen
     }
 
     // `number | null`, `{ k: number } | null`: a value type or null is a union with a tag - one member
-    // and null. castFromUnion turns every member into the target type, and null is not most types
+    // and null. castFromUnion turns every member into the target type, and null is not a boolean
     // ("can't cast from 'null' to 'boolean'"), nor does it know an object type at all. Tested for
-    // truth it is false when it holds null, as text it is "null"; read as anything else it is its
-    // member - what narrowing (`if (p) p.k`) reads - unchecked, as `p!` is.
+    // truth it is false when it holds null, as text it is "null". Anything else stays with
+    // castFromUnion: `let x: number = n` is refused, as TypeScript refuses it - a narrowing or `n!`
+    // reads the member.
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castFromNullableUnion(mlir::Location location, mlir::Type type, mlir::Value value, mlir_ts::UnionType unionType, const GenContext &genContext)
     {
-        if (isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type) || isa<mlir_ts::AnyType>(type)
-            || isa<mlir_ts::OptionalType>(type) || isa<mlir_ts::UnionType>(type))
+        if (!isa<mlir_ts::BooleanType>(type) && !isa<mlir_ts::StringType>(type))
         {
             return std::nullopt;
         }
@@ -1428,17 +1428,6 @@ namespace mlirgen
         }
 
         auto readMember = [&]() { return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, memberType, value)); };
-
-        if (!isa<mlir_ts::BooleanType>(type) && !isa<mlir_ts::StringType>(type))
-        {
-            auto member = readMember();
-            if (type == memberType)
-            {
-                return member;
-            }
-
-            return cast(location, type, member, genContext);
-        }
 
         auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
         auto isNull = builder.create<mlir_ts::LogicalBinaryOp>(

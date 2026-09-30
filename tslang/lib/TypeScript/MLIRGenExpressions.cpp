@@ -1291,7 +1291,29 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
     {
-        return mlirGen(nonNullExpression->expression, genContext);
+        auto result = mlirGen(nonNullExpression->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        // `n!` of a `number | null` (a union with a tag, one member and null) is that member, read out
+        // unchecked - the way a narrowing reads it. Left a union, it was cast to the member as any
+        // union is, and null is not a number.
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(loc(nonNullExpression), unionType, baseType))
+            {
+                SmallVector<mlir::Type> members;
+                llvm::copy_if(unionType.getTypes(), std::back_inserter(members),
+                    [](mlir::Type member) { return !isa<mlir_ts::NullType>(member); });
+                if (members.size() == 1 && members.size() != unionType.getTypes().size())
+                {
+                    return V(builder.create<mlir_ts::GetValueFromUnionOp>(loc(nonNullExpression), members.front(), value));
+                }
+            }
+        }
+
+        return value;
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext)

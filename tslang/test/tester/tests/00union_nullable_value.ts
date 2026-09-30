@@ -41,6 +41,10 @@ function main() {
     assert(keyOf({ k: 5 }) == 5, "object: value");
     assert(keyOf(null) == -1, "object: null");
 
+    let m: number | null = 4;
+    let z: number = m!;
+    assert(z == 4, "non-null assertion reads the member");
+
     let n: number | null = 2;
     print(n);
     assert(`${n}` == "2", "number as text");
