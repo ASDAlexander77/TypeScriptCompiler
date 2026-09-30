@@ -545,6 +545,18 @@ class CastLogicHelper
 
         if (auto arrType = dyn_cast<mlir_ts::ArrayType>(resType))
         {
+            // `number[] | null` has no tag - it is the array itself, null when it holds null (the
+            // union below does the same for every other type, but an array never got that far)
+            if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
+            {
+                MLIRTypeHelper mth(inUnionType.getContext(), compileOptions);
+                mlir::Type baseType;
+                if (!mth.isUnionTypeNeedsTag(loc, inUnionType, baseType))
+                {
+                    return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
+                }
+            }
+
             return castToArrayType(in, inType, resType);
         }
 
