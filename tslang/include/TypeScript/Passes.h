@@ -47,6 +47,7 @@ std::unique_ptr<mlir::Pass> createOwnedReturnConsumptionPass(CompileOptions&);
 
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
+std::unique_ptr<mlir::Pass> createProcessHeapPass();
 /// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free
 std::unique_ptr<mlir::Pass> createMemAllocPass(CompileOptions&);
 

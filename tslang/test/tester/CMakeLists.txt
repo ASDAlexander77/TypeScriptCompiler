@@ -1335,6 +1335,14 @@ tslang_add_test(NAME test-compile-declare-linkname COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-jit-declare-linkname COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname.ts")
 tslang_add_test(NAME test-compile-declare-linkname-shared-symbol COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
 tslang_add_test(NAME test-jit-declare-linkname-shared-symbol COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+# `@dllname("strlen") @linkname("strlen")` names the attribute once: two entries of one name are an
+# assert in a Debug build ("DictionaryAttr element names must be unique") and print twice in Release.
+add_test(NAME test-declare-linkname-attribute-once
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/declare_linkname_shared_symbol.ts")
+set_tests_properties(test-declare-linkname-attribute-once
+                     PROPERTIES PASS_REGULAR_EXPRESSION "dllname = \"strlen\""
+                                FAIL_REGULAR_EXPRESSION "dllname = \"strlen\", dllname|Assertion failed|Stack dump")
 # DISABLED: importing a module's `export declare function` bound to a C runtime function crashes,
 # and did before @linkname (the same with @dllname on a 2026-09-23 build). The importer re-prints
 # the declaration as `@dllimport @dllname("strlen")` and looks `strlen` up at startup in the loaded

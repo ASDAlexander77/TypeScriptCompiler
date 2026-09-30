@@ -202,6 +202,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }
+        else if (compileOptions.isWindows && !compileOptions.isWasm)
+        {
+            // one allocator for every module on Windows - see TypeScript/ProcessHeap.h
+            pm.addPass(mlir::typescript::createProcessHeapPass());
+        }
     }
 
     auto result = 0;

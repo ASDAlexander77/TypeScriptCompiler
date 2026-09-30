@@ -15,10 +15,6 @@
 #include <sys/time.h>
 #else
 #include "malloc.h"
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
 #endif // _WIN32
 
 #include <cinttypes>
@@ -26,6 +22,9 @@
 #include <cstdlib>
 
 #include "llvm/ADT/StringMap.h"
+
+// the process-heap allocator the JIT'd program calls (ProcessHeapPass), and heapMalloc/heapFree
+#include "../ProcessHeapExports.inc"
 
 //===----------------------------------------------------------------------===//
 // Async runtime API.
@@ -36,31 +35,14 @@ namespace mlir
 namespace runtime
 {
 
-// The heap these hand out: the release CRT's, on the process heap, which is also what JIT-compiled
-// code gets as `malloc` and `free` (tslang/jit.cpp, jitHeapFunction) - a coroutine frame this
-// allocates, the program frees with plain `free`. This DLL's own `malloc` need not be that heap:
-// linked against the prebuilt LLVM, LLVMSupport makes it rpmalloc (see
-// scripts/llvm_prebuilt_common.ps1), and a block of one freed by the other corrupts the heap. A
-// debug build keeps its own, as the JIT does: the debug CRT puts a header in front of each block.
-#if defined(_WIN32) && !defined(_DEBUG)
-template <typename F> static F crtFunction(const char *name, F ownFunction)
-{
-  static auto ucrt = LoadLibraryW(L"ucrtbase.dll");
-  auto function = ucrt ? reinterpret_cast<F>(GetProcAddress(ucrt, name)) : nullptr;
-  return function ? function : ownFunction;
-}
+// The heap these hand out is the process heap, which is what every module tslang builds allocates
+// from and frees to (TypeScript/ProcessHeap.h): a coroutine frame this allocates, the program frees.
+// This DLL's own `malloc` need not be that heap - a debug CRT keeps its blocks per copy, and against
+// the prebuilt LLVM, LLVMSupport makes it rpmalloc.
+#ifdef _WIN32
+static void *heapMalloc(size_t size) { return typescript::process_heap::allocate(size); }
 
-static void *heapMalloc(size_t size)
-{
-  static auto function = crtFunction<void *(*)(size_t)>("malloc", &malloc);
-  return function(size);
-}
-
-static void heapFree(void *ptr)
-{
-  static auto function = crtFunction<void (*)(void *)>("free", &free);
-  function(ptr);
-}
+static void heapFree(void *ptr) { typescript::process_heap::release(ptr); }
 #else
 static void *heapMalloc(size_t size) { return malloc(size); }
 

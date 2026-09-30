@@ -2676,15 +2676,26 @@ class MLIRGenImpl
 #endif
         // add decorations, "noinline, optnone"
 
+        // An attribute list may name each attribute once (a DictionaryAttr asserts it). A
+        // declaration can say the same thing twice - `@dllname("f") @linkname("f")` both become
+        // DLL_NAME, and checkLinkNameDecorators has made sure they agree - so the first stands.
+        auto addAttr = [&](StringRef name, mlir::Attribute value) {
+            auto present = llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == name; });
+            if (!present)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), value});
+            }
+        };
+
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             if (isFuncAttr(name))
             {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
+                addAttr(name, mlir::UnitAttr::get(builder.getContext()));
             }
 
             if (name == "varargs") 
             {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
+                addAttr("func.varargs", mlir::BoolAttr::get(builder.getContext(), true));
             }
 
             if (name == "used") {
@@ -2693,7 +2704,7 @@ class MLIRGenImpl
 
             if (name == DLL_NAME && args.size() > 0)
             {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), DLL_NAME), mlir::StringAttr::get(builder.getContext(), args.front())});
+                addAttr(DLL_NAME, mlir::StringAttr::get(builder.getContext(), args.front()));
             }
         });
 

@@ -36,6 +36,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipSignaturePass.cpp
     OwnedReturnConsumptionPass.cpp
     GCPass.cpp
+    ProcessHeapPass.cpp
     AsyncTargetWidthPass.cpp
     ObjDumper.cpp
     DeclarationPrinter.cpp
