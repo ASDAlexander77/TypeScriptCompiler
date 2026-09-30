@@ -3438,6 +3438,13 @@ class MLIRGenImpl
                         castedValue = builder.create<mlir_ts::CastOp>(location, safeType, exprValue);
                     }
                 }
+                else if (isa<mlir_ts::NullType>(safeType))
+                {
+                    // narrowed to null it is null - read out of `number[] | null`, which has no tag, it
+                    // was the array struct cast to a pointer, and under --di its debug record kept that
+                    // cast alive ("LLVM Translation failed for operation: builtin.unrealized_conversion_cast")
+                    castedValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                }
                 else
                 {
                     castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
