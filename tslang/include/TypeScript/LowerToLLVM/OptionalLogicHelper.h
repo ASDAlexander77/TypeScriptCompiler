@@ -53,19 +53,72 @@ class OptionalLogicHelper
             return WhenBothOptValues<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);
         }
 
-        if (isa<mlir_ts::UndefinedType>(rightType))
+        if (isa<mlir_ts::UndefinedType>(rightType) || isa<mlir_ts::UndefinedType>(leftType))
         {
-            // when we have undef in 1 of values we do not condition to test actual values
-            return whenOneValueIsUndef(opCmpCode, left, right);
-        }
+            auto optValue = isa<mlir_ts::UndefinedType>(rightType) ? left : right;
+            auto undefValue = isa<mlir_ts::UndefinedType>(rightType) ? right : left;
+            if (isLooseEquality(opCmpCode) && canHoldNull(mlir::cast<mlir_ts::OptionalType>(optValue.getType()).getElementType()))
+            {
+                return whenLooseUndefAgainstNullable<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode, optValue);
+            }
 
-        if (isa<mlir_ts::UndefinedType>(leftType))
-        {
             // when we have undef in 1 of values we do not condition to test actual values
-            return whenOneValueIsUndef(opCmpCode, right, left);
+            return whenOneValueIsUndef(opCmpCode, optValue, undefValue);
         }
 
         return whenOneOptValue<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);
+    }
+
+    static bool isLooseEquality(SyntaxKind opCmpCode)
+    {
+        return opCmpCode == SyntaxKind::EqualsEqualsToken || opCmpCode == SyntaxKind::ExclamationEqualsToken;
+    }
+
+    // a `T | null` (strict null checks), or a type whose own pointer holds null (without them)
+    static bool canHoldNull(mlir::Type type)
+    {
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); });
+        }
+
+        return MLIRTypeCore::isNullableTypeNoUnion(type);
+    }
+
+    // Loosely, null equals undefined: an optional holding null is `== undefined` as well, so it
+    // is not enough to ask whether it holds a value - a value it holds may be null. The value is
+    // read only when there is one.
+    template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+    mlir::Value whenLooseUndefAgainstNullable(SyntaxKind opCmpCode, mlir::Value optValue)
+    {
+        auto loc = binOp->getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(binOp, rewriter);
+
+        auto llvmBoolType = typeConverter.convertType(th.getBooleanType());
+        auto optType = mlir::cast<mlir_ts::OptionalType>(optValue.getType());
+
+        auto hasValueBool = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), optValue);
+        auto hasValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, hasValueBool);
+
+        return clh.conditionalExpressionLowering(
+            loc, llvmBoolType, hasValue,
+            [&](OpBuilder &builder, Location loc) {
+                mlir::Value value = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), optValue);
+                mlir::Value nullValue = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                mlir::Value result = LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(
+                    binOp, opCmpCode, value, value.getType(), nullValue, nullValue.getType(), rewriter, typeConverter, compileOptions);
+                if (result && result.getType() != llvmBoolType)
+                {
+                    result = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, result);
+                }
+
+                return result;
+            },
+            [&](OpBuilder &builder, Location loc) {
+                return clh.createI1ConstantOf(opCmpCode == SyntaxKind::EqualsEqualsToken);
+            });
     }
 
     // One side is optional, the other a value. An optional holding undefined equals no value - not
