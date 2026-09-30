@@ -4,11 +4,13 @@
 # code used to sit in the scheduler's own object file, so every program that awaits anything pulled
 # in references to GC_allow_register_threads, GC_register_my_thread, GC_unregister_my_thread and
 # GC_get_stack_base - and under rc, none and own the compiler links no gc.lib, so none of them
-# linked: "unresolved external symbol GC_allow_register_threads". It is an object file of its own
+# linked: "unresolved external symbol GC_allow_register_threads" on Windows, "undefined reference to
+# `GC_register_my_thread'" on Linux. It is an object file of its own
 # now, pulled in only by the call to GC_enable_threads that the GC pass puts in a gc program.
 #
-# This drives `tslang --emit=exe` itself, which `test-runner` does not: it links with lld directly,
-# and always with gc.lib, so the rc and none corpus runs of the same file never saw it.
+# This drives `tslang --emit=exe` itself, which `test-runner` does not: it links the program itself,
+# and always with the collector (gc.lib, -lgc), so the rc and none corpus runs of the same file never
+# saw it.
 
 cmake_minimum_required(VERSION 3.17.3)
 
