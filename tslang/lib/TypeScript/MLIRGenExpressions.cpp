@@ -831,6 +831,13 @@ namespace mlirgen
             return resultReturnUnions;
         }
 
+        auto resultReturnUnionAndValue =
+            binaryOpLogicForUnionAndValue(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
+        if (resultReturnUnionAndValue.value || resultReturnUnionAndValue.failed())
+        {
+            return resultReturnUnionAndValue;
+        }
+
         auto leftExpressionValueBeforeCast = leftExpressionValue;
         auto rightExpressionValueBeforeCast = rightExpressionValue;
 

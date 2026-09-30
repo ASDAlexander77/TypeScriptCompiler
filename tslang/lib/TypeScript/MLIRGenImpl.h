@@ -3414,13 +3414,29 @@ class MLIRGenImpl
 
             if (!inverse)
             {
-                if (isa<mlir_ts::UnionType>(safeType))
+                if (auto safeUnionType = dyn_cast<mlir_ts::UnionType>(safeType))
                 {
                     // no need to cast union type <type1 | type2 | type3 > to <type 1 | type 3> as it will be
                     // the same LLVMType structure
                     //return mlir::failure();
                     // in case of union we just want to have the same structured type but with less types in union
-                    castedValue = builder.create<mlir_ts::CastOp>(location, safeType, exprValue);
+                    //
+                    // Unless what is left needs no tag: `string | number | null` narrowed to `string | null`
+                    // (strict null checks) is the string's own pointer, not a tagged struct. Its value is
+                    // read out of the union - a null it holds is stored as a null pointer.
+                    mlir::Type safeBaseType;
+                    mlir::Type exprBaseType;
+                    if (!mth.isUnionTypeNeedsTag(location, safeUnionType, safeBaseType)
+                        && mth.isUnionTypeNeedsTag(location, unionType, exprBaseType)
+                        && safeBaseType)
+                    {
+                        auto baseValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeBaseType, exprValue);
+                        castedValue = builder.create<mlir_ts::CastOp>(location, safeType, baseValue);
+                    }
+                    else
+                    {
+                        castedValue = builder.create<mlir_ts::CastOp>(location, safeType, exprValue);
+                    }
                 }
                 else
                 {
@@ -6529,6 +6545,178 @@ class MLIRGenImpl
             }
 
         return mlir::success();
+    }
+
+    bool isPrimitiveForEquality(mlir::Type type)
+    {
+        return isPromotableNumeric(type) || isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::StringType>(type)
+            || isa<mlir_ts::CharType>(type) || isa<mlir_ts::BigIntType>(type);
+    }
+
+    bool isReferenceForEquality(mlir::Type type)
+    {
+        return isa<mlir_ts::ClassType>(type) || isa<mlir_ts::InterfaceType>(type) || isa<mlir_ts::ArrayType>(type)
+            || isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::OpaqueType>(type) || mth.isAnyFunctionType(type);
+    }
+
+    // Whether a union's member can be compared with a value: two primitives can (a string with a
+    // number converts, as it did), two references when one casts to the other; null, undefined, a
+    // class against a number, never.
+    bool isComparableForEquality(mlir::Location location, mlir::Type memberType, mlir::Type valueType)
+    {
+        auto stripLiteral = [](mlir::Type type) {
+            auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
+            return literalType ? literalType.getElementType() : type;
+        };
+
+        memberType = stripLiteral(memberType);
+        valueType = stripLiteral(valueType);
+        if (memberType == valueType)
+        {
+            return true;
+        }
+
+        if (isPrimitiveForEquality(memberType) && isPrimitiveForEquality(valueType))
+        {
+            return true;
+        }
+
+        return isReferenceForEquality(memberType) && isReferenceForEquality(valueType)
+            && (mth.canCastFromTo(location, memberType, valueType) || mth.canCastFromTo(location, valueType, memberType));
+    }
+
+    // A union (with a tag) compared for equality with a value that is not a union: it equals the value
+    // when the member it holds does. syncUnionTypes casts the union to the value's type, which a
+    // member that cannot be compared with it does not survive - `number | null` read null as a
+    // number, and `C | number === 3` did not compile. When the union has such a member, a helper
+    // compares the members that can be compared, and the others are simply not equal. A union whose
+    // members all can be compared (`number | string === 2`) keeps the cast.
+    ValueOrLogicalResult binaryOpLogicForUnionAndValue(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
+        mlir::Value rightExpressionValue, const GenContext &genContext)
+    {
+        if (opCode != SyntaxKind::EqualsEqualsEqualsToken && opCode != SyntaxKind::ExclamationEqualsEqualsToken
+            && opCode != SyntaxKind::EqualsEqualsToken && opCode != SyntaxKind::ExclamationEqualsToken)
+        {
+            return mlir::success();
+        }
+
+        if (!leftExpressionValue || !rightExpressionValue)
+        {
+            return mlir::success();
+        }
+
+        auto leftUnionType = dyn_cast<mlir_ts::UnionType>(leftExpressionValue.getType());
+        auto rightUnionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType());
+        if (!leftUnionType == !rightUnionType)
+        {
+            return mlir::success();
+        }
+
+        auto unionType = leftUnionType ? leftUnionType : rightUnionType;
+        auto unionValue = leftUnionType ? leftExpressionValue : rightExpressionValue;
+        auto value = leftUnionType ? rightExpressionValue : leftExpressionValue;
+        auto valueType = value.getType();
+
+        mlir::Type baseType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+        {
+            return mlir::success();
+        }
+
+        if (isa<mlir_ts::NullType>(valueType) || isa<mlir_ts::UndefinedType>(valueType) || isa<mlir_ts::AnyType>(valueType)
+            || isa<mlir_ts::OptionalType>(valueType))
+        {
+            return mlir::success();
+        }
+
+        if (llvm::all_of(unionType.getTypes(), [&](mlir::Type member) { return isComparableForEquality(location, member, valueType); }))
+        {
+            return mlir::success();
+        }
+
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(valueType))
+        {
+            valueType = literalType.getElementType();
+            CAST(value, location, valueType, value, genContext);
+        }
+
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___union_eq_" + opName(opCode);
+
+        // we need to remove current implementation as we have different implementation per union type
+        removeGenericFunctionMap(funcName);
+
+        TypeOfOpHelper toh(builder);
+
+        // a member it cannot be compared with is not equal to the value
+        auto notEqual = opCode == SyntaxKind::ExclamationEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken;
+
+        SmallVector<mlir::Type> classInstances;
+        stringstream ss;
+        ss << S("function __union_eq_") << stows(opName(opCode)) << S("<L, R>(l: L, r: R) {\n");
+        for (auto member : unionType.getTypes())
+        {
+            if (!isComparableForEquality(location, member, valueType))
+            {
+                continue;
+            }
+
+            auto typeOfName = toh.typeOfAsString(member);
+            ss << S("if (typeof(l) == \"") << stows(typeOfName) << S("\") ");
+            if (typeOfName == "class")
+            {
+                ss << S("{ if (l instanceof TYPE_INST_ALIAS") << classInstances.size() << S(") return l ")
+                   << Scanner::tokenStrings[opCode] << S(" r; }\n");
+                classInstances.push_back(member);
+            }
+            else
+            {
+                ss << S("return l ") << Scanner::tokenStrings[opCode] << S(" r;\n");
+            }
+        }
+
+        ss << S("return ") << (notEqual ? S("true") : S("false")) << S(";\n}\n");
+
+        auto src = ss.str();
+
+        {
+            MLIRLocationGuard vgLoc(overwriteLoc);
+            overwriteLoc = location;
+
+            if (mlir::failed(parsePartialStatements(src)))
+            {
+                assert(false);
+                return mlir::failure();
+            }
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+        assert(funcResult);
+
+        GenContext funcCallGenContext(genContext);
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_L", unionType});
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_R", valueType});
+
+        for (auto [index, instanceOfType] : enumerate(classInstances))
+        {
+            funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
+        }
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(unionValue);
+        operands.push_back(value);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        return mlirGenCallExpression(
+            location,
+            funcResult,
+            {
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_L")).as<Node>()),
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_R")).as<Node>())
+            },
+            operands,
+            funcCallGenContext);
     }
 
     mlir::LogicalResult instantiateGenericsForBinaryOp(mlir::Location location, mlir::Value &leftExpressionValue,
