@@ -29,17 +29,10 @@
 #include <thread>
 #include <vector>
 
+// only the hooks: GC_enable_threads and the collector calls are in AsyncGCThreadsCommon.inc
 #include "TypeScript/AsyncGCThreads.h"
 
 using namespace mlir::runtime;
-
-// Called once from the entry point: the GC pass injects the call beside GC_init, so it happens
-// only in a `gc` build. When linked into the shared TypeScriptRuntime, this symbol is also
-// exported under this name in TypeScriptRuntime.def for the JIT to resolve.
-extern "C" void GC_enable_threads()
-{
-    typescript::asyncgc::enableThreads();
-}
 
 //===----------------------------------------------------------------------===//
 // Async runtime API.

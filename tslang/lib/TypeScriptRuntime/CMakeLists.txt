@@ -14,6 +14,7 @@ add_mlir_library(TypeScriptRuntime
   gc.cpp
   MemRuntime.cpp
   AsyncRuntime.cpp
+  AsyncGCThreads.cpp
   DynamicRuntime.cpp
   mlir_init.cpp
 

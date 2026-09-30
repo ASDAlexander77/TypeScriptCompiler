@@ -2229,6 +2229,25 @@ if (WIN32)
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/jit-throw-without-runtime.cmake)
 endif()
 
+# An async program linked by tslang itself (test-runner links with gc.lib whatever the model) under
+# every model but gc - see async-without-collector.cmake.
+if (WIN32)
+    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+        set(async_without_collector_opt "--opt;--opt_level=3")
+    else()
+        set(async_without_collector_opt "--di;--opt_level=0")
+    endif()
+    add_test(NAME test-compile-async-without-collector
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/async-without-collector"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${async_without_collector_opt}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/async-without-collector.cmake")
+endif()
+
 # tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
 if (WIN32)
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
