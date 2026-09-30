@@ -644,7 +644,7 @@ namespace mlirgen
                 return mlir::Type();
             }
 
-            return getType(typeNode, genericTypeGenContext);
+            return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
         }  
 
         return mlir::Type();      
@@ -675,7 +675,7 @@ namespace mlirgen
                 return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
             }
 
-            return getType(typeNode, genericTypeGenContext);
+            return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
         }
 
         if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
@@ -789,7 +789,22 @@ namespace mlirgen
                     return embedType;
                 }
 
-                emitError(location, "generic type ") << name << " can't be found";
+                // `Reference<Node>` with `Node` already reported circular, or `List<T>` itself:
+                // not a missing generic
+                auto argumentIsCircular = circularTypeAliases.contains(name) || llvm::any_of(typeReferenceAST->typeArguments, [&](TypeNode typeArg) {
+                    if (typeArg != SyntaxKind::TypeReference)
+                    {
+                        return false;
+                    }
+
+                    auto argName = MLIRHelper::getName(typeArg.as<TypeReferenceNode>()->typeName);
+                    return circularTypeAliases.contains(argName);
+                });
+                if (!argumentIsCircular)
+                {
+                    emitError(location, "generic type ") << name << " can't be found";
+                }
+
                 return mlir::Type();
             }
         }

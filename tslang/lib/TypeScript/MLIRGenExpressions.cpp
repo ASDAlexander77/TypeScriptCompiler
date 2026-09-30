@@ -1720,7 +1720,7 @@ namespace mlirgen
 
         // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted
         // as embeded type "index"
-        if (!isEmbededType(name))
+        if (!isEmbededType(name) && !circularTypeAliases.contains(name))
             emitError(location, "can't resolve name: ") << name;
 
         return mlir::failure();

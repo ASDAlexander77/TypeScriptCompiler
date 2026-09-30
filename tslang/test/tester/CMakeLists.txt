@@ -2354,6 +2354,22 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A type alias that contains itself is one error, not a stack overflow (issue #370). The follow-on
+# messages ("can't find type", "generic type ... can't be found") would only repeat it. A stack
+# overflow prints nothing, so it fails the PASS expression.
+foreach(type_alias_circular_name tuple_reference object object_optional declared_param mutual exported
+                                 generic union_array namespaced)
+    add_test(NAME test-compile-type-alias-circular-${type_alias_circular_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/type-alias-circular/${type_alias_circular_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/type-alias-circular-${type_alias_circular_name}.obj")
+    set_tests_properties(test-compile-type-alias-circular-${type_alias_circular_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "type alias '[A-Za-z]+' circularly references itself"
+                                    FAIL_REGULAR_EXPRESSION "can't find type|can't be found|can't resolve name|Stack dump|Assertion failed")
+endforeach()
+tslang_add_test(NAME test-jit-type-alias-not-circular COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/type-alias-circular/positive.ts")
+tslang_add_test(NAME test-compile-type-alias-not-circular COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/type-alias-circular/positive.ts")
+
 # An error reported by a pass that still returns success - a lowering pattern that cannot build a
 # value, says so and carries on - fails the compile. It used to be printed and then ignored: the object
 # file was written, and under --emit=jit the program ran and crashed. Two tests because one
