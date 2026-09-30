@@ -8,6 +8,8 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
 #include "scanner_enums.h"
 
@@ -156,7 +158,38 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     }
     else if (isa<mlir_ts::AnyType>(leftType))
     {
-        if (left.getType() != right.getType())
+        // the operands are lowered already, so an `any` and a string (or null) are both a `ptr`
+        // and comparing their types said nothing: the string itself was handed over as the box,
+        // and its bytes read as one - `let t: any = "text"; t == "text"` was false. Box it by
+        // its TypeScript type, as a cast to `any` does - on the stack: the box lives for this
+        // comparison only, and one on the heap was never freed under reference counting.
+        auto rightElementType = isa<mlir_ts::LiteralType>(rightType) ? cast<mlir_ts::LiteralType>(rightType).getElementType() : rightType;
+        if (!isa<mlir_ts::AnyType>(rightElementType) && !isa<mlir_ts::UnionType>(rightElementType))
+        {
+            auto ctx = builder.getContext();
+            auto ptrTy = LLVM::LLVMPointerType::get(ctx);
+            auto llvmIndexType = typeConverter.convertType(builder.getIndexType());
+            auto boxType = LLVM::LLVMStructType::getLiteral(ctx, {llvmIndexType, ptrTy, right.getType()}, false);
+
+            LLVMCodeHelperBase ch(binOp, builder, &typeConverter, compileOptions);
+            auto box = ch.Alloca(boxType, 1);
+
+            auto sizeMLIR = builder.create<mlir_ts::SizeOfOp>(loc, builder.getIndexType(), right.getType());
+            auto size = builder.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeMLIR);
+
+            TypeOfOpHelper toh(builder);
+            auto typeOfValue = builder.create<mlir_ts::DialectCastOp>(loc, ptrTy, toh.typeOfLogic(loc, rightElementType));
+
+            auto fieldAddress = [&](int index) {
+                return builder.create<LLVM::GEPOp>(loc, ptrTy, boxType, box, ArrayRef<LLVM::GEPArg>{0, index});
+            };
+            builder.create<LLVM::StoreOp>(loc, size, fieldAddress(ANY_SIZE));
+            builder.create<LLVM::StoreOp>(loc, typeOfValue, fieldAddress(ANY_TYPE));
+            builder.create<LLVM::StoreOp>(loc, right, fieldAddress(ANY_DATA));
+
+            right = box;
+        }
+        else if (left.getType() != right.getType())
         {
             right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
         }

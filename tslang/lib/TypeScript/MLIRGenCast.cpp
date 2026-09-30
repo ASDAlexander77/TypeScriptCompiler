@@ -1881,6 +1881,13 @@ namespace mlirgen
                 ss << "\nif (typeof a == 'undefined') return 'undefined';";
                 ss << "\nif (typeof a == 'null') return 'null';";
             }
+
+            // `if (a)` and `!a` of an `any` holding undefined or null: false, as in JavaScript -
+            // it threw "Can't cast from any type"
+            if (mlir::isa<mlir_ts::BooleanType>(type) || mlir::isa<mlir_ts::TypePredicateType>(type)) {
+                ss << "\nif (typeof a == 'undefined') return false;";
+                ss << "\nif (typeof a == 'null') return false;";
+            }
         }
 
         ss << "\nthrow \"Can't cast from any type\";\n";                    
