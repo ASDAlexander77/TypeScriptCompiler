@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <typeinfo>
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -434,6 +435,16 @@ static void jitCxxThrowException(void *exceptionObject, void *throwInfo)
 // exception personality so throw and catch sides use the same CRT
 extern "C" EXCEPTION_DISPOSITION __CxxFrameHandler3(struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *,
                                                     struct _DISPATCHER_CONTEXT *);
+
+// The vtable of type_info (??_7type_info@@6B@), which every type descriptor a throw emits points
+// at. tslang.exe links the CRT statically, so no DLL in the process exports it - only
+// TypeScriptRuntime.dll, which re-exports its own copy and which the JIT loads for `gc` alone.
+// Without it every rc/none/own program that throws failed to materialize. Every type_info object
+// starts with this pointer, so take it from one: the static CRT's, like __CxxFrameHandler3's.
+static void *jitTypeInfoVftable()
+{
+    return *reinterpret_cast<void *const *>(&typeid(int));
+}
 #endif
 
 #define JIT_ENTRY_THUNK_NAME "__tslang_jit_main"
@@ -720,6 +731,7 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         // jitCxxThrowException above).
         addSym("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
         addSym("_CxxThrowException", (void *)&jitCxxThrowException);
+        addSym("??_7type_info@@6B@", jitTypeInfoVftable());
 #endif
     }
 #endif
@@ -879,6 +891,8 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         // fixes up the throw-site image base (see jitCxxThrowException above)
         addOverride("__CxxFrameHandler3", (void *)&__CxxFrameHandler3);
         addOverride("_CxxThrowException", (void *)&jitCxxThrowException);
+        // see jitTypeInfoVftable above
+        addOverride("??_7type_info@@6B@", jitTypeInfoVftable());
 #endif
         // The stand-in decided above. It goes here rather than through
         // DynamicLibrary::AddSymbol because the process generator resolves from export tables
