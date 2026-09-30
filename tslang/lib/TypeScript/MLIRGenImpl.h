@@ -1210,9 +1210,13 @@ class MLIRGenImpl
     bool tryInferTupleFields(mlir::Location location, mlir_ts::TupleType tempTuple, T typeTuple,
                              StringMap<mlir::Type> &results, const GenContext &genContext)
     {
-        for (auto tempFieldInfo : tempTuple.getFields())
+        for (auto [position, tempFieldInfo] : enumerate(tempTuple.getFields()))
         {
-            auto index = typeTuple.getIndex(tempFieldInfo.id);
+            // a field of `[K, V]` has no name, and every unnamed field looked up by its (null) id
+            // found the first: K and V both took the first element's type
+            auto index = tempFieldInfo.id
+                             ? typeTuple.getIndex(tempFieldInfo.id)
+                             : (position < typeTuple.size() ? static_cast<int>(position) : -1);
             if (index >= 0)
             {
                 inferType(location, tempFieldInfo.type, typeTuple.getFieldInfo(index).type, results, genContext);
@@ -1293,6 +1297,11 @@ class MLIRGenImpl
                                                                                ArrayRef<mlir::Type> typeArguments,
                                                                                const GenContext &genContext,
                                                                                bool allowNamedGenerics = false);
+
+    mlir_ts::ClassType inferClassTypeFromConstructorArguments(mlir::Location location,
+                                                              GenericClassInfo::TypePtr genericClassInfo,
+                                                              NodeArray<Expression> arguments,
+                                                              const GenContext &genContext);
 
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,

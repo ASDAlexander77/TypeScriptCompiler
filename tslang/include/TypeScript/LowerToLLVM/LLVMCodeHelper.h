@@ -717,17 +717,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             {
                 LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
 
-                // An unspecified field of an owning type must be null rather than undef: under
-                // reference counting the tuple is retained as a whole before anything writes the
-                // field (a generator's state object is built exactly this way), and walking an
-                // undef pointer to reach its header is undefined behaviour, which the optimizer
-                // is entitled to - and does - fold the whole caller away for.
-                auto unspecifiedFieldIsOwning = compileOptions.tracksOwnership() &&
-                                                MLIRTypeHelper(rewriter.getContext(), compileOptions).ownsHeapMemory(loc, type);
-
-                mlir::Value itemValue = unspecifiedFieldIsOwning
-                                            ? rewriter.create<LLVM::ZeroOp>(loc, llvmType).getResult()
-                                            : rewriter.create<mlir_ts::UndefOp>(loc, llvmType).getResult();
+                // An unspecified field is zero rather than undef. It is read - an iterator's final
+                // `{ value: undefined, done: true }` is this constant - and under reference
+                // counting the tuple is retained as a whole before anything writes the field (a
+                // generator's state object is built exactly this way), and walking an undef
+                // pointer to reach its header is undefined behaviour, which the optimizer is
+                // entitled to - and does - fold the whole caller away for.
+                mlir::Value itemValue = rewriter.create<LLVM::ZeroOp>(loc, llvmType).getResult();
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }

@@ -1515,22 +1515,13 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
 
         TypeConverterHelper tch(getTypeConverter());
 
-        // `undefined` materialised as a value of a type that owns heap memory has to be null
-        // rather than undef: under reference counting whoever receives it retains it, and
-        // reaching an undef pointer's block header is undefined behaviour. An iterator's final
-        // `{ value: undefined, done: true }` is built exactly this way, and the caller retains
-        // the result before it looks at `done`.
-        if (tsLlvmContext->compileOptions.tracksOwnership())
-        {
-            MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
-            if (mth.ownsHeapMemory(op.getLoc(), op.getType()))
-            {
-                rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, tch.convertType(op.getType()));
-                return success();
-            }
-        }
-
-        rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
+        // `undefined` materialised as a value of a type that cannot hold it is zero, not undef.
+        // It is read: an iterator's final `{ value: undefined, done: true }` is built exactly
+        // this way, and an undef `value` printed whatever the register held (a Set<si32>'s
+        // `values().drop(4).next()` gave `{ value: -971415704, done: true }`). Under reference
+        // counting it matters twice over - whoever receives an owning value retains it, and
+        // reaching an undef pointer's block header is undefined behaviour.
+        rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, tch.convertType(op.getType()));
         return success();
     }
 };

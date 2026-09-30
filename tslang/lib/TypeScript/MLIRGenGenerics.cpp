@@ -1246,6 +1246,127 @@ namespace mlirgen
         return {mlir::success(), mlir::Type()};
     }
 
+    // `new Set([2, 4, 6, 8])`: a generic class written without type arguments takes them from its
+    // constructor's arguments, as a generic function's call does (`first([2, 4])` is first<si32>).
+    // Nothing did: the class fell back to its defaults (`Set<V = any>` made Set<any>) or, with none,
+    // was "missing type arguments". A type parameter the arguments do not reach keeps its default;
+    // when one has neither, or anything is still generic, there is no answer here and the caller
+    // goes on as before.
+    mlir_ts::ClassType MLIRGenImpl::inferClassTypeFromConstructorArguments(mlir::Location location,
+                                                                          GenericClassInfo::TypePtr genericClassInfo,
+                                                                          NodeArray<Expression> arguments,
+                                                                          const GenContext &genContext)
+    {
+        // one constructor: with overloads, which one the arguments pick is a question for the call
+        ConstructorDeclaration constructorDeclaration;
+        for (auto member : genericClassInfo->classDeclaration->members)
+        {
+            if (member == SyntaxKind::Constructor && !hasModifier(member, SyntaxKind::StaticKeyword))
+            {
+                if (constructorDeclaration)
+                {
+                    return mlir_ts::ClassType();
+                }
+
+                constructorDeclaration = member.as<ConstructorDeclaration>();
+            }
+        }
+
+        if (!constructorDeclaration)
+        {
+            return mlir_ts::ClassType();
+        }
+
+        // the arguments' types, in the caller's scope; a function argument's parameters are typed
+        // by the constructor's, which is what is being worked out, so it tells nothing
+        SmallVector<mlir::Type> argumentTypes;
+        for (auto argument : arguments)
+        {
+            if (argument == SyntaxKind::SpreadElement)
+            {
+                break;
+            }
+
+            argumentTypes.push_back(argument == SyntaxKind::ArrowFunction || argument == SyntaxKind::FunctionExpression
+                                        ? mlir::Type()
+                                        : evaluate(argument, genContext));
+        }
+
+        // the parameters' types in the class's own scope, its type parameters standing for themselves
+        MLIRNamespaceGuard ng(currentNamespace);
+        currentNamespace = genericClassInfo->elementNamespace;
+
+        SourceFileScope sourceFileScope(*this, genericClassInfo->sourceFile, genericClassInfo->fileName);
+
+        GenContext templateGenContext(genContext);
+        for (auto &typeParam : genericClassInfo->typeParams)
+        {
+            templateGenContext.typeParamsWithArgs[typeParam->getName()] = {typeParam, getNamedGenericType(typeParam->getName())};
+        }
+
+        StringMap<mlir::Type> inferredTypes;
+        auto parameters = constructorDeclaration->parameters;
+        for (auto [index, argumentType] : enumerate(argumentTypes))
+        {
+            if (index >= parameters.size())
+            {
+                break;
+            }
+
+            auto parameter = parameters[index];
+            if (parameter->dotDotDotToken || !parameter->type || !argumentType)
+            {
+                continue;
+            }
+
+            if (auto parameterType = getType(parameter->type, templateGenContext))
+            {
+                inferType(location, parameterType, argumentType, inferredTypes, templateGenContext);
+            }
+        }
+
+        // in declaration order, up to the first the arguments do not reach; the rest must have defaults
+        SmallVector<mlir::Type> typeArguments;
+        for (auto &typeParam : genericClassInfo->typeParams)
+        {
+            auto found = inferredTypes.find(typeParam->getName());
+            if (found == inferredTypes.end())
+            {
+                break;
+            }
+
+            auto type = mth.wideStorageType(found->getValue());
+            if (mth.isGenericType(type))
+            {
+                return mlir_ts::ClassType();
+            }
+
+            typeArguments.push_back(type);
+        }
+
+        if (typeArguments.empty())
+        {
+            return mlir_ts::ClassType();
+        }
+
+        for (auto index = typeArguments.size(); index < genericClassInfo->typeParams.size(); index++)
+        {
+            if (!genericClassInfo->typeParams[index]->hasDefault())
+            {
+                return mlir_ts::ClassType();
+            }
+        }
+
+        auto [result, specType] =
+            instantiateSpecializedClassType(location, genericClassInfo->classType, typeArguments, genContext);
+        if (mlir::failed(result))
+        {
+            return mlir_ts::ClassType();
+        }
+
+        return dyn_cast_or_null<mlir_ts::ClassType>(specType);
+    }
+
     std::pair<mlir::LogicalResult, mlir::Type> MLIRGenImpl::instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
         const GenContext &genContext, bool allowNamedGenerics)
