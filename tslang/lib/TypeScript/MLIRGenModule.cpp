@@ -160,6 +160,7 @@ namespace mlirgen
                 if (option != strictNull->second.front().end()) 
                 {
                     compileOptions.strictNullChecks = option->second._arg.value == S("true");
+                    mth.setStrictNullChecks(compileOptions.strictNullChecks);
                 }
             }
         }
