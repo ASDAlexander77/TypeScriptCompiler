@@ -153,7 +153,12 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         {
             optPM.addPass(mlir::createCSEPass());
             pm.addPass(mlir::createLoopInvariantCodeMotionPass());
-            pm.addPass(mlir::createStripDebugInfoPass());
+            // Not under --di: stripping left every function a subprogram and every call no
+            // location, which the LLVM dialect's verifier rejects for a call it could inline
+            if (!compileOptions.generateDebugInfo)
+            {
+                pm.addPass(mlir::createStripDebugInfoPass());
+            }
             pm.addPass(mlir::createInlinerPass());
             pm.addPass(mlir::createSCCPPass());
             pm.addPass(mlir::createSymbolDCEPass());
@@ -195,6 +200,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 #endif
         if (compileOptions.generateDebugInfo)
         {
+            if (enableOpt)
+            {
+                pm.addPass(mlir::typescript::createInlinedLocationPass());
+            }
+
             pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
         }
 
