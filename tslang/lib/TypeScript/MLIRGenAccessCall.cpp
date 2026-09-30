@@ -1576,9 +1576,21 @@ namespace mlirgen
             return mlir::success();
         }
 
-        // special case when TypePredicateType is used in generic function and failed constraints 
         if (auto symbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
+            // The collector's own API - lib.native.d.ts declares GC_gcollect and the weak-link
+            // functions WeakRef is built on - exists only in a `gc` program: no other model links
+            // the collector, so a call to it was an unresolved symbol at link time instead
+            if (!compileOptions.needsGCRuntime() && symbolRefOp.getIdentifier().starts_with("GC_"))
+            {
+                emitError(location, "") << "'" << symbolRefOp.getIdentifier()
+                                         << "' is part of the garbage collector, which -mm="
+                                         << memoryModelName(compileOptions.memoryModel)
+                                         << " does not have; it needs -mm=gc, as does WeakRef, which is built on it";
+                return mlir::failure();
+            }
+
+            // special case when TypePredicateType is used in generic function and failed constraints
             if (symbolRefOp.getIdentifier() == "")
             {
                 if (auto funcType = mlir::dyn_cast<mlir_ts::FunctionType>(symbolRefOp.getType()))

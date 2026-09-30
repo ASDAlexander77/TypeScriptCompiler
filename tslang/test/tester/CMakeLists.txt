@@ -2419,6 +2419,23 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
+# is an error under every model but gc, which alone links the collector - it used to reach the
+# linker as an unresolved symbol. Under gc the same file compiles.
+foreach(gc_api_model rc none own)
+    add_test(NAME test-compile-gc-api-outside-gc-${gc_api_model}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=${gc_api_model}
+                     "${PROJECT_SOURCE_DIR}/test/tester/collector-api/gc_collect.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/gc-api-${gc_api_model}.obj")
+    set_tests_properties(test-compile-gc-api-outside-gc-${gc_api_model}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "'GC_gcollect' is part of the garbage collector, which -mm=${gc_api_model} does not have"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+add_test(NAME test-compile-gc-api-gc
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=gc
+                 "${PROJECT_SOURCE_DIR}/test/tester/collector-api/gc_collect.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/gc-api-gc.obj")
+
 # A type alias that contains itself is one error, not a stack overflow (issue #370). The follow-on
 # messages ("can't find type", "generic type ... can't be found") would only repeat it. A stack
 # overflow prints nothing, so it fails the PASS expression.
