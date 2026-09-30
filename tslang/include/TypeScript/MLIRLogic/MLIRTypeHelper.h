@@ -41,6 +41,13 @@ class MLIRTypeHelper
     {
     }
 
+    // the options are a copy, taken before a file's `// @strict-null` pragma is read: the pragma
+    // has to reach this copy too, or unions are built strict in a file compiled non-strict
+    void setStrictNullChecks(bool strictNullChecks)
+    {
+        compileOptions.strictNullChecks = strictNullChecks;
+    }
+
     MLIRTypeHelper(
         mlir::MLIRContext *context, 
         CompileOptions compileOptions,
@@ -3166,6 +3173,14 @@ class MLIRTypeHelper
         return getUnionTypeWithMerge(location, types, mergeLiterals, mergeTypes);
     }
 
+    // Without strict null checks a nullable type (string, a class) holds null in its own pointer, so
+    // null goes away beside it. A union of several types is a tagged value, not one pointer: there
+    // null has nowhere to go but a member of its own.
+    bool needsNullMember(mlir::ArrayRef<mlir::Type> types)
+    {
+        return llvm::count_if(types, [](mlir::Type type) { return !isa<mlir_ts::NullType>(type); }) > 1;
+    }
+
     // TODO: review all union merge logic
     mlir::Type getUnionTypeMergeTypes(mlir::Location location, UnionTypeProcessContext &unionContext, bool mergeLiterals = true, bool mergeTypes = true, bool disableStrickNullCheck = false)
     {
@@ -3213,17 +3228,22 @@ class MLIRTypeHelper
         if (typesAll.size() == 1)
         {
             auto resType = typesAll.front();
+
+            // the null the checker needs goes in before undefined wraps the type: undefined makes it
+            // optional, it must not take the null away - `string | null | undefined` accepts null as
+            // `string | null` does
+            if (compileOptions.strictNullChecks && !disableStrickNullCheck && unionContext.isNullable
+                && !isa<mlir_ts::NullType>(resType))
+            {
+                resType = mlir_ts::UnionType::get(context, {resType, getNullType()});
+            }
+
             if (unionContext.isUndefined)
             {
                 return mlir_ts::OptionalType::get(resType);
-            }     
-
-            if (compileOptions.strictNullChecks && !disableStrickNullCheck && unionContext.isNullable)
-            {
-                return mlir_ts::UnionType::get(context, {resType, getNullType()});             
             }
 
-            return resType;       
+            return resType;
         }
 
         // merge types
@@ -3233,7 +3253,7 @@ class MLIRTypeHelper
             mlir::SmallVector<mlir::Type> mergedTypesAll;
             this->mergeTypes(location, typesAll, mergedTypesAll);
 
-            if (compileOptions.strictNullChecks && unionContext.isNullable)
+            if (unionContext.isNullable && (compileOptions.strictNullChecks || needsNullMember(mergedTypesAll)))
             {
                 mergedTypesAll.push_back(getNullType());
             }
@@ -3247,7 +3267,8 @@ class MLIRTypeHelper
             return retType;
         }
 
-        if (compileOptions.strictNullChecks && !disableStrickNullCheck && unionContext.isNullable)
+        if (unionContext.isNullable
+            && ((compileOptions.strictNullChecks && !disableStrickNullCheck) || needsNullMember(typesAll)))
         {
             typesAll.push_back(getNullType());
         }

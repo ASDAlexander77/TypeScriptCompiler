@@ -383,6 +383,9 @@ tslang_add_test(NAME test-compile-00-union-bin-ops-2 COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-union-to-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-compile-00-union-errors COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
 tslang_add_test(NAME test-compile-00-union-null-to-string COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
+tslang_add_test(NAME test-compile-00-union-null-undefined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_undefined.ts")
+tslang_add_test(NAME test-compile-00-union-null-undefined-nonstrict COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_undefined_nonstrict.ts")
+tslang_add_test(NAME test-compile-00-optional-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_number_compare.ts")
 tslang_add_test(NAME test-compile-00-intersection-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-compile-00-intersection-type-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
 tslang_add_test(NAME test-compile-00-length COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length.ts")
@@ -849,6 +852,9 @@ tslang_add_test(NAME test-jit-00-union-bin-ops-2 COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-union-to-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_to_any.ts")
 tslang_add_test(NAME test-jit-00-union-errors COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_errors.ts")
 tslang_add_test(NAME test-jit-00-union-null-to-string COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_to_string.ts")
+tslang_add_test(NAME test-jit-00-union-null-undefined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_undefined.ts")
+tslang_add_test(NAME test-jit-00-union-null-undefined-nonstrict COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_null_undefined_nonstrict.ts")
+tslang_add_test(NAME test-jit-00-optional-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_number_compare.ts")
 tslang_add_test(NAME test-jit-00-union-global-init COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_global_init.ts")
 tslang_add_test(NAME test-jit-00-intersection-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type.ts")
 tslang_add_test(NAME test-jit-00-intersection-type-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
@@ -2460,7 +2466,7 @@ add_test(NAME test-compile-lowering-error-message
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-message.obj")
 set_tests_properties(test-compile-lowering-error-message
-                     PROPERTIES PASS_REGULAR_EXPRESSION "source array and destination array have different types"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "cast from array type .* to array type .* is not supported"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-lowering-error-exit
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none "${lowering_error_file}"

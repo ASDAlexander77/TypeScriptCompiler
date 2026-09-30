@@ -679,6 +679,11 @@ namespace mlirgen
             return *result;
         }
 
+        if (auto result = castToNullableUnionType(location, type, value, valueType, genContext))
+        {
+            return *result;
+        }
+
         // const dest: cast via the unwrapped source type instead
         if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
         {
@@ -1340,6 +1345,40 @@ namespace mlirgen
         }
 
         return std::nullopt;
+    }
+
+    // `T | null` without a tag is T's own pointer, and null only there for the checker (strict null
+    // checks). A value of another type becomes a T first - an object literal an interface, a const
+    // array an array - the way it would be cast to T alone: cast straight to the union, that
+    // conversion was left undone for the lowering, which can't do it.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castToNullableUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)
+    {
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        if (!unionType)
+        {
+            return std::nullopt;
+        }
+
+        mlir::Type baseType;
+        if (mth.isUnionTypeNeedsTag(location, unionType, baseType) || !baseType || baseType == valueType)
+        {
+            return std::nullopt;
+        }
+
+        if (isa<mlir_ts::NullType>(valueType) || isa<mlir_ts::UndefinedType>(valueType) || isa<mlir_ts::AnyType>(valueType)
+            || isa<mlir_ts::OptionalType>(valueType) || isa<mlir_ts::UnionType>(valueType))
+        {
+            return std::nullopt;
+        }
+
+        auto types = unionType.getTypes();
+        if (std::find(types.begin(), types.end(), valueType) != types.end())
+        {
+            return std::nullopt;
+        }
+
+        CAST(value, location, baseType, value, genContext);
+        return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext)

@@ -5861,6 +5861,54 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // An optional number compared with a number. The lowering compares them only when the optional
+    // holds a value (OptionalLogicHelper), so it stays optional here: synced as a plain value it was
+    // cast out of the optional first, an empty one reading as 0 - and the promotion saw only the other
+    // operand's type, so against an integer literal 0.5 became an s32 and `0.5 === 0` was true. Both
+    // sides take the wider of the optional's element type and the other operand's type.
+    ValueOrLogicalResult syncOptionalNumericTypes(mlir::Location location, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
+    {
+        auto leftOptType = dyn_cast<mlir_ts::OptionalType>(leftExpressionValue.getType());
+        auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightExpressionValue.getType());
+        if (!leftOptType == !rightOptType)
+        {
+            return mlir::success();
+        }
+
+        auto &optValue = leftOptType ? leftExpressionValue : rightExpressionValue;
+        auto &otherValue = leftOptType ? rightExpressionValue : leftExpressionValue;
+        auto elementType = (leftOptType ? leftOptType : rightOptType).getElementType();
+        auto otherType = otherValue.getType();
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(otherType))
+        {
+            otherType = literalType.getElementType();
+        }
+
+        if (!isPromotableNumeric(elementType) || !isPromotableNumeric(otherType))
+        {
+            return mlir::success();
+        }
+
+        auto types = numericPromotionOrder();
+        auto commonType = llvm::find_if(types, [&](mlir::Type type) { return type == elementType || type == otherType; });
+        if (commonType == types.end())
+        {
+            return mlir::success();
+        }
+
+        if (elementType != *commonType)
+        {
+            CAST(optValue, location, getOptionalType(*commonType), optValue, genContext);
+        }
+
+        if (otherValue.getType() != *commonType)
+        {
+            CAST(otherValue, location, *commonType, otherValue, genContext);
+        }
+
+        return optValue;
+    }
+
     // The order the arithmetic operators promote in, widest first: the first type either
     // operand already has is the one both are cast to. Shared by `+` and by the general
     // arithmetic/comparison path below, which is the point -- they disagreed, and `+` was
@@ -6168,6 +6216,21 @@ class MLIRGenImpl
             {
                 // TODO: do we need to sync type for all Ops?
                 auto types = numericPromotionOrder();
+
+                // `-` and `*` fall into this case too: arithmetic on an optional is left as it was
+                if (opCode != SyntaxKind::MinusToken && opCode != SyntaxKind::AsteriskToken)
+                {
+                    auto o = syncOptionalNumericTypes(location, leftExpressionValue, rightExpressionValue, genContext);
+                    if (o.value)
+                    {
+                        break;
+                    }
+
+                    if (mlir::failed(o.result))
+                    {
+                        return mlir::failure();
+                    }
+                }
 
                 auto r = syncUnionTypes(location, leftExpressionValue, rightExpressionValue, genContext);
                 if (r.value)
@@ -11335,6 +11398,7 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> castToOptionalType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
     std::optional<ValueOrLogicalResult> castToTaggedUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+    std::optional<ValueOrLogicalResult> castToNullableUnionType(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
     // union or optional or any or opaque source type
     std::optional<ValueOrLogicalResult> castFromSourceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);

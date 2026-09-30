@@ -101,6 +101,15 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
     LLVMTypeConverterHelper llvmtch(&typeConverter);
 
+    // A union's tag is read out of its LLVM struct. The lowering pattern hands over its operands
+    // converted already, but an optional's unwrapped value (OptionalLogicHelper) is still a ts.union.
+    auto asLLVMUnion = [&](mlir::Value value, mlir_ts::UnionType unionType) -> mlir::Value {
+        auto llvmUnionType = typeConverter.convertType(unionType);
+        return value.getType() == llvmUnionType
+            ? value
+            : builder.create<mlir_ts::DialectCastOp>(loc, llvmUnionType, value).getResult();
+    };
+
     if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
@@ -212,8 +221,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
             {
-                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()), right,
-                                    MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));                
+                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
+                                    asLLVMUnion(right, unionType), MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
                 auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
                 auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
                     loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
@@ -302,8 +311,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
                 right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero());            
             if (isRightNullValue)
             {
-                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()), left,
-                                    MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));                
+                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
+                                    asLLVMUnion(left, unionType), MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
                 auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
                 auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
                     loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
