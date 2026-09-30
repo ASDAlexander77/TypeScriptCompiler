@@ -7486,8 +7486,18 @@ class MLIRGenImpl
 
                     operands.pop_back_n(toIndex - fromIndex);
 
+                    auto packed = !varArgOperands.empty() || isa<mlir_ts::ArrayType>(varArgsType);
+
+                    // the data block about to be filled releases every element when it dies; without
+                    // this, `a.concat(["x"])` handed the callee an array nobody held, and its first
+                    // `for (const item of other)` freed it (§9.21, as for an array literal)
+                    if (packed)
+                    {
+                        mlirGenRetainCaptured(location, varArgOperands);
+                    }
+
                     // create array
-                    auto array = varArgOperands.empty() && !isa<mlir_ts::ArrayType>(varArgsType)
+                    auto array = !packed
                         ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
                         : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
                     operands.push_back(array);
