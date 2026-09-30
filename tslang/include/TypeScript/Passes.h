@@ -48,6 +48,10 @@ std::unique_ptr<mlir::Pass> createOwnedReturnConsumptionPass(CompileOptions&);
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 std::unique_ptr<mlir::Pass> createProcessHeapPass();
+/// Makes the inliner's call-site locations safe for DIScopeForLLVMFuncOpPass: an inlined op with no
+/// location of its own takes the call's, and one outside any function (a string literal's global)
+/// the location it was written at. Schedule before it, under --di --opt.
+std::unique_ptr<mlir::Pass> createInlinedLocationPass();
 /// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free
 std::unique_ptr<mlir::Pass> createMemAllocPass(CompileOptions&);
 

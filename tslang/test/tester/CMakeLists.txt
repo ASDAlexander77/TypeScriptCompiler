@@ -2203,6 +2203,13 @@ add_test(NAME test-compile-rc-debug-info
                  -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-rc.cmake)
 
+# Debug info together with optimisation, under every model - see debug-info-opt.cmake.
+add_test(NAME test-compile-debug-info-opt
+         COMMAND ${CMAKE_COMMAND}
+                 -DTSLANG=$<TARGET_FILE:tslang>
+                 -DTESTS_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/debug-info-opt.cmake)
+
 # tslang choosing the collector's linkage itself under -mm=gc - see shared-collector-auto.cmake.
 if (WIN32)
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
