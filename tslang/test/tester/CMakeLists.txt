@@ -2466,7 +2466,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_borrow own_element_borrow own_container_loop
                  own_optional_access own_borrow_merge
                  own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call
-                 own_call_no_drops own_getter_borrow own_param_kept own_any_box)
+                 own_call_no_drops own_getter_borrow own_param_kept own_any_box
+                 own_string_length_borrow)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
