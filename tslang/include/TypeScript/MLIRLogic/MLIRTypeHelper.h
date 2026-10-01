@@ -3628,6 +3628,57 @@ class MLIRTypeHelper
         return mlir_ts::TupleType::get(context, resultFields);
     }
 
+    // A function's inferred return type is the union of what it returns: `return "a"` with `return undefined` is
+    // string | undefined, as in TypeScript. mergeType absorbs undefined and null into the other type, as an
+    // initializer would; here they are kept, and so per field of a returned tuple ({value, done} of a generator).
+    mlir::Type mergeReturnType(mlir::Location location, mlir::Type existType, mlir::Type currentType, bool& merged)
+    {
+        merged = false;
+        if (existType == currentType)
+        {
+            merged = true;
+            return existType;
+        }
+
+        auto isUndefinedOrNull = [](mlir::Type type) {
+            return isa<mlir_ts::UndefinedType>(type) || isa<mlir_ts::NullType>(type);
+        };
+
+        if (isUndefinedOrNull(existType) != isUndefinedOrNull(currentType))
+        {
+            merged = true;
+            return getUnionType(location, existType, currentType);
+        }
+
+        auto existTuple = dyn_cast<mlir_ts::TupleType>(existType);
+        auto currentTuple = dyn_cast<mlir_ts::TupleType>(currentType);
+        if (existTuple && currentTuple && existTuple.size() == currentTuple.size())
+        {
+            llvm::SmallVector<mlir_ts::FieldInfo> resultFields;
+            for (auto [existField, currentField] : llvm::zip(existTuple.getFields(), currentTuple.getFields()))
+            {
+                if (existField.id != currentField.id)
+                {
+                    return mergeType(location, existType, currentType, merged);
+                }
+
+                auto fieldMerged = false;
+                auto fieldType = mergeReturnType(location, existField.type, currentField.type, fieldMerged);
+                if (!fieldType)
+                {
+                    return mergeType(location, existType, currentType, merged);
+                }
+
+                resultFields.push_back({existField.id, fieldType, existField.isConditional, existField.accessLevel});
+            }
+
+            merged = true;
+            return mlir_ts::TupleType::get(context, resultFields);
+        }
+
+        return mergeType(location, existType, currentType, merged);
+    }
+
     mlir::Type mergeType(mlir::Location location, mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;

@@ -512,6 +512,25 @@ namespace mlirgen
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
+        // `return;` in a function that returns a value returns undefined: its type is T | undefined
+        // (discovery adds undefined when it saw a bare return beside value ones)
+        if (genContext.passResult)
+        {
+            genContext.passResult->hasBareReturn = true;
+        }
+
+        if (auto returnType = getExplicitReturnTypeOfCurrentFunction(genContext))
+        {
+            if (!isa<mlir_ts::VoidType>(returnType))
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                auto undefinedReturn = nf.createReturnStatement(nf.createIdentifier(S(UNDEFINED_NAME)));
+                undefinedReturn->pos = returnStatementAST->pos;
+                undefinedReturn->_end = returnStatementAST->_end;
+                return mlirGen(undefinedReturn, genContext);
+            }
+        }
+
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::FullStack, {}, &genContext));
 
         builder.create<mlir_ts::ReturnOp>(location);

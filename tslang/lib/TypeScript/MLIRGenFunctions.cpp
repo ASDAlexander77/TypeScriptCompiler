@@ -453,6 +453,8 @@ namespace mlirgen
             SmallVector<mlir::Block *> cleanUpsList;
             SmallVector<mlir::Operation *> cleanUpOpsList;
             PassResult passResultData;
+            passResultData.iteratorResult =
+                (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::GeneratorNext) == InternalFlags::GeneratorNext;
             int discoverState = 1;
 
             GenContext genContextWithPassResult{};
@@ -525,6 +527,13 @@ namespace mlirgen
 
                 funcProto->setDiscovered(true);
                 auto discoveredType = passResult->functionReturnType;
+
+                // a bare `return;` beside value returns: T | undefined
+                if (passResult->hasBareReturn && !hasExplicitReturnType && discoveredType && !mth.isNoneType(discoveredType)
+                    && !isa<mlir_ts::VoidType>(discoveredType))
+                {
+                    discoveredType = getUnionType(loc(functionLikeDeclarationBaseAST), discoveredType, getUndefinedType());
+                }
                 // a "none" discoveredType means inference didn't converge (see above) -
                 // never let that silently overwrite an already-known (explicit or
                 // previously-cached) return type.
@@ -723,7 +732,7 @@ namespace mlirgen
         auto nextMethodDecl =
             nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
                                        undefined, undefined, undefined, nextBody);
-        nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext;
+        nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext | InternalFlags::GeneratorNext;
 
         // copy location info, to fix issue with names of anonymous functions
         nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;

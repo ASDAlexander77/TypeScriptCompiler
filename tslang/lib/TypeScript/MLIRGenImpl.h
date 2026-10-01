@@ -3133,23 +3133,19 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            // TODO: undefined & null should be processed as union type
-            auto undefType = getUndefinedType();
-            auto nullType = getNullType();
-
-            // filter out types, such as: undefined, objects with undefined values etc
-            if (type == undefType || type == nullType)
+            // a generator's next() returns {value: T, done} of Iterator<T>: the undefined value of a finished
+            // generator is not part of T, it reads as T's zero (00generator_done_value_zero.ts)
+            auto iteratorResult = genContext.passResult->iteratorResult;
+            if (iteratorResult && (isa<mlir_ts::UndefinedType>(type) || isa<mlir_ts::NullType>(type)))
             {
                 return mlir::failure();
             }
 
-            // if (mth.hasUndefines(type))
-            // {
-            //     return mlir::failure();
-            // }
-
+            // otherwise `return undefined` / `return null` are part of the union too (mergeReturnType)
             auto merged = false;
-            auto resultReturnType = mth.mergeType(location, genContext.passResult->functionReturnType, type, merged);            
+            auto resultReturnType = iteratorResult
+                ? mth.mergeType(location, genContext.passResult->functionReturnType, type, merged)
+                : mth.mergeReturnType(location, genContext.passResult->functionReturnType, type, merged);
 
             LLVM_DEBUG(dbgs() << "\n!! return type: " << resultReturnType << "");
 
