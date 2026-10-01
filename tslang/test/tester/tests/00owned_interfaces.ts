@@ -156,6 +156,55 @@ function interfacesInALoop() {
     return total + last.v.x;
 }
 
+// A store through an interface hands the count over as a store into the field itself does: the
+// object behind the interface owns the field. It did not - the replaced value was never released,
+// and the stored one kept no reference of its own, so it was freed at the end of the storing
+// function while the field still pointed at it.
+class Box {
+    v: Vec;
+
+    constructor(v: Vec) {
+        this.v = v;
+    }
+}
+
+// churn() frees each filler at once, so it can keep reusing one block; keeping them makes the
+// allocations spread over the blocks just freed, which is what finds this one
+let fillers: Vec[] = [];
+
+function churnKeeping() {
+    for (let i = 0; i < 256; i++) {
+        fillers.push(new Vec(999));
+    }
+}
+
+function storeThroughInterface(): Box {
+    let box = new Box(new Vec(1));
+    let h: Holder = box;
+    h.v = new Vec(31);
+    return box;
+}
+
+function storedThroughInterfaceSurvives() {
+    let box = storeThroughInterface();
+    churnKeeping();
+
+    return box.v.x;
+}
+
+function storeIntoBoxedLiteral(): Holder {
+    let h: Holder = { v: new Vec(1) };
+    h.v = new Vec(37);
+    return h;
+}
+
+function storedIntoBoxedLiteralSurvives() {
+    let h = storeIntoBoxedLiteral();
+    churnKeeping();
+
+    return h.v.x;
+}
+
 function main() {
     assert(returnedThroughInterface() == 7, "a literal boxed as an interface survives its maker");
     assert(argumentNeverBound() == 11, "an interface argument nothing bound survives the call");
@@ -165,6 +214,8 @@ function main() {
     assert(classThroughInterface() == 46, "a class behind an interface keeps its own owner");
     assert(nullInterfaceIsInert() == 29, "a null interface releases nothing");
     assert(interfacesInALoop() == 44, "a loop's interface temporaries do not disturb what it carries out");
+    assert(storedThroughInterfaceSurvives() == 31, "a value stored through an interface is owned by the object");
+    assert(storedIntoBoxedLiteralSurvives() == 37, "a value stored through an interface into a boxed literal is owned by it");
 
     print("done.");
 }

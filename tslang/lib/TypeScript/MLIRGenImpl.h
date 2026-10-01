@@ -1091,7 +1091,25 @@ class MLIRGenImpl
     {
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
                isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
-               isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference);
+               isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference) ||
+               isOwnedInterfaceFieldSlot(location, reference);
+    }
+
+    // A field reached through an interface: it belongs to the object behind the interface, which releases
+    // it - a class instance through its release routine, an object literal through the block it was boxed
+    // into, which retained its fields (castTupleToInterface). So `i.o = x` hands the count over as `obj.o = x`
+    // does. It did not: the old value was never released, and the new one kept no reference of its own, so
+    // its block was freed at the end of the producer's block while the field still pointed at it.
+    bool isOwnedInterfaceFieldSlot(mlir::Location location, mlir::Value reference)
+    {
+        auto interfaceSymbolRefOp = reference.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        if (!interfaceSymbolRefOp)
+        {
+            return false;
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
     // One `using` declaration's `[Symbol.dispose]()`, at one scope exit.
