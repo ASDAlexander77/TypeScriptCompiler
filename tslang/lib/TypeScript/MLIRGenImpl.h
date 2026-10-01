@@ -3055,6 +3055,11 @@ class MLIRGenImpl
         auto doneIdent = nf.createIdentifier(S("done"));
 
         NodeArray<ObjectLiteralElementLike> retObjectProperties;
+        if (stop && expr == SyntaxKind::Identifier && expr.as<Identifier>()->escapedText == S(UNDEFINED_NAME))
+        {
+            expr->internalFlags |= InternalFlags::GeneratorDoneValue;
+        }
+
         auto valueProp = nf.createPropertyAssignment(valueIdent, expr);
         retObjectProperties.push_back(valueProp);
 
@@ -4757,6 +4762,122 @@ class MLIRGenImpl
         return resultFirst;
     }
 
+    // a type whose values are never null or undefined: a value type - a number, a boolean, a tuple - or a union
+    // of them only, such as `0 | 1 | 42`
+    bool isNeverNullish(mlir::Type type)
+    {
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::all_of(unionType.getTypes(), [&](mlir::Type subType) { return isNeverNullish(subType); });
+        }
+
+        return mth.isValueType(type);
+    }
+
+    // the type without null and undefined: what is left once `?? b` did not take `b`
+    mlir::Type getNonNullishType(mlir::Type type)
+    {
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return getNonNullishType(optType.getElementType());
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            mlir::SmallVector<mlir::Type> types;
+            for (auto subType : unionType.getTypes())
+            {
+                if (!isa<mlir_ts::NullType>(subType) && !isa<mlir_ts::UndefinedType>(subType))
+                {
+                    types.push_back(subType);
+                }
+            }
+
+            if (types.size() > 0 && types.size() < unionType.getTypes().size())
+            {
+                return getUnionType(types);
+            }
+        }
+
+        return type;
+    }
+
+    // whether `value` is null or undefined, by its type: an optional only when it has no value or its value is,
+    // a value type never; anything else - a union, any, a reference - is compared with null and with undefined
+    mlir::Value mlirGenIsNullish(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        auto toBoolean = [&](mlir::Value boolValue) -> mlir::Value {
+            if (boolValue && boolValue.getType() != getBooleanType())
+            {
+                auto result = cast(location, getBooleanType(), boolValue, genContext);
+                return result.failed_or_no_value() ? mlir::Value() : V(result);
+            }
+
+            return boolValue;
+        };
+
+        auto type = value.getType();
+        if (isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type))
+        {
+            return toBoolean(V(mlirGenBooleanValue(location, true)));
+        }
+
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+            auto elementType = optType.getElementType();
+
+            // the value is tested only when there is one
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{getBooleanType()}, hasValue, true);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            mlir::Value valueIsNullish;
+            if (isNeverNullish(elementType))
+            {
+                valueIsNullish = toBoolean(V(mlirGenBooleanValue(location, false)));
+            }
+            else
+            {
+                auto innerValue = builder.create<mlir_ts::ValueOp>(location, elementType, value);
+                valueIsNullish = mlirGenIsNullish(location, innerValue, genContext);
+                if (!valueIsNullish)
+                {
+                    return mlir::Value();
+                }
+            }
+
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{valueIsNullish});
+
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{toBoolean(V(mlirGenBooleanValue(location, true)))});
+
+            builder.setInsertionPointAfter(ifOp);
+            return ifOp.getResult(0);
+        }
+
+        if (isNeverNullish(type))
+        {
+            return toBoolean(V(mlirGenBooleanValue(location, false)));
+        }
+
+        auto isNull = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsEqualsToken, value,
+                                          builder.create<mlir_ts::NullOp>(location, getNullType()), genContext);
+        if (isNull.failed_or_no_value())
+        {
+            return mlir::Value();
+        }
+
+        auto isUndefined = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsEqualsToken, value,
+                                               builder.create<mlir_ts::UndefOp>(location, getUndefinedType()), genContext);
+        if (isUndefined.failed_or_no_value())
+        {
+            return mlir::Value();
+        }
+
+        return builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::BarToken), toBoolean(V(isNull)),
+            toBoolean(V(isUndefined)));
+    }
+
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
                                                       const GenContext &genContext)
     {
@@ -4770,42 +4891,22 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
+        // `a ?? b` is `b` only when `a` is null or undefined, so its type is `a`'s without them, or `b`'s
+        auto leftNonNullishType = getNonNullishType(leftExpressionValue.getType());
+        // `a` that is only null or undefined - `x` narrowed so by `x = null` - always gives `b`
+        auto leftAlwaysNullish =
+            isa<mlir_ts::NullType>(leftNonNullishType) || isa<mlir_ts::UndefinedType>(leftNonNullishType);
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
-        auto defaultUnionType = getUnionType(location, leftExpressionValue.getType(), resultWhenFalseType);
+        auto defaultUnionType = getUnionType(location, leftNonNullishType, resultWhenFalseType);
         auto merged = false;
-        auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), merged, defaultUnionType);
+        auto resultType = leftAlwaysNullish
+            ? resultWhenFalseType
+            : mth.findBaseType(resultWhenFalseType, leftNonNullishType, merged, defaultUnionType);
 
-        // extarct value from optional type
-        auto actualLeftValue = leftExpressionValue;
-        auto hasOptional = false;
-        if (auto optType = dyn_cast<mlir_ts::OptionalType>(actualLeftValue.getType()))
+        auto ifCond = mlirGenIsNullish(location, leftExpressionValue, genContext);
+        if (!ifCond)
         {
-            hasOptional = true;
-            CAST(actualLeftValue, location, optType.getElementType(), leftExpressionValue, genContext);
-        }
-
-        CAST_A(opaqueValueOfLeftValue, location, getOpaqueType(), actualLeftValue, genContext);
-
-        auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
-
-        auto compareToNull = builder.create<mlir_ts::LogicalBinaryOp>(
-            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), opaqueValueOfLeftValue,
-            nullVal);
-
-        mlir::Value ifCond = compareToNull;
-        if (hasOptional)
-        {
-            CAST_A(hasValue, location, getBooleanType(), leftExpressionValue, genContext);      
-            CAST_A(isFalse, location, getBooleanType(), mlirGenBooleanValue(location, false), genContext);
-            auto compareToFalse = builder.create<mlir_ts::LogicalBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), isFalse,
-                hasValue);
-
-            auto orOp = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::BarToken), compareToFalse,
-                compareToNull);   
-
-            ifCond = orOp;            
+            return mlir::failure();
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, ifCond, true);
@@ -4829,9 +4930,34 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-        auto resultFalse = leftExpressionValue;
+        if (leftAlwaysNullish)
+        {
+            // never taken
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{builder.create<mlir_ts::UndefOp>(location, resultType)});
+            builder.setInsertionPointAfter(ifOp);
+            auto ifResult = ifOp.getResults().front();
+            if (saveResult)
+            {
+                return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
+            }
 
-        if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultFalse, genContext))) 
+            return ifResult;
+        }
+
+        // here `a` is neither null nor undefined: take it as such
+        mlir::Value resultFalse = leftExpressionValue;
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultFalse.getType()))
+        {
+            resultFalse = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), resultFalse);
+        }
+
+        if (isa<mlir_ts::UnionType>(resultFalse.getType()) && resultFalse.getType() != leftNonNullishType)
+        {
+            resultFalse = castToNarrowedType(location, resultFalse, leftNonNullishType, genContext);
+            VALIDATE(resultFalse, location)
+        }
+
+        if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultFalse, genContext)))
         {
             return mlir::failure();
         }
@@ -8520,6 +8646,79 @@ class MLIRGenImpl
         return mlirGenBooleanValue(location, isEquals ? namesMatch : !namesMatch);
     }
 
+    // A compare with null or undefined whose answer the type gives: a value type - a number, a boolean, a tuple -
+    // is neither, and an optional of one holds undefined or a value, never null. Lowered as they were, `0 === null`
+    // compared the number with null read as 0, and was true.
+    std::optional<ValueOrLogicalResult> foldNullishCompare(mlir::Location location, SyntaxKind opCode,
+                                                           mlir::Value leftValue, mlir::Value rightValue)
+    {
+        auto isEquals = opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::EqualsEqualsEqualsToken;
+        auto isNotEquals = opCode == SyntaxKind::ExclamationEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken;
+        if (!isEquals && !isNotEquals)
+        {
+            return std::nullopt;
+        }
+
+        auto isLoose = opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken;
+        auto isNullish = [](mlir::Type type) { return isa<mlir_ts::NullType>(type) || isa<mlir_ts::UndefinedType>(type); };
+
+        mlir::Value otherValue;
+        mlir::Type nullishType;
+        if (isNullish(rightValue.getType()) && !isNullish(leftValue.getType()))
+        {
+            otherValue = leftValue;
+            nullishType = rightValue.getType();
+        }
+        else if (isNullish(leftValue.getType()) && !isNullish(rightValue.getType()))
+        {
+            otherValue = rightValue;
+            nullishType = leftValue.getType();
+        }
+        else
+        {
+            return std::nullopt;
+        }
+
+        auto otherType = otherValue.getType();
+        if (isNeverNullish(otherType))
+        {
+            return mlirGenBooleanValue(location, isNotEquals);
+        }
+
+        auto optType = dyn_cast<mlir_ts::OptionalType>(otherType);
+        if (!optType || !isNeverNullish(optType.getElementType()))
+        {
+            return std::nullopt;
+        }
+
+        if (isa<mlir_ts::NullType>(nullishType))
+        {
+            if (!isLoose)
+            {
+                return mlirGenBooleanValue(location, isNotEquals);
+            }
+
+            // `== null` matches undefined too: the optional has no value
+            mlir::Value hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), otherValue);
+            if (isNotEquals)
+            {
+                return hasValue;
+            }
+
+            auto falseValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+            return V(builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), hasValue,
+                falseValue));
+        }
+
+        // an optional compared with undefined is handled as it was
+        return std::nullopt;
+    }
+
+    ValueOrLogicalResult mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
+                                             mlir::Value rightExpressionValue, const GenContext &genContext,
+                                             bool saveResult = false);
+
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext);
@@ -9556,6 +9755,16 @@ class MLIRGenImpl
                 auto result = mlirGen(propertyAssignment->initializer, receiverTypeGenContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
+
+                // a finished generator's value, of a value type - a number, a boolean, a tuple: its zero, as the cast
+                // of undefined to it lowers to (see UndefOpLowering), without that cast's warning in every generator
+                // of such a T. Other types keep the cast: to a string it is the text "undefined".
+                if (!!(propertyAssignment->initializer->internalFlags & InternalFlags::GeneratorDoneValue)
+                    && receiverElementType && isa<mlir_ts::UndefinedType>(itemValue.getType())
+                    && mth.isValueType(receiverElementType))
+                {
+                    itemValue = builder.create<mlir_ts::UndefOp>(location, receiverElementType);
+                }
 
                 // in case of Union type
                 if (oli.receiverType && !receiverElementType)

@@ -564,7 +564,10 @@ enum class InternalFlags : number
     // a `return` of a generator's own body: it finishes the generator (mlirGen(ReturnStatement))
     GeneratorReturn = 1 << 12,
     // the next() a generator is rewritten into: it returns Iterator<T>'s {value: T, done} (processReturnType)
-    GeneratorNext = 1 << 13
+    GeneratorNext = 1 << 13,
+    // the `undefined` of a finished generator's {value: undefined, done: true}: a `value` type that cannot hold
+    // undefined takes its zero (mlirGenObjectLiteralFields)
+    GeneratorDoneValue = 1 << 14
 };
 
 ENUM_OPS(InternalFlags)
