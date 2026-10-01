@@ -187,7 +187,7 @@ namespace mlirgen
         auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
         if (existValue)
         {
-            return existValue;
+            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, existValue, false, genContext);
         }
 
         if (mlir::succeeded(
@@ -255,7 +255,7 @@ namespace mlirgen
                 {
                     // every method slot is already a compile-time constant - no per-cast
                     // heap allocation needed, same footing as a method-less interface.
-                    return globalVTableRefValue;
+                    return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, genContext);
                 }
 
                 // match VTable
@@ -300,13 +300,102 @@ namespace mlirgen
                 }
 
                 // patched VTable
-                return V(varVTable);
+                return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, varVTable, true, genContext);
             }
 
-            return globalVTableRefValue;
+            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, genContext);
         }
 
         return mlir::failure();
+    }
+
+    // A `?` member matched by an optional<T> field (`v?: T` of a type literal) has a slot holding the field's
+    // offset - optional<T> holds its T first, which is what the member is read as. Whether the field has a value
+    // is known only at run time, so a field without one gets its slot set to -1 in a copy of the vtable made for
+    // this object: the member is then absent and reads as undefined, as for an object without the field.
+    mlir::Value MLIRGenImpl::patchAbsentOptionalFieldSlots(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objectType,
+                                                           InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef,
+                                                           bool ownsVTable, const GenContext &genContext)
+    {
+        mlir_ts::TupleType storeType;
+        if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+        {
+            storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
+        }
+        else
+        {
+            storeType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(objectType.getStorageType()));
+        }
+
+        if (!storeType)
+        {
+            return vtableRef;
+        }
+
+        // {field index in the object, slot index in the vtable}
+        SmallVector<std::pair<int, int>> optionalSlots;
+        for (auto [index, fieldInfo] : llvm::enumerate(storeType.getFields()))
+        {
+            auto optionalType = dyn_cast<mlir_ts::OptionalType>(fieldInfo.type);
+            if (!optionalType)
+            {
+                continue;
+            }
+
+            auto vtableOffset = 0;
+            auto interfaceField = newInterfacePtr->findField(fieldInfo.id, vtableOffset);
+            if (!interfaceField || !interfaceField->isConditional
+                || mth.stripLiteralType(interfaceField->type) != mth.stripLiteralType(optionalType.getElementType()))
+            {
+                continue;
+            }
+
+            optionalSlots.push_back({(int)index, interfaceField->virtualIndex + vtableOffset + INTERFACE_VTABLE_HEADER_SLOTS});
+        }
+
+        if (optionalSlots.empty())
+        {
+            return vtableRef;
+        }
+
+        auto vtableType = mlir::cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(vtableRef.getType()).getElementType());
+
+        auto varVTable = vtableRef;
+        if (!ownsVTable)
+        {
+            // on the heap for the same reason as the method-patched copy above
+            auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, vtableRef);
+            auto heapVTable = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(vtableType), builder.getBoolAttr(false));
+            builder.create<mlir_ts::StoreOp>(location, valueVTable, heapVTable);
+            varVTable = builder.create<mlir_ts::CastOp>(location, vtableRef.getType(), heapVTable);
+        }
+
+        for (auto [fieldIndex, slotIndex] : optionalSlots)
+        {
+            auto fieldType = storeType.getFieldInfo(fieldIndex).type;
+            auto fieldRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(fieldType), in, fieldIndex);
+            auto fieldValue = builder.create<mlir_ts::LoadOp>(location, fieldType, fieldRef);
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), fieldValue);
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, hasValue, true);
+
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+
+            auto slotType = vtableType.getFieldInfo(slotIndex).type;
+            auto slotRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(slotType), varVTable, slotIndex);
+            auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+            auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+            auto absentSlot = cast(location, slotType, negative1, genContext);
+            if (absentSlot.failed())
+            {
+                return vtableRef;
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, V(absentSlot), slotRef);
+        }
+
+        return varVTable;
     }
 
     // The `.instanceOf` of an object literal cast to an interface: it is an instance of no class.

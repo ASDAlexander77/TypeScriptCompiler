@@ -114,6 +114,25 @@ namespace mlirgen
         return mlir::success();
     }      
 
+    // the value of a field the source does not have, when the field's type admits undefined: `v?: T`
+    // is optional<T>, and `v?: any` stays any (any | undefined is any) - both read as undefined
+    mlir::Value MLIRGenImpl::absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext)
+    {
+        if (isa<mlir_ts::OptionalType>(fieldType))
+        {
+            return builder.create<mlir_ts::OptionalUndefOp>(location, fieldType);
+        }
+
+        if (isa<mlir_ts::AnyType>(fieldType))
+        {
+            auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            auto result = cast(location, fieldType, undefValue, genContext);
+            return result.failed() ? mlir::Value() : V(result);
+        }
+
+        return mlir::Value();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning)
     {
@@ -137,12 +156,13 @@ namespace mlirgen
             count ++;
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
-                if (index >= srcTupleType.size() && isa<mlir_ts::OptionalType>(fieldInfo.type))
+                if (index >= srcTupleType.size())
                 {
-                    // add undefined value
-                    auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
-                    values.push_back(undefVal);
-                    continue;
+                    if (auto undefVal = absentFieldValue(location, fieldInfo.type, genContext))
+                    {
+                        values.push_back(undefVal);
+                        continue;
+                    }
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
@@ -156,10 +176,8 @@ namespace mlirgen
                 auto fieldIndex = srcTupleType.getIndex(fieldInfo.id);
                 if (fieldIndex < 0)
                 {
-                    if (isa<mlir_ts::OptionalType>(fieldInfo.type))
+                    if (auto undefVal = absentFieldValue(location, fieldInfo.type, genContext))
                     {
-                        // add undefined value
-                        auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
                         values.push_back(undefVal);
                         continue;
                     }

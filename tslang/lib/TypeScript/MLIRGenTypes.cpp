@@ -2649,6 +2649,13 @@ namespace mlirgen
                 auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
+
+                // `v?: T` is `v: T | undefined`: an absent field reads as undefined, not as T's zero
+                if (propertySignature->questionToken)
+                {
+                    type = getUnionType(loc(propertySignature), type, getUndefinedType());
+                }
+
                 types.push_back({TupleFieldName(propertySignature->name, genContext), type, false, mlir_ts::AccessLevel::Public});
             }
             else if (kind == SyntaxKind::MethodSignature)

@@ -1583,8 +1583,24 @@ namespace mlirgen
                 llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
                 if (mlir::succeeded(mth.getFields(oli.receiverType, destTupleFields)))
                 {
-                    auto tupleType = getTupleType(destTupleFields);
-                    return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                    // `{}` does not have an optional member: an interface's `?` member is left out (an absent
+                    // member reads as undefined), and a tuple with a field that admits undefined is built by the
+                    // cast of the empty literal below, which gives such a field undefined rather than undef
+                    auto isInterface = isa<mlir_ts::InterfaceType>(oli.receiverType);
+                    if (isInterface)
+                    {
+                        llvm::erase_if(destTupleFields, [](const mlir_ts::FieldInfo &fieldInfo) { return fieldInfo.isConditional; });
+                    }
+
+                    auto hasAbsentableField = !isInterface && llvm::any_of(destTupleFields, [](const mlir_ts::FieldInfo &fieldInfo) {
+                        return isa<mlir_ts::OptionalType>(fieldInfo.type) || isa<mlir_ts::AnyType>(fieldInfo.type);
+                    });
+
+                    if (!hasAbsentableField)
+                    {
+                        auto tupleType = getTupleType(destTupleFields);
+                        return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                    }
                 }
             }
         }
