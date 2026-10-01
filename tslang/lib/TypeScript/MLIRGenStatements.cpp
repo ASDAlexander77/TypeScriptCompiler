@@ -425,6 +425,32 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGen(ReturnStatement returnStatementAST, const GenContext &genContext)
     {
         auto location = loc(returnStatementAST);
+
+        // `return e` in a generator: {value: e, done: true}, and every next() after it is done (step -1)
+        if (!!(returnStatementAST->internalFlags & InternalFlags::GeneratorReturn))
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            // as yield sets its resume point: `this.step` of the generator object, or `step` of a captured one
+            auto stepTarget = evaluateProperty(nf.createToken(SyntaxKind::ThisKeyword), GENERATOR_STEP, genContext)
+                ? static_cast<Expression>(nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S(GENERATOR_STEP))))
+                : static_cast<Expression>(nf.createIdentifier(S(GENERATOR_STEP)));
+            auto finishExpr = nf.createBinaryExpression(
+                stepTarget, nf.createToken(SyntaxKind::EqualsToken),
+                nf.createPrefixUnaryExpression(SyntaxKind::MinusToken, nf.createNumericLiteral(S("1"), TokenFlags::None)));
+            auto finishResult = mlirGen(finishExpr, genContext);
+            EXIT_IF_FAILED(finishResult)
+
+            Expression value = returnStatementAST->expression;
+            if (!value)
+            {
+                value = nf.createIdentifier(S(UNDEFINED_NAME));
+            }
+            auto finishedReturn = nf.createReturnStatement(getYieldReturnObject(nf, location, value, true));
+            finishedReturn->pos = returnStatementAST->pos;
+            finishedReturn->_end = returnStatementAST->_end;
+            return mlirGen(finishedReturn, genContext);
+        }
         if (auto expression = returnStatementAST->expression)
         {
             GenContext receiverTypeGenContext(genContext);

@@ -560,7 +560,9 @@ enum class InternalFlags : number
     // object literal must be heap-boxed into a reference-typed ObjectType value
     // instead of the default value-typed tuple (used for generator wrappers,
     // whose mutable `step` state must be shared across aliases)
-    BoxAsObject = 1 << 11
+    BoxAsObject = 1 << 11,
+    // a `return` of a generator's own body: it finishes the generator (mlirGen(ReturnStatement))
+    GeneratorReturn = 1 << 12
 };
 
 ENUM_OPS(InternalFlags)

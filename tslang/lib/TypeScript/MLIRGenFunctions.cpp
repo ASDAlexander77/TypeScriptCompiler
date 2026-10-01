@@ -670,11 +670,31 @@ namespace mlirgen
         // add main switcher
         auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
 
+        // a finished generator - `return` sets step to -1 - gives {value: undefined, done: true} from then on
+        auto finishedCheck = nf.createIfStatement(
+            nf.createBinaryExpression(stepAccess, nf.createToken(SyntaxKind::LessThanToken), nf.createNumericLiteral(S("0"), TokenFlags::None)),
+            nf.createReturnStatement(getYieldReturnObject(nf, location, nf.createIdentifier(S(UNDEFINED_NAME)), true)),
+            undefined);
+        nextStatements.push_back(finishedCheck);
+
         // call stateswitch
         auto callStat = nf.createExpressionStatement(
             nf.createCallExpression(nf.createIdentifier(S(GENERATOR_SWITCHSTATE)), undefined, {stepAccess}));
 
         nextStatements.push_back(callStat);
+
+        // the statements of next() that use the generator object's own `this`, not the body's
+        auto ownStatementsCount = nextStatements.size();
+
+        // a `return` of the body finishes the generator; one of a nested function is that function's own
+        FilterVisitorSkipFuncsAST<ReturnStatement> returnsVisitor(SyntaxKind::ReturnStatement, [&](auto returnStatement) {
+            returnStatement->internalFlags |= InternalFlags::GeneratorReturn;
+        });
+
+        if (functionLikeDeclarationBaseAST->body)
+        {
+            returnsVisitor.visit(functionLikeDeclarationBaseAST->body);
+        }
 
         // add function body to statements to first step
         if (functionLikeDeclarationBaseAST->body == SyntaxKind::Block)
@@ -715,7 +735,7 @@ namespace mlirgen
                 thisNode->internalFlags |= InternalFlags::ThisArgAlias;
             });
 
-            for (auto it = begin(nextStatements) + 1; it != end(nextStatements); ++it)
+            for (auto it = begin(nextStatements) + ownStatementsCount; it != end(nextStatements); ++it)
             {
                 visitor.visit(*it);
             }
