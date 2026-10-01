@@ -562,7 +562,9 @@ enum class InternalFlags : number
     // whose mutable `step` state must be shared across aliases)
     BoxAsObject = 1 << 11,
     // a `return` of a generator's own body: it finishes the generator (mlirGen(ReturnStatement))
-    GeneratorReturn = 1 << 12
+    GeneratorReturn = 1 << 12,
+    // the next() a generator is rewritten into: it returns Iterator<T>'s {value: T, done} (processReturnType)
+    GeneratorNext = 1 << 13
 };
 
 ENUM_OPS(InternalFlags)
