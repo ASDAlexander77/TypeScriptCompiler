@@ -178,8 +178,10 @@ def BoundIndirectIndexAccessorOp : TypeScript_Op<"BoundIndirectIndexAccessor",
   let hasCanonicalizer = 1;
 }
 
+// reads memory: the vtable slot, and for a `v?: T` field stored as optional<T> its flag (see
+// INTERFACE_OPTIONAL_STORAGE_TAG), so two accesses with a write between them are not one
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
-    [Pure]> {
+    [MemoryEffects<[MemRead]>]> {
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, AnyAttr:$identifier, OptionalAttr<BoolAttr>:$optional);

@@ -99,6 +99,13 @@
 // INTERFACE_VTABLE_HEADER_SLOTS.
 #define INTERFACE_VTABLE_INSTANCEOF_SLOT 0
 #define INTERFACE_VTABLE_HEADER_SLOTS 1
+// An interface `v?: T` field's slot is the field's offset from `this`, or -1 when absent. A class
+// stores its `v?: T` as optional<T> - {T, flag}, value first - and its slot carries this bit on top
+// of the offset: an access then reads the flag (false is undefined), and a write sets it.
+#define INTERFACE_OPTIONAL_STORAGE_TAG(sizeBits) (1LL << ((sizeBits) - 2))
+// on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
+// field, false (a store of undefined) clears it
+#define INTERFACE_OPTIONAL_WRITE_ATTR "__optional_write"
 #define INSTANCEOF_NONE_NAME ".instanceOf.none"
 #define MAIN_ENTRY_NAME "main"
 #define TS_NEST_ATTRIBUTE "ts.nest"

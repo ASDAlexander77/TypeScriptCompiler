@@ -813,9 +813,16 @@ namespace mlirgen
             type = mth.wideStorageType(type);
         }
 
-        LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << " access level: " << accessLevel);
-
         auto hasType = !!propertyDeclaration->type;
+
+        // `v?: T` is `v: T | undefined`, as in a type literal: unassigned it reads as undefined, not as T's zero.
+        // An interface's `v?: T` member reads it by its flag (see mlirGenClassVirtualTableDefinitionForInterface).
+        if (propertyDeclaration->questionToken && type && !mth.isNoneType(type))
+        {
+            type = getUnionType(location, type, getUndefinedType());
+        }
+
+        LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << " access level: " << accessLevel);
         if (mth.isNoneType(type))
         {
             if (hasType)
@@ -1019,11 +1026,19 @@ namespace mlirgen
 
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
 
-            LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
             if (mth.isNoneType(type))
             {
                 return mlir::failure();
             }
+
+            // `constructor(public m?: T)` is a field `m?: T`: T | undefined, as a declared one
+            // (mlirGenClassDataFieldMember) - `new Error().message` is undefined
+            if (parameter->questionToken)
+            {
+                type = getUnionType(location, type, getUndefinedType());
+            }
+
+            LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
 
             fieldInfos.push_back(
             {
@@ -1607,12 +1622,18 @@ genContext);
         auto classStorageType = mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType());
 
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        // the fields stored as optional<T> for an interface's `v?: T`: their slots are tagged
+        llvm::SmallVector<mlir::Attribute> optionalStorageFields;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
-                if (!found || fieldType != foundField.type)
+                // a class's `v?: T` is stored as optional<T>; the interface's `v?: T` reads it by its flag
+                // (a tagged slot, see isStoredAsOptional below)
+                auto optionalStorage = found && isConditional && isa<mlir_ts::OptionalType>(foundField.type)
+                    && mlir::cast<mlir_ts::OptionalType>(foundField.type).getElementType() == fieldType;
+                if (!found || (fieldType != foundField.type && !optionalStorage))
                 {
                     if (!found && !isConditional || found)
                     {
@@ -1624,6 +1645,11 @@ genContext);
                     }
 
                     return {emptyFieldInfo, mlir::success()};
+                }
+
+                if (optionalStorage)
+                {
+                    optionalStorageFields.push_back(id);
                 }
 
                 return {foundField, mlir::success()};
@@ -1796,6 +1822,22 @@ genContext);
                                                 << " in interface: " << newInterfacePtr->fullName
                                                 << " for class: " << newClassPtr->fullName;
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                        }
+
+                        // stored as optional<T> - {T, flag}, value first - for an interface's `v?: T`: the slot is
+                        // the offset plus INTERFACE_OPTIONAL_STORAGE_TAG, so an access reads the flag
+                        // (InterfaceSymbolRefOpLowering)
+                        if (llvm::is_contained(optionalStorageFields, methodOrField.fieldInfo.id))
+                        {
+                            auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                            auto offsetValue = builder.create<mlir_ts::CastOp>(location, ptrIntType, fieldRef);
+                            auto tagValue = builder.create<mlir_ts::ConstantOp>(
+                                location, ptrIntType,
+                                builder.getIntegerAttr(ptrIntType, INTERFACE_OPTIONAL_STORAGE_TAG(compileOptions.sizeBits())));
+                            auto taggedValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                                location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), offsetValue,
+                                tagValue);
+                            fieldRef = builder.create<mlir_ts::CastOp>(location, fieldRef.getType(), taggedValue);
                         }
 
                         // insert &(null)->field
