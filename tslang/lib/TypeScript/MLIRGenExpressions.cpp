@@ -824,7 +824,19 @@ namespace mlirgen
             }
         }
 
-        auto resultReturnUnions = 
+        return mlirGenBinaryValues(location, opCode, leftExpressionValue, rightExpressionValue, genContext, saveResult);
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
+                                                          mlir::Value rightExpressionValue, const GenContext &genContext,
+                                                          bool saveResult)
+    {
+        if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
+        {
+            return *folded;
+        }
+
+        auto resultReturnUnions =
             binaryOpLogicForUnions(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
         if (resultReturnUnions.value || resultReturnUnions.failed())
         {
