@@ -106,9 +106,11 @@ class CastLogicHelper
             return castIntToString(in, tch.getIndexTypeBitwidth(), true);
         }
 
+        // a sign-neutral iN prints signed, as it compares and converts to number: `let a: i32 = -1` is -1,
+        // not 4294967295; only an unsigned uN prints unsigned
         if (isa<mlir::IntegerType>(inType) && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), !inType.isUnsignedInteger());
         }
 
         // a bigint is a signed i64; without this case it fell through to a bare inttoptr, and
@@ -151,17 +153,16 @@ class CastLogicHelper
             }
         }
 
-        // a signed integer keeps its sign as an index: `let n = s.length; n = -1` held 4294967295 under the
-        // zext in castLLVMTypesLogic
-        if (inType.isSignedInteger() && resType.isIndex() && resLLVMType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        // a wider integer keeps the value: a signed or sign-neutral (iN) one sign-extends, only an unsigned one
+        // zero-extends (castLLVMTypesLogic, which sees signless LLVM types only). `let c: i64 = -7` held
+        // 4294967289, `let n = s.length; n = -1` held 4294967295, and `i16` -300 compared as 65236.
+        if (auto inIntType = dyn_cast<mlir::IntegerType>(inType))
         {
-            return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
-        }
-
-        // TODO: should be in LLVM cast?
-        if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
-        {
-            return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
+            if (!inIntType.isUnsigned() && inIntType.getWidth() > 1 && (isa<mlir::IntegerType>(resType) || resType.isIndex())
+                && resLLVMType.getIntOrFloatBitWidth() > inLLVMType.getIntOrFloatBitWidth())
+            {
+                return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
+            }
         }
 
         // an unsigned integer is converted to a float as unsigned: castLLVMTypesLogic only sees the
