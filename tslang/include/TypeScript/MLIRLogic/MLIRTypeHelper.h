@@ -1701,6 +1701,50 @@ class MLIRTypeHelper
         return mlir::Type();
     }
 
+    // index or a signless integer (a constant string's folded length is i32) with a signed integer (or a
+    // signed integer literal) merges to a signed integer that holds both
+    mlir::Type mergeIndexWithSignedInt(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
+    {
+        found = false;
+
+        auto intOf = [](mlir::Type type) -> mlir::IntegerType {
+            if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+            {
+                type = literalType.getElementType();
+            }
+
+            return dyn_cast<mlir::IntegerType>(type);
+        };
+
+        auto isIndexOrSignless = [&](mlir::Type type) {
+            auto intType = intOf(type);
+            return type.isIndex() || (intType && intType.isSignless());
+        };
+
+        auto signedIntOf = [&](mlir::Type type) {
+            auto intType = intOf(type);
+            return intType && intType.isSigned() ? intType : mlir::IntegerType();
+        };
+
+        mlir::IntegerType signedType;
+        if (isIndexOrSignless(typeLeft))
+        {
+            signedType = signedIntOf(typeRight);
+        }
+        else if (isIndexOrSignless(typeRight))
+        {
+            signedType = signedIntOf(typeLeft);
+        }
+
+        if (!signedType)
+        {
+            return mlir::Type();
+        }
+
+        found = true;
+        return mlir::IntegerType::get(context, std::max(64u, signedType.getIntOrFloatBitWidth()), mlir::IntegerType::Signed);
+    }
+
     mlir::Type mergeFuncTypes(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
     {
         found = false;
@@ -1783,6 +1827,14 @@ class MLIRTypeHelper
         if (typeRight && !typeLeft)
         {
             return typeRight;
+        }
+
+        // `c ? s.length : -1` - see mergeType
+        auto mergedIndex = false;
+        auto resIndexType = mergeIndexWithSignedInt(typeLeft, typeRight, mergedIndex);
+        if (mergedIndex)
+        {
+            return resIndexType;
         }
 
         if (canWideTypeWithoutDataLoss(typeLeft, typeRight))
@@ -3573,6 +3625,16 @@ class MLIRTypeHelper
         {
             merged = true;
             return existType;
+        }
+
+        // index (a length, a count) passes for signless in canCastFromTo but holds an unsigned value,
+        // so picking it for `index | si32` wraps a negative value: `return s.length` + `return -1` gave 4294967295
+        auto mergedIndex = false;
+        auto resIndexType = mergeIndexWithSignedInt(existType, currentType, mergedIndex);
+        if (mergedIndex)
+        {
+            merged = true;
+            return resIndexType;
         }
 
         if (canCastFromTo(location, currentType, existType))

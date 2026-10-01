@@ -6039,7 +6039,7 @@ class MLIRGenImpl
     {
         auto isBoolean = [](mlir::Type type) { return isa<mlir_ts::BooleanType>(type); };
         auto isString = [](mlir::Type type) { return isa<mlir_ts::StringType>(type); };
-        auto isNumeric = [](mlir::Type type) { return type.isIntOrIndexOrFloat() && !isa<mlir_ts::BooleanType>(type); };
+        auto isNumeric = [](mlir::Type type) { return isa<mlir_ts::NumberType>(type) || (type.isIntOrIndexOrFloat() && !isa<mlir_ts::BooleanType>(type)); };
 
         auto leftIsBoolean = isBoolean(leftType);
         auto rightIsBoolean = isBoolean(rightType);
@@ -6072,8 +6072,9 @@ class MLIRGenImpl
         if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken)
             && isDefinitelyMismatchedForStrictEquals(leftExpressionValue.getType(), rightExpressionValue.getType()))
         {
-            auto result = opCode == SyntaxKind::ExclamationEqualsEqualsToken;
-            leftExpressionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(result));
+            // the operator itself still runs on the replaced operands, so they must be two
+            // unequal values: `false === true` is false and `false !== true` is true
+            leftExpressionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
             rightExpressionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
             return mlir::success();
         }
