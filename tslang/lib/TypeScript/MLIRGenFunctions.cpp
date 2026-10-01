@@ -7,6 +7,188 @@ namespace typescript
 namespace mlirgen
 {
 
+    // A `break` that leaves `statement` (the body of a loop or the clauses of a switch): an unlabeled one not
+    // inside a nested loop or switch, or any labeled one - it may target this statement or one around it, and
+    // either way control leaves. Nested functions and classes have breaks of their own.
+    class BreakOutVisitor : public ts::FilterVisitorSkipFuncsAST<ts::BreakStatement>
+    {
+      public:
+        bool found = false;
+        bool labeledOnly;
+
+        BreakOutVisitor(bool labeledOnly)
+            : ts::FilterVisitorSkipFuncsAST<ts::BreakStatement>(SyntaxKind::BreakStatement, [&](ts::BreakStatement breakStatement) {
+                  if (!this->labeledOnly || breakStatement->label)
+                  {
+                      found = true;
+                  }
+              }),
+              labeledOnly(labeledOnly)
+        {
+        }
+
+      protected:
+        virtual bool isFiltered(ts::Node node) override
+        {
+            if (ts::FilterVisitorSkipFuncsAST<ts::BreakStatement>::isFiltered(node))
+            {
+                return true;
+            }
+
+            // inside a nested loop or switch only a labeled break can leave this statement
+            if (!labeledOnly)
+            {
+                SyntaxKind kind = node;
+                switch (kind)
+                {
+                case SyntaxKind::WhileStatement:
+                case SyntaxKind::DoStatement:
+                case SyntaxKind::ForStatement:
+                case SyntaxKind::ForInStatement:
+                case SyntaxKind::ForOfStatement:
+                case SyntaxKind::SwitchStatement:
+                    return true;
+                default:
+                    break;
+                }
+            }
+
+            return false;
+        }
+    };
+
+    static bool hasBreakOut(ts::Node statement)
+    {
+        if (statement == SyntaxKind::BreakStatement)
+        {
+            return true;
+        }
+
+        // unlabeled breaks of this statement
+        BreakOutVisitor ownBreaks(false);
+        ownBreaks.visit(statement);
+        if (ownBreaks.found)
+        {
+            return true;
+        }
+
+        // labeled breaks anywhere in it
+        BreakOutVisitor labeledBreaks(true);
+        labeledBreaks.visit(statement);
+        return labeledBreaks.found;
+    }
+
+    static bool isTrueCondition(ts::Expression expression)
+    {
+        return !expression || expression == SyntaxKind::TrueKeyword;
+    }
+
+    static bool canCompleteNormally(ts::Statement statement);
+
+    static bool canCompleteNormally(ts::NodeArray<ts::Statement> statements)
+    {
+        for (auto statement : statements)
+        {
+            if (!canCompleteNormally(statement))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Whether control can reach the point after `statement`: after a function's body, that is falling off its end,
+    // which returns undefined. Exact for return, throw, blocks, if/else, try/catch/finally, a switch with a
+    // default, and `while (true)` / `for (;;)` / `do .. while (true)`; any other statement is taken to complete.
+    static bool canCompleteNormally(ts::Statement statement)
+    {
+        if (!statement)
+        {
+            return true;
+        }
+
+        SyntaxKind kind = statement;
+        switch (kind)
+        {
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::ThrowStatement:
+            return false;
+        case SyntaxKind::Block:
+            return canCompleteNormally(statement.as<ts::Block>()->statements);
+        case SyntaxKind::IfStatement:
+        {
+            auto ifStatement = statement.as<ts::IfStatement>();
+            return !ifStatement->elseStatement || canCompleteNormally(ifStatement->thenStatement)
+                || canCompleteNormally(ifStatement->elseStatement);
+        }
+        case SyntaxKind::TryStatement:
+        {
+            auto tryStatement = statement.as<ts::TryStatement>();
+            if (tryStatement->finallyBlock && !canCompleteNormally(tryStatement->finallyBlock.as<ts::Statement>()))
+            {
+                return false;
+            }
+
+            return canCompleteNormally(tryStatement->tryBlock.as<ts::Statement>())
+                || (tryStatement->catchClause && canCompleteNormally(tryStatement->catchClause->block.as<ts::Statement>()));
+        }
+        case SyntaxKind::WhileStatement:
+        {
+            auto whileStatement = statement.as<ts::WhileStatement>();
+            return !isTrueCondition(whileStatement->expression) || hasBreakOut(whileStatement->statement);
+        }
+        case SyntaxKind::DoStatement:
+        {
+            auto doStatement = statement.as<ts::DoStatement>();
+            return !isTrueCondition(doStatement->expression) || hasBreakOut(doStatement->statement);
+        }
+        case SyntaxKind::ForStatement:
+        {
+            auto forStatement = statement.as<ts::ForStatement>();
+            return !isTrueCondition(forStatement->condition) || hasBreakOut(forStatement->statement);
+        }
+        case SyntaxKind::SwitchStatement:
+        {
+            // a clause falls through to the next one, so only the end of the last clause - or a break - leaves it;
+            // without a default no clause may run at all
+            auto clauses = statement.as<ts::SwitchStatement>()->caseBlock->clauses;
+            auto hasDefault = false;
+            for (auto clause : clauses)
+            {
+                hasDefault |= clause == SyntaxKind::DefaultClause;
+            }
+
+            if (!hasDefault || clauses.size() == 0)
+            {
+                return true;
+            }
+
+            for (auto clause : clauses)
+            {
+                for (auto clauseStatement : clause->statements)
+                {
+                    if (hasBreakOut(clauseStatement))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return canCompleteNormally(clauses[clauses.size() - 1]->statements);
+        }
+        default:
+            return true;
+        }
+    }
+
+    // a function body whose end is reachable: falling off it returns undefined
+    static bool bodyFallsOffEnd(ts::Node body)
+    {
+        return body == SyntaxKind::Block && canCompleteNormally(body.as<ts::Statement>());
+    }
+
+
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> MLIRGenImpl::mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
@@ -528,8 +710,9 @@ namespace mlirgen
                 funcProto->setDiscovered(true);
                 auto discoveredType = passResult->functionReturnType;
 
-                // a bare `return;` beside value returns: T | undefined
-                if (passResult->hasBareReturn && !hasExplicitReturnType && discoveredType && !mth.isNoneType(discoveredType)
+                // a bare `return;` beside value returns, or an end of the body that is reachable: T | undefined
+                if ((passResult->hasBareReturn || bodyFallsOffEnd(functionLikeDeclarationBaseAST->body))
+                    && !hasExplicitReturnType && discoveredType && !mth.isNoneType(discoveredType)
                     && !isa<mlir_ts::VoidType>(discoveredType))
                 {
                     discoveredType = getUnionType(loc(functionLikeDeclarationBaseAST), discoveredType, getUndefinedType());
@@ -1434,6 +1617,25 @@ namespace mlirgen
             if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
             {
                 return mlir::failure();
+            }
+
+            // falling off the end of a function returning T | undefined (inferred so, or declared) returns undefined;
+            // the return slot would otherwise be read as it was left
+            if (auto returnType = getExplicitReturnTypeOfCurrentFunction(funcGenContext))
+            {
+                if ((isa<mlir_ts::OptionalType>(returnType) || isa<mlir_ts::AnyType>(returnType)
+                     || isa<mlir_ts::UnknownType>(returnType))
+                    && bodyFallsOffEnd(functionLikeDeclarationBaseAST->body))
+                {
+                    NodeFactory nf(NodeFactoryFlags::None);
+                    auto undefinedReturn = nf.createReturnStatement(nf.createIdentifier(S(UNDEFINED_NAME)));
+                    undefinedReturn->pos = functionLikeDeclarationBaseAST->body->_end - 1;
+                    undefinedReturn->_end = functionLikeDeclarationBaseAST->body->_end;
+                    if (failed(mlirGen(undefinedReturn, funcGenContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
             }
         }
 
