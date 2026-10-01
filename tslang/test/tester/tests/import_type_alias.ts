@@ -16,5 +16,11 @@ function main() {
     s = "error";
     assert(s == "error");
 
+    const none: M.Options = {};
+    assert(none.label === undefined);
+    assert(none.size === undefined);
+    assert(M.labelOf(none) == "none");
+    assert(M.labelOf({ label: "l" }) == "l");
+
     print("done.");
 }

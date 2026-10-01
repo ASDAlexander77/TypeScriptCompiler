@@ -1383,6 +1383,18 @@ class MLIRTypeHelper
                     auto test = isa<mlir_ts::FunctionType>(foundField.type) && isa<mlir_ts::FunctionType>(fieldType)
                                     ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
                                     : stripLiteralType(fieldType) == stripLiteralType(foundField.type);
+
+                    // a `?` member is read through the vtable as its T, and an optional<T> field (`v?: T` of a
+                    // type literal) holds T first: the slot points at that value, and is patched to absent when
+                    // the field has none (mlirGenCreateInterfaceVTableForObject)
+                    if (!test && isConditional)
+                    {
+                        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(foundField.type))
+                        {
+                            test = stripLiteralType(fieldType) == stripLiteralType(optionalType.getElementType());
+                        }
+                    }
+
                     if (!test)
                     {
                         LLVM_DEBUG(llvm::dbgs() << "field " << id << " not matching type: " << fieldType << " and "

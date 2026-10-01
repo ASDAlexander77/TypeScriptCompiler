@@ -9609,6 +9609,27 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto tupleValue = V(result);
 
+                // `...opt` of a `v?: T` field: spread T's fields - with their defaults when it has no value, as for
+                // a plain T field before `?` made it optional (`{...undefined}` adds no field, which a fixed
+                // literal type cannot express)
+                if (auto optType = dyn_cast<mlir_ts::OptionalType>(tupleValue.getType()))
+                {
+                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), tupleValue);
+                    auto ifOp = builder.create<mlir_ts::IfOp>(location, optType.getElementType(), hasValue, true);
+                    {
+                        mlir::OpBuilder::InsertionGuard guard(builder);
+                        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                        auto value = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), tupleValue);
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{value});
+
+                        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                        auto defaultValue = builder.create<mlir_ts::DefaultOp>(location, optType.getElementType());
+                        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{defaultValue});
+                    }
+
+                    tupleValue = ifOp.getResult(0);
+                }
+
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
 
                 auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) -> mlir::LogicalResult {
@@ -10697,8 +10718,15 @@ class MLIRGenImpl
                                                               InterfaceInfo::TypePtr newInterfacePtr,
                                                               const GenContext &genContext);
 
-    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in, 
-            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in,
+            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext,
+            mlir::Value vtableStorage = mlir::Value());
+
+    SmallVector<std::pair<int, int>> getOptionalFieldSlots(mlir_ts::TupleType storeType, InterfaceInfo::TypePtr newInterfacePtr);
+
+    mlir::Value patchAbsentOptionalFieldSlots(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objectType,
+            InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef, bool ownsVTable, mlir::Value vtableStorage,
+            const GenContext &genContext);
 
     StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
     {
@@ -11552,6 +11580,8 @@ class MLIRGenImpl
     ValueOrLogicalResult selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,  
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
 
+    mlir::Value absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext);
+
     // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
@@ -11651,6 +11681,10 @@ class MLIRGenImpl
                                     mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 
     ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+                                    InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext,
+                                    mlir::Value vtableStorage = mlir::Value());
+
+    ValueOrLogicalResult castTupleWithOwnVTableToInterface(mlir::Location location, mlir::Value in, mlir_ts::TupleType tupleType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext);
 
     mlir_ts::CreateBoundFunctionOp createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction);

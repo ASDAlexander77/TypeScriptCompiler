@@ -19,6 +19,16 @@ namespace M {
 
     export type Status = number | string;
 
+    // a `?` field is `T | undefined` on both sides of the module boundary
+    export type Options = {
+        label?: string;
+        size?: number;
+    };
+
+    export function labelOf(o: Options): string {
+        return o.label ?? "none";
+    }
+
     export function makePoint(x: number, y: number): Point {
         return { x: x, y: y };
     }

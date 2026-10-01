@@ -114,6 +114,25 @@ namespace mlirgen
         return mlir::success();
     }      
 
+    // the value of a field the source does not have, when the field's type admits undefined: `v?: T`
+    // is optional<T>, and `v?: any` stays any (any | undefined is any) - both read as undefined
+    mlir::Value MLIRGenImpl::absentFieldValue(mlir::Location location, mlir::Type fieldType, const GenContext &genContext)
+    {
+        if (isa<mlir_ts::OptionalType>(fieldType))
+        {
+            return builder.create<mlir_ts::OptionalUndefOp>(location, fieldType);
+        }
+
+        if (isa<mlir_ts::AnyType>(fieldType))
+        {
+            auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
+            auto result = cast(location, fieldType, undefValue, genContext);
+            return result.failed() ? mlir::Value() : V(result);
+        }
+
+        return mlir::Value();
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning)
     {
@@ -137,12 +156,13 @@ namespace mlirgen
             count ++;
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
-                if (index >= srcTupleType.size() && isa<mlir_ts::OptionalType>(fieldInfo.type))
+                if (index >= srcTupleType.size())
                 {
-                    // add undefined value
-                    auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
-                    values.push_back(undefVal);
-                    continue;
+                    if (auto undefVal = absentFieldValue(location, fieldInfo.type, genContext))
+                    {
+                        values.push_back(undefVal);
+                        continue;
+                    }
                 }
 
                 MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
@@ -156,10 +176,8 @@ namespace mlirgen
                 auto fieldIndex = srcTupleType.getIndex(fieldInfo.id);
                 if (fieldIndex < 0)
                 {
-                    if (isa<mlir_ts::OptionalType>(fieldInfo.type))
+                    if (auto undefVal = absentFieldValue(location, fieldInfo.type, genContext))
                     {
-                        // add undefined value
-                        auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
                         values.push_back(undefVal);
                         continue;
                     }
@@ -2302,6 +2320,14 @@ namespace mlirgen
             emitWarning(location, "") << "Cloned object is used. Ensure all types are matching to interface: " << interfaceInfo->fullName;
         }
 
+        // a `?` member held as optional<T> needs a vtable of this object's own (patchAbsentOptionalFieldSlots):
+        // it goes in a field after the object's own ones, so the block the interface holds frees it as well
+        if (!getOptionalFieldSlots(mlir::cast<mlir_ts::TupleType>(tupleType), interfaceInfo).empty())
+        {
+            return castTupleWithOwnVTableToInterface(location, inEffective, mlir::cast<mlir_ts::TupleType>(tupleType),
+                                                     interfaceInfo, genContext);
+        }
+
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleType);
@@ -2325,8 +2351,72 @@ namespace mlirgen
         return castObjectToInterface(location, in, objType, interfaceInfo, genContext);
     }
 
+    // the object is copied into a block with one more field, `.vtable`, after its own: the vtable patched for
+    // its `?` members (patchAbsentOptionalFieldSlots) is stored there, so it lives and dies with the block the
+    // interface holds. The object's own fields keep their offsets, which are what the vtable holds.
+    ValueOrLogicalResult MLIRGenImpl::castTupleWithOwnVTableToInterface(mlir::Location location, mlir::Value in,
+                                    mlir_ts::TupleType tupleType, InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
+    {
+        auto inEffective = in;
+        if (inEffective.getType() != tupleType)
+        {
+            CAST(inEffective, location, tupleType, inEffective, genContext);
+        }
+
+        // the vtable's type: the interface's slots typed by this object's fields
+        auto plainObjType = mlir_ts::ObjectType::get(tupleType);
+        auto vtableName = interfaceVTableNameForObject(plainObjType, interfaceInfo);
+        auto globalVTable = resolveFullNameIdentifier(location, vtableName, true, genContext);
+        if (!globalVTable)
+        {
+            if (mlir::failed(mlirGenObjectVirtualTableDefinitionForInterface(location, plainObjType, interfaceInfo, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            globalVTable = resolveFullNameIdentifier(location, vtableName, true, genContext);
+            if (!globalVTable)
+            {
+                return mlir::failure();
+            }
+        }
+
+        auto vtableType = mlir::cast<mlir_ts::RefType>(globalVTable.getType()).getElementType();
+
+        SmallVector<mlir_ts::FieldInfo> fields(tupleType.getFields().begin(), tupleType.getFields().end());
+        fields.push_back({MLIRHelper::TupleFieldName(OWN_INTERFACE_VTABLE_FIELD_NAME, builder.getContext()), vtableType, false, mlir_ts::AccessLevel::Public});
+        auto withVTableType = getTupleType(fields);
+
+        SmallVector<mlir::Type> types;
+        for (auto &field : tupleType.getFields())
+        {
+            types.push_back(field.type);
+        }
+
+        // as in castTupleToInterface: the block owns what its fields hold
+        mlirGenRetainCaptured(location, mlir::ValueRange{inEffective});
+
+        auto parts = builder.create<mlir_ts::DeconstructTupleOp>(location, types, inEffective);
+        mlir::Value withVTable = builder.create<mlir_ts::UndefOp>(location, withVTableType);
+        for (auto [index, part] : llvm::enumerate(parts.getResults()))
+        {
+            withVTable = builder.create<mlir_ts::InsertPropertyOp>(location, withVTableType, part, withVTable,
+                                                                   MLIRHelper::getStructIndex(builder, index));
+        }
+
+        auto objType = mlir_ts::ObjectType::get(withVTableType);
+        auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(withVTableType), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, withVTable, valueAddr);
+        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
+
+        auto vtableStorage = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(vtableType), inCasted,
+                                                                    (int)fields.size() - 1);
+
+        return castObjectToInterface(location, inCasted, objType, interfaceInfo, genContext, vtableStorage);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
-                                    InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
+                                    InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext, mlir::Value vtableStorage)
     {
         auto inEffective = in;
         auto effectiveObjType = objType;
@@ -2364,7 +2454,21 @@ namespace mlirgen
             }
         }
 
-        auto result = mlirGenCreateInterfaceVTableForObject(location, inEffective, effectiveObjType, interfaceInfo, genContext);
+        // a boxed object literal's block is not made by this cast, so it has no room for a vtable of its own:
+        // its fields are copied into one that has (castTupleWithOwnVTableToInterface)
+        if (!vtableStorage)
+        {
+            if (auto storageTuple = dyn_cast<mlir_ts::TupleType>(effectiveObjType.getStorageType()))
+            {
+                if (!getOptionalFieldSlots(storageTuple, interfaceInfo).empty())
+                {
+                    CAST_A(unboxed, location, storageTuple, inEffective, genContext);
+                    return castTupleWithOwnVTableToInterface(location, unboxed, storageTuple, interfaceInfo, genContext);
+                }
+            }
+        }
+
+        auto result = mlirGenCreateInterfaceVTableForObject(location, inEffective, effectiveObjType, interfaceInfo, genContext, vtableStorage);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto createdInterfaceVTableForObject = V(result);
 
