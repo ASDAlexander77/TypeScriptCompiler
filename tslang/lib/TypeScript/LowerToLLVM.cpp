@@ -5768,14 +5768,54 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 };
 
                 // Both sides take the target width from compileOptions, not from the type converter's data layout, which is not yet target-derived.
-                auto intPtrType = rewriter.getIntegerType(tsLlvmContext->compileOptions.sizeBits());
+                auto sizeBits = tsLlvmContext->compileOptions.sizeBits();
+                auto intPtrType = rewriter.getIntegerType(sizeBits);
                 auto negative1 = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, -1));
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
                 auto condVal =
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
 
+                // a slot tagged INTERFACE_OPTIONAL_STORAGE_TAG: the field is stored as optional<T> (a class's `v?: T`),
+                // present only when its flag is set. A write through the interface sets the flag (clears it for
+                // `= undefined`), marked by MLIRGen with INTERFACE_OPTIONAL_WRITE_ATTR.
+                auto writeAttr = interfaceSymbolRefOp->getAttrOfType<mlir::BoolAttr>(INTERFACE_OPTIONAL_WRITE_ATTR);
+                auto storedAsOptionalAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                    auto tag = rewriter.create<LLVM::ConstantOp>(
+                        loc, intPtrType, rewriter.getIntegerAttr(intPtrType, INTERFACE_OPTIONAL_STORAGE_TAG(sizeBits)));
+                    auto offset = rewriter.create<LLVM::SubOp>(loc, intPtrType, methodOrFieldIntPtrValue, tag);
+                    auto thisInt = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, thisVal);
+                    auto addrInt = rewriter.create<LLVM::AddOp>(loc, intPtrType, thisInt, offset);
+                    mlir::Value addr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, addrInt.getResult());
+
+                    auto valueType = mlir::cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType()).getElementType();
+                    auto optionalLLVMType = tch.convertType(mlir_ts::OptionalType::get(valueType));
+                    auto flagPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), optionalLLVMType, addr,
+                                                                ArrayRef<LLVM::GEPArg>{0, OPTIONAL_HASVALUE_INDEX});
+                    if (writeAttr)
+                    {
+                        auto flagValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                                                           rewriter.getBoolAttr(writeAttr.getValue()));
+                        rewriter.create<LLVM::StoreOp>(loc, flagValue, flagPtr);
+                        return addr;
+                    }
+
+                    auto hasValue = rewriter.create<LLVM::LoadOp>(loc, rewriter.getI1Type(), flagPtr);
+                    auto nullAddr = rewriter.create<LLVM::ZeroOp>(loc, fieldLLVMTypeRef);
+                    return rewriter.create<LLVM::SelectOp>(loc, hasValue, addr, nullAddr);
+                };
+
+                auto presentAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                    auto tag = rewriter.create<LLVM::ConstantOp>(
+                        loc, intPtrType, rewriter.getIntegerAttr(intPtrType, INTERFACE_OPTIONAL_STORAGE_TAG(sizeBits)));
+                    auto tagBit = rewriter.create<LLVM::AndOp>(loc, intPtrType, methodOrFieldIntPtrValue, tag);
+                    auto zero = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, 0));
+                    auto isStoredAsOptional = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagBit, zero);
+                    return clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, isStoredAsOptional,
+                                                             storedAsOptionalAddrFunc, calcFieldTotalAddrFunc);
+                };
+
                 auto result =
-                    clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, condVal, nullAddrFunc, calcFieldTotalAddrFunc);
+                    clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, condVal, nullAddrFunc, presentAddrFunc);
                 fieldAddr = result;
             }
             else

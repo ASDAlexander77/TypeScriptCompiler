@@ -5500,6 +5500,21 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Dest type: " << destType << "\n";);
 
+            // an interface's `v?: T` field: a store sets its flag where it is stored as optional<T> (a class's
+            // `v?: T`), and a store of undefined clears it - see INTERFACE_OPTIONAL_STORAGE_TAG
+            mlir::Value storeReference = loadOp.getReference();
+            if (auto interfaceSymbolRefOp = storeReference.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+            {
+                if (interfaceSymbolRefOp.getOptional().value_or(false) && isa<mlir_ts::RefType>(interfaceSymbolRefOp.getType()))
+                {
+                    auto storesUndefined = isa<mlir_ts::UndefinedType>(savingValue.getType())
+                        || (isa<mlir_ts::OptionalType>(savingValue.getType()) && isa_and_nonnull<mlir_ts::OptionalUndefOp>(savingValue.getDefiningOp()));
+                    auto writeOp = mlir::cast<mlir_ts::InterfaceSymbolRefOp>(builder.clone(*interfaceSymbolRefOp));
+                    writeOp->setAttr(INTERFACE_OPTIONAL_WRITE_ATTR, builder.getBoolAttr(!storesUndefined));
+                    storeReference = writeOp.getResult();
+                }
+            }
+
             syncSavingValue(destType);
             if (!savingValue)
             {
@@ -5512,7 +5527,7 @@ class MLIRGenImpl
             // stored back. Without this the release that eventually runs for this storage -
             // scope exit for a local, the instance's release routine for a field - would give
             // up a reference the assignment never took.
-            if (isOwningSlot(location, loadOp.getReference()))
+            if (isOwningSlot(location, storeReference))
             {
                 // `h.item = new C()` arrives already owned (§9.25), so the slot takes that
                 // reference over instead of adding one. The release still runs either way -
@@ -5527,12 +5542,12 @@ class MLIRGenImpl
                     builder.create<mlir_ts::RetainOp>(location, savingValue);
                 }
 
-                builder.create<mlir_ts::ReleaseSlotOp>(location, loadOp.getReference());
+                builder.create<mlir_ts::ReleaseSlotOp>(location, storeReference);
             }
 
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
-            auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
+            auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, storeReference);
             cloneAtomicAttributes(loadOp, storeOp);
         }
         else if (auto extractPropertyOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ExtractPropertyOp>())
