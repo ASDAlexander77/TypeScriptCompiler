@@ -85,6 +85,8 @@
 #define CONSTRUCTOR_NAME "constructor"
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
 #define VTABLE_NAME ".vtbl"
+// the vtable an object cast to an interface keeps in its own block (castTupleWithOwnVTableToInterface)
+#define OWN_INTERFACE_VTABLE_FIELD_NAME ".ivtbl"
 #define RTTI_NAME ".rtti"
 #define SIZE_NAME ".size"
 #define INSTANCEOF_NAME ".instanceOf"

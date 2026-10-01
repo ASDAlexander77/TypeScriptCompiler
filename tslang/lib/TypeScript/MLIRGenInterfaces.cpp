@@ -181,13 +181,14 @@ namespace mlirgen
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in, 
-            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
+            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext,
+            mlir::Value vtableStorage)
     {
         auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
         auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
         if (existValue)
         {
-            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, existValue, false, genContext);
+            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, existValue, false, vtableStorage, genContext);
         }
 
         if (mlir::succeeded(
@@ -255,7 +256,7 @@ namespace mlirgen
                 {
                     // every method slot is already a compile-time constant - no per-cast
                     // heap allocation needed, same footing as a method-less interface.
-                    return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, genContext);
+                    return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, vtableStorage, genContext);
                 }
 
                 // match VTable
@@ -300,39 +301,18 @@ namespace mlirgen
                 }
 
                 // patched VTable
-                return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, varVTable, true, genContext);
+                return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, varVTable, true, vtableStorage, genContext);
             }
 
-            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, genContext);
+            return patchAbsentOptionalFieldSlots(location, in, objectType, newInterfacePtr, globalVTableRefValue, false, vtableStorage, genContext);
         }
 
         return mlir::failure();
     }
 
-    // A `?` member matched by an optional<T> field (`v?: T` of a type literal) has a slot holding the field's
-    // offset - optional<T> holds its T first, which is what the member is read as. Whether the field has a value
-    // is known only at run time, so a field without one gets its slot set to -1 in a copy of the vtable made for
-    // this object: the member is then absent and reads as undefined, as for an object without the field.
-    mlir::Value MLIRGenImpl::patchAbsentOptionalFieldSlots(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objectType,
-                                                           InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef,
-                                                           bool ownsVTable, const GenContext &genContext)
+    // {field index in the object, slot index in the vtable} of each `?` member the object holds as optional<T>
+    SmallVector<std::pair<int, int>> MLIRGenImpl::getOptionalFieldSlots(mlir_ts::TupleType storeType, InterfaceInfo::TypePtr newInterfacePtr)
     {
-        mlir_ts::TupleType storeType;
-        if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
-        {
-            storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
-        }
-        else
-        {
-            storeType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(objectType.getStorageType()));
-        }
-
-        if (!storeType)
-        {
-            return vtableRef;
-        }
-
-        // {field index in the object, slot index in the vtable}
         SmallVector<std::pair<int, int>> optionalSlots;
         for (auto [index, fieldInfo] : llvm::enumerate(storeType.getFields()))
         {
@@ -353,6 +333,36 @@ namespace mlirgen
             optionalSlots.push_back({(int)index, interfaceField->virtualIndex + vtableOffset + INTERFACE_VTABLE_HEADER_SLOTS});
         }
 
+        return optionalSlots;
+    }
+
+    // A `?` member matched by an optional<T> field (`v?: T` of a type literal) has a slot holding the field's
+    // offset - optional<T> holds its T first, which is what the member is read as. Whether the field has a value
+    // is known only at run time, so a field without one gets its slot set to -1 in a copy of the vtable made for
+    // this object: the member is then absent and reads as undefined, as for an object without the field. The slot
+    // is decided at the cast: a value given to the field later is not seen through the interface.
+    // The copy goes to vtableStorage when the cast provides one - a field of the object's own block
+    // (castTupleToInterface), so it is freed with the object; otherwise to a block of its own, which nothing frees.
+    mlir::Value MLIRGenImpl::patchAbsentOptionalFieldSlots(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objectType,
+                                                           InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef,
+                                                           bool ownsVTable, mlir::Value vtableStorage, const GenContext &genContext)
+    {
+        mlir_ts::TupleType storeType;
+        if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+        {
+            storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
+        }
+        else
+        {
+            storeType = dyn_cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(objectType.getStorageType()));
+        }
+
+        if (!storeType)
+        {
+            return vtableRef;
+        }
+
+        auto optionalSlots = getOptionalFieldSlots(storeType, newInterfacePtr);
         if (optionalSlots.empty())
         {
             return vtableRef;
@@ -361,7 +371,15 @@ namespace mlirgen
         auto vtableType = mlir::cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(vtableRef.getType()).getElementType());
 
         auto varVTable = vtableRef;
-        if (!ownsVTable)
+        if (!ownsVTable && vtableStorage)
+        {
+            auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, vtableRef);
+            builder.create<mlir_ts::StoreOp>(location, valueVTable, vtableStorage);
+            varVTable = vtableStorage.getType() == vtableRef.getType()
+                ? vtableStorage
+                : builder.create<mlir_ts::CastOp>(location, vtableRef.getType(), vtableStorage).getResult();
+        }
+        else if (!ownsVTable)
         {
             // on the heap for the same reason as the method-patched copy above
             auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, vtableRef);

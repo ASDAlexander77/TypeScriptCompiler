@@ -10719,10 +10719,14 @@ class MLIRGenImpl
                                                               const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in,
-            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext);
+            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext,
+            mlir::Value vtableStorage = mlir::Value());
+
+    SmallVector<std::pair<int, int>> getOptionalFieldSlots(mlir_ts::TupleType storeType, InterfaceInfo::TypePtr newInterfacePtr);
 
     mlir::Value patchAbsentOptionalFieldSlots(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objectType,
-            InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef, bool ownsVTable, const GenContext &genContext);
+            InterfaceInfo::TypePtr newInterfacePtr, mlir::Value vtableRef, bool ownsVTable, mlir::Value vtableStorage,
+            const GenContext &genContext);
 
     StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
     {
@@ -11677,6 +11681,10 @@ class MLIRGenImpl
                                     mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 
     ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+                                    InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext,
+                                    mlir::Value vtableStorage = mlir::Value());
+
+    ValueOrLogicalResult castTupleWithOwnVTableToInterface(mlir::Location location, mlir::Value in, mlir_ts::TupleType tupleType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext);
 
     mlir_ts::CreateBoundFunctionOp createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction);
