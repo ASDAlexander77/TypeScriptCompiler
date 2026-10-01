@@ -102,7 +102,8 @@ class CastLogicHelper
 
         if (inType.isIndex() && isResString)
         {
-            return castIntToString(in, tch.getIndexTypeBitwidth(), false);
+            // signed, as index compares and converts to number: `s.length - 3` is -1, not 18446744073709551615
+            return castIntToString(in, tch.getIndexTypeBitwidth(), true);
         }
 
         if (isa<mlir::IntegerType>(inType) && isResString)
@@ -148,6 +149,13 @@ class CastLogicHelper
             {
                 return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
             }
+        }
+
+        // a signed integer keeps its sign as an index: `let n = s.length; n = -1` held 4294967295 under the
+        // zext in castLLVMTypesLogic
+        if (inType.isSignedInteger() && resType.isIndex() && resLLVMType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        {
+            return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }
 
         // TODO: should be in LLVM cast?
