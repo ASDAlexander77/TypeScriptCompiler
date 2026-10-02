@@ -2563,7 +2563,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call
                  own_call_no_drops own_getter_borrow own_param_kept own_any_box
                  own_string_length_borrow
-                 own_closure_borrow own_closure_escape own_generator)
+                 own_closure_borrow own_closure_escape own_generator own_interface_view)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2641,12 +2641,11 @@ set(own_error_cases
     "own_err_cell_assigned_in_closure|borrows .* but is used here after it may be released or overwritten"
     "own_err_closure_assigns_captured_field|borrows .* but is used here after it may be released or overwritten"
     "own_err_unknown_producer|takes a second reference"
-    "own_err_object_literal_interface_alias|takes a second reference"
+    "own_err_interface_two_views|takes a second reference"
     "own_err_two_owners|is used here after its value was moved"
     "own_err_push_let|is used here after its value was moved"
     "own_err_push_loop|is moved inside a loop"
     "own_err_field_loop|is moved inside a loop"
-    "own_err_interface|takes a second reference"
     "own_err_union_moved|is used here after its value was moved"
     "own_err_field_read_overwritten|borrows .* but is used here after it may be released or overwritten"
     "own_err_element_read_overwritten|borrows .* but is used here after it may be released or overwritten"

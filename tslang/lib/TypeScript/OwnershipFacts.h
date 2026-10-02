@@ -136,14 +136,14 @@ inline int resultBorrows(mlir::Operation *op)
 }
 
 // An op whose result is the very block its operand holds: a class widened to a union or an
-// optional or narrowed back, a union made from its payload or read back from it. rc's retain
-// or release of either is one of the block, so the pass looks through them. A cast that
-// converts (a number printed into a string) or boxes (into `any`) makes a new block and is
-// not one.
+// optional or narrowed back, a union made from its payload or read back from it, an object seen
+// through an interface (`{vtable, this}`, released through `this`). rc's retain or release of
+// either is one of the block, so the pass looks through them. A cast that converts (a number
+// printed into a string) or boxes (into `any`) makes a new block and is not one.
 inline bool isView(mlir::Operation *op)
 {
     if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
-                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp>(op))
+                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op))
     {
         return true;
     }
@@ -250,6 +250,13 @@ inline bool isFresh(mlir::Value value)
         return false;
     }
 
+    // a view is the block it shows: the object literal's interface cast is marked as arriving with
+    // a reference, but `let raw = {...}; <I>raw` is `raw`'s block
+    if (isView(def))
+    {
+        return isFresh(rootOf(value));
+    }
+
     if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
                   mlir_ts::StringResizeOp, mlir_ts::CharToStringOp>(def))
     {
@@ -265,15 +272,6 @@ inline bool isFresh(mlir::Value value)
     if (def->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
     {
         return true;
-    }
-
-    // an interface over an object is that object: fresh only when the object is, and it goes
-    // nowhere else. The cast of an object literal to an interface marks it as arriving with a
-    // reference, which `let raw = {...}; <I>raw` makes a second owner of `raw`'s block.
-    if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(def))
-    {
-        auto object = newInterfaceOp->getOperand(0);
-        return object.hasOneUse() && isFresh(rootOf(object));
     }
 
     if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp,

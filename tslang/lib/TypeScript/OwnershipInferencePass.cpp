@@ -228,6 +228,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 continue;
             }
 
+            if (value && holdsConstantsOnly(value))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             if (!value || isFresh(value) == false)
             {
                 reportSecondReference(op);
@@ -1071,6 +1077,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         {
             varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
         }
+        else if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(acquisition))
+        {
+            // rc's reference for a `let` that takes the value over: `let ri = <I>raw` retains the
+            // interface and declares `ri` consuming it
+            varOp = consumingLetOf(retainOp.getReference());
+            consumed = true;
+        }
         else
         {
             varOp = mlir::dyn_cast<mlir_ts::VariableOp>(acquisition);
@@ -1089,6 +1102,21 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         auto retains = llvm::any_of(varOp.getResult().getUsers(),
                                     [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainSlotOp>(user); });
         return retains ? varOp : mlir_ts::VariableOp();
+    }
+
+    // The owning `let` declared from `value` that takes over its reference, or none.
+    static mlir_ts::VariableOp consumingLetOf(mlir::Value value)
+    {
+        for (auto *user : value.getUsers())
+        {
+            auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+            if (varOp && varOp.getInitializer() == value && varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME))
+            {
+                return varOp;
+            }
+        }
+
+        return {};
     }
 
     // Where an owning local stops holding its value: each release of its slot and each store
@@ -1171,6 +1199,18 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                                          llvm::SmallVectorImpl<BorrowUse> &uses,
                                          llvm::SmallVectorImpl<mlir::Operation *> &bookkeeping)
     {
+        // a `let` that took over its value's reference: rc's retain of the value was the `let`'s
+        if (borrower->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME))
+        {
+            for (auto *user : borrower.getInitializer().getUsers())
+            {
+                if (mlir::isa<mlir_ts::RetainOp>(user))
+                {
+                    bookkeeping.push_back(user);
+                }
+            }
+        }
+
         for (auto *user : borrower.getResult().getUsers())
         {
             if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
@@ -2079,8 +2119,62 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // Does a value of this type own a block that a release would destroy?
     bool ownsHeap(mlir::Value value)
     {
+        // a `value_ref` points at storage it does not own, but one `ts.New` made and seen as its
+        // object is the object's block: the root of a generator's state object or an object literal
+        if (value.getDefiningOp<mlir_ts::NewOp>() && mlir::isa<mlir_ts::ValueRefType>(value.getType()) &&
+            llvm::any_of(value.getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::CastOp>(user) && isView(user); }))
+        {
+            return true;
+        }
+
+        return ownsHeap(value.getLoc(), value.getType());
+    }
+
+    bool ownsHeap(mlir::Location location, mlir::Type type)
+    {
         MLIRTypeHelper mth(&getContext(), CompileOptions{});
-        return mth.ownsHeapMemory(value.getLoc(), value.getType());
+        return mth.ownsHeapMemory(location, type);
+    }
+
+    // A tuple read out of a local that a `ts.Constant` initializes, and whose owning fields nothing
+    // stores into: the initial state a generator's maker copies into its state object. What it
+    // holds there is null, a number or an immortal literal, so rc's retain of it takes nothing.
+    bool holdsConstantsOnly(mlir::Value value)
+    {
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!varOp || isOwningVariable(varOp) || !varOp.getInitializer() ||
+            !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return false;
+        }
+
+        for (auto *user : varOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                continue;
+            }
+
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                return false;
+            }
+
+            // a method's field is a `!ts.bound_ref`, which holds a function, not a block
+            auto field = propertyRefOp.getResult();
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
+            auto stored = llvm::any_of(field.getUsers(), [&](mlir::Operation *fieldUser) {
+                return !mlir::isa<mlir_ts::LoadOp>(fieldUser);
+            });
+            if (stored && (!refType || ownsHeap(field.getLoc(), refType.getElementType())))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // A string constant cast to `string` is the global itself, which a release skips.
@@ -2159,6 +2253,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return true;
         }
 
+        // a store through the value writes into its block and keeps nothing of it: `ts.New`
+        // filled with its initial contents
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+        {
+            return storeOp.getReference() == value && storeOp.getValue() != value;
+        }
+
         return false;
     }
 
@@ -2222,6 +2323,14 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             return true;
         }
 
+        // A temporary's releases are one owner, one release on each way out. Two on one path are
+        // two owners: each view rc gave a reference of its own (`use(o); use(o)`, with `o` a
+        // folded object literal and `use` taking an interface: two `ts.NewInterface`s of one block).
+        if (!checkReleasedOnce(value))
+        {
+            return false;
+        }
+
         if (quietly([&] { return movesOf(value, toErase); }))
         {
             return true;
@@ -2261,6 +2370,35 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         return movesOf(value, toErase);
+    }
+
+    // No release of `value` comes after another on any path. Reports and returns false otherwise.
+    bool checkReleasedOnce(mlir::Value value)
+    {
+        llvm::SmallVector<mlir::Operation *> releases;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
+            if (mlir::isa<mlir_ts::ReleaseOp>(user))
+            {
+                releases.push_back(user);
+            }
+        });
+
+        auto *definition = value.getDefiningOp();
+        for (auto *first : releases)
+        {
+            for (auto *second : releases)
+            {
+                if (first != second && reachableAfter(first, second, definition))
+                {
+                    // the view the second release gives back, where rc took its reference
+                    auto *view = second->getOperand(0).getDefiningOp();
+                    reportSecondReference(view ? view : second);
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     // The move verdict for an SSA value (phase 1). Reports and returns false when it is not one.
