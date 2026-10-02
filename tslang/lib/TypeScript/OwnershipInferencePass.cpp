@@ -215,6 +215,14 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // a retain of what holds no block takes nothing: a union's number payload made into
+            // another union is a view of the union it came from, but a number all the way
+            if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op); retainOp && holdsNoBlock(retainOp.getReference()))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             auto value = retainedValue(op);
             if (value && proven.contains(value))
             {
@@ -265,8 +273,15 @@ class OwnershipInferencePass
 
             // data nothing owns (isConstantData): a number or null in a union, a function, a
             // literal, a tuple of literals. A slot's retain is decided on its initializer, so only
-            // while nothing else is ever stored into the slot.
-            if (value && isConstantData(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotKeepsInitializer(op)))
+            // where the slot still holds it.
+            if (value && isConstantData(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotHoldsInitializerAt(op)))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
+            // an array a spread builds, read into the owning local it is made for
+            if (value && mlir::isa<mlir_ts::RetainSlotOp>(op) && isBuiltArrayRead(op, value))
             {
                 toErase.insert(op);
                 continue;
@@ -2743,38 +2758,39 @@ class OwnershipInferencePass
         return name;
     }
 
-    // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer,
-    // seen through its views. None for a variable with no initializer - its storage was hoisted
-    // in front of a try and its value arrives by a store this phase does not follow.
-    // A `ts.RetainSlot`'s slot holds its initializer for as long as it lives: nothing is stored
-    // into it or into a field of it, and no closure captures it.
-    static bool slotKeepsInitializer(mlir::Operation *op)
+    // A `ts.RetainSlot`'s slot holds its initializer where the retain is. MLIRGen puts the retain at
+    // the declaration (takeOwnershipOfLocal), and nothing between the two may write the slot: in
+    // their block, no op is given the slot, no call runs, and no op has regions (a store could hide
+    // in them). What is stored into the slot later is decided at its own store; this retain takes
+    // only the initializer. No closure captures it.
+    static bool slotHoldsInitializerAt(mlir::Operation *op)
     {
         auto slot = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot();
         auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
-        if (!varOp || !varOp.getInitializer() || isCellVariable(slot))
+        if (!varOp || !varOp.getInitializer() || isCellVariable(slot) || varOp->getBlock() != op->getBlock())
         {
             return false;
         }
 
-        return llvm::all_of(slot.getUsers(), [&](mlir::Operation *user) {
-            return mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user) || onlyRead(user);
-        });
-    }
-
-    // A read of what a slot holds, or of a field of it (`a[0]` of a tuple local), and nothing that
-    // writes through it.
-    static bool onlyRead(mlir::Operation *user)
-    {
-        if (mlir::isa<mlir_ts::LoadOp>(user))
+        for (auto *between = varOp->getNextNode(); between; between = between->getNextNode())
         {
-            return true;
+            if (between == op)
+            {
+                return true;
+            }
+
+            if (llvm::is_contained(between->getOperands(), slot) || isCall(between) || between->getNumRegions() > 0)
+            {
+                return false;
+            }
         }
 
-        auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
-        return propertyRefOp && llvm::all_of(propertyRefOp->getUsers(), [](mlir::Operation *fieldUser) { return onlyRead(fieldUser); });
+        return false;
     }
 
+    // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer,
+    // seen through its views. None for a variable with no initializer - its storage was hoisted
+    // in front of a try and its value arrives by a store this phase does not follow.
     static mlir::Value retainedValue(mlir::Operation *op)
     {
         if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
@@ -2949,6 +2965,35 @@ class OwnershipInferencePass
         return retain;
     }
 
+    // `const b = [...a, ...a]`: MLIRGen builds the array in a local of its own that owns nothing,
+    // starting from a fresh one and pushing into it, and reads it once, when it is done, into the
+    // owning local it is made for. That local's `ts.RetainSlot` (`retain`) is the reference: the
+    // fresh array moves into the builder and then into the owner, and nothing else holds it.
+    bool isBuiltArrayRead(mlir::Operation *retain, mlir::Value value)
+    {
+        auto read = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto builder = read ? read.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        auto owner = mlir::cast<mlir_ts::RetainSlotOp>(retain).getSlot().getDefiningOp<mlir_ts::VariableOp>();
+        if (!builder || isOwningVariable(builder) || builder.getCaptured().value_or(false) || !builder.getInitializer() ||
+            !mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp>(builder.getInitializer().getDefiningOp()) ||
+            !owner || owner.getInitializer() != read.getResult() || !read->hasOneUse() || onlyRetainSlotOf(owner) != retain)
+        {
+            return false;
+        }
+
+        // only filled, and only before it is read
+        return llvm::all_of(builder->getUses(), [&](mlir::OpOperand &use) {
+            auto *user = use.getOwner();
+            if (user == read)
+            {
+                return true;
+            }
+
+            return mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) && use.getOperandNumber() == 0 &&
+                   !reachableAfter(read, user, builder);
+        });
+    }
+
     // The one `ts.RetainSlot` of a local; null when there are none or several.
     static mlir::Operation *onlyRetainSlotOf(mlir_ts::VariableOp varOp)
     {
@@ -3046,6 +3091,11 @@ class OwnershipInferencePass
                    isBoundForCall(castOp);
         }
 
+        if (mlir::isa<mlir_ts::ExtractInterfaceThisOp>(user))
+        {
+            return isBoundForCall(user);
+        }
+
         // arguments are borrowed, but one the callee keeps (`__own_params`) is taken; a callee
         // with no facts that keeps one retains it, and that retain is its own error
         if (isCall(user))
@@ -3096,15 +3146,18 @@ class OwnershipInferencePass
     // `ts.GetMethod` for a call: a method of another module's class - its constructor, when it is
     // built with `new` - called on an object here. It reads the object as `ts.ThisSymbolRef` does
     // for a method of this module; nothing else may use the cast or the bound function, and the
-    // object comes out again only as a call's argument, which is a borrow of its own.
-    static bool isBoundForCall(mlir_ts::CastOp castOp)
+    // object comes out again only as a call's argument, which is a borrow of its own. An
+    // interface's `this` (`ts.ExtractInterfaceThis`) is bound so for a call of a function-typed
+    // field (`i.toString()` where `toString: () => string`).
+    static bool isBoundForCall(mlir::Operation *thisOp)
     {
-        if (!mlir::isa<mlir_ts::OpaqueType>(castOp.getType()) || castOp->use_empty())
+        if (thisOp->getNumResults() != 1 || !mlir::isa<mlir_ts::OpaqueType>(thisOp->getResult(0).getType()) ||
+            thisOp->use_empty())
         {
             return false;
         }
 
-        return llvm::all_of(castOp->getUses(), [](mlir::OpOperand &use) {
+        return llvm::all_of(thisOp->getUses(), [](mlir::OpOperand &use) {
             auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(use.getOwner());
             if (!boundOp || boundOp.getThisVal() != use.get())
             {
@@ -3222,7 +3275,7 @@ class OwnershipInferencePass
                 {
                     // the view the second release gives back, where rc took its reference
                     auto *view = second->getOperand(0).getDefiningOp();
-                    reportSecondReference(view ? view : second);
+                    reportSecondReference(view ? view : second, value);
                     return false;
                 }
             }
@@ -3284,7 +3337,7 @@ class OwnershipInferencePass
 
             if (!takerAcquires(taker, value))
             {
-                reportSecondReference(taker);
+                reportSecondReference(taker, value);
                 return false;
             }
 
@@ -3719,7 +3772,10 @@ class OwnershipInferencePass
         return name;
     }
 
-    void reportSecondReference(mlir::Operation *op)
+    // A second reference nobody proved safe. `value` is the value it is to, when the caller knows
+    // it; a retain names its own. The shapes this pass recognises get the rule they break (spec
+    // 21.2); anything else, the catch-all.
+    void reportSecondReference(mlir::Operation *op, mlir::Value value = {})
     {
         if (quiet)
         {
@@ -3739,9 +3795,193 @@ class OwnershipInferencePass
             name = varName(varOp);
         }
 
-        auto diag = op->emitError("'") << name << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
-        noteLostFacts(diag);
+        if (!value && mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op))
+        {
+            value = retainedValue(op);
+        }
+
+        if (!value || !reportShapeOfSecondReference(op, rootOf(value), name))
+        {
+            auto diag = op->emitError("'") << name << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
+            noteLostFacts(diag);
+        }
+
         signalPassFailure();
+    }
+
+    // The named shapes of a second reference to `root` (spec 21.2). False when it is none of them.
+    bool reportShapeOfSecondReference(mlir::Operation *op, mlir::Value root, llvm::StringRef name)
+    {
+        auto f = getFunction();
+
+        // returned, where another return gives a borrow of an argument and this one does not, or
+        // the other way round: the callers cannot be told which they get
+        if (isReturned(root))
+        {
+            auto param = borrowedParam(root);
+            if (auto *other = otherReturn(param))
+            {
+                auto diag = op->emitError("'") << f.getName()
+                                               << "' returns a borrow of its argument on some paths and another value on "
+                                                  "others; -mm=own cannot tell its callers whether they own the result";
+                diag.attachNote(other->getLoc())
+                    << (param >= 0 ? "returns another value here" : "returns a borrow of its argument here");
+                return true;
+            }
+        }
+
+        // a parameter's value, or a part of it, returned or kept: a fact its callers must know
+        // (spec 15), and noteLostFacts says why they cannot
+        if (auto param = borrowedParam(root); param >= 0)
+        {
+            auto diag = op->emitError("'") << (name == "this value" ? paramName(param) : name);
+            if (isReturned(root))
+            {
+                diag << "' is a parameter, returned here, but -mm=own cannot tell the callers of '" << f.getName()
+                     << "' that the result borrows it";
+            }
+            else
+            {
+                diag << "' is a parameter, kept here, but -mm=own cannot make the callers of '" << f.getName()
+                     << "' give it up";
+            }
+
+            noteLostFacts(diag);
+            return true;
+        }
+
+        // a store into a local whose value is not this function's to replace: a parameter's slot, or
+        // a local that owns nothing (MLIRGen's takeOwnershipOfLocal)
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+        if (auto slot = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            slot && !isOwningVariable(slot) && !isResultSlot(slot))
+        {
+            // a parameter's slot, assigned (isParameterSlot is the unassigned one)
+            auto argument = mlir::dyn_cast_or_null<mlir::BlockArgument>(slot.getInitializer());
+            if (argument && argument.getOwner()->isEntryBlock() &&
+                mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()))
+            {
+                op->emitError("'") << varName(slot) << "' is a parameter and cannot be assigned under -mm=own yet";
+                return true;
+            }
+
+            // MLIRGen makes no owner of a local declared without a value, nor of one declared in a
+            // catch or finally clause, whose release would be a call inside an exception funclet
+            if (!slot.getInitializer())
+            {
+                op->emitError("'") << varName(slot)
+                                   << "' owns nothing under -mm=own (it is declared without a value, or in a catch or "
+                                      "finally clause), so it cannot be given a new value here";
+                return true;
+            }
+        }
+
+        // merged from branches or loop iterations
+        if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root); argument && !argument.getOwner()->isEntryBlock())
+        {
+            op->emitError("'") << name
+                               << "' is merged from several branches (`?:`, `&&`, `||`, `??`, a loop); -mm=own cannot "
+                                  "prove which one owns it yet";
+            return true;
+        }
+
+        auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+
+        // a read of a global
+        if (auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp())
+        {
+            // a local that reads it: phase 3's borrow, which a call or an assignment of the global
+            // may end
+            if (mlir::isa<mlir_ts::RetainSlotOp>(op))
+            {
+                op->emitError("'") << name << "' borrows the global '" << addressOfOp.getGlobalName()
+                                   << "', but -mm=own cannot prove the global keeps its value while '" << name
+                                   << "' is used: a call or an assignment may overwrite it";
+                return true;
+            }
+
+            op->emitError("'") << name << "' borrows the global '" << addressOfOp.getGlobalName()
+                               << "' and cannot be stored, returned or captured";
+            return true;
+        }
+
+        // a read of a captured variable, through its cell
+        if (loadOp && isLoadedCell(loadOp.getReference()))
+        {
+            op->emitError("'") << name << "' borrows a captured variable and cannot be stored, returned or captured";
+            return true;
+        }
+
+        // an object literal built in a local, holding a value it owns: moved only into an owning
+        // local or the result (recordRetainOf)
+        auto record = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!record && storeOp)
+        {
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            record = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        }
+
+        if (record && !isOwningVariable(record) && record.getInitializer() &&
+            record.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            op->emitError("an object literal that holds a value it owns is moved only into a local or "
+                          "returned as it is; -mm=own cannot move it here yet");
+            return true;
+        }
+
+        return false;
+    }
+
+    // The name of parameter `index`, as its slot carries it (under `--di`).
+    llvm::StringRef paramName(int index)
+    {
+        llvm::StringRef name = "this value";
+        getFunction()->walk([&](mlir_ts::VariableOp varOp) {
+            auto argument = mlir::dyn_cast_or_null<mlir::BlockArgument>(varOp.getInitializer());
+            if (argument && argument.getOwner()->isEntryBlock() && static_cast<int>(argument.getArgNumber()) == index)
+            {
+                name = varName(varOp);
+            }
+        });
+
+        return name;
+    }
+
+    // Is `root`, or a view of it, stored into the result slot?
+    static bool isReturned(mlir::Value root)
+    {
+        auto returned = false;
+        forEachUse(root, [&](mlir::Operation *user, mlir::Value used) {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                              : mlir_ts::VariableOp();
+            returned = returned || (slot && isResultSlot(slot));
+        });
+
+        return returned;
+    }
+
+    // A return that disagrees with one of a borrow of parameter `param` (with -1, with one that
+    // borrows nothing): a store into the result slot of a value that holds a block and borrows
+    // another parameter or none - or, for -1, borrows a parameter. Null when there is none.
+    mlir::Operation *otherReturn(int param)
+    {
+        mlir::Operation *found = nullptr;
+        getFunction()->walk([&](mlir_ts::StoreOp storeOp) {
+            auto slot = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            if (found || !slot || !isResultSlot(slot) || holdsNoBlock(storeOp.getValue()))
+            {
+                return;
+            }
+
+            auto borrows = borrowedParam(storeOp.getValue());
+            if (param >= 0 ? borrows != param : borrows >= 0)
+            {
+                found = storeOp;
+            }
+        });
+
+        return found;
     }
 
     // Where the body would have been fine had its callers known a fact about it, say why they

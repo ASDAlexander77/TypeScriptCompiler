@@ -1576,3 +1576,148 @@ of the use-after-move and borrows-a-field files for false positives.
   `let m = n; n = null; use(m)`, with `n: number | null`.
 - **Nested record literals, and arrays of record literals,** are the catch-all.
 - **A conditional's result** is the catch-all.
+
+## 21. Phase 6 results, 2026-10-02 (second PR): named messages
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-6.md`, task 5. Changed: `OwnershipFacts.h`,
+`OwnershipInferencePass.cpp`. Nothing outside own's two passes changes, so rc, gc and none emit
+what they did.
+
+### 21.1 The report
+
+The same tooling as §20.1, rebuilt: the corpus script (now also run with the runner's
+`--opt --opt_level=3`), and the `OWN_SHAPES` dump, applied only inside the catch-all branch.
+
+On cd7c2840 (#445 merged), 402 of 592 compile, plain and with `--opt`. The catch-all is the first
+error of 100 files. After this PR, 416 compile plain and 415 with `--opt`, none lost either way:
+
+| first error | before | after |
+|---|---|---|
+| `takes a second reference` (the catch-all) | 100 | 25 |
+| used after its value was moved | 24 | 23 |
+| borrows a field and cannot be stored, returned or captured | 21 | 20 |
+| borrows an element and cannot be stored, returned or captured | 10 | 10 |
+
+The 25 left are a long tail: no shape is the only blocker of more than three files. Phase 6's exit
+criterion (every bucket that is the only blocker of six or more files is accepted or named) holds.
+
+The 13 files gained under `--opt` each pass test-runner `-mm=own`, AOT and JIT, with the runner's
+default flags and with `-noopt` (`--di --opt_level=0`). `00interface_object3` compiles plain only
+(§21.6), so it is not counted.
+
+### 21.2 Named messages
+
+`reportSecondReference` now classifies what it is given, from the retained value's root, in one
+place, so all four places that report it get the same names. Each message has a negative test.
+
+| shape | message | test |
+|---|---|---|
+| a function returns a borrow of a parameter on one path and something else on another | `'f' returns a borrow of its argument on some paths and another value on others; -mm=own cannot tell its callers whether they own the result`, with a note at the other return | `own_err_mixed_return`, `own_err_unbox_string` |
+| a parameter's value, returned, where the callers cannot learn the fact (§15) | `'x' is a parameter, returned here, but -mm=own cannot tell the callers of 'f' that the result borrows it`, with §15's facts-lost note | `own_err_param_returned_exported` |
+| a parameter's value, kept (stored, pushed, given away) | `'x' is a parameter, kept here, but -mm=own cannot make the callers of 'f' give it up`, with the note | `own_err_param_kept_exported` |
+| a store into a parameter's slot | `'x' is a parameter and cannot be assigned under -mm=own yet` | `own_err_param_assigned` |
+| a store into a local that owns nothing | `'x' owns nothing under -mm=own (it is declared without a value, or in a catch or finally clause), so it cannot be given a new value here` | `own_err_local_owns_nothing` |
+| a value merged from branches or loop iterations (a conditional, `&&`, `\|\|`, `??`, a loop) | 'x' is merged from several branches (the operators, a loop); -mm=own cannot prove which one owns it yet | `own_err_merged_result` |
+| a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
+| a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
+| a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
+| an object literal holding a value it owns, given anywhere but an owning local or the result | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_given` |
+
+The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
+- `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
+  string made from its number, boolean or bigint otherwise;
+- `___cast<A, string>` of a union does the same with the union's payload.
+
+The others are user functions such as `return name` on one path and `return "Sorry, " + name` on
+another.
+
+The parameter messages name the parameter from its slot, which carries a name under `--di` only,
+like the other messages (`test-own-err-names-the-variable`).
+
+### 21.3 What this PR accepts
+
+- **A string or an array widened to a union of it and null or undefined, or narrowed back**
+  (`isView`). Such a cast is the same block: the lowering passes the pointer through, and an
+  optional array narrowed out of its optional is the array or an empty one. A union with other
+  members is not a view, since it can convert on the way out (a number printed into a string).
+- **A view of a value that owns no block holds none** (`holdsNoBlock`). A union's number payload
+  made into another union is a view, by `rootOf`, of the union it came from, but it is a number
+  all the way. A `value_ref` is not taken as such a type: by type it owns nothing, but one
+  `ts.New` made is the object (§20.2). A `ts.Retain` of such a value is erased. Without this, the
+  number path of `widen(u: number | string): boolean | number | string` left its retain behind
+  for the lowering's guard: a loud failure, not a hole.
+  - The signature pass reads it too. A function that returns a number widened into a union
+    (`mkN(v: number): number | P { return v; }`) no longer has a result that "borrows" its
+    argument, so `00union_global_init` stops at a later error, a global boxed into `any`.
+- **A local's declaration retain of constant data, whatever is stored later**
+  (`slotHoldsInitializerAt`, replacing §20.2's "nothing is ever stored into the slot").
+  - MLIRGen emits `ts.RetainSlot` only at a declaration (`takeOwnershipOfLocal`), right after the
+    initializer. The rule checks that nothing between the two can write the slot: in their block,
+    no op is given the slot, no call runs, and no op has regions.
+  - So the retain takes only the initializer, and each later store is decided on its own.
+  - `let y: number | null = null; y = 0` compiles now.
+- **A field of constant data is constant data** (`isConstantData`): a tuple of literals re-made as
+  a named tuple, `let pair: [name: string, age: number] = ["user", 10]`.
+- **An array a spread builds** (`isBuiltArrayRead`). `const b = [...a, ...a]`:
+  - MLIRGen makes a fresh array in a local of its own that owns nothing, pushes into it, and reads
+    it once, when it is done, into the owning local it is made for.
+  - The fresh array moves into the builder and then into that local, whose `ts.RetainSlot` is the
+    reference.
+  - The builder may only be filled (`push`, `unshift`), and only before the read.
+- **A function-typed field of an interface, called** (`isBoundForCall`). `i.toString()` with
+  `toString: () => string` binds `ts.ExtractInterfaceThis(i)` to the function read out of the field
+  and splits the bound function straight back for the call. It is #410's shape with the interface's
+  `this` in place of a cast to `opaque`: the call borrows the object.
+
+Two rules were tried and dropped, because no corpus file and no program written for them needed
+them: `ts.SafeCast` as a view, and a number cast to a union as holding no block.
+
+### 21.4 Tests and teeth
+
+- **Positive:** `own_nullable_view`, `own_declared_constant`, `own_spread_build`,
+  `own_interface_field_call`. Each passes test-runner under own, rc, none and gc, AOT and JIT, and
+  under own with `-noopt`.
+- **Negative:** the eleven in the table of §21.2.
+
+Teeth, each a temporary switch: the positive stops compiling, plain, with `--opt` and with `--di`.
+
+| rule turned off | fails |
+|---|---|
+| the nullable view | `own_nullable_view` |
+| a view of a value that owns no block | `own_nullable_view` |
+| the erase of a retain of such a value | `own_nullable_view` |
+| a field of constant data | `own_declared_constant` |
+| the declaration retain | `own_declared_constant`, `own_constant_data` |
+| the spread builder | `own_spread_build` |
+| the interface's `this` bound for a call | `own_interface_field_call` |
+
+### 21.5 Sampled: use-after-move (24) and borrows-a-field (21)
+
+Both buckets were read with `--di`.
+
+- **One false positive, fixed:** the interface field call of §21.3 (`00interface_function_typed_field`).
+- **The rest are true positives of single ownership.** Two shapes cover most of them, and each is a
+  question for the model, not a fix:
+  - **A value moved into a place that still holds it, then read**, in about 14 of the 24
+    use-after-move files. Examples: `h.item = kept; return kept.n`, `(x = f()) !== null`,
+    `(x += "ba") == ...`, `constructor(public what: string) { print(what) }`. The read could be a
+    borrow of the destination while nothing overwrites or releases it.
+  - **A string stored or returned as a second owner**, in most of the 21 borrows-a-field files.
+    Examples: `testrec.str = testrec.str2`, `return held.text`, `caught = e.m`. Strings are
+    immutable, so a second reference could be a copy.
+- **A value given to an `any` parameter moves into its box** (`isA(union)` in `00union_to_any`). The
+  box owns what it holds (§15), so the use after the call is a true use after a move. A box that
+  borrows, for a callee that does not keep it, would accept it.
+
+### 21.6 Known limits
+
+- **A synthesized helper's error** (`___unbox<string>`, `___cast<...>`) is reported at the
+  location of the first use that instantiated it, which may be a comment line at the top of the
+  file.
+- **An interface's `this` bound for a call is decided per read.** Under `--opt`, CSE merges the
+  reads of one interface value, and a read that is also stored (`const mt: () => void = a.print`)
+  makes the merged one a taker. `00interface_object3` compiles plain and fails with `--opt` and
+  `--di`.
+- **`instanceof` of a class value held in a union or a nullable local** is false under every
+  model, even narrowed (`let a: C | null = new C(); a instanceof C`). It is a frontend or lowering
+  bug outside this phase. `own_declared_constant` tests the value with `typeof`.
