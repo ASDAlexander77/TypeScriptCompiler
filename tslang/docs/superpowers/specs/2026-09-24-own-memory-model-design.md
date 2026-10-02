@@ -2024,10 +2024,10 @@ one order in 9 runs of 12, this branch in 10 of 12). With the same order, the IR
 
 GCC, in WSL, the branch at `efd252b1`: the build is clean, and
 `ctest -R "own-err|own-no-counting|own-verify"` passes 140 of 140. `ctest -R own_string_copy` (the
-positives under own, rc, none and gc, AOT and JIT) passes 48 of 48. The commits after `efd252b1`
-were not run there: the Linux paragraph is docs only, and the final review's fixes (the borrow
-attributes kept for the copies, the retain-before-use check, `dominance` cleared, and
-`own_string_copy_branch` with its IR check) were run on Windows only.
+positives under own, rc, none and gc, AOT and JIT) passes 48 of 48. After the final review's fixes
+(the borrow attributes kept for the copies, the retain-before-use check, `dominance` cleared, and
+`own_string_copy_branch`), the branch at `2345904d` builds clean there, and
+`ctest -R "own-err|own-no-counting|own-verify|own_string_copy|own_err_string"` passes 191 of 191.
 
 #### Outside the rule
 
