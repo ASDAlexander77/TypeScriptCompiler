@@ -1564,11 +1564,11 @@ of the use-after-move and borrows-a-field files for false positives.
 
 ### 20.5 Found, not fixed (every model)
 
-- **A global initialized from another global reads garbage.** `let a: number[] = [1, 2]; let b = a;`
+- **A global initialized from another global reads garbage** (#446). `let a: number[] = [1, 2]; let b = a;`
   at module level gives `b.length` = 140711081380496 under gc. With a class, the program faults.
-- **A module with a top-level statement, imported as source,** fails with "Global is referenced
+- **A module with a top-level statement, imported as source,** (#447) fails with "Global is referenced
   by parentless instruction! @puts" (invalid LLVM IR).
-- **With `-shared`, an exported `const` from such a module** cannot be resolved by the importer.
+- **With `-shared`, an exported `const` from such a module** (#448) cannot be resolved by the importer.
 
 ### 20.6 Known limits
 
