@@ -1741,8 +1741,8 @@ becomes a copy.
 - **A string** is a value whose type is `string`, a string literal type, or a union or an optional
   of `string` with only `null` or `undefined` beside it. A union with `null` is one pointer, the
   same as `string`; an optional (`string | undefined`, an optional parameter) is `{ptr, i1}`, the
-  pointer meaningful only when the flag is set. A union with other members (`string | number`), and an
-  object or array holding strings, are not covered.
+  pointer meaningful only when the flag is set. A union with other members (`string | number`),
+  and an object or array holding strings, are not covered.
 - **Silent.** A copy makes no diagnostic.
 - **Only where the program would fail.** Copies are made only in a function the analysis rejects,
   and only for the string retains it could not erase. A function that compiles today compiles to
@@ -1755,8 +1755,7 @@ becomes a copy.
 
 `ts.StringCopy %s : !ts.string -> !ts.string`, its result a new allocation (`MemAlloc`). It lowers
 to: null stays null; otherwise the length plus one byte, through the allocator `ts.StringConcat`
-uses, and a `memcpy`. An optional is copied
-only when it holds a value.
+uses, and a `memcpy`. An optional is copied only when it holds a value.
 
 - Only the own inference pass creates it, but it lowers under every model.
 - `isFresh` counts it, beside `ts.StringConcat`.
@@ -2007,10 +2006,14 @@ Main rejects the program under own (`r.t = r.s`, "borrows a field").
 The 417 files that compile on main were compiled with main's binary and this branch's,
 `--emit=llvm -mm=own --no-default-lib`. §22.6 named `--emit=mlir-affine`; the plan's step and this
 check use the LLVM IR, which is what runs. The output is identical once the names that change from
-run to run are normalised. Main against main needed the same normalisations:
-- the `FH<digits>` hashes;
-- pointer-derived suffixes (`@a_<n>`, `@td_<n>_number`, `@tsrel_<n>`, `<Class>.<n>..vtbl`);
-- the sizes of the strings that hold an `FH` name.
+run to run are normalised. Main against main needed the same normalisations, as `sed -E`
+substitutions:
+- the hashes, `s/FH[0-9]+/FH/g`;
+- pointer-derived suffixes (`@a_<n>`, `@td_<n>_number`, `@tsrel_<n>`),
+  `s/([A-Za-z])_[0-9]{4,}/\1_N/g`;
+- class numbers (`<Class>.<n>..vtbl`), `s/\.[0-9]{6,}\./.N./g`;
+- the size of a string constant that holds an `FH` name, on its line only,
+  `s/\[[0-9]+ x i8\]( c".*FH)/[K x i8]\1/`.
 
 One file, `00union_null_undefined_nonstrict`, can differ in the order of a union's members in a
 synthesized `___cast<union<...>>` name. The order flips between runs of either binary (main gave
@@ -2020,7 +2023,10 @@ one order in 9 runs of 12, this branch in 10 of 12). With the same order, the IR
 
 GCC, in WSL, the branch at `efd252b1`: the build is clean, and
 `ctest -R "own-err|own-no-counting|own-verify"` passes 140 of 140. `ctest -R own_string_copy` (the
-positives under own, rc, none and gc, AOT and JIT) passes 48 of 48.
+positives under own, rc, none and gc, AOT and JIT) passes 48 of 48. The commits after `efd252b1`
+were not run there: the Linux paragraph is docs only, and the final review's fixes (the borrow
+attributes kept for the copies, the retain-before-use check, `dominance` cleared, and
+`own_string_copy_branch` with its IR check) were run on Windows only.
 
 #### Outside the rule
 
@@ -2057,3 +2063,11 @@ positives under own, rc, none and gc, AOT and JIT) passes 48 of 48.
 - **A fresh string merged by CSE** under `--opt` (`05strings`): the two `"X" + true` become one
   value with two retains and two releases, for a print and a comparison. Neither retain has a taker
   to copy for, so the catch-all reports it, on main too.
+- **A copy made at a birth retain, before a call that may throw** (`const t = "t" + n; boom(n);
+  h.text = t`): the copy is made right after `t`, before `boom`, and leaks when `boom` throws.
+  `t` itself leaks the same way already, since its release is on the normal path only.
+- **The tag of a union.** `isCopyableString` asks `isUnionTypeNeedsTag` with a default
+  `CompileOptions`, and the lowering asks with the real ones (`strictNullChecks` can change the
+  answer). Both disagreements are safe: where the pass sees a tag there is no copy, and the error
+  stays; where only the lowering sees one, `ts.StringCopy` fails to match (`notifyMatchFailure`),
+  and the build fails loudly.

@@ -1002,7 +1002,7 @@ function main() {
   `~/ts/TypeScriptCompiler`, build dir `__build/tslang/ninja/release`, fetch this branch from the
   Windows repo).
 
-- [x] **Step 7: Commit, and open the PR.**
+- [x] **Step 7: Commit, and open the PR.** Committed; push and PR left to the user.
 
 ```bash
 git add tslang/test/tester/own/own_string_copy_mixed_return.ts tslang/test/tester/CMakeLists.txt tslang/docs/superpowers/
