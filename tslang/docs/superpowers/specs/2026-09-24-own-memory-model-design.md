@@ -1221,15 +1221,20 @@ calls `next` through the state object.
   `func.func`, which the inference did not visit. A retain there was neither erased nor reported,
   and the lowering failed with "ownership inference left a retain behind" (`00for_await_yield`).
   The inference now runs on every function. An outlined body's arguments are the values it
-  captures: a retain of one is an error.
+  captures: a retain of one is an error. The signature pass collects the calls in those bodies
+  too. It did not: a callee that keeps its argument (`stash(c)` pushing into a global) moved it
+  in its own body, while the `for await` body that called it kept its release of `c`, a use after
+  free on `main` as well. Verified in the IR only: the release is gone. A run cannot show it,
+  because `await f()` returns before `f`'s `for await` body has run (§18.5).
 
 ### 18.2 An interface over an object is that object
 
 The view above showed that `ts.NewInterface` gave a block a second owner. The object-literal
 interface cast marks it `__owned_result`, and `isFresh` took the mark at its word.
 `let raw = {...}; let i = <I>raw` freed `raw`'s block twice. On `main` already, a folded object
-literal given twice as an interface (`use(o); use(o)`) was freed twice, and 12 corpus files that
-compiled there have that shape somewhere.
+literal given twice as an interface (`use(o); use(o)`) is freed twice: it crashes there. A first
+fix, fresh only when the object has no other use, lost 12 corpus files that compile on `main`;
+the view below gets them back.
 
 `ts.NewInterface` is now a view of its object, as a union or an optional is, and a view is as fresh
 as its root:
@@ -1288,8 +1293,9 @@ object, so the cache was cleared between them.
   runtime's own message, "Awaited async operand is in error state".
 
 Corpus: 325 of 591 before, 359 after. Every file that newly compiles runs under test-runner
-`-mm=own`, AOT and JIT, with gc's output, and so does every `-shared` pair whose two halves both
-compile. Two files that compiled on `main` are errors now, both correctly:
+`-mm=own`, AOT and JIT, and so does every `-shared` pair whose two halves both compile. The
+JIT output of each matches gc's, except the two async files (`00for_await`, `00for_await_yield`),
+which the JIT runs only with the async runtime test-runner links: they pass under test-runner. Two files that compiled on `main` are errors now, both correctly:
 
 - `00object` stores one object literal into two tuples, which rc leaks.
 - `00interface_object_array` reads an object after it moved into an array.
@@ -1306,6 +1312,9 @@ Found, not fixed:
 - **A method of an object literal held in a `let`**, returning a block, called and kept, is a
   borrow error: `let o = {make(): C {...}}; const c = o.make()`. A `const o` works.
 - **`measure.ps1` reads `compile.bat`**, which only a test-runner run without `-mm` writes.
+- **`await f()` returns before `f`'s `for await` body has run**, under every model: with
+  `for await (const x of g()) keep.push(1)`, `keep` is empty after it (`none` fails the assert,
+  `gc` too).
 
 ### 18.6 Known limits (the input to 7b)
 

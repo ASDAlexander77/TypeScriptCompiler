@@ -1,6 +1,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -74,7 +75,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         collectFieldFunctions(module);
 
         module.walk([&](mlir::Operation *op) {
-            if (isCall(op) && op->getParentOfType<mlir_ts::FuncOp>())
+            // in any function: a `ts.Func`, or the `func.func` the async lowering outlines a body into
+            if (isCall(op) && op->getParentOfType<mlir::FunctionOpInterface>())
             {
                 calls.push_back({op, resolve(op)});
             }
@@ -818,7 +820,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 index = refOp.getIndex();
             }
 
-            auto inFunction = !!user->getParentOfType<mlir_ts::FuncOp>();
+            auto inFunction = !!user->getParentOfType<mlir::FunctionOpInterface>();
             if (inFunction && mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::VirtualSymbolRefOp,
                                         mlir_ts::ThisSymbolRefOp, mlir_ts::SymbolRefOp>(user) &&
                 onlyCalled(user->getResult(0)))
