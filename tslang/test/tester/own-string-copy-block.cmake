@@ -1,8 +1,8 @@
 # Under own a string stored on one branch only gets its copy in the store's block, never at rc's
 # birth retain after the producer: copied there, the copy has no owner on the path that skips the
 # store, a leak no run can see (spec 22.7, "only for a use in the retain's block").
-# Checked on `stored` of own_string_copy_after_move.ts: its one `ts.StringCopy` comes after the
-# entry block's `cf.cond_br`.
+# Checked on `stored` of own_string_copy_branch.ts: its one `ts.StringCopy` comes after the entry
+# block's `cf.cond_br`. That file has no loop, so without the rule it still compiles.
 cmake_minimum_required(VERSION 3.17.3)
 execute_process(COMMAND "${TSLANG}" --emit=mlir-affine --no-default-lib -mm=own "${FILE}"
                 OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE result)

@@ -2574,7 +2574,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_global_init own_constant_data own_record_local
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
                  own_string_copy_field own_string_copy_after_move own_string_copy_nullable
-                 own_string_copy_exported own_string_copy_written own_string_copy_mixed_return)
+                 own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
+                 own_string_copy_branch)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2596,7 +2597,7 @@ endforeach()
 # under every model.
 foreach(strings_mm rc none gc)
     foreach(strings_test own_string_copy_field own_string_copy_after_move own_string_copy_nullable own_string_copy_exported
-                         own_string_copy_mixed_return)
+                         own_string_copy_mixed_return own_string_copy_branch)
         tslang_add_test(NAME test-jit-${strings_mm}-${strings_test} COMMAND test-runner -jit -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
         tslang_add_test(NAME test-compile-${strings_mm}-${strings_test} COMMAND test-runner -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
     endforeach()
@@ -2605,7 +2606,7 @@ endforeach()
 # the copy would leak on the path that skips the store; no run can see that leak, so the IR is read.
 add_test(NAME test-own-string-copy-in-store-block
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
-                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_after_move.ts"
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held

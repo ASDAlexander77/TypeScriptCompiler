@@ -1957,12 +1957,17 @@ The 35 files gained under `--opt`:
   - `own_string_copy_mixed_return`: `greet` returning `name` on one path and `"Sorry, " + name` on
     the other, `<string>` of an `any` (`___unbox<string>`), and `<string>` of a `number | string`
     (`___cast`). Its own IR has eight copies; main rejects it with eight errors. It needed no new
-    code.
+    code;
+  - `own_string_copy_branch`: a string stored into a field on one branch only and used after,
+    alone, for the IR check below.
 - **Own only:** `own_string_copy_written`, `let t = s; t[0] = <char>65` changes `t` only.
 - **The copy's block** (`test-own-string-copy-in-store-block`, `own-string-copy-block.cmake`): the
-  own IR of `own_string_copy_after_move.ts` has one `ts.StringCopy` in `stored`, after the entry
+  own IR of `own_string_copy_branch.ts` has one `ts.StringCopy` in `stored`, after the entry
   block's `cf.cond_br`. Copied at the birth retain instead, it would leak on the path that skips
-  the store, which no run can see, so the IR is read.
+  the store, which no run can see, so the IR is read. The file is also a positive, under every
+  model; it has no loop, so with the same-block rule off it still compiles, and only this check
+  fails (teeth (e)). `own_string_copy_after_move` has the same `stored`, but with the rule off its
+  `storedInLoop` is rejected first.
 - **Negative:**
 
 | test | message |
@@ -1979,6 +1984,7 @@ The 35 files gained under `--opt`:
 | (b) `borrowsKnownParam` returns false | `own_err_string_kept_param_known` compiles, and `keep` never releases the `v` its callers gave up: the leak the guard is for |
 | (c) the copy always in front of the use | `own_string_copy_field` and `own_string_copy_nullable` fail (6 tests); `r.s = r.s` is rejected by the place check |
 | (d) the `several` guard off | `own_err_string_pushed_twice` compiles, and is correct: each retain copies a different operand |
+| (e) the same-block rule off | `test-own-string-copy-in-store-block` fails: `stored`'s copy is in the entry block |
 
 - **Step 7 of the plan.** Five string negatives compiled once strings were copied:
   - `own_err_mixed_return`, `own_err_param_returned_exported`, `own_err_param_kept_exported` and
