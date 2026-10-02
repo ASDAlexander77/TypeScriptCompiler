@@ -139,6 +139,30 @@ inline int resultBorrows(mlir::Operation *op)
     return -1;
 }
 
+// Is `narrow` a member of the union or optional `wide` as it is, so that a cast between them keeps
+// its value? With `onlyNullable`, every other member is null or undefined.
+inline bool holdsAsIs(mlir::Type wide, mlir::Type narrow, bool onlyNullable = false)
+{
+    llvm::SmallVector<mlir::Type> members;
+    if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(wide))
+    {
+        members.push_back(optionalType.getElementType());
+    }
+    else if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(wide))
+    {
+        members.append(unionType.getTypes().begin(), unionType.getTypes().end());
+    }
+    else
+    {
+        return false;
+    }
+
+    return llvm::is_contained(members, narrow) &&
+           (!onlyNullable || llvm::all_of(members, [&](mlir::Type member) {
+                return member == narrow || mlir::isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member);
+            }));
+}
+
 // An op whose result is the very block its operand holds: a class widened to a union or an
 // optional or narrowed back, a union made from its payload or read back from it, an object seen
 // through an interface (`{vtable, this}`, released through `this`). rc's retain or release of
@@ -171,8 +195,17 @@ inline bool isView(mlir::Operation *op)
         return mlir::isa<mlir_ts::ValueRefType>(castOp.getIn().getType()) &&
                mlir::isa<mlir_ts::ObjectType>(castOp.getType());
     };
-    return (keeps(castOp.getIn().getType()) && keeps(castOp.getType())) ||
-           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType())) || isMadeObject();
+    // a string or an array widened to a union that holds it as it is (`string | null`), or narrowed
+    // back from one whose other members are only null or undefined. A union with other members can
+    // convert on the way out (a number printed into a string), and an array of another element type
+    // is a new array.
+    auto isStringOrArray = [](mlir::Type type) { return mlir::isa<mlir_ts::StringType, mlir_ts::ArrayType>(type); };
+    auto in = castOp.getIn().getType();
+    auto out = castOp.getType();
+    auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
+                          (isStringOrArray(out) && holdsAsIs(in, out, true));
+
+    return (keeps(in) && keeps(out)) || (isClosure(in) && isClosure(out)) || isMadeObject() || isNullableView;
 }
 
 // The block a value is a view of.
@@ -368,10 +401,36 @@ inline bool ownsHeap(mlir::Value value)
 }
 
 // Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.
+// Also a view of a value whose type owns none: a union's number payload made into another union
+// (`GetValueFromUnion`, then `CreateUnionInstance`) is a number all the way. A `value_ref` is not
+// such a type: it owns nothing by type, but one `ts.New` made is the object its view shows.
 inline bool holdsNoBlock(mlir::Value value)
 {
-    auto *def = rootOf(value).getDefiningOp();
-    return !ownsHeap(value) || (def && isLiteral(def));
+    if (!ownsHeap(value))
+    {
+        return true;
+    }
+
+    for (auto *def = value.getDefiningOp(); def; def = def->getOperand(0).getDefiningOp())
+    {
+        if (isLiteral(def))
+        {
+            return true;
+        }
+
+        if (!isView(def))
+        {
+            return false;
+        }
+
+        auto in = def->getOperand(0);
+        if (!ownsHeap(in) && !mlir::isa<mlir_ts::ValueRefType>(in.getType()))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // Some view of `value` is a `ts.NewInterface`, which boxes what it shows into a block.
@@ -433,9 +492,10 @@ inline bool isConstantData(mlir::Value value)
         return true;
     }
 
+    // a field of such data: of a `ts.Constant`, or of a tuple of literals re-made as a named one
     if (auto extractOp = mlir::dyn_cast<mlir_ts::ExtractPropertyOp>(def))
     {
-        return extractOp.getObject().getDefiningOp<mlir_ts::ConstantOp>() != nullptr;
+        return isConstantData(extractOp.getObject());
     }
 
     if (mlir::isa<mlir_ts::CreateTupleOp>(def))
