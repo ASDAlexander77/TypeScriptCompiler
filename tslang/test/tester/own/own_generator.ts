@@ -62,6 +62,13 @@ function* strings() {
     }
 }
 
+// parameters holding numbers: their cells move into the box the state object owns
+function* range(from: number, to: number) {
+    for (let i = from; i < to; i++) {
+        yield i;
+    }
+}
+
 // an object literal with a method: the same made block, seen as its object
 function makeCounter(start: number) {
     return {
@@ -123,6 +130,11 @@ function main() {
         churn();
         t += o.value.x;
 
+        for (const v of range(n, n + 3)) {
+            churn();
+            t += v;
+        }
+
         // given up after the first value: the state object still destroys its local
         const half = fromLocal();
         t += half.next().value;
@@ -131,6 +143,6 @@ function main() {
         t += c.next() + c.next();
     }
 
-    assert(t == 1490000, "t");
+    assert(t == 1820000, "t");
     print("done.");
 }

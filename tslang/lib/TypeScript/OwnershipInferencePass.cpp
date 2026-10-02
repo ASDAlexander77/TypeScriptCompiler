@@ -88,12 +88,14 @@ class OwnershipInferencePass
         derivedCache.clear();
         closures.clear();
         closureOf.clear();
+        stateBoxes.clear();
         captureStores.clear();
         captureRetains.clear();
         returnsBorrowOf = resultBorrows(f);
 
         // first: whether a closure borrows what it captures changes what its box's stores are
         classifyClosures();
+        classifyStateBoxes();
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -375,6 +377,8 @@ class OwnershipInferencePass
     llvm::DenseSet<mlir::Operation *> captureRetains;
     // each closure over a cell, by its `ts.CreateBoundFunction`
     llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
+    // each generator's capture box, which escapes with its state object (classifyStateBoxes)
+    llvm::DenseMap<mlir::Value, Closure *> stateBoxes;
 
     // Finds the closures over cells and what they borrow, before anything else: whether a box's
     // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
@@ -473,6 +477,119 @@ class OwnershipInferencePass
             closureOf[boundOp.getOperation()] = closure.get();
             closures.push_back(std::move(closure));
         });
+    }
+
+    // A generator's maker puts what the generator captures - its parameters, an outer local - into
+    // a box, and the box into its state object's `.captured` field: the box of a closure that
+    // escapes, with the state object, at that store. There is no closure value, so no use runs it
+    // here and nothing calls through it. rc's `ts.RetainCell` of the box is the state object's
+    // reference, which moves in with it. A box used any other way is left to the RetainCell error.
+    void classifyStateBoxes()
+    {
+        getFunction().walk([&](mlir_ts::VariableOp boxOp) {
+            auto box = boxOp.getResult();
+            if (!boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME) || closureOfBox(box))
+            {
+                return;
+            }
+
+            auto closure = std::make_shared<Closure>();
+            closure->box = box;
+            llvm::SmallVector<mlir::Operation *> boxRetains;
+            for (auto *user : box.getUsers())
+            {
+                if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user))
+                {
+                    for (auto *fieldUser : propertyRefOp->getUsers())
+                    {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                        if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                        {
+                            return;
+                        }
+
+                        closure->fills.push_back({propertyRefOp.getPosition(), storeOp});
+                        closure->hasCells = closure->hasCells || mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType());
+                    }
+
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::RetainCellOp>(user))
+                {
+                    boxRetains.push_back(user);
+                    continue;
+                }
+
+                if (!closure->escape && isStoreIntoState(user, box))
+                {
+                    closure->escape = user;
+                    continue;
+                }
+
+                return;
+            }
+
+            if (!closure->escape)
+            {
+                return;
+            }
+
+            for (auto &fill : closure->fills)
+            {
+                if (auto *retain = retainBefore(fill.second.getValue(), fill.second))
+                {
+                    closure->retains.push_back(retain);
+                    captureRetains.insert(retain);
+                }
+            }
+
+            for (auto *retain : boxRetains)
+            {
+                closure->retains.push_back(retain);
+                captureRetains.insert(retain);
+            }
+
+            stateBoxes[box] = closure.get();
+            closures.push_back(std::move(closure));
+        });
+    }
+
+    // `ts.Store(box, ts.PropertyRef(state, i))`, where `state` is a local a `ts.Constant`
+    // initializes whose every read fills a block `ts.New` made: a generator's initial state.
+    static bool isStoreIntoState(mlir::Operation *user, mlir::Value box)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+        auto propertyRefOp = storeOp && storeOp.getValue() == box
+                                 ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                 : mlir_ts::PropertyRefOp();
+        auto stateOp = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!stateOp || !isConstantRecordLocal(stateOp))
+        {
+            return false;
+        }
+
+        auto reads = 0;
+        for (auto *stateUser : stateOp->getUsers())
+        {
+            auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(stateUser);
+            if (!loadOp)
+            {
+                continue;
+            }
+
+            ++reads;
+            for (auto *readUser : loadOp->getUsers())
+            {
+                auto fillOp = mlir::dyn_cast<mlir_ts::StoreOp>(readUser);
+                if (!fillOp || fillOp.getValue() != loadOp.getResult() || !fillOp.getReference().getDefiningOp<mlir_ts::NewOp>())
+                {
+                    return false;
+                }
+            }
+        }
+
+        return reads > 0;
     }
 
     // rc's reference for the box's copy of `value`: the retain of it nearest before the store that
@@ -637,6 +754,12 @@ class OwnershipInferencePass
     {
         for (auto &closure : closures)
         {
+            if (!closure->op)
+            {
+                decideEscaping(*closure, toErase); // a generator's box
+                continue;
+            }
+
             auto *boundOp = closure->op.getOperation();
             auto name = ownerName(closure->op.getResult());
             auto ok = true;
@@ -772,10 +895,19 @@ class OwnershipInferencePass
     {
         auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
         auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
-        auto boundOp = propertyRefOp ? closureOfBox(propertyRefOp.getObjectRef()) : mlir_ts::CreateBoundFunctionOp();
+        if (!propertyRefOp || !mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType()))
+        {
+            return false;
+        }
+
+        if (stateBoxes.count(propertyRefOp.getObjectRef()))
+        {
+            return true;
+        }
+
+        auto boundOp = closureOfBox(propertyRefOp.getObjectRef());
         auto found = boundOp ? closureOf.find(boundOp.getOperation()) : closureOf.end();
-        return found != closureOf.end() && found->second->escape &&
-               mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType());
+        return found != closureOf.end() && found->second->escape;
     }
 
     // A closure that escapes owns what its box holds (spec 2.5, phase 5b). Its copies moved in as
@@ -859,7 +991,14 @@ class OwnershipInferencePass
 
         // A call through the box itself after the closure was given away or given back. followClosure
         // stops at the escape, so `ends` may miss releases past it; that is enough while the only
-        // calls through a box are those of a folded `const f`, whose release ends its block.
+        // calls through a box are those of a folded `const f`, whose release ends its block. A
+        // generator's box has no closure value and no such call.
+        if (!closure.op)
+        {
+            toErase.insert(closure.retains.begin(), closure.retains.end());
+            return;
+        }
+
         auto name = ownerName(closure.op.getResult());
         llvm::SmallVector<mlir::Operation *> gone(closure.ends.begin(), closure.ends.end());
         gone.push_back(closure.escape);

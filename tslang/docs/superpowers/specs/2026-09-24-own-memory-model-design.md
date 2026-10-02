@@ -5,8 +5,8 @@ amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) merged as #402
 (results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
 signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
-merged as #436 (results §16); phase 5b (closures that escape) on branch `own-phase-5b` (results
-§17). Plans in `docs/superpowers/plans/`.
+merged as #436 (results §16); phase 5b (closures that escape) merged as #437 (results §17); phase
+7a (generators, async) on branch `own-phase-7` (results §18). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -1180,3 +1180,139 @@ integer literal is `s32`.
 - A closure that escapes from a closure body with a cell it inherited, and a closure over a
   parameter's object, are errors. `this` captured by an escaping callback is the common case.
 - From §16.5: a non-escaping closure always borrows; a captured local is never `let`-borrowed.
+
+## 18. Phase 7a results, 2026-10-02
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-7.md`. Changed: `OwnershipFacts.h`,
+`OwnershipInferencePass.cpp`, `OwnershipSignaturePass.cpp`, and `tslang/transform.cpp` (the
+inference runs on `func.func` too). MLIRGen does not change.
+
+### 18.1 What phase 7a accepts
+
+A generator's maker builds its initial state as a `ts.Constant` tuple in a local, copies it into a
+block `ts.New` makes, and returns that block cast to `!ts.object`. Its `next` keeps the
+generator's locals in the state object's fields and returns a `{value, done}` record. The caller
+calls `next` through the state object.
+
+- **The state object is a fresh block.** The cast of a `ts.New`'d `value_ref` to its `!ts.object`
+  is a view. Inside the pass such a block owns (`ownsHeapMemory` says no for any `value_ref`), so
+  its root is checked, and the store that fills it is a borrow, not a taker.
+- **The initial state holds nothing.** rc's retain of the tuple is erased when its owning fields
+  hold what the constant put there: null, a number, an immortal literal.
+- **Locals are fields.** A store into one is a move into the container, a read a borrow bounded
+  by it, and reassignment releases the old value (rc's `ts.ReleaseSlot` of the field). Nothing new
+  was needed.
+- **A yield moves its value to the caller.** A record built to be returned (a local a
+  `ts.Constant` initializes, read once, the read only returned) takes the fresh values stored into
+  its fields: each store is the value's taker, and rc's retain of the filled record is where the
+  value moves in. A plain function returning `{ value: new C(), done: false }` is the same shape.
+- **The caller's `next` resolves.** The signature pass resolves a function read out of an
+  object's field when the field only ever holds that function: every `ts.Constant` of the
+  object's tuple type holds it there, nothing stores into the field (a method sees its object as
+  `object_storage`, whose fields count too), and no other op makes a value of the type. The call
+  gets `__own_fresh_result`. `next` is open (its symbol sits in a constant), so its body may not
+  return a borrow.
+- **What a generator captures is an escaping closure's box.** The maker puts the cells of its
+  parameters into a box and the box into the state's `.captured` field. That store is the box's
+  escape, and phase 5b's rules apply as they are. A cell holding a number moves in
+  (`range(from, to)`), and a parameter's object is 5b's "its value is the caller's" error. An
+  object literal whose methods capture keeps its box the same way.
+- **Async.** The async lowering outlines a `for await` body and each `await`'s continuation into a
+  `func.func`, which the inference did not visit. A retain there was neither erased nor reported,
+  and the lowering failed with "ownership inference left a retain behind" (`00for_await_yield`).
+  The inference now runs on every function. An outlined body's arguments are the values it
+  captures: a retain of one is an error.
+
+### 18.2 An interface over an object is that object
+
+The view above showed that `ts.NewInterface` gave a block a second owner. The object-literal
+interface cast marks it `__owned_result`, and `isFresh` took the mark at its word.
+`let raw = {...}; let i = <I>raw` freed `raw`'s block twice. On `main` already, a folded object
+literal given twice as an interface (`use(o); use(o)`) was freed twice, and 12 corpus files that
+compiled there have that shape somewhere.
+
+`ts.NewInterface` is now a view of its object, as a union or an optional is, and a view is as fresh
+as its root:
+
+- `let i = <I>raw` borrows `raw`. rc's `ts.Retain` of the interface is the reference of the `let`
+  that consumes it, and a borrow erases it.
+- A class instance behind an interface is one block, so the phase-0 placeholder
+  `own_err_interface` compiles and is gone.
+- Two releases of one block, one reachable after the other, are two owners: the error at the
+  second view (`own_err_interface_two_views`).
+
+### 18.3 Measured
+
+AOT, `measure.ps1`, in MB:
+
+| test | gc | rc | none | own |
+|---|---|---|---|---|
+| `own_generator` | 6.1 | 11.2 | 1548.6 | 4.3 |
+| `own_record_return` | 5.9 | 4.2 | 224.0 | 4.2 |
+| `own_interface_view` | 5.9 | 4.3 | 551.1 | 4.3 |
+| `own_async` | 6.1 | 5.7 | 334.7 | 5.8 |
+
+rc is above gc on `own_generator` because it leaks yielded objects (§18.5).
+
+### 18.4 Teeth
+
+Each made with a temporary `getenv` switch:
+
+- Keep the frame's `ts.ReleaseCell` of a cell after it moves into a generator's box:
+  `own_generator` fails, AOT (0xC0000374) and JIT.
+- Keep a value's temporary release after it moves into a returned record: `own_record_return`
+  fails, AOT (0xC0000374) and JIT. In a generator's `next` there is no such release to keep
+  (§18.5).
+- Skip the released-twice check: `own_err_interface_two_views` compiles and crashes.
+- Let a field that is assigned another function resolve: `own_err_field_function_reassigned`
+  compiles.
+
+The JIT's object cache (`__jit` beside the source) keys on the compiler binary and the options, not
+on the environment. Every JIT run with the teeth build after the first reused the first one's
+object, so the cache was cleared between them.
+
+### 18.5 Tests and the corpus
+
+- **Positives:**
+  - `own_generator`: numbers, a class local, a local reassigned between yields, a generator given
+    up after one value, yields of fresh objects and strings through `for...of` and by hand, number
+    parameters, an object literal with a method;
+  - `own_record_return`;
+  - `own_interface_view`: a class instance as an interface, a `let` borrowed through one, a
+    literal given once, a literal made straight into one;
+  - `own_async`: a heap local across an `await`, a fresh result, a heap parameter after an
+    `await`, a string, a `for await` body.
+- **Negatives:** `own_err_interface_two_views`, `own_err_field_function_reassigned`,
+  `own_err_generator_param_object`.
+- The no-counting check's failure pattern is `error:` now: `error` alone matched the async
+  runtime's own message, "Awaited async operand is in error state".
+
+Corpus: 325 of 591 before, 359 after. Every file that newly compiles runs under test-runner
+`-mm=own`, AOT and JIT, with gc's output, and so does every `-shared` pair whose two halves both
+compile. Two files that compiled on `main` are errors now, both correctly:
+
+- `00object` stores one object literal into two tuples, which rc leaks.
+- `00interface_object_array` reads an object after it moved into an array.
+
+Found, not fixed:
+
+- **A temporary made in front of a `yield`** in the generator's own body is never released, under
+  rc as well. `OwnedReturnConsumptionPass` does not release past a resume point, so
+  `yield "s" + i` leaks the number's string (50 MB over 200000 runs).
+- **rc leaks yielded objects.** The call's reference and the record's retain are two, and the
+  caller releases one.
+- **Reading a record out of a call or a folded `const`** (`print(f().value.x)`,
+  `const r = f(); r.value.x`) is an error. A `let` works.
+- **A method of an object literal held in a `let`**, returning a block, called and kept, is a
+  borrow error: `let o = {make(): C {...}}; const c = o.make()`. A `const o` works.
+- **`measure.ps1` reads `compile.bat`**, which only a test-runner run without `-mm` writes.
+
+### 18.6 Known limits (the input to 7b)
+
+- A generator over a parameter's object needs its result to borrow the argument, and a box that
+  frees its cells but not their values.
+- A nested generator over an outer local inherits the cell: 5b's "captured from an enclosing
+  function" error.
+- `.map`/`.filter`, which MLIRGen builds as generators over the source array and the callback, stop
+  on "borrows a field and cannot be stored".
+- A yielded borrow (a parameter's element, a state field's value) is an error.
