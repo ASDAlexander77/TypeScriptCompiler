@@ -7,6 +7,10 @@ class C {
     constructor(public x: number) {}
 }
 
+class H {
+    items: number[] = [1, 2, 3];
+}
+
 function churn() {
     const junk: C[] = [];
     for (let i = 0; i < 64; i++) {
@@ -64,6 +68,13 @@ function main() {
             t += v;
         }
 
+        // an argument read out of a field: nothing here overwrites it
+        const h = new H();
+        for (const v of each(h.items)) {
+            churn();
+            t += v;
+        }
+
         // given up after the first value
         const it = each(a);
         t += it.next().value;
@@ -92,6 +103,6 @@ function main() {
         }
     }
 
-    assert(t == 2080000, "t");
+    assert(t == 2200000, "t");
     print("done.");
 }

@@ -1407,10 +1407,11 @@ Each made with a temporary `getenv` switch, the JIT cache cleared between runs:
 ### 19.4 Tests and the corpus
 
 - **Positive:** `own_generator_borrow`. It covers an array, a class and a string parameter, a
-  generator given up early, two generators over one argument, `map`, `filter`, and a capturing
-  `filter` last.
+  generator given up early, two generators over one argument, an argument read out of a field,
+  `map`, `filter`, and a capturing `filter` last.
 - **Negatives:** `own_err_generator_outlives_arg`, `own_err_generator_bounded_escapes`,
-  `own_err_generator_yields_borrow`, `own_err_generator_map_outlives`.
+  `own_err_generator_yields_borrow`, `own_err_generator_map_outlives`,
+  `own_err_generator_place_overwritten` (the field the argument was read from is assigned).
 - **Removed:** `own_err_generator_param_object` compiles now and is gone.
 
 Corpus: 359 of 591 before, 364 after, none lost: `00funcs_generic_iterator`, `01disposable`,

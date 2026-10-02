@@ -3426,8 +3426,9 @@ class OwnershipInferencePass
                 return loadOp.getResult();
             }
 
-            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
-            if ((storeOp && storeOp.getReference() == place) || isCall(op))
+            // anything else given the place may write through it - a store, a push - and a call may
+            // write anything
+            if (llvm::is_contained(op->getOperands(), place) || isCall(op))
             {
                 return {};
             }

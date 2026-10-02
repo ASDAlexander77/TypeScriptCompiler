@@ -2648,6 +2648,7 @@ set(own_error_cases
     "own_err_generator_bounded_escapes|borrows its generator's arguments and cannot be stored, returned or captured"
     "own_err_generator_yields_borrow|borrows the generator's argument and cannot be stored, returned or captured"
     "own_err_generator_map_outlives|borrows .* but is used here after .* is released or overwritten"
+    "own_err_generator_place_overwritten|borrows a field but is used here after it may be released or overwritten"
     "own_err_two_owners|is used here after its value was moved"
     "own_err_push_let|is used here after its value was moved"
     "own_err_push_loop|is moved inside a loop"
