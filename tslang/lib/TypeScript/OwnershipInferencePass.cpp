@@ -448,8 +448,8 @@ class OwnershipInferencePass
     }
 
     // Strings as values (spec 22.3): each string retain the dry run did not erase is rewritten, where
-    // its one use can be found, into a copy for that use. True when anything was rewritten.
-    bool makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased)
+    // its one use can be found, into a copy for that use.
+    void makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased)
     {
         llvm::SmallVector<mlir::Operation *> retains;
         getFunction()->walk([&](mlir::Operation *op) {
@@ -460,13 +460,10 @@ class OwnershipInferencePass
             }
         });
 
-        auto copied = false;
         for (auto *retain : retains)
         {
-            copied = copyForRetain(retain) || copied;
+            copyForRetain(retain);
         }
-
-        return copied;
     }
 
     // The value a parameter of this function is, when its callers were told this function keeps it
@@ -477,6 +474,11 @@ class OwnershipInferencePass
         return param >= 0 && (llvm::is_contained(ownedParams(getFunction()), param) || param == returnsBorrowOf);
     }
 
+    // Rewrites one string retain into a copy for the use it was made for (spec 22.3), and erases it;
+    // false, leaving it for the real run to report, where there is no single such use in its block,
+    // or the value is not a string or is a known parameter's (spec 22.4). Its use walk is takerOf's
+    // without the twinReadAfter fallback: a retain whose value has no use of its own is not copied,
+    // so its error stays.
     bool copyForRetain(mlir::Operation *retain)
     {
         // `let x = v`: the local starts from a copy
@@ -523,6 +525,14 @@ class OwnershipInferencePass
         });
 
         if (!taking || several || !isCopyableString(taking->get().getType()))
+        {
+            return false;
+        }
+
+        // only a retain in the use's block: a copy made elsewhere (rc's birth retain, after the
+        // producer) has no owner on a path that does not reach the use; rc retains for the use
+        // beside it too
+        if (taking->getOwner()->getBlock() != retain->getBlock())
         {
             return false;
         }

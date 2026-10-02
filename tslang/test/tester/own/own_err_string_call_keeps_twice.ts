@@ -1,5 +1,6 @@
-// -mm=own rejects, and does not copy: one string given twice to a call that keeps both arguments.
-// The retains have no single use each, so no copy is made.
+// -mm=own rejects, and does not copy: a field's string given twice to a call that keeps both
+// arguments. A keeping call's retains are in the callee, so `main` has no retain to turn into a
+// copy: the call takes the value without one (spec 22.4).
 class P {
     a = "";
     b = "";

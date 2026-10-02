@@ -2722,7 +2722,8 @@ set(own_error_cases
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
-    "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured")
+    "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
+    "own_err_string_pushed_twice|is used here after its value was moved")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
