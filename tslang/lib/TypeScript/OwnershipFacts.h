@@ -374,11 +374,43 @@ inline bool holdsNoBlock(mlir::Value value)
     return !ownsHeap(value) || (def && isLiteral(def));
 }
 
+// Some view of `value` is a `ts.NewInterface`, which boxes what it shows into a block.
+inline bool boxedByView(mlir::Value value)
+{
+    llvm::SmallVector<mlir::Value> values{value};
+    while (!values.empty())
+    {
+        for (auto &use : values.pop_back_val().getUses())
+        {
+            auto *user = use.getOwner();
+            if (isView(user) && use.getOperandNumber() == 0)
+            {
+                if (mlir::isa<mlir_ts::NewInterfaceOp>(user))
+                {
+                    return true;
+                }
+
+                values.push_back(user->getResult(0));
+            }
+        }
+    }
+
+    return false;
+}
+
 // Data nothing owns: what holds no block, a `ts.Constant` (its strings are immortal) or a field of
 // one, and a tuple built of such (`[1, "a"]`, an object literal's fields read out of its constant).
 // Retaining it takes nothing anyone gives back.
 inline bool isConstantData(mlir::Value value)
 {
+    // a view that boxes it makes a block of its own: a folded object literal given as an interface
+    // is a new block each time, which its own release destroys. And a `ts.New` is a block, though
+    // its `value_ref` type owns nothing: it is the object its view shows.
+    if (value.getDefiningOp<mlir_ts::NewOp>() || boxedByView(value))
+    {
+        return false;
+    }
+
     if (holdsNoBlock(value))
     {
         return true;
@@ -390,7 +422,13 @@ inline bool isConstantData(mlir::Value value)
         return false;
     }
 
-    if (mlir::isa<mlir_ts::ConstantOp>(def))
+    if (mlir::isa<mlir_ts::ConstantOp, mlir_ts::SymbolRefOp>(def))
+    {
+        return true;
+    }
+
+    // a function, which a `ts.SymbolRef` names, seen as a function value: it has no capture box
+    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(def); castOp && castOp.getIn().getDefiningOp<mlir_ts::SymbolRefOp>())
     {
         return true;
     }

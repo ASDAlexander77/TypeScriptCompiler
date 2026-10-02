@@ -263,6 +263,15 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // data nothing owns (isConstantData): a number or null in a union, a function, a
+            // literal, a tuple of literals. A slot's retain is decided on its initializer, so only
+            // while nothing else is ever stored into the slot.
+            if (value && isConstantData(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotKeepsInitializer(op)))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             if (!value || isFresh(value) == false)
             {
                 reportSecondReference(op);
@@ -2737,6 +2746,23 @@ class OwnershipInferencePass
     // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer,
     // seen through its views. None for a variable with no initializer - its storage was hoisted
     // in front of a try and its value arrives by a store this phase does not follow.
+    // A `ts.RetainSlot`'s slot holds its initializer for as long as it lives: nothing is stored
+    // into it, and no closure captures it.
+    static bool slotKeepsInitializer(mlir::Operation *op)
+    {
+        auto slot = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot();
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        if (!varOp || !varOp.getInitializer() || isCellVariable(slot))
+        {
+            return false;
+        }
+
+        return llvm::none_of(slot.getUsers(), [&](mlir::Operation *user) {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            return (storeOp && storeOp.getReference() == slot) || !mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user);
+        });
+    }
+
     static mlir::Value retainedValue(mlir::Operation *op)
     {
         if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
@@ -3071,8 +3097,9 @@ class OwnershipInferencePass
         // Nothing to move: a number owns no block, and a string literal is the immortal global,
         // which any number of places may hold. Under --opt, CSE merges identical literals before
         // this pass, so one such value is routinely stored into several places. A read out of a
-        // container owns nothing either: checkPlaceRead decides it.
-        if (!ownsHeap(value) || isImmortalLiteral(value) || placeReadOf(value))
+        // container owns nothing either: checkPlaceRead decides it. Nor does other data nothing
+        // owns: an empty optional, a function, a tuple of literals (isConstantData).
+        if (!ownsHeap(value) || isImmortalLiteral(value) || isConstantData(value) || placeReadOf(value))
         {
             return true;
         }
