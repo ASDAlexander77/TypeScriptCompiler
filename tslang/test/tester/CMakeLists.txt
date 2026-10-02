@@ -2567,7 +2567,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_call_no_drops own_getter_borrow own_param_kept own_any_box
                  own_string_length_borrow
                  own_closure_borrow own_closure_escape own_generator own_interface_view
-                 own_async own_record_return own_generator_borrow)
+                 own_async own_record_return own_generator_borrow own_global_script)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2577,6 +2577,12 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
     set_tests_properties(test-own-no-counting-${own_test}
                          PROPERTIES PASS_REGULAR_EXPRESSION "define"
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error:|Stack dump")
+endforeach()
+
+# A global declared in top-level code owns what it is given, under every model that counts.
+foreach(global_mm rc none gc)
+    tslang_add_test(NAME test-jit-${global_mm}-own-global-script COMMAND test-runner -jit -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
+    tslang_add_test(NAME test-compile-${global_mm}-own-global-script COMMAND test-runner -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
 endforeach()
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held

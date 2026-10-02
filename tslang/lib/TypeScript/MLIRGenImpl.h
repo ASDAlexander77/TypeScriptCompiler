@@ -2123,6 +2123,26 @@ class MLIRGenImpl
             // save value
             auto address = builder.create<mlir_ts::AddressOfOp>(
                 location, mlir_ts::RefType::get(variableDeclarationInfo.type), variableDeclarationInfo.fullName, mlir::IntegerAttr());
+
+            // A global is a root and owns what it holds, so its declaration hands the count over
+            // as an assignment to it does (isOwnedGlobalSlot): `const t = new C()` in top-level
+            // code stored the instance, and §9.30 then gave its reference back at the end of the
+            // block, leaving the global pointing at a freed block. A `var` met again in a loop
+            // gives up what it held before.
+            if (isOwningSlot(location, address))
+            {
+                if (producesOwnedReference(variableDeclarationInfo.initial))
+                {
+                    consumeOwnedReference(variableDeclarationInfo.initial);
+                }
+                else
+                {
+                    builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial);
+                }
+
+                builder.create<mlir_ts::ReleaseSlotOp>(location, address);
+            }
+
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
             if (variableDeclarationInfo.varClass.atomic)
             {
