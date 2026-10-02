@@ -2919,17 +2919,54 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // `let a = { item: new C() }`: the read is what an owning local starts with, and rc's
+            // `ts.RetainSlot` of that local is the record's retain
+            if (auto ownerOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+            {
+                auto *slotRetain = ownerOp.getInitializer() == read.getResult() && isOwningVariable(ownerOp)
+                                       ? onlyRetainSlotOf(ownerOp)
+                                       : nullptr;
+                if (!slotRetain || retain)
+                {
+                    return nullptr;
+                }
+
+                retain = slotRetain;
+                continue;
+            }
+
+            // stored into the result slot, or into an owning local (`a = { item: new C() }`)
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             auto slot = storeOp && storeOp.getValue() == read.getResult()
                             ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                             : mlir_ts::VariableOp();
-            if (!slot || !isResultSlot(slot))
+            if (!slot || !(isResultSlot(slot) || isOwningVariable(slot)))
             {
                 return nullptr;
             }
         }
 
         return retain;
+    }
+
+    // The one `ts.RetainSlot` of a local; null when there are none or several.
+    static mlir::Operation *onlyRetainSlotOf(mlir_ts::VariableOp varOp)
+    {
+        mlir::Operation *found = nullptr;
+        for (auto *user : varOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+            {
+                if (found)
+                {
+                    return nullptr;
+                }
+
+                found = user;
+            }
+        }
+
+        return found;
     }
 
     // A local that owns nothing, is never captured, and is read only to be returned.
