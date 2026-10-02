@@ -30,6 +30,25 @@ function storedInLoop() {
     return h;
 }
 
+// A closure borrows the string and a field takes it. The closure captures a variable too, so it
+// borrows all it captures: the store that fills its box borrows, and the field is the one taker,
+// which gets the copy.
+function captured() {
+    const h = new H();
+    let n = 1;
+    const s = "cap" + 7;
+    const f = () => {
+        return s.length + n;
+    };
+    n = 2;
+    assert(f() == 6);
+    h.text = s;
+    print(s);
+    assert(churn() == 1000);
+    assert(s == "cap7" && h.text == "cap7");
+    return h;
+}
+
 function main() {
     const h = new H();
     let kept = "kept" + 1;
@@ -44,6 +63,10 @@ function main() {
     const looped = storedInLoop();
     assert(churn() == 1000);
     assert(both.text == "some3" && neither.text == "" && looped.text == "loop4");
+
+    const closed = captured();
+    assert(churn() == 1000);
+    assert(closed.text == "cap7");
 
     print("done.");
 }

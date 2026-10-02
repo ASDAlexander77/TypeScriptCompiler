@@ -79,16 +79,21 @@ class OwnershipInferencePass
             failures = 0;
             auto passed = analyze(toErase);
             dryRun = false;
+            // The copies are judged with the dry run's facts still set: a store into a borrowing
+            // closure's box, or a borrowing field's, is a borrow only by its
+            // `__own_capture_borrow`. They are taken off after, before the real run sets its own.
+            // makeStringCopies erases only retains, which the dry run sets no attribute on.
+            if (!passed)
+            {
+                makeStringCopies(toErase);
+            }
+
             for (auto &[op, name] : dryRunAttrs)
             {
                 op->removeAttr(name);
             }
 
             dryRunAttrs.clear();
-            if (!passed)
-            {
-                makeStringCopies(toErase);
-            }
         }
 
         llvm::SetVector<mlir::Operation *> toErase;

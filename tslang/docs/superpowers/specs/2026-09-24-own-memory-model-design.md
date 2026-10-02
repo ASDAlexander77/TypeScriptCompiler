@@ -1769,7 +1769,8 @@ The inference pass decides each function in up to two runs.
 1. **A dry run.** The whole analysis runs, but it reports nothing and changes nothing:
    - nothing is erased;
    - the signature facts are not stripped;
-   - the attributes the analysis sets are noted, not set;
+   - the attributes the analysis sets are set and tracked, and taken off again after the copies
+     (step 2), before the real run;
    - every error, including those that do not go through the `quiet` reporters today (the
      `RetainCell` and `delete` errors), is counted as a failure, not emitted.
 
@@ -1845,9 +1846,12 @@ emit what they did.
   Measured under gc: `string | null` and `"a" | "b" | null` are a `ptr`, `string | undefined` is
   `{ptr, i1}`, and `string | number` is tagged and not covered.
 - **The dry run** (§22.3). `analyze` runs once quietly. Every report goes through `reporting()`,
-  which counts a failure instead of emitting it, the `RetainCell` and `delete` errors included. The
-  attributes are noted, not set, and nothing is erased or stripped. On the corpus it changed
-  nothing, plain and with `--opt`.
+  which counts a failure instead of emitting it, the `RetainCell` and `delete` errors included.
+  Nothing is erased or stripped. The attributes it sets (`setAttrTracked`) are tracked and taken
+  off after the copies, before the real run: a store into a borrowing closure's box or into a
+  borrowing field is a borrow only by its `__own_capture_borrow`, and the copies must see it. The
+  copies erase only retains, which carry none of them. On the corpus the dry run changed nothing,
+  plain and with `--opt`.
 - **The copies** (`makeStringCopies`, `copyForRetain`, `borrowsKnownParam`). After a failing dry
   run, each string retain it did not erase is rewritten:
   - a `ts.Retain` whose one use is in the retain's block: the use takes `ts.StringCopy(v)`;
@@ -1943,7 +1947,10 @@ The 35 files gained under `--opt`:
   and JIT; each passes under own with `-noopt`:
   - `own_string_copy_field`: a field into a field, a field returned, a field pushed;
   - `own_string_copy_after_move`: a string moved into a field and used after, stored on one branch
-    only, and stored in a loop;
+    only, stored in a loop, and stored beside a closure that borrows it (the closure also captures
+    a `let`, so it borrows all it captures). Before the dry run's attributes were kept for the
+    copies, the store into the closure's box counted as a second taker, and that last shape was
+    rejected;
   - `own_string_copy_nullable`: four copies (`string | null` holding a pointer and null, an optional
     holding a value and none), so the lowering's three paths run;
   - `own_string_copy_exported`: an exported constructor storing its string parameter;
@@ -2027,6 +2034,10 @@ positives under own, rc, none and gc, AOT and JIT) passes 48 of 48.
 - **One string taken twice by one op** (`list.push(s, s)`) is rejected, by the `several` guard. With
   the guard off it compiles and is correct, so the rule is conservative there; widened, the
   negative becomes a positive.
+- **A string captured by a closure that owns its copies, and also stored** (`const f = () =>
+  s.length; r.t = s; print(s)`). A closure that captures only copies, and is not given to a maker
+  whose result is bounded, owns them (phase 4): the store into its box is a taker, so the string
+  has two, and the `several` guard keeps the error.
 - **A use whose operand is a view defined after the retain** gets its copy in front of the use. A
   same-position, same-type `ReleaseSlot` in between would make the place check reject the program:
   a false error, not a miscompile. No test has it.
