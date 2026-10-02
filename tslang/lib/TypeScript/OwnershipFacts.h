@@ -45,12 +45,64 @@ namespace mlir_ts = mlir::typescript;
 // the caller's.
 #define OWN_ASSIGNS_CAPTURES_ATTR_NAME "__own_assigns_captures"
 
+// A call inside a try body is a `ts.Invoke` (`ts.InvokeHybrid` through a hybrid function): a
+// terminator whose normal and unwind edges are its successors. It names its callee as a symbol, or
+// is given the function value as its first call operand.
+
+// The function a call names, or null when it goes through a value.
+inline mlir::FlatSymbolRefAttr directCallee(mlir::Operation *op)
+{
+    if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
+    {
+        return callOp.getCalleeAttr();
+    }
+
+    if (auto callOp = mlir::dyn_cast<mlir_ts::CallOp>(op))
+    {
+        return callOp.getCalleeAttr();
+    }
+
+    if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(op))
+    {
+        return invokeOp.getCalleeAttr();
+    }
+
+    return {};
+}
+
+// The function value a call goes through, or null when it names its callee.
+inline mlir::Value calleeValue(mlir::Operation *op)
+{
+    if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::CallHybridInternalOp,
+                  mlir_ts::InvokeHybridOp>(op))
+    {
+        return op->getOperand(0);
+    }
+
+    if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(op); invokeOp && !invokeOp.getCalleeAttr())
+    {
+        return invokeOp.getCallOperands().front();
+    }
+
+    return {};
+}
+
 // The arguments of a call, without the callee value of an indirect one.
 inline mlir::OperandRange callArgs(mlir::Operation *op)
 {
     if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::CallHybridInternalOp>(op))
     {
         return op->getOperands().drop_front();
+    }
+
+    if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeOp>(op))
+    {
+        return invokeOp.getCalleeAttr() ? invokeOp.getCallOperands() : invokeOp.getCallOperands().drop_front();
+    }
+
+    if (auto invokeOp = mlir::dyn_cast<mlir_ts::InvokeHybridOp>(op))
+    {
+        return invokeOp.getCallOperands();
     }
 
     return op->getOperands();
@@ -199,9 +251,9 @@ inline bool isFresh(mlir::Value value)
         return true;
     }
 
-    if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(def))
+    if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::InvokeOp>(def) && directCallee(def))
     {
-        auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, callOp.getCalleeAttr());
+        auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, directCallee(def));
         return callee && !callee.isDeclaration();
     }
 
@@ -210,7 +262,8 @@ inline bool isFresh(mlir::Value value)
         return true;
     }
 
-    if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(def))
+    if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp,
+                  mlir_ts::InvokeOp, mlir_ts::InvokeHybridOp>(def))
     {
         return false;
     }
@@ -221,7 +274,8 @@ inline bool isFresh(mlir::Value value)
 inline bool isCall(mlir::Operation *op)
 {
     return mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp,
-                     mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp>(op);
+                     mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp, mlir_ts::InvokeOp,
+                     mlir_ts::InvokeHybridOp>(op);
 }
 
 inline bool isPlace(mlir::Value ref)

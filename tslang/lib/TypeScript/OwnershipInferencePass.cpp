@@ -69,6 +69,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         drops.clear();
         derivedCache.clear();
         closures.clear();
+        closureOf.clear();
         captureStores.clear();
         captureRetains.clear();
         returnsBorrowOf = resultBorrows(f);
@@ -348,6 +349,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     llvm::DenseMap<mlir::Operation *, Closure *> captureStores;
     // rc's references for boxes, which the closures decide
     llvm::DenseSet<mlir::Operation *> captureRetains;
+    // each closure over a cell, by its `ts.CreateBoundFunction`
+    llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
 
     // Finds the closures over cells and what they borrow, before anything else: whether a box's
     // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
@@ -418,13 +421,20 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             for (auto &fill : closure->fills)
             {
                 auto storeOp = fill.second;
+                auto isCell = mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType());
+                // an escaping closure's copies move into its box as in phase 4, rc's retain with them
+                if (closure->escape && !isCell)
+                {
+                    continue;
+                }
+
                 if (auto *retain = retainBefore(storeOp.getValue(), storeOp))
                 {
                     closure->retains.push_back(retain);
                     captureRetains.insert(retain);
                 }
 
-                if (!closure->escape && !mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType()))
+                if (!closure->escape && !isCell)
                 {
                     storeOp->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                     captureStores[storeOp] = closure.get();
@@ -436,6 +446,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 boundOp->setAttr(OWN_BORROWS_CAPTURES_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
 
+            closureOf[boundOp.getOperation()] = closure.get();
             closures.push_back(std::move(closure));
         });
     }
@@ -636,7 +647,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
             if (closure->escape)
             {
-                reportClosureEscapes(closure->escape, boundOp);
+                decideEscaping(*closure, toErase);
                 continue;
             }
 
@@ -652,7 +663,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                         captured = varName(value.getDefiningOp<mlir_ts::VariableOp>());
                         for (auto *user : value.getUsers())
                         {
-                            if (mlir::isa<mlir_ts::ReleaseCellOp>(user))
+                            if (mlir::isa<mlir_ts::ReleaseCellOp>(user) || movesCellAway(user))
                             {
                                 ends.push_back(user);
                             }
@@ -730,6 +741,117 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
             toErase.insert(closure->retains.begin(), closure->retains.end());
         }
+    }
+
+    // Is this the store that moves a cell into the box of a closure that escapes?
+    bool movesCellAway(mlir::Operation *op)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+        auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto boundOp = propertyRefOp ? closureOfBox(propertyRefOp.getObjectRef()) : mlir_ts::CreateBoundFunctionOp();
+        auto found = boundOp ? closureOf.find(boundOp.getOperation()) : closureOf.end();
+        return found != closureOf.end() && found->second->escape &&
+               mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType());
+    }
+
+    // A closure that escapes owns what its box holds (spec 2.5, phase 5b). Its copies moved in as
+    // in phase 4. Each cell moves in where the box takes it: that store is the move, rc's
+    // `ts.RetainCell` for it goes, and so does each of the frame's `ts.ReleaseCell`s the move reaches,
+    // which it must dominate. Nothing in the frame may use the variable after the move - read it,
+    // assign it, capture it again - and the move may not come round a loop to a cell made outside
+    // it. A cell that borrows its value (a parameter's) or one an enclosing closure holds has
+    // nothing to move. And nothing may call through the box once the closure has gone.
+    void decideEscaping(Closure &closure, llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto ok = true;
+        for (auto &fill : closure.fills)
+        {
+            auto value = fill.second.getValue();
+            mlir::Operation *move = fill.second;
+            if (!mlir::isa<mlir_ts::RefType>(value.getType()))
+            {
+                continue;
+            }
+
+            if (isLoadedCell(value))
+            {
+                reportEscapingCellNotOwned(move, closure.escape, "it is captured from an enclosing function");
+                ok = false;
+                continue;
+            }
+
+            auto varOp = isCellVariable(value) ? value.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (!varOp)
+            {
+                reportCaptureNotOwned(move, "this value");
+                ok = false;
+                continue;
+            }
+
+            auto name = varName(varOp);
+            MLIRTypeHelper mth(&getContext(), CompileOptions{});
+            if (!isOwningVariable(varOp) &&
+                mth.ownsHeapMemory(varOp.getLoc(), mlir::cast<mlir_ts::RefType>(value.getType()).getElementType()))
+            {
+                reportEscapingCellNotOwned(move, closure.escape, "its value is the caller's");
+                ok = false;
+                continue;
+            }
+
+            if (takerLoops(move, varOp))
+            {
+                reportMovedInLoop(move, name);
+                ok = false;
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Operation *> moved;
+            for (auto *user : value.getUsers())
+            {
+                if (user == move || llvm::is_contained(closure.retains, user) || !reachableAfter(move, user, varOp))
+                {
+                    continue;
+                }
+
+                if (!mlir::isa<mlir_ts::ReleaseCellOp>(user))
+                {
+                    reportUsedAfterEscapingCapture(user, move, name);
+                    ok = false;
+                    break;
+                }
+
+                if (!dominance->properlyDominates(move, user))
+                {
+                    reportMovedOnSomePaths(move, user, name);
+                    ok = false;
+                    break;
+                }
+
+                moved.push_back(user);
+            }
+
+            toErase.insert(moved.begin(), moved.end());
+        }
+
+        // A call through the box itself after the closure was given away or given back. followClosure
+        // stops at the escape, so `ends` may miss releases past it; that is enough while the only
+        // calls through a box are those of a folded `const f`, whose release ends its block.
+        auto name = ownerName(closure.op.getResult());
+        llvm::SmallVector<mlir::Operation *> gone(closure.ends.begin(), closure.ends.end());
+        gone.push_back(closure.escape);
+        for (auto *end : gone)
+        {
+            for (auto *use : closure.boxUses)
+            {
+                if (ok && use != end && reachableAfter(end, use, closure.op.getOperation()))
+                {
+                    reportUseAfterMove(use, end, name);
+                    ok = false;
+                }
+            }
+        }
+
+        toErase.insert(closure.retains.begin(), closure.retains.end());
     }
 
     // A captured variable whose value this function does not own - a parameter, `this` - has a cell
@@ -1263,7 +1385,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     static bool isCalleeOperand(mlir::OpOperand &use)
     {
         auto *user = use.getOwner();
-        if (!mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::CallHybridInternalOp>(user))
+        auto callee = isCall(user) ? calleeValue(user) : mlir::Value();
+        if (!callee)
         {
             return false;
         }
@@ -1274,7 +1397,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         auto getThisOp = use.get().getDefiningOp<mlir_ts::GetThisOp>();
-        auto getMethodOp = user->getOperand(0).getDefiningOp<mlir_ts::GetMethodOp>();
+        auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>();
         auto methodField = getThisOp ? getThisOp.getOperand().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
         return use.getOperandNumber() == 1 && getMethodOp && methodField &&
                getThisOp.getOperand() == getMethodOp.getBoundFunc() &&
@@ -1780,11 +1903,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     static std::string calleeName(mlir::Operation *call)
     {
         mlir::StringAttr callee;
-        if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(call))
+        auto value = calleeValue(call);
+        if (auto symbol = directCallee(call))
         {
-            callee = callOp.getCalleeAttr().getAttr();
+            callee = symbol.getAttr();
         }
-        else if (auto calleeOp = call->getOperand(0).getDefiningOp())
+        else if (auto calleeOp = value ? value.getDefiningOp() : nullptr)
         {
             if (auto getMethodOp = mlir::dyn_cast<mlir_ts::GetMethodOp>(calleeOp))
             {
@@ -2762,10 +2886,19 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         signalPassFailure();
     }
 
-    void reportClosureEscapes(mlir::Operation *escape, mlir::Operation *closure)
+    void reportEscapingCellNotOwned(mlir::Operation *capture, mlir::Operation *escape, llvm::StringRef why)
     {
-        auto diag = escape->emitError("a closure that captures a variable and escapes here is not supported by -mm=own yet");
-        diag.attachNote(closure->getLoc()) << "the closure is created here";
+        auto diag = capture->emitError("a closure that escapes owns what it captures, but -mm=own cannot move this "
+                                       "variable into it: ")
+                    << why;
+        diag.attachNote(escape->getLoc()) << "the closure escapes here";
+        signalPassFailure();
+    }
+
+    void reportUsedAfterEscapingCapture(mlir::Operation *use, mlir::Operation *capture, llvm::StringRef name)
+    {
+        auto diag = use->emitError("'") << name << "' is captured by a closure that escapes, and is still used here";
+        diag.attachNote(capture->getLoc()) << "the closure takes it here";
         signalPassFailure();
     }
 
