@@ -6,8 +6,9 @@ amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
 signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
 merged as #436 (results §16); phase 5b (closures that escape) merged as #437 (results §17); phase
-7a (generators, async) merged as #439 (results §18); phase 7b (generators that borrow) on branch
-`own-phase-7b` (results §19). Plans in `docs/superpowers/plans/`.
+7a (generators, async) merged as #439 (results §18); phase 7b (generators that borrow) merged as
+#441 (results §19); phase 6 (the corpus report) on branch `own-phase-6`, after #444 (results
+§20). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -1432,3 +1433,146 @@ Found, not fixed (every model): `a.map(f).map(g)` fails to compile ("the conditi
 - **A copy a borrowing field takes of a sub-field** (`const v = c.v` in the generator) is not
   borrowing, so it is the existing "cannot be stored" error.
 - **Without `--di`**, the bounded errors name "this value".
+
+## 20. Phase 6 results, 2026-10-02 (first PR)
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-6.md`. Changed: `MLIRGenImpl.h` (#444, every
+counting model), `OwnershipSignaturePass.cpp`, `OwnershipInferencePass.cpp`, `OwnershipFacts.h`.
+
+### 20.1 The report (spec §6.5)
+
+The tooling stays out of the tree:
+- a script that compiles every corpus file under own and keeps the first error;
+- a temporary dump, under `OWN_SHAPES`, at the four places that report the catch-all. It prints the
+  retained value's definition, its root, its users, its type, whether it owns a block, the source
+  location, and for a read of a slot, the slot's kind and what takes the value.
+
+On ad8ea908 (7b merged), 364 of 591 compile. The first error of the 227 that do not:
+
+| first error | files |
+|---|---|
+| `takes a second reference` (the catch-all, which names no rule) | 137 |
+| used after its value was moved | 22 |
+| borrows a field and cannot be stored, returned or captured | 21 |
+| borrows an element and cannot be stored, returned or captured | 9 |
+| `ownership inference left a retain behind` (the lowering's guard) | 8 |
+| the rest: other named rules, unsupported, frontend | 30 |
+
+The 137, by the dump: 447 sites. The last column counts the files where the bucket is the only
+blocker:
+
+| shape | sites | files | only blocker |
+|---|---|---|---|
+| a read of a slot (mixed) | 97 | 39 | 17 |
+| a call's result stored: script-mode globals | 59 | 28 | 14 |
+| tuple literals | 52 | 23 | 13 |
+| the value owns no block (`number \| null`) | 35 | 23 | 9 |
+| a block argument (`c ? a : b`) | 18 | 11 | 7 |
+| a function literal | 24 | 13 | 6 |
+| a read of a global | 22 | 8 | 4 |
+| a number, bool or bigint converted to a string | 42 | 11 | 0 |
+| other | 55 | 34 | 18 |
+
+### 20.2 What this PR accepts
+
+- **A global declared in top-level code (#444, rc).** `const t = new C()` there stored into the
+  global with no reference, and the end-of-block release gave the value's back: 5ai's bug, in
+  the declaration's store, which 5ai's fix (the assignment's) did not reach.
+  - The fix: the declaration's store takes the owning-slot path, as an assignment does.
+  - It is not observable under rc today. Nothing runs after a program's top-level code, and a
+    module with top-level code cannot be imported (§20.5).
+  - Under own, the store read as a move and the release as a second reference.
+- **A global's initializer** runs in the global's region, which no function's inference sees,
+  so rc's retain for its `ts.GlobalResult` reached the lowering's guard. The signature pass now
+  erases such a retain when:
+  - the value is the only reference to its block: retained once, released nowhere in the region;
+  - it is fresh, constant data, or a record of constants;
+  - every use of it ends in the `ts.GlobalResult`: directly, through views, as an element of an
+    array literal, or copied into an object literal's box.
+
+  Any other retain there is reported by the global's name.
+- **Data nothing owns** (`isConstantData`, `OwnershipFacts.h`): what holds no block (a number or
+  null in a union), a `ts.Constant` or a field of one, a function named by a `ts.SymbolRef` and
+  its cast to a function value, and a tuple of such.
+  - A retain of it is erased.
+  - A `ts.RetainSlot` is decided on its slot's initializer, so only while nothing is stored into
+    the slot or a field of it, and no closure captures it.
+  - Such data has no use after a move: under `--opt`, CSE merges equal literals (the left-out
+    optional field of two tuple literals), and one value goes into several places.
+  - Two exclusions, from a type-only reading. The header's `ownsHeap` reads the type, and the
+    inference pass overrides it for a `ts.New` seen as its object; the two disagree by design.
+    - A `ts.New` is excluded: its `value_ref` owns nothing by type, but it is the object. Without
+      this, `00object` compiled again: one object literal stored into two records, which 7a
+      rightly rejects.
+    - A value a `ts.NewInterface` view boxes is excluded: each view is a block of its own.
+- **A record literal made for an owning local**, `let a = { item: new C() }`, and its assignment
+  form. MLIRGen builds it in a local a `ts.Constant` starts, stores the fresh value into the
+  field, and reads the record once into `a`. That is 7a's record built to be returned, with an
+  owning local in place of the result slot: the fresh value moves into the record, the record
+  into `a`, and `a`'s `ts.RetainSlot` is the reference for what moved in.
+
+### 20.3 Measured and teeth
+
+AOT, `measure.ps1`, a loop that builds and drops `let a = { item: new Leaf(i) }`, in MB:
+
+| iterations | gc | rc | none | own |
+|---|---|---|---|---|
+| 20000 | 5.9 | 4.2 | 7.7 | 4.2 |
+| 200000 | 5.9 | 4.2 | 35.2 | 4.2 |
+
+Teeth, each a temporary switch, with the JIT cache cleared:
+- **The global declaration's retain reverted** (#444): `own_global_script` fails under own (AOT,
+  JIT, no-counting). rc passes either way, as §20.2 says.
+- **The global initializer's erase skipped:** `own_global_init` fails.
+- **The constant-data erase skipped:** `own_constant_data` fails.
+- **Its no-use-after-move skipped:** `own_constant_data` fails under the runner's `--opt`.
+- **The `ts.New` exclusion dropped:** `own_err_literal_two_records` compiles.
+- **The boxing exclusion dropped:** `own_err_interface_two_views` still fails. It compiles only with
+  both exclusions dropped, so for that test each exclusion is a second guard for the other.
+- **The record rule's two acceptances dropped:** `own_record_local` fails.
+
+### 20.4 Tests and the corpus
+
+- **Positive:** `own_global_script` (also under rc, none and gc), `own_global_init`,
+  `own_constant_data`, `own_record_local`.
+- **Negative:** `own_err_literal_two_records`.
+
+Corpus: 364 → 402 of 591, none lost. It is 402 with the runner's `--opt --opt_level=3` as well;
+the plain count can overstate (`01optional` compiled plain and failed under `--opt` before the
+no-use-after-move rule). Each of the 38 passes test-runner `-mm=own`, AOT and JIT, with gc's
+output, re-gated on the final build. The first errors after:
+
+| first error | files |
+|---|---|
+| `takes a second reference` | 101 |
+| used after its value was moved | 24 |
+| borrows a field and cannot be stored, returned or captured | 21 |
+| borrows an element and cannot be stored, returned or captured | 9 |
+| `left a retain behind` | 0 |
+
+Remaining shapes, by the dump, as the files where each is the only blocker:
+- slot reads, 25. They split into:
+  - a record a `ts.Constant` starts, stored or taken;
+  - a parameter's value stored, pushed or cast;
+- other, 24;
+- a conditional's result (`return a > b ? a : b`), 7;
+- tuples, 7;
+- nested record literals (`{ inner: { item: new C() } }`) and arrays of record literals.
+
+These are the next PR's input: named messages for what the dump recognises, and the sampling
+of the use-after-move and borrows-a-field files for false positives.
+
+### 20.5 Found, not fixed (every model)
+
+- **A global initialized from another global reads garbage.** `let a: number[] = [1, 2]; let b = a;`
+  at module level gives `b.length` = 140711081380496 under gc. With a class, the program faults.
+- **A module with a top-level statement, imported as source,** fails with "Global is referenced
+  by parentless instruction! @puts" (invalid LLVM IR).
+- **With `-shared`, an exported `const` from such a module** cannot be resolved by the importer.
+
+### 20.6 Known limits
+
+- **A borrow of data nothing owns past its owner's overwrite** is still an error:
+  `let m = n; n = null; use(m)`, with `n: number | null`.
+- **Nested record literals, and arrays of record literals,** are the catch-all.
+- **A conditional's result** is the catch-all.
