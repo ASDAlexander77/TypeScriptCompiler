@@ -6,7 +6,8 @@ amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
 signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
 merged as #436 (results §16); phase 5b (closures that escape) merged as #437 (results §17); phase
-7a (generators, async) on branch `own-phase-7` (results §18). Plans in `docs/superpowers/plans/`.
+7a (generators, async) merged as #439 (results §18); phase 7b (generators that borrow) on branch
+`own-phase-7b` (results §19). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -1312,9 +1313,10 @@ Found, not fixed:
 - **A method of an object literal held in a `let`**, returning a block, called and kept, is a
   borrow error: `let o = {make(): C {...}}; const c = o.make()`. A `const o` works.
 - **`measure.ps1` reads `compile.bat`**, which only a test-runner run without `-mm` writes.
-- **`await f()` returns before `f`'s `for await` body has run**, under every model: with
-  `for await (const x of g()) keep.push(1)`, `keep` is empty after it (`none` fails the assert,
-  `gc` too).
+- **An `await` of a function that returns nothing never awaits** (#440, every model): MLIRGen
+  exits before building the `async.await` when the awaited call has no value, so `await f()`
+  continues at once and `f` may never run. That is what made the `for await` facts above
+  impossible to test at run time.
 
 ### 18.6 Known limits (the input to 7b)
 
@@ -1325,3 +1327,108 @@ Found, not fixed:
 - `.map`/`.filter`, which MLIRGen builds as generators over the source array and the callback, stop
   on "borrows a field and cannot be stored".
 - A yielded borrow (a parameter's element, a state field's value) is an error.
+
+## 19. Phase 7b results, 2026-10-02
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-7b.md`. Changed: `OwnershipSignaturePass.cpp`,
+`OwnershipInferencePass.cpp`, `OwnershipFacts.h`, `Defines.h`, and `OwnershipRoutineLogic.h`
+(the lowering).
+
+### 19.1 What phase 7b accepts
+
+A generator over a parameter that holds a block, `function* each(a: number[])`, borrows it: Rust's
+`fn each<'a>(a: &'a [f64]) -> impl Iterator + 'a`. The caller owns the state object, which may not
+outlive the argument, and whose release gives the argument back to nobody.
+
+- **The decision is the signature pass's.** The release routine is built once per type, and the
+  inference is per function and parallel, so neither can make it. A state type is unique to its
+  generator: its `next`'s type names a per-site `object_storage`. For a state type whose maker is
+  closed, and is the type's only `ts.New`:
+  - the `.captured` box borrows when every fill is a parameter's cell, or a copy read out of a
+    parameter's field (`.map`'s maker is a closure body that copies its box);
+  - a state field borrows when everything stored into it, in the whole module, is a read of a
+    borrowing cell or field (a least fixpoint). The `for...of` copy of the array is such a field.
+
+  It writes `ts.own_borrowing_fields` on the module (per type, the box's index first), and pins
+  `__own_result_bounded`, the parameters whose blocks the state borrows, on the maker and its calls.
+  A maker is closed when it is private and its symbol is used only by direct calls, and by closures
+  that are only retained and released (`.map` builds one and calls its body through the box).
+- **The lowering**, under own, skips a borrowing field in the state object's release routine. A
+  borrowing box gets `tsrelcbc_`, which frees each cell and none of what the cells or by-value
+  fields hold.
+- **In the maker**, a parameter's cell moves into a borrowing box: no 5b error, and the frame's
+  `ts.ReleaseCell` goes. A copy stored into a borrowing box is a borrow.
+- **In `next`**:
+  - a store into a borrowing field takes nothing: rc's retain goes, and so does its release when
+    the field is overwritten;
+  - what is read out of a borrowing cell, field or box field is the caller's, and may only be
+    borrowed. Yielding it is an error (`own_err_generator_yields_borrow`): it would give the
+    caller's value a second owner, and rc retains nothing there for anything else to see;
+  - a read of a borrowing box's field is not a place read: only the maker fills the box, so no call
+    overwrites it.
+- **At the caller**, the generator is owned as any fresh value, and bounded:
+  - no use of it may come after an end of a bounding argument. Its uses are followed through the
+    locals that hold it and the `next` it is called through. An end is the argument's root's
+    releases, assignments and moves, or, for a read out of a place, what may destroy the place.
+    Its releases are not uses: the routine gives back nothing it borrows;
+  - it may not be stored, returned or captured (`own_err_generator_bounded_escapes`);
+  - a bounding capture box (`.map`) ends where the closures on it are released, and where what it
+    was filled from ends (`own_err_generator_map_outlives`).
+- **`.map` and `.filter`.** The caller's closure box holds a copy of the array. A box of copies
+  that does not escape, is given to a bounded maker, and holds nothing fresh borrows its copies, so
+  two `.map`s of one array no longer move it twice. A callback that captures is a fresh closure
+  made for the box: the box then owns its copies, and the array moves in. rc reads the array twice
+  for one copy and retains the first read: the second is the same value, both where a taker is
+  looked for and where a box field's retain is.
+
+### 19.2 Measured
+
+AOT, `measure.ps1`, in MB:
+
+| test | gc | rc | none | own |
+|---|---|---|---|---|
+| `own_generator_borrow`, 20000 iterations | 6.1 | 4.3 | 1441.5 | 4.3 |
+| the same, 200000 iterations | 6.1 | 4.3 | 14376.5 | 4.3 |
+
+The ten-times run is the leak check. It found one in this phase's own work: the first form of the
+copies rule borrowed a fresh capturing callback, which nobody then freed (own 10.5 MB, rc 4.3).
+
+### 19.3 Teeth
+
+Each made with a temporary `getenv` switch, the JIT cache cleared between runs:
+
+- **The owning box routine for a borrowing box:** `own_generator_borrow` fails, AOT
+  (0xC0000374) and JIT.
+- **A borrowing field released:** the same.
+- **The bounded check skipped:** `own_err_generator_outlives_arg`,
+  `own_err_generator_bounded_escapes` and `own_err_generator_map_outlives` compile.
+- **The borrowed-read check skipped:** `own_err_generator_yields_borrow` compiles.
+
+### 19.4 Tests and the corpus
+
+- **Positive:** `own_generator_borrow`. It covers an array, a class and a string parameter, a
+  generator given up early, two generators over one argument, an argument read out of a field,
+  `map`, `filter`, and a capturing `filter` last.
+- **Negatives:** `own_err_generator_outlives_arg`, `own_err_generator_bounded_escapes`,
+  `own_err_generator_yields_borrow`, `own_err_generator_map_outlives`,
+  `own_err_generator_place_overwritten` (the field the argument was read from is assigned).
+- **Removed:** `own_err_generator_param_object` compiles now and is gone.
+
+Corpus: 359 of 591 before, 364 after, none lost: `00funcs_generic_iterator`, `01disposable`,
+`02disposable` (an object literal whose methods capture a parameter is the same shape),
+`00filter`, `00class_iterator_super`. Each runs under test-runner `-mm=own`, AOT and JIT.
+
+Found, not fixed (every model): `a.map(f).map(g)` fails to compile ("the condition has no value").
+
+### 19.5 Known limits
+
+- **A yielded borrow** (an element of a parameter's array, the parameter itself) is an error. The
+  result record type `{value: C, done}` is shared between generators, so a fact per type cannot
+  say that a record borrows.
+- **A capturing `.map`/`.filter` callback** moves the array into the closure's box: a later use of
+  the array is a use after move.
+- **A bounded generator cannot be returned** past the argument it borrows, even when the
+  argument is the returning function's own parameter (the fact does not propagate).
+- **A copy a borrowing field takes of a sub-field** (`const v = c.v` in the generator) is not
+  borrowing, so it is the existing "cannot be stored" error.
+- **Without `--di`**, the bounded errors name "this value".

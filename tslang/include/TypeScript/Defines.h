@@ -74,6 +74,12 @@
 // `this`), so the release frees the cell and leaves the value to its owner.
 #define OWN_BORROWS_CAPTURES_ATTR_NAME "__own_borrows_captures"
 #define OWN_CELL_BORROWS_ATTR_NAME "__own_cell_borrows"
+// -mm=own only, set by OwnershipSignaturePass on the module for the lowering and the inference: the
+// fields of a generator's state object that borrow what they hold from the generator's arguments,
+// as [[type, [field...]], ...] keyed by the state's tuple type, the `.captured` box's index first.
+// Its release routine skips them, and a borrowing `.captured` box frees its cells but not what
+// they hold.
+#define OWN_BORROWING_FIELDS_ATTR_NAME "ts.own_borrowing_fields"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"

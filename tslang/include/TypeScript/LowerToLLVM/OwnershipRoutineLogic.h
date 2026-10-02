@@ -299,6 +299,14 @@ class OwnershipRoutineLogic
 
     // Copying a closure duplicates its one reference to the box and nothing else - what the
     // box holds is not duplicated - so this stops at the block, as an object's retain does.
+    // -mm=own: the box of a generator whose state object borrows from its arguments
+    // (OWN_BORROWING_FIELDS_ATTR_NAME): it frees each cell, but what the cells hold is the caller's.
+    std::string getOrCreateCaptureBoxCellsRoutine(mlir_ts::RefType captureRefType)
+    {
+        return buildCaptureBoxRoutine(captureRefType, "tsrelcbc_", /*retaining=*/false, /*holdsNothing=*/false,
+                                      /*borrowsContents=*/true);
+    }
+
     std::string getOrCreateCaptureBoxRetainRoutine(mlir_ts::RefType captureRefType)
     {
         return buildCaptureBoxRoutine(captureRefType, "tsretcb_", /*retaining=*/true);
@@ -690,9 +698,18 @@ class OwnershipRoutineLogic
 
         auto loc = op->getLoc();
         auto llvmRecordType = tch.convertType(recordType);
+        auto borrowing = borrowingFieldsOf(recordType);
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
         {
+            // a field of a generator's state object that borrows from the generator's arguments:
+            // nothing to give back, but for the `.captured` box itself, whose cells are the state's
+            auto borrows = llvm::is_contained(borrowing, static_cast<int32_t>(index));
+            if (borrows && (borrowing.front() != static_cast<int32_t>(index) || !isa<mlir_ts::RefType>(fieldType)))
+            {
+                continue;
+            }
+
             // A field holding a `ref` to a tuple is a capture box - the `.captured` field of an
             // object literal with methods, or of the state object a generator becomes - and it is
             // the one field an object owns that the generic routines cannot see, because a
@@ -708,7 +725,8 @@ class OwnershipRoutineLogic
             {
                 if (isa<mlir_ts::TupleType>(refFieldType.getElementType()))
                 {
-                    routineName = getOrCreateCaptureBoxReleaseRoutine(refFieldType);
+                    routineName = borrows ? getOrCreateCaptureBoxCellsRoutine(refFieldType)
+                                          : getOrCreateCaptureBoxReleaseRoutine(refFieldType);
                 }
             }
             else
@@ -804,7 +822,7 @@ class OwnershipRoutineLogic
     // every other routine, so each begins by loading the box out of it. A box that holds nothing
     // of its own frees the block and stops there.
     std::string buildCaptureBoxRoutine(mlir_ts::RefType captureRefType, StringRef prefix, bool retaining,
-                                       bool holdsNothing = false)
+                                       bool holdsNothing = false, bool borrowsContents = false)
     {
         std::stringstream nameStream;
         nameStream << prefix.str() << (size_t)hash_value(captureRefType);
@@ -839,7 +857,7 @@ class OwnershipRoutineLogic
             emitIfLastReference(boxValue, [&]() {
                 if (!holdsNothing)
                 {
-                    releaseCapturedFields(captureRefType.getElementType(), boxValue);
+                    releaseCapturedFields(captureRefType.getElementType(), boxValue, borrowsContents);
                 }
 
                 emitFreeBlock(boxValue);
@@ -853,8 +871,8 @@ class OwnershipRoutineLogic
     }
 
     // Gives back what a dying box holds: one owner of each captured cell, and the contents of
-    // each field captured by value.
-    void releaseCapturedFields(mlir::Type tupleType, mlir::Value boxPtr)
+    // each field captured by value. A box that borrows its contents frees its cells only.
+    void releaseCapturedFields(mlir::Type tupleType, mlir::Value boxPtr, bool borrowsContents = false)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -866,7 +884,7 @@ class OwnershipRoutineLogic
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(tupleType)))
         {
             auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType);
-            if (!refFieldType && !ownsHeapMemory(fieldType))
+            if (!refFieldType && (borrowsContents || !ownsHeapMemory(fieldType)))
             {
                 continue;
             }
@@ -876,13 +894,48 @@ class OwnershipRoutineLogic
             if (refFieldType)
             {
                 // the field holds the cell's address, so the cell is one load further in
-                emitReleaseCell(refFieldType.getElementType(), rewriter.create<LLVM::LoadOp>(loc, ptrTy, fieldPtr));
+                emitReleaseCell(refFieldType.getElementType(), rewriter.create<LLVM::LoadOp>(loc, ptrTy, fieldPtr),
+                                borrowsContents);
             }
             else
             {
                 releaseSlot(fieldType, fieldPtr);
             }
         }
+    }
+
+    // Under own, the fields of a generator's state object that borrow (OWN_BORROWING_FIELDS_ATTR_NAME),
+    // the `.captured` box's first; empty for any other record or model.
+    llvm::SmallVector<int32_t> borrowingFieldsOf(mlir::Type recordType)
+    {
+        llvm::SmallVector<int32_t> fields;
+        if (compileOptions.memoryModel != MemoryModelOwn)
+        {
+            return fields;
+        }
+
+        if (auto storageType = dyn_cast<mlir_ts::ObjectStorageType>(recordType))
+        {
+            recordType = mlir_ts::TupleType::get(rewriter.getContext(), storageType.getFields());
+        }
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        auto entries = parentModule ? parentModule->getAttrOfType<ArrayAttr>(OWN_BORROWING_FIELDS_ATTR_NAME) : ArrayAttr();
+        if (!entries)
+        {
+            return fields;
+        }
+
+        for (auto entry : entries.getAsRange<ArrayAttr>())
+        {
+            if (cast<TypeAttr>(entry[0]).getValue() == recordType)
+            {
+                auto indices = cast<DenseI32ArrayAttr>(entry[1]).asArrayRef();
+                fields.append(indices.begin(), indices.end());
+            }
+        }
+
+        return fields;
     }
 
     void buildBody(mlir::Type type, mlir::Value slotPtr)
