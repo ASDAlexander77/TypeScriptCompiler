@@ -1959,6 +1959,10 @@ The 35 files gained under `--opt`:
     (`___cast`). Its own IR has eight copies; main rejects it with eight errors. It needed no new
     code.
 - **Own only:** `own_string_copy_written`, `let t = s; t[0] = <char>65` changes `t` only.
+- **The copy's block** (`test-own-string-copy-in-store-block`, `own-string-copy-block.cmake`): the
+  own IR of `own_string_copy_after_move.ts` has one `ts.StringCopy` in `stored`, after the entry
+  block's `cf.cond_br`. Copied at the birth retain instead, it would leak on the path that skips
+  the store, which no run can see, so the IR is read.
 - **Negative:**
 
 | test | message |

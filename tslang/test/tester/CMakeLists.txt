@@ -2601,6 +2601,12 @@ foreach(strings_mm rc none gc)
         tslang_add_test(NAME test-compile-${strings_mm}-${strings_test} COMMAND test-runner -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
     endforeach()
 endforeach()
+# A string stored on one branch only is copied in the store's block, not at rc's birth retain, where
+# the copy would leak on the path that skips the store; no run can see that leak, so the IR is read.
+add_test(NAME test-own-string-copy-in-store-block
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_after_move.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
