@@ -69,10 +69,21 @@ function main() {
         churn();
         t += g1.next().value + g2.next().value;
 
+        // `.map` and `.filter` are generators over the array MLIRGen builds for them
+        for (const v of a.map((x) => x * 2)) {
+            churn();
+            t += v;
+        }
+
+        for (const v of a.filter((x) => x > n)) {
+            churn();
+            t += v;
+        }
+
         // the argument is still the caller's
         t += a.length + c.x;
     }
 
-    assert(t == 1180000, "t");
+    assert(t == 2080000, "t");
     print("done.");
 }

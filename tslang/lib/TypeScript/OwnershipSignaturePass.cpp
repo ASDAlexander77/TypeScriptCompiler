@@ -1229,6 +1229,51 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return boxOp && boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME) ? box : mlir::Value();
     }
 
+    // Is every caller of `funcOp` a direct call this pass sees? It is private, and each use of its
+    // symbol is a call, or a closure over it that is only retained and released - `.map(f)` builds
+    // one and calls its body straight through the box.
+    bool calledOnlyDirectly(mlir::ModuleOp module, mlir_ts::FuncOp funcOp)
+    {
+        if (!funcOp.isPrivate())
+        {
+            return false;
+        }
+
+        auto uses = mlir::SymbolTable::getSymbolUses(funcOp.getSymNameAttr(), &module.getBodyRegion());
+        if (!uses)
+        {
+            return false;
+        }
+
+        for (auto &use : *uses)
+        {
+            auto *user = use.getUser();
+            if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::InvokeOp>(user))
+            {
+                continue;
+            }
+
+            auto symbolRefOp = mlir::dyn_cast<mlir_ts::SymbolRefOp>(user);
+            if (!symbolRefOp)
+            {
+                return false;
+            }
+
+            for (auto *refUser : symbolRefOp->getUsers())
+            {
+                auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(refUser);
+                if (!boundOp || !llvm::all_of(boundOp->getUsers(), [](mlir::Operation *boundUser) {
+                        return mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(boundUser);
+                    }))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     // A parameter's cell: a captured local declared from an argument of `maker`'s entry block, that
     // owns nothing (its value is the caller's).
     static bool isParameterCell(mlir_ts::VariableOp cellOp, mlir_ts::FuncOp maker, int32_t &index)
@@ -1237,6 +1282,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                                                 : mlir::BlockArgument();
         if (!cellOp.getCaptured().value_or(false) || isOwningVariable(cellOp) || !argument ||
             !argument.getOwner()->isEntryBlock() || argument.getOwner()->getParentOp() != maker.getOperation())
+        {
+            return false;
+        }
+
+        index = static_cast<int32_t>(argument.getArgNumber());
+        return true;
+    }
+
+    // `ts.Load(ts.PropertyRef(argument, i))` of one of `maker`'s parameters: `index` is its position.
+    static bool readsParameterField(mlir::Value value, mlir_ts::FuncOp maker, int32_t &index)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto argument = propertyRefOp ? mlir::dyn_cast<mlir::BlockArgument>(propertyRefOp->getOperand(0)) : mlir::BlockArgument();
+        if (!argument || !argument.getOwner()->isEntryBlock() || argument.getOwner()->getParentOp() != maker.getOperation())
         {
             return false;
         }
@@ -1268,7 +1328,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto captured = fieldIndex(tupleType, CAPTURED_NAME);
             auto maker = newOp->getParentOfType<mlir_ts::FuncOp>();
             // an open maker has callers this pass cannot give the bound to
-            if (captured < 0 || !maker || open.contains(maker))
+            if (captured < 0 || !maker || !calledOnlyDirectly(module, maker))
             {
                 return;
             }
@@ -1291,15 +1351,37 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 for (auto *fieldUser : propertyRefOp->getUsers())
                 {
                     auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
-                    auto cellOp = storeOp ? storeOp.getValue().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-                    int32_t index = -1;
-                    if (!cellOp || !isParameterCell(cellOp, maker, index))
+                    if (!storeOp)
                     {
-                        return; // a box with anything but parameters' cells owns what it holds
+                        return;
                     }
 
-                    auto cellType = mlir::cast<mlir_ts::RefType>(cellOp.getType());
-                    if (ownsHeap(cellOp.getLoc(), cellType.getElementType()))
+                    auto value = storeOp.getValue();
+                    int32_t index = -1;
+                    if (auto cellOp = value.getDefiningOp<mlir_ts::VariableOp>(); cellOp && isParameterCell(cellOp, maker, index))
+                    {
+                        auto cellType = mlir::cast<mlir_ts::RefType>(cellOp.getType());
+                        if (ownsHeap(cellOp.getLoc(), cellType.getElementType()))
+                        {
+                            state.bounded.push_back(index);
+                        }
+
+                        continue;
+                    }
+
+                    // a copy of what a parameter holds in a field: `.map`'s maker is a closure body
+                    // that copies its own box's fields into the generator's
+                    if (!ownsHeap(value.getLoc(), value.getType()))
+                    {
+                        continue;
+                    }
+
+                    if (!readsParameterField(value, maker, index))
+                    {
+                        return; // a box with anything but what the parameters hold owns what it holds
+                    }
+
+                    if (!llvm::is_contained(state.bounded, index))
                     {
                         state.bounded.push_back(index);
                     }
@@ -1399,11 +1481,20 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return state.fields.contains(position);
         }
 
-        // the cell, read out of the box the state holds
+        // a field of the box the state holds, copied in by value, or a cell read out of it
+        auto isBoxField = [&](mlir::Value ref) {
+            auto fieldRef = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto boxLoad = fieldRef ? fieldRef->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            return boxLoad && isStateField(boxLoad.getReference(), position) && position == state.captured;
+        };
+
+        if (isBoxField(loadOp.getReference()))
+        {
+            return true;
+        }
+
         auto cellLoad = loadOp.getReference().getDefiningOp<mlir_ts::LoadOp>();
-        auto cellRef = cellLoad ? cellLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
-        auto boxLoad = cellRef ? cellRef->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
-        return boxLoad && isStateField(boxLoad.getReference(), position) && position == state.captured;
+        return cellLoad && isBoxField(cellLoad.getReference());
     }
 
     // ---- Drops ----
