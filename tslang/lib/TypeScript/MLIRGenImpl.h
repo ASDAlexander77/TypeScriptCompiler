@@ -5140,6 +5140,89 @@ class MLIRGenImpl
             });
     }
 
+    // A union or an optional with a class among what it may hold.
+    bool mayHoldClass(mlir::Type type)
+    {
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return isa<mlir_ts::ClassType>(optionalType.getElementType()) || mayHoldClass(optionalType.getElementType());
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassType>(member); });
+        }
+
+        return false;
+    }
+
+    // `u instanceof C` for a union or an optional that may hold a class. Whether it holds one is
+    // known only at run time, and which class only to the instance's vtable: every class member of
+    // a tagged union has the tag "class". Anything else it may hold - null, undefined, a number - is
+    // an instance of nothing.
+    ValueOrLogicalResult mlirGenInstanceOfMaybeClass(mlir::Location location, mlir::Value value, mlir::Value classRefVal,
+                                                     const GenContext &genContext)
+    {
+        auto notInstance = [&](mlir::Type) {
+            return ValueOrLogicalResult(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false)));
+        };
+
+        // the instance, asked through its own vtable
+        auto askInstance = [&](mlir::Value instance) -> ValueOrLogicalResult {
+            auto thisPtr = cast(location, getOpaqueType(), instance, genContext);
+            if (thisPtr.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            return mlirGenInstanceOfOpaque(location, V(thisPtr), classRefVal, genContext);
+        };
+
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+        {
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+            return mclh.conditionalValue(
+                hasValue,
+                [&]() -> ValueOrLogicalResult {
+                    auto inner = builder.create<mlir_ts::ValueOp>(location, optionalType.getElementType(), value);
+                    return isa<mlir_ts::ClassType>(inner.getType())
+                        ? askInstance(inner.getResult())
+                        : mlirGenInstanceOfMaybeClass(location, inner, classRefVal, genContext);
+                },
+                notInstance);
+        }
+
+        auto unionType = mlir::cast<mlir_ts::UnionType>(value.getType());
+        auto classMember = *llvm::find_if(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ClassType>(member); });
+
+        // `C | null` needs no tag: it is the class's pointer, null when it holds null
+        mlir::Type baseType;
+        if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+        {
+            auto isSet = cast(location, getBooleanType(), value, genContext);
+            if (isSet.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            return mclh.conditionalValue(
+                V(isSet),
+                [&]() { return askInstance(builder.create<mlir_ts::GetValueFromUnionOp>(location, classMember, value).getResult()); },
+                notInstance);
+        }
+
+        // a tagged union: a class is in it when its tag says so, and the payload is its pointer
+        auto typeOfValue = builder.create<mlir_ts::GetTypeInfoFromUnionOp>(location, getStringType(), value);
+        auto classStrConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("class"));
+        auto isClass = builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfValue, classStrConst,
+                                                                builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+        return mclh.conditionalValue(
+            isClass,
+            [&]() { return askInstance(builder.create<mlir_ts::GetValueFromUnionOp>(location, classMember, value).getResult()); },
+            notInstance);
+    }
+
     // Asks `thisPtrValue` whether it is a `classRefVal` through slot 0 of `vtablePtr`: the class's
     // `.instanceOf` for a class vtable, and the implementer's for an interface vtable.
     ValueOrLogicalResult mlirGenInstanceOfThroughVTable(mlir::Location location, mlir::Value vtablePtr, mlir::Value thisPtrValue,
@@ -5289,6 +5372,16 @@ class MLIRGenImpl
             if (isa<mlir_ts::InterfaceType>(resultLeftfType))
             {
                 return mlirGenInstanceOfInterface(location, resultLeftValue, resultRightValue, genContext);
+            }
+
+            // a union or an optional that may hold a class: asked at run time, not by its type
+            auto refType = dyn_cast<mlir_ts::RefType>(resultLeftValue.getType());
+            if (mayHoldClass(refType ? refType.getElementType() : resultLeftValue.getType()))
+            {
+                auto leftValue = refType
+                    ? builder.create<mlir_ts::LoadOp>(location, refType.getElementType(), resultLeftValue).getResult()
+                    : resultLeftValue;
+                return mlirGenInstanceOfMaybeClass(location, leftValue, resultRightValue, genContext);
             }
         }
 #endif
