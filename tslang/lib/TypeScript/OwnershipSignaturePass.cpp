@@ -1,6 +1,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -71,9 +72,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         collectClassVTables(module);
+        collectFieldFunctions(module);
 
         module.walk([&](mlir::Operation *op) {
-            if (isCall(op) && op->getParentOfType<mlir_ts::FuncOp>())
+            // in any function: a `ts.Func`, or the `func.func` the async lowering outlines a body into
+            if (isCall(op) && op->getParentOfType<mlir::FunctionOpInterface>())
             {
                 calls.push_back({op, resolve(op)});
             }
@@ -99,6 +102,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
             if (call.callees.imported && call.callees.importedName.ends_with("." NEW_METHOD_NAME) &&
                 call.op->getNumResults() == 1)
+            {
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
+            // a generator's `next`, read out of its state object: a function defined here, which
+            // returns its result retained like any other (its symbol sits in a constant, so it is
+            // open, and its body may not return a borrow)
+            if (call.callees.fieldFunction && call.op->getNumResults() == 1)
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -238,6 +249,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool known = false;
         bool instanceOf = false;
         bool imported = false;
+        // a function read out of a field that only ever holds it (fieldFunctions)
+        bool fieldFunction = false;
         // the name the imported function is exported under
         llvm::StringRef importedName;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
@@ -258,6 +271,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Functions of imported libraries that destroy nothing a caller can reach, by the name they
     // are exported under (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME).
     llvm::StringSet<> importedNoDrops;
+
+    // (tuple type, field) -> the one function an object of that type holds in that field: every
+    // `ts.Constant` of the type's shape puts it there, nothing stores into the field, and nothing
+    // but a constant or a read makes a value of the type. A generator's state object holds its
+    // `next` so.
+    llvm::DenseMap<std::pair<mlir::Type, int64_t>, mlir::StringAttr> fieldFunctions;
 
     // Class names, from their vtables, to split a method's symbol into class and method name.
     llvm::StringSet<> classNames;
@@ -323,6 +342,129 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 families[{position, methodName(symbol.getValue())}].push_back(symbol);
             }
         }
+    }
+
+    // The tuple an object, a reference or a tuple value of this type stores its fields in; null for
+    // any other type. A method sees its object as `!ts.object<!ts.object_storage<@name>>`, whose
+    // fields are the tuple's.
+    mlir_ts::TupleType storageTupleOf(mlir::Type type)
+    {
+        if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            type = objectType.getStorageType();
+            if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(type))
+            {
+                return mlir_ts::TupleType::get(&getContext(), storageType.getFields());
+            }
+        }
+        else if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+        {
+            type = refType.getElementType();
+        }
+        else if (auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(type))
+        {
+            type = valueRefType.getElementType();
+        }
+
+        return mlir::dyn_cast<mlir_ts::TupleType>(type);
+    }
+
+    void collectFieldFunctions(mlir::ModuleOp module)
+    {
+        auto *context = &getContext();
+        llvm::DenseSet<std::pair<mlir::Type, int64_t>> unknownFields;
+        llvm::DenseSet<mlir::Type> unknownTuples;
+        module.walk([&](mlir::Operation *op) {
+            if (auto constantOp = mlir::dyn_cast<mlir_ts::ConstantOp>(op))
+            {
+                auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(constantOp.getType());
+                auto values = mlir::dyn_cast<mlir::ArrayAttr>(constantOp.getValue());
+                if (!constTupleType || !values)
+                {
+                    return;
+                }
+
+                mlir::Type tupleType = mlir_ts::TupleType::get(context, constTupleType.getFields());
+                for (auto [index, value] : llvm::enumerate(values))
+                {
+                    auto symbol = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(value);
+                    if (!symbol)
+                    {
+                        continue;
+                    }
+
+                    std::pair<mlir::Type, int64_t> key{tupleType, static_cast<int64_t>(index)};
+                    auto [found, inserted] = fieldFunctions.try_emplace(key, symbol.getAttr());
+                    if (!inserted && found->second != symbol.getAttr())
+                    {
+                        unknownFields.insert(key);
+                    }
+                }
+
+                return;
+            }
+
+            // a field reference that is not only read: the field may be given anything
+            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
+            {
+                auto tupleType = storageTupleOf(propertyRefOp->getOperand(0).getType());
+                auto onlyRead = llvm::all_of(propertyRefOp->getUsers(),
+                                             [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+                if (tupleType && !onlyRead)
+                {
+                    unknownFields.insert({tupleType, propertyRefOp.getPosition()});
+                }
+
+                return;
+            }
+
+            // a value of the type made any other way may hold anything in any field
+            if (mlir::isa<mlir_ts::LoadOp>(op))
+            {
+                return;
+            }
+
+            for (auto result : op->getResults())
+            {
+                if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(result.getType()))
+                {
+                    unknownTuples.insert(tupleType);
+                }
+            }
+        });
+
+        for (auto &key : unknownFields)
+        {
+            fieldFunctions.erase(key);
+        }
+
+        llvm::SmallVector<std::pair<mlir::Type, int64_t>> dropped;
+        for (auto &entry : fieldFunctions)
+        {
+            if (unknownTuples.contains(entry.first.first))
+            {
+                dropped.push_back(entry.first);
+            }
+        }
+
+        for (auto &key : dropped)
+        {
+            fieldFunctions.erase(key);
+        }
+    }
+
+    // `ts.Load(ts.PropertyRef(object, p))` of a field that only ever holds one function.
+    mlir::StringAttr fieldFunctionOf(mlir::Operation *def)
+    {
+        auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+        auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto tupleType = propertyRefOp ? storageTupleOf(propertyRefOp->getOperand(0).getType()) : mlir_ts::TupleType();
+        if (!tupleType)
+        {
+            return {};
+        }
+
+        return fieldFunctions.lookup({tupleType, propertyRefOp.getPosition()});
     }
 
     // The functions a class vtable holds, by position; empty for any other global.
@@ -533,6 +675,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             callees.instanceOf = true;
             return;
         }
+        else if (auto symbol = fieldFunctionOf(def))
+        {
+            callees.known = addDefined(symbol, callees);
+            callees.fieldFunction = callees.known;
+            return;
+        }
 
         if (!identifier)
         {
@@ -672,7 +820,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 index = refOp.getIndex();
             }
 
-            auto inFunction = !!user->getParentOfType<mlir_ts::FuncOp>();
+            auto inFunction = !!user->getParentOfType<mlir::FunctionOpInterface>();
             if (inFunction && mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::VirtualSymbolRefOp,
                                         mlir_ts::ThisSymbolRefOp, mlir_ts::SymbolRefOp>(user) &&
                 onlyCalled(user->getResult(0)))

@@ -136,14 +136,14 @@ inline int resultBorrows(mlir::Operation *op)
 }
 
 // An op whose result is the very block its operand holds: a class widened to a union or an
-// optional or narrowed back, a union made from its payload or read back from it. rc's retain
-// or release of either is one of the block, so the pass looks through them. A cast that
-// converts (a number printed into a string) or boxes (into `any`) makes a new block and is
-// not one.
+// optional or narrowed back, a union made from its payload or read back from it, an object seen
+// through an interface (`{vtable, this}`, released through `this`). rc's retain or release of
+// either is one of the block, so the pass looks through them. A cast that converts (a number
+// printed into a string) or boxes (into `any`) makes a new block and is not one.
 inline bool isView(mlir::Operation *op)
 {
     if (mlir::isa_and_nonnull<mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
-                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp>(op))
+                              mlir_ts::OptionalValueOp, mlir_ts::ValueOp, mlir_ts::NewInterfaceOp>(op))
     {
         return true;
     }
@@ -162,8 +162,13 @@ inline bool isView(mlir::Operation *op)
     auto isClosure = [](mlir::Type type) {
         return mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type);
     };
+    // a block `ts.New` made, seen as the object it is: a generator's state object
+    auto isMadeObject = [&]() {
+        return mlir::isa<mlir_ts::ValueRefType>(castOp.getIn().getType()) &&
+               mlir::isa<mlir_ts::ObjectType>(castOp.getType());
+    };
     return (keeps(castOp.getIn().getType()) && keeps(castOp.getType())) ||
-           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType()));
+           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType())) || isMadeObject();
 }
 
 // The block a value is a view of.
@@ -243,6 +248,13 @@ inline bool isFresh(mlir::Value value)
     if (!def || resultBorrows(def) >= 0)
     {
         return false;
+    }
+
+    // a view is the block it shows: the object literal's interface cast is marked as arriving with
+    // a reference, but `let raw = {...}; <I>raw` is `raw`'s block
+    if (isView(def))
+    {
+        return isFresh(rootOf(value));
     }
 
     if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
