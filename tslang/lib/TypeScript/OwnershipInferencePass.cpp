@@ -1383,7 +1383,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     static bool isCalleeOperand(mlir::OpOperand &use)
     {
         auto *user = use.getOwner();
-        if (!mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::CallHybridInternalOp>(user))
+        auto callee = isCall(user) ? calleeValue(user) : mlir::Value();
+        if (!callee)
         {
             return false;
         }
@@ -1394,7 +1395,7 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         auto getThisOp = use.get().getDefiningOp<mlir_ts::GetThisOp>();
-        auto getMethodOp = user->getOperand(0).getDefiningOp<mlir_ts::GetMethodOp>();
+        auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>();
         auto methodField = getThisOp ? getThisOp.getOperand().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
         return use.getOperandNumber() == 1 && getMethodOp && methodField &&
                getThisOp.getOperand() == getMethodOp.getBoundFunc() &&
@@ -1900,11 +1901,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     static std::string calleeName(mlir::Operation *call)
     {
         mlir::StringAttr callee;
-        if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(call))
+        auto value = calleeValue(call);
+        if (auto symbol = directCallee(call))
         {
-            callee = callOp.getCalleeAttr().getAttr();
+            callee = symbol.getAttr();
         }
-        else if (auto calleeOp = call->getOperand(0).getDefiningOp())
+        else if (auto calleeOp = value ? value.getDefiningOp() : nullptr)
         {
             if (auto getMethodOp = mlir::dyn_cast<mlir_ts::GetMethodOp>(calleeOp))
             {

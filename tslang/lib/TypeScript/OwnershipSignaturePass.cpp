@@ -473,19 +473,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     Callees resolve(mlir::Operation *op)
     {
         Callees callees;
-        if (auto callOp = mlir::dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
+        if (auto callee = directCallee(op))
         {
-            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees) ||
-                            addImported(callOp.getCalleeAttr().getAttr(), callees);
+            callees.known = addDefined(callee.getAttr(), callees) || addImported(callee.getAttr(), callees);
         }
-        else if (auto callOp = mlir::dyn_cast<mlir_ts::CallOp>(op))
+        else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(op))
         {
-            callees.known = addDefined(callOp.getCalleeAttr().getAttr(), callees) ||
-                            addImported(callOp.getCalleeAttr().getAttr(), callees);
-        }
-        else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp>(op))
-        {
-            resolveValue(op->getOperand(0), callees);
+            resolveValue(calleeValue(op), callees);
         }
 
         if (!callees.known)
@@ -599,7 +593,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         for (auto &use : value.getUses())
         {
             auto *user = use.getOwner();
-            if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp>(user) && use.getOperandNumber() == 0)
+            if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(user) &&
+                calleeValue(user) == use.get() && use.getOperandNumber() == 0)
             {
                 continue;
             }
@@ -657,7 +652,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             auto *user = use.getUser();
-            if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp>(user))
+            if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::InvokeOp>(user))
             {
                 continue;
             }

@@ -2626,6 +2626,7 @@ set(own_error_cases
     "own_err_const_alias_move|borrows .* and cannot be assigned"
     "own_err_const_alias_field|is used here after its value was moved"
     "own_err_field_alias|is used here after its value was moved"
+    "own_err_call_in_try_drops|borrows .* but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_twice|is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_param|cannot move this variable into it: its value is the caller's"
