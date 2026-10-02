@@ -7756,8 +7756,9 @@ class MLIRGenImpl
             nf.createForOfStatement(undefined, declList, _src_array_ident,
                                     nf.createExpressionStatement(_yield_expr));
 
-        // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, ".iter", getFullNamespaceName());
+        // iterator; named by where its callback is too: `a.map(f).map(g)`'s two calls start together
+        auto iterName = MLIRHelper::getAnonymousName(
+            mlir::FusedLoc::get(builder.getContext(), {location, funcSrc.getLoc()}), ".iter", getFullNamespaceName());
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -7817,8 +7818,9 @@ class MLIRGenImpl
                                  nf.createExpressionStatement(_yield_expr),
                                  undefined));
 
-        // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, ".iter", getFullNamespaceName());
+        // iterator; named by where its callback is too: `a.map(f).map(g)`'s two calls start together
+        auto iterName = MLIRHelper::getAnonymousName(
+            mlir::FusedLoc::get(builder.getContext(), {location, funcSrc.getLoc()}), ".iter", getFullNamespaceName());
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -8218,6 +8220,12 @@ class MLIRGenImpl
 
     bool hasIterator(mlir::Location location, mlir::Value source, const GenContext &genContext) 
     {
+        return !!getIteratorValueType(location, source, genContext);
+    }
+
+    // The type of `value` in what `source.next()` returns, or null when `source` is not an iterator.
+    mlir::Type getIteratorValueType(mlir::Location location, mlir::Value source, const GenContext &genContext) 
+    {
         auto nextPropertyType = evaluateProperty(location, source, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
         {
@@ -8243,14 +8251,15 @@ class MLIRGenImpl
                     });
 
                 auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
-                if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
+                auto valueField = std::find_if(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; });
+                if (valueField != fields.end())
                 {
-                    return true;
+                    return valueField->type;
                 }
             }
         }
 
-        return false;
+        return mlir::Type();
     }
 
     bool isArrayLike(mlir::Location location, mlir::Value source, const GenContext &genContext) 

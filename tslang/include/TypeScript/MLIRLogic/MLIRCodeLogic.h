@@ -1771,43 +1771,58 @@ class MLIRPropertyAccessCodeLogic
                     elementType = arrayType.getElementType();
                 }
 
-                auto isReduce = propName == "reduce";
-                SmallVector<mlir::Type> resultArgs;
-                if (isArrayCustomMethodReturnsBool(propName))
-                {
-                    resultArgs.push_back(mlir_ts::BooleanType::get(builder.getContext()));
-                }
-
-                mlir::Type genericTypeT;
-                SmallVector<mlir::Type> lambdaArgs{elementType};
-                if (isReduce)
-                {
-                    // add sum param
-                    genericTypeT = mlir_ts::NamedGenericType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), "T"));
-                    lambdaArgs.insert(&lambdaArgs.front(), genericTypeT);
-                }
-
-                auto lambdaFuncType = mlir_ts::FunctionType::get(builder.getContext(), lambdaArgs, resultArgs);
-                
-                SmallVector<mlir::Type> funcArgs{lambdaFuncType};
-                if (isReduce)
-                {
-                    funcArgs.push_back(genericTypeT);
-                }
-
-                auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, resultArgs);
-                auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, funcType, expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), 
-                    getArrayCustomMethodName(propName)));
-                symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-                return symbOp;
+                return CustomMethod(elementType);
             }
 
             return mlir::Value();
         }
 
         return mlir::Value();
+    }
+
+    // The custom methods an iterator has too: `reduce`'s builtin takes an array (`T[]`).
+    bool isIteratorCustomMethod()
+    {
+        auto propName = getName();
+        return isArrayCustomMethod(propName) && propName != "reduce";
+    }
+
+    // The builtin custom method `getName()` of `expression`, whose elements are `elementType`:
+    // an array, or an iterator, which the builtin goes through with for...of.
+    mlir::Value CustomMethod(mlir::Type elementType)
+    {
+        auto propName = getName();
+        auto isReduce = propName == "reduce";
+        SmallVector<mlir::Type> resultArgs;
+        if (isArrayCustomMethodReturnsBool(propName))
+        {
+            resultArgs.push_back(mlir_ts::BooleanType::get(builder.getContext()));
+        }
+
+        mlir::Type genericTypeT;
+        SmallVector<mlir::Type> lambdaArgs{elementType};
+        if (isReduce)
+        {
+            // add sum param
+            genericTypeT = mlir_ts::NamedGenericType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), "T"));
+            lambdaArgs.insert(&lambdaArgs.front(), genericTypeT);
+        }
+
+        auto lambdaFuncType = mlir_ts::FunctionType::get(builder.getContext(), lambdaArgs, resultArgs);
+        
+        SmallVector<mlir::Type> funcArgs{lambdaFuncType};
+        if (isReduce)
+        {
+            funcArgs.push_back(genericTypeT);
+        }
+
+        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, resultArgs);
+        auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+            location, funcType, expression,
+            mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+            getArrayCustomMethodName(propName)));
+        symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+        return symbOp;
     }
 
     template <typename T> mlir::Value Ref(T refType)

@@ -385,6 +385,19 @@ namespace mlirgen
             }
         }
 
+        // Without the default library, an array's map/filter/forEach/every/some are builtins, and
+        // what map and filter give is a generator. An iterator has them too, as the default
+        // library's __Iterator gives them (`a.map(f).map(g)`, `g().filter(f)`): each builtin is a
+        // for...of over its receiver. After extension functions, so a user's own `map` wins.
+        if (!value && compileOptions.enableBuiltins && compileOptions.noDefaultLib && cl.isIteratorCustomMethod())
+        {
+            if (auto elementType = getIteratorValueType(location, objectValue, genContext))
+            {
+                cl.setExpression(objectValue);
+                return cl.CustomMethod(elementType);
+            }
+        }
+
         if (!value)
         {
             // During a speculative discovery/dummy run (e.g. inferring an enclosing
