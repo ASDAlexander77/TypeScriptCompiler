@@ -11,6 +11,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
@@ -104,9 +105,131 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         exportNoDrops();
+
+        module.walk([&](mlir_ts::CreateBoundFunctionOp boundOp) {
+            if (!boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
+            {
+                return;
+            }
+
+            auto assigned = assignedCaptures(closureBody(boundOp));
+            if (!assigned.empty())
+            {
+                boundOp->setAttr(OWN_ASSIGNS_CAPTURES_ATTR_NAME,
+                                 mlir::DenseI32ArrayAttr::get(&getContext(), assigned.getArrayRef()));
+            }
+        });
     }
 
   private:
+    // The function a closure runs, when it names one defined here.
+    mlir_ts::FuncOp closureBody(mlir_ts::CreateBoundFunctionOp boundOp)
+    {
+        auto symbolRefOp = boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolRefOp)
+        {
+            return {};
+        }
+
+        auto found = functions.find(symbolRefOp.getIdentifier());
+        return found != functions.end() && !found->second.isDeclaration() ? found->second : mlir_ts::FuncOp();
+    }
+
+    // The fields of a closure body's capture box whose cell it assigns (OWN_ASSIGNS_CAPTURES_ATTR_NAME),
+    // directly or through a closure it builds over the cell. Every field, when the body is unknown or
+    // a cell goes anywhere this does not follow.
+    llvm::SetVector<int32_t> assignedCaptures(mlir_ts::FuncOp funcOp, int depth = 0)
+    {
+        llvm::SetVector<int32_t> assigned;
+        auto boxType = funcOp && funcOp.getNumArguments() > 0 && !funcOp.getBody().empty()
+                           ? mlir::dyn_cast<mlir_ts::RefType>(funcOp.getArgument(0).getType())
+                           : mlir_ts::RefType();
+        auto tupleType = boxType ? mlir::dyn_cast<mlir_ts::TupleType>(boxType.getElementType()) : mlir_ts::TupleType();
+        if (!tupleType || depth > 16)
+        {
+            // unknown: a box of any shape may have had any of its cells assigned
+            for (int32_t index = 0; index < 64; ++index)
+            {
+                assigned.insert(index);
+            }
+
+            return assigned;
+        }
+
+        if (auto found = assignedCache.find(funcOp); found != assignedCache.end())
+        {
+            return found->second;
+        }
+
+        for (auto *user : funcOp.getArgument(0).getUsers())
+        {
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                continue;
+            }
+
+            auto field = propertyRefOp.getPosition();
+            for (auto *fieldUser : propertyRefOp->getUsers())
+            {
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(fieldUser);
+                if (!loadOp || !isLoadedCell(loadOp.getResult()))
+                {
+                    continue; // a field captured by value: a copy, not a variable
+                }
+
+                if (cellAssigned(loadOp.getResult(), depth))
+                {
+                    assigned.insert(field);
+                }
+            }
+        }
+
+        assignedCache[funcOp] = assigned;
+        return assigned;
+    }
+
+    // Is the variable behind this cell assigned - here, or by a closure built over it?
+    bool cellAssigned(mlir::Value cell, int depth)
+    {
+        for (auto &use : cell.getUses())
+        {
+            auto *user = use.getOwner();
+            if (mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainCellOp>(user))
+            {
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+            {
+                return true;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (!storeOp)
+            {
+                return true; // the cell goes somewhere this does not follow
+            }
+
+            if (storeOp.getReference() == cell)
+            {
+                return true;
+            }
+
+            // captured again, by a closure built here: the field it fills in that closure's box
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto boundOp = propertyRefOp ? closureOfBox(propertyRefOp.getObjectRef()) : mlir_ts::CreateBoundFunctionOp();
+            if (!boundOp || assignedCaptures(closureBody(boundOp), depth + 1).contains(propertyRefOp.getPosition()))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    llvm::DenseMap<mlir::Operation *, llvm::SetVector<int32_t>> assignedCache;
+
     // What a call may reach: known, when every candidate is a function defined in this module (or
     // the call goes through the `.instanceOf` slot, or reaches a function another module says
     // destroys nothing); else anything.
@@ -1003,8 +1126,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
+                // a captured variable assigned through its cell, by a closure's body: the variable
+                // is its declaring function's
                 auto slot = releaseSlotOp.getSlot();
-                drops = slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp));
+                drops = slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
+                        isLoadedCell(slot);
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {

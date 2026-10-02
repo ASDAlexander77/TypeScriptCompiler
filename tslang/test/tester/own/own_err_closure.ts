@@ -1,7 +1,12 @@
-// -mm=own, phase 0 rejects: a closure capturing a heap value (closures are phase 5).
+// -mm=own, phase 5 rejects: a closure over a variable that escapes (returned). Its box would own
+// the cell, which phase 5b does.
+function makeCounter() {
+    let n = 0;
+    return () => ++n;
+}
+
 function main() {
-    const a: number[] = [1];
-    const f = () => a.length;
+    const f = makeCounter();
     print(f());
     print("done.");
 }

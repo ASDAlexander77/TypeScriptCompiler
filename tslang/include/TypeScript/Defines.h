@@ -67,6 +67,13 @@
 // without this marker it would be indistinguishable from the cell of a captured variable - and
 // so would be given a frame's reference it has no owner for. A box's owner is the closure.
 #define CAPTURE_BOX_ATTR_NAME "__capture_box"
+
+// -mm=own only, set by OwnershipInferencePass for the lowering. On a `ts.CreateBoundFunction`: the
+// closure does not escape, so its box borrows what it captures - the box's routine frees the box
+// and nothing it holds. On a `ts.ReleaseCell`: the cell borrows its value (a captured parameter's,
+// `this`), so the release frees the cell and leaves the value to its owner.
+#define OWN_BORROWS_CAPTURES_ATTR_NAME "__own_borrows_captures"
+#define OWN_CELL_BORROWS_ATTR_NAME "__own_cell_borrows"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"

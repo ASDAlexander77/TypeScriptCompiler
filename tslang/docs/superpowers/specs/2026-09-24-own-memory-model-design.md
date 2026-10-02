@@ -4,7 +4,8 @@ Date: 2026-09-24. Status: design approved in conversation; written review 2026-0
 amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) merged as #402
 (results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
-signatures and `any`) on branch `own-phase-4` (results §15). Plans in `docs/superpowers/plans/`.
+signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
+on branch `own-phase-5` (results §16). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -1007,3 +1008,99 @@ checks that the program is rejected against the rc library.
 - From §14.6: a read reached through an interface, borrow chains through assigned borrowers,
   moves after the last use of every borrower, and a temporary taken by a `let` and consumed
   elsewhere.
+
+## 16. Phase 5a results, 2026-10-02
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-5.md`. Changed: `OwnershipInferencePass.cpp`,
+`OwnershipSignaturePass.cpp`, `OwnershipFacts.h`, and in the lowering the capture box's
+descriptor and `ts.ReleaseCell`. MLIRGen does not change.
+
+### 16.1 What phase 5a accepts
+
+A closure is `ts.CreateBoundFunction(box, @f) {__owns_capture}`. Its box holds a cell for each
+variable captured by reference and a copy of each `const` captured by value. The pass decides each
+closure over at least one cell before anything else, because the verdict changes what the box's
+stores are.
+
+- **Escape.** The closure value is followed through its views (a bound function and a hybrid one are
+  the same `{func, this, tag}`, so the cast between them is now a view) and through the locals that
+  hold it. It does not escape when every use is rc's bookkeeping, a call given it (not kept), or a
+  call through it (`ts.GetThis`/`ts.GetMethod`, or the devirtualized `ts.SymbolCallInternal(box)` of
+  a folded `const f`). Anything else is an escape: a return, a store into a field, element, global or
+  another box, a kept argument. An escape is `a closure that captures a variable and escapes here is
+  not supported by -mm=own yet` (5b).
+- **A closure that does not escape borrows everything its box holds.** rc's `ts.RetainCell` of each
+  cell and `ts.Retain` of each copy go. The box's stores of copies are reads, not takers
+  (`__own_capture_borrow`, this pass's own mark). The closure carries `__own_borrows_captures`, and
+  its tag names a routine that frees the box and nothing else (`tsfrecb_`).
+- **The closure's uses** are every call given it, called through it or through its box. None may run
+  after an end of what it borrows: the `ts.ReleaseCell`s of a cell this function owns, and the
+  releases and takers of a copy's owner (rootEnds of a fresh value or an owning local). A cell an
+  enclosing closure holds, and a parameter, end nowhere here. A copy of a read out of a container is
+  bounded by the read's own check: walkBorrowed adds the closure's uses to the read's.
+- **A local that owns nothing** (`let f: () => number; f = () => ...`) is an alias of the closure.
+  rc's birth reference reads to the move logic as the store's, which erased the closure's only
+  release. Now the closure keeps its releases, and nothing may run it after them. That holds for a
+  closure over copies only too, whose box otherwise owns its copies as in phase 4.
+- **A captured parameter's cell** (`this` included) borrows the caller's value. Its `ts.ReleaseCell`
+  carries `__own_cell_borrows` and frees the cell only. Nothing may assign the variable: not the
+  frame, and not a closure body. The signature pass pins `__own_assigns_captures` on each closure:
+  the box fields whose cell its body assigns, followed through the closures it builds over the same
+  cell. The inference reads it, because a per-function pass may not look into another function. A
+  non-owning cell with a heap value that is not a parameter's is
+  `'x' is captured by a closure, but -mm=own cannot tell who owns its value here`.
+- **Cells are places.** `ts.ReleaseSlot` of a cell, a captured `ts.Variable` in the frame or a cell
+  read out of a box in a closure body, is a drop of every chain whose root this function does not own.
+  A read of a cell is such a root. In the signature pass the closure-body form makes a function drop.
+- **A call given a closure may run it.** A call whose operand is a closure value, a capture box, or a
+  closure's `this` drops every chain when its callee may drop: the box may hold anything. Before, a
+  call given only the box was not "given" what the box held (`derivedFrom` follows results, and a
+  store has none).
+
+### 16.2 Measured
+
+AOT, `measure.ps1`, in MB: `own_closure_borrow` (thirteen shapes, 20000 rounds) reads gc 6.1, rc 4.3,
+none 1879.7, own 4.3.
+
+### 16.3 Teeth
+
+- With the owning routine for a borrowing box, `own_closure_borrow` fails under AOT (0xC0000005): the
+  closure in `innerBlock` is a `let` released at its block's end, and its box then destroys the cell
+  the frame still reads.
+- With `__own_cell_borrows` ignored, it fails under AOT (0xC0000374): the cell of `param`'s `c` and of
+  `D.read`'s `this` free the caller's objects, which `main` reads after a churn.
+- Under the JIT both pass: LLVM folds the reads of freed memory. The AOT runs are the evidence.
+- Each new negative compiles with its rule switched off. `own_err_closure_param_assigned` then
+  crashes (0xC0000374).
+
+### 16.4 Tests and the corpus
+
+- **Positive:** `own_closure_borrow` (a local, a copy beside a cell, an argument, a loop, nested, an
+  inner block, `this`, a parameter, the frame and the closure assigning the variable, a `let` holding
+  the closure, a `let` aliasing it, a `let` aliasing a closure over copies), under JIT, AOT and the
+  no-counting check.
+- **Negatives:** `own_err_closure` (now: escapes), `own_err_closure_outlives_cell`,
+  `own_err_closure_copy_moved`, `own_err_closure_param_assigned`, `own_err_closure_assigns_param`,
+  `own_err_cell_assigned_in_frame`, `own_err_cell_assigned_in_closure`,
+  `own_err_closure_assigns_captured_field`.
+- The capture box's descriptor has no retain routine under own, as no other descriptor does: it would
+  bring `__tslang_inc_ref` in.
+
+Corpus under `-mm=own --no-default-lib`: 310 of 591 before, 319 after, none lost. The nine new ones
+(`00arrow_generic`, `00capture_in_new_arguments`, `00funcs_expression_generic`,
+`00funcs_generic_arrow`, `00funcs_nesting_capture`, `00stack_test`, `22lambdas`, `241arrayforeach`,
+`25lamdacapture`) pass under test-runner `-mm=own`, AOT and JIT. Of the 25 files the old error
+stopped first: 9 compile, 4 escape (5b), 8 still meet a cell no closure claims (generators, which
+are phase 7, and object literals whose methods capture), 4 stop at an earlier limit.
+
+### 16.5 Known limits (the input to phase 5b)
+
+- A closure over a cell that escapes (§2.5's second half): 5b. A closure over copies only already
+  owns them, as in phase 4, escaping or not.
+- A copy of a borrowed value captured by a closure that does not escape works only when the borrow's
+  own check passes; a copy of a borrow into an escaping closure is an error.
+- A captured local cannot be borrowed by a `let` or moved out of (slotLoadOf and borrowerOf exclude
+  captured variables).
+- A non-escaping closure always borrows: one that could own its captures instead (called after the
+  cell's block ends, the variable not used again) is rejected.
+- A call given any function value drops every chain when its callee may drop.

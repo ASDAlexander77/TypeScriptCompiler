@@ -549,7 +549,9 @@ class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitReleaseCell(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(),
-                                transformed.getSlot());
+                                transformed.getSlot(),
+                                tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                                    op->hasAttr(OWN_CELL_BORROWS_ATTR_NAME));
         }
 
         rewriter.eraseOp(op);
@@ -2610,19 +2612,13 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // (`isOwningSlot`). So the first value has to be taken too, unless the frame has
             // already taken it - which is what an owned local's mark says, and what a captured
             // parameter's storage is precisely missing, the argument being the caller's.
-            if (isCaptured && tsLlvmContext->compileOptions.tracksOwnership() &&
+            //
+            // Not under own, which has no count to take: such a cell borrows the value, and its
+            // release frees the cell alone (OWN_CELL_BORROWS_ATTR_NAME, which ownership inference
+            // sets, or rejects the program).
+            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
                 !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
             {
-                // The value is someone else's - a parameter's is the caller's - and a cell that
-                // destroyed it would free it under them. Own has no count to take here: closures
-                // are phase 5.
-                if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
-                    MLIRTypeHelper(rewriter.getContext(), tsLlvmContext->compileOptions)
-                        .ownsHeapMemory(location, referenceType.getElementType()))
-                {
-                    return varOp.emitError("a captured variable cannot own its value under -mm=own yet");
-                }
-
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
                 orl.emitRetainSlot(referenceType.getElementType(), allocated);
             }
@@ -6183,13 +6179,22 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         // co-owns - and a RefType field owns nothing anywhere else in the compiler. Keyed by
         // the capture's `ref<tuple<..>>` for the same reason, so neither the routines nor the
         // descriptor can be reused for a plain object of the same shape.
+        //
+        // Under own, a closure that does not escape borrows what its box holds
+        // (OWN_BORROWS_CAPTURES_ATTR_NAME), so its routine frees the box and nothing else.
         OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        auto releaseRoutineName = orl.getOrCreateCaptureBoxReleaseRoutine(captureRefType);
-        auto retainRoutineName = orl.getOrCreateCaptureBoxRetainRoutine(captureRefType);
+        auto borrows = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                       createBoundFunctionOp->hasAttr(OWN_BORROWS_CAPTURES_ATTR_NAME);
+        auto releaseRoutineName = borrows ? orl.getOrCreateCaptureBoxFreeRoutine(captureRefType)
+                                          : orl.getOrCreateCaptureBoxReleaseRoutine(captureRefType);
+        // under own nothing retains: see TypeDescriptorOpLowering
+        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
+                                     ? std::string()
+                                     : orl.getOrCreateCaptureBoxRetainRoutine(captureRefType);
 
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(captureRefType, name, TypeOfOpHelper::typeKindFromName(name),
-                                                releaseRoutineName, retainRoutineName);
+                                                releaseRoutineName, retainRoutineName, borrows ? "b" : "");
     }
 
     LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,
