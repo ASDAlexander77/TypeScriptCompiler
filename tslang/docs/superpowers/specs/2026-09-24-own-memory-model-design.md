@@ -1612,7 +1612,7 @@ place, so all four places that report it get the same names. Each message has a 
 
 | shape | message | test |
 |---|---|---|
-| a function returns a borrow of a parameter on one path and something else on another | `'f' returns a borrow of its argument on some paths and another value on others; -mm=own cannot tell its callers whether they own the result`, with a note at the other return | `own_err_mixed_return`, `own_err_unbox_string` |
+| a function returns a borrow of a parameter on one path and something else on another | `'f' returns a borrow of its argument on some paths and another value on others; -mm=own cannot tell its callers whether they own the result`, with a note at the other return | `own_err_mixed_return`; `own_err_unbox_string` until §22, which copies the string and deleted it |
 | a parameter's value, returned, where the callers cannot learn the fact (§15) | `'x' is a parameter, returned here, but -mm=own cannot tell the callers of 'f' that the result borrows it`, with §15's facts-lost note | `own_err_param_returned_exported` |
 | a parameter's value, kept (stored, pushed, given away) | `'x' is a parameter, kept here, but -mm=own cannot make the callers of 'f' give it up`, with the note | `own_err_param_kept_exported` |
 | a store into a parameter's slot | `'x' is a parameter and cannot be assigned under -mm=own yet` | `own_err_param_assigned` |
@@ -1826,3 +1826,207 @@ The error stays where a copy would be wrong:
   every corpus file that compiles on main.
 - **Corpus:** none lost, plain and with `--opt`. Each gained file passes test-runner under own,
   AOT and JIT, with the default flags and with `-noopt`.
+
+### 22.7 Results, 2026-10-02
+
+Plan: `docs/superpowers/plans/2026-10-02-own-strings-as-values.md`. Changed: `TypeScriptOps.td`,
+`LowerToAffineLoops.cpp`, `LowerToLLVM.cpp` (the op, lowered under every model), `OwnershipFacts.h`,
+`OwnershipInferencePass.cpp`. MLIRGen and the signature pass do not change, so rc, gc and none
+emit what they did.
+
+#### What was built
+
+- **`ts.StringCopy`** (§22.2) and its lowering:
+  - null stays null, and an optional is copied only when its flag is set;
+  - otherwise the length plus one byte, from the allocator `ts.StringConcat` uses, and a `memcpy`;
+  - an operand that is not a pointer must be exactly `{ptr, i1}`, or the pattern does not match.
+- **`isCopyableString`** (`OwnershipFacts.h`) is §22.1's string: `string`, a string literal type, an
+  optional of one, or a union of one with only `null` or `undefined` beside it that needs no tag.
+  Measured under gc: `string | null` and `"a" | "b" | null` are a `ptr`, `string | undefined` is
+  `{ptr, i1}`, and `string | number` is tagged and not covered.
+- **The dry run** (§22.3). `analyze` runs once quietly. Every report goes through `reporting()`,
+  which counts a failure instead of emitting it, the `RetainCell` and `delete` errors included. The
+  attributes are noted, not set, and nothing is erased or stripped. On the corpus it changed
+  nothing, plain and with `--opt`.
+- **The copies** (`makeStringCopies`, `copyForRetain`, `borrowsKnownParam`). After a failing dry
+  run, each string retain it did not erase is rewritten:
+  - a `ts.Retain` whose one use is in the retain's block: the use takes `ts.StringCopy(v)`;
+  - a `ts.RetainSlot`: the local starts from the copy;
+  - no copy for: no single use in the retain's block, one operand taken twice (`several`), not a
+    string, or a parameter whose callers were told it is kept or borrowed.
+- **Two facts about the copy**, both needed by the positives:
+  - It is a borrow of its operand (`isBorrow`, beside `StringConcat` and `StringResize`). Without
+    it, the place check saw a copy of a field as keeping the field.
+  - The borrow walk (`walkBorrowed`) stops at it: its result points into nothing. Without it, in
+    `b.s = a.s` the store of the copy counted as a use of `a.s` after `ReleaseSlot(b.s)`. The two
+    fields have the same position and type, so `dropsChain` cannot tell them apart.
+
+#### Where the copy goes (§22.3 as built)
+
+- **At rc's retain, not in front of the use,** when the use's operand is the retained value, or is
+  defined before the retain in its block.
+  - A store releases what it overwrites before it stores: in `b.s = b.s`, a copy in front of the
+    store would read freed memory.
+  - A return comes after rc releases the locals: in `return made.str2`, the copy would read the
+    field of a released object.
+  - With the copy in front of the use, the place check rejects both rather than miscompiling
+    (teeth (c)).
+- **Only for a use in the retain's block.** rc's birth retain sits right after the producer, which
+  may be in another block. Copied there, the copy has no owner on a path that does not reach the
+  use (`if (c) { h.a = s; }`): a leak. rc's retain beside the store makes the copy in the store's
+  block instead, and the real run erases the birth retain once the value is proven.
+- **A loop makes a copy per pass.** A string made outside a loop and stored inside it compiles with
+  a copy in the loop body. Each store's `ReleaseSlot` frees the previous copy, the field owns the
+  last one, and the original is released after the loop. `own_err_field_loop`, that shape with a
+  string, compiles and runs now; it uses a class instead, and its message is unchanged.
+
+#### Corpus
+
+`--emit=llvm -mm=own --no-default-lib`, every file of `test/tester/tests`, against main, plain and
+with the runner's `--opt --opt_level=3`:
+
+| | main | this branch | gained | lost |
+|---|---|---|---|---|
+| plain | 417 / 593 | 453 / 593 | 36 | 0 |
+| `--opt` | 416 / 593 | 451 / 593 | 35 | 0 |
+
+Two of the files gained compile plain only:
+- `00interface_object3`, §21.6;
+- `05strings`: under `--opt`, CSE merges the two `"X" + true` (one printed, one compared) into one
+  fresh string taken twice, and the catch-all reports it. A three-line program of that shape fails
+  the same way on main.
+
+The first errors, plain (`--opt` in brackets where it differs):
+
+| first error | main | this branch |
+|---|---|---|
+| `takes a second reference` (the catch-all) | 25 (27) | 19 (22) |
+| used after its value was moved | 23 (25) | 24 (25) |
+| borrows a field and cannot be stored, returned or captured | 20 | 11 |
+| returns a borrow of its argument on some paths and another value on others | 17 | 1 |
+| borrows an element and cannot be stored, returned or captured | 10 | 3 |
+| borrows a field but is used here after it may be released or overwritten | 6 | 13 |
+| borrows an element but is used here after it may be released or overwritten | 0 | 2 |
+| merged from several branches | 8 (7) | 5 (4) |
+| borrows the global and cannot be stored, returned or captured | 8 | 7 |
+| the rest | 59 (57) | 55 (54) |
+
+- **The mixed-return bucket, 17 → 1.** The one left is `conditionalTypes2`'s
+  `___cast<union<hybrid_func, string>, hybrid_func>`, which returns a function value, not a string
+  (§22.4).
+- **The use-after-release buckets, 6 → 15,** are files whose earlier error is gone.
+- **No error is new.** For every corpus file, plain, with `--opt` and with `--di`, each error this
+  branch reports is one main reports too. The whole error list was compared, not only the first.
+
+#### Gated
+
+The 35 files gained under `--opt`:
+- **30 run alone.** Each passes test-runner `-mm=own`, AOT and JIT, with the default flags and with
+  `-noopt`.
+- **5 are halves of four import/export pairs:** `export_class_extends`, `export_class_indexer`,
+  `export_owned_returns` with `import_owned_returns`, and `export_type_alias`. Each pair was run
+  the way the suite runs it, under own: AOT, `-shared` AOT, and `-shared` JIT. A JIT pair without
+  `-shared` fails under gc too.
+  - `class_extends`, `class_indexer`, `owned_returns`: pass, with the default flags and `-noopt`.
+  - `type_alias`: the export half compiles, but the importer is rejected at
+    `M.labelOf({ label: "l" })` with "borrows a field and cannot be stored, returned or captured".
+    Main reports the same error behind a `___cast` mixed return. The literal is re-made into
+    `M.Options` by a `ts.CreateTuple` of its field's read, with no retain, so there is nothing to
+    copy (§22.4).
+  - The export half's own copy (`return o.label ?? "none"` in an exported function, whose facts
+    are lost) was gated with a one-module program holding the same function: it passes under
+    own, AOT and JIT, with the default flags and with `-noopt`.
+
+#### Tests and teeth
+
+- **Positive.** Each runs under own (AOT, JIT, and no counting) and also under rc, none and gc, AOT
+  and JIT; each passes under own with `-noopt`:
+  - `own_string_copy_field`: a field into a field, a field returned, a field pushed;
+  - `own_string_copy_after_move`: a string moved into a field and used after, stored on one branch
+    only, and stored in a loop;
+  - `own_string_copy_nullable`: four copies (`string | null` holding a pointer and null, an optional
+    holding a value and none), so the lowering's three paths run;
+  - `own_string_copy_exported`: an exported constructor storing its string parameter;
+  - `own_string_copy_mixed_return`: `greet` returning `name` on one path and `"Sorry, " + name` on
+    the other, `<string>` of an `any` (`___unbox<string>`), and `<string>` of a `number | string`
+    (`___cast`). Its own IR has eight copies; main rejects it with eight errors. It needed no new
+    code.
+- **Own only:** `own_string_copy_written`, `let t = s; t[0] = <char>65` changes `t` only.
+- **Negative:**
+
+| test | message |
+|---|---|
+| `own_err_string_kept_param_known` | is used here after its value was moved |
+| `own_err_string_call_keeps_twice` | borrows a field and cannot be stored, returned or captured |
+| `own_err_string_pushed_twice` | is used here after its value was moved |
+
+- **Teeth**, each a temporary switch, with the JIT cache cleared:
+
+| switch | result |
+|---|---|
+| (a) `makeStringCopies` returns at once | the 15 own runs of the five positives then written fail |
+| (b) `borrowsKnownParam` returns false | `own_err_string_kept_param_known` compiles, and `keep` never releases the `v` its callers gave up: the leak the guard is for |
+| (c) the copy always in front of the use | `own_string_copy_field` and `own_string_copy_nullable` fail (6 tests); `r.s = r.s` is rejected by the place check |
+| (d) the `several` guard off | `own_err_string_pushed_twice` compiles, and is correct: each retain copies a different operand |
+
+- **Step 7 of the plan.** Five string negatives compiled once strings were copied:
+  - `own_err_mixed_return`, `own_err_param_returned_exported`, `own_err_param_kept_exported` and
+    `own_err_merged_result` use a class now, with their messages unchanged (`pick` for the first);
+  - `own_err_unbox_string` was deleted (§21.2's table says so).
+
+#### Measured
+
+AOT, `measure.ps1`, `r.s = "v" + i; r.t = r.s` in a loop, in MB:
+
+| iterations | gc | rc | none | own |
+|---|---|---|---|---|
+| 20000 | 5.9 | 4.4 | 6.6 | 4.4 |
+| 200000 | 5.9 | 4.4 | 25.9 | 4.4 |
+
+Main rejects the program under own (`r.t = r.s`, "borrows a field").
+
+#### Unchanged where it compiles
+
+The 417 files that compile on main were compiled with main's binary and this branch's,
+`--emit=llvm -mm=own --no-default-lib`. §22.6 named `--emit=mlir-affine`; the plan's step and this
+check use the LLVM IR, which is what runs. The output is identical once the names that change from
+run to run are normalised. Main against main needed the same normalisations:
+- the `FH<digits>` hashes;
+- pointer-derived suffixes (`@a_<n>`, `@td_<n>_number`, `@tsrel_<n>`, `<Class>.<n>..vtbl`);
+- the sizes of the strings that hold an `FH` name.
+
+One file, `00union_null_undefined_nonstrict`, can differ in the order of a union's members in a
+synthesized `___cast<union<...>>` name. The order flips between runs of either binary (main gave
+one order in 9 runs of 12, this branch in 10 of 12). With the same order, the IR is identical.
+
+#### Outside the rule
+
+- **A returned field of a parameter.** `function textOf(r) { return r.str2; }` stays a borrowed
+  return (`__own_result_borrows`), and a caller that uses the result after overwriting `r.str2` is
+  still rejected (§22.4). The accepted returned field is one of an object the function owns, of a
+  global, or of an exported function's parameter (facts lost).
+- **The guard's negative.** `borrowsKnownParam` matters only when a known parameter's retain
+  survives the dry run, as in `keep(v) { holder.s = v; print(v); }`. The plan's version, `main`
+  passing `h.s` to `keep`, never reaches the guard: `main` has no retain to copy.
+- **A field's string given to a known keeper** (`keep(h.s)`) is that shape: no retain in the caller,
+  so it stays an error.
+- **No consumed-twice shape.** The plan's `own_err_string_consumed_twice` compiles: the const lambda
+  becomes a direct call, and the two locals are views of the const. A parameter called, a field
+  holding a function, and an indirect result pushed twice and stored twice all had rc's retains.
+  The test was dropped; `own_err_string_call_keeps_twice` covers a taker with no retain in the
+  caller.
+- **An omitted optional argument** is a `ts.Undef : !ts.optional<!ts.string>`. Given to a callee
+  that keeps its parameter, it is reported "not owned", because `holdsNoBlock` does not cover it.
+  This predates the phase.
+- **One string taken twice by one op** (`list.push(s, s)`) is rejected, by the `several` guard. With
+  the guard off it compiles and is correct, so the rule is conservative there; widened, the
+  negative becomes a positive.
+- **A use whose operand is a view defined after the retain** gets its copy in front of the use. A
+  same-position, same-type `ReleaseSlot` in between would make the place check reject the program:
+  a false error, not a miscompile. No test has it.
+- **An object literal re-made into its annotated type** (a field missing from the literal) reads
+  the literal's fields into a `ts.CreateTuple` with no retain, so a string there is not copied
+  (`import_type_alias`).
+- **A fresh string merged by CSE** under `--opt` (`05strings`): the two `"X" + true` become one
+  value with two retains and two releases, for a print and a comparison. Neither retain has a taker
+  to copy for, so the catch-all reports it, on main too.

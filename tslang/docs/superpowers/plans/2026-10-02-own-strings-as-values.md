@@ -97,7 +97,7 @@ background.
   - `inline bool isCopyableString(mlir::Type type)` in `OwnershipFacts.h`;
   - `isFresh(value)` true for a `StringCopyOp` result.
 
-- [ ] **Step 1: Add the op.** In `TypeScriptOps.td`, after `TypeScript_StringConcatOp`:
+- [x] **Step 1: Add the op.** In `TypeScriptOps.td`, after `TypeScript_StringConcatOp`:
 
 ```tablegen
 // A copy of a string: a new block holding the same text, null when `in` is null (or, for an
@@ -110,11 +110,11 @@ def TypeScript_StringCopyOp : TypeScript_Op<"StringCopy", [AllTypesMatch<["in", 
 }
 ```
 
-- [ ] **Step 2: Mark it legal for the affine lowering.** In `LowerToAffineLoops.cpp`, in the
+- [x] **Step 2: Mark it legal for the affine lowering.** In `LowerToAffineLoops.cpp`, in the
   `target.addLegalOp<...>` list, change `mlir_ts::StringConcatOp,mlir_ts::StringCompareOp` to
   `mlir_ts::StringConcatOp, mlir_ts::StringCopyOp, mlir_ts::StringCompareOp`.
 
-- [ ] **Step 3: Write the LLVM lowering.** In `LowerToLLVM.cpp`, after `StringConcatOpLowering`:
+- [x] **Step 3: Write the LLVM lowering.** In `LowerToLLVM.cpp`, after `StringConcatOpLowering`:
 
 ```cpp
 // A copy of a string: `strlen + 1` bytes, from the allocator `ts.StringConcat` uses. A null string
@@ -183,7 +183,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
   Register it: in the pattern list (the line with `StringConcatOpLowering,`), add
   `StringCopyOpLowering,` after it.
 
-- [ ] **Step 4: Teach the facts.** In `OwnershipFacts.h`, `isFresh`: add `mlir_ts::StringCopyOp`
+- [x] **Step 4: Teach the facts.** In `OwnershipFacts.h`, `isFresh`: add `mlir_ts::StringCopyOp`
   to the `mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp, ...>`
   list. After `holdsNoBlock`, add:
 
@@ -224,7 +224,7 @@ inline bool isCopyableString(mlir::Type type)
   `MLIRTypeHelper::isUnionTypeNeedsTag` answers false (the LLVM type is `ptr`; see the `@n` and
   `@w` functions in §21's checks). If some string union does need a tag, add that condition here.
 
-- [ ] **Step 5: Correct the spec.** In §22.1, change "Those are one pointer, the same as `string`
+- [x] **Step 5: Correct the spec.** In §22.1, change "Those are one pointer, the same as `string`
   (the nullable views of §21.3)" to:
 
 ```
@@ -235,11 +235,11 @@ optional parameter) is `{ptr, i1}`, the pointer meaningful only when the flag is
   In §22.2, change "A nullable string is copied through its pointer." to "An optional is copied
   only when it holds a value."
 
-- [ ] **Step 6: Build, and confirm nothing else changed.** Build (Global Constraints). Run
+- [x] **Step 6: Build, and confirm nothing else changed.** Build (Global Constraints). Run
   `ctest -C Release -R "own" -j 8 --timeout 300` and expect 100% passed. Nothing creates the op
   yet, so this is a no-op change for every program.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 git add tslang/include/TypeScript/TypeScriptOps.td tslang/lib/TypeScript/LowerToLLVM.cpp tslang/lib/TypeScript/LowerToAffineLoops.cpp tslang/lib/TypeScript/OwnershipFacts.h tslang/docs/superpowers/specs/2026-09-24-own-memory-model-design.md
@@ -264,7 +264,7 @@ git commit -m "-mm=own strings: ts.StringCopy and the facts that know it (spec 2
     function passed. In a dry run it erases nothing and strips no facts; otherwise it does both,
     as `runOnFunction` does today.
 
-- [ ] **Step 1: Record the baseline.** Build, then, in the scratchpad, save the first error of
+- [x] **Step 1: Record the baseline.** Build, then, in the scratchpad, save the first error of
   every corpus file (Appendix A, `run.sh`) as `base.tsv`, plain and with
   `OPTS="--opt --opt_level=3"` as `baseopt.tsv`. Also save the full stderr of three negative tests:
 
@@ -273,7 +273,7 @@ T=__build/tslang/windows-msbuild-2026-release/bin/tslang.exe
 for f in own_err_two_owners own_err_closure_escape_twice own_err_delete; do $T --emit=obj --no-default-lib -mm=own tslang/test/tester/own/$f.ts -o NUL > $SCRATCH/$f.before.txt 2>&1; done
 ```
 
-- [ ] **Step 2: Add the reporting switch.** Add the members beside `unsigned quiet = 0;`:
+- [x] **Step 2: Add the reporting switch.** Add the members beside `unsigned quiet = 0;`:
 
 ```cpp
     // The dry run (spec 22.3): the whole analysis, but nothing reported and nothing changed. A
@@ -314,7 +314,7 @@ for f in own_err_two_owners own_err_closure_escape_twice own_err_delete; do $T -
     }
 ```
 
-- [ ] **Step 3: Route every report through it.**
+- [x] **Step 3: Route every report through it.**
   - In every report function (`grep -n "if (quiet)" OwnershipInferencePass.cpp`, about 12 of
     them), replace
     ```cpp
@@ -343,12 +343,12 @@ for f in own_err_two_owners own_err_closure_escape_twice own_err_delete; do $T -
   - Every `signalPassFailure()` must now sit behind a `reporting()` that returned true. Confirm with
     `grep -n "signalPassFailure" OwnershipInferencePass.cpp` and read each one.
 
-- [ ] **Step 4: Track the attributes.** Replace each `x->setAttr(NAME, mlir::UnitAttr::get(&getContext()))`
+- [x] **Step 4: Track the attributes.** Replace each `x->setAttr(NAME, mlir::UnitAttr::get(&getContext()))`
   in the pass with `setAttrTracked(x, NAME)` (`grep -n "setAttr(" OwnershipInferencePass.cpp`: the
   `OWN_CAPTURE_BORROW_ATTR_NAME`, `OWN_BORROWS_CAPTURES_ATTR_NAME` and
   `OWN_CELL_BORROWS_ATTR_NAME` sites).
 
-- [ ] **Step 5: Split `runOnFunction` into `analyze`.**
+- [x] **Step 5: Split `runOnFunction` into `analyze`.**
   - Move the body of `runOnFunction` into `bool analyze(llvm::SetVector<mlir::Operation *> &toErase)`,
     with `toErase` declared by the caller, not inside.
   - Its last part becomes:
@@ -398,7 +398,7 @@ for f in own_err_two_owners own_err_closure_escape_twice own_err_delete; do $T -
         }
     ```
 
-- [ ] **Step 6: Confirm nothing changed.**
+- [x] **Step 6: Confirm nothing changed.**
   - Build. Run `ctest -C Release -R "own|mlirgen-matches" -j 8 --timeout 300`: expect 100%.
   - Rerun the corpus (`run.sh`) plain and `--opt`, and `diff` against `base.tsv`/`baseopt.tsv`,
     ignoring the generated `FH<digits>` hashes (`sed -E 's/FH[0-9]+/FH/g'` on both). Expect no
@@ -406,7 +406,7 @@ for f in own_err_two_owners own_err_closure_escape_twice own_err_delete; do $T -
   - Rerun Step 1's three negatives and `diff` their stderr against the `.before.txt` files. They
     must be identical: each error once, with the same notes.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 git add tslang/lib/TypeScript/OwnershipInferencePass.cpp
@@ -436,7 +436,7 @@ git commit -m "-mm=own strings: the inference pass's dry run (spec 22.3), no cha
 - Produces: `bool makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased)`, which returns
   whether it rewrote anything.
 
-- [ ] **Step 1: Write the positive tests.** Each frees the original, or overwrites its owner, and
+- [x] **Step 1: Write the positive tests.** Each frees the original, or overwrites its owner, and
   allocates over it with `churn()` before reading the copy. A missing copy then reads freed memory.
 
 `own_string_copy_field.ts`:
@@ -624,7 +624,7 @@ function main() {
 }
 ```
 
-- [ ] **Step 2: Write the negative tests.**
+- [x] **Step 2: Write the negative tests.**
 
 `own_err_string_kept_param_known.ts`:
 
@@ -705,7 +705,7 @@ function main() {
   The negative for a value that is not a string is the existing class negatives
   (`own_err_two_owners`, `own_err_push_let`, ...). Step 5's full `own` run keeps them passing.
 
-- [ ] **Step 3: Register the tests and watch them fail.** In `CMakeLists.txt`:
+- [x] **Step 3: Register the tests and watch them fail.** In `CMakeLists.txt`:
   - add `own_string_copy_field own_string_copy_after_move own_string_copy_nullable own_string_copy_exported own_string_copy_written`
     to the `foreach(own_test ...)` list;
   - add the three negatives to `own_error_cases` with the regexes from Step 2;
@@ -726,7 +726,7 @@ endforeach()
   `-own-` positive fails (own rejects them today), the rc/none/gc ones pass, and the negatives
   pass. If an rc/none/gc run fails, that is a bug outside this phase. Stop and report it.
 
-- [ ] **Step 4: Write the rewrite.** In `OwnershipInferencePass.cpp`, add:
+- [x] **Step 4: Write the rewrite.** In `OwnershipInferencePass.cpp`, add:
 
 ```cpp
     // Strings as values (spec 22.3): each string retain the dry run did not erase is rewritten, where
@@ -833,7 +833,7 @@ endforeach()
   This needs `captureRetains` and `fieldBorrowRetains` as the dry run left them. They are members
   and are cleared only at the start of `analyze`, so they still hold the dry run's sets here.
 
-- [ ] **Step 5: Run the tests.** Build. Run
+- [x] **Step 5: Run the tests.** Build. Run
   `ctest -C Release -R "own_string_copy|own_err_string|own" -j 8 --timeout 300`. Expected: all pass.
   - If a positive still fails, read its error:
     - one named in §22.4 means that shape is outside the rule; adjust the test only if the spec
@@ -843,7 +843,7 @@ endforeach()
   - Also run each positive under own with the runner's `-noopt` (`--di --opt_level=0`):
     `test-runner -noopt -mm=own <file>` and `test-runner -noopt -jit -mm=own <file>`.
 
-- [ ] **Step 6: Teeth.** Each change is temporary, made after this task's code is committed or
+- [x] **Step 6: Teeth.** Each change is temporary, made after this task's code is committed or
   backed up.
   - (a) `makeStringCopies` returns false at its top: every `own_string_copy_*` positive must fail.
   - (b) `borrowsKnownParam` returns false: `own_err_string_kept_param_known` must compile, or
@@ -852,7 +852,7 @@ endforeach()
   - Revert both. Clear `tslang/test/tester/own/__jit` and the build's `own/__jit` between JIT runs
     (the JIT cache does not key on such a switch).
 
-- [ ] **Step 7: The string negatives that now compile.**
+- [x] **Step 7: The string negatives that now compile.**
   - Run `ctest -C Release -R "test-own-err" -j 8`. Phase 6's named-message negatives used strings
     in some cases: `own_err_mixed_return`, `own_err_unbox_string`,
     `own_err_param_returned_exported`, `own_err_param_kept_exported`, `own_err_merged_result`, and
@@ -876,7 +876,7 @@ endforeach()
     Task 4's mixed-return test cover the copy now.
   - Rerun until `test-own-err` is 100%.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 git add tslang/lib/TypeScript/OwnershipInferencePass.cpp tslang/test/tester/CMakeLists.txt tslang/test/tester/own/
@@ -898,7 +898,7 @@ git commit -m "-mm=own strings: a second reference to a string own cannot prove 
 - Consumes: Task 3's rewrite (no new code is expected here; if the mixed-return shape needs one, it
   goes into `copyForRetain` with its own test).
 
-- [ ] **Step 1: Write the test.** `own_string_copy_mixed_return.ts`:
+- [x] **Step 1: Write the test.** `own_string_copy_mixed_return.ts`:
 
 ```ts
 // A function that returns a borrow of its argument on one path and a new string on another: the
@@ -942,7 +942,7 @@ function main() {
   had no single use (Task 3, Step 5), fix `copyForRetain` with a test-first change, and record the
   shape in §22.7.
 
-- [ ] **Step 2: Corpus.** Rerun `run.sh` plain and `--opt` (Appendix A). Then:
+- [x] **Step 2: Corpus.** Rerun `run.sh` plain and `--opt` (Appendix A). Then:
   - **None lost:** `join -t $'\t' base.tsv new.tsv | awk -F'\t' '$2=="ok" && $3!="ok"'` prints
     nothing, plain and `--opt`.
   - **Gate every gained file:** list the files ok under `--opt` now and not in `baseopt.tsv`, then
@@ -951,7 +951,7 @@ function main() {
   - Record the first-error histogram before and after
     (`cut -f2 | sed -E "s/'[^']*'/'X'/g" | sort | uniq -c | sort -rn`).
 
-- [ ] **Step 3: Unchanged where it compiles.** Before building this branch's final binary, copy
+- [x] **Step 3: Unchanged where it compiles.** Before building this branch's final binary, copy
   main's `tslang.exe` aside (build main once, or reuse a saved one: `tslang-main.exe`).
   - For every file ok in `base.tsv`, compare
     `--emit=llvm -mm=own --no-default-lib <file> -o <out>.ll` from both binaries, with
@@ -959,7 +959,7 @@ function main() {
   - Expect no difference. Any difference means a function that compiled on main took the copy
     path, or the dry run changed something. Find it and fix it.
 
-- [ ] **Step 4: Measure.** Write `$SCRATCH/copy_loop.ts`:
+- [x] **Step 4: Measure.** Write `$SCRATCH/copy_loop.ts`:
 
 ```ts
 class R {
@@ -986,7 +986,7 @@ function main() {
 
   Record both rows in §22.7.
 
-- [ ] **Step 5: Spec results.** Append §22.7 "Results" to the spec, in the style of §20/§21:
+- [x] **Step 5: Spec results.** Append §22.7 "Results" to the spec, in the style of §20/§21:
   - what was built;
   - the corpus table, before and after, plain and `--opt`;
   - the gated files;

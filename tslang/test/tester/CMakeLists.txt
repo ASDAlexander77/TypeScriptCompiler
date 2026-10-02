@@ -2574,7 +2574,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_global_init own_constant_data own_record_local
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
                  own_string_copy_field own_string_copy_after_move own_string_copy_nullable
-                 own_string_copy_exported own_string_copy_written)
+                 own_string_copy_exported own_string_copy_written own_string_copy_mixed_return)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2595,7 +2595,8 @@ endforeach()
 # Strings as values (spec 22): no model but own makes a copy, and each program means the same
 # under every model.
 foreach(strings_mm rc none gc)
-    foreach(strings_test own_string_copy_field own_string_copy_after_move own_string_copy_nullable own_string_copy_exported)
+    foreach(strings_test own_string_copy_field own_string_copy_after_move own_string_copy_nullable own_string_copy_exported
+                         own_string_copy_mixed_return)
         tslang_add_test(NAME test-jit-${strings_mm}-${strings_test} COMMAND test-runner -jit -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
         tslang_add_test(NAME test-compile-${strings_mm}-${strings_test} COMMAND test-runner -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
     endforeach()
