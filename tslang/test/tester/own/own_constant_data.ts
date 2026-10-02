@@ -37,6 +37,11 @@ function main() {
     assert(churn() == 1000);
     assert(pairs.length == 5 && pairs[0][1] == "z" && pairs[2][1] == "y" && pairs[4][1] == "c");
 
+    // a tuple local, read by index
+    let t: [string, number] = ["asd", 1.0];
+    const nested: [[number, string], number] = [[1.0, "x"], 2.0];
+    assert(t[0] == "asd" && t[1] == 1.0 && nested[0][1] == "x");
+
     let [num, str] = [1, "foo"];
     assert(num == 1 && str == "foo");
 

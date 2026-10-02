@@ -2747,7 +2747,7 @@ class OwnershipInferencePass
     // seen through its views. None for a variable with no initializer - its storage was hoisted
     // in front of a try and its value arrives by a store this phase does not follow.
     // A `ts.RetainSlot`'s slot holds its initializer for as long as it lives: nothing is stored
-    // into it, and no closure captures it.
+    // into it or into a field of it, and no closure captures it.
     static bool slotKeepsInitializer(mlir::Operation *op)
     {
         auto slot = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot();
@@ -2757,10 +2757,22 @@ class OwnershipInferencePass
             return false;
         }
 
-        return llvm::none_of(slot.getUsers(), [&](mlir::Operation *user) {
-            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-            return (storeOp && storeOp.getReference() == slot) || !mlir::isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user);
+        return llvm::all_of(slot.getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user) || onlyRead(user);
         });
+    }
+
+    // A read of what a slot holds, or of a field of it (`a[0]` of a tuple local), and nothing that
+    // writes through it.
+    static bool onlyRead(mlir::Operation *user)
+    {
+        if (mlir::isa<mlir_ts::LoadOp>(user))
+        {
+            return true;
+        }
+
+        auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+        return propertyRefOp && llvm::all_of(propertyRefOp->getUsers(), [](mlir::Operation *fieldUser) { return onlyRead(fieldUser); });
     }
 
     static mlir::Value retainedValue(mlir::Operation *op)
