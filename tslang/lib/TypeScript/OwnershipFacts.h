@@ -455,10 +455,17 @@ inline bool isCopyableString(mlir::Type type)
 
     if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
     {
-        return llvm::any_of(unionType.getTypes(), isText) &&
-               llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
-                   return isText(member) || mlir::isa<mlir_ts::NullType>(member);
-               });
+        if (!llvm::any_of(unionType.getTypes(), isText) ||
+            !llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                return isText(member) || mlir::isa<mlir_ts::NullType>(member);
+            }))
+        {
+            return false;
+        }
+
+        // only a union that lowers to one pointer: a tagged union is a struct
+        MLIRTypeHelper mth(type.getContext(), CompileOptions{});
+        return !mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), unionType);
     }
 
     return isText(type);

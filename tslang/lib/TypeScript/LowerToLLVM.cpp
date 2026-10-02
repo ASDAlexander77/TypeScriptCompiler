@@ -933,6 +933,13 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
         }
 
         // an optional: `{ptr, i1}`
+        auto optionalType = mlir::dyn_cast<LLVM::LLVMStructType>(in.getType());
+        if (!optionalType || optionalType.getBody().size() != 2 ||
+            !mlir::isa<LLVM::LLVMPointerType>(optionalType.getBody()[0]) || !optionalType.getBody()[1].isInteger(1))
+        {
+            return rewriter.notifyMatchFailure(op, "ts.StringCopy takes a pointer or a { ptr, i1 } optional");
+        }
+
         auto pointer = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{0});
         auto hasValue = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{1});
         auto copyIt = rewriter.create<LLVM::AndOp>(loc, llvmBoolType, hasValue, isSet(pointer));
