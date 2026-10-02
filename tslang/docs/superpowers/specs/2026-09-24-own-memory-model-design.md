@@ -1812,7 +1812,8 @@ The error stays where a copy would be wrong:
 
 - **Positive** (test-runner under own, AOT and JIT; each also under rc, none and gc, where no copy
   is made): `own_string_copy_field`, `own_string_copy_after_move`,
-  `own_string_copy_mixed_return`, `own_string_copy_nullable`, `own_string_copy_exported`.
+  `own_string_copy_mixed_return`, `own_string_copy_nullable`, `own_string_copy_exported`,
+  `own_string_copy_branch` (added after the final review).
 - **Own only:** `own_string_copy_written`, `let t = s; t[0] = <char>65`, which changes `t` only.
 - **Negative:**
   - a kept parameter whose callers know the fact;
@@ -2051,9 +2052,10 @@ attributes kept for the copies, the retain-before-use check, `dominance` cleared
   the guard off it compiles and is correct, so the rule is conservative there; widened, the
   negative becomes a positive.
 - **A string captured by a closure that owns its copies, and also stored** (`const f = () =>
-  s.length; r.t = s; print(s)`). A closure that captures only copies, and is not given to a maker
-  whose result is bounded, owns them (phase 4): the store into its box is a taker, so the string
-  has two, and the `several` guard keeps the error.
+  s.length; r.t = s; print(s)`). A closure that captures only copies owns them (phase 4) unless it
+  does not escape, is given to a maker whose result is bounded, and none of its copies is fresh.
+  Here the string is fresh, so the store into the box is a taker, the string has two, and the
+  `several` guard keeps the error.
 - **A use whose operand is a view defined after the retain** gets its copy in front of the use. A
   same-position, same-type `ReleaseSlot` in between would make the place check reject the program:
   a false error, not a miscompile. No test has it.
