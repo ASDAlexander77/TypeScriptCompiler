@@ -1721,3 +1721,106 @@ Both buckets were read with `--di`.
 - **`instanceof` of a class value held in a union or a nullable local** is false under every
   model, even narrowed (`let a: C | null = new C(); a instanceof C`). It is a frontend or lowering
   bug outside this phase. `own_declared_constant` tests the value with `typeof`.
+
+## 22. Strings as values (design, 2026-10-02)
+
+A design to build after phase 6, ahead of phase 8 (`Shared<T>`). §21.5 found that most of the
+corpus files rejected with "borrows a field and cannot be stored, returned or captured" are a
+string given a second owner (`testrec.str = testrec.str2`, `return held.text`, `caught = e.m`). So
+are the 17 files rejected with "returns a borrow of its argument on some paths and another value
+on others" (`___unbox<string>`, `___cast<A, string>`, `return name` beside
+`return "Sorry, " + name`). A string is immutable in TypeScript, so a copy cannot be told apart
+from sharing. MLIRGen already treats it as a value: `s.length = n` makes a new string rather than
+resizing in place.
+
+### 22.1 The rule
+
+Under `-mm=own`, a second reference to a string that own cannot prove to be a move or a borrow
+becomes a copy.
+
+- **A string** is a value whose type is `string`, a string literal type, or a union or an optional
+  of `string` with only `null` or `undefined` beside it. Those are one pointer, the same as
+  `string` (the nullable views of §21.3). A union with other members (`string | number`), and an
+  object or array holding strings, are not covered.
+- **Silent.** A copy makes no diagnostic.
+- **Only where the program would fail.** Copies are made only in a function the analysis rejects,
+  and only for the string retains it could not erase. A function that compiles today compiles to
+  the same IR.
+- **A write in place.** tslang accepts `t[0] = <char>65` on a string, which writes into its bytes;
+  standard TypeScript rejects it. After `let t = s`, if `t` is a copy, the write changes `t` only.
+  Under gc both names see it. The difference is accepted and tested.
+
+### 22.2 The copy
+
+`ts.StringCopy %s : !ts.string -> !ts.string`, its result a new allocation (`MemAlloc`). It lowers
+to: null stays null; otherwise the length plus one byte, through the allocator `ts.StringConcat`
+uses, and a `memcpy`. A nullable string is copied through its pointer.
+
+- Only the own inference pass creates it, but it lowers under every model.
+- `isFresh` counts it, beside `ts.StringConcat`.
+- A string literal is never copied: it is constant data (§20.2), whose retains are already erased.
+
+### 22.3 Where the copies go
+
+The inference pass decides each function in up to two runs.
+
+1. **A dry run.** The whole analysis runs, but it reports nothing and changes nothing:
+   - nothing is erased;
+   - the signature facts are not stripped;
+   - the attributes the analysis sets are noted, not set;
+   - every error, including those that do not go through the `quiet` reporters today (the
+     `RetainCell` and `delete` errors), is counted as a failure, not emitted.
+
+   Without a failure, the function is decided by the real run alone, exactly as today.
+2. **The copies.** After a failing dry run, each string retain the dry run did not erase is
+   rewritten where its use can be found:
+   - `ts.Retain(v)` for one use, the one `takerOf` names (a store, a push, a call that keeps it, a
+     store into the result slot): `c = ts.StringCopy(v)` is inserted before that use, the use
+     takes `c` in place of `v`, and the retain is erased. `v` keeps its owner, which still
+     releases it; the use owns `c`.
+   - `ts.RetainSlot` of `let x = v`: the local starts from `ts.StringCopy(v)` instead, and the
+     retain is erased. `x`'s release at scope exit frees the copy.
+3. **The real run.** The analysis runs on the rewritten function as it does today. A copy is fresh,
+   and moves into its use by the existing rules. Anything still unproven is reported.
+
+### 22.4 No copy
+
+The error stays where a copy would be wrong:
+
+- **No single use.** The retain's use cannot be pinned to one op, or the use took the value
+  without a retain (rc consumed a fresh value). Copying there would leave the original with no
+  owner: a leak.
+- **A fact the callers rely on.** The value is a parameter, or read out of one, that the signature
+  pass told this function's callers it keeps (`__own_params`) or returns a borrow of
+  (`__own_result_borrows`). Facts lost (§15, an exported function) are not such facts. There the
+  callers keep their own, so a copy is right.
+- **Not a string** in the sense of §22.1.
+
+### 22.5 What it should accept
+
+- A field's string stored into another field, returned, pushed, or read out of a caught object
+  (`caught = e.m`).
+- A string moved into a field and used after (`h.text = kept; print(kept)`).
+- A function that returns a borrow of its argument on some paths and something else on others:
+  the borrowed return is copied, so the result is always fresh. That includes
+  `___unbox<string>` and `___cast<A, string>`.
+- An exported constructor storing its string parameter.
+
+### 22.6 Tests and measures
+
+- **Positive** (test-runner under own, AOT and JIT; each also under rc, none and gc, where no copy
+  is made): `own_string_copy_field`, `own_string_copy_after_move`,
+  `own_string_copy_mixed_return`, `own_string_copy_nullable`, `own_string_copy_exported`.
+- **Own only:** `own_string_copy_written`, `let t = s; t[0] = <char>65`, which changes `t` only.
+- **Negative:**
+  - a kept parameter whose callers know the fact;
+  - a second reference to a value that is not a string;
+  - a taker that consumed without a retain.
+- **Teeth:** with the copies turned off, every positive fails. With the fact guard turned off, its
+  negative compiles.
+- **Measured:** a loop that copies a field's string 200,000 times stays flat under own, as under
+  rc (`measure.ps1`).
+- **Unchanged where it compiles:** `--emit=mlir-affine` with the copies on and off is the same for
+  every corpus file that compiles on main.
+- **Corpus:** none lost, plain and with `--opt`. Each gained file passes test-runner under own,
+  AOT and JIT, with the default flags and with `-noopt`.
