@@ -349,8 +349,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     // pointer to its trailing name bytes. That pointer is the runtime type tag: it reads as
     // an ordinary NUL-terminated type name, and the record is at `tag - sizeof(record)`.
     // See TYPE_DESCR_* in Defines.h.
+    // `variant` keeps apart two records of one type whose routines differ (-mm=own's borrowing
+    // capture box); it is not part of the name the record carries.
     mlir::Value getOrCreateTypeDescriptorName(mlir::Type type, std::string name, int kind,
-                                             StringRef releaseRoutineName, StringRef retainRoutineName)
+                                             StringRef releaseRoutineName, StringRef retainRoutineName,
+                                             StringRef variant = "")
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -360,7 +363,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // keyed by the concrete type rather than by the name: every class reports the name
         // "class", but each needs its own record, which is the point of having one at all
         std::stringstream varName;
-        varName << "td_" << (size_t)hash_value(type) << "_" << name;
+        varName << "td_" << (size_t)hash_value(type) << variant.str() << "_" << name;
 
         TypeConverterHelper tch(typeConverter);
         auto llvmIndexType = tch.convertType(th.getIndexType());

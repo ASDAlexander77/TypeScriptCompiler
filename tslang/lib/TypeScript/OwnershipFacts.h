@@ -39,6 +39,11 @@ namespace mlir_ts = mlir::typescript;
 // the function among its `__own_no_drops` - and only its blocks are ones this module may destroy:
 // a block made under rc still carries a count its own module holds.
 #define OWN_FRESH_RESULT_ATTR_NAME "__own_fresh_result"
+// On a closure (`ts.CreateBoundFunction`, OWNS_CAPTURE_ATTR_NAME): the fields of its capture box
+// whose captured variable its body assigns, itself or through a closure it builds over the same
+// cell. A cell that borrows its value (a captured parameter's) cannot be assigned: the old value is
+// the caller's.
+#define OWN_ASSIGNS_CAPTURES_ATTR_NAME "__own_assigns_captures"
 
 // The arguments of a call, without the callee value of an indirect one.
 inline mlir::OperandRange callArgs(mlir::Operation *op)
@@ -100,7 +105,13 @@ inline bool isView(mlir::Operation *op)
     auto keeps = [](mlir::Type type) {
         return mlir::isa<mlir_ts::ClassType, mlir_ts::UnionType, mlir_ts::OptionalType>(type);
     };
-    return keeps(castOp.getIn().getType()) && keeps(castOp.getType());
+    // a bound function and a hybrid one are the same `{func, this, tag}`: a closure passed on as
+    // a function value is still its box
+    auto isClosure = [](mlir::Type type) {
+        return mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type);
+    };
+    return (keeps(castOp.getIn().getType()) && keeps(castOp.getType())) ||
+           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType()));
 }
 
 // The block a value is a view of.
@@ -291,6 +302,44 @@ inline bool holdsNoBlock(mlir::Value value)
 {
     auto *def = rootOf(value).getDefiningOp();
     return !ownsHeap(value) || (def && isLiteral(def));
+}
+
+// A captured variable's cell, as a closure body reaches it: read out of a field of its capture box
+// (or of any other block - a RefType loaded from somewhere is a cell). Its variable lives in
+// whatever function declared it, so an assignment through it may destroy a value that function, and
+// the closures over the same cell, hold borrows of.
+inline bool isLoadedCell(mlir::Value value)
+{
+    auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+    return loadOp && mlir::isa<mlir_ts::RefType>(loadOp.getType());
+}
+
+// A captured variable's cell, in the function that declared it.
+inline bool isCellVariable(mlir::Value value)
+{
+    auto varOp = value.getDefiningOp<mlir_ts::VariableOp>();
+    return varOp && varOp.getCaptured().value_or(false) && !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
+}
+
+// The capture box a closure was built over, if `value` is a capture box's own variable.
+inline mlir_ts::CreateBoundFunctionOp closureOfBox(mlir::Value box)
+{
+    auto varOp = box.getDefiningOp<mlir_ts::VariableOp>();
+    if (!varOp || !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME))
+    {
+        return {};
+    }
+
+    for (auto *user : box.getUsers())
+    {
+        if (auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(user);
+            boundOp && boundOp.getThisVal() == box && boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
+        {
+            return boundOp;
+        }
+    }
+
+    return {};
 }
 
 // Is this the slot of parameter `argument` - a local declared from it that owns nothing, is not

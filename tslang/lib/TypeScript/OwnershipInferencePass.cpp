@@ -27,6 +27,10 @@ namespace
 
 using namespace own_facts;
 
+// This pass's own mark, for its own reading: a store of a value into the capture box of a closure
+// that borrows what it captures (phase 5). The store is a read, not a taker.
+#define OWN_CAPTURE_BORROW_ATTR_NAME "__own_capture_borrow"
+
 // Ownership inference for -mm=own, phases 0 and 1. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 4.2, 10.6, 11 and 12.
 //
@@ -64,7 +68,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         llvm::SmallVector<mlir::Operation *> keepingCalls;
         drops.clear();
         derivedCache.clear();
+        closures.clear();
+        captureStores.clear();
+        captureRetains.clear();
         returnsBorrowOf = resultBorrows(f);
+
+        // first: whether a closure borrows what it captures changes what its box's stores are
+        classifyClosures();
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -90,8 +100,12 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
             else if (mlir::isa<mlir_ts::RetainCellOp>(op))
             {
-                op->emitError("closures that capture a variable are not supported by -mm=own yet");
-                signalPassFailure();
+                // a box taking a cell: a closure that borrows it (decideClosures) claimed it
+                if (!captureRetains.contains(op))
+                {
+                    op->emitError("closures that capture a variable are not supported by -mm=own here yet");
+                    signalPassFailure();
+                }
             }
             else if (mlir::isa<mlir_ts::DeleteOp>(op))
             {
@@ -107,8 +121,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             }
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
-                if (mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(
-                        releaseSlotOp.getSlot().getDefiningOp()))
+                // an overwrite of a field or an element, or an assignment to a captured variable
+                auto slot = releaseSlotOp.getSlot();
+                if (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot))
                 {
                     drops.push_back(op);
                 }
@@ -165,6 +180,11 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> paramReceivers;
         for (auto *op : retains)
         {
+            if (captureRetains.contains(op))
+            {
+                continue; // a borrowing box's copy of a value: decideClosures decides it
+            }
+
             auto value = retainedValue(op);
             if (value && proven.contains(value))
             {
@@ -255,6 +275,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             decideParam(entry.first, entry.second, toErase);
         }
 
+        decideClosures(toErase);
+        decideCells();
+
         for (auto *op : toErase)
         {
             op->erase();
@@ -264,7 +287,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         returnedParams.clear();
         f.walk([](mlir::Operation *op) {
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_NO_DROPS_ATTR_NAME,
-                               OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME})
+                               OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME, OWN_ASSIGNS_CAPTURES_ATTR_NAME,
+                               OWN_CAPTURE_BORROW_ATTR_NAME})
             {
                 op->removeAttr(name);
             }
@@ -289,6 +313,471 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
     // parameters (or views of them) whose rc reference for the caller was already decided.
     int returnsBorrowOf = -1;
     llvm::DenseSet<mlir::Value> returnedParams;
+
+    // ---- Closures (spec 2.5, phase 5) ----
+    //
+    // A closure is `ts.CreateBoundFunction(box, @f) {__owns_capture}`; its box holds a cell for each
+    // variable it captures by reference and a copy of each it captures by value. One that does not
+    // escape borrows all of it: rc's references for the box go, the box frees itself only
+    // (OWN_BORROWS_CAPTURES_ATTR_NAME), and nothing that may run the closure may come after anything
+    // it borrows is given back. One that escapes would own all of it, which is not done yet.
+    struct Closure
+    {
+        mlir_ts::CreateBoundFunctionOp op;
+        mlir::Value box;
+        // each store that fills the box, with the field it fills
+        llvm::SmallVector<std::pair<int64_t, mlir_ts::StoreOp>> fills;
+        bool hasCells = false;
+        // the first use that takes the closure out of this function's hands
+        mlir::Operation *escape = nullptr;
+        // what may run the closure: calls given it, called through it, or through its box
+        llvm::SmallVector<mlir::Operation *> uses;
+        // the calls through the box itself, made without the closure value (a folded `const f`)
+        llvm::SmallVector<mlir::Operation *> boxUses;
+        // where the closure value is given back: its releases, and those of the `let`s holding it
+        llvm::SmallVector<mlir::Operation *> ends;
+        // rc's references for the box: `ts.RetainCell` of each cell, `ts.Retain` of each copy
+        llvm::SmallVector<mlir::Operation *> retains;
+        // held by a local that owns nothing (`let f: () => number; f = () => ...`): an alias, so
+        // the closure's own releases stay its owner
+        bool aliased = false;
+    };
+
+    llvm::SmallVector<std::shared_ptr<Closure>> closures;
+    // a copy stored into a borrowing box -> its closure
+    llvm::DenseMap<mlir::Operation *, Closure *> captureStores;
+    // rc's references for boxes, which the closures decide
+    llvm::DenseSet<mlir::Operation *> captureRetains;
+
+    // Finds the closures over cells and what they borrow, before anything else: whether a box's
+    // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
+    // with it - its box owns them, and each copy moves in.
+    void classifyClosures()
+    {
+        getFunction().walk([&](mlir_ts::CreateBoundFunctionOp boundOp) {
+            if (!boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME) || closureOfBox(boundOp.getThisVal()) != boundOp)
+            {
+                return;
+            }
+
+            auto closure = std::make_shared<Closure>();
+            closure->op = boundOp;
+            closure->box = boundOp.getThisVal();
+            for (auto *user : closure->box.getUsers())
+            {
+                if (user == boundOp.getOperation())
+                {
+                    continue;
+                }
+
+                if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user))
+                {
+                    for (auto *fieldUser : propertyRefOp->getUsers())
+                    {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                        if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                        {
+                            closure->escape = closure->escape ? closure->escape : fieldUser;
+                            continue;
+                        }
+
+                        closure->fills.push_back({propertyRefOp.getPosition(), storeOp});
+                        closure->hasCells = closure->hasCells || mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType());
+                    }
+
+                    continue;
+                }
+
+                if (isCall(user))
+                {
+                    closure->uses.push_back(user);
+                    closure->boxUses.push_back(user);
+                    continue;
+                }
+
+                closure->escape = closure->escape ? closure->escape : user;
+            }
+
+            if (!closure->hasCells)
+            {
+                return;
+            }
+
+            if (auto *escape = followClosure(boundOp.getResult(), closure->uses, closure->ends, closure->aliased);
+                escape && !closure->escape)
+            {
+                closure->escape = escape;
+            }
+
+            for (auto &fill : closure->fills)
+            {
+                auto storeOp = fill.second;
+                if (auto *retain = retainBefore(storeOp.getValue(), storeOp))
+                {
+                    closure->retains.push_back(retain);
+                    captureRetains.insert(retain);
+                }
+
+                if (!closure->escape && !mlir::isa<mlir_ts::RefType>(storeOp.getValue().getType()))
+                {
+                    storeOp->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    captureStores[storeOp] = closure.get();
+                }
+            }
+
+            if (!closure->escape)
+            {
+                boundOp->setAttr(OWN_BORROWS_CAPTURES_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
+            closures.push_back(std::move(closure));
+        });
+    }
+
+    // rc's reference for the box's copy of `value`: the retain of it nearest before the store that
+    // fills the box, in the same block.
+    mlir::Operation *retainBefore(mlir::Value value, mlir::Operation *store)
+    {
+        mlir::Operation *found = nullptr;
+        for (auto *user : value.getUsers())
+        {
+            if (!mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainCellOp>(user) || user->getBlock() != store->getBlock() ||
+                !user->isBeforeInBlock(store) || captureRetains.contains(user))
+            {
+                continue;
+            }
+
+            if (!found || found->isBeforeInBlock(user))
+            {
+                found = user;
+            }
+        }
+
+        return found;
+    }
+
+    // Where a closure value goes: through its views and the owning `let`s that hold it, each use
+    // that may run it joins `uses`, and each release `ends`. Answers the first use that takes it
+    // anywhere else - returned, stored, kept by a callee, captured - or null. Anything this does
+    // not know is such a use.
+    mlir::Operation *followClosure(mlir::Value closure, llvm::SmallVectorImpl<mlir::Operation *> &uses,
+                                   llvm::SmallVectorImpl<mlir::Operation *> &ends, bool &aliased)
+    {
+        llvm::SmallVector<mlir::Value> values{closure};
+        llvm::SmallPtrSet<mlir::Value, 8> seen;
+        mlir::Operation *escape = nullptr;
+        auto followSlot = [&](mlir::Value slot) {
+            for (auto *slotUser : slot.getUsers())
+            {
+                if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::DebugVariableOp>(slotUser))
+                {
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::ReleaseSlotOp>(slotUser))
+                {
+                    ends.push_back(slotUser);
+                }
+                else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                {
+                    values.push_back(loadOp.getResult());
+                }
+                else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(slotUser); !storeOp || storeOp.getReference() != slot)
+                {
+                    escape = escape ? escape : slotUser;
+                }
+            }
+        };
+
+        while (!values.empty() && !escape)
+        {
+            auto value = values.pop_back_val();
+            if (!seen.insert(value).second)
+            {
+                continue;
+            }
+
+            forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+                if (escape || mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user))
+                {
+                    return;
+                }
+
+                if (mlir::isa<mlir_ts::ReleaseOp>(user))
+                {
+                    ends.push_back(user);
+                    return;
+                }
+
+                if (isCall(user))
+                {
+                    if (isKeptArgument(user, used))
+                    {
+                        escape = user;
+                    }
+                    else
+                    {
+                        uses.push_back(user);
+                    }
+
+                    return;
+                }
+
+                // the function and the box a call through the closure is made with
+                if (mlir::isa<mlir_ts::GetThisOp, mlir_ts::GetMethodOp>(user))
+                {
+                    for (auto *partUser : user->getResult(0).getUsers())
+                    {
+                        if (isCall(partUser) && !isKeptArgument(partUser, user->getResult(0)))
+                        {
+                            uses.push_back(partUser);
+                        }
+                        else
+                        {
+                            escape = escape ? escape : partUser;
+                        }
+                    }
+
+                    return;
+                }
+
+                mlir::Value slot;
+                if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+                {
+                    slot = varOp.getResult();
+                }
+                else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == used)
+                {
+                    slot = storeOp.getReference();
+                }
+
+                // a local, owning or not (`let f: () => number;` owns nothing): its reads are the
+                // closure; a function's result slot is a local too, and its read is returned
+                auto slotVar = slot ? slot.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                if (slotVar && !slotVar.getCaptured().value_or(false))
+                {
+                    aliased = aliased || !isOwningVariable(slotVar);
+                    followSlot(slot);
+                    return;
+                }
+
+                escape = user;
+            });
+        }
+
+        return escape;
+    }
+
+    // Does a call given this value give it a closure, which may run and touch what its box holds?
+    static bool holdsCaptures(mlir::Value value)
+    {
+        if (mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(value.getType()))
+        {
+            return true;
+        }
+
+        auto root = rootOf(value);
+        if (auto varOp = root.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            return varOp->hasAttr(CAPTURE_BOX_ATTR_NAME);
+        }
+
+        // a closure's `this` is its box, a reference; a bound method's is the object
+        auto getThisOp = root.getDefiningOp<mlir_ts::GetThisOp>();
+        return getThisOp && mlir::isa<mlir_ts::RefType>(getThisOp.getType());
+    }
+
+    // The verdicts on the closures over cells: an escape is an error; a borrow must not be run after
+    // anything it borrows is given back - a cell this function owns at its releases, a copy at its
+    // owner's ends. A cell an enclosing closure holds and a parameter end nowhere here; a copy of a
+    // read out of a container is bounded by the read's own check, which sees the closure's uses
+    // (walkBorrowed).
+    void decideClosures(llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        for (auto &closure : closures)
+        {
+            auto *boundOp = closure->op.getOperation();
+            auto name = ownerName(closure->op.getResult());
+            if (closure->escape)
+            {
+                reportClosureEscapes(closure->escape, boundOp);
+                continue;
+            }
+
+            auto ok = true;
+            for (auto &fill : closure->fills)
+            {
+                auto value = fill.second.getValue();
+                llvm::SmallVector<mlir::Operation *> ends;
+                llvm::StringRef captured = "this value";
+                if (mlir::isa<mlir_ts::RefType>(value.getType()))
+                {
+                    if (isCellVariable(value))
+                    {
+                        captured = varName(value.getDefiningOp<mlir_ts::VariableOp>());
+                        for (auto *user : value.getUsers())
+                        {
+                            if (mlir::isa<mlir_ts::ReleaseCellOp>(user))
+                            {
+                                ends.push_back(user);
+                            }
+                        }
+                    }
+                    else if (!isLoadedCell(value))
+                    {
+                        reportCaptureNotOwned(fill.second, captured);
+                        ok = false;
+                        continue;
+                    }
+                }
+                else
+                {
+                    auto root = rootOf(value);
+                    captured = ownerName(root);
+                    Chain chain;
+                    if (holdsNoBlock(value) || placeReadOf(root) || borrowedParam(root) >= 0)
+                    {
+                        // nothing to own, a read the read's check bounds, or a parameter
+                    }
+                    else if (auto slotLoad = slotLoadOf(root))
+                    {
+                        chain.roots.push_back({slotLoad.getReference(), Chain::Slot});
+                    }
+                    else if (isFresh(root))
+                    {
+                        chain.roots.push_back({root, Chain::Owned});
+                    }
+                    else
+                    {
+                        reportCaptureNotOwned(fill.second, captured);
+                        ok = false;
+                        continue;
+                    }
+
+                    ends = rootEnds(chain);
+                }
+
+                for (auto *end : ends)
+                {
+                    if (captureRetains.contains(end) || captureStores.count(end))
+                    {
+                        continue; // a box's own copy, this one's or another borrowing closure's
+                    }
+
+                    for (auto *use : closure->uses)
+                    {
+                        if (ok && reachableAfter(end, use, boundOp))
+                        {
+                            reportClosureOutlives(use, end, name, captured);
+                            ok = false;
+                        }
+                    }
+                }
+            }
+
+            // Held by a local that owns nothing: rc's birth reference reads to the move logic as the
+            // store's, which would leave the box with no owner. The closure keeps its releases, and
+            // nothing may run it after them.
+            if (closure->aliased)
+            {
+                for (auto *end : closure->ends)
+                {
+                    if (!mlir::isa<mlir_ts::ReleaseOp>(end))
+                    {
+                        continue;
+                    }
+
+                    toErase.remove(end);
+                    for (auto *use : closure->uses)
+                    {
+                        if (ok && reachableAfter(end, use, boundOp))
+                        {
+                            reportClosureOutlives(use, end, name, name);
+                            ok = false;
+                        }
+                    }
+                }
+            }
+
+            // a call through the box, after the closure value that owns the box is given back
+            for (auto *end : closure->ends)
+            {
+                for (auto *use : closure->boxUses)
+                {
+                    if (ok && reachableAfter(end, use, boundOp))
+                    {
+                        reportClosureOutlives(use, end, name, name);
+                        ok = false;
+                    }
+                }
+            }
+
+            toErase.insert(closure->retains.begin(), closure->retains.end());
+        }
+    }
+
+    // A captured variable whose value this function does not own - a parameter, `this` - has a cell
+    // that borrows the value: the cell's release frees the cell only (OWN_CELL_BORROWS_ATTR_NAME),
+    // and nothing may assign the variable, here or in a closure over it, since the old value is the
+    // caller's. A variable whose value nobody can be said to own is an error.
+    void decideCells()
+    {
+        getFunction().walk([&](mlir_ts::VariableOp varOp) {
+            auto cell = varOp.getResult();
+            if (!isCellVariable(cell) || isOwningVariable(varOp))
+            {
+                return;
+            }
+
+            MLIRTypeHelper mth(&getContext(), CompileOptions{});
+            if (!mth.ownsHeapMemory(varOp.getLoc(), mlir::cast<mlir_ts::RefType>(cell.getType()).getElementType()))
+            {
+                return;
+            }
+
+            auto name = varName(varOp);
+            auto init = varOp.getInitializer();
+            auto argument = init ? mlir::dyn_cast<mlir::BlockArgument>(init) : mlir::BlockArgument();
+            if (!argument || !argument.getOwner()->isEntryBlock() ||
+                !mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()))
+            {
+                reportCaptureNotOwned(varOp, name);
+                return;
+            }
+
+            for (auto *user : cell.getUsers())
+            {
+                if (mlir::isa<mlir_ts::ReleaseCellOp>(user))
+                {
+                    user->setAttr(OWN_CELL_BORROWS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                if (mlir::isa<mlir_ts::ReleaseSlotOp>(user) || (storeOp && storeOp.getReference() == cell))
+                {
+                    reportCapturedParamAssigned(user, name);
+                    return;
+                }
+
+                // captured: the closure's body must not assign it either
+                auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                             : mlir_ts::PropertyRefOp();
+                auto boundOp = propertyRefOp ? closureOfBox(propertyRefOp.getObjectRef()) : mlir_ts::CreateBoundFunctionOp();
+                if (!boundOp)
+                {
+                    continue;
+                }
+
+                auto assigned = boundOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_ASSIGNS_CAPTURES_ATTR_NAME);
+                if (assigned && llvm::is_contained(assigned.asArrayRef(), static_cast<int32_t>(propertyRefOp.getPosition())))
+                {
+                    reportCapturedParamAssigned(boundOp, name);
+                    return;
+                }
+            }
+        });
+    }
 
     struct SlotReceiver
     {
@@ -688,7 +1177,22 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                     continue;
                 }
 
+                // rc's reference for a borrowing box's copy goes with the closure (decideClosures)
+                if (captureRetains.contains(user))
+                {
+                    continue;
+                }
+
                 uses.push_back({user, pending.kills, isCall(user) && isCalleeOperand(use)});
+                // copied into a borrowing box: whatever runs the closure reads it
+                if (auto found = captureStores.find(user); found != captureStores.end())
+                {
+                    for (auto *closureUse : found->second->uses)
+                    {
+                        uses.push_back({closureUse, pending.kills});
+                    }
+                }
+
                 if (pending.borrowed && keeping.returns && mlir::isa<mlir_ts::ReturnInternalOp>(user))
                 {
                     continue;
@@ -1090,7 +1594,14 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
 
         if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(drop))
         {
+            // An assignment to a captured variable destroys its old value, which is reached only
+            // through a read of the variable's cell: a root this function does not own.
             auto slot = releaseSlotOp.getSlot();
+            if (isCellVariable(slot) || isLoadedCell(slot))
+            {
+                return !chain.owned();
+            }
+
             int64_t position = -1;
             if (auto propertyRefOp = slot.getDefiningOp<mlir_ts::PropertyRefOp>())
             {
@@ -1109,7 +1620,8 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 return false;
             }
 
-            if (!chain.owned())
+            // a call given a closure may run it, and its box may hold anything
+            if (!chain.owned() || llvm::any_of(drop->getOperands(), holdsCaptures))
             {
                 return true;
             }
@@ -1498,6 +2010,13 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
         {
             return !isOwningVariable(varOp);
+        }
+
+        // the box of a closure that borrows what it captures holds a copy that owns nothing; the
+        // closure's own uses are the borrow's (walkBorrowed, decideClosures)
+        if (mlir::isa<mlir_ts::StoreOp>(user) && user->hasAttr(OWN_CAPTURE_BORROW_ATTR_NAME))
+        {
+            return true;
         }
 
         return false;
@@ -2224,6 +2743,36 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         }
 
         op->emitError("'") << name << "' borrows '" << owner << "' and cannot be assigned; -mm=own cannot prove that yet";
+        signalPassFailure();
+    }
+
+    void reportClosureEscapes(mlir::Operation *escape, mlir::Operation *closure)
+    {
+        auto diag = escape->emitError("a closure that captures a variable and escapes here is not supported by -mm=own yet");
+        diag.attachNote(closure->getLoc()) << "the closure is created here";
+        signalPassFailure();
+    }
+
+    void reportClosureOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef closure,
+                               llvm::StringRef captured)
+    {
+        auto diag = use->emitError("'") << closure << "' borrows '" << captured << "', which it captures, but runs here after '"
+                                        << captured << "' is released";
+        diag.attachNote(end->getLoc()) << "'" << captured << "' is released here";
+        signalPassFailure();
+    }
+
+    void reportCaptureNotOwned(mlir::Operation *op, llvm::StringRef captured)
+    {
+        op->emitError("'") << captured << "' is captured by a closure, but -mm=own cannot tell who owns its value here";
+        signalPassFailure();
+    }
+
+    void reportCapturedParamAssigned(mlir::Operation *op, llvm::StringRef name)
+    {
+        op->emitError("'") << name
+                           << "' is a captured parameter and cannot be assigned under -mm=own: its value is the "
+                              "caller's";
         signalPassFailure();
     }
 

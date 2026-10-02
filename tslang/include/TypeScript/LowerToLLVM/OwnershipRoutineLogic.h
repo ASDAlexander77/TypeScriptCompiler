@@ -261,11 +261,15 @@ class OwnershipRoutineLogic
     }
 
     // The value goes back before the block does, and in that order: releasing it reads the
-    // cell.
-    void emitReleaseCell(mlir::Type contentsType, mlir::Value cellPtr)
+    // cell. A cell that borrows its value (-mm=own, OWN_CELL_BORROWS_ATTR_NAME) frees itself only.
+    void emitReleaseCell(mlir::Type contentsType, mlir::Value cellPtr, bool borrowsContents = false)
     {
         emitIfLastReference(cellPtr, [&]() {
-            releaseSlot(contentsType, cellPtr);
+            if (!borrowsContents)
+            {
+                releaseSlot(contentsType, cellPtr);
+            }
+
             emitFreeBlock(cellPtr);
         });
     }
@@ -284,6 +288,13 @@ class OwnershipRoutineLogic
     std::string getOrCreateCaptureBoxReleaseRoutine(mlir_ts::RefType captureRefType)
     {
         return buildCaptureBoxRoutine(captureRefType, "tsrelcb_", /*retaining=*/false);
+    }
+
+    // -mm=own's box of a closure that does not escape (OWN_BORROWS_CAPTURES_ATTR_NAME): it borrows
+    // every cell and every value it holds from the frame that built it, so it frees itself only.
+    std::string getOrCreateCaptureBoxFreeRoutine(mlir_ts::RefType captureRefType)
+    {
+        return buildCaptureBoxRoutine(captureRefType, "tsfrecb_", /*retaining=*/false, /*holdsNothing=*/true);
     }
 
     // Copying a closure duplicates its one reference to the box and nothing else - what the
@@ -789,9 +800,11 @@ class OwnershipRoutineLogic
         releaseViaTagBesideThis(type, slotPtr, INTERFACE_TYPE_INDEX, retaining);
     }
 
-    // Body of both capture-box routines: they take the storage holding the box pointer, like
-    // every other routine, so each begins by loading the box out of it.
-    std::string buildCaptureBoxRoutine(mlir_ts::RefType captureRefType, StringRef prefix, bool retaining)
+    // Body of the capture-box routines: they take the storage holding the box pointer, like
+    // every other routine, so each begins by loading the box out of it. A box that holds nothing
+    // of its own frees the block and stops there.
+    std::string buildCaptureBoxRoutine(mlir_ts::RefType captureRefType, StringRef prefix, bool retaining,
+                                       bool holdsNothing = false)
     {
         std::stringstream nameStream;
         nameStream << prefix.str() << (size_t)hash_value(captureRefType);
@@ -824,7 +837,11 @@ class OwnershipRoutineLogic
         else
         {
             emitIfLastReference(boxValue, [&]() {
-                releaseCapturedFields(captureRefType.getElementType(), boxValue);
+                if (!holdsNothing)
+                {
+                    releaseCapturedFields(captureRefType.getElementType(), boxValue);
+                }
+
                 emitFreeBlock(boxValue);
             });
         }
