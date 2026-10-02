@@ -5,7 +5,8 @@ amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 (moves by reachability) merged as #401 (results §12); phase 2 (borrows for locals) merged as #402
 (results §13); phase 3 (containers and unions) merged as #403 (results §14); phase 4 (function
 signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
-on branch `own-phase-5` (results §16). Plans in `docs/superpowers/plans/`.
+merged as #436 (results §16); phase 5b (closures that escape) on branch `own-phase-5b` (results
+§17). Plans in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -1104,3 +1105,78 @@ are phase 7, and object literals whose methods capture), 4 stop at an earlier li
 - A non-escaping closure always borrows: one that could own its captures instead (called after the
   cell's block ends, the variable not used again) is rejected.
 - A call given any function value drops every chain when its callee may drop.
+
+## 17. Phase 5b results, 2026-10-02
+
+Plan: `docs/superpowers/plans/2026-10-02-own-phase-5.md`, task 4. Changed: `OwnershipInferencePass.cpp`,
+and, for the bug in §17.2, `OwnershipFacts.h` and `OwnershipSignaturePass.cpp`.
+
+### 17.1 What phase 5b accepts
+
+A closure over a cell that escapes (§16.1's classification) owns what its box holds. Its box keeps
+today's routine (`tsrelcb_`), which destroys each cell with what is in it, and each copy.
+
+- **Copies** move in as in phase 4: the box's store is a taker, and the copy's owner gives it up there.
+- **Each cell moves in** at the store that fills the box: rc's `ts.RetainCell` for it goes, and so
+  does each of the frame's `ts.ReleaseCell`s the move reaches. The move must dominate them:
+  `'a' is moved here on some paths only` otherwise (a closure pushed in one branch of an `if`).
+- **Nothing in the frame may use the variable after the move.** That covers a read, an assignment
+  and another capture: `'a' is captured by a closure that escapes, and is still used here`. Two
+  closures that escape cannot share a variable. This is §2.5's "any use after the closure's
+  creation", measured from the box's store.
+- **A move round a loop** of a cell made outside it is the loop rule (§2.6).
+- **No move is possible** for a parameter's cell with a heap value, whose value is the caller's, or
+  for a cell an enclosing closure holds: `a closure that escapes owns what it captures, but -mm=own
+  cannot move this variable into it: ...`. A parameter's cell holding a number moves: it owns
+  nothing but itself (`makeScaler(k)`).
+- **A borrowing closure over the same cell** must be done with it before the move: the move into an
+  escaping box is an end of the cell, beside its `ts.ReleaseCell`s.
+- **A call through the box** (a folded `const f` called before `return f`) may not come after the
+  closure escapes or is released.
+
+### 17.2 A call inside a try body was not a call
+
+A call in a try body lowers to `ts.Invoke`, or to `ts.InvokeHybrid` through a hybrid function: a
+terminator whose normal and unwind edges are its successors. Neither pass knew the op. So such a
+call dropped no borrow: a read of `h.c` held across `reset(h)` inside a `try`, with `reset`
+overwriting `h.c`, compiled and printed 999 (gc: 1). It also resolved to no callee and returned nothing
+fresh. Found when `51exceptions.ts` reported its on-the-spot closure call in a `try` as an escape.
+`directCallee`, `calleeValue` and `callArgs` now take every call form apart, and `isCall` and
+`isFresh` know both ops. Test: `own_err_call_in_try_drops`.
+
+### 17.3 Measured
+
+AOT, `measure.ps1`, in MB: `own_closure_escape` reads gc 5.9, rc 4.3, none 234.6, own 4.3.
+
+### 17.4 Teeth
+
+With the frame's `ts.ReleaseCell`s kept after a move, `own_closure_escape` fails under AOT
+(0xC0000005). The JIT folds the reads of freed memory, as in §16.3.
+
+### 17.5 Tests and the corpus
+
+- **Positive:** `own_closure_escape` (over an object local, over a number parameter, a counter, a
+  copy beside a cell, called through the box before it is returned, kept by a constructor, pushed
+  into a global).
+- **Negatives:** `own_err_closure_escape_used`, `own_err_closure_escape_twice`,
+  `own_err_closure_escape_param`, `own_err_closure_escape_loop`, `own_err_closure_escape_inherited`,
+  `own_err_closure_escape_some_paths`, `own_err_call_in_try_drops`. `own_err_closure` (a counter that
+  escapes) compiles now and is gone.
+
+Corpus: 319 of 591 before, 325 after, none lost. `13actions` comes from the escapes. `51exceptions`
+and four `using` files (`00disposable`, `00try_catch_return_dispose`, `00using_nested_scopes`,
+`01try_catch_return_dispose`) come from §17.2: a call in a try body returns a fresh value now. All six
+pass under test-runner `-mm=own`, AOT and JIT, and their JIT output matches gc's.
+
+Found, not fixed (every model, MLIRGen): pushing a closure that returns `s32` into a
+`(() => number)[]` segfaults the compiler. For example, `let n = 0; h.push(() => n)`, since an
+integer literal is `s32`.
+
+### 17.6 Known limits
+
+- The capture is the move, so a closure created on one path only, with the variable alive on the
+  other, is an error (no drop elaboration).
+- A frame use between the capture and the escape is rejected, though the box is still alive there.
+- A closure that escapes from a closure body with a cell it inherited, and a closure over a
+  parameter's object, are errors. `this` captured by an escaping callback is the common case.
+- From §16.5: a non-escaping closure always borrows; a captured local is never `let`-borrowed.
