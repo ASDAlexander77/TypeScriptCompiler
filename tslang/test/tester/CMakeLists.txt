@@ -2572,7 +2572,9 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_closure_borrow own_closure_escape own_generator own_interface_view
                  own_async own_record_return own_generator_borrow own_global_script
                  own_global_init own_constant_data own_record_local
-                 own_nullable_view own_declared_constant own_spread_build own_interface_field_call)
+                 own_nullable_view own_declared_constant own_spread_build own_interface_field_call
+                 own_string_copy_field own_string_copy_after_move own_string_copy_nullable
+                 own_string_copy_exported own_string_copy_written)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2588,6 +2590,15 @@ endforeach()
 foreach(global_mm rc none gc)
     tslang_add_test(NAME test-jit-${global_mm}-own-global-script COMMAND test-runner -jit -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
     tslang_add_test(NAME test-compile-${global_mm}-own-global-script COMMAND test-runner -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
+endforeach()
+
+# Strings as values (spec 22): no model but own makes a copy, and each program means the same
+# under every model.
+foreach(strings_mm rc none gc)
+    foreach(strings_test own_string_copy_field own_string_copy_after_move own_string_copy_nullable own_string_copy_exported)
+        tslang_add_test(NAME test-jit-${strings_mm}-${strings_test} COMMAND test-runner -jit -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
+        tslang_add_test(NAME test-compile-${strings_mm}-${strings_test} COMMAND test-runner -mm=${strings_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${strings_test}.ts")
+    endforeach()
 endforeach()
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
@@ -2700,8 +2711,7 @@ set(own_error_cases
     "own_err_param_kept_loop|is moved inside a loop"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_delete|'delete' is not supported by -mm=own yet"
-    "own_err_mixed_return|'greet' returns a borrow of its argument on some paths and another value on others"
-    "own_err_unbox_string|'___unbox<!ts.string>' returns a borrow of its argument on some paths and another value on others"
+    "own_err_mixed_return|'pick' returns a borrow of its argument on some paths and another value on others"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"
@@ -2710,7 +2720,9 @@ set(own_error_cases
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
-    "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is")
+    "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_string_kept_param_known|is used here after its value was moved"
+    "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

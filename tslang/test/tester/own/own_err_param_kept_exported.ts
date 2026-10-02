@@ -1,12 +1,16 @@
 // -mm=own rejects: the constructor keeps its parameter, which its callers would have to give up,
-// but an exported class can be built from another module, which does not.
+// but an exported class can be built from another module, which does not. (A string there is copied
+// instead, spec 22.)
+class C {
+    constructor(public n: string) {}
+}
 export class Animal {
-    name: string;
-    constructor(name: string) {
-        this.name = name;
+    c: C;
+    constructor(c: C) {
+        this.c = c;
     }
 }
 function main() {
-    const a = new Animal("cat" + 1);
-    print(a.name);
+    const a = new Animal(new C("cat"));
+    print(a.c.n);
 }

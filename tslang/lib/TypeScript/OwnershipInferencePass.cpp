@@ -85,7 +85,10 @@ class OwnershipInferencePass
             }
 
             dryRunAttrs.clear();
-            (void)passed; // Task 3 makes the copies here when it did not
+            if (!passed)
+            {
+                makeStringCopies(toErase);
+            }
         }
 
         llvm::SetVector<mlir::Operation *> toErase;
@@ -442,6 +445,102 @@ class OwnershipInferencePass
         }
 
         op->setAttr(attrName, mlir::UnitAttr::get(&getContext()));
+    }
+
+    // Strings as values (spec 22.3): each string retain the dry run did not erase is rewritten, where
+    // its one use can be found, into a copy for that use. True when anything was rewritten.
+    bool makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased)
+    {
+        llvm::SmallVector<mlir::Operation *> retains;
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) && !erased.contains(op) &&
+                !captureRetains.contains(op) && !fieldBorrowRetains.contains(op))
+            {
+                retains.push_back(op);
+            }
+        });
+
+        auto copied = false;
+        for (auto *retain : retains)
+        {
+            copied = copyForRetain(retain) || copied;
+        }
+
+        return copied;
+    }
+
+    // The value a parameter of this function is, when its callers were told this function keeps it
+    // or returns a borrow of it (spec 15): copying it would leak what the caller gave up.
+    bool borrowsKnownParam(mlir::Value value)
+    {
+        auto param = borrowedParam(value);
+        return param >= 0 && (llvm::is_contained(ownedParams(getFunction()), param) || param == returnsBorrowOf);
+    }
+
+    bool copyForRetain(mlir::Operation *retain)
+    {
+        // `let x = v`: the local starts from a copy
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(retain))
+        {
+            auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            auto init = varOp ? varOp.getInitializer() : mlir::Value();
+            if (!init || !isCopyableString(init.getType()) || borrowsKnownParam(init) || isCellVariable(varOp.getResult()))
+            {
+                return false;
+            }
+
+            mlir::OpBuilder builder(varOp);
+            auto copy = builder.create<mlir_ts::StringCopyOp>(varOp.getLoc(), init.getType(), init);
+            varOp.getInitializerMutable().assign(copy);
+            retain->erase();
+            return true;
+        }
+
+        auto retainOp = mlir::cast<mlir_ts::RetainOp>(retain);
+        auto value = retainOp.getReference();
+        if (!isCopyableString(value.getType()) || borrowsKnownParam(value))
+        {
+            return false;
+        }
+
+        // the one use rc retained it for
+        mlir::OpOperand *taking = nullptr;
+        auto several = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user) || isBorrow(user, used))
+            {
+                return;
+            }
+
+            for (auto &operand : user->getOpOperands())
+            {
+                if (operand.get() == used)
+                {
+                    several = several || taking;
+                    taking = &operand;
+                }
+            }
+        });
+
+        if (!taking || several || !isCopyableString(taking->get().getType()))
+        {
+            return false;
+        }
+
+        // made where rc took its reference: a store releases what it overwrites first, and that may
+        // be the very string (`b.s = b.s`), or one the analysis cannot tell from it (`b.s = a.s`)
+        auto *at = taking->getOwner();
+        auto *def = taking->get().getDefiningOp();
+        if (taking->get() == value || (def && def->getBlock() == retain->getBlock() && def->isBeforeInBlock(retain)))
+        {
+            at = retain;
+        }
+
+        mlir::OpBuilder builder(at);
+        auto copy = builder.create<mlir_ts::StringCopyOp>(retain->getLoc(), taking->get().getType(), taking->get());
+        taking->set(copy);
+        retain->erase();
+        return true;
     }
 
     // The parameter this function's result borrows (`__own_result_borrows`), or -1; and the
@@ -2124,6 +2223,12 @@ class OwnershipInferencePass
                     }
                 }
 
+                // a copy (spec 22.2) reads the borrow into a block of its own, which points into nothing
+                if (mlir::isa<mlir_ts::StringCopyOp>(user))
+                {
+                    continue;
+                }
+
                 // A result that borrows what it was given borrows this too, and is walked as it.
                 for (auto result : user->getResults())
                 {
@@ -3138,7 +3243,7 @@ class OwnershipInferencePass
                       mlir_ts::ThisSymbolRefOp, mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
                       mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp, mlir_ts::StringConcatOp,
-                      mlir_ts::StringResizeOp, mlir_ts::StringLengthOp>(user))
+                      mlir_ts::StringResizeOp, mlir_ts::StringLengthOp, mlir_ts::StringCopyOp>(user))
         {
             return true;
         }
