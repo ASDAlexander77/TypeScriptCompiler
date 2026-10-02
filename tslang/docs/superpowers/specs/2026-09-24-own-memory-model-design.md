@@ -1999,6 +1999,12 @@ One file, `00union_null_undefined_nonstrict`, can differ in the order of a union
 synthesized `___cast<union<...>>` name. The order flips between runs of either binary (main gave
 one order in 9 runs of 12, this branch in 10 of 12). With the same order, the IR is identical.
 
+#### Linux
+
+GCC, in WSL, the branch at `efd252b1`: the build is clean, and
+`ctest -R "own-err|own-no-counting|own-verify"` passes 140 of 140. `ctest -R own_string_copy` (the
+positives under own, rc, none and gc, AOT and JIT) passes 48 of 48.
+
 #### Outside the rule
 
 - **A returned field of a parameter.** `function textOf(r) { return r.str2; }` stays a borrowed

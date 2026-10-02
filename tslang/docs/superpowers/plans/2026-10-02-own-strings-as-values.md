@@ -997,12 +997,12 @@ function main() {
 
   Tick this plan's boxes.
 
-- [ ] **Step 6: Linux.** Build the branch with GCC in WSL and run
+- [x] **Step 6: Linux.** Build the branch with GCC in WSL and run
   `ctest -R "own-err|own-no-counting|own-verify"` there (recipe: the WSL clone at
   `~/ts/TypeScriptCompiler`, build dir `__build/tslang/ninja/release`, fetch this branch from the
   Windows repo).
 
-- [ ] **Step 7: Commit, and open the PR.**
+- [x] **Step 7: Commit, and open the PR.**
 
 ```bash
 git add tslang/test/tester/own/own_string_copy_mixed_return.ts tslang/test/tester/CMakeLists.txt tslang/docs/superpowers/
