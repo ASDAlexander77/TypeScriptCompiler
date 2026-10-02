@@ -162,8 +162,13 @@ inline bool isView(mlir::Operation *op)
     auto isClosure = [](mlir::Type type) {
         return mlir::isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type);
     };
+    // a block `ts.New` made, seen as the object it is: a generator's state object
+    auto isMadeObject = [&]() {
+        return mlir::isa<mlir_ts::ValueRefType>(castOp.getIn().getType()) &&
+               mlir::isa<mlir_ts::ObjectType>(castOp.getType());
+    };
     return (keeps(castOp.getIn().getType()) && keeps(castOp.getType())) ||
-           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType()));
+           (isClosure(castOp.getIn().getType()) && isClosure(castOp.getType())) || isMadeObject();
 }
 
 // The block a value is a view of.
@@ -260,6 +265,15 @@ inline bool isFresh(mlir::Value value)
     if (def->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
     {
         return true;
+    }
+
+    // an interface over an object is that object: fresh only when the object is, and it goes
+    // nowhere else. The cast of an object literal to an interface marks it as arriving with a
+    // reference, which `let raw = {...}; <I>raw` makes a second owner of `raw`'s block.
+    if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(def))
+    {
+        auto object = newInterfaceOp->getOperand(0);
+        return object.hasOneUse() && isFresh(rootOf(object));
     }
 
     if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp,
