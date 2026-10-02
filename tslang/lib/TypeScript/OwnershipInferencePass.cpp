@@ -833,7 +833,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
             toErase.insert(moved.begin(), moved.end());
         }
 
-        // a call through the box itself after the closure was given away or given back
+        // A call through the box itself after the closure was given away or given back. followClosure
+        // stops at the escape, so `ends` may miss releases past it; that is enough while the only
+        // calls through a box are those of a folded `const f`, whose release ends its block.
         auto name = ownerName(closure.op.getResult());
         llvm::SmallVector<mlir::Operation *> gone(closure.ends.begin(), closure.ends.end());
         gone.push_back(closure.escape);
