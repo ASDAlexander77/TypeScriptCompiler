@@ -14,6 +14,7 @@
 #include "OwnershipFacts.h"
 
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -107,6 +108,8 @@ class OwnershipInferencePass
         auto f = getFunction();
         mlir::DominanceInfo dominanceInfo(f);
         dominance = &dominanceInfo;
+        // it is this call's: nothing after it (the copies, the next run) may read it
+        auto dominanceGone = llvm::make_scope_exit([&]() { dominance = nullptr; });
 
         // every value some ownership operation names, in the order the walk meets them
         llvm::SetVector<mlir::Value> candidates;
@@ -548,6 +551,12 @@ class OwnershipInferencePass
         auto *def = taking->get().getDefiningOp();
         if (taking->get() == value || (def && def->getBlock() == retain->getBlock() && def->isBeforeInBlock(retain)))
         {
+            // the use reads the copy, so the retain must come before it
+            if (!retain->isBeforeInBlock(taking->getOwner()))
+            {
+                return false;
+            }
+
             at = retain;
         }
 
