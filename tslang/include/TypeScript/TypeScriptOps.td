@@ -2373,6 +2373,15 @@ def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
   let results = (outs Res<TypeScript_String, "", [MemAlloc]>:$result);
 }
 
+// A copy of a string: a new block holding the same text, null when `in` is null (or, for an
+// optional, when it holds no value). Made by -mm=own's inference pass only, where a second
+// reference to a string cannot be proven a move or a borrow (spec 22); it lowers under every
+// model.
+def TypeScript_StringCopyOp : TypeScript_Op<"StringCopy", [AllTypesMatch<["in", "result"]>]> {
+  let arguments = (ins AnyType:$in);
+  let results = (outs Res<AnyType, "", [MemAlloc]>:$result);
+}
+
 def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
   let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2, I32Attr:$code);
   let results = (outs TypeScript_Boolean:$result);

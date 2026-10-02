@@ -884,6 +884,64 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
     }
 };
 
+// A copy of a string: `strlen + 1` bytes, from the allocator `ts.StringConcat` uses. A null string
+// stays null and allocates nothing. An optional `{ptr, i1}` is copied only when it holds a value:
+// a pointer whose flag says "none" may be anything.
+class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::StringCopyOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::StringCopyOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+
+        auto loc = op->getLoc();
+        auto i8PtrTy = th.getPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto llvmBoolType = th.getLLVMBoolType();
+        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
+
+        auto copyOf = [&](mlir::Value source, mlir::Value copyIt) {
+            return clh.conditionalExpressionLowering(
+                loc, i8PtrTy, copyIt,
+                [&](OpBuilder &, Location) -> mlir::Value {
+                    mlir::Value bytes = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, ValueRange{source}).getResult();
+                    bytes = rewriter.create<LLVM::AddOp>(
+                        loc, llvmIndexType,
+                        ValueRange{bytes, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1))});
+                    auto copy = ch.MemoryAlloc(bytes);
+                    rewriter.create<LLVM::MemcpyOp>(loc, copy, source, bytes, /*isVolatile=*/false);
+                    return copy;
+                },
+                [&](OpBuilder &, Location) -> mlir::Value { return source; });
+        };
+
+        mlir::Value in = transformed.getIn();
+        auto isSet = [&](mlir::Value pointer) -> mlir::Value {
+            return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, pointer, rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy));
+        };
+
+        if (mlir::isa<LLVM::LLVMPointerType>(in.getType()))
+        {
+            rewriter.replaceOp(op, ValueRange{copyOf(in, isSet(in))});
+            return success();
+        }
+
+        // an optional: `{ptr, i1}`
+        auto pointer = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{0});
+        auto hasValue = rewriter.create<LLVM::ExtractValueOp>(loc, in, ArrayRef<int64_t>{1});
+        auto copyIt = rewriter.create<LLVM::AndOp>(loc, llvmBoolType, hasValue, isSet(pointer));
+        auto copied = copyOf(pointer, copyIt);
+        rewriter.replaceOp(op, ValueRange{rewriter.create<LLVM::InsertValueOp>(loc, in, copied, ArrayRef<int64_t>{0})});
+        return success();
+    }
+};
+
 class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
 {
   public:
@@ -7963,7 +8021,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
-        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering,
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

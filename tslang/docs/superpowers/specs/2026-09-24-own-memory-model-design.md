@@ -1739,8 +1739,9 @@ Under `-mm=own`, a second reference to a string that own cannot prove to be a mo
 becomes a copy.
 
 - **A string** is a value whose type is `string`, a string literal type, or a union or an optional
-  of `string` with only `null` or `undefined` beside it. Those are one pointer, the same as
-  `string` (the nullable views of §21.3). A union with other members (`string | number`), and an
+  of `string` with only `null` or `undefined` beside it. A union with `null` is one pointer, the
+  same as `string`; an optional (`string | undefined`, an optional parameter) is `{ptr, i1}`, the
+  pointer meaningful only when the flag is set. A union with other members (`string | number`), and an
   object or array holding strings, are not covered.
 - **Silent.** A copy makes no diagnostic.
 - **Only where the program would fail.** Copies are made only in a function the analysis rejects,
@@ -1754,7 +1755,8 @@ becomes a copy.
 
 `ts.StringCopy %s : !ts.string -> !ts.string`, its result a new allocation (`MemAlloc`). It lowers
 to: null stays null; otherwise the length plus one byte, through the allocator `ts.StringConcat`
-uses, and a `memcpy`. A nullable string is copied through its pointer.
+uses, and a `memcpy`. An optional is copied
+only when it holds a value.
 
 - Only the own inference pass creates it, but it lowers under every model.
 - `isFresh` counts it, beside `ts.StringConcat`.

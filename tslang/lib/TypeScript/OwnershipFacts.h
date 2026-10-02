@@ -295,7 +295,7 @@ inline bool isFresh(mlir::Value value)
     }
 
     if (mlir::isa<mlir_ts::NewOp, mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::StringConcatOp,
-                  mlir_ts::StringResizeOp, mlir_ts::CharToStringOp>(def))
+                  mlir_ts::StringResizeOp, mlir_ts::StringCopyOp, mlir_ts::CharToStringOp>(def))
     {
         return true;
     }
@@ -431,6 +431,37 @@ inline bool holdsNoBlock(mlir::Value value)
     }
 
     return false;
+}
+
+// A value -mm=own copies rather than give a second owner (spec 22.1): a string, a string literal,
+// a union of strings and null that needs no tag (one pointer), or an optional of one of those
+// (`{ptr, i1}`).
+inline bool isCopyableString(mlir::Type type)
+{
+    auto isText = [](mlir::Type member) {
+        if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(member))
+        {
+            return mlir::isa<mlir_ts::StringType>(literalType.getElementType());
+        }
+
+        return mlir::isa<mlir_ts::StringType>(member);
+    };
+
+    if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+    {
+        return !mlir::isa<mlir_ts::OptionalType>(optionalType.getElementType()) &&
+               isCopyableString(optionalType.getElementType());
+    }
+
+    if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+    {
+        return llvm::any_of(unionType.getTypes(), isText) &&
+               llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                   return isText(member) || mlir::isa<mlir_ts::NullType>(member);
+               });
+    }
+
+    return isText(type);
 }
 
 // Some view of `value` is a `ts.NewInterface`, which boxes what it shows into a block.
