@@ -31,6 +31,21 @@ function local(n: number) {
     return r + a.x;
 }
 
+// the closure goes at the end of its block, before the frame's last reads: a box that destroyed
+// what it borrows would leave `a` freed here
+function innerBlock(n: number) {
+    let a = new C(n);
+    a.v.push(n);
+    let r = 0;
+    {
+        let f = () => a.x;
+        r = f();
+    }
+
+    churn();
+    return r + a.x + a.v.length - 1;
+}
+
 // a copy of a `const` beside a cell: the box borrows it too
 function byValue(n: number) {
     const h = new C(n);
@@ -135,10 +150,13 @@ function main() {
         const n = i % 10;
         const d = new D(new C(n));
         const c = new C(n);
-        t += local(n) + byValue(n) + asArgument(n) + inLoop(n) + nested(n) + d.read() + param(c) +
+        t += innerBlock(n) + local(n) + byValue(n) + asArgument(n) + inLoop(n) + nested(n) + d.read() + param(c) +
              frameAssigns(n) + closureAssigns(n) + letHolds(n) + letAliases(n);
+        // the captured parameters' values are still the caller's
+        churn();
+        t += c.x + d.c.x - 2 * n;
     }
 
-    assert(t == 1920000);
+    assert(t == 2100000);
     print("done.");
 }
