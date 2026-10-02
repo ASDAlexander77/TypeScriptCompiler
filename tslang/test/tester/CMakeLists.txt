@@ -619,6 +619,7 @@ tslang_add_test(NAME test-compile-02-iterator COMMAND test-runner "${PROJECT_SOU
 tslang_add_test(NAME test-compile-03-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/03iterator.ts")
 tslang_add_test(NAME test-compile-00-iterator-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterator_bug.ts")
 tslang_add_test(NAME test-compile-00-map COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00map.ts")
+tslang_add_test(NAME test-compile-00-iterator-methods COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterator_methods.ts")
 tslang_add_test(NAME test-compile-01-map COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01map.ts")
 tslang_add_test(NAME test-compile-00-filter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00filter.ts")
 tslang_add_test(NAME test-compile-00-reduce COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00reduce.ts")
@@ -1105,6 +1106,7 @@ tslang_add_test(NAME test-jit-02-iterator COMMAND test-runner -jit "${PROJECT_SO
 tslang_add_test(NAME test-jit-03-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/03iterator.ts")
 tslang_add_test(NAME test-jit-00-iterator-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterator_bug.ts")
 tslang_add_test(NAME test-jit-00-map COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00map.ts")
+tslang_add_test(NAME test-jit-00-iterator-methods COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00iterator_methods.ts")
 tslang_add_test(NAME test-jit-01-map COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01map.ts")
 tslang_add_test(NAME test-jit-00-filter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00filter.ts")
 tslang_add_test(NAME test-jit-00-reduce COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00reduce.ts")
@@ -1785,6 +1787,7 @@ set(TSLANG_CORPUS
     00intersection_type_generic.ts
     00intersection_type.ts
     00iterator_bug.ts
+    00iterator_methods.ts
     00iterator.ts
     00lambdas_generic_global.ts
     00lambdas.ts
