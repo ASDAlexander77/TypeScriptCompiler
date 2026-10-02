@@ -17,7 +17,7 @@
 # Skips everything when the prefix already has MLIR, so it never overwrites a custom build.
 set -e
 
-VERSION=${1:-22.1.8}
+VERSION=${1:-23.1.2}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PREFIX=${PREFIX:-$ROOT/3rdParty/llvm/release}
 WORK_DIR=${WORK_DIR:-$ROOT/__build/llvm-prebuilt}
@@ -28,17 +28,17 @@ if [ -f "$PREFIX/lib/cmake/mlir/MLIRConfig.cmake" ]; then
 fi
 
 NAME=LLVM-$VERSION-Linux-X64
-PACKAGE=$WORK_DIR/$NAME.tar.xz
+PACKAGE=$WORK_DIR/$NAME.tar.zst
 mkdir -p "$WORK_DIR" "$PREFIX"
 if [ ! -f "$PACKAGE" ]; then
-    echo "Downloading $NAME.tar.xz"
+    echo "Downloading $NAME.tar.zst"
     curl -fsSL --retry 3 -o "$PACKAGE.part" \
-        "https://github.com/llvm/llvm-project/releases/download/llvmorg-$VERSION/$NAME.tar.xz"
+        "https://github.com/llvm/llvm-project/releases/download/llvmorg-$VERSION/$NAME.tar.zst"
     mv "$PACKAGE.part" "$PACKAGE"
 fi
 
 echo "Unpacking $PACKAGE into $PREFIX"
-xz -T0 -dc "$PACKAGE" | tar -x -C "$PREFIX" --strip-components=1 \
+zstd --long=31 -T0 -dc "$PACKAGE" | tar -x -C "$PREFIX" --strip-components=1 \
     --exclude='*/bin/flang*' --exclude='*/bin/bbc' --exclude='*/bin/tco' \
     --exclude='*/bin/fir-*' --exclude='*/bin/f18-*' --exclude='*/bin/lldb*' \
     --exclude='*/bin/llvm-bolt*' --exclude='*/bin/*bolt*' --exclude='*/bin/merge-fdata' \

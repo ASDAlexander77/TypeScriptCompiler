@@ -78,7 +78,7 @@ public:
         }
 
         auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
-        SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+        SmallVector<mlir::Attribute> retainedNodes; // TODO: review usage of it
         SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it
         // a fresh DistinctAttr id: references to the old subprogram outside this
         // function (if any) keep the old identity instead of colliding with the

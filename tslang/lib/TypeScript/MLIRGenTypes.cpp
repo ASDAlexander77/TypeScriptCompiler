@@ -1167,16 +1167,16 @@ namespace mlirgen
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
             .Case("TypeOf", EmbeddedType::TypeOf)
-            .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Cases({"Reference", "Ref"}, EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
-            .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
+            .Cases({"Readonly", "Partial", "Required", "ThisType"}, EmbeddedType::FirstTypeArgument)
             .Case("NonNullable", EmbeddedType::NonNullable)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
 #endif
             .Case("ReadonlyArray", EmbeddedType::ReadonlyArray)
             .Case("ReturnType", EmbeddedType::ReturnType)
-            .Cases("Parameters", "ConstructorParameters", EmbeddedType::Parameters)
+            .Cases({"Parameters", "ConstructorParameters"}, EmbeddedType::Parameters)
             .Case("ThisParameterType", EmbeddedType::ThisParameterType)
             .Case("OmitThisParameter", EmbeddedType::OmitThisParameter)
             .Case("Uppercase", EmbeddedType::Uppercase)
@@ -1265,7 +1265,7 @@ namespace mlirgen
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
             .Case("TypeOf", EmbeddedType::TypeOf)
-            .Cases("Reference", "Ref", EmbeddedType::Reference)
+            .Cases({"Reference", "Ref"}, EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("ThisType", EmbeddedType::ThisType)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS

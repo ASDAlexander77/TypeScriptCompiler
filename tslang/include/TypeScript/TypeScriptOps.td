@@ -1812,7 +1812,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
 }
 
 def TypeScript_IfOp : TypeScript_Op<"If",
-      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::ResultOp">, 
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getSuccessorInputs"]>, SingleBlockImplicitTerminator<"typescript::ResultOp">,
       NoRegionArguments]> {
   let summary = "if-then-else operation";
 
@@ -1870,7 +1870,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands", "getSuccessorInputs"]>
     ]> {
   let summary = "a generic 'while' loop";
   let description = [{
@@ -1915,7 +1915,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands", "getSuccessorInputs"]>
     ]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
@@ -1943,7 +1943,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands", "getSuccessorInputs"]>
     ]> {
   let summary = "a generic 'for' loop";
 
