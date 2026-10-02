@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "OwnershipFacts.h"
 
@@ -85,6 +86,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         findOpen(module);
         computeFacts();
         computeDrops();
+        findBorrowingStates(module);
 
         for (auto &call : calls)
         {
@@ -112,6 +114,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             if (call.callees.fieldFunction && call.op->getNumResults() == 1)
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
+            // a generator whose state object borrows from its arguments
+            if (call.callees.funcs.size() == 1 && !call.callees.imported)
+            {
+                if (auto bounded = call.callees.funcs.front()->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BOUNDED_ATTR_NAME))
+                {
+                    call.op->setAttr(OWN_RESULT_BOUNDED_ATTR_NAME, bounded);
+                }
             }
         }
 
@@ -1138,6 +1149,261 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                                 mlir::StringAttr::get(&getContext(), why ? why : "an override in its class family disagrees"));
             }
         }
+    }
+
+    // ---- Generators that borrow (phase 7b) ----
+    //
+    // A generator over a parameter that holds a block - `function* each(a: number[])` - keeps the
+    // parameter's cell in a box in its state object's `.captured` field. Under 5b's rule that is an
+    // escaping closure over a value that is the caller's, an error. Instead the state object
+    // borrows: the caller owns it, it may not outlive the argument (OWN_RESULT_BOUNDED_ATTR_NAME),
+    // and its release gives back neither the parameter's value nor any field that only ever holds
+    // what was read out of it (OWN_BORROWING_FIELDS_ATTR_NAME). A state type is unique to its
+    // generator - its `next` field's type names a per-site `object_storage` - so a fact per type is
+    // a fact per generator, which is what the per-type release routine needs.
+
+    struct BorrowingState
+    {
+        mlir_ts::FuncOp maker;
+        int32_t captured = -1;
+        llvm::SmallVector<int32_t> bounded;
+        llvm::SetVector<int32_t> fields;
+    };
+
+    static int32_t fieldIndex(mlir_ts::TupleType tupleType, llvm::StringRef name)
+    {
+        for (auto [index, field] : llvm::enumerate(tupleType.getFields()))
+        {
+            if (auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(field.id); id && id.getValue() == name)
+            {
+                return static_cast<int32_t>(index);
+            }
+        }
+
+        return -1;
+    }
+
+    // The box the maker stores into the `.captured` field of the initial state it copies into
+    // `newOp`'s block: `ts.Store(box, ts.PropertyRef(state, captured))`, `state` a local whose only
+    // read fills the block.
+    static mlir::Value boxStoredIntoState(mlir_ts::NewOp newOp, int32_t captured)
+    {
+        mlir_ts::StoreOp fill;
+        for (auto *user : newOp->getUsers())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == newOp.getResult())
+            {
+                fill = storeOp;
+            }
+        }
+
+        auto loadOp = fill ? fill.getValue().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto stateOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!stateOp)
+        {
+            return {};
+        }
+
+        mlir::Value box;
+        for (auto *user : stateOp->getUsers())
+        {
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp || propertyRefOp.getPosition() != captured)
+            {
+                continue;
+            }
+
+            for (auto *fieldUser : propertyRefOp->getUsers())
+            {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || box)
+                {
+                    return {};
+                }
+
+                box = storeOp.getValue();
+            }
+        }
+
+        auto boxOp = box ? box.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        return boxOp && boxOp->hasAttr(CAPTURE_BOX_ATTR_NAME) ? box : mlir::Value();
+    }
+
+    // A parameter's cell: a captured local declared from an argument of `maker`'s entry block, that
+    // owns nothing (its value is the caller's).
+    static bool isParameterCell(mlir_ts::VariableOp cellOp, mlir_ts::FuncOp maker, int32_t &index)
+    {
+        auto argument = cellOp.getInitializer() ? mlir::dyn_cast<mlir::BlockArgument>(cellOp.getInitializer())
+                                                : mlir::BlockArgument();
+        if (!cellOp.getCaptured().value_or(false) || isOwningVariable(cellOp) || !argument ||
+            !argument.getOwner()->isEntryBlock() || argument.getOwner()->getParentOp() != maker.getOperation())
+        {
+            return false;
+        }
+
+        index = static_cast<int32_t>(argument.getArgNumber());
+        return true;
+    }
+
+    bool ownsHeap(mlir::Location location, mlir::Type type)
+    {
+        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        return mth.ownsHeapMemory(location, type);
+    }
+
+    void findBorrowingStates(mlir::ModuleOp module)
+    {
+        llvm::MapVector<mlir::Type, BorrowingState> states;
+        llvm::DenseMap<mlir::Type, int> made;
+        module.walk([&](mlir_ts::NewOp newOp) {
+            auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(newOp.getType());
+            auto tupleType = valueRefType ? mlir::dyn_cast<mlir_ts::TupleType>(valueRefType.getElementType())
+                                          : mlir_ts::TupleType();
+            if (!tupleType)
+            {
+                return;
+            }
+
+            ++made[tupleType];
+            auto captured = fieldIndex(tupleType, CAPTURED_NAME);
+            auto maker = newOp->getParentOfType<mlir_ts::FuncOp>();
+            // an open maker has callers this pass cannot give the bound to
+            if (captured < 0 || !maker || open.contains(maker))
+            {
+                return;
+            }
+
+            auto box = boxStoredIntoState(newOp, captured);
+            if (!box)
+            {
+                return;
+            }
+
+            BorrowingState state{maker, captured};
+            for (auto *user : box.getUsers())
+            {
+                auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                if (!propertyRefOp)
+                {
+                    continue;
+                }
+
+                for (auto *fieldUser : propertyRefOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    auto cellOp = storeOp ? storeOp.getValue().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+                    int32_t index = -1;
+                    if (!cellOp || !isParameterCell(cellOp, maker, index))
+                    {
+                        return; // a box with anything but parameters' cells owns what it holds
+                    }
+
+                    auto cellType = mlir::cast<mlir_ts::RefType>(cellOp.getType());
+                    if (ownsHeap(cellOp.getLoc(), cellType.getElementType()))
+                    {
+                        state.bounded.push_back(index);
+                    }
+                }
+            }
+
+            if (!state.bounded.empty())
+            {
+                states[tupleType] = state;
+            }
+        });
+
+        // made in one place only: the maker is the one function a bound can come from
+        states.remove_if([&](auto &entry) { return made[entry.first] != 1; });
+        if (states.empty())
+        {
+            return;
+        }
+
+        // Each store into a field of a state type, by field: what the field may be given.
+        llvm::DenseMap<std::pair<mlir::Type, int64_t>, llvm::SmallVector<mlir::Value>> stored;
+        module.walk([&](mlir_ts::StoreOp storeOp) {
+            auto propertyRefOp = storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto tupleType = propertyRefOp ? storageTupleOf(propertyRefOp->getOperand(0).getType()) : mlir_ts::TupleType();
+            if (tupleType && states.count(tupleType))
+            {
+                stored[{tupleType, propertyRefOp.getPosition()}].push_back(storeOp.getValue());
+            }
+        });
+
+        for (auto &[type, state] : states)
+        {
+            auto tupleType = mlir::cast<mlir_ts::TupleType>(type);
+            // least fixpoint: a field borrows once everything stored into it is a read of a borrowing
+            // cell or field
+            for (auto changed = true; changed;)
+            {
+                changed = false;
+                for (auto [index, field] : llvm::enumerate(tupleType.getFields()))
+                {
+                    auto position = static_cast<int32_t>(index);
+                    auto found = stored.find({type, position});
+                    if (position == state.captured || state.fields.contains(position) || found == stored.end() ||
+                        !ownsHeap(state.maker.getLoc(), field.type))
+                    {
+                        continue;
+                    }
+
+                    if (llvm::all_of(found->second, [&](mlir::Value value) { return readsBorrowed(value, tupleType, state); }))
+                    {
+                        state.fields.insert(position);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        auto *context = &getContext();
+        llvm::SmallVector<mlir::Attribute> entries;
+        for (auto &[type, state] : states)
+        {
+            llvm::SmallVector<int32_t> fields{state.captured};
+            fields.append(state.fields.begin(), state.fields.end());
+            entries.push_back(mlir::ArrayAttr::get(
+                context, {mlir::TypeAttr::get(type), mlir::DenseI32ArrayAttr::get(context, fields)}));
+            state.maker->setAttr(OWN_RESULT_BOUNDED_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, state.bounded));
+        }
+
+        module->setAttr(OWN_BORROWING_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));
+    }
+
+    // Is `value` a read of what a state of `tupleType` borrows: the value in one of its box's cells
+    // (`ts.Load` of `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`), or a
+    // borrowing field's (`ts.Load(ts.PropertyRef(state, p))`)?
+    bool readsBorrowed(mlir::Value value, mlir_ts::TupleType tupleType, const BorrowingState &state)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp)
+        {
+            return false;
+        }
+
+        auto isStateField = [&](mlir::Value ref, int32_t &position) {
+            auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+            if (!propertyRefOp || storageTupleOf(propertyRefOp->getOperand(0).getType()) != tupleType)
+            {
+                return false;
+            }
+
+            position = propertyRefOp.getPosition();
+            return true;
+        };
+
+        int32_t position = -1;
+        if (isStateField(loadOp.getReference(), position))
+        {
+            return state.fields.contains(position);
+        }
+
+        // the cell, read out of the box the state holds
+        auto cellLoad = loadOp.getReference().getDefiningOp<mlir_ts::LoadOp>();
+        auto cellRef = cellLoad ? cellLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto boxLoad = cellRef ? cellRef->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        return boxLoad && isStateField(boxLoad.getReference(), position) && position == state.captured;
     }
 
     // ---- Drops ----

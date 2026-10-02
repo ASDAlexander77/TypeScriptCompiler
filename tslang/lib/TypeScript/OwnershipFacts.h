@@ -44,6 +44,10 @@ namespace mlir_ts = mlir::typescript;
 // cell. A cell that borrows its value (a captured parameter's) cannot be assigned: the old value is
 // the caller's.
 #define OWN_ASSIGNS_CAPTURES_ATTR_NAME "__own_assigns_captures"
+// The arguments a generator's state object borrows from (OWN_BORROWING_FIELDS_ATTR_NAME): the
+// result is the caller's to own, but no use of it may come after any of these arguments is given
+// back, and it may not be kept anywhere that outlives them.
+#define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
 
 // A call inside a try body is a `ts.Invoke` (`ts.InvokeHybrid` through a hybrid function): a
 // terminator whose normal and unwind edges are its successors. It names its callee as a symbol, or

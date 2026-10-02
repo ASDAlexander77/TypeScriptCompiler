@@ -89,6 +89,8 @@ class OwnershipInferencePass
         closures.clear();
         closureOf.clear();
         stateBoxes.clear();
+        fieldBorrowRetains.clear();
+        fieldBorrowReleases.clear();
         captureStores.clear();
         captureRetains.clear();
         returnsBorrowOf = resultBorrows(f);
@@ -96,6 +98,7 @@ class OwnershipInferencePass
         // first: whether a closure borrows what it captures changes what its box's stores are
         classifyClosures();
         classifyStateBoxes();
+        classifyBorrowingFields();
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -206,6 +209,12 @@ class OwnershipInferencePass
                 continue; // a borrowing box's copy of a value: decideClosures decides it
             }
 
+            if (fieldBorrowRetains.contains(op))
+            {
+                toErase.insert(op); // a borrowing field's: it takes nothing
+                continue;
+            }
+
             auto value = retainedValue(op);
             if (value && proven.contains(value))
             {
@@ -304,6 +313,9 @@ class OwnershipInferencePass
 
         decideClosures(toErase);
         decideCells();
+        checkBorrowedReads();
+        checkBoundedResults();
+        toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
 
         for (auto *op : toErase)
         {
@@ -315,6 +327,7 @@ class OwnershipInferencePass
         f.walk([](mlir::Operation *op) {
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_NO_DROPS_ATTR_NAME,
                                OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME, OWN_ASSIGNS_CAPTURES_ATTR_NAME,
+                               OWN_RESULT_BOUNDED_ATTR_NAME,
                                OWN_CAPTURE_BORROW_ATTR_NAME})
             {
                 op->removeAttr(name);
@@ -368,6 +381,9 @@ class OwnershipInferencePass
         // held by a local that owns nothing (`let f: () => number; f = () => ...`): an alias, so
         // the closure's own releases stay its owner
         bool aliased = false;
+        // a generator's box whose state object borrows from the generator's arguments
+        // (OWN_BORROWING_FIELDS_ATTR_NAME): a parameter's cell moves in, and the box frees the cell only
+        bool borrowsValues = false;
     };
 
     llvm::SmallVector<std::shared_ptr<Closure>> closures;
@@ -379,6 +395,9 @@ class OwnershipInferencePass
     llvm::DenseMap<mlir::Operation *, Closure *> closureOf;
     // each generator's capture box, which escapes with its state object (classifyStateBoxes)
     llvm::DenseMap<mlir::Value, Closure *> stateBoxes;
+    // rc's retains for stores into borrowing fields, and those fields' releases (classifyBorrowingFields)
+    llvm::DenseSet<mlir::Operation *> fieldBorrowRetains;
+    llvm::SmallVector<mlir::Operation *> fieldBorrowReleases;
 
     // Finds the closures over cells and what they borrow, before anything else: whether a box's
     // stores are reads or takers depends on it. A closure with copies only keeps what phase 4 does
@@ -479,6 +498,291 @@ class OwnershipInferencePass
         });
     }
 
+    // The fields of a generator's state object of this type that borrow from its arguments
+    // (OWN_BORROWING_FIELDS_ATTR_NAME, the signature pass's), the `.captured` box's first.
+    llvm::SmallVector<int32_t> borrowingFieldsOf(mlir::Type recordType)
+    {
+        llvm::SmallVector<int32_t> fields;
+        if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(recordType))
+        {
+            recordType = objectType.getStorageType();
+        }
+
+        if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(recordType))
+        {
+            recordType = mlir_ts::TupleType::get(&getContext(), storageType.getFields());
+        }
+
+        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+        auto entries = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_BORROWING_FIELDS_ATTR_NAME) : mlir::ArrayAttr();
+        if (!entries)
+        {
+            return fields;
+        }
+
+        for (auto entry : entries.getAsRange<mlir::ArrayAttr>())
+        {
+            if (mlir::cast<mlir::TypeAttr>(entry[0]).getValue() == recordType)
+            {
+                auto indices = mlir::cast<mlir::DenseI32ArrayAttr>(entry[1]).asArrayRef();
+                fields.append(indices.begin(), indices.end());
+            }
+        }
+
+        return fields;
+    }
+
+    // Is `ref` a field of a generator's state object that borrows (other than the `.captured` box)?
+    bool isBorrowingField(mlir::Value ref)
+    {
+        auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        auto fields = borrowingFieldsOf(propertyRefOp->getOperand(0).getType());
+        return fields.size() > 1 && llvm::is_contained(llvm::ArrayRef<int32_t>(fields).drop_front(),
+                                                       static_cast<int32_t>(propertyRefOp.getPosition()));
+    }
+
+    // A store into a borrowing field holds what it stores without owning it, as a borrowing box's
+    // copy does (OWN_CAPTURE_BORROW_ATTR_NAME), and rc's retain for it goes; its release, when the
+    // field is overwritten, gives nothing back.
+    void classifyBorrowingFields()
+    {
+        getFunction().walk([&](mlir::Operation *op) {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op); storeOp && isBorrowingField(storeOp.getReference()))
+            {
+                storeOp->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                if (auto *retain = retainBefore(storeOp.getValue(), storeOp))
+                {
+                    fieldBorrowRetains.insert(retain);
+                }
+            }
+            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
+                     releaseSlotOp && isBorrowingField(releaseSlotOp.getSlot()))
+            {
+                fieldBorrowReleases.push_back(op);
+            }
+        });
+    }
+
+    // Is `ref` a cell read out of the `.captured` box of a generator's state object that borrows:
+    // `ts.Load(ts.PropertyRef(ts.Load(ts.PropertyRef(state, captured)), i))`?
+    bool isBorrowingCell(mlir::Value ref)
+    {
+        auto cellLoad = ref.getDefiningOp<mlir_ts::LoadOp>();
+        auto cellRef = cellLoad ? cellLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto boxLoad = cellRef ? cellRef->getOperand(0).getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+        auto boxRef = boxLoad ? boxLoad.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        if (!boxRef)
+        {
+            return false;
+        }
+
+        auto fields = borrowingFieldsOf(boxRef->getOperand(0).getType());
+        return !fields.empty() && fields.front() == static_cast<int32_t>(boxRef.getPosition());
+    }
+
+    // What a generator reads out of a borrowing cell or field is the caller's: every use of it must
+    // be a borrow - a store into another borrowing field is one (classifyBorrowingFields). A yield of
+    // it, a push, a return, a store anywhere else would give the caller's value a second owner, and
+    // rc retains nothing for some of these, so nothing else would see it.
+    void checkBorrowedReads()
+    {
+        getFunction().walk([&](mlir_ts::LoadOp loadOp) {
+            auto ref = loadOp.getReference();
+            if (!ownsHeap(loadOp.getResult()) || !(isBorrowingCell(ref) || isBorrowingField(ref)))
+            {
+                return;
+            }
+
+            auto reported = false;
+            forEachUse(loadOp.getResult(), [&](mlir::Operation *user, mlir::Value used) {
+                if (reported || isBorrow(user, used) || fieldBorrowRetains.contains(user))
+                {
+                    return;
+                }
+
+                reportPlaceBorrowEscapes(user, ownerName(loadOp.getResult()), "the generator's argument");
+                reported = true;
+            });
+        });
+    }
+
+    // A call whose result borrows from its arguments (OWN_RESULT_BOUNDED_ATTR_NAME): a generator over
+    // a parameter's block. The result is owned as any fresh value is, but nothing may use it after
+    // one of those arguments is given back - released, assigned, or dropped from the place it was
+    // read from - and it may not be kept anywhere that could outlive them. Its releases are not
+    // uses: the state object's release gives back nothing it borrows.
+    void checkBoundedResults()
+    {
+        getFunction().walk([&](mlir::Operation *call) {
+            auto bounded = call->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BOUNDED_ATTR_NAME);
+            if (!bounded || !isCall(call) || call->getNumResults() != 1)
+            {
+                return;
+            }
+
+            auto name = ownerName(call->getResult(0));
+            llvm::SmallVector<mlir::Operation *> uses;
+            if (auto *kept = boundedUses(call->getResult(0), uses))
+            {
+                reportPlaceBorrowEscapes(kept, name, "its generator's arguments");
+                return;
+            }
+
+            auto args = callArgs(call);
+            for (auto index : bounded.asArrayRef())
+            {
+                if (static_cast<size_t>(index) >= args.size() || holdsNoBlock(args[index]) ||
+                    isImmortalLiteral(args[index]))
+                {
+                    continue;
+                }
+
+                auto root = rootOf(args[index]);
+                if (borrowedParam(root) >= 0)
+                {
+                    continue; // the caller's caller's: alive for all of this function
+                }
+
+                Chain chain;
+                auto *read = placeReadOf(root);
+                if (read)
+                {
+                    chain = chainOf(read);
+                }
+                else if (auto slotLoad = slotLoadOf(root))
+                {
+                    chain.roots.push_back({slotLoad.getReference(), Chain::Slot});
+                }
+                else if (isFresh(root))
+                {
+                    chain.roots.push_back({root, Chain::Owned});
+                }
+                else
+                {
+                    chain.roots.push_back({root, Chain::NotOwned});
+                }
+
+                // the root's own ends; and, for a read out of a place, whatever may destroy what the
+                // place holds (a local or a made value is not destroyed by a call it is given)
+                auto ends = rootEnds(chain);
+                for (auto *drop : read ? llvm::ArrayRef<mlir::Operation *>(drops) : llvm::ArrayRef<mlir::Operation *>())
+                {
+                    if (drop != call && dropsChain(drop, chain, read))
+                    {
+                        ends.push_back(drop);
+                    }
+                }
+
+                auto owner = ownerName(root);
+                for (auto *end : ends)
+                {
+                    if (end == call)
+                    {
+                        continue;
+                    }
+
+                    for (auto *use : uses)
+                    {
+                        if (use != end && reachableAfter(end, use, call))
+                        {
+                            reportBorrowOutlives(use, end, name, owner);
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Every use of a bounded result, through its views, the locals that hold it, and the function
+    // and object a call through it is made with. Answers the first use that keeps it - anything
+    // that is not a read, a call, a local, or rc's bookkeeping - or null.
+    mlir::Operation *boundedUses(mlir::Value result, llvm::SmallVectorImpl<mlir::Operation *> &uses)
+    {
+        llvm::SmallVector<mlir::Value> values{result};
+        llvm::SmallPtrSet<mlir::Value, 8> seen;
+        mlir::Operation *kept = nullptr;
+        while (!values.empty() && !kept)
+        {
+            auto value = values.pop_back_val();
+            if (!seen.insert(value).second)
+            {
+                continue;
+            }
+
+            forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+                if (kept || mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::DebugVariableOp>(user))
+                {
+                    return;
+                }
+
+                mlir::Value slot;
+                if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+                {
+                    slot = varOp.getResult();
+                }
+                else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == used)
+                {
+                    slot = storeOp.getReference();
+                }
+
+                if (slot)
+                {
+                    auto slotVar = slot.getDefiningOp<mlir_ts::VariableOp>();
+                    if (!slotVar || slotVar.getCaptured().value_or(false))
+                    {
+                        kept = user;
+                        return;
+                    }
+
+                    for (auto *slotUser : slot.getUsers())
+                    {
+                        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                        {
+                            values.push_back(loadOp.getResult());
+                        }
+                    }
+
+                    return;
+                }
+
+                uses.push_back(user);
+                if (isCall(user))
+                {
+                    if (isKeptArgument(user, used))
+                    {
+                        kept = user;
+                    }
+
+                    return;
+                }
+
+                // `it.next()`: the field read, the bound function, its `this`
+                if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::LoadOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp>(user))
+                {
+                    for (auto partResult : user->getResults())
+                    {
+                        values.push_back(partResult);
+                    }
+
+                    return;
+                }
+
+                if (!isBorrow(user, used))
+                {
+                    kept = user;
+                }
+            });
+        }
+
+        return kept;
+    }
+
     // A generator's maker puts what the generator captures - its parameters, an outer local - into
     // a box, and the box into its state object's `.captured` field: the box of a closure that
     // escapes, with the state object, at that store. There is no closure value, so no use runs it
@@ -535,6 +839,11 @@ class OwnershipInferencePass
                 return;
             }
 
+            auto stateRef = mlir::cast<mlir_ts::StoreOp>(closure->escape).getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto stateType = mlir::cast<mlir_ts::RefType>(stateRef->getOperand(0).getType()).getElementType();
+            auto borrowing = borrowingFieldsOf(stateType);
+            closure->borrowsValues = !borrowing.empty() && borrowing.front() == stateRef.getPosition();
+
             for (auto &fill : closure->fills)
             {
                 if (auto *retain = retainBefore(fill.second.getValue(), fill.second))
@@ -581,6 +890,12 @@ class OwnershipInferencePass
             ++reads;
             for (auto *readUser : loadOp->getUsers())
             {
+                // rc's retain of the initial state, for fields that own (holdsConstantsOrMoves)
+                if (mlir::isa<mlir_ts::RetainOp>(readUser))
+                {
+                    continue;
+                }
+
                 auto fillOp = mlir::dyn_cast<mlir_ts::StoreOp>(readUser);
                 if (!fillOp || fillOp.getValue() != loadOp.getResult() || !fillOp.getReference().getDefiningOp<mlir_ts::NewOp>())
                 {
@@ -946,7 +1261,7 @@ class OwnershipInferencePass
 
             auto name = varName(varOp);
             MLIRTypeHelper mth(&getContext(), CompileOptions{});
-            if (!isOwningVariable(varOp) &&
+            if (!isOwningVariable(varOp) && !closure.borrowsValues &&
                 mth.ownsHeapMemory(varOp.getLoc(), mlir::cast<mlir_ts::RefType>(value.getType()).getElementType()))
             {
                 reportEscapingCellNotOwned(move, closure.escape, "its value is the caller's");
