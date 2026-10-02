@@ -263,6 +263,15 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // data nothing owns (isConstantData): a number or null in a union, a function, a
+            // literal, a tuple of literals. A slot's retain is decided on its initializer, so only
+            // while nothing else is ever stored into the slot.
+            if (value && isConstantData(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotKeepsInitializer(op)))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             if (!value || isFresh(value) == false)
             {
                 reportSecondReference(op);
@@ -2737,6 +2746,35 @@ class OwnershipInferencePass
     // The value a retain acquires: a Retain's operand, or a RetainSlot's variable's initializer,
     // seen through its views. None for a variable with no initializer - its storage was hoisted
     // in front of a try and its value arrives by a store this phase does not follow.
+    // A `ts.RetainSlot`'s slot holds its initializer for as long as it lives: nothing is stored
+    // into it or into a field of it, and no closure captures it.
+    static bool slotKeepsInitializer(mlir::Operation *op)
+    {
+        auto slot = mlir::cast<mlir_ts::RetainSlotOp>(op).getSlot();
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        if (!varOp || !varOp.getInitializer() || isCellVariable(slot))
+        {
+            return false;
+        }
+
+        return llvm::all_of(slot.getUsers(), [&](mlir::Operation *user) {
+            return mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user) || onlyRead(user);
+        });
+    }
+
+    // A read of what a slot holds, or of a field of it (`a[0]` of a tuple local), and nothing that
+    // writes through it.
+    static bool onlyRead(mlir::Operation *user)
+    {
+        if (mlir::isa<mlir_ts::LoadOp>(user))
+        {
+            return true;
+        }
+
+        auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+        return propertyRefOp && llvm::all_of(propertyRefOp->getUsers(), [](mlir::Operation *fieldUser) { return onlyRead(fieldUser); });
+    }
+
     static mlir::Value retainedValue(mlir::Operation *op)
     {
         if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
@@ -2881,17 +2919,54 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // `let a = { item: new C() }`: the read is what an owning local starts with, and rc's
+            // `ts.RetainSlot` of that local is the record's retain
+            if (auto ownerOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+            {
+                auto *slotRetain = ownerOp.getInitializer() == read.getResult() && isOwningVariable(ownerOp)
+                                       ? onlyRetainSlotOf(ownerOp)
+                                       : nullptr;
+                if (!slotRetain || retain)
+                {
+                    return nullptr;
+                }
+
+                retain = slotRetain;
+                continue;
+            }
+
+            // stored into the result slot, or into an owning local (`a = { item: new C() }`)
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             auto slot = storeOp && storeOp.getValue() == read.getResult()
                             ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                             : mlir_ts::VariableOp();
-            if (!slot || !isResultSlot(slot))
+            if (!slot || !(isResultSlot(slot) || isOwningVariable(slot)))
             {
                 return nullptr;
             }
         }
 
         return retain;
+    }
+
+    // The one `ts.RetainSlot` of a local; null when there are none or several.
+    static mlir::Operation *onlyRetainSlotOf(mlir_ts::VariableOp varOp)
+    {
+        mlir::Operation *found = nullptr;
+        for (auto *user : varOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::RetainSlotOp>(user))
+            {
+                if (found)
+                {
+                    return nullptr;
+                }
+
+                found = user;
+            }
+        }
+
+        return found;
     }
 
     // A local that owns nothing, is never captured, and is read only to be returned.
@@ -3071,8 +3146,9 @@ class OwnershipInferencePass
         // Nothing to move: a number owns no block, and a string literal is the immortal global,
         // which any number of places may hold. Under --opt, CSE merges identical literals before
         // this pass, so one such value is routinely stored into several places. A read out of a
-        // container owns nothing either: checkPlaceRead decides it.
-        if (!ownsHeap(value) || isImmortalLiteral(value) || placeReadOf(value))
+        // container owns nothing either: checkPlaceRead decides it. Nor does other data nothing
+        // owns: an empty optional, a function, a tuple of literals (isConstantData).
+        if (!ownsHeap(value) || isImmortalLiteral(value) || isConstantData(value) || placeReadOf(value))
         {
             return true;
         }

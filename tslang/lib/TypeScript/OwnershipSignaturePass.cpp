@@ -50,6 +50,102 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OwnershipSignaturePass)
 
+    // A global is a root (rc 5ai): what its initializer makes moves into it, and nothing gives it
+    // back. rc retains a fresh value for its `ts.GlobalResult`, and that retain is the move: it
+    // goes. The per-function inference never sees a global's region, so any other retain there is
+    // reported here, by the global's name, rather than left to the lowering's "left a retain
+    // behind".
+    // Every use of `value` ends in the global's `ts.GlobalResult`: given to it, or an element of a
+    // fresh array literal that is (`const nested = [[1, 2], [3]]`). Its retains are judged on their
+    // own.
+    static bool movesIntoResult(mlir::Value value)
+    {
+        return llvm::all_of(value.getUses(), [](mlir::OpOperand &use) {
+            auto *user = use.getOwner();
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::GlobalResultOp>(user))
+            {
+                return true;
+            }
+
+            if ((isView(user) && use.getOperandNumber() == 0) || mlir::isa<mlir_ts::CreateArrayOp>(user))
+            {
+                return movesIntoResult(user->getResult(0));
+            }
+
+            // copied into a block `ts.New` made, which itself moves in: an object literal's box
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && use.getOperandNumber() == 0)
+            {
+                auto block = storeOp.getReference();
+                return block.getDefiningOp<mlir_ts::NewOp>() &&
+                       llvm::all_of(block.getUses(), [&](mlir::OpOperand &blockUse) {
+                           return blockUse.getOwner() == storeOp.getOperation() ||
+                                  (isView(blockUse.getOwner()) && movesIntoResult(blockUse.getOwner()->getResult(0)));
+                       });
+            }
+
+            return false;
+        });
+    }
+
+    // A record copied out of a local a `ts.Constant` initializes, whose owning fields are given
+    // nothing that holds a block: it holds constants only - numbers, immortal string literals,
+    // functions - and nobody else's reference.
+    static bool holdsOnlyConstants(mlir::Value value)
+    {
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!varOp || !varOp.getInitializer() || !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return false;
+        }
+
+        return llvm::all_of(varOp->getUsers(), [](mlir::Operation *user) {
+            if (mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                return true;
+            }
+
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            return propertyRefOp && llvm::all_of(propertyRefOp->getUsers(), [&](mlir::Operation *fieldUser) {
+                       auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                       return mlir::isa<mlir_ts::LoadOp>(fieldUser) ||
+                              (storeOp && storeOp.getReference() == propertyRefOp.getResult() &&
+                               holdsNoBlock(storeOp.getValue()));
+                   });
+        });
+    }
+
+    void moveIntoGlobals(mlir::ModuleOp module)
+    {
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            llvm::SmallVector<mlir_ts::RetainOp> retains;
+            globalOp.walk([&](mlir_ts::RetainOp retainOp) { retains.push_back(retainOp); });
+            for (auto retainOp : retains)
+            {
+                auto value = retainOp.getReference();
+
+                // nothing in the region gives the block back, or takes a second reference to it:
+                // the global is its one owner
+                auto released = false;
+                auto retained = 0;
+                forEachUse(rootOf(value), [&](mlir::Operation *user, mlir::Value) {
+                    released = released || mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(user);
+                    retained += mlir::isa<mlir_ts::RetainOp>(user);
+                });
+
+                if (retained == 1 && !released && (isFresh(value) || holdsOnlyConstants(value) || isConstantData(value)) && movesIntoResult(value))
+                {
+                    retainOp.erase();
+                    continue;
+                }
+
+                retainOp.emitError("the initializer of global '")
+                    << globalOp.getSymName() << "' takes a second reference; -mm=own cannot prove a move or a borrow here yet";
+                signalPassFailure();
+            }
+        });
+    }
+
     void runOnOperation() override
     {
         auto module = getOperation();
@@ -72,6 +168,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
+        moveIntoGlobals(module);
         collectClassVTables(module);
         collectFieldFunctions(module);
 

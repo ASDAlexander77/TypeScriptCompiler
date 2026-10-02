@@ -2567,7 +2567,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_call_no_drops own_getter_borrow own_param_kept own_any_box
                  own_string_length_borrow
                  own_closure_borrow own_closure_escape own_generator own_interface_view
-                 own_async own_record_return own_generator_borrow own_global_script)
+                 own_async own_record_return own_generator_borrow own_global_script
+                 own_global_init own_constant_data own_record_local)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -2655,6 +2656,7 @@ set(own_error_cases
     "own_err_field_function_reassigned|borrows .* but is used here after it may be released or overwritten"
     "own_err_generator_outlives_arg|borrows .* but is used here after .* is released or overwritten"
     "own_err_generator_bounded_escapes|borrows its generator's arguments and cannot be stored, returned or captured"
+    "own_err_literal_two_records|is used here after its value was moved"
     "own_err_generator_yields_borrow|borrows the generator's argument and cannot be stored, returned or captured"
     "own_err_generator_map_outlives|borrows .* but is used here after .* is released or overwritten"
     "own_err_generator_place_overwritten|borrows a field but is used here after it may be released or overwritten"
