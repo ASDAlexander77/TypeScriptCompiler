@@ -461,9 +461,16 @@ class OwnershipInferencePass
             // is given to a generator's maker whose result borrows from it
             if (!closure->hasCells)
             {
+                // ...and only when every copy has an owner of its own: the box frees itself alone, so a
+                // value made for it (a callback that captures, `a.filter((x) => x > n)`) would be
+                // nobody's
                 closure->borrowsCopies =
-                    !closure->escape && llvm::any_of(closure->boxUses, [](mlir::Operation *use) {
-                        return use->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME);
+                    !closure->escape &&
+                    llvm::any_of(closure->boxUses,
+                                 [](mlir::Operation *use) { return use->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME); }) &&
+                    llvm::none_of(closure->fills, [&](auto &fill) {
+                        auto value = fill.second.getValue();
+                        return !holdsNoBlock(value) && isFresh(rootOf(value));
                     });
                 if (!closure->borrowsCopies)
                 {

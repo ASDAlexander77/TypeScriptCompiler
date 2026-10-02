@@ -29,10 +29,16 @@ function* fields(c: C) {
     yield c.v.length;
 }
 
+// a string made in another function: a temporary made in front of a `yield` in the generator's own
+// body is never released (spec 18.5)
+function bangLength(s: string) {
+    return (s + "!").length;
+}
+
 // a string parameter: what is made from it is the generator's own
 function* lengths(s: string) {
     yield s.length;
-    yield (s + "!").length;
+    yield bangLength(s);
 }
 
 function main() {
@@ -75,13 +81,15 @@ function main() {
             t += v;
         }
 
+        // the argument is still the caller's
+        t += a.length + c.x;
+
+        // a callback that captures is made for the box `.filter` builds, which then owns its copies:
+        // `a` moves in, so this is its last use
         for (const v of a.filter((x) => x > n)) {
             churn();
             t += v;
         }
-
-        // the argument is still the caller's
-        t += a.length + c.x;
     }
 
     assert(t == 2080000, "t");
