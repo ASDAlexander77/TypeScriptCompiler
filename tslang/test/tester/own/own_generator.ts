@@ -42,6 +42,26 @@ function* reassigned() {
     yield c.x;
 }
 
+// yields fresh blocks: each moves into the `{value, done}` result, which the caller owns
+function* objects() {
+    const k = seed;
+    yield new C(k);
+    yield new C(k + 1);
+}
+
+// a string made in another function: a temporary made in front of a `yield` in the generator's
+// own body is never released, under rc as well (OwnedReturnConsumptionPass does not release past a
+// resume point)
+function label(i: number) {
+    return "s" + i;
+}
+
+function* strings() {
+    for (let i = 0; i < 3; i++) {
+        yield label(i);
+    }
+}
+
 // an object literal with a method: the same made block, seen as its object
 function makeCounter(start: number) {
     return {
@@ -81,6 +101,28 @@ function main() {
             t += v;
         }
 
+        for (const v of objects()) {
+            churn();
+            t += v.x + v.v.length;
+        }
+
+        let text = "";
+        for (const s of strings()) {
+            churn();
+            text = text + s;
+        }
+
+        t += text.length;
+
+        // by hand, each result kept across a churn() before it is read
+        const os = objects();
+        let o = os.next();
+        churn();
+        t += o.value.x;
+        o = os.next();
+        churn();
+        t += o.value.x;
+
         // given up after the first value: the state object still destroys its local
         const half = fromLocal();
         t += half.next().value;
@@ -89,7 +131,6 @@ function main() {
         t += c.next() + c.next();
     }
 
-    print(t);
-    assert(t == 970000, "t");
+    assert(t == 1490000, "t");
     print("done.");
 }

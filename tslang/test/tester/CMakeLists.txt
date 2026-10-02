@@ -2642,6 +2642,7 @@ set(own_error_cases
     "own_err_closure_assigns_captured_field|borrows .* but is used here after it may be released or overwritten"
     "own_err_unknown_producer|takes a second reference"
     "own_err_interface_two_views|takes a second reference"
+    "own_err_field_function_reassigned|borrows .* but is used here after it may be released or overwritten"
     "own_err_two_owners|is used here after its value was moved"
     "own_err_push_let|is used here after its value was moved"
     "own_err_push_loop|is moved inside a loop"

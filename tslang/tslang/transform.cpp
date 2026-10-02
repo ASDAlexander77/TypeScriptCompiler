@@ -146,6 +146,8 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         {
             pm.addPass(mlir::typescript::createOwnershipSignaturePass());
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
+            // an `await`'s continuation and a `for await` body, outlined by the async lowering
+            pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
         }
 
 #ifdef ENABLE_OPT_PASSES
