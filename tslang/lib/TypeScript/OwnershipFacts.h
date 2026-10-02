@@ -374,6 +374,40 @@ inline bool holdsNoBlock(mlir::Value value)
     return !ownsHeap(value) || (def && isLiteral(def));
 }
 
+// Data nothing owns: what holds no block, a `ts.Constant` (its strings are immortal) or a field of
+// one, and a tuple built of such (`[1, "a"]`, an object literal's fields read out of its constant).
+// Retaining it takes nothing anyone gives back.
+inline bool isConstantData(mlir::Value value)
+{
+    if (holdsNoBlock(value))
+    {
+        return true;
+    }
+
+    auto *def = value.getDefiningOp();
+    if (!def)
+    {
+        return false;
+    }
+
+    if (mlir::isa<mlir_ts::ConstantOp>(def))
+    {
+        return true;
+    }
+
+    if (auto extractOp = mlir::dyn_cast<mlir_ts::ExtractPropertyOp>(def))
+    {
+        return extractOp.getObject().getDefiningOp<mlir_ts::ConstantOp>() != nullptr;
+    }
+
+    if (mlir::isa<mlir_ts::CreateTupleOp>(def))
+    {
+        return llvm::all_of(def->getOperands(), [](mlir::Value operand) { return isConstantData(operand); });
+    }
+
+    return false;
+}
+
 // A captured variable's cell, as a closure body reaches it: read out of a field of its capture box
 // (or of any other block - a RefType loaded from somewhere is a cell). Its variable lives in
 // whatever function declared it, so an assignment through it may destroy a value that function, and
