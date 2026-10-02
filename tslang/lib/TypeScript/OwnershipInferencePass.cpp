@@ -398,15 +398,21 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 closure->escape = closure->escape ? closure->escape : user;
             }
 
-            if (!closure->hasCells)
-            {
-                return;
-            }
-
             if (auto *escape = followClosure(boundOp.getResult(), closure->uses, closure->ends, closure->aliased);
                 escape && !closure->escape)
             {
                 closure->escape = escape;
+            }
+
+            // copies only: the box owns them (phase 4); only an alias needs deciding
+            if (!closure->hasCells)
+            {
+                if (!closure->escape && closure->aliased)
+                {
+                    closures.push_back(std::move(closure));
+                }
+
+                return;
             }
 
             for (auto &fill : closure->fills)
@@ -598,13 +604,42 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
         {
             auto *boundOp = closure->op.getOperation();
             auto name = ownerName(closure->op.getResult());
+            auto ok = true;
+            // Held by a local that owns nothing: rc's birth reference reads to the move logic as the
+            // store's, which would leave the box with no owner. The closure keeps its releases, and
+            // nothing may run it after them.
+            auto keepAliasedReleases = [&]() {
+                for (auto *end : closure->ends)
+                {
+                    if (!mlir::isa<mlir_ts::ReleaseOp>(end))
+                    {
+                        continue;
+                    }
+
+                    toErase.remove(end);
+                    for (auto *use : closure->uses)
+                    {
+                        if (ok && reachableAfter(end, use, boundOp))
+                        {
+                            reportClosureOutlives(use, end, name, name);
+                            ok = false;
+                        }
+                    }
+                }
+            };
+
+            if (!closure->hasCells)
+            {
+                keepAliasedReleases();
+                continue;
+            }
+
             if (closure->escape)
             {
                 reportClosureEscapes(closure->escape, boundOp);
                 continue;
             }
 
-            auto ok = true;
             for (auto &fill : closure->fills)
             {
                 auto value = fill.second.getValue();
@@ -675,28 +710,9 @@ class OwnershipInferencePass : public mlir::PassWrapper<OwnershipInferencePass, 
                 }
             }
 
-            // Held by a local that owns nothing: rc's birth reference reads to the move logic as the
-            // store's, which would leave the box with no owner. The closure keeps its releases, and
-            // nothing may run it after them.
             if (closure->aliased)
             {
-                for (auto *end : closure->ends)
-                {
-                    if (!mlir::isa<mlir_ts::ReleaseOp>(end))
-                    {
-                        continue;
-                    }
-
-                    toErase.remove(end);
-                    for (auto *use : closure->uses)
-                    {
-                        if (ok && reachableAfter(end, use, boundOp))
-                        {
-                            reportClosureOutlives(use, end, name, name);
-                            ok = false;
-                        }
-                    }
-                }
+                keepAliasedReleases();
             }
 
             // a call through the box, after the closure value that owns the box is given back

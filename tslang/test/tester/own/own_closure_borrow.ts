@@ -144,6 +144,16 @@ function letAliases(n: number) {
     return f();
 }
 
+// a closure over copies only owns them, as before phase 5; aliased the same way, it keeps its
+// release too
+function copiesAliased(n: number) {
+    const h = new C(n);
+    let f: () => number;
+    f = () => h.x;
+    churn();
+    return f();
+}
+
 function main() {
     let t = 0;
     for (let i = 0; i < 20000; i++) {
@@ -151,12 +161,12 @@ function main() {
         const d = new D(new C(n));
         const c = new C(n);
         t += innerBlock(n) + local(n) + byValue(n) + asArgument(n) + inLoop(n) + nested(n) + d.read() + param(c) +
-             frameAssigns(n) + closureAssigns(n) + letHolds(n) + letAliases(n);
+             frameAssigns(n) + closureAssigns(n) + letHolds(n) + letAliases(n) + copiesAliased(n);
         // the captured parameters' values are still the caller's
         churn();
         t += c.x + d.c.x - 2 * n;
     }
 
-    assert(t == 2100000);
+    assert(t == 2190000);
     print("done.");
 }

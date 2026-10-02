@@ -1040,7 +1040,8 @@ stores are.
   bounded by the read's own check: walkBorrowed adds the closure's uses to the read's.
 - **A local that owns nothing** (`let f: () => number; f = () => ...`) is an alias of the closure.
   rc's birth reference reads to the move logic as the store's, which erased the closure's only
-  release. Now the closure keeps its releases, and nothing may run it after them.
+  release. Now the closure keeps its releases, and nothing may run it after them. That holds for a
+  closure over copies only too, whose box otherwise owns its copies as in phase 4.
 - **A captured parameter's cell** (`this` included) borrows the caller's value. Its `ts.ReleaseCell`
   carries `__own_cell_borrows` and frees the cell only. Nothing may assign the variable: not the
   frame, and not a closure body. The signature pass pins `__own_assigns_captures` on each closure:
@@ -1058,8 +1059,8 @@ stores are.
 
 ### 16.2 Measured
 
-AOT, `measure.ps1`, in MB: `own_closure_borrow` (eleven shapes, 20000 rounds) reads gc 6.0, rc 4.3,
-none 1769.5, own 4.3.
+AOT, `measure.ps1`, in MB: `own_closure_borrow` (thirteen shapes, 20000 rounds) reads gc 6.1, rc 4.3,
+none 1879.7, own 4.3.
 
 ### 16.3 Teeth
 
@@ -1076,7 +1077,8 @@ none 1769.5, own 4.3.
 
 - **Positive:** `own_closure_borrow` (a local, a copy beside a cell, an argument, a loop, nested, an
   inner block, `this`, a parameter, the frame and the closure assigning the variable, a `let` holding
-  the closure, a `let` aliasing it), under JIT, AOT and the no-counting check.
+  the closure, a `let` aliasing it, a `let` aliasing a closure over copies), under JIT, AOT and the
+  no-counting check.
 - **Negatives:** `own_err_closure` (now: escapes), `own_err_closure_outlives_cell`,
   `own_err_closure_copy_moved`, `own_err_closure_param_assigned`, `own_err_closure_assigns_param`,
   `own_err_cell_assigned_in_frame`, `own_err_cell_assigned_in_closure`,
