@@ -2291,10 +2291,19 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
     MLIRGen cannot see it. Keyed on the global's type. The first fix round claimed only a cast of
     `new Shared(..)`, in MLIRGen; `Shared<T> | undefined = new Shared(..)` and
     `Shared<T> | null = mk()` stayed at count 0 until the second (`own_shared_global_init`).
-    **Not covered:** a handle global initialised from a value that carries no reference - another
-    global (`let h = root`), a field - takes no count of its own. Today a global initialised from
-    another global does not read that global's value in any model (#446; the review's `glob.ts`
-    reads null for `d` and `h`), which hides it.
+    **A handle read out of a field or an element carries no reference**, and since the third fix
+    round the claim gives it one: a `ts.Retain` right after the read, before the end of the
+    initializer gives back a temporary object or array (`own_shared_global_field`:
+    `holder.child`, `new P().child`, `mkP().child`, `mkArr()[0]`). Until then such a global was
+    born at count 0 under rc and own alike and crashed when read (the re-review's `globfield`,
+    `tmpfield`, `callfield`: `count 0`, then 0xC0000005). #446 did not hide that: it hides only a
+    global initialised from another global. The class equivalents (`let g: Node = new P().child`)
+    read freed memory under rc on main too (`cls_globfield`, `cls_tmpfield`); they are not changed.
+    **Not covered:** a handle global initialised from another global (`let h = root`) takes no
+    count of its own; #446 makes such an initializer read null in every model (the review's
+    `glob.ts` reads null for `d` and `h`), which hides it. A global object literal holding a handle
+    from a call (`let o = { s: mkS(4) }`) gives the call's reference back and crashes under rc and
+    own (`objonly`), as its class equivalent reads freed memory under rc on main (`cls_obj`).
 - **The routines.** `ownsHeapMemory` is true for a handle. Its release routine is
   `__tslang_dec_ref`, and at zero the payload's routine and `__tslang_free_block`; its retain is
   `__tslang_inc_ref`. `emitIfLastReference(counted)` makes own count a handle where it tests
@@ -2337,10 +2346,14 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
     `handleReadUses`, Ruling 7). A counted use is a `ts.Retain` of it and what takes the value it
     retains for (a store into a field, an element, a global or an owning local, a push,
     `new Shared`, a return; `isCountedHandleReceiver`), or an owning local's slot
-    (`ts.RetainSlot`); an `any` box is a view whose own retain counts it. What makes the read a
-    borrow is a use `isBorrow` lists; a use that is neither (an op outside that list) does not, as
-    in the first round. A handle argument is always such a borrow, never a kept one, since a handle
-    gets no parameter facts: `keep(k, q.child = p.child)`, `keep` storing it, is rejected.
+    (`ts.RetainSlot`); an `any` box is a view whose own retain counts it. **A store counts only
+    when rc retained for it** (third fix round; `countedStoreRetain`: `ts.Retain` of the value,
+    then the store, or the `ts.ReleaseSlot` of the old value and then the store). What makes the
+    read a borrow is a use `isBorrow` lists, or a store rc made no retain for
+    (`isUncountedStoreOf`), which the borrow walk then reports as a keep. A use in neither list
+    (any other op) does not, as in the first round. A handle argument is always such a borrow,
+    never a kept one, since a handle gets no parameter facts: `keep(k, q.child = p.child)`, `keep`
+    storing it, is rejected.
     `cur = cur.value.next`
     is counted only, so walking stays legal. `f(p, p.child)`, where `f` overwrites `p.child`, is
     rejected (`own_err_shared_place_arg`). Before the first fix round every handle read was
@@ -2356,6 +2369,16 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
     when the two fields are one. So `Shared.count(q.child = p.child)` and
     `look(q.child = p.child)` stay legal (`own_shared_place_two_uses`). Until this round any one
     counted use exempted the whole read, and that program read freed memory under own;
+  - **a store counts only when rc retains for it** (third fix round). `isCountedHandleReceiver`
+    took every `ts.Store` of the read as counted, and the borrow walk skipped it as a copy. In
+    `const o = { s: (q.child = p.child) }` the read has two stores: the one into `q.child`, which
+    rc retains for, and the one into the object literal's field, which rc makes no retain for. The
+    second kept the read with no count, so after `dropBoth(p, q)` own read freed memory and crashed
+    (the re-review's `e2_objlit`). The second round had put the remaining gap in "an op outside
+    `isBorrow`'s list"; this one was the store receiver. That program is now rejected with the
+    plain `{ s: p.child }`'s message, `borrows a field and cannot be stored, returned or captured`
+    (`own_err_shared_place_literal`). The array literal, return, constructor argument and `any`
+    shapes (`e3`, `e6`, `e7`, `e9`) are retained by rc, compile, and count as rc does;
   - `ts.SharedValueRef` and `ts.SharedCount` read a handle and keep nothing (`isBorrow`), so
     `s.value` and `Shared.count(s)` are borrows of whatever `s` borrows.
 - **`any`.** A handle boxes under its own descriptor, named `"object"`, whose release and retain
@@ -2366,9 +2389,14 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 
 #### Tests and teeth
 
-- **Positive**, under gc, none, rc and own, AOT and JIT (80 runs): `own_shared_basic`,
+- **Positive**, under gc, none, rc and own, AOT and JIT (88 runs): `own_shared_basic`,
   `own_shared_user_named`, `own_shared_graph`, `own_shared_containers`, `own_shared_cycle`,
-  `own_shared_union`, two from the final review's fix round, and two from its second:
+  `own_shared_union`, two from the final review's fix round, two from its second, and one from its
+  third:
+  - `own_shared_global_field`: handle globals initialised from `holder.child` (born at 2: the
+    field keeps its count), `new P().child`, `mkP(..).child` and `mkArr(..)[0]` (born at 1: the
+    temporary gave its count back). Each drops the other handle where there is one, reuses the
+    memory, and reads through the global;
   - `own_shared_global_init`: `Shared<T> | undefined` from `new Shared(...)`, `let` and `const`
     `Shared<T> | null` from a call, an explicit cast of a call's result, `Shared<T> | undefined`
     and `Shared<T> | number` from a call. Each asserts the global's count of 1, copies it, drops
@@ -2391,10 +2419,10 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
   (`2`, `42`, then `1`). The fix round also asserts the
   counts of a `const` union (`own_shared_union`: 4, not 3) and of a `const` read out of a field
   (`own_shared_graph`: 3, under rc and own). **`--verify-ownership`**, under own and rc, is quiet
-  on the ten counted files (20 runs).
+  on the eleven counted files (22 runs).
 - **`-O0`**: test-runner's `-noopt` does nothing in a Release build, so each positive was also run
   by hand with `--opt_level=0` under own and rc, AOT and JIT.
-- **Negative** (10). Messages with `--di`; without it the borrower is `'this value'` and the place
+- **Negative** (11). Messages with `--di`; without it the borrower is `'this value'` and the place
   "a field" or "an element", as for every own error:
 
 | test | message |
@@ -2409,10 +2437,11 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 | `own_err_shared_union_owned` | `a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported` |
 | `own_err_shared_place_arg` | `'this value' borrows 'p.child' but is used here after …`, at `f(p, p.child)`, where `f` overwrites `p.child` |
 | `own_err_shared_place_two_uses` | `'this value' borrows a field but is used here after …`, at `f(p, q, q.child = p.child)`, where `f` overwrites both fields; the same with `--opt` |
+| `own_err_shared_place_literal` | `'this value' borrows a field and cannot be stored, returned or captured`, at `{ s: (q.child = p.child) }` (31:15), then `dropBoth(p, q)`; the same with `--opt` |
 
-- **Suites:** the Shared set is 114 tests, `ctest -R own` 604 and `ctest -R "own|rc"` 1558, all
+- **Suites:** the Shared set is 125 tests, `ctest -R own` 615 and `ctest -R "own|rc"` 1569, all
   passing on this branch's final build (72, 562 and 1516 before the final review's fix round;
-  93, 583 and 1537 after it).
+  93, 583 and 1537 after it; 114, 604 and 1558 after the second).
 - **Teeth**, each a temporary switch, with the JIT cache cleared:
 
 | switch | result |
@@ -2440,6 +2469,10 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 | second fix round: any one counted use exempts the whole read again | `own_err_shared_place_two_uses` compiles; the review's `hole.ts` crashes under own (`count 0`) |
 | second fix round: a counted store's release of the old value a drop again | `own_shared_place_two_uses` under own (JIT, AOT, verifier): `borrows a field but is used here after …` |
 | second fix round: the counted uses not a copy in the borrow walk | `own_shared_place_two_uses` under own (JIT, AOT, verifier) and `own_err_shared_place_two_uses`: `borrows a field and cannot be stored, returned or captured` |
+| third fix round: any store of the read counted again (`isCountedHandleReceiver`) | `own_err_shared_place_literal` compiles (`--emit=obj` exits 0); the re-review's `e2_objlit` crashes under own (0xC0000005) |
+| third fix round: a store with no retain not marked uncounted (`isUncountedStoreOf` off, the predicate kept) | the same: the store falls through both lists, the read stays exempt, `own_err_shared_place_literal` compiles and `e2_objlit` crashes |
+| third fix round: the field-read retain in the global claim off | `own_shared_global_field` under rc and own, JIT and AOT: `a global from a live object's field takes a count of its own`; `globfield`, `tmpfield`, `callfield` crash again (`count 0`) |
+| third fix round: the element read left out of the claim | `own_shared_global_field` under rc and own, JIT and AOT: `a global from a temporary array's element is born with one count` |
 
 - **What (d) showed:** no existing rule ends an element borrow across a push through another
   handle; the push rule is the only one. Each other §23.3 rule also has its own negative.
@@ -2495,6 +2528,11 @@ the earlier runs: the order of a union's members in `___cast<!ts.union<si32, !ts
 Over 12 runs, main gives 11 and 1 of two outputs and this branch 10 and 2, the same two. Under rc,
 49 of the 50 are identical, and `00union_bin_ops2` is main's other output again.
 
+After the third fix round, a spot check of 40 corpus files (every fifteenth, and one more),
+`--emit=llvm --no-default-lib` against main's binary under own and rc, normalised as above: all
+70 that compile are identical (40 under rc, 30 under own); the other ten fail under own on both
+binaries with the same first error. None of the three flippers was in the sample.
+
 #### The final review and its fix round
 
 The final review of the branch found three critical defects and one important one. Every test
@@ -2533,6 +2571,18 @@ round, approved by the user, fixed both:
   `own_shared_place_two_uses`).
 - Also: a generator that outlives its caller's handle is asserted (`own_shared_count`).
 
+The second re-review found one more important defect and a gap in this section. A third fix
+round, approved by the user, fixed both:
+
+- **Important, a store with no count exempted its read.** Every `ts.Store` of a handle read was
+  a counted receiver, so in `{ s: (q.child = p.child) }` the object literal's field, which rc
+  makes no retain for, kept the read uncounted, and own crashed after both fields were replaced.
+  A store now counts only when rc retained for it (`countedStoreRetain`), and one it did not
+  makes the read a borrow (`own_err_shared_place_literal`).
+- **The global gap was understated.** A handle global initialised from a field read was born at
+  count 0 and crashed under rc and own; #446 hides only the global-from-global case. The claim now
+  retains a handle read out of a field or an element (`own_shared_global_field`).
+
 #### Linux
 
 GCC, in WSL, the branch at `bbac9ba8`: it builds with no errors, and
@@ -2541,7 +2591,9 @@ of 213, the same 213 tests the Windows build lists for that pattern. After the f
 round, at `fad98c53` (the later commits change only documents), it builds with no errors and the
 same pattern passes 234 of 234, again the Windows build's count. After the second fix round
 (its changes applied to `476c4d8f` as a patch), it builds with
-no errors and the same pattern passes 255 of 255, the Windows build's count.
+no errors and the same pattern passes 255 of 255, the Windows build's count. After the third fix
+round, at `3a86e20d`, it builds with no errors and the same pattern passes 266 of 266, the Windows
+build's count.
 
 #### Outside the rule
 
@@ -2637,3 +2689,10 @@ no errors and the same pattern passes 255 of 255, the Windows build's count.
 - Not filed: `<Shared<T> | string>a`, an `any` unboxed to a union holding a string, is a
   compile error in every model (`'ts.Cast' op type ['!ts.any'] can't be stored in …`; the
   final review's u1).
+- Not filed: a global object literal initialised with a call's result (`let o = { s: mk(4) }`)
+  gives the call's reference back at the end of the initializer: the class version reads freed
+  memory under rc on main (`cls_obj`), the handle version crashes under rc and own (`objonly`).
+- Not filed: a discarded `arr.pop()` does not give back the element it removes, so a handle
+  popped out of an array keeps its count (2 after the pop of a two-handle block, under rc and own
+  alike). The re-review's `arronly` (a `const` read out of a global array, then `arr = []`)
+  prints 2 under rc and 1 under own, as before this round.
