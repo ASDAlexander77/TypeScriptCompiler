@@ -138,6 +138,11 @@ class OwnershipInferencePass
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
+            // A handle put into a union with a member that owns a block of its own: counting the
+            // union would count that member's single-owner block, and not counting it would lose
+            // the handle's count (spec 23.2).
+            reportHandleInOwningUnion(op);
+
             // A handle's retains and releases are rc's, counted, and nobody's to decide (spec 23.2).
             // An overwrite of a field or an element that holds one is still a drop: the old handle
             // may be the last, and its payload goes with it.
@@ -4319,6 +4324,75 @@ class OwnershipInferencePass
                                             "on the others yet";
         diag.attachNote(exit->getLoc()) << "returns here without moving it; the caller gave it up";
         signalPassFailure();
+    }
+
+    // A handle made into a union whose other members include one that owns a block (spec 23.2):
+    // `Shared<T> | string` given a Shared<T>. gc, none and rc accept it.
+    void reportHandleInOwningUnion(mlir::Operation *op)
+    {
+        auto handleIn = llvm::any_of(op->getOperandTypes(), [](mlir::Type type) {
+            return MLIRTypeHelper::isSharedHandleType(type);
+        });
+        if (!handleIn)
+        {
+            return;
+        }
+
+        for (auto resultType : op->getResultTypes())
+        {
+            if (!MLIRTypeHelper::isSharedInOwningUnionType(resultType))
+            {
+                continue;
+            }
+
+            if (!reporting())
+            {
+                return;
+            }
+
+            auto unionType = resultType;
+            if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(unionType))
+            {
+                unionType = optionalType.getElementType();
+            }
+
+            mlir::Type shared;
+            mlir::Type owning;
+            for (auto member : mlir::cast<mlir_ts::UnionType>(unionType).getTypes())
+            {
+                if (mlir::isa<mlir_ts::SharedType>(member))
+                {
+                    shared = shared ? shared : member;
+                }
+                else if (!owning && MLIRTypeHelper::ownsHeapMemoryOfUnionMember(member))
+                {
+                    owning = member;
+                }
+            }
+
+            auto diag = op->emitError("a ") << printed(shared) << " in a union with ";
+            if (owning)
+            {
+                diag << "'" << printed(owning) << "', which -mm=own does not count,";
+            }
+            else
+            {
+                diag << "a member -mm=own does not count,";
+            }
+
+            diag << " is not supported";
+            signalPassFailure();
+            return;
+        }
+    }
+
+    static std::string printed(mlir::Type type)
+    {
+        llvm::SmallString<128> text;
+        llvm::raw_svector_ostream out(text);
+        MLIRPrinter printer{};
+        printer.printType<llvm::raw_svector_ostream>(out, type);
+        return text.str().str();
     }
 
     void reportGivenNotOwned(mlir::Operation *call, mlir::Value arg)

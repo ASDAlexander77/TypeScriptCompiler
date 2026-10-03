@@ -2118,8 +2118,11 @@ class MLIRTypeHelper
         return ownsHeapMemory(location, type, visiting);
     }
 
-    // A handle (own spec 23.2): Shared<T>, or a tag-free union or an optional of one with null or
-    // undefined - one pointer whose block is counted in every model that tracks ownership.
+    // A handle (own spec 23.2): a value counted in every model that tracks ownership. That is a
+    // Shared<T>, an optional of a handle, or a union of at least one Shared<T> whose other members
+    // own no heap memory: null, undefined, a number, a boolean, a literal, another Shared<U>.
+    // `Shared<T> | null` is one pointer; `Shared<T> | number` is tagged, and its routines dispatch
+    // on the tag through descriptors, each Shared member's counting and the others' doing nothing.
     static bool isSharedHandleType(mlir::Type type)
     {
         if (isa<mlir_ts::SharedType>(type))
@@ -2134,26 +2137,50 @@ class MLIRTypeHelper
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
-            mlir::Type shared;
+            auto shared = false;
             for (auto member : unionType.getTypes())
             {
-                if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+                if (isa<mlir_ts::SharedType>(member))
                 {
+                    shared = true;
                     continue;
                 }
 
-                if (!isa<mlir_ts::SharedType>(member) || (shared && shared != member))
+                if (ownsHeapMemoryOfUnionMember(member))
                 {
                     return false;
                 }
-
-                shared = member;
             }
 
-            return !!shared;
+            return shared;
         }
 
         return false;
+    }
+
+    // A union with a Shared<T> member that is not a handle: another member owns a block of its own
+    // (`Shared<T> | string`, `Shared<T> | Node`), which -mm=own does not count (spec 23.2).
+    static bool isSharedInOwningUnionType(mlir::Type type)
+    {
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return isSharedInOwningUnionType(optionalType.getElementType());
+        }
+
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        return unionType && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::SharedType>(member); }) &&
+               !isSharedHandleType(unionType);
+    }
+
+    static bool ownsHeapMemoryOfUnionMember(mlir::Type member)
+    {
+        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+        {
+            return false;
+        }
+
+        MLIRTypeHelper mth(member.getContext(), CompileOptions{});
+        return mth.ownsHeapMemory(mlir::UnknownLoc::get(member.getContext()), member);
     }
 
     // Field types of a record-shaped type, empty for anything else.

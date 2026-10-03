@@ -2133,9 +2133,20 @@ print(Shared.count(a), a === b);
   `ts.RetainSlot`, releases and `__owned_consumed` declarations for a `!ts.shared` value under rc
   and own, because both track ownership (§3.1). That is unchanged.
 - **The inference pass leaves every retain and release of a handle in place.** A handle is a value of
-  type `!ts.shared<T>`, or a tag-free union or an optional of one with `null` or `undefined`
-  (one pointer, as in §22.1). The pass never erases such a retain or release, and never reports one. A handle's count is therefore exactly rc's, which rc's own
-  suite tests.
+  one of these types (`MLIRTypeHelper::isSharedHandleType`):
+  - `!ts.shared<T>`, or an optional of a handle;
+  - a union with at least one `Shared<T>` member whose other members own no heap memory: `null`,
+    `undefined`, a number, a boolean, a literal, another `Shared<U>`. `Shared<T> | null` is one
+    pointer (§22.1). `Shared<T> | number` is tagged: its routines dispatch on the tag through
+    descriptors, a `Shared` member's counting and the others' doing nothing.
+
+  The pass never erases such a retain or release, and never reports one. A handle's count is
+  therefore exactly rc's, which rc's own suite tests.
+- **A `Shared<T>` in a union with a member that owns a block** (`Shared<T> | string`,
+  `Shared<T> | Node`, `Shared<T>[] | Shared<T>`) is rejected under own where a handle is put into
+  one: `a Shared<T> in a union with '<type>', which -mm=own does not count, is not supported`.
+  Counting the union would count a single-owner block, and not counting it would lose the
+  handle's count. gc, none and rc accept it.
 - **Lowering.** Under own, a surviving retain of a `!ts.shared` value no longer reports "left a
   retain behind"; it lowers to `__tslang_inc_ref`, as under rc.
 - **The release routine** of a `!ts.shared` value is the same in every model that tracks
@@ -2203,6 +2214,8 @@ change. It runs on every `own_shared_*` test, under own and rc.
     capturing a handle, a handle boxed into `any` and back, a handle returned from a function.
   - `own_shared_cycle`: a cycle that is never freed, which still runs: a doubly linked list and a
     node with a parent link, both cycles that leak (§23.4).
+  - `own_shared_union`: a handle in a `Shared<T> | number` local, field and element, each switched
+    to a number and back, with rc's counts under own (§23.2).
 
   Each frees every handle but one, then allocates over the freed memory (the churn pattern)
   before reading through the one left. An early free then reads reused memory.
@@ -2213,6 +2226,7 @@ change. It runs on every `own_shared_*` test, under own and rc.
   - `own_err_shared_borrow_call`: a borrow through a handle used after a call that may drop;
   - `own_err_shared_moved_in`: a class value given to `new Shared(x)` and then used, which is a
     use after move.
+  - `own_err_shared_union_owned`: a handle put into a `Shared<T> | string` (§23.2).
 - **Teeth:**
   - with the inference pass erasing a handle's retains as for any value, the positives fail;
   - with §23.3's rule off, its negatives compile.
