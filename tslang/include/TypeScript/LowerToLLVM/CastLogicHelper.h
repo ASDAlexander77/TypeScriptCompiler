@@ -1175,15 +1175,29 @@ class CastLogicHelper
                 LLVM_DEBUG(llvm::dbgs() << "\n!! union storage type: " << storageType << "\n";);
                 valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
             }
-            else if (MLIRTypeHelper::isSharedHandleType(unionType))
-            {
-                // `Shared<T> | null` (own spec 23.1) is one pointer, boxed under the handle's own
-                // descriptor: the union has no `typeof` name, so it had no tag at all
-                typeOfValue = toh.typeOfLogic(loc, baseType);
-            }
             else
             {
-                typeOfValue = toh.typeOfLogic(loc, inType);    
+                // a union without a tag (`Node | null`, `Shared<T> | null`) is one pointer: set, it
+                // boxes under its base type's descriptor, null under null's, as an optional picks
+                // its own or undefined's. The union itself has no `typeof` name, so it had no tag
+                // at all (#455)
+                TypeHelper th(rewriter);
+                auto setTag = toh.typeOfLogic(loc, baseType);
+                auto nullTag = toh.typeOfLogic(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                mlir::Value pointer =
+                    in.getType() == inLLVMType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, inLLVMType, in);
+                if (isa<LLVM::LLVMStructType>(pointer.getType()))
+                {
+                    // an array is { data, length }: null has no data
+                    pointer = rewriter.create<LLVM::ExtractValueOp>(loc, pointer, 0);
+                }
+                auto isSet = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, pointer,
+                                                           rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+                auto tagType = setTag.getType();
+                auto tag = rewriter.create<LLVM::SelectOp>(
+                    loc, isSet, rewriter.create<mlir_ts::DialectCastOp>(loc, th.getPtrType(), setTag),
+                    rewriter.create<mlir_ts::DialectCastOp>(loc, th.getPtrType(), nullTag));
+                typeOfValue = rewriter.create<mlir_ts::DialectCastOp>(loc, tagType, tag);
             }
         }
         else
