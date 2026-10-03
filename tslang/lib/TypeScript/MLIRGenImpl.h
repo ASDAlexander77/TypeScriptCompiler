@@ -954,8 +954,8 @@ class MLIRGenImpl
     // Does this reference address an element of an array that will release what the element
     // holds? A `T[]` value points to a header { data, length, capacity }, and its release
     // routine walks the elements of the data block before freeing it (`buildArrayBody` in
-    // OwnershipRoutineLogic) - the exact mirror of what `releaseFields` does for an instance. So `arr[i] = x` carries the same
-    // debt as `obj.f = x`.
+    // OwnershipRoutineLogic) - the exact mirror of what `releaseFields` does for an instance.
+    // So `arr[i] = x` carries the same debt as `obj.f = x`.
     //
     // Only ArrayType. `ts.ElementRef` also addresses a ConstArrayType, whose data is a static
     // literal nothing releases, and a StringType, whose characters are not references at all.

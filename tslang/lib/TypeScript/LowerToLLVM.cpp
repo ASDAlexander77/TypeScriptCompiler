@@ -3071,7 +3071,6 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             next = true;
         }
 
-
         ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
 
@@ -3151,7 +3150,6 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         // zeroed: its elements are not set yet, and under `-mm=rc` the first store into one
         // releases what the slot held - `malloc`'s leftovers would be released as a reference
         auto allocated = ch.MemoryAlloc(multSizeOfTypeValue, MemoryAllocSet::Zero);
-
 
         ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, transformed.getCount());

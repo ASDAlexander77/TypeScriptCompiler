@@ -15,12 +15,15 @@ assert(arr2[2] === 4);
 class Item { v: number; constructor(v: number) { this.v = v; } }
 
 function peekItem(a: Item[]) {
+    // `view(from, to)` includes `to`: two elements
     const w = a.view(0, 1);
+    assert(w.length == 2, "view(0, 1) has two elements");
     return w[0].v + w[1].v;
 }
 
 function peekText(a: string[]) {
     const w = a.view(1, 1);
+    assert(w.length == 1, "view(1, 1) has one element");
     return w[0].length;
 }
 
