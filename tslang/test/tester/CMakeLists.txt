@@ -474,6 +474,7 @@ tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 tslang_add_test(NAME test-compile-01-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 tslang_add_test(NAME test-compile-00-class-stack COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
@@ -960,6 +961,7 @@ tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 tslang_add_test(NAME test-jit-01-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
 tslang_add_test(NAME test-jit-00-class-stack COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_stack.ts")
@@ -1770,6 +1772,7 @@ set(TSLANG_CORPUS
     00in_method_names.ts
     00in.ts
     00infer.ts
+    00global_union_from_call.ts
     00instanceof.ts
     00const_of_let.ts
     00instanceof_namespace_narrowing.ts
