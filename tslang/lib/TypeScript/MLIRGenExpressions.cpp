@@ -1098,6 +1098,31 @@ namespace mlirgen
         auto result = mlirGen(callExpression->arguments.front(), genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto handle = V(result);
+        // `Shared<T> | null` narrowed by `if (s)`, which keeps the union's type: unwrapped to the
+        // handle, as `.value` collapses a tag-free union (mlirGenPropertyAccessExpressionBaseLogic)
+        if (MLIRTypeHelper::isSharedHandleType(handle.getType()) && !isa<mlir_ts::SharedType>(handle.getType()))
+        {
+            auto handleType = handle.getType();
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(handleType))
+            {
+                handleType = optionalType.getElementType();
+            }
+
+            mlir::Type baseType;
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(handleType))
+            {
+                if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+                {
+                    handleType = baseType;
+                }
+            }
+
+            if (isa<mlir_ts::SharedType>(handleType))
+            {
+                CAST(handle, location, handleType, handle, genContext);
+            }
+        }
+
         if (!isa<mlir_ts::SharedType>(handle.getType()))
         {
             emitError(location, "Shared.count takes a Shared<T>, not ") << to_print(handle.getType());

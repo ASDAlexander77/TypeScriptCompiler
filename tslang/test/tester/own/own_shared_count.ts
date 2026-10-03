@@ -1,7 +1,8 @@
 // Shared<T> (spec 23.1): Shared.count after each copy and drop - a handle made, copied, given to a
 // function that keeps it, returned from one, reassigned to the block it holds, copied in a loop, held
 // by another block that dies, replaced in a block by `s.value = x`, and captured as a parameter by a
-// closure and by one that escapes.
+// closure and by one that escapes; a narrowed `Shared<T> | null`, and a handle boxed into `any` and
+// read back out.
 class Node {
     v = 0;
 }
@@ -91,6 +92,30 @@ function main() {
     }
 
     assert(Shared.count(a) == 1, "every escaping closure gave its count back");
+
+    // a `Shared<T> | null` narrowed by `if (u)` keeps the union's type, and is still a handle here
+    let u: Shared<Node> | null = null;
+    u = a;
+    if (u) {
+        assert(Shared.count(u) == 2, "a narrowed union is a handle");
+    }
+
+    if (u !== null) {
+        assert(Shared.count(u) == 2, "a union narrowed by !== null is a handle");
+    }
+
+    u = null;
+    assert(Shared.count(a) == 1, "the union's count given back");
+
+    // an `any` box holds a count, and a handle read back out of it holds its own
+    for (let i = 0; i < 100; i++) {
+        const boxed: any = a;
+        assert(Shared.count(a) == 2, "boxed into any");
+        const back = <Shared<Node>>boxed;
+        assert(Shared.count(back) == 3, "read back out of any");
+    }
+
+    assert(Shared.count(a) == 1, "every box and every handle read out of one gave its count back");
 
     print("done.");
 }

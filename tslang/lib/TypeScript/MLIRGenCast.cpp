@@ -1541,7 +1541,9 @@ namespace mlirgen
                 || isa<mlir_ts::BigIntType>(type)
                 || isa<mlir::IntegerType>(type)
                 || isa<mlir::FloatType>(type)
-                || isa<mlir_ts::ClassType>(type))
+                || isa<mlir_ts::ClassType>(type)
+                // a Shared<T> handle (own spec 23.1) is checked by its `typeof` name, "object"
+                || isa<mlir_ts::SharedType>(type))
             {
                 return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
@@ -1905,6 +1907,10 @@ namespace mlirgen
             .Case<mlir_ts::ExtensionFunctionType>([&](auto _) { typeOfs["function"] = true; })
             .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
             .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
+            // A handle's tag names it "object" (TypeOfOpHelper), and there is no `instanceof` for a
+            // handle, so the name is all that is checked: an `any` holding a Shared<B> passes for a
+            // Shared<A>, as would any other value tagged "object" (own spec 23.7).
+            .Case<mlir_ts::SharedType>([&](auto _) { typeOfs["object"] = true; })
             // TODO: we can't use null type here and undefined otherwise code will be cycling 
             // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
             // review code to use null in "TypeGuard"

@@ -1175,6 +1175,12 @@ class CastLogicHelper
                 LLVM_DEBUG(llvm::dbgs() << "\n!! union storage type: " << storageType << "\n";);
                 valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, storageType, in);
             }
+            else if (MLIRTypeHelper::isSharedHandleType(unionType))
+            {
+                // `Shared<T> | null` (own spec 23.1) is one pointer, boxed under the handle's own
+                // descriptor: the union has no `typeof` name, so it had no tag at all
+                typeOfValue = toh.typeOfLogic(loc, baseType);
+            }
             else
             {
                 typeOfValue = toh.typeOfLogic(loc, inType);    

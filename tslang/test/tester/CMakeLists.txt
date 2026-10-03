@@ -2614,7 +2614,7 @@ add_test(NAME test-own-string-copy-in-store-block
 # own_shared_user_named: a program's own class named Shared wins over the built-in (spec 23.1).
 set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
-    foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph)
+    foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
@@ -2626,7 +2626,7 @@ foreach(shared_count_mm rc own)
 endforeach()
 # --verify-ownership is quiet on every positive (spec 23.5): handles keep rc's pairing.
 foreach(shared_verify_mm own rc)
-    foreach(shared_test own_shared_basic own_shared_graph own_shared_count)
+    foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
                          "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")

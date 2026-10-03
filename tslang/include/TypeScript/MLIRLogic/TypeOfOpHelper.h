@@ -193,6 +193,13 @@ class TypeOfOpHelper
             return "object";
         }
 
+        // A Shared<T> handle (own spec 23.2) is what JavaScript's `typeof` calls a wrapper object.
+        // Its descriptor is keyed by the type, so Shared<A> and Shared<B> still get distinct ones.
+        if (isa<mlir_ts::SharedType>(type))
+        {
+            return "object";
+        }
+
         if (isa<mlir_ts::SymbolType>(type))
         {
             return "symbol";

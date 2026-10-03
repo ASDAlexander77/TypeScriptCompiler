@@ -400,10 +400,13 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
         // Under own nothing retains: the descriptor's retain slot is read only from inside
         // retain routines (retainViaDescriptor), none of which can run, and building one would
-        // bring `__tslang_inc_ref` into a model that promises it is never referenced.
-        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
-                                     ? std::string()
-                                     : orl.getOrCreateRetainRoutine(descriptorType);
+        // bring `__tslang_inc_ref` into a model that promises it is never referenced. A Shared<T>
+        // handle is the exception: own counts it (spec 23.2), so its retain is kept.
+        auto retainRoutineName =
+            tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                    !MLIRTypeHelper::isSharedHandleType(descriptorType)
+                ? std::string()
+                : orl.getOrCreateRetainRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
