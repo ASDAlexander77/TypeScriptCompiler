@@ -2552,6 +2552,16 @@ add_test(NAME test-compile-lowering-error-exit
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-exit.obj")
 set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
 
+# `main`'s argv is `Ref<string>` (C's `char **`) only. A `string[]` argv would read that `char **`
+# as an array header, so it is a compile error that says to use `Ref<string>`. Run under --emit=jit,
+# where `main` is called, so a program that wrongly compiled would run instead of matching.
+add_test(NAME test-jit-main-argv-string-array-error
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/main_argv_string_array.ts")
+set_tests_properties(test-jit-main-argv-string-array-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # -mm=own is accepted. Phase 0: a program that allocates nothing compiles and runs under it.
 add_test(NAME test-own-flag-accepted
          COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own

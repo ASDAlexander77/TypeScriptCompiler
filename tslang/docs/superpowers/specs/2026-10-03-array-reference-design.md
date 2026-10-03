@@ -125,11 +125,7 @@ unchanged.
   the retain/release routines (§4).
 - **Debug info** (`LLVMDebugInfo.h`): an array's debug type becomes a pointer to a
   `{ data, length, capacity }` struct, so a debugger still shows the elements.
-- **`main(argc, argv: string[])`:** MLIRGen gives `main` a `Ref<string>` second parameter, so the
-  entry point takes C's `char **`, and binds `argv` to a new op `ts.ArrayFromCStrings(argc, argv)`
-  that makes the array with the model's allocator, copying each string (plan ruling R2). Today
-  the struct is read from C's `argv` and `envp`, which is the open `argv.length` = envp bug; this
-  fixes it. A `Ref<string>` argv still receives C's `char **` directly. Both AOT and JIT.
+- `main`'s argv is `Ref<string>` only (C's `char **`); a `string[]` argv is a compile error that names the `Ref<string>` form (owner's ruling 2026-10-04; replaces plan ruling R2).
 - **32-bit x86:** the header is three pointer-sized words; nothing is specific to x86.
 
 ## 6. Growth (PR 3)

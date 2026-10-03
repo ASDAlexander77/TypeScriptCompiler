@@ -25,7 +25,7 @@
 ## Rulings (spec gaps decided while planning)
 
 - **R1, a null header is an empty array.** Today zeroed memory is a valid empty array: elements of `new Array<T[]>(n)`, class fields of array type with no initializer, and `undefined` cast to an array (`CastLogicHelper::castToArrayType`, `isUndef`). So: reading `data`/`length` of a null header gives null/0; an op that changes an array through its slot (`push`, `pop`, `shift`, `unshift`, `splice`, `length =`) first stores a fresh empty header into a slot that holds null; rc/own release of null does nothing (`emitIfLastReference` already skips null). Cost if wrong: one compare and branch per array read.
-- **R2, `main`'s `argv: string[]` is built by a new op, not a C adapter.** Spec §5 says lowering emits a C `main(int, char **)` adapter. The array must come from the model's allocator and be seen by the ownership passes as fresh, which only MLIR-level code gets. So MLIRGen gives `main` a `Ref<string>` second parameter and binds `argv` to a new `ts.ArrayFromCStrings(argc, argv)` op (a copy of each C string into an array). The JIT thunk's pointer branch and the C runtime then pass `char **` as they already can. Cost if wrong: one more op to teach to two passes.
+- **R2 (replaced 2026-10-04), `main`'s argv is `Ref<string>` only.** `main`'s argv is `Ref<string>` only (C's `char **`); a `string[]` argv is a compile error that names the `Ref<string>` form (owner's ruling 2026-10-04; replaces plan ruling R2). Spec section 5 has the same text. The original Task 5 (a `ts.ArrayFromCStrings` op) is dropped.
 - **R3, the rest copy is built in MLIRGen.** Spec §3 says `ts.ArrayView` becomes a copy. A copy must own its elements under rc/own; MLIRGen's existing "fresh array + synthesized loop" idiom (`MLIRGenCast.cpp`, numeric array widening) gets that from the passes for free. So MLIRGen stops emitting `ts.ArrayView` for a rest element and builds `const .rest: T[] = []; for (let .i = index; .i < .src.length; .i++) .rest.push(.src[.i]);` instead. `ArrayViewOpLowering` stays for other users (none known; see Task 3 step 1).
 
 ## Review Focus
@@ -769,63 +769,13 @@ header before a change through its slot.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-### Task 5: `main(argc, argv: string[])`
+### Task 5: `main`'s argv is `Ref<string>` only
 
-**Files:**
-- Modify: `tslang/include/TypeScript/TypeScriptOps.td` (new op; build with `--parallel 3` - editing this file needs `-j 3`/`-j 4` or MSVC fails with C1060)
-- Modify: `tslang/lib/TypeScript/MLIRGenFunctions.cpp` (`mlirGenParameters` ~192, `mlirGenFunctionParams` ~1360)
-- Modify: `tslang/lib/TypeScript/LowerToLLVM.cpp` (new lowering pattern; add to the pattern list ~8140)
-- Modify: `tslang/lib/TypeScript/LowerToAffineLoops.cpp` (~2660 legal-op list)
-- Modify: `tslang/lib/TypeScript/OwnershipFacts.h` (~298 fresh-op list)
-- Create: `tslang/test/tester/tests/00main_argv_array.ts`; Modify: `tslang/test/tester/CMakeLists.txt`
+Revised 2026-10-04 (owner's ruling; the `ts.ArrayFromCStrings` op is dropped). A `main` whose second parameter is `string[]` would read C's `char **` as an array header, so it becomes a compile error:
 
-**Interfaces:**
-- Consumes: `ArrayLayout::make`.
-- Produces: `ts.ArrayFromCStrings`.
-
-- [ ] **Step 1: Write the failing test** `00main_argv_array.ts`:
-
-```ts
-// `argv` as a `string[]`: an array of the program's arguments, each a copy of the C string, made
-// with the memory model's allocator. argv[0] is the program (the input file under the JIT).
-function main(argc: int, argv: string[]): int {
-    assert(argv.length == argc, "argv.length");
-    assert(argv.length >= 1 && argv[0].length > 0, "argv[0]");
-    argv.push("extra");
-    assert(argv.length == argc + 1, "argv is an ordinary array");
-    print("done.");
-    return 0;
-}
-```
-
-Run under JIT and compiled (`test-runner` style): `tslang.exe --emit=jit --no-default-lib tslang/test/tester/tests/00main_argv_array.ts`. Expected now: crash or assertion failure (Task 4 removed the struct branch).
-
-- [ ] **Step 2: The op** (`TypeScriptOps.td`, next to `TypeScript_StringCopyOp`):
-
-```tablegen
-// `main(argc, argv: string[])`: an array holding a copy of each of C's `argc` strings at `argv`
-def TypeScript_ArrayFromCStringsOp : TypeScript_Op<"ArrayFromCStrings"> {
-  let arguments = (ins Index:$count, TypeScript_Ref:$argv);
-  let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$result);
-}
-```
-
-Use the operand constraint other ops use for a `Ref` operand (look at how `TypeScript_RefType`/`AnyRef` is spelled in the file). Add `mlir_ts::ArrayFromCStringsOp` to the legal-op list in `LowerToAffineLoops.cpp` (~2660) and to the fresh-op `isa<...>` in `OwnershipFacts.h` (~298).
-
-- [ ] **Step 3: Lowering.** A pattern in `LowerToLLVM.cpp`: allocate `count` pointers (`ch.MemoryAlloc(count * sizeof(ptr), MemoryAllocSet::Zero)`), loop `i` in `[0, count)` storing a copy of `argv[i]` (the same `strlen + 1` / `MemoryAlloc` / `MemcpyOp` sequence as `StringCopyOpLowering`, ~920; extract that lambda into a shared static function rather than duplicating it), then `ArrayLayout::make(arrayType, data, count)`. Build the loop with blocks as `OwnershipRoutineLogic::emitCountedLoop` does (or reuse it if reachable).
-
-- [ ] **Step 4: MLIRGen.** In `mlirGenParameters`, when the function is `MAIN_ENTRY_NAME`, has exactly two parameters and the second's type is `ArrayType` of `StringType`: give the second parameter the type `mlir_ts::RefType::get(getStringType())` and the name `.argv`, and remember (in the `FunctionParamDOM` or a flag on the prototype) that `argv` must be made. In `mlirGenFunctionParams`, after the loop, for that function: load `argc` (cast to `index` with `mlir_ts::CastOp`), load `.argv`, create `ts.ArrayFromCStrings`, and `DECLARE` a `VariableDeclarationDOM` named with the original parameter name, type `string[]`, holding the op's result. `LowerToAffineLoops`'s shape check already accepts `Ref<string>` for argv; the JIT thunk's pointer branch passes C's `char **`; the C runtime does too when compiled.
-
-- [ ] **Step 5: Run.**
-
-```bash
-cmake --build __build/tslang/windows-msbuild-2026-release --config Release --parallel 3 --target tslang 2>&1 | grep -E "error C|error:" | head
-for mm in gc rc none own; do __build/tslang/windows-msbuild-2026-release/bin/tslang.exe --emit=jit --no-default-lib -mm=$mm tslang/test/tester/tests/00main_argv_array.ts; echo "$mm exit=$?"; done
-```
-
-Expected: `done.` and exit 0 for every model. Register it with `python "$R" main-argv-array 00main_argv_array.ts 00array7.ts 00array7.ts` (the corpora run it under rc and none the same way; if a corpus run fails only because it passes no arguments, remove the corpus line by hand and say so in the report). Also run `00main_argc_argv.ts` (the `Ref<string>` form) to confirm it still passes.
-
-- [ ] **Step 6: Full suite, commit** (`git commit -m "main(argc, argv: string[]) gets an array of copies of the C strings ..."`; mention that compiled `argv.length` was C's `envp` before).
+- `LowerToAffineLoops.cpp`: the `main` shape check accepts only `Ref<string>` for argv; any other shape is an error with a source location, and an array argv gets the message `'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])`.
+- `jit.cpp` `addEntryThunk`: comment and `unsupported()` message name `Ref<string>` only; no behaviour change.
+- Test `tslang/test/tester/lowering-errors/main_argv_string_array.ts`, registered in `tslang/test/tester/CMakeLists.txt`, passes only when the compile output contains `takes argv as Ref<string>`. `tests/00main_argc_argv.ts` (the `Ref<string>` form) keeps passing.
 
 ### Task 6: debug info
 

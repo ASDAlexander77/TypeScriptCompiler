@@ -480,9 +480,8 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
 // entry point's, and let this thunk adapt it in IR, where the entry's own types are known: `argc`
 // converted to the first parameter's type, `argv` as it is for a second parameter that is a
 // pointer, and the result converted to the exit code. A `Ref<string>` second parameter is C's
-// `char **`; a `string[]` one is a pointer to an array header too, and gets the `char **` until
-// MLIRGen builds the array from it (ts.ArrayFromCStrings, array-reference spec section 5). LowerToAffineLoops has already refused any
-// other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
+// `char **`; a `string[]` one is not supported (it is an array header, not C's `char **`).
+// LowerToAffineLoops has already refused any other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
 llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
 {
     auto *entry = llvmModule.getFunction(entryName);
@@ -493,7 +492,7 @@ llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
 
     auto unsupported = [&]() {
         return llvm::createStringError("entry point '" + entryName +
-                                       "' must be '(argc?: i32 | number, argv?: string[] | Ref<string>) => void | i32 | number'");
+                                       "' must be '(argc?: i32 | number, argv?: Ref<string>) => void | i32 | number'");
     };
 
     auto &context = llvmModule.getContext();
