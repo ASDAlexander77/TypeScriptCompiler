@@ -122,6 +122,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             globalOp.walk([&](mlir_ts::RetainOp retainOp) { retains.push_back(retainOp); });
             for (auto retainOp : retains)
             {
+                // a handle's retain is rc's: the global's count, which own leaves in place (spec 23.2)
+                if (touchesHandle(retainOp))
+                {
+                    continue;
+                }
+
                 auto value = retainOp.getReference();
 
                 // nothing in the region gives the block back, or takes a second reference to it:
@@ -1476,6 +1482,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     if (auto cellOp = value.getDefiningOp<mlir_ts::VariableOp>(); cellOp && isParameterCell(cellOp, maker, index))
                     {
                         auto cellType = mlir::cast<mlir_ts::RefType>(cellOp.getType());
+                        // a handle parameter's cell holds a count of its own (spec 23.2), which only
+                        // the box's release gives back: a box holding one owns what it holds
+                        if (MLIRTypeHelper::isSharedHandleType(cellType.getElementType()))
+                        {
+                            return;
+                        }
+
                         if (ownsHeap(cellOp.getLoc(), cellType.getElementType()))
                         {
                             state.bounded.push_back(index);

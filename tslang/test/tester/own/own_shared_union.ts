@@ -34,10 +34,11 @@ function inLet(a: Shared<Node>) {
     assert(valueOf(u) == 7);
 }
 
+// a const union is a handle of its own too (spec 23.1), as a let is
 function inConst(a: Shared<Node>) {
     const b = a;
     const u: Shared<Node> | number = b;
-    assert(countIs(a, 3), "a const union");
+    assert(countIs(a, 4), "a const union holds a count");
     assert(valueOf(u) == 7);
 }
 

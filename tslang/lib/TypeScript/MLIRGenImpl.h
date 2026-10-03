@@ -1495,12 +1495,14 @@ class MLIRGenImpl
             // (addSafeCastStatement, a SafeCastOp) is the narrowed variable seen through
             // another type, not an array of its own.
             //
-            // A `Shared<T>` handle (own spec 23.1) as well: `const b = a` is a second handle, and
-            // counts as one. A folded name would be `a` itself, with no reference of its own, so
-            // `a = c` would free the block `b` still reads, and `Shared.count` would miss it.
+            // A `Shared<T>` handle (own spec 23.1) as well, bare or in a union or optional
+            // (`Shared<T> | null`): `const b = a` is a second handle, and counts as one. A folded
+            // name would be `a` itself, with no reference of its own, so `a = c` would free the
+            // block `b` still reads, and `Shared.count` would miss it.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || (isa<mlir_ts::ArrayType, mlir_ts::SharedType>(type) && !(varClass == VariableType::ConstRef)
+                || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type))
+                    && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
             {
@@ -1992,10 +1994,23 @@ class MLIRGenImpl
             variableDeclarationInfo.initial = builder.create<mlir_ts::DefaultOp>(location, variableDeclarationInfo.type);
         }
 
+        // A handle global (own spec 23.1) takes over the reference its initializer carries, through
+        // the cast to its type as well: `let g: Shared<T> | null = new Shared(x)`. Left unclaimed,
+        // the reference is a discarded temporary (§9.30), given back at the end of the region,
+        // and the global is born holding a block nobody counts.
+        if (MLIRTypeHelper::isSharedHandleType(variableDeclarationInfo.type))
+        {
+            if (auto castOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>();
+                castOp && producesOwnedReference(castOp.getIn()))
+            {
+                consumeOwnedReference(castOp.getIn());
+            }
+        }
+
         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{variableDeclarationInfo.initial});
 
         return mlir::success();
-    }    
+    }
 
     mlir::LogicalResult createGlobalVariableUndefinedInitialization(mlir::Location location, mlir_ts::GlobalOp globalOp, struct VariableDeclarationInfo &variableDeclarationInfo)
     {

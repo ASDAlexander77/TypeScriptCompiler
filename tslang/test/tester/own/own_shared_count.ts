@@ -1,8 +1,8 @@
 // Shared<T> (spec 23.1): Shared.count after each copy and drop - a handle made, copied, given to a
 // function that keeps it, returned from one, reassigned to the block it holds, copied in a loop, held
 // by another block that dies, replaced in a block by `s.value = x`, and captured as a parameter by a
-// closure and by one that escapes; a narrowed `Shared<T> | null`, and a handle boxed into `any` and
-// read back out.
+// closure and by one that escapes; a narrowed `Shared<T> | null`, a handle boxed into `any` and read
+// back out, and a handle given to a generator.
 class Node {
     v = 0;
 }
@@ -36,6 +36,19 @@ function capture(s: Shared<Node>) {
 // a closure that escapes with a handle parameter: its box holds the count
 function reader(s: Shared<Node>) {
     return () => s.value.v;
+}
+
+// a generator over a handle parameter: its box holds the parameter's cell, which holds a count, and
+// the generator reads through it with Shared.count and .value
+function* counts(s: Shared<Node>) {
+    yield Shared.count(s);
+    yield s.value.v;
+}
+
+function walkCounts(s: Shared<Node>) {
+    const seen: number[] = [];
+    for (const c of counts(s)) seen.push(c);
+    return seen;
 }
 
 function main() {
@@ -116,6 +129,13 @@ function main() {
     }
 
     assert(Shared.count(a) == 1, "every box and every handle read out of one gave its count back");
+
+    a.value.v = 7;
+    for (let i = 0; i < 100; i++) {
+        const seen = walkCounts(a);
+        assert(seen.length == 2 && seen[0] == 2 && seen[1] == 7, "a generator over a handle holds a count");
+        assert(Shared.count(a) == 1, "the generator's count given back");
+    }
 
     print("done.");
 }

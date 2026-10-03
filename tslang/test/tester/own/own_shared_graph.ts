@@ -39,6 +39,9 @@ function main() {
     assert(churn() == 1000);
     const c = p2.child;
     assert(c !== null && c.value.name == "child1", "the other parent keeps the child");
+    // a const copied out of a field is a handle of its own (spec 23.1): child, p2.child and c
+    const n = Shared.count(child);
+    assert(n < 0 || n == 3, "the const counts");
 
     let sum = 0;
     let cur = list(10);

@@ -2357,8 +2357,9 @@ class OwnershipInferencePass
     {
         auto root = rootOf(value);
         auto *def = root.getDefiningOp();
-        // a handle read out of a place is a counted copy, not a borrow (spec 23.3)
-        if (!def || !ownsHeap(root) || isHandle(root))
+        // a handle read out of a place that rc gives an owner of its own is a counted copy, not a
+        // borrow (spec 23.3); any other is a borrow of the place, as a field read is
+        if (!def || !ownsHeap(root) || (isHandle(root) && isCountedHandleRead(root)))
         {
             return nullptr;
         }
@@ -2376,6 +2377,52 @@ class OwnershipInferencePass
         }
 
         return borrowingCall(root);
+    }
+
+    // A handle read out of a place that rc gives a count of its own (spec 23.3): retained, which
+    // own leaves in place - a store into a field, an element or a global, a push, `new Shared`,
+    // an `any` box, a return - or the initializer of an owning local, which takes its own count
+    // (`ts.RetainSlot`). `cur = cur.value.next` is one. Seen through casts, merges and locals
+    // that own nothing. A handle read with none of these - an argument given straight to a call
+    // (`f(p, p.child)`), a `.value` read through it - is a borrow of the place.
+    static bool isCountedHandleRead(mlir::Value value)
+    {
+        llvm::SmallVector<mlir::Value> values{value};
+        llvm::SmallPtrSet<mlir::Value, 8> seen{value};
+        while (!values.empty())
+        {
+            auto current = values.pop_back_val();
+            for (auto &use : current.getUses())
+            {
+                auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::RetainOp>(user))
+                {
+                    return true;
+                }
+
+                if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user); varOp && isOwningVariable(varOp) &&
+                    llvm::any_of(varOp->getUsers(), [](mlir::Operation *varUser) {
+                        return mlir::isa<mlir_ts::RetainSlotOp>(varUser);
+                    }))
+                {
+                    return true;
+                }
+
+                llvm::SmallVector<mlir::Value> same;
+                if (passesOn(use, same))
+                {
+                    for (auto next : same)
+                    {
+                        if (isHandle(next) && seen.insert(next).second)
+                        {
+                            values.push_back(next);
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     // The call a value is the result of, when that result borrows an argument.
@@ -3384,6 +3431,12 @@ class OwnershipInferencePass
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
                       mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp, mlir_ts::StringConcatOp,
                       mlir_ts::StringResizeOp, mlir_ts::StringLengthOp, mlir_ts::StringCopyOp>(user))
+        {
+            return true;
+        }
+
+        // `s.value`'s place and `Shared.count(s)` read the handle and keep nothing (spec 23.1)
+        if (mlir::isa<mlir_ts::SharedValueRefOp, mlir_ts::SharedCountOp>(user))
         {
             return true;
         }
