@@ -2399,6 +2399,12 @@ Each binary gives exactly the same two normalised outputs, byte for byte. Under 
 those files (every ninth) were compared the same way: 49 are identical, and `00union_bin_ops2`
 flips the same way (main 8 and 4, this branch 11 and 1, the same two outputs).
 
+#### Linux
+
+GCC, in WSL, the branch at `bbac9ba8`: it builds with no errors, and
+`ctest -R "own_shared|own-err|own-no-counting|own-verify|verify-ownership-own_shared"` passes 213
+of 213, the same 213 tests the Windows build lists for that pattern.
+
 #### Outside the rule
 
 - **The covariance hole.** `Shared<Derived>` is assignable to `Shared<Base>`, so
