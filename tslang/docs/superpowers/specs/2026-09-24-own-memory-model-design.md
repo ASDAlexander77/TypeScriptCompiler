@@ -2664,10 +2664,13 @@ errors and the same pattern passes 267 of 267, the Windows build's count.
     1 under rc and own). All three compiled before this round; the plain `[p.child, 1]` was
     already rejected. `const x = p.child; const t = [x, 1]` is accepted, and counts;
   - a return whose retain is not followed by only the scope exit's `ts.Release` and
-    `ts.ReleaseSlot` ops (in any order) before the store into the result slot would be rejected:
-    none was found (`return p.child` after `const` and `let` locals, after a single `let`, inside
-    a loop, inside `try`/`finally`, from an arrow or a method, into an optional or a union result
-    all compile and count as rc does);
+    `ts.ReleaseSlot` ops (in any order) before the store into the result slot is rejected. One
+    such shape was found: a scope exit split across blocks, as a `using` disposal makes it
+    (`using r = …; return p.child`, in a function or an arrow), compiled and counted 1 before this
+    round and is now rejected ("borrows a field and cannot be stored, returned or captured").
+    `return p.child` after `const` and `let` locals, after a single `let`, inside a loop, inside
+    `try`/`finally`, from an arrow or a method, into an optional or a union result all compile
+    and count as rc does;
   - so is one read of a handle with a counted use and a use given to a call that may drop: with
     `k` an owning local, `f(p, k = p.child)`, where `f` overwrites `p.child`, is rejected even
     though `k` keeps the block alive (the review's `hole2.ts`). `k = p.child; f(p, k)` is
