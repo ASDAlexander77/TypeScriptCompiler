@@ -63,12 +63,17 @@ struct fails. Under rc a parameter push exits with 127 and prints nothing.
   or a union copy the pointer. `===` and `!==` compare header pointers.
 - An empty array is a header with `data = null`, `length = 0`, `capacity = 0`. There is no shared
   empty header: each `[]` is a distinct array.
+- A null header (zeroed memory: an element of `new Array<T[]>(n)`, a field with no initializer,
+  `undefined` cast to an array) reads as an empty array, and an op that changes an array through
+  its slot stores a fresh empty header into a slot holding null first. This keeps today's
+  behaviour, where a zeroed `{ data, length }` is an empty array (plan ruling R1).
 - `ConstArray` (a literal's static data) is unchanged. The cast from `ConstArray` to `T[]` makes a
   header and copies the data into a fresh block on both of its paths; the path that today points
   the struct at the static data (`byValue = false`) copies as well, since `push` would otherwise
   reallocate static memory.
-- `[a, ...rest] = src` gives `rest` a new array holding a copy of the slice (#477); `ts.ArrayView`
-  becomes a copy.
+- `[a, ...rest] = src` gives `rest` a new array holding a copy of the slice (#477). MLIRGen builds
+  it from a new empty array and a loop of pushes instead of emitting `ts.ArrayView`, so the
+  ownership passes see a fresh array (plan ruling R3).
 - Layout: an array field, element, tuple slot or union payload shrinks from two words to one
   pointer; `T[] | undefined` is the pointer and its tag.
 - ABI: every function that takes or returns an array changes. Objects built before the switch do
@@ -116,10 +121,11 @@ unchanged.
   the retain/release routines (§4).
 - **Debug info** (`LLVMDebugInfo.h`): an array's debug type becomes a pointer to a
   `{ data, length, capacity }` struct, so a debugger still shows the elements.
-- **`main(argc, argv: string[])`:** lowering emits a C `main(int, char **)` adapter that builds a
-  `string[]` header from `argc`/`argv` and calls the user's `main`. Today the struct is read from
-  C's `argv` and `envp`, which is the open `argv.length` = envp bug; the adapter fixes it. A
-  `Ref<string>` argv still receives C's `char **` directly. Both AOT and JIT.
+- **`main(argc, argv: string[])`:** MLIRGen gives `main` a `Ref<string>` second parameter, so the
+  entry point takes C's `char **`, and binds `argv` to a new op `ts.ArrayFromCStrings(argc, argv)`
+  that makes the array with the model's allocator, copying each string (plan ruling R2). Today
+  the struct is read from C's `argv` and `envp`, which is the open `argv.length` = envp bug; this
+  fixes it. A `Ref<string>` argv still receives C's `char **` directly. Both AOT and JIT.
 - **32-bit x86:** the header is three pointer-sized words; nothing is specific to x86.
 
 ## 6. Growth (PR 3)
