@@ -370,6 +370,36 @@ class OwnershipRoutineLogic
         });
     }
 
+    // Takes one more reference for each of the `count` elements at `dataPtr`: a copy of them
+    // into a new array's block (`.view()`), whose release will release them again. Only under
+    // rc - own rejects a second reference to an element at compile time.
+    void emitRetainArrayElements(mlir::Type elementType, mlir::Value dataPtr, mlir::Value count)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        auto routineName = getOrCreateRetainRoutine(elementType);
+        if (routineName.empty())
+        {
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmElementType = tch.convertType(elementType);
+
+        emitCountedLoop(count, [&](mlir::Value index) {
+            auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataPtr, ValueRange{index});
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
+                                          ValueRange{elementPtr});
+        });
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)

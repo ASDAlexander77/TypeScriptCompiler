@@ -55,7 +55,7 @@ class ArrayLayout : public LLVMCodeHelperBase
             loc, ptrType, isNull,
             [&](OpBuilder &, Location) -> mlir::Value {
                 auto fresh = MemoryAlloc(headerType(), MemoryAllocSet::Zero);
-                if (compileOptions.memoryModel == MemoryModelRC)
+                if (compileOptions.isRefCounted())
                 {
                     // the slot is the header's one reference, and nothing above lowering knows
                     // the header exists to take it: born at zero, the owner's release would

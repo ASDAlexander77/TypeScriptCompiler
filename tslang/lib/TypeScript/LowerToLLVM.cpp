@@ -727,6 +727,8 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.eraseOp(op);
 
@@ -2740,8 +2742,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // never written. Not a corner - it is any captured declaration without an
             // initializer, which an owned local can never be (§9.36).
             //
-            // Only under -mm=rc: nothing reads the slot before its store in any other model, and
-            // a collected build is meant to come out of this step byte-identical.
+            // Only under rc and own: in the other models nothing reads the slot before its store,
+            // so this step stores nothing there - except for an array, below, which every model
+            // starts as null.
             rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
         }
         else if (!value && isa<mlir_ts::ArrayType>(referenceType.getElementType()))
@@ -3068,8 +3071,6 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             next = true;
         }
 
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
 
         ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
@@ -3106,8 +3107,6 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
 
         auto allocated = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
 
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         ArrayLayout layout(newEmptyArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -3153,8 +3152,6 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         // releases what the slot held - `malloc`'s leftovers would be released as a reference
         auto allocated = ch.MemoryAlloc(multSizeOfTypeValue, MemoryAllocSet::Zero);
 
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
 
         ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, transformed.getCount());
@@ -3243,6 +3240,8 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3297,6 +3296,8 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
         return success();
@@ -3391,6 +3392,8 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(unshiftOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3454,6 +3457,8 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
         return success();
@@ -3642,6 +3647,8 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(spliceOp, ValueRange{newCountAsLLVMType});
         return success();
@@ -3684,6 +3691,12 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, transformed.getCount()});
         auto copy = ch.MemoryAlloc(bytes);
         rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
+
+        // the copy holds a second reference to each element, and its release gives them back
+        {
+            OwnershipRoutineLogic orl(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainArrayElements(elementType, copy, transformed.getCount());
+        }
 
         auto structValue3 = layout.make(arrayType, copy, transformed.getCount());
 

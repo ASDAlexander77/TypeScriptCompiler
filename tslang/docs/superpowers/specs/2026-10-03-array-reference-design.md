@@ -67,6 +67,10 @@ struct fails. Under rc a parameter push exits with 127 and prints nothing.
   `undefined` cast to an array) reads as an empty array, and an op that changes an array through
   its slot stores a fresh empty header into a slot holding null first. This keeps today's
   behaviour, where a zeroed `{ data, length }` is an empty array (plan ruling R1).
+- A null slot passed by value to a parameter (an unset field, an element made by `length =`):
+  a push through the parameter materialises a header in the parameter's copy, so the slot's
+  owner does not see the change and, under rc and own, that header leaks. Accepted: such a slot
+  holds `undefined` in TypeScript terms, where `.push` would throw (ruling T4-D).
 - `ConstArray` (a literal's static data) is unchanged. The cast from `ConstArray` to `T[]` makes a
   header and copies the data into a fresh block on both of its paths; the path that today points
   the struct at the static data (`byValue = false`) copies as well, since `push` would otherwise
