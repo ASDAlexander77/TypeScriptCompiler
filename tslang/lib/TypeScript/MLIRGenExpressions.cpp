@@ -1000,6 +1000,20 @@ namespace mlirgen
 
         auto callExpr = callExpression->expression.as<Expression>();
 
+        // `Shared.count(s)` (own spec 23.1), unless the program declares its own `Shared`, which
+        // wins as it does in type position and in `new`.
+        if (callExpr == SyntaxKind::PropertyAccessExpression)
+        {
+            auto access = callExpr.as<PropertyAccessExpression>();
+            if (access->expression == SyntaxKind::Identifier
+                && MLIRHelper::getName(access->expression.as<Identifier>()) == "Shared"
+                && MLIRHelper::getName(access->name) == "count"
+                && !resolveIdentifier(location, "Shared", genContext))
+            {
+                return mlirGenSharedCount(location, callExpression, genContext);
+            }
+        }
+
         auto result = mlirGen(callExpr, genContext);
         // in case of detecting value for recursive calls we need to ignore failed calls
         // last condition we need to reduce posobilities to ignore legitimate failure
@@ -1071,6 +1085,53 @@ namespace mlirgen
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
     }
 
+    // `Shared.count(s)` (own spec 23.1): the number of handles under rc and own, -1 under gc and none.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenSharedCount(mlir::Location location, CallExpression callExpression,
+                                                         const GenContext &genContext)
+    {
+        if (callExpression->arguments.size() != 1)
+        {
+            emitError(location, "Shared.count(handle) takes one argument");
+            return mlir::failure();
+        }
+
+        auto result = mlirGen(callExpression->arguments.front(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto handle = V(result);
+        // `Shared<T> | null` narrowed by `if (s)`, which keeps the union's type: unwrapped to the
+        // handle, as `.value` collapses a tag-free union (mlirGenPropertyAccessExpressionBaseLogic)
+        if (MLIRTypeHelper::isSharedHandleType(handle.getType()) && !isa<mlir_ts::SharedType>(handle.getType()))
+        {
+            auto handleType = handle.getType();
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(handleType))
+            {
+                handleType = optionalType.getElementType();
+            }
+
+            mlir::Type baseType;
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(handleType))
+            {
+                if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+                {
+                    handleType = baseType;
+                }
+            }
+
+            if (isa<mlir_ts::SharedType>(handleType))
+            {
+                CAST(handle, location, handleType, handle, genContext);
+            }
+        }
+
+        if (!isa<mlir_ts::SharedType>(handle.getType()))
+        {
+            emitError(location, "Shared.count takes a Shared<T>, not ") << to_print(handle.getType());
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::SharedCountOp>(location, getNumberType(), handle));
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
         auto location = loc(newExpression);
@@ -1086,6 +1147,11 @@ namespace mlirgen
             {
                 // TODO: review it, seems it should be resolved earlier
                 auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
+                if (name == "Shared")
+                {
+                    return mlirGenNewShared(location, newExpression, genContext);
+                }
+
                 type = findEmbeddedType(location, name, newExpression->typeArguments, genContext);
                 if (type)
                 {
@@ -1200,6 +1266,58 @@ namespace mlirgen
                                         InternalFlags::SuppressConstructorCall;
 
         return NewClassInstance(location, value, newExpression->arguments, newExpression->typeArguments, suppressConstructorCall, genContext);
+    }
+
+    // `new Shared(x)` (own spec 23): T is the type argument, else the receiver's, else x's.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenNewShared(mlir::Location location, NewExpression newExpression,
+                                                       const GenContext &genContext)
+    {
+        if (newExpression->arguments.size() != 1)
+        {
+            emitError(location, "new Shared(value) takes one argument");
+            return mlir::failure();
+        }
+
+        if (newExpression->typeArguments.size() > 1)
+        {
+            emitError(location, "Shared<T> takes one type argument");
+            return mlir::failure();
+        }
+
+        mlir::Type elementType;
+        if (newExpression->typeArguments.size() == 1)
+        {
+            elementType = getType(newExpression->typeArguments.front(), genContext);
+            if (!elementType)
+            {
+                return mlir::failure();
+            }
+        }
+        else if (auto receiver = mlir::dyn_cast_or_null<mlir_ts::SharedType>(genContext.receiverType))
+        {
+            elementType = receiver.getElementType();
+        }
+
+        // the value is given T as its receiver, not the handle's type
+        GenContext valueGenContext(genContext);
+        valueGenContext.clearReceiverTypes();
+        valueGenContext.receiverType = elementType;
+
+        auto result = mlirGen(newExpression->arguments.front(), valueGenContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        if (!elementType)
+        {
+            elementType = mth.wideStorageType(value.getType());
+        }
+
+        CAST_A(stored, location, elementType, value, genContext);
+        // the block owns what it holds, as an array literal owns its elements
+        mlirGenRetainCaptured(location, mlir::ValueRange{stored});
+        auto handle = builder.create<mlir_ts::SharedNewOp>(location, mlir_ts::SharedType::get(elementType), stored);
+        markFreshBlockOwned(location, handle);
+        return V(handle);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)

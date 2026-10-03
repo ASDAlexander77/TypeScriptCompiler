@@ -400,10 +400,13 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
         auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
         // Under own nothing retains: the descriptor's retain slot is read only from inside
         // retain routines (retainViaDescriptor), none of which can run, and building one would
-        // bring `__tslang_inc_ref` into a model that promises it is never referenced.
-        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
-                                     ? std::string()
-                                     : orl.getOrCreateRetainRoutine(descriptorType);
+        // bring `__tslang_inc_ref` into a model that promises it is never referenced. A Shared<T>
+        // handle is the exception: own counts it (spec 23.2), so its retain is kept.
+        auto retainRoutineName =
+            tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn &&
+                    !MLIRTypeHelper::isSharedHandleType(descriptorType)
+                ? std::string()
+                : orl.getOrCreateRetainRoutine(descriptorType);
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
@@ -425,14 +428,17 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // A handle is counted under own too, and inference leaves its retains (spec 23.2).
+        auto counted = MLIRTypeHelper::isSharedHandleType(op.getReference().getType());
+
         // Under own, ownership inference erased every retain it could prove, and reported the
         // rest; one that reaches here was neither, and erasing it would ship a double free.
-        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
             return op.emitError("ownership inference left a retain behind");
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitRetainValue(op.getReference().getType(), transformed.getReference());
@@ -472,14 +478,19 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // A slot holding a handle is counted under own too, and inference leaves its retains
+        // (spec 23.2).
+        auto counted =
+            MLIRTypeHelper::isSharedHandleType(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType());
+
         // Under own, ownership inference erased every retain it could prove, and reported the
         // rest; one that reaches here was neither, and erasing it would ship a double free.
-        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
             return op.emitError("ownership inference left a retain behind");
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
@@ -945,6 +956,68 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
         auto copyIt = rewriter.create<LLVM::AndOp>(loc, llvmBoolType, hasValue, isSet(pointer));
         auto copied = copyOf(pointer, copyIt);
         rewriter.replaceOp(op, ValueRange{rewriter.create<LLVM::InsertValueOp>(loc, in, copied, ArrayRef<int64_t>{0})});
+        return success();
+    }
+};
+
+// `new Shared(x)` (own spec 23): a heap block with the header every block has (a count under rc
+// and own, born 0 like any block), whose payload is the value.
+class SharedNewOpLowering : public TsLlvmPattern<mlir_ts::SharedNewOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedNewOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedNewOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto elementType = mlir::cast<mlir_ts::SharedType>(op.getType()).getElementType();
+        auto handle = ch.MemoryAlloc(elementType, MemoryAllocSet::Zero);
+        rewriter.create<LLVM::StoreOp>(op->getLoc(), transformed.getValue(), handle);
+        rewriter.replaceOp(op, ValueRange{handle});
+        return success();
+    }
+};
+
+// `s.value`: the payload starts at the handle.
+class SharedValueRefOpLowering : public TsLlvmPattern<mlir_ts::SharedValueRefOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedValueRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedValueRefOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOp(op, ValueRange{transformed.getShared()});
+        return success();
+    }
+};
+
+// `Shared.count(s)`: the header word under rc and own; gc and none never write it.
+class SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedCountOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedCountOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+
+        auto numberType = tch.convertType(op.getType());
+        if (!tsLlvmContext->compileOptions.tracksOwnership())
+        {
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, numberType, rewriter.getFloatAttr(numberType, -1.0));
+            return success();
+        }
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, transformed.getShared(), llvmIndexType);
+        auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        rewriter.replaceOpWithNewOp<LLVM::SIToFPOp>(op, numberType, count);
         return success();
     }
 };
@@ -2611,9 +2684,12 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (!isCaptured)
         {
             auto  tsStorageType = referenceType.getElementType();
-            if (isa<mlir_ts::ClassType>(tsStorageType) || isa<mlir_ts::StringType>(tsStorageType) ||
- isa<mlir_ts::ArrayType>(tsStorageType) || isa<mlir_ts::ObjectType>(tsStorageType) ||
- isa<mlir_ts::AnyType>(tsStorageType))
+            if (isa<mlir_ts::ClassType>(tsStorageType) ||
+                isa<mlir_ts::SharedType>(tsStorageType) ||
+                isa<mlir_ts::StringType>(tsStorageType) ||
+                isa<mlir_ts::ArrayType>(tsStorageType) ||
+                isa<mlir_ts::ObjectType>(tsStorageType) ||
+                isa<mlir_ts::AnyType>(tsStorageType))
             {
                 TypeHelper th(rewriter);
 
@@ -2681,7 +2757,10 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // Not under own, which has no count to take: such a cell borrows the value, and its
             // release frees the cell alone (OWN_CELL_BORROWS_ATTR_NAME, which ownership inference
             // sets, or rejects the program).
-            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+            // A handle is counted under own too (spec 23.2).
+            auto counted = MLIRTypeHelper::isSharedHandleType(referenceType.getElementType());
+            if (isCaptured &&
+                (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted)) &&
                 !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
             {
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -7138,6 +7217,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(m.getContext());
     });
 
+    // Shared<T> (own spec 23): a pointer to the handle's payload
+    converter.addConversion([&](mlir_ts::SharedType type) {
+        return LLVM::LLVMPointerType::get(m.getContext());
+    });
+
     converter.addConversion([&](mlir_ts::ValueRefType type) {
         return LLVM::LLVMPointerType::get(m.getContext());
     });
@@ -8029,6 +8113,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
+        SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

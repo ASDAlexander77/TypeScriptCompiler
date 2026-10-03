@@ -2609,6 +2609,36 @@ add_test(NAME test-own-string-copy-in-store-block
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
+# Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
+# test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
+# own_shared_user_named: a program's own class named Shared wins over the built-in (spec 23.1).
+set(shared_models gc none rc own)
+foreach(shared_mm ${shared_models})
+    foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
+                        own_shared_global own_shared_unlink own_shared_global_init
+                        own_shared_place_two_uses own_shared_global_field)
+        tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+        tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+    endforeach()
+endforeach()
+# Shared.count is a count only under rc and own.
+foreach(shared_count_mm rc own)
+    tslang_add_test(NAME test-jit-${shared_count_mm}-own_shared_count COMMAND test-runner -jit -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
+    tslang_add_test(NAME test-compile-${shared_count_mm}-own_shared_count COMMAND test-runner -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
+endforeach()
+# --verify-ownership is quiet on every positive (spec 23.5): handles keep rc's pairing.
+foreach(shared_verify_mm own rc)
+    foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
+                        own_shared_global own_shared_unlink own_shared_global_init
+                        own_shared_place_two_uses own_shared_global_field)
+        add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
+                 COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
+                         "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+        set_tests_properties(test-${shared_verify_mm}-verify-ownership-${shared_test}
+                             PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+    endforeach()
+endforeach()
+
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
 # Windows, checked against a library that lists nothing (own-shared-no-drops.cmake).
@@ -2731,7 +2761,19 @@ set(own_error_cases
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
-    "own_err_string_pushed_twice|is used here after its value was moved")
+    "own_err_string_pushed_twice|is used here after its value was moved"
+    "own_err_shared_borrow_write|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_call|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_push|but is used here after it may be released or overwritten"
+    "own_err_shared_moved_in|is used here after its value was moved"
+    "own_err_shared_borrow_other_type|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_push_call|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_reassigned|but is used here after it may be released or overwritten"
+    "own_err_shared_union_owned|a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported"
+    "own_err_shared_place_arg|borrows a field but is used here after it may be released or overwritten"
+    "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten"
+    "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured"
+    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

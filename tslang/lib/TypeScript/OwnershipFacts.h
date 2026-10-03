@@ -7,6 +7,7 @@
 
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
@@ -327,9 +328,34 @@ inline bool isCall(mlir::Operation *op)
                      mlir_ts::InvokeHybridOp>(op);
 }
 
+// A field, an element, or `s.value` - the payload of a handle (spec 23.1).
 inline bool isPlace(mlir::Value ref)
 {
-    return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(ref.getDefiningOp());
+    return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(
+        ref.getDefiningOp());
+}
+
+// A handle (spec 23.2): counted in every model that tracks ownership, and left alone by own.
+inline bool isHandle(mlir::Value value)
+{
+    return value && MLIRTypeHelper::isSharedHandleType(value.getType());
+}
+
+// A retain or release of a handle, or of a slot holding one: rc's, which own leaves in place.
+inline bool touchesHandle(mlir::Operation *op)
+{
+    if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(op))
+    {
+        return isHandle(op->getOperand(0));
+    }
+
+    if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(op))
+    {
+        auto slotType = mlir::dyn_cast<mlir_ts::RefType>(op->getOperand(0).getType());
+        return slotType && MLIRTypeHelper::isSharedHandleType(slotType.getElementType());
+    }
+
+    return false;
 }
 
 // The values the branches into its block pass for `argument`, each seen through its views.
@@ -371,6 +397,49 @@ inline bool mergedInto(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir:
 
     values.append(found.begin(), found.end());
     return true;
+}
+
+// Is this reference a place reached through a handle's payload (`s.value.items`), at any depth?
+inline bool reachesSharedValue(mlir::Value ref)
+{
+    llvm::SmallVector<mlir::Value> work{ref};
+    llvm::SmallPtrSet<mlir::Value, 8> seen;
+    while (!work.empty())
+    {
+        auto value = rootOf(work.pop_back_val());
+        if (!seen.insert(value).second)
+        {
+            continue;
+        }
+
+        if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        {
+            return true;
+        }
+
+        if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
+        {
+            work.push_back(propertyRefOp.getObjectRef());
+        }
+        else if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
+        {
+            work.push_back(elementRefOp.getArray());
+        }
+        else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+        {
+            work.push_back(loadOp.getReference());
+        }
+        else if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+        {
+            llvm::SmallVector<mlir::Value> merged;
+            if (mergedInto(argument, merged))
+            {
+                work.append(merged.begin(), merged.end());
+            }
+        }
+    }
+
+    return false;
 }
 
 // The load of an owning local that `value` was read from, through its views (a class widened

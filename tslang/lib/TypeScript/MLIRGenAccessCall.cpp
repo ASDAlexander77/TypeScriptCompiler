@@ -305,6 +305,20 @@ namespace mlirgen
                     return mlir::Value();
                 })
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
+                // `s.value` (own spec 23.1): a ts.Load of the place ts.SharedValueRef(s), so `s.value = x`
+                // stores through that place the way a field store does (mlirGenSaveLogicOneItem)
+                .Case<mlir_ts::SharedType>([&](auto sharedType) -> mlir::Value {
+                    // any other member: an extension function, else "Can't resolve property" below
+                    if (name != "value")
+                    {
+                        return mlir::Value();
+                    }
+
+                    auto elementType = sharedType.getElementType();
+                    auto valueRef = builder.create<mlir_ts::SharedValueRefOp>(
+                        location, mlir_ts::RefType::get(elementType), objectValue);
+                    return builder.create<mlir_ts::LoadOp>(location, elementType, valueRef);
+                })
                 .Case<mlir_ts::ObjectType>([&](auto objectType) { 
                     if (auto value = cl.Object(objectType))
                     {

@@ -437,6 +437,11 @@ class MLIRPrinter
                 printType(out, t.getElementType());
                 out << ">";
             })
+            .template Case<mlir_ts::SharedType>([&](auto t) {
+                out << "Shared<";
+                printType(out, t.getElementType());
+                out << ">";
+            })
             .template Case<mlir_ts::TupleType>([&](auto t) {
                 printTupleOrObjectType(out, t);
             })

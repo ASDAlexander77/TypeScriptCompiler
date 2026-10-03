@@ -123,6 +123,7 @@ class OwnedReturnConsumptionPass
         // back even when no function here is classified as returning owned.
         if (returnsOwned.empty())
         {
+            claimHandleGlobalInitializers(module);
             releaseDiscardedTemporaries(mth, module);
             return;
         }
@@ -235,7 +236,87 @@ class OwnedReturnConsumptionPass
 
         consumeConditionalResults(mth, module);
 
+        claimHandleGlobalInitializers(module);
+
         releaseDiscardedTemporaries(mth, module);
+    }
+
+    // A handle global (own spec 23.1) is born holding the reference its initializer carries.
+    //
+    // The initializer region ends in `ts.GlobalResult`, a terminator, so a value given to it
+    // straight is never released as a discarded temporary (§9.30): `let g: Shared<T> = mk()`
+    // keeps the call's +1. A value given to it through a view of the global's type is: `ts.Cast`
+    // to `Shared<T> | null`, `ts.OptionalValue` to `Shared<T> | undefined`, `ts.CreateUnionInstance`
+    // - the view is the one use the producer has, and it is releasable, so the producer's
+    // reference was given back at the end of the region and the global was born at count 0.
+    //
+    // The producer is anything that carries an owned reference by now: `new Shared(..)`, marked
+    // where MLIRGen builds it, or a call, marked above once its callee is classified - which is
+    // why MLIRGen alone cannot see it. A handle read out of a field or an element carries none,
+    // and gets a retain of its own. Keyed on the global's type: no other global changes. A read of another
+    // global is left alone (#446: it reads null today in every model).
+    void claimHandleGlobalInitializers(mlir::ModuleOp module)
+    {
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            if (!MLIRTypeHelper::isSharedHandleType(globalOp.getType()))
+            {
+                return;
+            }
+
+            auto *block = globalOp.getInitializerBlock();
+            if (!block || block->empty())
+            {
+                return;
+            }
+
+            auto resultOp = mlir::dyn_cast<mlir_ts::GlobalResultOp>(block->getTerminator());
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return;
+            }
+
+            auto value = resultOp->getOperand(0);
+            while (auto *definingOp = value.getDefiningOp())
+            {
+                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp))
+                {
+                    value = castOp.getIn();
+                }
+                else if (auto optionalValueOp = mlir::dyn_cast<mlir_ts::OptionalValueOp>(definingOp))
+                {
+                    value = optionalValueOp.getIn();
+                }
+                else if (auto createUnionInstanceOp = mlir::dyn_cast<mlir_ts::CreateUnionInstanceOp>(definingOp))
+                {
+                    value = createUnionInstanceOp.getIn();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (producesOwnedResult(value))
+            {
+                value.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                return;
+            }
+
+            // A field or element read (`holder.child`, `new P().child`, `mkP().child`,
+            // `mkArr()[0]`) carries no reference: the object or array keeps its count, and a
+            // temporary one gives it back at the end of the region. The global takes a count of its
+            // own, retained right where it is read - before the temporary's release. Erased under
+            // gc and none.
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+            if (place && MLIRTypeHelper::isSharedHandleType(value.getType()) &&
+                mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+            {
+                mlir::OpBuilder builder(loadOp->getContext());
+                builder.setInsertionPointAfter(loadOp);
+                builder.create<mlir_ts::RetainOp>(loadOp->getLoc(), value);
+            }
+        });
     }
 
     // A conditional expression whose branches disagree about ownership.

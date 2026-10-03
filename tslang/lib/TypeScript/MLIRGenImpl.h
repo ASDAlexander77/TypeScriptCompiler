@@ -1055,17 +1055,17 @@ class MLIRGenImpl
         }
     }
 
-    // Gives a freshly built string, or a freshly made `any` box, the same standing as every other
-    // producer of a new heap value: the retain makes the reference real, and the mark says a
-    // receiver may take it over rather than adding one of its own - which is also what lets §9.30
-    // give it back where nothing receives it at all.
+    // Gives a freshly built string, a freshly made `any` box, or a new Shared<T> handle (own spec
+    // 23), the same standing as every other producer of a new heap value: the retain makes the
+    // reference real, and the mark says a receiver may take it over rather than adding one of its
+    // own - which is also what lets §9.30 give it back where nothing receives it at all.
     //
     // Both halves are needed together, and the retain is what makes this safe to be generous
     // with: a value wrongly counted as fresh gains a reference and a release for it, which is
     // balanced, where a mark on its own would hand a receiver a reference nobody took.
     void markFreshBlockOwned(mlir::Location location, mlir::Value value)
     {
-        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType>(value.getType()))
+        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::SharedType>(value.getType()))
         {
             return;
         }
@@ -1092,7 +1092,19 @@ class MLIRGenImpl
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
                isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference) ||
-               isOwnedInterfaceFieldSlot(location, reference);
+               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference);
+    }
+
+    // `s.value` (own spec 23): the payload is owned by the handle's block, as a field by its object
+    bool isOwnedSharedValueSlot(mlir::Location location, mlir::Value reference)
+    {
+        if (!reference.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        {
+            return false;
+        }
+
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
     // A field reached through an interface: it belongs to the object behind the interface, which releases
@@ -1482,9 +1494,15 @@ class MLIRGenImpl
             // aliases the storage it was read from, so it keeps that, and a narrowed view
             // (addSafeCastStatement, a SafeCastOp) is the narrowed variable seen through
             // another type, not an array of its own.
+            //
+            // A `Shared<T>` handle (own spec 23.1) as well, bare or in a union or optional
+            // (`Shared<T> | null`): `const b = a` is a second handle, and counts as one. A folded
+            // name would be `a` itself, with no reference of its own, so `a = c` would free the
+            // block `b` still reads, and `Shared.count` would miss it.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || (isa<mlir_ts::ArrayType>(type) && !(varClass == VariableType::ConstRef)
+                || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type))
+                    && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
             {
@@ -1976,10 +1994,13 @@ class MLIRGenImpl
             variableDeclarationInfo.initial = builder.create<mlir_ts::DefaultOp>(location, variableDeclarationInfo.type);
         }
 
+        // A handle global (own spec 23.1) takes over the reference its initializer carries, through
+        // a view of its type as well (`let g: Shared<T> | null = mk()`): OwnedReturnConsumptionPass
+        // claims it (claimHandleGlobalInitializers), once a call's result is known to carry one.
         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{variableDeclarationInfo.initial});
 
         return mlir::success();
-    }    
+    }
 
     mlir::LogicalResult createGlobalVariableUndefinedInitialization(mlir::Location location, mlir_ts::GlobalOp globalOp, struct VariableDeclarationInfo &variableDeclarationInfo)
     {
@@ -8660,6 +8681,10 @@ class MLIRGenImpl
             NodeArray<TypeNode> typeArguments, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenNewShared(mlir::Location location, NewExpression newExpression, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenSharedCount(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext);
 
