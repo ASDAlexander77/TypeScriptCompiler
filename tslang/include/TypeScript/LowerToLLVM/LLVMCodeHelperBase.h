@@ -444,10 +444,26 @@ class LLVMCodeHelperBase
         // block must stay large enough for the header it carries
         auto headerSizeValue = createHeapBlockHeaderSizeConstant(loc, llvmIndexType);
         mlir::Value paddedSize = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{effectiveSize, headerSizeValue});
-        auto blockPtrValue = getBlockPtrFromPayloadPtr(loc, ptrValue, llvmIndexType);
+        // A null payload has no block: an empty array's data (a header with data = null) is
+        // reallocated by its first push, and realloc(NULL, n) - GC_realloc's too - is malloc(n)
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, ptrValue, nullPtr);
+        mlir::Value blockPtrValue = rewriter.create<LLVM::SelectOp>(
+            loc, isNull, nullPtr, getBlockPtrFromPayloadPtr(loc, ptrValue, llvmIndexType));
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{blockPtrValue, paddedSize});
-        return getPayloadPtrFromBlockPtr(loc, callResults.getResult(), llvmIndexType);
+        mlir::Value newBlockPtr = callResults.getResult();
+        if (compileOptions.tracksOwnership())
+        {
+            // a block that was just made has the word an allocation is born with (_MemoryAlloc)
+            auto word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, newBlockPtr);
+            auto bornWord =
+                rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+            rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::SelectOp>(loc, isNull, bornWord, word),
+                                           newBlockPtr);
+        }
+
+        return getPayloadPtrFromBlockPtr(loc, newBlockPtr, llvmIndexType);
     }
 
     template <typename T> mlir::LogicalResult _MemoryFree(mlir::Value ptrValue)
@@ -465,9 +481,13 @@ class LLVMCodeHelperBase
 
         auto casted = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
 
-        // the incoming pointer addresses the payload; free must see the block base
+        // the incoming pointer addresses the payload; free must see the block base. A null
+        // payload - an empty array's data - has no block, and free(NULL) does nothing
         auto llvmIndexType = tch.convertType(th.getIndexType());
-        auto blockPtrValue = getBlockPtrFromPayloadPtr(loc, casted, llvmIndexType);
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, casted, nullPtr);
+        mlir::Value blockPtrValue = rewriter.create<LLVM::SelectOp>(
+            loc, isNull, nullPtr, getBlockPtrFromPayloadPtr(loc, casted, llvmIndexType));
 
         rewriter.create<LLVM::CallOp>(loc, freeFuncOp, ValueRange{blockPtrValue});
 

@@ -1680,7 +1680,10 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
-            getOrCreateGlobalArray(constantOp, arrayType, rewriter);
+            // an array value is a header pointer: a static header over the static data
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            rewriter.replaceOp(constantOp, ch.getReadOnlyRTArray(constantOp->getLoc(), arrayType,
+                                                                 cast<ArrayAttr>(constantOp.getValue())));
             return success();
         }
 
@@ -3665,8 +3668,16 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto arrayPtr = layout.data(arrayType, transformed.getOp());
 
         auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
-        // create array type
-        auto structValue3 = layout.make(arrayType, arrayOffset, transformed.getCount());
+
+        // a copy of the slice: an array owns its data block, and a header over the middle of
+        // another array's block would free (and realloc) an interior pointer
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+        auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, transformed.getCount()});
+        auto copy = ch.MemoryAlloc(bytes);
+        rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
+
+        auto structValue3 = layout.make(arrayType, copy, transformed.getCount());
 
         rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});
         return success();
@@ -7208,16 +7219,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMArrayType::get(converter.convertType(type.getElementType()), type.getSize());
     });
 
+    // an array is a reference to its header { data, length, capacity } (ArrayLayout.h)
     converter.addConversion([&](mlir_ts::ArrayType type) {
-        TypeHelper th(m.getContext());
-
-        SmallVector<mlir::Type> rtArrayType;
-        // pointer to data type
-        rtArrayType.push_back(th.getPtrType());
-        // field which store length of array
-        rtArrayType.push_back(converter.convertType(th.getIndexType()));
-
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), rtArrayType, false);
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::RefType type) {

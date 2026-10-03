@@ -957,8 +957,8 @@ class OwnershipRoutineLogic
             return;
         }
 
-        // an array value is { data, length }; it owns the data block and, through it, the
-        // elements
+        // an array value is a pointer to its header { data, length, capacity }; the header owns
+        // the data block and, through it, the elements
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             buildArrayBody(arrayType, slotPtr);
@@ -1158,13 +1158,13 @@ class OwnershipRoutineLogic
             return;
         }
 
-        // an array value is { data, length }: the copy shares the data block, and the block
-        // already holds whatever the elements own
+        // an array value is a pointer to its header { data, length, capacity }, and the header
+        // is the counted block: the copy shares it, and it already holds whatever the elements
+        // own. A null header (an empty array, R1) is skipped by emitIncRef
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
-            auto dataSlot = layout.dataAddress(arrayType, layout.headerForRead(arrayType, slotPtr));
-            emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot));
+            emitIncRef(layout.headerForRead(arrayType, slotPtr));
             return;
         }
 
@@ -1286,12 +1286,18 @@ class OwnershipRoutineLogic
         auto ptrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
+        // the header { data, length, capacity } is the counted block (spec section 4). On its last
+        // reference: release the elements [0, length), free the data block - the header holds
+        // its only reference, so its own count is never read - and free the header. A null
+        // header (an empty array, R1) holds nothing and is skipped by emitIfLastReference; a
+        // static header (a constant array in global data) is immortal and never freed
         ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
         auto header = layout.headerForRead(arrayType, slotPtr);
-        auto dataSlot = layout.dataAddress(arrayType, header);
-        auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
-        emitIfLastReference(dataValue, [&]() {
+        emitIfLastReference(header, [&]() {
+            auto dataSlot = layout.dataAddress(arrayType, header);
+            auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
+
             auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
             if (!elementRoutine.empty())
             {
@@ -1308,7 +1314,9 @@ class OwnershipRoutineLogic
                 });
             }
 
+            // null for an empty array; MemoryFree passes that on to free(NULL)
             emitFreeBlock(dataValue);
+            emitFreeBlock(header);
         });
     }
 

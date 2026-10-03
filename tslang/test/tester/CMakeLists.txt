@@ -335,7 +335,9 @@ tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOU
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
+tslang_add_test(NAME test-compile-00-array-reference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
 tslang_add_test(NAME test-compile-00-arrays3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
+tslang_add_test(NAME test-compile-00-array-zero-slots COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_zero_slots.ts")
 tslang_add_test(NAME test-compile-00-arrays4-push-pop COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
 tslang_add_test(NAME test-compile-00-array-shift COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 tslang_add_test(NAME test-compile-00-array-splice COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
@@ -344,6 +346,7 @@ tslang_add_test(NAME test-compile-00-array-spread-args COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-arrays5-deconstruct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
 tslang_add_test(NAME test-compile-00-array-rest-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
+tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
 tslang_add_test(NAME test-compile-00-arrays-assignment5 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_assignment5.ts")
@@ -830,7 +833,9 @@ tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SO
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
+tslang_add_test(NAME test-jit-00-array-reference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
 tslang_add_test(NAME test-jit-00-arrays3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
+tslang_add_test(NAME test-jit-00-array-zero-slots COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_zero_slots.ts")
 tslang_add_test(NAME test-jit-00-arrays4-push-pop COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
 tslang_add_test(NAME test-jit-00-array-shift COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 tslang_add_test(NAME test-jit-00-array-splice COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
@@ -839,6 +844,7 @@ tslang_add_test(NAME test-jit-00-array-spread-args COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-arrays5-deconstruct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
 tslang_add_test(NAME test-jit-00-array-rest-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
+tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
 tslang_add_test(NAME test-jit-00-arrays-assignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_assignment5.ts")
@@ -1658,11 +1664,14 @@ set(TSLANG_CORPUS
     00const_array_push.ts
     00array.ts
     00array2.ts
+    00array_reference.ts
     00array3.ts
+    00array_zero_slots.ts
     00array4_push_pop.ts
     00array5_deconst.ts
     00array_rest_copy.ts
     00array6.ts
+    00array_static_nested.ts
     00array7.ts
     00array8_tuple_spread.ts
     00arrow_generic.ts

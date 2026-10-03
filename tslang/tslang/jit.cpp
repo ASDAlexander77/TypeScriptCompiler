@@ -475,11 +475,13 @@ static bool callEntryThunk(JitEntryThunkFn entryThunk, int argc, char **argv, in
 }
 
 // The entry point keeps whatever signature its TS declaration lowered to - `void @main()`,
-// `double @main()`, `i32 @main(i32, { ptr, i64 })`, ... - and calling it through a C++ function
+// `double @main()`, `i32 @main(i32, ptr)`, ... - and calling it through a C++ function
 // pointer of the wrong type reads garbage arguments. So give the JIT one signature to call, the C
 // entry point's, and let this thunk adapt it in IR, where the entry's own types are known: `argc`
-// converted to the first parameter's type, `argv` and `argc` as the `string[]` (data, length) of the
-// second or `argv` alone for a `Ref<string>`, and the result converted to the exit code. LowerToAffineLoops has already refused any
+// converted to the first parameter's type, `argv` as it is for a second parameter that is a
+// pointer, and the result converted to the exit code. A `Ref<string>` second parameter is C's
+// `char **`; a `string[]` one is a pointer to an array header too, and gets the `char **` until
+// MLIRGen builds the array from it (ts.ArrayFromCStrings, array-reference spec section 5). LowerToAffineLoops has already refused any
 // other shape of `main`, with a source location; this still checks, for an entry picked with `-e`.
 llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
 {
@@ -516,7 +518,6 @@ llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
     llvm::SmallVector<llvm::Value *> args;
     for (auto [index, paramType] : llvm::enumerate(entryType->params()))
     {
-        auto *arrayType = llvm::dyn_cast<llvm::StructType>(paramType);
         if (index == 0 && paramType->isIntegerTy())
         {
             args.push_back(builder.CreateSExtOrTrunc(argc, paramType));
@@ -527,16 +528,8 @@ llvm::Error addEntryThunk(llvm::Module &llvmModule, llvm::StringRef entryName)
         }
         else if (index == 1 && paramType->isPointerTy())
         {
-            // `Ref<string>`: the C `char **` as it is
+            // the C `char **` as it is
             args.push_back(argv);
-        }
-        else if (index == 1 && arrayType && arrayType->getNumElements() == 2 &&
-                 arrayType->getElementType(0)->isPointerTy() && arrayType->getElementType(1)->isIntegerTy())
-        {
-            llvm::Value *array = llvm::UndefValue::get(arrayType);
-            array = builder.CreateInsertValue(array, argv, 0);
-            array = builder.CreateInsertValue(array, builder.CreateSExtOrTrunc(argc, arrayType->getElementType(1)), 1);
-            args.push_back(array);
         }
         else
         {
