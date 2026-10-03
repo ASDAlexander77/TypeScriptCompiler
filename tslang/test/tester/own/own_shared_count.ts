@@ -51,6 +51,15 @@ function walkCounts(s: Shared<Node>) {
     return seen;
 }
 
+// handles copied inside a generator live in its state object, and are read by Shared.count there
+function* copies() {
+    const s = new Shared(new Node());
+    const t = s;
+    yield Shared.count(t);
+    const u = t;
+    yield Shared.count(u);
+}
+
 function main() {
     const a = new Shared(new Node());
     assert(Shared.count(a) == 1, "one handle");
@@ -136,6 +145,10 @@ function main() {
         assert(seen.length == 2 && seen[0] == 2 && seen[1] == 7, "a generator over a handle holds a count");
         assert(Shared.count(a) == 1, "the generator's count given back");
     }
+
+    const copied: number[] = [];
+    for (const c of copies()) copied.push(c);
+    assert(copied.length == 2 && copied[0] == 2 && copied[1] == 3, "handles copied inside a generator");
 
     print("done.");
 }
