@@ -2235,3 +2235,219 @@ change. It runs on every `own_shared_*` test, under own and rc.
   under own and rc (`measure.ps1`), and grows under none.
 - **Unchanged:** no corpus file uses `Shared`, so the corpus (453 / 593 plain, 451 with `--opt`)
   must be unchanged, and its LLVM IR identical for every file that compiles, as in §22.7.
+
+### 23.7 Results, 2026-10-03
+
+Plan: `docs/superpowers/plans/2026-10-03-own-shared.md`. Changed: `TypeScriptTypes.td`,
+`TypeScriptOps.td`, `MLIRTypeCore.h`, `MLIRTypeHelper.h`, `MLIRTypeIterator.h`, `MLIRPrinter.h`,
+`TypeOfOpHelper.h` (the type), `MLIRGenTypes.cpp`, `MLIRGenExpressions.cpp`,
+`MLIRGenAccessCall.cpp`, `MLIRGenCast.cpp`, `MLIRGenImpl.h` (MLIRGen), `OwnershipRoutineLogic.h`,
+`CastLogicHelper.h`, `LowerToAffineLoops.cpp`, `LowerToLLVM.cpp` (the routines and lowering),
+`OwnershipFacts.h`, `OwnershipInferencePass.cpp`, `OwnershipSignaturePass.cpp` (own). Every new
+branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so a program without
+`Shared` compiles as before (see "Unchanged where it compiles").
+
+#### What was built
+
+- **The type** `!ts.shared<T>` (`mlir_ts::SharedType`), lowered to `ptr`. `Shared` is an embedded
+  name in `MLIRGenTypes`, so a program's own `Shared` is found first and wins
+  (`own_shared_user_named`). It is nullable (`===`, `null`), its `typeof` is `"object"`, and it
+  prints as `Shared<T>`, in messages and in `__decls`.
+- **The ops**, three, not the two of §23.1's first draft:
+  - `ts.SharedNew` (`MemAlloc`): allocates the block with the allocator every model's `new` uses,
+    and stores the value;
+  - `ts.SharedValueRef`: the place `!ts.ref<T>` of the payload, the identity in lowering.
+    **`s.value` is a `ts.Load` of it**, and `s.value = x` stores through it (§23.1), so the place
+    machinery of MLIRGen and own applies unchanged;
+  - `ts.SharedCount`: `-1` where nothing is counted (gc, none), otherwise the header word as a
+    `number`.
+- **MLIRGen.**
+  - `new Shared(x)` is reached only when `Shared` does not resolve. `T` comes from a type argument,
+    then a `Shared<T>` receiver, then the value: **`new Shared(1)` is a `Shared<s32>`**, as
+    `let x = 1` is an `s32`. `new Shared()`, two arguments and two type arguments are errors.
+  - `Shared.count(s)` is intercepted at the call when `Shared` does not resolve. It takes a bare
+    handle, and a narrowed `Shared<T> | null` or optional one (`if (s)` keeps the union's type),
+    which it unwraps as `.value` does.
+  - The payload goes in with `mlirGenRetainCaptured` (a move, §2.3), and `ts.SharedNew`'s result is
+    a fresh owned reference (`markFreshBlockOwned`). A `.value` place is an owning slot
+    (`isOwnedSharedValueSlot`), so `s.value = x` is rc's `Retain`, `ReleaseSlot`, `Store`.
+  - **A `const` of a bare `Shared<T>` gets identity storage** (`needsIdentityStorage`, as a `const`
+    array does), so `const b = a` is a second, counted handle (§23.1). A `const` of a union or
+    optional handle (`const c = p.child`) stays folded; no defect was found with it.
+- **The routines.** `ownsHeapMemory` is true for a handle. Its release routine is
+  `__tslang_dec_ref`, and at zero the payload's routine and `__tslang_free_block`; its retain is
+  `__tslang_inc_ref`. `emitIfLastReference(counted)` makes own count a handle where it tests
+  mortality for everything else. A tag-free `Shared<T> | null` needs no routine of its own.
+- **Under own, the analysis steps aside** (§23.2):
+  - the facts `isHandle` and `touchesHandle`; `isPlace` includes `ts.SharedValueRef`;
+  - the inference walk returns early for every op that touches a handle, except a `ReleaseSlot` of
+    a field or element holding one, which stays a drop (a handle overwritten there may be the last
+    one). A handle never becomes a candidate, by any of the four ways in, and a safety net takes
+    any handle op out of the erase list;
+  - the signature pass gives no parameter or result fact to a handle;
+  - the lowering emits a surviving handle retain under own (`__tslang_inc_ref`), without "left a
+    retain behind";
+  - a cell holding a handle (a captured handle parameter) is released by `ReleaseCell`, and a box
+    may take it (`decideCells`, `decideEscaping`): the cell holds its own count.
+- **The handle, widened** (Ruling 6, §23.2): a `Shared<T>`, an optional of one, or a union with a
+  `Shared` member whose other members own no heap. `Shared<T> | number` and
+  `Shared<A> | Shared<B> | null | number` are counted under own exactly as rc counts them.
+  `Shared<T> | string`, `Shared<T> | Node` and `Shared<T>[] | Shared<T>` are rejected under own
+  where a handle is put into one, with a named error (`reportHandleInOwningUnion`).
+- **Reading through a handle** (§23.3), as built:
+  - `chainOf` treats a base read through by `ts.SharedValueRef` as a `NotOwned` root and records
+    it as a handle; a handle loaded out of a place walks on up, so `p.child.value` sees `p.child`;
+  - `rootEnds`: a borrow through a handle also ends at that handle's own `ReleaseSlot` or `Store`
+    (a local) or `ts.Release` (a temporary). A copy of the handle does not end it;
+  - `dropsChain`: a `ReleaseSlot` of a `.value` place ends every borrow read through any handle,
+    **whatever the element type** (Ruling 4);
+  - a `push` or `unshift` on an array reached through a handle (`reachesSharedValue`) is a drop,
+    inline and inside a callee (`dropsInBody`);
+  - a function that stores a parameter into a handle's payload keeps that parameter (`keeps()`
+    sees `s.value = x` as a store into a place).
+- **`any`.** A handle boxes under its own descriptor, named `"object"`, whose release and retain
+  slots are the handle's routines, kept under own. A tag-free `Shared<T> | null` boxes under the
+  handle's descriptor, so a null in it is `typeof` `"object"`. `<Shared<T>>a` goes through
+  `___unbox<Shared<T>>`, which checks the name and throws otherwise. The counts round-trip
+  exactly under rc and own.
+
+#### Tests and teeth
+
+- **Positive**, under gc, none, rc and own, AOT and JIT (48 runs): `own_shared_basic`,
+  `own_shared_user_named`, `own_shared_graph`, `own_shared_containers`, `own_shared_cycle`,
+  `own_shared_union`. **Under rc and own** (4 runs): `own_shared_count`, with every count after a
+  copy, a drop, an outer block's death, a `.value` write, a narrowed union, an `any` round trip, a
+  captured handle parameter (two calls) and an escaping closure over one (100 iterations).
+  **`--verify-ownership`**, under own and rc, is quiet on the six counted files (12 runs).
+- **`-O0`**: test-runner's `-noopt` does nothing in a Release build, so each positive was also run
+  by hand with `--opt_level=0` under own and rc, AOT and JIT.
+- **Negative** (8). Messages with `--di`; without it the borrower is `'this value'` and the place
+  "a field" or "an element", as for every own error:
+
+| test | message |
+|---|---|
+| `own_err_shared_borrow_write` | `'n' borrows 'a.value' but is used here after it may be released or overwritten` (the §23.3 example) |
+| `own_err_shared_borrow_call` | the same, after a call that may drop |
+| `own_err_shared_borrow_push` | `'first' borrows 'a.value.items[]' but is used here after …` (a push through another handle) |
+| `own_err_shared_borrow_push_call` | `… borrows 'a.value' but is used here after …` (the push inside a callee) |
+| `own_err_shared_borrow_other_type` | `'n' borrows 'a.value' but is used here after …` (a write through a `Shared<Base>` alias) |
+| `own_err_shared_borrow_reassigned` | `'n' borrows 'a.value' but is used here after …` (the handle itself reassigned) |
+| `own_err_shared_moved_in` | `is used here after its value was moved` |
+| `own_err_shared_union_owned` | `a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported` |
+
+- **Suites:** the Shared set is 72 tests, `ctest -R own` 562 and `ctest -R "own|rc"` 1516, all
+  passing on this branch's final build.
+- **Teeth**, each a temporary switch, with the JIT cache cleared:
+
+| switch | result |
+|---|---|
+| Task 1: before the type existed (its RED) | `own_shared_basic` fails under gc and none, `can't resolve name: Shared` |
+| Task 2: the payload's release taken out of the handle routine | `own_shared_count` fails under rc and own: `the payload released when the outer block died` |
+| (a) the safety net and the retain loop's handle skip removed | nothing fails: the walk's early return keeps handles out first |
+| (a) extended: the walk's early return removed too | the six own positive runs and `own_shared_count`'s own verifier run fail to compile |
+| (b) a handle root `Owned`, not `NotOwned` | `own_err_shared_borrow_call` compiles |
+| (c) the `.value` match removed from `dropsChain` | `own_err_shared_borrow_write` compiles |
+| (d) the inline push rule off | `own_err_shared_borrow_push` compiles |
+| the element-type comparison restored for `.value` places | `own_err_shared_borrow_other_type` compiles |
+| the push rule in `dropsInBody` off | `own_err_shared_borrow_push_call` compiles |
+| the `rootEnds` handle clause off | `own_err_shared_borrow_reassigned` compiles |
+| the `decideCells` handle return removed | `own_shared_count` under own: `a captured parameter's count given back` (a count leaked per call) |
+| the widened handle off | `own_shared_union` is rejected by the named rule |
+| the widened handle and the named rejection off (a tagged union is single-owner) | `own_shared_union`: `is used here after its value was moved`; a field loop crashes; the counts drop below rc's |
+
+- **What (d) showed:** no existing rule ends an element borrow across a push through another
+  handle; the push rule is the only one. Each other §23.3 rule also has its own negative.
+- **The containers test is weak as teeth:** several owners keep its node alive, so an early free
+  there may read live memory. The counts are asserted in `own_shared_count` and `own_shared_union`.
+
+#### Measured
+
+AOT, `measure.ps1`, in MB. The first program is the plan's: per iteration, three handles, one of
+them in two arrays, every block given back at the end of the iteration. The second builds a
+two-node cycle (`a.value.next = b; b.value.next = a`) per iteration.
+
+| program | iterations | gc | rc | none | own |
+|---|---|---|---|---|---|
+| a leaf in two arrays | 20000 | 5.9 | 4.4 | 10.6 | 4.4 |
+| a leaf in two arrays | 200000 | 5.9 | 4.4 | 65.9 | 4.4 |
+| a two-node cycle | 200000 | 5.9 | 35.2 | 35.2 | 35.2 |
+
+Own and rc are flat and equal; none grows. A cycle leaks under rc and own exactly as under none,
+and gc collects it (§23.4).
+
+#### Corpus
+
+`--emit=llvm -mm=own --no-default-lib`, every file of `test/tester/tests`, main's binary against
+this branch's, plain and with `--opt`: 453 / 593 and 451 / 593 on both, each file with the same
+first error. Two messages (`00types`, `callWithSpread`) name a function by its run-to-run hash
+(`FH<n>`); with it normalised, the two lists are identical.
+
+#### Unchanged where it compiles
+
+The 453 files that compile on main were compiled with main's binary and this branch's,
+`--emit=llvm -mm=own --no-default-lib`, with §22.7's normalisations; the `[n x i8]` size is
+normalised on any line holding an `FH` name. 451 are identical. The other two differ only as
+main differs from itself between runs, in the order of a union's members in a synthesized name,
+and so in the order of the functions and constants that follow it:
+
+| file | main, 12 runs | this branch, 12 runs |
+|---|---|---|
+| `00union_null_undefined_nonstrict` (§22.7) | 11 one order, 1 the other | 10, 2 |
+| `00union_bin_ops2` (`___bin_op_plus<union<…>>`) | 8, 4 | 7, 5 |
+
+Each binary gives exactly the same two normalised outputs, byte for byte. Under `-mm=rc`, 50 of
+those files (every ninth) were compared the same way: 49 are identical, and `00union_bin_ops2`
+flips the same way (main 8 and 4, this branch 11 and 1, the same two outputs).
+
+#### Outside the rule
+
+- **The covariance hole.** `Shared<Derived>` is assignable to `Shared<Base>`, so
+  `b.value = new Base()` through the `Base` view leaves a `Base` in a `Derived` block. That is
+  TypeScript's own unsoundness (mutable covariance) and is not fixed: the `Derived` view then
+  reads fields a `Base` does not have (p2c, under gc and rc). Own lets no borrow survive such a
+  write: any write through any handle ends every borrow read through a handle (Ruling 4).
+- **Conservative rejections**, false errors rather than miscompiles:
+  - a function that gives back a handle (a `ts.Release`, or a `ReleaseSlot` of a local holding
+    one) loses `__own_no_drops`, so a call to it ends borrows its caller holds;
+  - a getter returning `s.value` is rejected (`borrows 's.value' and cannot be stored, returned or
+    captured`): `borrowedParam` does not see through `ts.SharedValueRef`;
+  - a write through a handle of an unrelated type ends borrows through every handle (p1d);
+  - a push or unshift through a handle ends element borrows, inline and in a callee alike.
+- **`any` is checked by name only.** `<Shared<A>>a` accepts any value tagged `"object"`, so a
+  `Shared<B>` passes as a `Shared<A>` and its fields are read as `A`'s. Literals, numbers and
+  class instances are rejected. A wrong-type unbox cannot be asserted in a test, because a `let`
+  in `try` whose initializer throws is not caught (#456).
+- **Through null.** `Shared.count(u)` and `u.value` on an un-narrowed `Shared<T> | null` read
+  through null when it is null; neither is a compile error.
+- **Misused names.** `Shared.foo(s)` and a bare `Shared` value report only "failed statement",
+  with no cause, as `BoxedObject` and `Reference` do. A member other than `value` gets the generic
+  "Can't resolve property". When a program has its own `Shared`, the `Shared.count` guard leaves
+  one dead op behind.
+- **A rejected mixed union** (`Shared<T> | string`) also reports own's ordinary error on the same
+  function after the named one (`borrows … and cannot be assigned`).
+- **The union check's options.** `ownsHeapMemoryOfUnionMember` builds its `MLIRTypeHelper` with a
+  default `CompileOptions`, as `isCopyableString` (§22.7) and `OwnershipFacts`' `ownsHeap` do.
+- **rc is no oracle for borrows.** rc takes no retain for `const n = obj.f`, so it runs the
+  use-after-free shapes own rejects (`own_err_shared_borrow_write`, p2c, r1) and prints whatever
+  the freed memory holds. Own and rc differ there by design.
+- **No count is elided.** Own counts every handle as rc does (§23.2's last bullet); a handle own
+  could prove moved or borrowed is still counted.
+- **A bare `{ }` block** does not end a folded `const boxed: any = h`: §9.30 releases a fresh box
+  at the end of its MLIR block, and a bare block in `main` is not one. Loops and functions are
+  exact.
+- **Not tested:** a generic `function f<T>(s: Shared<T>)`; nothing rebuilds a `SharedType` with a
+  substituted element.
+- **Resolved during the phase:** an escaping closure capturing a handle parameter, rejected at
+  first, is accepted (its cell holds a count) and asserted in `own_shared_count`; `Shared.count`
+  on a narrowed `Shared<T> | null` const, an error at first, is accepted; a tagged
+  `Shared<T> | number`, single-owner at first, is counted (Ruling 6).
+
+#### Found, not fixed (every model)
+
+- #453: a push onto an array parameter is lost to the caller (gc sees the old length, rc frees the
+  data block the caller still holds). `own_shared_count` keeps its handles in a class for this.
+- #454: under rc, `const b = a` of a `let` class value takes no reference, so `a = …` frees what
+  `b` reads. A `const` handle has its own storage and is not affected.
+- #455: a `Node | null` cast to `any` crashes the compiler (a null tag). Fixed for
+  `Shared<T> | null` only.
+- #456: a `let` inside `try` whose initializer throws is not caught.

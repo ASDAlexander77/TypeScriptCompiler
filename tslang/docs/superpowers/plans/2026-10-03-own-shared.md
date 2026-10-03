@@ -125,7 +125,7 @@ names given, because lines move.
   - `mlir_ts::SharedCountOp(loc, NumberType, mlir::Value shared)`.
   - The CMake variable `shared_models` and the foreach that registers `own_shared_*` tests per model.
 
-- [ ] **Step 1: Write the test.** `test/tester/own/own_shared_basic.ts`:
+- [x] **Step 1: Write the test.** `test/tester/own/own_shared_basic.ts`:
 
 ```ts
 // Shared<T> (spec 23): two handles to one block, `.value` read and write, `===` on handles, and a
@@ -173,7 +173,7 @@ function main() {
 }
 ```
 
-- [ ] **Step 2: Register it under gc and none, and watch it fail.**
+- [x] **Step 2: Register it under gc and none, and watch it fail.**
   - In `test/tester/CMakeLists.txt`, after the `strings_mm` foreach (search
     `foreach(strings_mm rc none gc)`), add:
 
@@ -192,7 +192,7 @@ endforeach()
   - Build, then run `ctest -C Release -R own_shared -j 8 --timeout 300`.
   - Expected: 4 tests, all FAIL, with "can't resolve name" or similar for `Shared`.
 
-- [ ] **Step 3: The type.** In `include/TypeScript/TypeScriptTypes.td`, after `def TypeScript_Ref`
+- [x] **Step 3: The type.** In `include/TypeScript/TypeScriptTypes.td`, after `def TypeScript_Ref`
   (the block that ends with its `builders`), add:
 
 ```tablegen
@@ -225,7 +225,7 @@ def TypeScript_Shared : TypeScript_Type<"Shared"> {
 }
 ```
 
-- [ ] **Step 4: The ops.** In `include/TypeScript/TypeScriptOps.td`, after `def TypeScript_StringCopyOp`,
+- [x] **Step 4: The ops.** In `include/TypeScript/TypeScriptOps.td`, after `def TypeScript_StringCopyOp`,
   add:
 
 ```tablegen
@@ -253,7 +253,7 @@ def TypeScript_SharedCountOp : TypeScript_Op<"SharedCount"> {
   operand constraint, wrap it the way `TypeScript_AnyClassOrValueRef` is
   (`TypeScriptTypes.td`, `AnyTypeOf<[...]>`): `def TypeScript_SharedLike : AnyTypeOf<[TypeScript_Shared]>;`
 
-- [ ] **Step 5: MLIRGen.** Each change is small.
+- [x] **Step 5: MLIRGen.** Each change is small.
   - **The embedded name** (`lib/TypeScript/MLIRGenTypes.cpp`):
     - Add `{"Shared", true}` to the static maps in `isEmbededTypeWithBuiltins` and
       `isEmbededTypeWithNoBuiltins`, next to `{"BoxedObject", true}`.
@@ -378,7 +378,7 @@ def TypeScript_SharedCountOp : TypeScript_Op<"SharedCount"> {
     lookup the new-expression fallback relies on to find that `mlirGen(identifier)` failed (for
     example, a `findDeclaration`/`resolveIdentifier` call; search how `mlirGen(location, name)`
     decides "can't resolve name").
-- [ ] **Step 6: Type helpers.**
+- [x] **Step 6: Type helpers.**
   - **`include/TypeScript/MLIRLogic/MLIRTypeCore.h`:** add `mlir_ts::SharedType` to the lists in
     `isNullableTypeNoUnion` and `isNullableOrOptionalType`, beside `ClassType`. This makes `===`
     compare pointers and `null` compare and assign.
@@ -394,7 +394,7 @@ def TypeScript_SharedCountOp : TypeScript_Op<"SharedCount"> {
             })
 ```
 
-- [ ] **Step 7: Lowering.**
+- [x] **Step 7: Lowering.**
   - **`lib/TypeScript/LowerToLLVM.cpp`, `populateTypeScriptConversionPatterns`:** add beside the
     `RefType` conversion:
 
@@ -472,7 +472,7 @@ struct SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
   - **`lib/TypeScript/LowerToAffineLoops.cpp`, `AddTsAffineLegalOps`:** add
     `mlir_ts::SharedNewOp, mlir_ts::SharedValueRefOp, mlir_ts::SharedCountOp` to the
     `addLegalOp<...>` list beside `mlir_ts::StringCopyOp`.
-- [ ] **Step 8: Run the test.**
+- [x] **Step 8: Run the test.**
   - Build, then run `ctest -C Release -R own_shared -j 8 --timeout 300`. Expected: 4/4 pass.
   - Also run `test-runner -mm=rc <file>` once by hand. It should pass too, but it leaks: rc does
     not count handles until Task 2.
@@ -480,7 +480,7 @@ struct SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
     `export function make(): Shared<number> { return new Shared(1); }`, compile it with
     `--emit=mlir` and `--export`, the way the `export_*` corpus files are, and confirm that
     `__decls` prints `Shared<number>`.
-- [ ] **Step 9: The spec.** In §23.1:
+- [x] **Step 9: The spec.** In §23.1:
   - Replace the bullets for `s.value` and `s.value = x` with one bullet: "**`s.value`** is a
     `ts.Load` of the place `ts.SharedValueRef(s)`, and **`s.value = x`** stores into that place
     the way a field store does (MLIRGen's retain, `ts.ReleaseSlot` and `ts.Store`), so `x` moves in
@@ -491,7 +491,7 @@ struct SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
     "a doubly linked list and a node with a parent link" to `own_shared_cycle`, since both are
     cycles and leak (§23.4).
   - Keep CRLF.
-- [ ] **Step 10: Commit.**
+- [x] **Step 10: Commit.**
 
 ```bash
 git add include/TypeScript lib/TypeScript test/tester/own/own_shared_basic.ts test/tester/CMakeLists.txt docs/superpowers/specs/2026-09-24-own-memory-model-design.md
@@ -516,7 +516,7 @@ git commit -m "-mm=own Shared<T>: the type, its ops and MLIRGen (spec 23.1)"
   `SharedType`, or an `OptionalType` of one, or a `UnionType` whose members are one `SharedType` and
   `NullType`/`UndefinedType` only. Tasks 3 and 4 use it.
 
-- [ ] **Step 1: Write the tests.** `test/tester/own/own_shared_count.ts` (rc and own only, since
+- [x] **Step 1: Write the tests.** `test/tester/own/own_shared_count.ts` (rc and own only, since
   gc and none keep no count):
 
 ```ts
@@ -631,7 +631,7 @@ function main() {
 }
 ```
 
-- [ ] **Step 2: Register them and watch them fail.** In `CMakeLists.txt`:
+- [x] **Step 2: Register them and watch them fail.** In `CMakeLists.txt`:
   - change `set(shared_models gc none)` to `set(shared_models gc none rc)`;
   - add `own_shared_graph` to the inner `foreach(shared_test ...)` list;
   - add after that foreach:
@@ -652,7 +652,7 @@ endforeach()
   If `own_shared_graph` fails to compile under gc or none (a `Shared<Item> | null` narrowing),
   that is Review Focus 1: fix it in this task. The union must be tag-free and narrow like a class
   union; check `isUnionTypeNeedsTag` and the narrowing helpers.
-- [ ] **Step 3: The type predicates** (`include/TypeScript/MLIRLogic/MLIRTypeHelper.h`):
+- [x] **Step 3: The type predicates** (`include/TypeScript/MLIRLogic/MLIRTypeHelper.h`):
   - In `ownsHeapMemory(location, type, visiting)`, add `isa<mlir_ts::SharedType>(type)` to the first
     "owns its own block" test, beside `ClassType`. Do not add `SharedType` to
     `getOwnershipFieldTypes`: the block's payload is released by the handle's routine.
@@ -698,7 +698,7 @@ endforeach()
     }
 ```
 
-- [ ] **Step 4: The routines** (`include/TypeScript/LowerToLLVM/OwnershipRoutineLogic.h`):
+- [x] **Step 4: The routines** (`include/TypeScript/LowerToLLVM/OwnershipRoutineLogic.h`):
   - In `buildRetainBody`, add `isa<mlir_ts::SharedType>(type)` to the "reference to a block of its
     own" condition beside `ClassType`, so it is `emitIncRef` of the loaded pointer.
   - In `buildBody`, after the class/object branch, add:
@@ -733,7 +733,7 @@ endforeach()
     have, make the tag-free union of one `SharedType` use the `SharedType` routine (the same way a
     tag-free `C | null` uses the class routine; find that branch and add `SharedType` beside
     `ClassType`).
-- [ ] **Step 5: MLIRGen's ownership ops for a handle** (`lib/TypeScript/MLIRGenImpl.h`):
+- [x] **Step 5: MLIRGen's ownership ops for a handle** (`lib/TypeScript/MLIRGenImpl.h`):
   - In `markFreshBlockOwned`, widen the test to
     `isa<mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::SharedType>(value.getType())`. A new
     handle then carries its birth reference the way a new string does (§9.25 of the rc document).
@@ -763,14 +763,14 @@ endforeach()
 
   - **`LowerToLLVM.cpp`:** in the GC root type test (the list that names `ClassType` near the
     `GC_ENABLE` code in `VariableOpLowering`), add `SharedType` beside `ClassType`.
-- [ ] **Step 6: Run the tests.**
+- [x] **Step 6: Run the tests.**
   - Build, then run `ctest -C Release -R own_shared -j 8 --timeout 300`. Expected: all pass (gc,
     none and rc, plus `own_shared_count` under rc).
   - Run `test-runner -noopt -mm=rc` and `test-runner -noopt -jit -mm=rc` on all three files.
     Expected: they pass.
   - Run `ctest -C Release -R "own|rc" -j 8 --timeout 300`. Expected: no new failure (nothing
     existing uses `Shared`).
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 git add include/TypeScript lib/TypeScript test/tester/own/own_shared_count.ts test/tester/own/own_shared_graph.ts test/tester/CMakeLists.txt
@@ -796,7 +796,7 @@ git commit -m "-mm=own Shared<T>: a handle is counted, under rc first (spec 23.2
   - `inline bool touchesHandle(mlir::Operation *op)`, true for a `Retain`/`Release` of a handle
     value, or a `RetainSlot`/`ReleaseSlot` of a slot holding one.
 
-- [ ] **Step 1: Write the negative tests.**
+- [x] **Step 1: Write the negative tests.**
 
   `own_err_shared_borrow_write.ts`:
 
@@ -880,7 +880,7 @@ function main() {
 }
 ```
 
-- [ ] **Step 2: Register them; add own to the positives; watch them fail.** In `CMakeLists.txt`:
+- [x] **Step 2: Register them; add own to the positives; watch them fail.** In `CMakeLists.txt`:
   - add to `own_error_cases`:
 
 ```cmake
@@ -914,7 +914,7 @@ endforeach()
   - the rest pass.
 
   Record each negative's actual first message now.
-- [ ] **Step 3: The facts** (`lib/TypeScript/OwnershipFacts.h`):
+- [x] **Step 3: The facts** (`lib/TypeScript/OwnershipFacts.h`):
 
 ```cpp
 // A handle (spec 23.2): counted in every model that tracks ownership, and left alone by own.
@@ -942,7 +942,7 @@ inline bool touchesHandle(mlir::Operation *op)
 
   Use the namespace `MLIRTypeHelper` is in, as the file's other uses show. In `isPlace(ref)`, add
   `SharedValueRefOp` beside `PropertyRefOp`/`ElementRefOp`: `s.value` is a place.
-- [ ] **Step 4: The inference pass steps aside** (`lib/TypeScript/OwnershipInferencePass.cpp`). The
+- [x] **Step 4: The inference pass steps aside** (`lib/TypeScript/OwnershipInferencePass.cpp`). The
   goal is "never erased, never reported" for a handle. The safety net comes first:
   - **Never erased.** Immediately before the loop that erases `toErase` in `analyze`, add:
 
@@ -976,7 +976,7 @@ inline bool touchesHandle(mlir::Operation *op)
       `drops` beside `ArrayPopOp`, but only when the array operand's `chainOf` reaches a
       `SharedValueRef`. It is a drop for an element place of the same element type, as `pop` is.
   - `describePlace` should name a `SharedValueRef` place `'<handle>.value'` (e.g. `'a.value'`).
-- [ ] **Step 5: The signature pass** (`lib/TypeScript/OwnershipSignaturePass.cpp`):
+- [x] **Step 5: The signature pass** (`lib/TypeScript/OwnershipSignaturePass.cpp`):
   - **No facts on handles:** in `setFacts`, leave out of `__own_params` any parameter whose type
     `isSharedHandleType`, and do not set `__own_result_borrows` for a result that is a handle.
   - **`keeps()`:** a `SharedNewOp` whose operand is the parameter keeps it, like a store into a
@@ -986,7 +986,7 @@ inline bool touchesHandle(mlir::Operation *op)
       be the last handle, and its payload's release can free anything the payload owns;
     - a `ReleaseSlotOp` of a `SharedValueRef` place is a drop. In `reachesOutside`, treat a
       `SharedValueRef` as reaching outside: any handle may be shared.
-- [ ] **Step 6: The lowering gates** (`lib/TypeScript/LowerToLLVM.cpp`):
+- [x] **Step 6: The lowering gates** (`lib/TypeScript/LowerToLLVM.cpp`):
   - In `RetainOpLowering` and `RetainSlotOpLowering`, compute
     `auto counted = MLIRTypeHelper::isSharedHandleType(<value type>)`. Use the reference's type,
     and for a slot, the `RefType`'s element type. Then:
@@ -996,7 +996,7 @@ inline bool touchesHandle(mlir::Operation *op)
   - In the two `VariableOpLowering` sites gated on `isRefCounted()` that retain a captured slot's
     initial value with `emitRetainSlot`, use the same `|| (tracksOwnership() && counted)` on the
     slot's element type.
-- [ ] **Step 7: Run the tests.**
+- [x] **Step 7: Run the tests.**
   - Build, then run
     `ctest -C Release -R "own_shared|own-err-own_err_shared|verify-ownership-own_shared" -j 8 --timeout 300`.
     Expected: all pass. That is every positive under gc, none, rc and own (AOT and JIT), the count
@@ -1006,7 +1006,7 @@ inline bool touchesHandle(mlir::Operation *op)
   - Run `test-runner -noopt -mm=own` and `-noopt -jit -mm=own` on every positive.
   - Run the full `ctest -C Release -R own -j 8 --timeout 300`. Expected: every existing own test
     still passes (490 before this phase).
-- [ ] **Step 8: Teeth.** Commit or back up first. Each switch is temporary. Clear
+- [x] **Step 8: Teeth.** Commit or back up first. Each switch is temporary. Clear
   `test/tester/own/__jit` and the build's `own/__jit` between JIT runs.
   - (a) Remove the `toErase.remove_if(...)` line and the `touchesHandle` skips in the retain loop:
     the own positives must fail (to compile, or at run time).
@@ -1017,7 +1017,7 @@ inline bool touchesHandle(mlir::Operation *op)
   - (d) Drop the push rule: `own_err_shared_borrow_push` must compile. If it errors anyway, the
     existing rules already end that borrow. Record which, for §23.7.
   - Revert all four.
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
 
 ```bash
 git add lib/TypeScript test/tester/own/own_err_shared_*.ts test/tester/CMakeLists.txt
@@ -1037,7 +1037,7 @@ git commit -m "-mm=own Shared<T>: own leaves handles to the count; reads through
 **Interfaces:**
 - Consumes: everything above.
 
-- [ ] **Step 1: Write the tests.** `own_shared_containers.ts`:
+- [x] **Step 1: Write the tests.** `own_shared_containers.ts`:
 
 ```ts
 // Shared<T> (spec 23) in containers: one node in two arrays, a `Shared<T> | null` field, a closure
@@ -1123,12 +1123,12 @@ function main() {
 }
 ```
 
-- [ ] **Step 2: Register them and watch them fail.** Add `own_shared_containers own_shared_cycle`
+- [x] **Step 2: Register them and watch them fail.** Add `own_shared_containers own_shared_cycle`
   to the inner `foreach(shared_test ...)` list and to the `shared_verify_mm` list. Build, then run
   `ctest -C Release -R own_shared -j 8 --timeout 300`. Expected: `own_shared_containers` fails in
   some models. The `any` box has no type descriptor for a handle yet, and the `<Shared<Node>>`
   cast from `any` is not supported. `own_shared_cycle` may already pass.
-- [ ] **Step 3: A descriptor for a handle.**
+- [x] **Step 3: A descriptor for a handle.**
   - **`TypeOfOpHelper.h`, `typeOfAsString`:** return `"object"` for a `SharedType`. That is what
     JavaScript's `typeof` would say of a wrapper object. The descriptor is keyed by the type's hash,
     so `Shared<A>` and `Shared<B>` still get distinct descriptors.
@@ -1143,21 +1143,21 @@ function main() {
                 : orl.getOrCreateRetainRoutine(descriptorType);
 ```
 
-- [ ] **Step 4: `any` back to `Shared<T>`** (`lib/TypeScript/MLIRGenCast.cpp`). Find where a cast
+- [x] **Step 4: `any` back to `Shared<T>`** (`lib/TypeScript/MLIRGenCast.cpp`). Find where a cast
   from `any` to a class type is generated: it checks the box's type tag and unboxes. Make
   `SharedType` take the same path as `ClassType`. The tag it compares against is the handle's
   descriptor from Step 3.
   - If that path compares the `typeof` name only ("object"), an `any` holding a plain object would
     also pass the check. Record that in §23.7 as a limit.
   - If the class path cannot be reused, stop and report the reason (BLOCKED).
-- [ ] **Step 5: Run the tests.**
+- [x] **Step 5: Run the tests.**
   - Build, then run `ctest -C Release -R "own_shared|verify-ownership-own_shared" -j 8 --timeout 300`.
     Expected: all pass under gc, none, rc and own, AOT and JIT.
   - Run `-noopt` under own and rc for both files.
   - If own rejects `own_shared_containers` with an error that names a non-handle value, read it:
     - a rule of §23.3 means the test is wrong; rewrite the shape and say so in the commit;
     - anything else is a gap in Task 3's skips. Fix it there, with this test as its proof.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 git add include/TypeScript lib/TypeScript test/tester/own/own_shared_containers.ts test/tester/own/own_shared_cycle.ts test/tester/CMakeLists.txt
@@ -1172,7 +1172,7 @@ git commit -m "-mm=own Shared<T>: handles in containers, any and closures; cycle
 - Modify: the spec, a new §23.7 "Results"
 - Modify: this plan (tick the boxes)
 
-- [ ] **Step 1: Measure.** Write `$SCRATCH/shared_loop.ts`:
+- [x] **Step 1: Measure.** Write `$SCRATCH/shared_loop.ts`:
 
 ```ts
 class N {
@@ -1202,20 +1202,20 @@ function main() {
   - Expected: own and rc peaks are the same at both counts, within 0.5 MB; none grows; gc stays
     bounded.
   - Record both rows.
-- [ ] **Step 2: Corpus.** Run the corpus scripts (Appendix A) plain and with `OPTS=--opt`, with
+- [x] **Step 2: Corpus.** Run the corpus scripts (Appendix A) plain and with `OPTS=--opt`, with
   this branch's binary.
   - Expected: 453 / 593 and 451 / 593, each with the same file set as main
     (`join -t $'\t' base.tsv new.tsv | awk -F'\t' '$2 != $3'` prints nothing).
   - Make `base.tsv`/`baseopt.tsv` from main's binary first: build main once, or reuse a saved
     `tslang-main.exe`, before this branch's final build.
-- [ ] **Step 3: Unchanged where it compiles.** For every file ok in `base.tsv`, compare
+- [x] **Step 3: Unchanged where it compiles.** For every file ok in `base.tsv`, compare
   `--emit=llvm -mm=own --no-default-lib <file> -o <out>.ll` from main's binary and this branch's.
   - Normalise the run-to-run names first: `([A-Za-z])_[0-9]{4,}` → `\1_N`, `\.[0-9]{6,}\.` →
     `.N.`, and the `[N x i8]` size on lines containing `FH`.
   - Expected: identical, apart from any file shown to differ between two runs of main itself.
   - Also run `--emit=llvm -mm=rc` on 50 of those files. Expected: identical. rc's routines changed
     only for `SharedType`.
-- [ ] **Step 4: Spec results.** Append §23.7 "Results" in the style of §22.7:
+- [x] **Step 4: Spec results.** Append §23.7 "Results" in the style of §22.7:
   - what was built, with the op list, including Task 1's `SharedValueRef` amendment;
   - the tests and models;
   - the negatives with their messages;
@@ -1226,13 +1226,13 @@ function main() {
     recorded.
 
   Tick this plan's boxes, and annotate this step "committed; push and PR left to the user".
-- [ ] **Step 5: Linux.** Build the branch with GCC in WSL and run
+- [x] **Step 5: Linux.** Build the branch with GCC in WSL and run
   `ctest -R "own_shared|own-err|own-no-counting|own-verify|verify-ownership-own_shared"` there.
   - The WSL clone is `~/ts/TypeScriptCompiler`, whose origin is `/mnt/i/TypeScriptCompiler`.
     Fetch this branch, and do not fetch `main`.
   - The build dir is `__build/tslang/ninja/release`.
   - Write a `.sh` into the scratchpad and run it with `wsl bash -l <path>` from PowerShell.
-- [ ] **Step 6: Commit.** Do not push and do not open a PR. That is left to the user.
+- [x] **Step 6: Commit.** Do not push and do not open a PR. That is left to the user. Committed; push and PR left to the user.
 
 ```bash
 git add docs/superpowers/
