@@ -611,7 +611,7 @@ namespace mlirgen
                 // check if we do safe-cast here
                 checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits ? &elseSafeCase : nullptr, genContext);
 
-                auto result = mlirGen(ifStatementAST->thenStatement, genContext);
+                auto result = mlirGenBranchStatement(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
             }
         }
@@ -632,7 +632,7 @@ namespace mlirgen
                     addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
                 }
 
-                auto result = mlirGen(ifStatementAST->elseStatement, genContext);
+                auto result = mlirGenBranchStatement(ifStatementAST->elseStatement, genContext);
                 EXIT_IF_FAILED(result)
             }
         }
@@ -645,6 +645,35 @@ namespace mlirgen
         }
 
         return mlir::success();
+    }
+
+    // A branch written without braces (`else for (const c of gen()) ...`) is a scope all the same:
+    // what it registers to give back at the end of its block - an owned local such as a
+    // generator's iterator, a `using` - belongs to the branch, whose region it is defined in, not
+    // to the block around the `if`, whose end is outside that region (#458). A braced branch is a
+    // Block and makes this scope itself.
+    mlir::LogicalResult MLIRGenImpl::mlirGenBranchStatement(Statement statement, const GenContext &genContext)
+    {
+        if (statement == SyntaxKind::Block)
+        {
+            return mlirGen(statement, genContext);
+        }
+
+        auto location = loc(statement);
+
+        GenContext branchContext(genContext);
+        branchContext.parentBlockContext = &genContext;
+        branchContext.isLoopBodyScope = false;
+
+        auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        branchContext.usingVars = usingVars.get();
+
+        auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+        branchContext.ownedVars = ownedVars.get();
+
+        EXIT_IF_FAILED(mlirGen(statement, branchContext));
+
+        return mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &branchContext);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(DoStatement doStatementAST, const GenContext &genContext)

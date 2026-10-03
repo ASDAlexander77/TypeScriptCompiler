@@ -471,6 +471,7 @@ tslang_add_test(NAME test-compile-00-class-structural-extends COMMAND test-runne
 tslang_add_test(NAME test-compile-00-global-constant-concat COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_constant_concat.ts")
 tslang_add_test(NAME test-compile-00-global-object-literal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_object_literal.ts")
 tslang_add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
+tslang_add_test(NAME test-compile-00-unbraced-branch-scope COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unbraced_branch_scope.ts")
 tslang_add_test(NAME test-compile-00-const-of-let COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-compile-00-instanceof-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
 tslang_add_test(NAME test-compile-00-const-object-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_object_literal_field.ts")
@@ -963,6 +964,7 @@ tslang_add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -j
 tslang_add_test(NAME test-jit-00-global-constant-concat COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_constant_concat.ts")
 tslang_add_test(NAME test-jit-00-global-object-literal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_object_literal.ts")
 tslang_add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
+tslang_add_test(NAME test-jit-00-unbraced-branch-scope COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unbraced_branch_scope.ts")
 tslang_add_test(NAME test-jit-00-const-of-let COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-jit-00-instanceof-union COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
 tslang_add_test(NAME test-jit-00-const-object-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_object_literal_field.ts")
@@ -1787,6 +1789,7 @@ set(TSLANG_CORPUS
     00const_object_literal_field.ts
     00global_union_from_call.ts
     00instanceof.ts
+    00unbraced_branch_scope.ts
     00global_constant_concat.ts
     00const_of_let.ts
     00instanceof_namespace_narrowing.ts

@@ -4239,6 +4239,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext);
+    mlir::LogicalResult mlirGenBranchStatement(Statement statement, const GenContext &genContext);
 
     mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext);
 
