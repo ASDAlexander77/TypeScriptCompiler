@@ -4418,12 +4418,30 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             {
                 createAsGlobalConstructor = true;
             }
+            else if (auto binaryOp = dyn_cast<mlir_ts::ArithmeticBinaryOp>(op);
+                     binaryOp && isa<mlir_ts::StringType>(binaryOp.getResult().getType()))
+            {
+                // `"text" + 4` is a string concatenation, which allocates, even when every operand
+                // is a constant (#469)
+                createAsGlobalConstructor = true;
+            }
             else if (auto castOp = dyn_cast<mlir_ts::CastOp>(op))
             {
                 auto castType = castOp.getRes().getType();
+                auto inType = castOp.getIn().getType();
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(inType))
+                {
+                    inType = literalType.getElementType();
+                }
+
                 if (isa<mlir_ts::ArrayType>(castType) || isa<mlir_ts::TupleType>(castType))
                 {
                    createAsGlobalConstructor = true;
+                }
+                else if (isa<mlir_ts::StringType>(castType) && !isa<mlir_ts::StringType>(inType))
+                {
+                    // a number or a boolean made into a string allocates it (#469)
+                    createAsGlobalConstructor = true;
                 }
                 else
                 {

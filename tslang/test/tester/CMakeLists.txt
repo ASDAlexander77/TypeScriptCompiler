@@ -467,6 +467,7 @@ tslang_add_test(NAME test-compile-00-void COMMAND test-runner "${PROJECT_SOURCE_
 tslang_add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 tslang_add_test(NAME test-compile-00-in-method-names COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
 tslang_add_test(NAME test-compile-00-class-structural-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_structural_extends.ts")
+tslang_add_test(NAME test-compile-00-global-constant-concat COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_constant_concat.ts")
 tslang_add_test(NAME test-compile-00-global-object-literal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_object_literal.ts")
 tslang_add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 tslang_add_test(NAME test-compile-00-const-of-let COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
@@ -956,6 +957,7 @@ tslang_add_test(NAME test-jit-00-void COMMAND test-runner -jit "${PROJECT_SOURCE
 tslang_add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 tslang_add_test(NAME test-jit-00-in-method-names COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
 tslang_add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_structural_extends.ts")
+tslang_add_test(NAME test-jit-00-global-constant-concat COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_constant_concat.ts")
 tslang_add_test(NAME test-jit-00-global-object-literal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_object_literal.ts")
 tslang_add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 tslang_add_test(NAME test-jit-00-const-of-let COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
@@ -1780,6 +1782,7 @@ set(TSLANG_CORPUS
     00infer.ts
     00global_union_from_call.ts
     00instanceof.ts
+    00global_constant_concat.ts
     00const_of_let.ts
     00instanceof_namespace_narrowing.ts
     00instanceof_union.ts
