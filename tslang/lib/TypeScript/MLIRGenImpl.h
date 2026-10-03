@@ -1461,6 +1461,20 @@ class MLIRGenImpl
             isUsed = varClass.isUsed;
         }
 
+        // A value read out of a local variable that owns what it holds, through any casts: what
+        // `a` is in `const b = a` when `a` is a `let`. A literal's temporary slot is not one.
+        static bool readsLocalSlot(mlir::Value value)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
+        }
+
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
         {
             if (mlir::failed(getVariableTypeAndInit(location, genContext)))
@@ -1499,9 +1513,15 @@ class MLIRGenImpl
             // (`Shared<T> | null`): `const b = a` is a second handle, and counts as one. A folded
             // name would be `a` itself, with no reference of its own, so `a = c` would free the
             // block `b` still reads, and `Shared.count` would miss it.
+            //
+            // So does a const of anything that owns a block, read out of a local variable's slot
+            // (`let a = new C(); const b = a;`, a parameter too): folded, it would be a read of
+            // that slot, holding no reference of its own, and `a = d` would free what `b` still
+            // reads (#454). A const of a const, a call or a field has no slot to lose it from.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type))
+                || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
+                     || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
