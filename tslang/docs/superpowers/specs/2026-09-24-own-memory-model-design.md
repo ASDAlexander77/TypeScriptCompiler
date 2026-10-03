@@ -2343,17 +2343,23 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
     sees `s.value = x` as a store into a place);
   - **a handle read out of a place is a borrow of the place** (`placeReadOf`), checked as a field
     read is (`checkPlaceRead`), unless every use of it is one rc counts (`isCountedHandleRead`,
-    `handleReadUses`, Ruling 7). A counted use is a `ts.Retain` of it and what takes the value it
-    retains for (a store into a field, an element, a global or an owning local, a push,
-    `new Shared`, a return; `isCountedHandleReceiver`), or an owning local's slot
-    (`ts.RetainSlot`); an `any` box is a view whose own retain counts it. **A store counts only
-    when rc retained for it** (third fix round; `countedStoreRetain`: `ts.Retain` of the value,
-    then the store, or the `ts.ReleaseSlot` of the old value and then the store). What makes the
-    read a borrow is a use `isBorrow` lists, or a store rc made no retain for
-    (`isUncountedStoreOf`), which the borrow walk then reports as a keep. A use in neither list
-    (any other op) does not, as in the first round. A handle argument is always such a borrow,
-    never a kept one, since a handle gets no parameter facts: `keep(k, q.child = p.child)`, `keep`
-    storing it, is rejected.
+    `handleReadUses`, Rulings 7 and 9). **Every use is classified, and a use not known to count
+    is a borrow** (fourth fix round, Ruling 9). A counted use is a receiver with rc's retain for
+    that very use (`isCountedHandleReceiver`): a store into a field, an element, a global or an
+    owning local (`countedStoreRetain`: `ts.Retain` of the value, then the store, or the
+    `ts.ReleaseSlot` of the old value and then the store); a return, which after the affine
+    lowering is a store into the result slot after the scope exit's releases (`ts.Retain`, then
+    `ts.Release` and `ts.ReleaseSlot` of the frame's locals, then the store); a push, an unshift,
+    `new Shared`, an array literal's element and an `any` box, each right after the row of
+    retains MLIRGen puts before what it fills (`retainedRightBefore`); or an owning local's slot
+    (`ts.RetainSlot`). A cast or view that is still a handle, a merge and a local that owns
+    nothing pass the value on, and their uses are classified in turn. Everything else is a
+    borrow: a use `isBorrow` lists, and every use that is neither of the above - a tuple's element,
+    an object literal's field, a capture, a `yield`, a cast to what is not a handle, a receiver
+    with no retain of its own, any op not named here; the borrow walk reports one that keeps the
+    value as a keep. rc's retains count for nothing on their own: each is the count of the
+    receiver right after it. A handle argument is always a borrow, never a kept one, since a
+    handle gets no parameter facts: `keep(k, q.child = p.child)`, `keep` storing it, is rejected.
     `cur = cur.value.next`
     is counted only, so walking stays legal. `f(p, p.child)`, where `f` overwrites `p.child`, is
     rejected (`own_err_shared_place_arg`). Before the first fix round every handle read was
@@ -2379,6 +2385,26 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
     plain `{ s: p.child }`'s message, `borrows a field and cannot be stored, returned or captured`
     (`own_err_shared_place_literal`). The array literal, return, constructor argument and `any`
     shapes (`e3`, `e6`, `e7`, `e9`) are retained by rc, compile, and count as rc does;
+  - **a use not known to count is a borrow** (fourth fix round, Ruling 9). `handleReadUses` still
+    let a use that was neither a counted receiver nor in `isBorrow`'s list fall through, so in
+    `const t: [Shared<T>, number] = [(q.child = p.child), 1]` the counted store into `q.child`
+    exempted the read and the tuple kept it with no count: after `dropBoth(p, q)` own read freed
+    memory and crashed (the re-review's `c7`, and `as const` and `[Shared<T> | null, number]`,
+    `d4` and `d10`). The default is now inverted: only a receiver with rc's retain for that use
+    counts, and every other use makes the read a borrow, which the borrow walk reports at the tuple
+    (`own_err_shared_place_tuple`, the plain `[p.child, 1]`'s message). Push, unshift,
+    `new Shared` and a return now need their retain too, where before they counted on sight; an
+    array literal's element is now a receiver, with its retain (before, its bare retain alone
+    counted the read). A return and an `any` box are classified before `passesOn` would hand
+    them on (`isHandOff`), in `handleReadUses` and in the borrow walk alike, and
+    `ts.ReturnInternal` is no receiver any more: it is reached only through the result slot.
+    **The pairing is exact in effect.** `countedStoreRetain` and `retainedRightBefore` match a
+    retain by position, and a retain has one next op, so no two receivers count the same retain.
+    A retain made for one receiver but sitting right before another, uncounted, store of the value
+    would be taken by that store; the receiver it was made for then finds no retain of its own and
+    makes the read a borrow, so the read is never exempt with fewer retains than counted
+    receivers. No MLIRGen site emits that order (each emits its retain right before its own op),
+    and nothing more was built for it;
   - `ts.SharedValueRef` and `ts.SharedCount` read a handle and keep nothing (`isBorrow`), so
     `s.value` and `Shared.count(s)` are borrows of whatever `s` borrows.
 - **`any`.** A handle boxes under its own descriptor, named `"object"`, whose release and retain
@@ -2422,7 +2448,7 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
   on the eleven counted files (22 runs).
 - **`-O0`**: test-runner's `-noopt` does nothing in a Release build, so each positive was also run
   by hand with `--opt_level=0` under own and rc, AOT and JIT.
-- **Negative** (11). Messages with `--di`; without it the borrower is `'this value'` and the place
+- **Negative** (12). Messages with `--di`; without it the borrower is `'this value'` and the place
   "a field" or "an element", as for every own error:
 
 | test | message |
@@ -2438,10 +2464,12 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 | `own_err_shared_place_arg` | `'this value' borrows 'p.child' but is used here after …`, at `f(p, p.child)`, where `f` overwrites `p.child` |
 | `own_err_shared_place_two_uses` | `'this value' borrows a field but is used here after …`, at `f(p, q, q.child = p.child)`, where `f` overwrites both fields; the same with `--opt` |
 | `own_err_shared_place_literal` | `'this value' borrows a field and cannot be stored, returned or captured`, at `{ s: (q.child = p.child) }` (31:15), then `dropBoth(p, q)`; the same with `--opt` |
+| `own_err_shared_place_tuple` | `'this value' borrows a field and cannot be stored, returned or captured`, at `[(q.child = p.child), 1]` (31:39), then `dropBoth(p, q)`; the same with `--opt` |
 
-- **Suites:** the Shared set is 125 tests, `ctest -R own` 615 and `ctest -R "own|rc"` 1569, all
+- **Suites:** the Shared set is 126 tests, `ctest -R own` 616 and `ctest -R "own|rc"` 1570, all
   passing on this branch's final build (72, 562 and 1516 before the final review's fix round;
-  93, 583 and 1537 after it; 114, 604 and 1558 after the second).
+  93, 583 and 1537 after it; 114, 604 and 1558 after the second; 125, 615 and 1569 after the
+  third).
 - **Teeth**, each a temporary switch, with the JIT cache cleared:
 
 | switch | result |
@@ -2473,6 +2501,8 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 | third fix round: a store with no retain not marked uncounted (`isUncountedStoreOf` off, the predicate kept) | the same: the store falls through both lists, the read stays exempt, `own_err_shared_place_literal` compiles and `e2_objlit` crashes |
 | third fix round: the field-read retain in the global claim off | `own_shared_global_field` under rc and own, JIT and AOT: `a global from a live object's field takes a count of its own`; `globfield`, `tmpfield`, `callfield` crash again (`count 0`) |
 | third fix round: the element read left out of the claim | `own_shared_global_field` under rc and own, JIT and AOT: `a global from a temporary array's element is born with one count` |
+| fourth fix round: the fall-through restored (a use neither counted nor in `isBorrow`'s list, nor a store, is neither) | `own_err_shared_place_tuple` fails, the only one of the 126 (`--emit=obj` exits 0); the re-review's `c7`, `d4` and `d10` crash under own (0xC0000005) |
+| fourth fix round: a return and an `any` box no longer classified before `passesOn` (`isHandOff` off) | `own_shared_containers` under own (JIT, AOT, verifier) fails to compile, at its `any` box (`const boxed: any = h.s`); the re-review's `e6`, `e9`, `b9`, `c2` and this round's return and `any` probes are rejected with `borrows a field and cannot be stored, returned or captured` |
 
 - **What (d) showed:** no existing rule ends an element borrow across a push through another
   handle; the push rule is the only one. Each other §23.3 rule also has its own negative.
@@ -2533,6 +2563,11 @@ After the third fix round, a spot check of 40 corpus files (every fifteenth, and
 70 that compile are identical (40 under rc, 30 under own); the other ten fail under own on both
 binaries with the same first error. None of the three flippers was in the sample.
 
+After the fourth fix round, another 40 (every fifteenth from the seventh), the same way: 66 of
+the 67 that compile are identical; the other is `00union_bin_ops2`, main's other output, under
+rc in one run and under own in the rerun on the final build (main gives it 1 time in 10 here
+too). The 13 that fail fail on both binaries with the same first error.
+
 #### The final review and its fix round
 
 The final review of the branch found three critical defects and one important one. Every test
@@ -2583,6 +2618,15 @@ round, approved by the user, fixed both:
   count 0 and crashed under rc and own; #446 hides only the global-from-global case. The claim now
   retains a handle read out of a field or an element (`own_shared_global_field`).
 
+The third re-review found one more important defect, of the same kind: a use outside both lists
+fell through. A fourth fix round, approved by the user, inverted the default (Ruling 9):
+
+- **Important, a tuple's element exempted its read.** `[(q.child = p.child), 1]`, in a `const`
+  tuple (`as const`, or with a `Shared<T> | null` element), kept the read with no count beside a
+  counted store; own crashed after both fields were replaced. Every use of a handle read is now
+  classified, a receiver counts only with rc's retain for that very use, and anything else is a
+  borrow (`own_err_shared_place_tuple`).
+
 #### Linux
 
 GCC, in WSL, the branch at `bbac9ba8`: it builds with no errors, and
@@ -2593,7 +2637,8 @@ same pattern passes 234 of 234, again the Windows build's count. After the secon
 (its changes applied to `476c4d8f` as a patch), it builds with
 no errors and the same pattern passes 255 of 255, the Windows build's count. After the third fix
 round, at `3a86e20d`, it builds with no errors and the same pattern passes 266 of 266, the Windows
-build's count.
+build's count. After the fourth (its changes applied to `ceedafa5` as a patch), it builds with no
+errors and the same pattern passes 267 of 267, the Windows build's count.
 
 #### Outside the rule
 
@@ -2613,6 +2658,16 @@ build's count.
     7), so the call ends it even where the callee retains the handle first. With `p` a parameter,
     `keep(k, p.child)` is rejected when `keep` stores into a field. Copying it into a local first
     (`const c = p.child; keep(k, c)`) is accepted, and counts;
+  - a handle read whose count goes into a tuple, beside a counted use, is rejected whether or not
+    anything drops it (Ruling 9): `[(q.child = p.child), 1]` with nothing dropped after it (the
+    re-review's `c7c`, `c7d`), and `const [a, n] = [(q.child = p.child), 1]` (`d3`, which counted
+    1 under rc and own). All three compiled before this round; the plain `[p.child, 1]` was
+    already rejected. `const x = p.child; const t = [x, 1]` is accepted, and counts;
+  - a return whose retain is not followed by only the scope exit's `ts.Release` and
+    `ts.ReleaseSlot` ops (in any order) before the store into the result slot would be rejected:
+    none was found (`return p.child` after `const` and `let` locals, after a single `let`, inside
+    a loop, inside `try`/`finally`, from an arrow or a method, into an optional or a union result
+    all compile and count as rc does);
   - so is one read of a handle with a counted use and a use given to a call that may drop: with
     `k` an owning local, `f(p, k = p.child)`, where `f` overwrites `p.child`, is rejected even
     though `k` keeps the block alive (the review's `hole2.ts`). `k = p.child; f(p, k)` is

@@ -2772,7 +2772,8 @@ set(own_error_cases
     "own_err_shared_union_owned|a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported"
     "own_err_shared_place_arg|borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten"
-    "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured")
+    "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured"
+    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

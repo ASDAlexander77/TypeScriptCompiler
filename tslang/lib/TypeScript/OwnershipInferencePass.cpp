@@ -2261,6 +2261,13 @@ class OwnershipInferencePass
 
                 if (pending.borrowed)
                 {
+                    // a handle read that rc counts (spec 23.3): a return or an `any` box rc
+                    // retained for is a counted copy of its own; passesOn would hand them on
+                    if (countedHandle && isCountedHandOff(user, pending.value))
+                    {
+                        continue;
+                    }
+
                     llvm::SmallVector<mlir::Value> same;
                     llvm::SmallVector<mlir::Operation *, 2> renewedAt;
                     if (passesOn(use, same, &renewedAt))
@@ -2388,11 +2395,19 @@ class OwnershipInferencePass
     }
 
     // How a handle read out of a place is used (spec 23.3), seen through casts, merges and locals
-    // that own nothing: `counted` when rc gives it an owner of its own - a retain, which own leaves
-    // in place, for what takes it (isCountedHandleReceiver), or an owning local's own count
-    // (`ts.RetainSlot`); `borrowed` when a use reads through the place instead - an argument given
-    // to a call (`f(p, p.child)`), a `.value` read, `Shared.count`. `cur = cur.value.next` is
-    // counted only.
+    // that own nothing. Every use is classified, and nothing falls through (Ruling 9):
+    // - `counted`: a receiver that takes a count rc made for that very use
+    //   (isCountedHandleReceiver) - a store, a push or an unshift, `new Shared`, an array
+    //   literal's element, a return, an `any` box, or an owning local's initializer;
+    // - passed on: a cast or a view that is still a handle, a merge, a local that owns nothing -
+    //   whose own uses are classified in turn;
+    // - `borrowed`: everything else. A use that reads through the place (`f(p, p.child)`, a
+    //   `.value` read, `Shared.count`), and every use that is neither of the above: a tuple's
+    //   element, an object literal's field, a capture, a `yield`, a receiver rc made no retain
+    //   for, any op not named here. The read is then a borrow, and tenure-checked
+    //   (checkPlaceRead).
+    // rc's retains count for nothing on their own: each is the count of the receiver right after
+    // it. `cur = cur.value.next` is counted only.
     struct HandleReadUses
     {
         bool counted;
@@ -2410,12 +2425,30 @@ class OwnershipInferencePass
             for (auto &use : current.getUses())
             {
                 auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::RetainOp>(user))
+                {
+                    continue;
+                }
+
+                // a return and an `any` box take the value, though passesOn would hand them on
+                if (isHandOff(user, current))
+                {
+                    (isCountedHandleReceiver(user, current) ? result.counted : result.borrowed) = true;
+                    continue;
+                }
+
                 llvm::SmallVector<mlir::Value> same;
                 if (passesOn(use, same))
                 {
                     for (auto next : same)
                     {
-                        if (isHandle(next) && seen.insert(next).second)
+                        // what is no longer a handle is no receiver: a test (`if (p.child)`) only
+                        // reads it
+                        if (!isHandle(next))
+                        {
+                            result.borrowed = true;
+                        }
+                        else if (seen.insert(next).second)
                         {
                             values.push_back(next);
                         }
@@ -2424,19 +2457,7 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                if (isCountedHandleReceiver(user, current))
-                {
-                    result.counted |= mlir::isa<mlir_ts::RetainOp, mlir_ts::VariableOp>(user);
-                    continue;
-                }
-
-                // a store of the read that rc made no retain for (an object literal's field,
-                // `{ s: (q.child = p.child) }`) keeps it uncounted: the read is checked as a
-                // borrow, and the store is its keep
-                if (isBorrow(user, current) || isUncountedStoreOf(user, current))
-                {
-                    result.borrowed = true;
-                }
+                (isCountedHandleReceiver(user, current) ? result.counted : result.borrowed) = true;
             }
         }
 
@@ -2444,21 +2465,24 @@ class OwnershipInferencePass
     }
 
     // A handle read out of a place that rc gives a count of its own is a counted copy, not a borrow
-    // (spec 23.3) - but only when every use of it is one rc counts (Ruling 7). A read with one use
-    // that reads through the place as well (`f(p, q, q.child = p.child)`) is a borrow, and that
-    // use is tenure-checked; the counted uses are copies (checkPlaceRead).
+    // (spec 23.3) - but only when every use of it is one rc counts (Ruling 7), and a use that is
+    // not known to be one is not (Ruling 9). A read with one use that reads through the place as
+    // well (`f(p, q, q.child = p.child)`), or that keeps it with no count (`[(q.child = p.child),
+    // 1]`), is a borrow, and that use is tenure-checked; the counted uses are copies
+    // (checkPlaceRead).
     static bool isCountedHandleRead(mlir::Value value)
     {
         auto uses = handleReadUses(value);
         return uses.counted && !uses.borrowed;
     }
 
-    // A use that gives a handle an owner rc counts: rc's retain, and what takes the value it
-    // retains for - a store into a field, an element, a global or an owning local (a local that
-    // owns nothing passes the value on) that rc retained for (countedStoreRetain), a push,
-    // `new Shared`, a return - or the initializer of an owning local, which takes a count of its
-    // own (`ts.RetainSlot`). A store rc made no retain for is not one: it keeps the read without
-    // a count (`{ s: (q.child = p.child) }`'s field).
+    // A use that gives a handle an owner rc counts, with rc's retain for that very use: rc's
+    // retain itself, a store into a field, an element, a global, an owning local or the result
+    // slot (a return) that rc retained for (countedStoreRetain); a push or an unshift, `new
+    // Shared`, an array literal's element, an `any` box, a `ts.ReturnVal`, each right after rc's
+    // retain of what it takes (retainedRightBefore); or the initializer of an owning local, which
+    // takes a count of its own (`ts.RetainSlot`). Any of them without its retain is not one: it
+    // keeps the read without a count (`{ s: (q.child = p.child) }`'s field).
     static bool isCountedHandleReceiver(mlir::Operation *user, mlir::Value value)
     {
         if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -2480,15 +2504,76 @@ class OwnershipInferencePass
 
         if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
         {
-            return llvm::is_contained(pushOp.getItems(), value);
+            return retainedRightBefore(user, pushOp.getItems(), value);
         }
 
         if (auto unshiftOp = mlir::dyn_cast<mlir_ts::ArrayUnshiftOp>(user))
         {
-            return llvm::is_contained(unshiftOp.getItems(), value);
+            return retainedRightBefore(user, unshiftOp.getItems(), value);
         }
 
-        return mlir::isa<mlir_ts::SharedNewOp, mlir_ts::ReturnValOp, mlir_ts::ReturnInternalOp>(user);
+        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
+        {
+            return mlir::isa<mlir_ts::AnyType>(castOp.getType()) && retainedRightBefore(user, user->getOperands(), value);
+        }
+
+        // `ts.ReturnVal` is the return before the affine lowering, which makes it a store into
+        // the result slot
+        if (mlir::isa<mlir_ts::SharedNewOp, mlir_ts::CreateArrayOp, mlir_ts::ReturnValOp>(user))
+        {
+            return retainedRightBefore(user, user->getOperands(), value);
+        }
+
+        return false;
+    }
+
+    // A use that passesOn hands on but that takes the value: a return's store into the function's
+    // result slot (isResultSlot), and a cast that boxes it into `any`.
+    static bool isHandOff(mlir::Operation *user, mlir::Value value)
+    {
+        if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+        {
+            auto slot = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            return storeOp.getValue() == value && slot && isResultSlot(slot);
+        }
+
+        auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+        return castOp && castOp.getIn() == value && mlir::isa<mlir_ts::AnyType>(castOp.getType());
+    }
+
+    // A return or an `any` box of a handle that rc counts (walkBorrowed).
+    static bool isCountedHandOff(mlir::Operation *user, mlir::Value value)
+    {
+        return isHandOff(user, value) && isCountedHandleReceiver(user, value);
+    }
+
+    // rc's retains for what `op` takes: MLIRGen puts them in a row right before it
+    // (mlirGenRetainCaptured, retainInsertedElements), one for each operand it does not take
+    // over. Answers whether that row retains `value` once for each time `operands` hold it. A
+    // retain is right before one op only, so no other receiver can count it as well.
+    static bool retainedRightBefore(mlir::Operation *op, mlir::ValueRange operands, mlir::Value value)
+    {
+        auto needed = llvm::count(operands, value);
+        if (needed == 0)
+        {
+            return false;
+        }
+
+        for (auto *previous = op->getPrevNode(); needed > 0 && previous; previous = previous->getPrevNode())
+        {
+            auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(previous);
+            if (!retainOp)
+            {
+                break;
+            }
+
+            if (retainOp.getReference() == value)
+            {
+                --needed;
+            }
+        }
+
+        return needed == 0;
     }
 
     // The releases of the old value that rc's counted stores of a handle read make: `ts.Retain` of
@@ -2533,26 +2618,29 @@ class OwnershipInferencePass
 
     // rc's retain for a store of a value, when it made one: `ts.Retain` of the value right before
     // the store, or before the `ts.ReleaseSlot` of the old value right before it -
-    // `Retain(v)`, [`ReleaseSlot(slot)`], `Store(v, slot)`. Null for a store rc counts nothing for.
+    // `Retain(v)`, [`ReleaseSlot(slot)`], `Store(v, slot)`. A return's store into the result
+    // slot comes after the scope exit's releases of the frame's locals and their slots:
+    // `Retain(v)`, [`Release(..)`, `ReleaseSlot(..)`...], `Store(v, result)`. Null for a store rc
+    // counts nothing for.
     static mlir::Operation *countedStoreRetain(mlir_ts::StoreOp storeOp)
     {
         auto *previous = storeOp->getPrevNode();
-        if (auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(previous))
+        if (auto slot = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>(); slot && isResultSlot(slot))
+        {
+            // the scope exit's releases, of locals and of their slots, in any order
+            while (mlir::isa_and_nonnull<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(previous) &&
+                   previous->getOperand(0) != storeOp.getValue())
+            {
+                previous = previous->getPrevNode();
+            }
+        }
+        else if (auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(previous))
         {
             previous = releaseSlotOp.getSlot() == storeOp.getReference() ? releaseSlotOp->getPrevNode() : nullptr;
         }
 
         auto retainOp = mlir::dyn_cast_or_null<mlir_ts::RetainOp>(previous);
         return retainOp && retainOp.getReference() == storeOp.getValue() ? retainOp.getOperation() : nullptr;
-    }
-
-    // A store of a handle read that rc made no retain for (countedStoreRetain): it keeps the read
-    // with no count of its own. A store into a local that owns nothing passes the value on
-    // (passesOn) and is not seen here.
-    static bool isUncountedStoreOf(mlir::Operation *user, mlir::Value value)
-    {
-        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-        return storeOp && storeOp.getValue() == value && !countedStoreRetain(storeOp);
     }
 
     // The call a value is the result of, when that result borrows an argument.
