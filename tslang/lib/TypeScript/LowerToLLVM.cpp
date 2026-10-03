@@ -38,6 +38,7 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMDebugInfo.h"
 #include "TypeScript/LowerToLLVM/LLVMDebugInfoFixer.h"
+#include "TypeScript/LowerToLLVM/ArrayLayout.h"
 
 #include "scanner_enums.h"
 
@@ -628,6 +629,13 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
 
         auto loc = op->getLoc();
 
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getOp().getType()))
+        {
+            ArrayLayout layout(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            rewriter.replaceOp(op, layout.length(arrayType, transformed.getOp()));
+            return success();
+        }
+
         rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(op, typeConverter->convertType(th.getIndexType()), transformed.getOp(),
                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
 
@@ -661,12 +669,12 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         LLVM_DEBUG(llvm::dbgs() << "arrayType: elementType: " << elementType << "\n";);
         LLVM_DEBUG(llvm::dbgs() << "arrayType: llvm: " << tch.convertType(arrayType) << "\n";);
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
         auto newCountAsIndexType = op.getNewLength();
 
@@ -3055,12 +3063,8 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
 
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(rewriter, 0));
-
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 newCountAsIndexType, MLIRHelper::getStructIndex(rewriter, 1));
+        ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
 
         rewriter.replaceOp(createArrayOp, ValueRange{structValue3});
         return success();
@@ -3098,13 +3102,9 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(rewriter, 0));
-
+        ArrayLayout layout(newEmptyArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto size0 = clh.createIndexConstantOf(llvmIndexType, 0);
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, size0,
-                                                                 MLIRHelper::getStructIndex(rewriter, 1));
+        auto structValue3 = layout.make(arrayType, allocated, size0);
 
         rewriter.replaceOp(newEmptyArrOp, ValueRange{structValue3});
         return success();
@@ -3148,12 +3148,8 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
 
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
-
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
+        ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto structValue3 = layout.make(arrayType, allocated, transformed.getCount());
 
         rewriter.replaceOp(newArrOp, ValueRange{structValue3});
         return success();
@@ -3183,12 +3179,12 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // TODO: use GetAddressOfArrayElement method to sync code
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
@@ -3268,12 +3264,12 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(popOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
@@ -3323,12 +3319,12 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(unshiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
@@ -3421,12 +3417,12 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         mlir::Type storageType = elementType;
         // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(shiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
@@ -3483,12 +3479,12 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto indexType = th.getIndexType();
         auto llvmIndexType = tch.convertType(indexType);
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(spliceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto header = layout.headerForUpdate(arrayType, transformed.getOp());
+        auto currentPtrPtr = layout.dataAddress(arrayType, header);
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
-                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto startIndexAsIndexType = spliceOp.getStart();
@@ -3674,17 +3670,12 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
 
         // TODO: add size check !!!
 
-        auto arrayPtr = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(),
-                transformed.getOp(), MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+        ArrayLayout layout(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto arrayPtr = layout.data(arrayType, transformed.getOp());
 
         auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
         // create array type
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, arrayOffset,
-                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
-
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue2,
-                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
+        auto structValue3 = layout.make(arrayType, arrayOffset, transformed.getCount());
 
         rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});
         return success();
