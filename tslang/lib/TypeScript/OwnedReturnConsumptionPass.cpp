@@ -304,6 +304,19 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
+            // An object literal (`let o = { s: mk() }`) is built in a temporary slot and read out
+            // whole: what its fields were given goes into the global with it (#461), nested
+            // literals included.
+            if (auto literalLoad = value.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto literalSlot = literalLoad.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    literalSlot && !literalSlot->hasAttr(OWNED_LOCAL_ATTR_NAME))
+                {
+                    claimStoredIntoLiteral(literalSlot);
+                    return;
+                }
+            }
+
             // A field or element read (`holder.child`, `new P().child`, `mkP().child`,
             // `mkArr()[0]`) carries no reference: the object or array keeps its count, and a
             // temporary one gives it back at the end of the region. The global takes a count of its
@@ -319,6 +332,65 @@ class OwnedReturnConsumptionPass
                 builder.create<mlir_ts::RetainOp>(loadOp->getLoc(), value);
             }
         });
+    }
+
+    // Each owned producer stored into a field of an object literal's temporary slot, through the
+    // views of claimGlobalInitializers, is taken over by whoever takes the literal; a field that is
+    // itself a literal read out of its own temporary slot is followed into.
+    void claimStoredIntoLiteral(mlir_ts::VariableOp literalSlot)
+    {
+        for (auto *user : literalSlot->getUsers())
+        {
+            auto fieldRef = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!fieldRef)
+            {
+                continue;
+            }
+
+            for (auto *fieldUser : fieldRef->getUsers())
+            {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || storeOp.getReference() != fieldRef.getResult())
+                {
+                    continue;
+                }
+
+                auto stored = storeOp.getValue();
+                while (auto *definingOp = stored.getDefiningOp())
+                {
+                    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp))
+                    {
+                        stored = castOp.getIn();
+                    }
+                    else if (auto optionalValueOp = mlir::dyn_cast<mlir_ts::OptionalValueOp>(definingOp))
+                    {
+                        stored = optionalValueOp.getIn();
+                    }
+                    else if (auto createUnionInstanceOp = mlir::dyn_cast<mlir_ts::CreateUnionInstanceOp>(definingOp))
+                    {
+                        stored = createUnionInstanceOp.getIn();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                if (producesOwnedResult(stored))
+                {
+                    stored.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME,
+                                                    mlir::UnitAttr::get(&getContext()));
+                }
+                else if (auto innerLoad = stored.getDefiningOp<mlir_ts::LoadOp>())
+                {
+                    if (auto innerSlot = innerLoad.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                        innerSlot && !innerSlot->hasAttr(OWNED_LOCAL_ATTR_NAME))
+                    {
+                        claimStoredIntoLiteral(innerSlot);
+                    }
+                }
+            }
+        }
     }
 
     // A conditional expression whose branches disagree about ownership.
