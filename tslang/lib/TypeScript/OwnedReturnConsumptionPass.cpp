@@ -389,9 +389,43 @@ class OwnedReturnConsumptionPass
 
             // Only worth doing when some branch actually carries an unclaimed +1. Where every
             // branch borrows, the receiver's retain is already the right and only answer.
+            // What a branch yields, seen through the casts that only widen it: `new C()` yielded as
+            // `C | null` or `C | undefined` is still that block, so its reference goes out with it
+            // (#465). A cast that makes a new value (a box) carries its own reference instead.
+            auto producerOf = [](mlir::Value value) {
+                while (auto *definingOp = value.getDefiningOp())
+                {
+                    if (definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+                    {
+                        break;
+                    }
+
+                    if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp);
+                        castOp && mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(castOp.getType()))
+                    {
+                        value = castOp.getIn();
+                    }
+                    else if (auto optionalValueOp = mlir::dyn_cast<mlir_ts::OptionalValueOp>(definingOp))
+                    {
+                        value = optionalValueOp.getIn();
+                    }
+                    else if (auto createUnionInstanceOp = mlir::dyn_cast<mlir_ts::CreateUnionInstanceOp>(definingOp))
+                    {
+                        value = createUnionInstanceOp.getIn();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                return value;
+            };
+
             auto carriesOwned = [&](mlir_ts::ResultOp resultOp) {
-                auto *definingOp = resultOp->getOperand(0).getDefiningOp();
-                return ::typescript::mayTakeOverReference(resultOp->getOperand(0)) &&
+                auto produced = producerOf(resultOp->getOperand(0));
+                auto *definingOp = produced.getDefiningOp();
+                return ::typescript::mayTakeOverReference(produced) &&
                        definingOp->getParentRegion() == resultOp->getParentRegion();
             };
 
@@ -406,8 +440,9 @@ class OwnedReturnConsumptionPass
                 {
                     // The `ts.If` result now stands for this reference, so the producer's +1 has
                     // an owner and must not also be released as a discarded temporary.
-                    resultOp->getOperand(0).getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME,
-                                                                    mlir::UnitAttr::get(&getContext()));
+                    producerOf(resultOp->getOperand(0))
+                        .getDefiningOp()
+                        ->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
                     continue;
                 }
 
