@@ -1057,9 +1057,8 @@ class MLIRGenImpl
 
     // Gives a freshly built string, a freshly made `any` box, or a new Shared<T> handle (own spec
     // 23), the same standing as every other producer of a new heap value: the retain makes the
-    // reference real, and the mark says a
-    // receiver may take it over rather than adding one of its own - which is also what lets §9.30
-    // give it back where nothing receives it at all.
+    // reference real, and the mark says a receiver may take it over rather than adding one of its
+    // own - which is also what lets §9.30 give it back where nothing receives it at all.
     //
     // Both halves are needed together, and the retain is what makes this safe to be generous
     // with: a value wrongly counted as fresh gains a reference and a release for it, which is

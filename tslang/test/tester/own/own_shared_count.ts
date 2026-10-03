@@ -1,5 +1,6 @@
 // Shared<T> (spec 23.1): Shared.count after each copy and drop - a handle made, copied, given to a
-// function that keeps it, returned from one, reassigned to the block it holds, and copied in a loop.
+// function that keeps it, returned from one, reassigned to the block it holds, copied in a loop, held
+// by another block that dies, and replaced in a block by `s.value = x`.
 class Node {
     v = 0;
 }
@@ -51,6 +52,20 @@ function main() {
     }
 
     assert(Shared.count(a) == 1, "every copy in the loop dropped");
+
+    // the payload is released when the outer block dies
+    const inner = new Shared(new Node());
+    let outer = new Shared(inner);
+    assert(Shared.count(inner) == 2, "an outer block holds inner");
+    outer = new Shared(new Shared(new Node()));
+    assert(Shared.count(inner) == 1, "the payload released when the outer block died");
+
+    // `s.value = x` releases the old payload and takes a count of the new one
+    const other = new Shared(new Node());
+    const o2 = new Shared(inner);
+    assert(Shared.count(inner) == 2, "o2 holds inner");
+    o2.value = other;
+    assert(Shared.count(inner) == 1 && Shared.count(other) == 2, "s.value = x hands over");
 
     print("done.");
 }

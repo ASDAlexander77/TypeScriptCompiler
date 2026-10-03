@@ -2612,7 +2612,7 @@ add_test(NAME test-own-string-copy-in-store-block
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
 # own_shared_user_named: a program's own class named Shared wins over the built-in (spec 23.1).
-set(shared_models gc none rc)
+set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
@@ -2620,9 +2620,19 @@ foreach(shared_mm ${shared_models})
     endforeach()
 endforeach()
 # Shared.count is a count only under rc and own.
-foreach(shared_count_mm rc)
+foreach(shared_count_mm rc own)
     tslang_add_test(NAME test-jit-${shared_count_mm}-own_shared_count COMMAND test-runner -jit -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
     tslang_add_test(NAME test-compile-${shared_count_mm}-own_shared_count COMMAND test-runner -mm=${shared_count_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_count.ts")
+endforeach()
+# --verify-ownership is quiet on every positive (spec 23.5): handles keep rc's pairing.
+foreach(shared_verify_mm own rc)
+    foreach(shared_test own_shared_basic own_shared_graph own_shared_count)
+        add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
+                 COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
+                         "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+        set_tests_properties(test-${shared_verify_mm}-verify-ownership-${shared_test}
+                             PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+    endforeach()
 endforeach()
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
@@ -2747,7 +2757,11 @@ set(own_error_cases
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
-    "own_err_string_pushed_twice|is used here after its value was moved")
+    "own_err_string_pushed_twice|is used here after its value was moved"
+    "own_err_shared_borrow_write|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_call|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_push|but is used here after it may be released or overwritten"
+    "own_err_shared_moved_in|is used here after its value was moved")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

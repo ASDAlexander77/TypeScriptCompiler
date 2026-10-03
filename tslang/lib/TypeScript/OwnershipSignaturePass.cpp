@@ -1010,6 +1010,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
+            // a handle returned is a counted copy, never a borrow (spec 23.2)
+            if (isHandle(value))
+            {
+                return -1;
+            }
+
             auto index = borrowedParam(value);
             if (index < 0 || (found >= 0 && index != found))
             {
@@ -1047,6 +1053,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return llvm::is_contained(pushOp.getItems(), used);
         }
 
+        // `new Shared(x)` moves `x` into the block, as a store into a place does (spec 23.1)
+        if (auto sharedNewOp = mlir::dyn_cast<mlir_ts::SharedNewOp>(user))
+        {
+            return sharedNewOp.getValue() == used;
+        }
+
         if (auto unshiftOp = mlir::dyn_cast<mlir_ts::ArrayUnshiftOp>(user))
         {
             return llvm::is_contained(unshiftOp.getItems(), used);
@@ -1080,6 +1092,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         for (auto argument : funcOp.getBody().front().getArguments())
         {
+            // a handle kept is a counted copy: its caller gives nothing up (spec 23.2)
+            if (isHandle(argument))
+            {
+                continue;
+            }
+
             auto kept = false;
             for (auto *user : argument.getUsers())
             {
@@ -1721,7 +1739,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 return;
             }
 
-            if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+            // A handle given back may be the last one, and its payload goes with it, and with that
+            // anything the payload owns (spec 23.3).
+            if (mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(op) && touchesHandle(op))
+            {
+                drops = true;
+            }
+            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
                 // a captured variable assigned through its cell, by a closure's body: the variable
                 // is its declaring function's
@@ -1763,6 +1787,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 work.push_back(object);
                 continue;
+            }
+
+            // a handle's payload: any other handle may reach it (spec 23.3)
+            if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+            {
+                return true;
             }
 
             if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())

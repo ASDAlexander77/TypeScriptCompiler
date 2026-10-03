@@ -327,9 +327,34 @@ inline bool isCall(mlir::Operation *op)
                      mlir_ts::InvokeHybridOp>(op);
 }
 
+// A field, an element, or `s.value` - the payload of a handle (spec 23.1).
 inline bool isPlace(mlir::Value ref)
 {
-    return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(ref.getDefiningOp());
+    return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(
+        ref.getDefiningOp());
+}
+
+// A handle (spec 23.2): counted in every model that tracks ownership, and left alone by own.
+inline bool isHandle(mlir::Value value)
+{
+    return value && MLIRTypeHelper::isSharedHandleType(value.getType());
+}
+
+// A retain or release of a handle, or of a slot holding one: rc's, which own leaves in place.
+inline bool touchesHandle(mlir::Operation *op)
+{
+    if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(op))
+    {
+        return isHandle(op->getOperand(0));
+    }
+
+    if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(op))
+    {
+        auto slotType = mlir::dyn_cast<mlir_ts::RefType>(op->getOperand(0).getType());
+        return slotType && MLIRTypeHelper::isSharedHandleType(slotType.getElementType());
+    }
+
+    return false;
 }
 
 // The values the branches into its block pass for `argument`, each seen through its views.

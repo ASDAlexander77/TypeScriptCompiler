@@ -138,6 +138,14 @@ class OwnershipInferencePass
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
+            // A handle's retains and releases are rc's, counted, and nobody's to decide (spec 23.2).
+            // An overwrite of a field or an element that holds one is still a drop: the old handle
+            // may be the last, and its payload goes with it.
+            if (touchesHandle(op) && !mlir::isa<mlir_ts::ReleaseSlotOp>(op))
+            {
+                return;
+            }
+
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
             {
                 retains.push_back(op);
@@ -153,7 +161,7 @@ class OwnershipInferencePass
             }
             else if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(op))
             {
-                if (varOp.getInitializer() && isOwningVariable(varOp))
+                if (varOp.getInitializer() && isOwningVariable(varOp) && !isHandle(varOp.getInitializer()))
                 {
                     candidates.insert(rootOf(varOp.getInitializer()));
                 }
@@ -191,6 +199,14 @@ class OwnershipInferencePass
                     drops.push_back(op);
                 }
             }
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            {
+                // through a handle, it may move the elements another handle's borrow reads (spec 23.3)
+                if (reachesSharedValue(op->getOperand(0)))
+                {
+                    drops.push_back(op);
+                }
+            }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp,
                                mlir_ts::SetLengthOfOp>(op) ||
                      isCall(op))
@@ -209,7 +225,7 @@ class OwnershipInferencePass
 
             for (auto result : op->getResults())
             {
-                if (!isView(op) && isFresh(result) && ownsHeap(result))
+                if (!isView(op) && isFresh(result) && ownsHeap(result) && !isHandle(result))
                 {
                     candidates.insert(result);
                 }
@@ -242,6 +258,11 @@ class OwnershipInferencePass
         llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> paramReceivers;
         for (auto *op : retains)
         {
+            if (touchesHandle(op))
+            {
+                continue;
+            }
+
             if (captureRetains.contains(op))
             {
                 continue; // a borrowing box's copy of a value: decideClosures decides it
@@ -340,8 +361,9 @@ class OwnershipInferencePass
             auto args = callArgs(call);
             for (auto index : ownedParams(call))
             {
+                // a handle given to a callee that keeps it is a counted copy (spec 23.2)
                 if (static_cast<size_t>(index) >= args.size() || holdsNoBlock(args[index]) ||
-                    isImmortalLiteral(args[index]))
+                    isImmortalLiteral(args[index]) || isHandle(args[index]))
                 {
                     continue;
                 }
@@ -384,6 +406,8 @@ class OwnershipInferencePass
             return failures == 0;
         }
 
+        // a handle's retains and releases are rc's, and stay (spec 23.2)
+        toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
         for (auto *op : toErase)
         {
             op->erase();
@@ -1506,9 +1530,10 @@ class OwnershipInferencePass
                     auto root = rootOf(value);
                     captured = ownerName(root);
                     Chain chain;
-                    if (holdsNoBlock(value) || placeReadOf(root) || borrowedParam(root) >= 0)
+                    if (holdsNoBlock(value) || placeReadOf(root) || borrowedParam(root) >= 0 || isHandle(root))
                     {
-                        // nothing to own, a read the read's check bounds, or a parameter
+                        // nothing to own, a read the read's check bounds, a parameter, or a handle,
+                        // whose copy in the box is counted (spec 23.2)
                     }
                     else if (auto slotLoad = slotLoadOf(root))
                     {
@@ -2317,7 +2342,8 @@ class OwnershipInferencePass
     {
         auto root = rootOf(value);
         auto *def = root.getDefiningOp();
-        if (!def || !ownsHeap(root))
+        // a handle read out of a place is a counted copy, not a borrow (spec 23.3)
+        if (!def || !ownsHeap(root) || isHandle(root))
         {
             return nullptr;
         }
@@ -2357,8 +2383,10 @@ class OwnershipInferencePass
             NotOwned // a parameter, `this`, a global, anything else
         };
 
-        // a field's position and reference type; an element is position -1
+        // a field's position and reference type; an element is position -1, a handle's payload
+        // (`s.value`) is SharedValue
         llvm::SmallVector<std::pair<int64_t, mlir::Type>> places;
+        static constexpr int64_t SharedValue = -2;
         llvm::SmallVector<std::pair<mlir::Value, Kind>> roots;
         // Somewhere under a root, but where is not known: a result that borrows an argument may
         // be any field or element under it. Every overwrite and every removal drops it.
@@ -2402,6 +2430,11 @@ class OwnershipInferencePass
                     chain.places.push_back({propertyRefOp.getPosition(), propertyRefOp.getType()});
                     base = propertyRefOp.getObjectRef();
                 }
+                else if (auto sharedValueRefOp = ref.getDefiningOp<mlir_ts::SharedValueRefOp>())
+                {
+                    chain.places.push_back({Chain::SharedValue, sharedValueRefOp.getType()});
+                    base = sharedValueRefOp.getShared();
+                }
                 else
                 {
                     auto elementRefOp = ref.getDefiningOp<mlir_ts::ElementRefOp>();
@@ -2417,6 +2450,19 @@ class OwnershipInferencePass
                 auto base = bases.pop_back_val();
                 if (!seen.insert(base).second)
                 {
+                    continue;
+                }
+
+                // A handle (spec 23.3): other handles may reach its block, so this function owns
+                // nothing under it. A handle read out of a place still has that place above it.
+                if (isHandle(base))
+                {
+                    chain.roots.push_back({base, Chain::NotOwned});
+                    if (auto loadOp = base.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+                    {
+                        refs.push_back(loadOp.getReference());
+                    }
+
                     continue;
                 }
 
@@ -2470,6 +2516,49 @@ class OwnershipInferencePass
         return chain;
     }
 
+    // Is this reference a place reached through a handle's payload (`s.value.items`), at any depth?
+    static bool reachesSharedValue(mlir::Value ref)
+    {
+        llvm::SmallVector<mlir::Value> work{ref};
+        llvm::SmallPtrSet<mlir::Value, 8> seen;
+        while (!work.empty())
+        {
+            auto value = rootOf(work.pop_back_val());
+            if (!seen.insert(value).second)
+            {
+                continue;
+            }
+
+            if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+            {
+                return true;
+            }
+
+            if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                work.push_back(propertyRefOp.getObjectRef());
+            }
+            else if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
+            {
+                work.push_back(elementRefOp.getArray());
+            }
+            else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+            {
+                work.push_back(loadOp.getReference());
+            }
+            else if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+            {
+                llvm::SmallVector<mlir::Value> merged;
+                if (mergedInto(argument, merged))
+                {
+                    work.append(merged.begin(), merged.end());
+                }
+            }
+        }
+
+        return false;
+    }
+
     // Where the roots stop holding what the chain reads: a local's releases and assignments and
     // every declaration or retain that may move it away; a made value's releases and every use
     // that takes it; a global's assignments.
@@ -2478,6 +2567,33 @@ class OwnershipInferencePass
         llvm::SmallVector<mlir::Operation *> ends;
         for (auto [root, kind] : chain.roots)
         {
+            // A handle (spec 23.3), never owned: where this one is given back or overwritten - a
+            // local's release and assignments, a temporary's release; a global's assignments are
+            // below. A copy of it is counted, and moves nothing away.
+            if (isHandle(root))
+            {
+                auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>();
+                if (auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp())
+                {
+                    for (auto *user : varOp->getUsers())
+                    {
+                        if (mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::StoreOp>(user))
+                        {
+                            ends.push_back(user);
+                        }
+                    }
+                }
+                else if (!loadOp)
+                {
+                    forEachUse(root, [&](mlir::Operation *use, mlir::Value) {
+                        if (mlir::isa<mlir_ts::ReleaseOp>(use))
+                        {
+                            ends.push_back(use);
+                        }
+                    });
+                }
+            }
+
             if (kind == Chain::Slot)
             {
                 for (auto *user : root.getUsers())
@@ -2642,6 +2758,12 @@ class OwnershipInferencePass
             {
                 position = propertyRefOp.getPosition();
             }
+            else if (slot.getDefiningOp<mlir_ts::SharedValueRefOp>())
+            {
+                // `x.value = ...` through any handle may replace the payload another one reads
+                // (spec 23.3)
+                position = Chain::SharedValue;
+            }
 
             return llvm::any_of(chain.places, [&](auto &place) {
                 return place.first == position && place.second == slot.getType();
@@ -2670,7 +2792,7 @@ class OwnershipInferencePass
             });
         }
 
-        // pop, shift, splice, `length =`
+        // pop, shift, splice, `length =`; push and unshift on an array reached through a handle
         auto refType = mlir::dyn_cast<mlir_ts::RefType>(drop->getOperand(0).getType());
         auto arrayType = refType ? mlir::dyn_cast<mlir_ts::ArrayType>(refType.getElementType()) : mlir_ts::ArrayType();
         if (!arrayType)
@@ -2860,6 +2982,11 @@ class OwnershipInferencePass
         {
             base = elementRefOp.getArray();
             step = "[]";
+        }
+        else if (auto sharedValueRefOp = ref.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        {
+            base = sharedValueRefOp.getShared();
+            step = ".value";
         }
         else
         {

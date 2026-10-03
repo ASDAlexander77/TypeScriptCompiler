@@ -425,14 +425,17 @@ class RetainOpLowering : public TsLlvmPattern<mlir_ts::RetainOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // A handle is counted under own too, and inference leaves its retains (spec 23.2).
+        auto counted = MLIRTypeHelper::isSharedHandleType(op.getReference().getType());
+
         // Under own, ownership inference erased every retain it could prove, and reported the
         // rest; one that reaches here was neither, and erasing it would ship a double free.
-        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
             return op.emitError("ownership inference left a retain behind");
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitRetainValue(op.getReference().getType(), transformed.getReference());
@@ -472,14 +475,19 @@ class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
     LogicalResult matchAndRewrite(mlir_ts::RetainSlotOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // A slot holding a handle is counted under own too, and inference leaves its retains
+        // (spec 23.2).
+        auto counted =
+            MLIRTypeHelper::isSharedHandleType(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType());
+
         // Under own, ownership inference erased every retain it could prove, and reported the
         // rest; one that reaches here was neither, and erasing it would ship a double free.
-        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !counted)
         {
             return op.emitError("ownership inference left a retain behind");
         }
 
-        if (tsLlvmContext->compileOptions.isRefCounted())
+        if (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted))
         {
             OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
             orl.emitRetainSlot(cast<mlir_ts::RefType>(op.getSlot().getType()).getElementType(), transformed.getSlot());
@@ -2673,9 +2681,12 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (!isCaptured)
         {
             auto  tsStorageType = referenceType.getElementType();
-            if (isa<mlir_ts::ClassType>(tsStorageType) || isa<mlir_ts::SharedType>(tsStorageType) || isa<mlir_ts::StringType>(tsStorageType) ||
- isa<mlir_ts::ArrayType>(tsStorageType) || isa<mlir_ts::ObjectType>(tsStorageType) ||
- isa<mlir_ts::AnyType>(tsStorageType))
+            if (isa<mlir_ts::ClassType>(tsStorageType) ||
+                isa<mlir_ts::SharedType>(tsStorageType) ||
+                isa<mlir_ts::StringType>(tsStorageType) ||
+                isa<mlir_ts::ArrayType>(tsStorageType) ||
+                isa<mlir_ts::ObjectType>(tsStorageType) ||
+                isa<mlir_ts::AnyType>(tsStorageType))
             {
                 TypeHelper th(rewriter);
 
@@ -2743,7 +2754,10 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // Not under own, which has no count to take: such a cell borrows the value, and its
             // release frees the cell alone (OWN_CELL_BORROWS_ATTR_NAME, which ownership inference
             // sets, or rejects the program).
-            if (isCaptured && tsLlvmContext->compileOptions.isRefCounted() &&
+            // A handle is counted under own too (spec 23.2).
+            auto counted = MLIRTypeHelper::isSharedHandleType(referenceType.getElementType());
+            if (isCaptured &&
+                (tsLlvmContext->compileOptions.isRefCounted() || (tsLlvmContext->compileOptions.tracksOwnership() && counted)) &&
                 !varOp->hasAttr(CAPTURE_BOX_ATTR_NAME) && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
             {
                 OwnershipRoutineLogic orl(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
