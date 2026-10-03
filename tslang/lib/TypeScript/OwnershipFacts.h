@@ -7,6 +7,7 @@
 
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
@@ -396,6 +397,49 @@ inline bool mergedInto(mlir::BlockArgument argument, llvm::SmallVectorImpl<mlir:
 
     values.append(found.begin(), found.end());
     return true;
+}
+
+// Is this reference a place reached through a handle's payload (`s.value.items`), at any depth?
+inline bool reachesSharedValue(mlir::Value ref)
+{
+    llvm::SmallVector<mlir::Value> work{ref};
+    llvm::SmallPtrSet<mlir::Value, 8> seen;
+    while (!work.empty())
+    {
+        auto value = rootOf(work.pop_back_val());
+        if (!seen.insert(value).second)
+        {
+            continue;
+        }
+
+        if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        {
+            return true;
+        }
+
+        if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
+        {
+            work.push_back(propertyRefOp.getObjectRef());
+        }
+        else if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
+        {
+            work.push_back(elementRefOp.getArray());
+        }
+        else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+        {
+            work.push_back(loadOp.getReference());
+        }
+        else if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
+        {
+            llvm::SmallVector<mlir::Value> merged;
+            if (mergedInto(argument, merged))
+            {
+                work.append(merged.begin(), merged.end());
+            }
+        }
+    }
+
+    return false;
 }
 
 // The load of an owning local that `value` was read from, through its views (a class widened

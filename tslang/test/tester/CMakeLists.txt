@@ -2761,7 +2761,10 @@ set(own_error_cases
     "own_err_shared_borrow_write|but is used here after it may be released or overwritten"
     "own_err_shared_borrow_call|but is used here after it may be released or overwritten"
     "own_err_shared_borrow_push|but is used here after it may be released or overwritten"
-    "own_err_shared_moved_in|is used here after its value was moved")
+    "own_err_shared_moved_in|is used here after its value was moved"
+    "own_err_shared_borrow_other_type|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_push_call|but is used here after it may be released or overwritten"
+    "own_err_shared_borrow_reassigned|but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

@@ -1,6 +1,7 @@
 // Shared<T> (spec 23.1): Shared.count after each copy and drop - a handle made, copied, given to a
 // function that keeps it, returned from one, reassigned to the block it holds, copied in a loop, held
-// by another block that dies, and replaced in a block by `s.value = x`.
+// by another block that dies, replaced in a block by `s.value = x`, and captured as a parameter by a
+// closure and by one that escapes.
 class Node {
     v = 0;
 }
@@ -21,6 +22,19 @@ function dropLast(list: Keeper) {
 
 function make() {
     return new Shared(new Node());
+}
+
+// a handle parameter captured by a closure: its cell holds a count, and gives it back
+function capture(s: Shared<Node>) {
+    let t = 1;
+    const g = () => s.value.v + t;
+    t = 2;
+    return g();
+}
+
+// a closure that escapes with a handle parameter: its box holds the count
+function reader(s: Shared<Node>) {
+    return () => s.value.v;
 }
 
 function main() {
@@ -66,6 +80,17 @@ function main() {
     assert(Shared.count(inner) == 2, "o2 holds inner");
     o2.value = other;
     assert(Shared.count(inner) == 1 && Shared.count(other) == 2, "s.value = x hands over");
+
+    capture(a);
+    capture(a);
+    assert(Shared.count(a) == 1, "a captured parameter's count given back");
+
+    for (let i = 0; i < 100; i++) {
+        const r = reader(a);
+        assert(r() == 0 && Shared.count(a) == 2, "held by an escaping closure");
+    }
+
+    assert(Shared.count(a) == 1, "every escaping closure gave its count back");
 
     print("done.");
 }

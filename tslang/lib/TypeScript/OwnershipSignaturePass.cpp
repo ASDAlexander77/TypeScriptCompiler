@@ -1759,6 +1759,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 drops = reachesOutside(op->getOperand(0), funcOp);
             }
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            {
+                // through a handle, it may move the elements another handle's borrow reads (spec 23.3)
+                drops = reachesSharedValue(op->getOperand(0));
+            }
             else if (mlir::isa<mlir_ts::DeleteOp>(op))
             {
                 drops = true;
