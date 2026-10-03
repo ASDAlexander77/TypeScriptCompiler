@@ -14,6 +14,7 @@
 #include "OwnershipFacts.h"
 
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -72,9 +73,43 @@ class OwnershipInferencePass
 
     void runOnFunction()
     {
+        // the dry run (spec 22.3): does today's analysis pass as it is?
+        {
+            llvm::SetVector<mlir::Operation *> toErase;
+            dryRun = true;
+            failures = 0;
+            auto passed = analyze(toErase);
+            dryRun = false;
+            // The copies are judged with the dry run's facts still set: a store into a borrowing
+            // closure's box, or a borrowing field's, is a borrow only by its
+            // `__own_capture_borrow`. They are taken off after, before the real run sets its own.
+            // makeStringCopies erases only retains, which the dry run sets no attribute on.
+            if (!passed)
+            {
+                makeStringCopies(toErase);
+            }
+
+            for (auto &[op, name] : dryRunAttrs)
+            {
+                op->removeAttr(name);
+            }
+
+            dryRunAttrs.clear();
+        }
+
+        llvm::SetVector<mlir::Operation *> toErase;
+        analyze(toErase);
+    }
+
+    // The analysis of one function; true when it passed. In a dry run it erases nothing and strips
+    // no facts.
+    bool analyze(llvm::SetVector<mlir::Operation *> &toErase)
+    {
         auto f = getFunction();
         mlir::DominanceInfo dominanceInfo(f);
         dominance = &dominanceInfo;
+        // it is this call's: nothing after it (the copies, the next run) may read it
+        auto dominanceGone = llvm::make_scope_exit([&]() { dominance = nullptr; });
 
         // every value some ownership operation names, in the order the walk meets them
         llvm::SetVector<mlir::Value> candidates;
@@ -93,6 +128,7 @@ class OwnershipInferencePass
         fieldBorrowReleases.clear();
         captureStores.clear();
         captureRetains.clear();
+        returnedParams.clear();
         returnsBorrowOf = resultBorrows(f);
 
         // first: whether a closure borrows what it captures changes what its box's stores are
@@ -125,7 +161,7 @@ class OwnershipInferencePass
             else if (mlir::isa<mlir_ts::RetainCellOp>(op))
             {
                 // a box taking a cell: a closure that borrows it (decideClosures) claimed it
-                if (!captureRetains.contains(op))
+                if (!captureRetains.contains(op) && reporting())
                 {
                     op->emitError("closures that capture a variable are not supported by -mm=own here yet");
                     signalPassFailure();
@@ -133,8 +169,11 @@ class OwnershipInferencePass
             }
             else if (mlir::isa<mlir_ts::DeleteOp>(op))
             {
-                op->emitError("'delete' is not supported by -mm=own yet");
-                signalPassFailure();
+                if (reporting())
+                {
+                    op->emitError("'delete' is not supported by -mm=own yet");
+                    signalPassFailure();
+                }
             }
             else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(op))
             {
@@ -181,7 +220,6 @@ class OwnershipInferencePass
         // two consuming declarations without a single retain (the result of an indirect call
         // taken by `let b = a; let c = a;`). Only a fresh value's retains can be erased.
         llvm::DenseSet<mlir::Value> proven;
-        llvm::SetVector<mlir::Operation *> toErase;
         for (auto value : candidates)
         {
             if (checkValueMoves(value, toErase) && isFresh(value))
@@ -341,6 +379,11 @@ class OwnershipInferencePass
         checkBoundedResults();
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
 
+        if (dryRun)
+        {
+            return failures == 0;
+        }
+
         for (auto *op : toErase)
         {
             op->erase();
@@ -357,6 +400,8 @@ class OwnershipInferencePass
                 op->removeAttr(name);
             }
         });
+
+        return true;
     }
 
   private:
@@ -372,6 +417,155 @@ class OwnershipInferencePass
 
     // While non-zero, verdicts are tried without reporting: the next verdict gets its turn first.
     unsigned quiet = 0;
+
+    // The dry run (spec 22.3): the whole analysis, but nothing reported and nothing changed. A
+    // report it would make is counted in `failures`.
+    bool dryRun = false;
+    unsigned failures = 0;
+    // attributes the dry run set on ops that did not have them, taken off again after it
+    llvm::SmallVector<std::pair<mlir::Operation *, mlir::StringAttr>> dryRunAttrs;
+
+    // Whether a report is to be emitted: not under `quietly`'s trial, and not in the dry run, which
+    // only counts it.
+    bool reporting()
+    {
+        if (quiet)
+        {
+            return false;
+        }
+
+        if (dryRun)
+        {
+            ++failures;
+            return false;
+        }
+
+        return true;
+    }
+
+    // `op->setAttr(name, unit)`, undone after the dry run when the op did not have it
+    void setAttrTracked(mlir::Operation *op, llvm::StringRef name)
+    {
+        auto attrName = mlir::StringAttr::get(&getContext(), name);
+        if (dryRun && !op->hasAttr(attrName))
+        {
+            dryRunAttrs.push_back({op, attrName});
+        }
+
+        op->setAttr(attrName, mlir::UnitAttr::get(&getContext()));
+    }
+
+    // Strings as values (spec 22.3): each string retain the dry run did not erase is rewritten, where
+    // its one use can be found, into a copy for that use.
+    void makeStringCopies(const llvm::SetVector<mlir::Operation *> &erased)
+    {
+        llvm::SmallVector<mlir::Operation *> retains;
+        getFunction()->walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::RetainSlotOp>(op) && !erased.contains(op) &&
+                !captureRetains.contains(op) && !fieldBorrowRetains.contains(op))
+            {
+                retains.push_back(op);
+            }
+        });
+
+        for (auto *retain : retains)
+        {
+            copyForRetain(retain);
+        }
+    }
+
+    // The value a parameter of this function is, when its callers were told this function keeps it
+    // or returns a borrow of it (spec 15): copying it would leak what the caller gave up.
+    bool borrowsKnownParam(mlir::Value value)
+    {
+        auto param = borrowedParam(value);
+        return param >= 0 && (llvm::is_contained(ownedParams(getFunction()), param) || param == returnsBorrowOf);
+    }
+
+    // Rewrites one string retain into a copy for the use it was made for (spec 22.3), and erases it;
+    // false, leaving it for the real run to report, where there is no single such use in its block,
+    // or the value is not a string or is a known parameter's (spec 22.4). Its use walk is takerOf's
+    // without the twinReadAfter fallback: a retain whose value has no use of its own is not copied,
+    // so its error stays.
+    bool copyForRetain(mlir::Operation *retain)
+    {
+        // `let x = v`: the local starts from a copy
+        if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(retain))
+        {
+            auto varOp = retainSlotOp.getSlot().getDefiningOp<mlir_ts::VariableOp>();
+            auto init = varOp ? varOp.getInitializer() : mlir::Value();
+            if (!init || !isCopyableString(init.getType()) || borrowsKnownParam(init) || isCellVariable(varOp.getResult()))
+            {
+                return false;
+            }
+
+            mlir::OpBuilder builder(varOp);
+            auto copy = builder.create<mlir_ts::StringCopyOp>(varOp.getLoc(), init.getType(), init);
+            varOp.getInitializerMutable().assign(copy);
+            retain->erase();
+            return true;
+        }
+
+        auto retainOp = mlir::cast<mlir_ts::RetainOp>(retain);
+        auto value = retainOp.getReference();
+        if (!isCopyableString(value.getType()) || borrowsKnownParam(value))
+        {
+            return false;
+        }
+
+        // the one use rc retained it for
+        mlir::OpOperand *taking = nullptr;
+        auto several = false;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user) || isBorrow(user, used))
+            {
+                return;
+            }
+
+            for (auto &operand : user->getOpOperands())
+            {
+                if (operand.get() == used)
+                {
+                    several = several || taking;
+                    taking = &operand;
+                }
+            }
+        });
+
+        if (!taking || several || !isCopyableString(taking->get().getType()))
+        {
+            return false;
+        }
+
+        // only a retain in the use's block: a copy made elsewhere (rc's birth retain, after the
+        // producer) has no owner on a path that does not reach the use; rc retains for the use
+        // beside it too
+        if (taking->getOwner()->getBlock() != retain->getBlock())
+        {
+            return false;
+        }
+
+        // made where rc took its reference: a store releases what it overwrites first, and that may
+        // be the very string (`b.s = b.s`), or one the analysis cannot tell from it (`b.s = a.s`)
+        auto *at = taking->getOwner();
+        auto *def = taking->get().getDefiningOp();
+        if (taking->get() == value || (def && def->getBlock() == retain->getBlock() && def->isBeforeInBlock(retain)))
+        {
+            // the use reads the copy, so the retain must come before it
+            if (!retain->isBeforeInBlock(taking->getOwner()))
+            {
+                return false;
+            }
+
+            at = retain;
+        }
+
+        mlir::OpBuilder builder(at);
+        auto copy = builder.create<mlir_ts::StringCopyOp>(retain->getLoc(), taking->get().getType(), taking->get());
+        taking->set(copy);
+        retain->erase();
+        return true;
+    }
 
     // The parameter this function's result borrows (`__own_result_borrows`), or -1; and the
     // parameters (or views of them) whose rc reference for the caller was already decided.
@@ -525,14 +719,14 @@ class OwnershipInferencePass
 
                 if (!closure->escape && !isCell)
                 {
-                    storeOp->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    setAttrTracked(storeOp, OWN_CAPTURE_BORROW_ATTR_NAME);
                     captureStores[storeOp] = closure.get();
                 }
             }
 
             if (!closure->escape)
             {
-                boundOp->setAttr(OWN_BORROWS_CAPTURES_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                setAttrTracked(boundOp, OWN_BORROWS_CAPTURES_ATTR_NAME);
             }
 
             closureOf[boundOp.getOperation()] = closure.get();
@@ -596,7 +790,7 @@ class OwnershipInferencePass
         getFunction().walk([&](mlir::Operation *op) {
             if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op); storeOp && isBorrowingField(storeOp.getReference()))
             {
-                storeOp->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                setAttrTracked(storeOp, OWN_CAPTURE_BORROW_ATTR_NAME);
                 if (auto *retain = retainBefore(storeOp.getValue(), storeOp))
                 {
                     fieldBorrowRetains.insert(retain);
@@ -992,7 +1186,7 @@ class OwnershipInferencePass
                 {
                     if (!mlir::isa<mlir_ts::RefType>(fill.second.getValue().getType()))
                     {
-                        fill.second->setAttr(OWN_CAPTURE_BORROW_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                        setAttrTracked(fill.second, OWN_CAPTURE_BORROW_ATTR_NAME);
                     }
                 }
             }
@@ -1534,7 +1728,7 @@ class OwnershipInferencePass
             {
                 if (mlir::isa<mlir_ts::ReleaseCellOp>(user))
                 {
-                    user->setAttr(OWN_CELL_BORROWS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                    setAttrTracked(user, OWN_CELL_BORROWS_ATTR_NAME);
                     continue;
                 }
 
@@ -2051,6 +2245,12 @@ class OwnershipInferencePass
                     {
                         return user;
                     }
+                }
+
+                // a copy (spec 22.2) reads the borrow into a block of its own, which points into nothing
+                if (mlir::isa<mlir_ts::StringCopyOp>(user))
+                {
+                    continue;
                 }
 
                 // A result that borrows what it was given borrows this too, and is walked as it.
@@ -3067,7 +3267,7 @@ class OwnershipInferencePass
                       mlir_ts::ThisSymbolRefOp, mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
                       mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp, mlir_ts::StringConcatOp,
-                      mlir_ts::StringResizeOp, mlir_ts::StringLengthOp>(user))
+                      mlir_ts::StringResizeOp, mlir_ts::StringLengthOp, mlir_ts::StringCopyOp>(user))
         {
             return true;
         }
@@ -3777,7 +3977,7 @@ class OwnershipInferencePass
     // 21.2); anything else, the catch-all.
     void reportSecondReference(mlir::Operation *op, mlir::Value value = {})
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -3998,7 +4198,7 @@ class OwnershipInferencePass
 
     void reportKeptOnSomePaths(mlir::Operation *move, mlir::Operation *exit, llvm::StringRef name)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4012,7 +4212,7 @@ class OwnershipInferencePass
 
     void reportGivenNotOwned(mlir::Operation *call, mlir::Value arg)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4036,7 +4236,7 @@ class OwnershipInferencePass
 
     void reportUseAfterMove(mlir::Operation *use, mlir::Operation *move, llvm::StringRef name)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4048,7 +4248,7 @@ class OwnershipInferencePass
 
     void reportMovedInLoop(mlir::Operation *move, llvm::StringRef name)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4061,7 +4261,7 @@ class OwnershipInferencePass
 
     void reportBorrowOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef name, llvm::StringRef owner)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4075,7 +4275,7 @@ class OwnershipInferencePass
     void reportPlaceBorrowOutlives(mlir::Operation *use, mlir::Operation *drop, llvm::StringRef name,
                                    llvm::StringRef place)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4088,7 +4288,7 @@ class OwnershipInferencePass
 
     void reportPlaceBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4099,7 +4299,7 @@ class OwnershipInferencePass
 
     void reportPlaceBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef place)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4111,7 +4311,7 @@ class OwnershipInferencePass
 
     void reportMovedWhileBorrowed(mlir::Operation *op, llvm::StringRef owner, llvm::StringRef borrower)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4123,7 +4323,7 @@ class OwnershipInferencePass
 
     void reportBorrowEscapes(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4135,7 +4335,7 @@ class OwnershipInferencePass
 
     void reportBorrowerAssigned(mlir::Operation *op, llvm::StringRef name, llvm::StringRef owner)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
@@ -4146,6 +4346,11 @@ class OwnershipInferencePass
 
     void reportEscapingCellNotOwned(mlir::Operation *capture, mlir::Operation *escape, llvm::StringRef why)
     {
+        if (!reporting())
+        {
+            return;
+        }
+
         auto diag = capture->emitError("a closure that escapes owns what it captures, but -mm=own cannot move this "
                                        "variable into it: ")
                     << why;
@@ -4155,6 +4360,11 @@ class OwnershipInferencePass
 
     void reportUsedAfterEscapingCapture(mlir::Operation *use, mlir::Operation *capture, llvm::StringRef name)
     {
+        if (!reporting())
+        {
+            return;
+        }
+
         auto diag = use->emitError("'") << name << "' is captured by a closure that escapes, and is still used here";
         diag.attachNote(capture->getLoc()) << "the closure takes it here";
         signalPassFailure();
@@ -4163,6 +4373,11 @@ class OwnershipInferencePass
     void reportClosureOutlives(mlir::Operation *use, mlir::Operation *end, llvm::StringRef closure,
                                llvm::StringRef captured)
     {
+        if (!reporting())
+        {
+            return;
+        }
+
         auto diag = use->emitError("'") << closure << "' borrows '" << captured << "', which it captures, but runs here after '"
                                         << captured << "' is released";
         diag.attachNote(end->getLoc()) << "'" << captured << "' is released here";
@@ -4171,12 +4386,22 @@ class OwnershipInferencePass
 
     void reportCaptureNotOwned(mlir::Operation *op, llvm::StringRef captured)
     {
+        if (!reporting())
+        {
+            return;
+        }
+
         op->emitError("'") << captured << "' is captured by a closure, but -mm=own cannot tell who owns its value here";
         signalPassFailure();
     }
 
     void reportCapturedParamAssigned(mlir::Operation *op, llvm::StringRef name)
     {
+        if (!reporting())
+        {
+            return;
+        }
+
         op->emitError("'") << name
                            << "' is a captured parameter and cannot be assigned under -mm=own: its value is the "
                               "caller's";
@@ -4185,7 +4410,7 @@ class OwnershipInferencePass
 
     void reportMovedOnSomePaths(mlir::Operation *move, mlir::Operation *release, llvm::StringRef name)
     {
-        if (quiet)
+        if (!reporting())
         {
             return;
         }
