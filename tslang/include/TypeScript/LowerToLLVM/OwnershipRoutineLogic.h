@@ -11,6 +11,7 @@
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/ArrayLayout.h"
 #include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -1161,9 +1162,8 @@ class OwnershipRoutineLogic
         // already holds whatever the elements own
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
-            auto llvmArrayType = tch.convertType(arrayType);
-            auto dataSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmArrayType, slotPtr,
-                                                         ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+            ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
+            auto dataSlot = layout.dataAddress(arrayType, layout.headerForRead(arrayType, slotPtr));
             emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot));
             return;
         }
@@ -1285,18 +1285,17 @@ class OwnershipRoutineLogic
         auto loc = op->getLoc();
         auto ptrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
-        auto llvmArrayType = tch.convertType(arrayType);
 
-        auto dataSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmArrayType, slotPtr,
-                                                     ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
+        ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
+        auto header = layout.headerForRead(arrayType, slotPtr);
+        auto dataSlot = layout.dataAddress(arrayType, header);
         auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
         emitIfLastReference(dataValue, [&]() {
             auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
             if (!elementRoutine.empty())
             {
-                auto sizeSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmArrayType, slotPtr,
-                                                             ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+                auto sizeSlot = layout.lengthAddress(arrayType, header);
                 auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, sizeSlot);
 
                 emitCountedLoop(sizeValue, [&](mlir::Value index) {
