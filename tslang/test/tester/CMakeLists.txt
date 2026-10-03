@@ -2570,8 +2570,12 @@ foreach(argv_emit exe obj)
                          PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# The DLL is linked, so it is given what it links from the build tree rather than the environment:
+# -mm=none needs only the runtime library (gc would need the shared collector too), and the check
+# does not depend on the model.
 add_test(NAME test-compile-main-argv-string-array-dll-no-error
-         COMMAND $<TARGET_FILE:tslang> --emit=dll --no-default-lib "${main_argv_file}"
+         COMMAND $<TARGET_FILE:tslang> --emit=dll --no-default-lib -mm=none
+                 "--tslang-lib-path=${CMAKE_BINARY_DIR}/lib" "${main_argv_file}"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.dll")
 set_tests_properties(test-compile-main-argv-string-array-dll-no-error
                      PROPERTIES FAIL_REGULAR_EXPRESSION "takes argv as Ref<string>|Stack dump|Assertion failed")
