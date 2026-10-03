@@ -4454,6 +4454,13 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         globalOp.getInitializerRegion().walk(visitorAllOps);
 
+        // a branch in the initializer (a conditional, an optional widened into a union) has left
+        // it more than one block, which only a function can hold (#462)
+        if (!globalOp.getInitializerRegion().empty() && !globalOp.getInitializerRegion().hasOneBlock())
+        {
+            createAsGlobalConstructor = true;
+        }
+
         auto linkage = globalOp.getLinkage();
         LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)

@@ -430,6 +430,7 @@ tslang_add_test(NAME test-compile-00-throw-f32 COMMAND test-runner "${PROJECT_SO
 tslang_add_test(NAME test-compile-00-throw-u32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_u32.ts")
 tslang_add_test(NAME test-compile-00-cast-to-f32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-compile-00-instanceof-namespace-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_namespace_narrowing.ts")
+tslang_add_test(NAME test-compile-00-global-initializer-branches COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_initializer_branches.ts")
 tslang_add_test(NAME test-compile-00-using-nested-scopes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-compile-00-using-unwind-progress COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-compile-00-break-continue-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -917,6 +918,7 @@ tslang_add_test(NAME test-jit-00-throw-f32 COMMAND test-runner -jit "${PROJECT_S
 tslang_add_test(NAME test-jit-00-throw-u32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00throw_u32.ts")
 tslang_add_test(NAME test-jit-00-cast-to-f32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cast_to_f32.ts")
 tslang_add_test(NAME test-jit-00-instanceof-namespace-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_namespace_narrowing.ts")
+tslang_add_test(NAME test-jit-00-global-initializer-branches COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_initializer_branches.ts")
 tslang_add_test(NAME test-jit-00-using-nested-scopes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_nested_scopes.ts")
 tslang_add_test(NAME test-jit-00-using-unwind-progress COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_progress.ts")
 tslang_add_test(NAME test-jit-00-break-continue-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue_scope_exit.ts")
@@ -1779,6 +1781,7 @@ set(TSLANG_CORPUS
     00instanceof.ts
     00const_of_let.ts
     00instanceof_namespace_narrowing.ts
+    00global_initializer_branches.ts
     00instanceof_union.ts
     00nullable_to_any.ts
     00ternary_new_or_null.ts

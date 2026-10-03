@@ -2215,8 +2215,11 @@ def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
   }];
 }
 
+// The initializer is one block as MLIRGen builds it, ending in ts.GlobalResult; lowering a branch
+// in it (a conditional, an optional widened into a union) adds blocks, and GlobalOpLowering then
+// makes the global a constructor (#462).
 def TypeScript_GlobalOp : TypeScript_Op<"Global",
-    [IsolatedFromAbove, SingleBlockImplicitTerminator<"GlobalResultOp">, Symbol]> {
+    [IsolatedFromAbove, Symbol]> {
   let arguments = (ins
     TypeAttr:$type,
     UnitAttr:$constant,

@@ -304,6 +304,77 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
+            // An optional widened into a union (`let g: C | null | undefined = mkU()`, #462) is a
+            // ts.If over the call made before it: each branch yields that call's value through
+            // views, or a value that holds nothing (the empty optional). The global takes the call's
+            // count, as it would take the call's straight.
+            if (auto ifOp = value.getDefiningOp<mlir_ts::IfOp>())
+            {
+                auto throughViews = [](mlir::Value yielded) {
+                    while (auto *definingOp = yielded.getDefiningOp())
+                    {
+                        if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(definingOp))
+                        {
+                            yielded = castOp.getIn();
+                        }
+                        else if (auto optionalValueOp = mlir::dyn_cast<mlir_ts::OptionalValueOp>(definingOp))
+                        {
+                            yielded = optionalValueOp.getIn();
+                        }
+                        else if (auto createUnionInstanceOp = mlir::dyn_cast<mlir_ts::CreateUnionInstanceOp>(definingOp))
+                        {
+                            yielded = createUnionInstanceOp.getIn();
+                        }
+                        else if (auto valueOp = mlir::dyn_cast<mlir_ts::ValueOp>(definingOp))
+                        {
+                            yielded = valueOp.getIn();
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+
+                    return yielded;
+                };
+
+                mlir::Value producer;
+                auto agrees = true;
+                for (auto &region : ifOp->getRegions())
+                {
+                    auto resultOp = region.empty() ? mlir_ts::ResultOp()
+                                                   : mlir::dyn_cast<mlir_ts::ResultOp>(region.back().getTerminator());
+                    if (!resultOp || resultOp->getNumOperands() != 1)
+                    {
+                        agrees = false;
+                        break;
+                    }
+
+                    auto yielded = throughViews(resultOp->getOperand(0));
+                    auto *yieldedOp = yielded.getDefiningOp();
+                    if (yieldedOp && mlir::isa<mlir_ts::OptionalUndefOp, mlir_ts::NullOp, mlir_ts::UndefOp>(yieldedOp))
+                    {
+                        continue;
+                    }
+
+                    if (producer && producer != yielded)
+                    {
+                        agrees = false;
+                        break;
+                    }
+
+                    producer = yielded;
+                }
+
+                if (agrees && producer && producesOwnedResult(producer) &&
+                    !ifOp->isAncestor(producer.getDefiningOp()))
+                {
+                    producer.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME,
+                                                      mlir::UnitAttr::get(&getContext()));
+                    return;
+                }
+            }
+
             // An object literal (`let o = { s: mk() }`) is built in a temporary slot and read out
             // whole: what its fields were given goes into the global with it (#461), nested
             // literals included.
