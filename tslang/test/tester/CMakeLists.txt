@@ -479,6 +479,7 @@ tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-compile-00-global-from-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-compile-00-try-cleanup-then-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
@@ -972,6 +973,7 @@ tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-jit-00-global-from-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-jit-00-try-cleanup-then-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
@@ -1783,6 +1785,7 @@ set(TSLANG_CORPUS
     00if_return.ts
     00in_method_names.ts
     00in.ts
+    00global_from_global.ts
     00try_cleanup_then_catch.ts
     00global_object_literal.ts
     00infer.ts
