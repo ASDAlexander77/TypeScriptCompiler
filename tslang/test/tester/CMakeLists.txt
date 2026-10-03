@@ -342,6 +342,7 @@ tslang_add_test(NAME test-compile-00-array-splice COMMAND test-runner "${PROJECT
 tslang_add_test(NAME test-compile-00-const-array-push COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_push.ts")
 tslang_add_test(NAME test-compile-00-array-spread-args COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_spread_args.ts")
 tslang_add_test(NAME test-compile-00-arrays5-deconstruct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
+tslang_add_test(NAME test-compile-00-array-rest-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -836,6 +837,7 @@ tslang_add_test(NAME test-jit-00-array-splice COMMAND test-runner -jit "${PROJEC
 tslang_add_test(NAME test-jit-00-const-array-push COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_push.ts")
 tslang_add_test(NAME test-jit-00-array-spread-args COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_spread_args.ts")
 tslang_add_test(NAME test-jit-00-arrays5-deconstruct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
+tslang_add_test(NAME test-jit-00-array-rest-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -1659,6 +1661,7 @@ set(TSLANG_CORPUS
     00array3.ts
     00array4_push_pop.ts
     00array5_deconst.ts
+    00array_rest_copy.ts
     00array6.ts
     00array7.ts
     00array8_tuple_spread.ts

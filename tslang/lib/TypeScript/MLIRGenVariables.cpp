@@ -7,6 +7,71 @@ namespace typescript
 namespace mlirgen
 {
 
+    // `[a, ...rest] = src`: rest is a new array holding src[index..] (#477) - built as
+    //   let .rest_n = .rest_src.length - index; if (.rest_n < 0) .rest_n = 0;
+    //   .rest = new array(.rest_n); for (let .rest_i = 0; .rest_i < .rest_n; ++.rest_i) .rest[.rest_i] = .rest_src[.rest_i + index];
+    // the elements are written into the new array in place, so no second variable holds the same storage
+    ValueOrLogicalResult MLIRGenImpl::mlirGenArrayRestCopy(mlir::Location location, mlir_ts::ArrayType arrayType, mlir::Value source,
+                                                  int64_t index, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto srcVarDecl = std::make_shared<VariableDeclarationDOM>(".rest_src", arrayType, location);
+        DECLARE(srcVarDecl, source);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto _src = nf.createIdentifier(S(".rest_src"));
+        auto _dst = nf.createIdentifier(S(".rest"));
+        auto _n = nf.createIdentifier(S(".rest_n"));
+        auto _i = nf.createIdentifier(S(".rest_i"));
+        auto _index = [&]() { return nf.createNumericLiteral(stows(std::to_string(index))); };
+        auto _zero = [&]() { return nf.createNumericLiteral(S("0")); };
+
+        // let .rest_n = .rest_src.length - index; if (.rest_n < 0) .rest_n = 0;
+        NodeArray<VariableDeclaration> countDeclarations;
+        countDeclarations.push_back(nf.createVariableDeclaration(
+            _n, undefined, undefined,
+            nf.createBinaryExpression(nf.createPropertyAccessExpression(_src, nf.createIdentifier(S(LENGTH_FIELD_NAME))),
+                                      nf.createToken(SyntaxKind::MinusToken), _index())));
+        if (mlir::failed(mlirGen(nf.createVariableStatement(undefined, nf.createVariableDeclarationList(countDeclarations, NodeFlags::Let)), genContext)))
+        {
+            return mlir::failure();
+        }
+
+        auto clamp = nf.createIfStatement(
+            nf.createBinaryExpression(_n, nf.createToken(SyntaxKind::LessThanToken), _zero()),
+            nf.createExpressionStatement(nf.createBinaryExpression(_n, nf.createToken(SyntaxKind::EqualsToken), _zero())), undefined);
+        if (mlir::failed(mlirGen(clamp, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        auto count = resolveIdentifier(location, ".rest_n", genContext);
+        auto countAsIndex = cast(location, builder.getIndexType(), count, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(countAsIndex)
+
+        auto newArray = builder.create<mlir_ts::NewArrayOp>(location, arrayType, countAsIndex);
+        auto dstVarDecl = std::make_shared<VariableDeclarationDOM>(".rest", arrayType, location);
+        DECLARE(dstVarDecl, newArray);
+
+        // for (let .rest_i = 0; .rest_i < .rest_n; ++.rest_i) .rest[.rest_i] = .rest_src[.rest_i + index];
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, _zero()));
+        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
+        auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), _n);
+        auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+        auto assign = nf.createExpressionStatement(nf.createBinaryExpression(
+            nf.createElementAccessExpression(_dst, _i), nf.createToken(SyntaxKind::EqualsToken),
+            nf.createElementAccessExpression(_src, nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::PlusToken), _index()))));
+
+        if (mlir::failed(mlirGen(nf.createForStatement(initVars, cond, incr, assign), genContext)))
+        {
+            return mlir::failure();
+        }
+
+        return V(newArray);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
                                                        const GenContext &genContext)
     {
@@ -328,8 +393,6 @@ namespace mlirgen
                 .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
                     if (isDotDotDot)
                     {   
-                        auto indexType = builder.getIndexType();
-
                         auto arrayType = mth.removeConstType(constArrayType);
 
                         auto arrayValue = cast(location, arrayType, init, genContext);
@@ -338,23 +401,7 @@ namespace mlirgen
                             return mlir::Value();
                         }
 
-                        auto constIndex = builder.create<mlir_ts::ConstantOp>(
-                            location, indexType, builder.getIndexAttr(index));
-
-                        auto length = builder.create<mlir_ts::LengthOfOp>(location, indexType, arrayValue);
-
-                        auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), length, constIndex);
-
-                        mlir::Value arrayViewValue =
-                            builder.create<mlir_ts::ArrayViewOp>(
-                                location, 
-                                arrayType, 
-                                arrayValue, 
-                                constIndex, 
-                                count);                        
-
-                        return arrayViewValue;
+                        return V(mlirGenArrayRestCopy(location, mlir::cast<mlir_ts::ArrayType>(arrayType), arrayValue, index, genContext));
                     }
 
                     // TODO: unify it with ElementAccess
@@ -368,25 +415,7 @@ namespace mlirgen
 
                     if (isDotDotDot)
                     {   
-                        auto indexType = builder.getIndexType();
-
-                        auto constIndex = builder.create<mlir_ts::ConstantOp>(
-                            location, indexType, builder.getIndexAttr(index));
-
-                        auto length = builder.create<mlir_ts::LengthOfOp>(location, indexType, init);
-
-                        auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), length, constIndex);
-
-                        mlir::Value arrayViewValue =
-                            builder.create<mlir_ts::ArrayViewOp>(
-                                location, 
-                                arrayType, 
-                                init, 
-                                constIndex, 
-                                count);                        
-
-                        return arrayViewValue;
+                        return V(mlirGenArrayRestCopy(location, arrayType, init, index, genContext));
                     }
 
                     // TODO: unify it with ElementAccess

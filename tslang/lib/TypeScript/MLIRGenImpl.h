@@ -12116,6 +12116,9 @@ class MLIRGenImpl
     std::optional<ValueOrLogicalResult> castConstArrayToArray(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
     std::optional<ValueOrLogicalResult> castArrayElementwise(mlir::Location location, mlir_ts::ArrayType arrayType, mlir::Value value, mlir_ts::ArrayType srcArrayType, const GenContext &genContext);
 
+    // `[a, ...rest] = src`: rest as a new array filled by a push loop (#477)
+    ValueOrLogicalResult mlirGenArrayRestCopy(mlir::Location location, mlir_ts::ArrayType arrayType, mlir::Value source, int64_t index, const GenContext &genContext);
+
     // reports which part of a function signature does not match the one it is assigned to
     void emitFunctionTypeMismatch(mlir::Location location, mlir::Type valueType, mlir::Type type, MatchResult match);
 
