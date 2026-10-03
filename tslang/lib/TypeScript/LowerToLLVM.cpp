@@ -2744,6 +2744,14 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // a collected build is meant to come out of this step byte-identical.
             rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
         }
+        else if (!value && isa<mlir_ts::ArrayType>(referenceType.getElementType()))
+        {
+            // `let a: T[];`: an array is a header pointer, and reading one out of an unwritten
+            // slot - even only to its data - branches on whatever the frame held, which the
+            // optimizer may take as unreachable (newWithSpread.ts's `let g: C[]; g[1]` faulted).
+            // Null is no array, which reads as empty (array-reference spec, ruling R1)
+            rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
+        }
 
         if (value)
         {
