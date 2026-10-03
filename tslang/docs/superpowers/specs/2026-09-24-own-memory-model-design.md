@@ -7,8 +7,9 @@ amendments folded in. Phase 0 merged as #399 (results §11); phase 1
 signatures and `any`) merged as #406-#410 (results §15); phase 5a (closures that do not escape)
 merged as #436 (results §16); phase 5b (closures that escape) merged as #437 (results §17); phase
 7a (generators, async) merged as #439 (results §18); phase 7b (generators that borrow) merged as
-#441 (results §19); phase 6 (the corpus report) on branch `own-phase-6`, after #444 (results
-§20). Plans in `docs/superpowers/plans/`.
+#441 (results §19); phase 6 (the corpus report) merged as #444, #445 and #449 (results
+§20, §21); strings as values merged as #452 (§22); phase 8 (`Shared<T>`) designed in §23. Plans
+in `docs/superpowers/plans/`.
 
 ## 1. Purpose
 
@@ -2073,3 +2074,146 @@ positives under own, rc, none and gc, AOT and JIT) passes 48 of 48. After the fi
   answer). Both disagreements are safe: where the pass sees a tag there is no copy, and the error
   stays; where only the lowering sees one, `ts.StringCopy` fails to match (`notifyMatchFailure`),
   and the build fails loudly.
+
+## 23. `Shared<T>` (design, 2026-10-03)
+
+Phase 8 (§7). §2.7 deferred it: an explicit, counted generic for graphs that a tree of single
+owners cannot express (a parent link, a node in two lists, a DAG), reusing rc's retain and release
+routines for that type only. Everything else stays single-owner and uncounted.
+
+Decisions taken in the design conversation:
+
+| Question | Decision |
+| --- | --- |
+| Form | A wrapper: a handle to a block that holds one `T` and the count. Not a marker on `T` itself |
+| Where it is declared | Built into the compiler, so `--no-default-lib` programs and every model have it |
+| Members | `.value` read and write, `===`/`!==` on handles, `Shared.count(s)` |
+| Handles under own | Own steps aside: every rc retain and release of a handle stays and is counted |
+| Cycles | Leak, as under rc, and documented; `WeakRef<T>` under own is a later phase |
+
+### 23.1 The type and its members
+
+```ts
+class Node {
+    v = 0;
+    next: Shared<Node> | null = null;
+}
+
+const a = new Shared(new Node());
+const b = a;                 // a second handle: the count is 2
+a.value.v = 1;
+print(b.value.v);            // 1
+b.value = new Node();        // the old Node is released, the new one moves in
+print(Shared.count(a), a === b);
+```
+
+- **The type.** `Shared<T>` is resolved by name in `MLIRGenTypes` beside `Reference<T>` and
+  `BoxedObject<T>`, to a new `!ts.shared<T>`. A program's own declaration of a type named `Shared`
+  is found first and wins, as for every embedded name.
+- **At run time** a handle is a pointer to a heap block: the header word is the count, and the
+  payload is one `T` in its storage type.
+- **`new Shared(x)`** is `ts.SharedNew`: it allocates the block and stores `x` into it, which is a
+  store into a container (§2.3): `x` moves in.
+- **`s.value`** is `ts.SharedValue`, a read out of a container: a borrow of the `T` (§23.3).
+- **`s.value = x`** is `ts.SharedStore`: `x` moves in, and the old `T` is released, as a field
+  store does.
+- **`a === b` and `a !== b`** compare the pointers.
+- **`Shared.count(s)`** reads the header: the number of handles under rc and own, `-1` under gc
+  and none, which keep no count.
+- **A program means the same under every model.** gc and none get a wrapper that is never
+  counted. rc counts it as it counts every block. Own counts this type and no other.
+- **Other uses of the type.** A handle can be a field, an element, a union member (`Shared<T> |
+  null` is one pointer), a capture, a parameter, a result, or boxed into `any`. It goes into a
+  module's `__decls` as `Shared<T>`, so a module that imports it sees the same type.
+
+### 23.2 Handles under own: the analysis steps aside
+
+- **MLIRGen emits rc's ops for handles under own too.** It emits the same `ts.Retain`,
+  `ts.RetainSlot`, releases and `__owned_consumed` declarations for a `!ts.shared` value under rc
+  and own, because both track ownership (§3.1). That is unchanged.
+- **The inference pass leaves every retain and release of a handle in place.** A handle is a value of
+  type `!ts.shared<T>`, or a tag-free union or an optional of one with `null` or `undefined`
+  (one pointer, as in §22.1). The pass never erases such a retain or release, and never reports one. A handle's count is therefore exactly rc's, which rc's own
+  suite tests.
+- **Lowering.** Under own, a surviving retain of a `!ts.shared` value no longer reports "left a
+  retain behind"; it lowers to `__tslang_inc_ref`, as under rc.
+- **The release routine** of a `!ts.shared` value is the same in every model that tracks
+  ownership: `__tslang_dec_ref`, and at zero, release the payload `T` and free the block.
+- **The `T` is released by its model's routine.** Under own, that is a single-owner drop: free
+  unless immortal, after releasing the `T`'s own fields.
+- **Inside a container.** Everything outside the handle is ordinary own analysis. A handle stored
+  in a field, element, union or closure is a value the container owns, and the container's drop
+  releases it through the routine above.
+- **The type descriptor.** An `any` box, a union or an interface releases what it holds through the
+  type's descriptor, so `!ts.shared` gets a descriptor whose release slot is its routine.
+- **Not in this phase.** Eliding the count for a handle own could prove moved or borrowed. That
+  would need a birth convention for handles that differs from rc's (rc counts the birth with a
+  retain own would erase), so it is left for a measured later step.
+
+### 23.3 Reading through a handle
+
+Under own, no other path reaches a block while its owner holds it. That is why a borrow out of a
+container ends only at the container's own release or overwrite. A `Shared` breaks that: two
+handles can reach one block.
+
+```ts
+const n = a.value;           // a borrow of the Node
+b.value = new Node();        // if b is a, this frees the Node n borrows
+print(n.v);                  // rejected
+```
+
+- **The rule.** A borrow read through a handle, at any depth (`s.value`, `s.value.name`,
+  `s.value.items[0]`), ends at the first of:
+  - the handle's own release or overwrite (the existing rule);
+  - a write into any place reached through any `Shared`: `x.value = …`, `x.value.f = …`, an
+    element store, `push` or `pop` on an array reached through one;
+  - a call that is not known to drop nothing (`__own_no_drops`, §15).
+- **A handle copied out is a counted retain, not a borrow.** `cur = cur.value.next` gives `cur` a
+  handle of its own, which no write ends. That is how a graph is walked, so walking is not
+  restricted.
+- **The error** is the existing "borrows a field but is used here after it may be released or
+  overwritten".
+- **Conservative by design.** It does not check whether two handles could be the same: any write
+  through any handle, and any call that may drop, ends every such borrow. The alternative is a
+  runtime borrow flag, Rust's `RefCell`, which costs at run time; it is not taken.
+- **A string read through a handle** is a borrow too. Where one of rc's retains survives, §22
+  makes it a copy, as for any field.
+
+### 23.4 Cycles
+
+`a.value.next = b; b.value.next = a` leaks both blocks, as under rc. The test
+`own_shared_cycle` shows that it compiles and runs, and §23.7 (the results) records it.
+
+### 23.5 The verifier
+
+`--verify-ownership` (§9.18 of the rc document) runs before the own passes. It checks that every
+slot that takes a reference gives it back on every path. Handles keep rc's pairing, so it needs no
+change. It runs on every `own_shared_*` test, under own and rc.
+
+### 23.6 Tests and measures
+
+- **Positive**, under own, rc, none and gc, AOT and JIT:
+  - `own_shared_basic`: two handles, `.value` read and write, `===`.
+  - `own_shared_graph`: a doubly linked list and a node with a parent link, walked with
+    `cur = cur.value.next`.
+  - `own_shared_containers`: one node in two arrays, a `Shared<T> | null` field, a closure
+    capturing a handle, a handle boxed into `any` and back, a handle returned from a function.
+  - `own_shared_cycle`: a cycle that is never freed, which still runs.
+
+  Each frees every handle but one, then allocates over the freed memory (the churn pattern)
+  before reading through the one left. An early free then reads reused memory.
+- **Under own and rc only:** `own_shared_count`, which asserts `Shared.count` after each copy and
+  drop.
+- **Negative:**
+  - `own_err_shared_borrow_write`: the §23.3 example;
+  - `own_err_shared_borrow_call`: a borrow through a handle used after a call that may drop;
+  - `own_err_shared_moved_in`: a class value given to `new Shared(x)` and then used, which is a
+    use after move.
+- **Teeth:**
+  - with the inference pass erasing a handle's retains as for any value, the positives fail;
+  - with §23.3's rule off, its negatives compile.
+- **Verifier:** `--verify-ownership` is quiet on every `own_shared_*` file.
+- **Measured:** a loop that builds and drops a small graph of handles 200,000 times stays flat
+  under own and rc (`measure.ps1`), and grows under none.
+- **Unchanged:** no corpus file uses `Shared`, so the corpus (453 / 593 plain, 451 with `--opt`)
+  must be unchanged, and its LLVM IR identical for every file that compiles, as in §22.7.
