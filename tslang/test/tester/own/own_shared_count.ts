@@ -2,7 +2,7 @@
 // function that keeps it, returned from one, reassigned to the block it holds, copied in a loop, held
 // by another block that dies, replaced in a block by `s.value = x`, and captured as a parameter by a
 // closure and by one that escapes; a narrowed `Shared<T> | null`, a handle boxed into `any` and read
-// back out, and a handle given to a generator.
+// back out, and a handle given to a generator, also one that outlives the caller's handle.
 class Node {
     v = 0;
 }
@@ -49,6 +49,25 @@ function walkCounts(s: Shared<Node>) {
     const seen: number[] = [];
     for (const c of counts(s)) seen.push(c);
     return seen;
+}
+
+// a generator that reads its handle parameter again after the caller has dropped its own handle:
+// the generator's count is the block's last
+function* readsLater(s: Shared<Node>) {
+    yield Shared.count(s);
+    yield s.value.v;
+    yield Shared.count(s);
+}
+
+function churn() {
+    let keep: Node[] = [];
+    for (let i = 0; i < 1000; i++) {
+        const n = new Node();
+        n.v = -i;
+        keep.push(n);
+    }
+
+    return keep.length;
 }
 
 // handles copied inside a generator live in its state object, and are read by Shared.count there
@@ -149,6 +168,17 @@ function main() {
     const copied: number[] = [];
     for (const c of copies()) copied.push(c);
     assert(copied.length == 2 && copied[0] == 2 && copied[1] == 3, "handles copied inside a generator");
+
+    // the caller's handle replaced while a generator holds the block: the generator's count keeps it
+    let d = new Shared(new Node());
+    d.value.v = 42;
+    const later = readsLater(d);
+    assert(later.next().value == 2, "the generator holds a count");
+    d = new Shared(new Node());
+    assert(churn() == 1000);
+    assert(later.next().value == 42, "the generator's block is alive after the caller's handle is dropped");
+    assert(later.next().value == 1, "the generator's count is the block's last");
+    assert(Shared.count(d) == 1);
 
     print("done.");
 }

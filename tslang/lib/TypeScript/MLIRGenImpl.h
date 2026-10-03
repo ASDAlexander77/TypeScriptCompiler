@@ -1995,18 +1995,8 @@ class MLIRGenImpl
         }
 
         // A handle global (own spec 23.1) takes over the reference its initializer carries, through
-        // the cast to its type as well: `let g: Shared<T> | null = new Shared(x)`. Left unclaimed,
-        // the reference is a discarded temporary (§9.30), given back at the end of the region,
-        // and the global is born holding a block nobody counts.
-        if (MLIRTypeHelper::isSharedHandleType(variableDeclarationInfo.type))
-        {
-            if (auto castOp = variableDeclarationInfo.initial.getDefiningOp<mlir_ts::CastOp>();
-                castOp && producesOwnedReference(castOp.getIn()))
-            {
-                consumeOwnedReference(castOp.getIn());
-            }
-        }
-
+        // a view of its type as well (`let g: Shared<T> | null = mk()`): OwnedReturnConsumptionPass
+        // claims it (claimHandleGlobalInitializers), once a call's result is known to carry one.
         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{variableDeclarationInfo.initial});
 
         return mlir::success();
