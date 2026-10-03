@@ -62,6 +62,13 @@ struct TsLlvmContext
     TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions) {};
 
     CompileOptions& compileOptions;
+
+    // the priority of the next global's own constructor, above every one MLIRGen made: LLVM leaves
+    // the order of equal priorities undefined, and a global may read one made before it (#446)
+    int64_t nextGlobalConstructorPriority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
+
+    // the calls put into __mlir_gctors so far, with their priorities, to keep them in that order
+    std::vector<std::pair<int64_t, mlir::Operation *>> globalConstructorCalls;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -4523,7 +4530,8 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 lch.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
 
                 rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
-                    FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)), rewriter.getIndexAttr(1000));
+                    FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)),
+                    rewriter.getIndexAttr(tsLlvmContext->nextGlobalConstructorPriority++));
             }
         }
         else
@@ -6737,6 +6745,27 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
     }
 };
 
+// the body of __mlir_gctors, whichever function op it is by now
+static mlir::Region *gctorsBodyOf(mlir::Operation *op)
+{
+    if (auto llvmFunc = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
+    {
+        return &llvmFunc.getBody();
+    }
+
+    if (auto tsFunc = dyn_cast_or_null<mlir_ts::FuncOp>(op))
+    {
+        return &tsFunc.getBody();
+    }
+
+    if (auto func = dyn_cast_or_null<func::FuncOp>(op))
+    {
+        return &func.getBody();
+    }
+
+    return nullptr;
+}
+
 struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstructorOp>
 {
     using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
@@ -6774,51 +6803,37 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 
-                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+                auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+                tsLlvmContext->globalConstructorCalls.push_back({(int64_t)priority, callOp});
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
             }
-            else if (auto llvmGCtors = dyn_cast_or_null<LLVM::LLVMFuncOp>(mlirGCtors))
+            else if (auto *gctorsBody = gctorsBodyOf(mlirGCtors))
             {
+                // in priority order, each after the ones before it (#446): before the first call
+                // already here with a higher priority, else after the last one here
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                if (priority <= 1000)
+                auto &calls = tsLlvmContext->globalConstructorCalls;
+                auto later = llvm::find_if(calls, [&](auto &entry) { return entry.first > (int64_t)priority; });
+                if (later != calls.end())
                 {
-                    rewriter.setInsertionPointToStart(&llvmGCtors.getBody().front());
+                    rewriter.setInsertionPoint(later->second);
+                }
+                else if (!calls.empty())
+                {
+                    rewriter.setInsertionPointAfter(calls.back().second);
+                }
+                else if (priority <= 1000)
+                {
+                    rewriter.setInsertionPointToStart(&gctorsBody->front());
                 }
                 else
                 {
-                    rewriter.setInsertionPoint(llvmGCtors.getBody().back().getTerminator());
+                    rewriter.setInsertionPoint(gctorsBody->back().getTerminator());
                 }
 
-                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+                auto callOp = rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+                calls.insert(later, {(int64_t)priority, callOp});
             }
-            else if (auto tsFuncGCtors = dyn_cast_or_null<mlir_ts::FuncOp>(mlirGCtors))
-            {
-                OpBuilder::InsertionGuard insertGuard(rewriter);
-                if (priority <= 1000)
-                {
-                    rewriter.setInsertionPointToStart(&tsFuncGCtors.getBody().front());
-                }
-                else
-                {
-                    rewriter.setInsertionPoint(tsFuncGCtors.getBody().back().getTerminator());
-                }
-
-                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
-            }
-            else if (auto funcGCtors = dyn_cast_or_null<func::FuncOp>(mlirGCtors))
-            {
-                OpBuilder::InsertionGuard insertGuard(rewriter);
-                if (priority <= 1000)
-                {
-                    rewriter.setInsertionPointToStart(&funcGCtors.getBody().front());
-                }
-                else
-                {
-                    rewriter.setInsertionPoint(funcGCtors.getBody().back().getTerminator());
-                }
-
-                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
-            }            
             else 
             {
                 assert(false);
@@ -8132,6 +8147,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{tsContext.compileOptions};
+    for (auto existing : m.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
+    {
+        tsLlvmContext.nextGlobalConstructorPriority =
+            std::max<int64_t>(tsLlvmContext.nextGlobalConstructorPriority, existing.getPriority().getSExtValue() + 1);
+    }
+
     patterns.insert<
         AddressOfOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, DefaultOpLowering, 

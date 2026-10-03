@@ -728,9 +728,16 @@ namespace mlirgen
         builder.setInsertionPointToStart(theModule.getBody());
         mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(theModule.getBody());
 
+        // each one after every one before it: LLVM leaves the order of equal priorities undefined,
+        // and a global's initializer may read one made before it (#446)
+        int64_t priority = LAST_GLOBAL_CONSTRUCTOR_PRIORITY;
+        for (auto existing : theModule.getBody()->getOps<mlir_ts::GlobalConstructorOp>())
+        {
+            priority = std::max<int64_t>(priority, existing.getPriority().getSExtValue() + 1);
+        }
+
         builder.create<mlir_ts::GlobalConstructorOp>(
-            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName),
-            builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
+            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName), builder.getIndexAttr(priority));
     }
 
     mlir::LogicalResult MLIRGenImpl::generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
