@@ -196,7 +196,8 @@ class LLVMDebugInfoHelper
 #ifndef ENABLE_DEBUGINFO_PATCH_INFO
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
-            return getDITypeWithFields(location, arrayType, to_print(arrayType), false, file, line, scope);
+            // an array value is a pointer to its heap header { data, length, capacity }, same shape as a class
+            return getDIPointerType(getDITypeWithFields(location, arrayType, to_print(arrayType), false, file, line, scope), file, line);
         }        
 #endif        
 
@@ -500,6 +501,11 @@ class LLVMDebugInfoHelper
         MLIRTypeHelper mth(context, compileOptions);
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         auto hasFields = mlir::succeeded(mth.getFields(typeWithFields, destTupleFields, true));
+        if (isa<mlir_ts::ArrayType>(typeWithFields))
+        {
+            // the array header also holds the capacity (see ArrayLayout.h); getFields() has no such field
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("capacity", context), mlir::IndexType::get(context), false, mlir_ts::AccessLevel::Public });
+        }
 
         CompositeSizesTrack sizesTrack(llvmtch);
 
