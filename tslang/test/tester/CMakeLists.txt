@@ -470,6 +470,7 @@ tslang_add_test(NAME test-compile-00-class-structural-extends COMMAND test-runne
 tslang_add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 tslang_add_test(NAME test-compile-00-const-of-let COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-compile-00-instanceof-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
+tslang_add_test(NAME test-compile-00-const-object-literal-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_object_literal_field.ts")
 tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_to_any.ts")
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
@@ -957,6 +958,7 @@ tslang_add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -j
 tslang_add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
 tslang_add_test(NAME test-jit-00-const-of-let COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-jit-00-instanceof-union COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
+tslang_add_test(NAME test-jit-00-const-object-literal-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_object_literal_field.ts")
 tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_to_any.ts")
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
@@ -1772,6 +1774,7 @@ set(TSLANG_CORPUS
     00in_method_names.ts
     00in.ts
     00infer.ts
+    00const_object_literal_field.ts
     00global_union_from_call.ts
     00instanceof.ts
     00const_of_let.ts
