@@ -15,7 +15,7 @@ env:
   BUILD_TYPE: Release
   # The official LLVM release package, installed where a custom LLVM build would be - see
   # scripts/install_llvm_prebuilt_release.sh.
-  LLVM_FULL_VERSION: "22.1.8"
+  LLVM_FULL_VERSION: "23.1.2"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
 

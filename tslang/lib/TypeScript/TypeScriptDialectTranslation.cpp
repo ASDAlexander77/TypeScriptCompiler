@@ -1,5 +1,6 @@
 #include "TypeScript/TypeScriptDialectTranslation.h"
 #include "TypeScript/Defines.h"
+#undef ATTR
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
@@ -77,7 +78,7 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
 
     /// Attaches module-level metadata for functions marked as kernels.
     virtual LogicalResult 
-    amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
+    amendOperation(Operation *op, ArrayRef<llvm::Instruction *> instructions, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
     {
         LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.getName() << " val: " << attribute.getValue() << "\n");

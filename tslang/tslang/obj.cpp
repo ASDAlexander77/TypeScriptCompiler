@@ -249,7 +249,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     llvmModule->setTargetTriple(TheTriple);
 
     // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
-    llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule);
+    llvm::codegen::setFunctionAttributes(*llvmModule, CPUStr, FeaturesStr);
 
     return 0;
 }

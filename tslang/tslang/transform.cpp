@@ -275,10 +275,8 @@ static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsi
             return llvm::OptimizationLevel::O2;
 
         case 1:
-            return llvm::OptimizationLevel::Os;
-
         case 2:
-            return llvm::OptimizationLevel::Oz;
+            return llvm::OptimizationLevel::O2;
         }
         break;
     case 3:
@@ -341,6 +339,18 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         if (compileOptions.enableFastMath)
         {
             applyFastMathFlags(*m);
+        }
+
+        if (mbOptLevel && *mbOptLevel == 2 && mbSizeLevel && *mbSizeLevel > 0)
+        {
+            llvm::Attribute::AttrKind sizeAttr = *mbSizeLevel == 1
+                ? llvm::Attribute::OptimizeForSize
+                : llvm::Attribute::MinSize;
+            for (llvm::Function &function : *m)
+            {
+                if (!function.isDeclaration())
+                    function.addFnAttr(sizeAttr);
+            }
         }
 
         // Every caller hands in a null TargetMachine, which leaves the -O2/-O3

@@ -14,10 +14,10 @@ env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
   CACHE_VERSION: v11
-  LLVM_VERSION: 22
+  LLVM_VERSION: 23
   # The official LLVM release package plus a prebuilt MLIR archive, installed where a custom LLVM
   # build would be - see scripts/install_llvm_prebuilt_release.ps1.
-  LLVM_FULL_VERSION: "22.1.8"
+  LLVM_FULL_VERSION: "23.1.2"
   GC_VERSION: "8.2.12"
   LIBATOMIC_OPS_VERSION: "7.10.0"
   

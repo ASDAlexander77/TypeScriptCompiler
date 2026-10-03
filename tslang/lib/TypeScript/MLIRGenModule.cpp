@@ -105,7 +105,7 @@ namespace mlirgen
     {
         std::string suffix(llvm::sys::path::stem(llvm::sys::path::filename(filePath)));
         suffix.append("_");
-        suffix.append(to_string(llvm::xxh3_64bits(canonicalFilePath(filePath))));
+        suffix.append(std::to_string(llvm::xxh3_64bits(canonicalFilePath(filePath))));
         return suffix;
     }
 

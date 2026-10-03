@@ -1,6 +1,6 @@
 # Shared by build_mlir_prebuilt_release.ps1 and install_llvm_prebuilt_release.ps1 (dot-sourced).
 #
-# The official LLVM Windows package (clang+llvm-<ver>-x86_64-pc-windows-msvc.tar.xz, a GitHub
+# The official LLVM Windows package (clang+llvm-<ver>-x86_64-pc-windows-msvc.tar.zst, a GitHub
 # release asset of llvm/llvm-project) carries the LLVM, Clang and LLD libraries with their CMake
 # packages, lld/wasm-ld, clang and clang's resource directory, built with the static CRT (/MT) the
 # project needs. It has no MLIR at all. build_mlir_prebuilt_release.ps1 builds MLIR standalone
@@ -16,7 +16,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# Windows' own bsdtar reads and writes .tar.xz; a Git for Windows tar earlier on PATH would need xz
+# Windows' own bsdtar reads and writes .tar.zst; a Git for Windows tar earlier on PATH would need zst
 # beside it.
 $script:tar = Join-Path $env:SystemRoot "System32\tar.exe"
 
@@ -44,7 +44,7 @@ function Get-LlvmAsset([string]$version, [string]$name, [string]$dir) {
 function Install-OfficialLlvm([string]$version, [string]$prefix, [string]$workDir) {
     $llvmConfig = Join-Path $prefix "lib\cmake\llvm\LLVMConfig.cmake"
     if (-not (Test-Path $llvmConfig)) {
-        $package = Get-LlvmAsset $version "clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz" $workDir
+        $package = Get-LlvmAsset $version "clang+llvm-$version-x86_64-pc-windows-msvc.tar.zst" $workDir
         New-Item -ItemType Directory -Force -Path $prefix | Out-Null
         Write-Host "Unpacking $package into $prefix"
         Invoke-Checked "Unpacking the LLVM package" { & $script:tar -xf $package -C $prefix --strip-components=1 }

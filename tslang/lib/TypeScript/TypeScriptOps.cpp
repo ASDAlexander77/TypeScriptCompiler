@@ -1512,11 +1512,14 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
     rewriter.eraseOp(terminator);
 }
 
-/// Given the region at `index`, or the parent operation if `index` is None,
-/// return the successor regions. These are the regions that may be selected
-/// during the flow of control. `operands` is a set of optional attributes that
-/// correspond to a constant value for each operand, or null if that operand is
-/// not a constant.
+ValueRange mlir_ts::IfOp::getSuccessorInputs(RegionSuccessor successor)
+{
+    // LLVM 23 queries successor inputs separately from the control-flow edges.
+    return successor.isOperation() ? ValueRange(getResults()) : ValueRange();
+}
+
+/// Return the possible successor regions from the parent operation or a
+/// terminator in one of its regions.
 void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl<RegionSuccessor> &regions)
 {
     // If the predecessor is an IfOp, then branching into both `then` and
@@ -1524,25 +1527,31 @@ void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl
     if (point.isParent()) {
         regions.reserve(2);
         regions.push_back(
-            RegionSuccessor(&getThenRegion(), getThenRegion().getArguments()));
+            RegionSuccessor(&getThenRegion()));
         // If the "else" region is empty, branch back into parent.
         if (getElseRegion().empty()) {
-            regions.push_back(RegionSuccessor(getOperation(), getResults()));
+            regions.push_back(RegionSuccessor(getOperation()));
         } else {
             regions.push_back(
-                RegionSuccessor(&getElseRegion(), getElseRegion().getArguments()));
+                RegionSuccessor(&getElseRegion()));
         }
         return;
     }
 
     // If the predecessor is the `else`/`then` region, then branching into parent
     // op is valid.
-    regions.push_back(RegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
 }
 
 //===----------------------------------------------------------------------===//
 // WhileOp
 //===----------------------------------------------------------------------===//
+
+ValueRange mlir_ts::WhileOp::getSuccessorInputs(RegionSuccessor successor)
+{
+    return successor.isOperation() ? ValueRange(getResults())
+                                   : ValueRange(successor.getSuccessor()->getArguments());
+}
 
 OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
@@ -1553,23 +1562,29 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
 {
     // The parent op always branches to the condition region.
     if (point.isParent()) {
-        regions.emplace_back(&getCond(), getCond().getArguments());
+        regions.emplace_back(&getCond());
         return;
     }
 
     // The body region always branches back to the condition region.
     if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getBody()) {
-        regions.emplace_back(&getCond(), getCond().getArguments());
+        regions.emplace_back(&getCond());
         return;
     }
 
-    regions.emplace_back(getOperation(), getResults());
-    regions.emplace_back(&getBody(), getBody().getArguments());
+    regions.emplace_back(getOperation());
+    regions.emplace_back(&getBody());
 }
 
 //===----------------------------------------------------------------------===//
 // DoWhileOp
 //===----------------------------------------------------------------------===//
+
+ValueRange mlir_ts::DoWhileOp::getSuccessorInputs(RegionSuccessor successor)
+{
+    return successor.isOperation() ? ValueRange(getResults())
+                                   : ValueRange(successor.getSuccessor()->getArguments());
+}
 
 OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
@@ -1580,23 +1595,29 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
 {
     // The parent op always branches to the condition region.
     if (point.isParent()) {
-        regions.emplace_back(&getBody(), getBody().getArguments());
+        regions.emplace_back(&getBody());
         return;
     }
 
     // The body region always branches back to the condition region.
     if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getCond()) {
-        regions.emplace_back(&getBody(), getBody().getArguments());
+        regions.emplace_back(&getBody());
         return;
     }
 
-    regions.emplace_back(getOperation(), getResults());
-    regions.emplace_back(&getCond(), getCond().getArguments());
+    regions.emplace_back(getOperation());
+    regions.emplace_back(&getCond());
 }
 
 //===----------------------------------------------------------------------===//
 // ForOp
 //===----------------------------------------------------------------------===//
+
+ValueRange mlir_ts::ForOp::getSuccessorInputs(RegionSuccessor successor)
+{
+    return successor.isOperation() ? ValueRange(getResults())
+                                   : ValueRange(successor.getSuccessor()->getArguments());
+}
 
 OperandRange mlir_ts::ForOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
@@ -1608,8 +1629,8 @@ void mlir_ts::ForOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImp
     // Both the operation itself and the region may be branching into the body or
     // back into the operation itself. It is possible for loop not to enter the
     // body.
-    regions.push_back(RegionSuccessor(&getRegion(0), getRegionIterArgs()));
-    regions.push_back(RegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(&getRegion(0)));
+    regions.push_back(RegionSuccessor(getOperation()));
 }
 
 //===----------------------------------------------------------------------===//

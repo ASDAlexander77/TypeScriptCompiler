@@ -1814,14 +1814,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         // ts loop with a call/store in its body already satisfies the (weaker)
         // mustprogress contract; a body-less `while(true){}` is the only case this
         // attribute changes the meaning of, same as in C/C++/Rust.
-        funcAttrs.push_back(ATTR("mustprogress"));
+        funcAttrs.push_back(TS_ATTR("mustprogress"));
 
         if (funcOp.getPersonality().has_value() && funcOp.getPersonality().value())
         {
             LLVMRTTIHelperVC rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
             rttih.setPersonality(newFuncOp);
 
-            funcAttrs.push_back(ATTR("noinline"));
+            funcAttrs.push_back(TS_ATTR("noinline"));
         }
 
         // copy attributes over
@@ -1858,27 +1858,27 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 #ifdef DISABLE_OPT
         // add LLVM attributes to fix issue with shift >> 32
         funcAttrs.append({
-            ATTR("noinline"),
-            // ATTR("norecurse"),
-            // ATTR("nounwind"),
-            ATTR("optnone"),
-            // ATTR("uwtable"),
-            // NAMED_ATTR("correctly-rounded-divide-sqrt-fp-math","false"),
-            // NAMED_ATTR("disable-tail-calls","false"),
-            // NAMED_ATTR("frame-pointer","none"),
-            // NAMED_ATTR("less-precise-fpmad","false"),
-            // NAMED_ATTR("min-legal-vector-width","0"),
-            // NAMED_ATTR("no-infs-fp-math","false"),
-            // NAMED_ATTR("no-jump-tables","false"),
-            // NAMED_ATTR("no-nans-fp-math","false"),
-            // NAMED_ATTR("no-signed-zeros-fp-math","false"),
-            // NAMED_ATTR("no-trapping-math","true"),
-            // NAMED_ATTR("stack-protector-buffer-size","8"),
-            // NAMED_ATTR("target-cpu","x86-64"),
-            // NAMED_ATTR("target-features","+cx8,+fxsr,+mmx,+sse,+sse2,+x87"),
-            // NAMED_ATTR("tune-cpu","generic"),
-            // NAMED_ATTR("unsafe-fp-math","false"),
-            // NAMED_ATTR("use-soft-float","false"),
+            TS_ATTR("noinline"),
+            // TS_ATTR("norecurse"),
+            // TS_ATTR("nounwind"),
+            TS_ATTR("optnone"),
+            // TS_ATTR("uwtable"),
+            // NAMED_TS_ATTR("correctly-rounded-divide-sqrt-fp-math","false"),
+            // NAMED_TS_ATTR("disable-tail-calls","false"),
+            // NAMED_TS_ATTR("frame-pointer","none"),
+            // NAMED_TS_ATTR("less-precise-fpmad","false"),
+            // NAMED_TS_ATTR("min-legal-vector-width","0"),
+            // NAMED_TS_ATTR("no-infs-fp-math","false"),
+            // NAMED_TS_ATTR("no-jump-tables","false"),
+            // NAMED_TS_ATTR("no-nans-fp-math","false"),
+            // NAMED_TS_ATTR("no-signed-zeros-fp-math","false"),
+            // NAMED_TS_ATTR("no-trapping-math","true"),
+            // NAMED_TS_ATTR("stack-protector-buffer-size","8"),
+            // NAMED_TS_ATTR("target-cpu","x86-64"),
+            // NAMED_TS_ATTR("target-features","+cx8,+fxsr,+mmx,+sse,+sse2,+x87"),
+            // NAMED_TS_ATTR("tune-cpu","generic"),
+            // NAMED_TS_ATTR("unsafe-fp-math","false"),
+            // NAMED_TS_ATTR("use-soft-float","false"),
         }));
 #endif
 
@@ -6651,7 +6651,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 if (true || tsLlvmContext->compileOptions.isDLL)
                 {
                     SmallVector<mlir::Attribute> funcAttrs;
-                    funcAttrs.push_back(ATTR("export"));
+                    funcAttrs.push_back(TS_ATTR("export"));
                     initFunc->setAttr("passthrough", ArrayAttr::get(rewriter.getContext(), funcAttrs));
                 }
 

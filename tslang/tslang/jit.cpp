@@ -799,7 +799,7 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         llvm::orc::LLJITBuilder()
             .setJITTargetMachineBuilder(std::move(tmBuilder))
             .setObjectLinkingLayerCreator(
-                [targetTriple](llvm::orc::ExecutionSession &session)
+                [targetTriple](llvm::orc::ExecutionSession &session, llvm::jitlink::JITLinkMemoryManager &memoryManager)
                     -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
                     auto objectLayer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
                         session, [](const llvm::MemoryBuffer &) { return std::make_unique<JitSectionMemoryManager>(); });

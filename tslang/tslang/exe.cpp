@@ -1036,7 +1036,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }
     }
 
-    diags.getClient()->finish();
 
     // A binary linked against gc.dll does not start without it, so put it beside the output.
     if (res == 0 && useSharedGC)

@@ -189,12 +189,13 @@ class MLIRDebugInfoHelper
 
                 auto funcNameAttr = builder.getStringAttr(functionName);
                 auto linkageNameAttr = builder.getStringAttr(linkageName);
-                SmallVector<mlir::LLVM::DINodeAttr> retainedNodes; // TODO: review usage of it
+                SmallVector<mlir::Attribute> retainedNodes; // TODO: review usage of it
                 SmallVector<mlir::LLVM::DINodeAttr> annotations; // TODO: review usage of it
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                     builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, isAcceptableSubProgramScope(scopeAttr) ? scopeAttr : compileUnitAttr, 
                     funcNameAttr, linkageNameAttr, 
-                    file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type, retainedNodes, annotations);   
+                    file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type,
+                    retainedNodes, annotations);   
 
                 debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
                 debugScope.insert(DEBUG_SCOPE, subprogramAttr);

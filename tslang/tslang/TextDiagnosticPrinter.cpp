@@ -34,11 +34,11 @@ void TextDiagnosticPrinter::HandleDiagnostic(
            "Diagnostics with valid source location are not supported");
 
     typescript::tslang::TextDiagnostic::printDiagnosticLevel(os, level,
-                                                            diagOpts->ShowColors);
+                                                            diagOpts->showColors(os.has_colors()));
     typescript::tslang::TextDiagnostic::printDiagnosticMessage(
         os,
         /*IsSupplemental=*/level == clang::DiagnosticsEngine::Note,
-        diagMessageStream.str(), diagOpts->ShowColors);
+        diagMessageStream.str(), diagOpts->showColors(os.has_colors()));
 
     os.flush();
 }
