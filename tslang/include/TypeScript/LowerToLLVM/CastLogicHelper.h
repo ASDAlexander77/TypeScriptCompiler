@@ -18,6 +18,7 @@
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/ArrayLayout.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -226,15 +227,13 @@ class CastLogicHelper
             {
                 if (arrayType.getElementType() == refType.getElementType())
                 {
-                    return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
-                        MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+                    return extractArrayData(in, arrayType);
                 }
             }
 
             if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(resType))
             {
-                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), in,
-                    MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));                
+                auto ptrOfElementValue = extractArrayData(in, arrayType);
 
                 return rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), ptrOfElementValue);
             }            
@@ -1095,7 +1094,8 @@ class CastLogicHelper
         }
 
         auto ptrType = th.getPtrType();
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto arrayTypeTs = mlir::cast<mlir_ts::ArrayType>(arrayType);
+        ArrayLayout layout(op, rewriter, tch.typeConverter, compileOptions);
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto sizeValue = clh.createIndexConstantOf(llvmIndexType, size);
         auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
@@ -1110,13 +1110,11 @@ class CastLogicHelper
             // retains the result before it looks at `done`.
             if (compileOptions.tracksOwnership())
             {
-                return rewriter.create<LLVM::ZeroOp>(loc, llvmRtArrayStructType).getResult();
+                return layout.zero(arrayTypeTs);
             }
 
-            return rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType).getResult();
+            return layout.undef(arrayTypeTs);
         }
-
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
 
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
 
@@ -1141,13 +1139,7 @@ class CastLogicHelper
             arrayPtr = in;
         }
 
-        auto structValue2 =
-            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayPtr, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
-
-        auto structValue3 =
-            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue, MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
-
-        return structValue3;
+        return layout.make(arrayTypeTs, arrayPtr, sizeValue);
     }
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
@@ -1292,13 +1284,16 @@ class CastLogicHelper
 
     mlir::Value extractArrayPtr(mlir::Value in, mlir_ts::ArrayType arrayType)
     {
-        auto llvmType = tch.convertType(arrayType.getElementType());
-        auto ptrType = th.getPtrType();
-
         mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
 
-        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
-        return ptrVal;
+        // only used for identity: truthiness and `===`
+        return ArrayLayout(op, rewriter, tch.typeConverter, compileOptions).identity(arrayType, inAsLLVMType);
+    }
+
+    // the data pointer of an array value, for the casts to a ref of the element and to opaque
+    mlir::Value extractArrayData(mlir::Value in, mlir_ts::ArrayType arrayType)
+    {
+        return ArrayLayout(op, rewriter, tch.typeConverter, compileOptions).data(arrayType, in);
     }
 
 };

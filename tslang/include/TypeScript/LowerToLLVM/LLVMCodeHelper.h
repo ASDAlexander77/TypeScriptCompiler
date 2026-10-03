@@ -14,6 +14,7 @@
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/ArrayLayout.h"
 #include "TypeScript/LowerToLLVM/TypeDescriptorLogic.h"
 
 #include "mlir/Transforms/DialectConversion.h"
@@ -440,17 +441,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), size, arrayValue);
 
         // create ReadOnlyRuntimeArrayType
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
         auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, typeConverter->convertType(rewriter.getIndexType()),
                                                            rewriter.getIndexAttr(arrayValue.size()));
 
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, itemValArrayPtr,
-                                                                 MLIRHelper::getStructIndex(rewriter, 0));
-
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue2, sizeValue,
-                                                                 MLIRHelper::getStructIndex(rewriter, 1));
-
-        return structValue3;
+        return ArrayLayout(op, rewriter, typeConverter, compileOptions).makeStatic(originalArrayType, itemValArrayPtr, sizeValue);
     }
 
     mlir::Value getArrayValue(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size,
@@ -861,8 +855,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         if (isa<mlir_ts::ArrayType>(arrayOrStringOrTupleMlirTSType))
         {
             // extract pointer from struct
-            dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
-                                                            MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+            dataPtr = ArrayLayout(op, rewriter, typeConverter, compileOptions)
+                          .data(cast<mlir_ts::ArrayType>(arrayOrStringOrTupleMlirTSType), arrayOrStringOrTuple);
         }
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, dataPtr, ArrayRef<LLVM::GEPArg>{index});

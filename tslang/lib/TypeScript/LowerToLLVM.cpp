@@ -627,8 +627,6 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
     {
         TypeHelper th(rewriter);
 
-        auto loc = op->getLoc();
-
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getOp().getType()))
         {
             ArrayLayout layout(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -662,7 +660,6 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(op.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());        
 
@@ -3174,7 +3171,6 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(pushOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -3260,7 +3256,6 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(popOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
         
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -3315,7 +3310,6 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(unshiftOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -3410,7 +3404,6 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(shiftOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -3474,7 +3467,6 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(spliceOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto indexType = th.getIndexType();
         auto llvmIndexType = tch.convertType(indexType);
@@ -3665,7 +3657,6 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto arrayType = arrayViewOp.getOp().getType();
         auto elementType = arrayType.getElementType();
 
-        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // TODO: add size check !!!
