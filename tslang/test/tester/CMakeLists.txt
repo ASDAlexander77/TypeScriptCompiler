@@ -2553,14 +2553,28 @@ add_test(NAME test-compile-lowering-error-exit
 set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
 
 # `main`'s argv is `Ref<string>` (C's `char **`) only. A `string[]` argv would read that `char **`
-# as an array header, so it is a compile error that says to use `Ref<string>`. Run under --emit=jit,
-# where `main` is called, so a program that wrongly compiled would run instead of matching.
+# as an array header, so it is a compile error that says to use `Ref<string>`, under the JIT (where
+# `main` is called, so a program that wrongly compiled would run instead of matching) and ahead of
+# time. A DLL has no `main` entry point, so the same file must not draw the error there.
+set(main_argv_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/main_argv_string_array.ts")
 add_test(NAME test-jit-main-argv-string-array-error
-         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
-                 "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/main_argv_string_array.ts")
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib "${main_argv_file}")
 set_tests_properties(test-jit-main-argv-string-array-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+foreach(argv_emit exe obj)
+    add_test(NAME test-compile-main-argv-string-array-error-${argv_emit}
+             COMMAND $<TARGET_FILE:tslang> --emit=${argv_emit} --no-default-lib "${main_argv_file}"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.${argv_emit}")
+    set_tests_properties(test-compile-main-argv-string-array-error-${argv_emit}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+add_test(NAME test-compile-main-argv-string-array-dll-no-error
+         COMMAND $<TARGET_FILE:tslang> --emit=dll --no-default-lib "${main_argv_file}"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.dll")
+set_tests_properties(test-compile-main-argv-string-array-dll-no-error
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "takes argv as Ref<string>|Stack dump|Assertion failed")
 
 # -mm=own is accepted. Phase 0: a program that allocates nothing compiles and runs under it.
 add_test(NAME test-own-flag-accepted

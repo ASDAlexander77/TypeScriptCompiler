@@ -773,9 +773,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Revised 2026-10-04 (owner's ruling; the `ts.ArrayFromCStrings` op is dropped). A `main` whose second parameter is `string[]` would read C's `char **` as an array header, so it becomes a compile error:
 
-- `LowerToAffineLoops.cpp`: the `main` shape check accepts only `Ref<string>` for argv; any other shape is an error with a source location, and an array argv gets the message `'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])`.
+- `LowerToAffineLoops.cpp`: in every build but a DLL (JIT and AOT) an array argv of `main` is an error with a source location, with the message `'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])`.
 - `jit.cpp` `addEntryThunk`: comment and `unsupported()` message name `Ref<string>` only; no behaviour change.
-- Test `tslang/test/tester/lowering-errors/main_argv_string_array.ts`, registered in `tslang/test/tester/CMakeLists.txt`, passes only when the compile output contains `takes argv as Ref<string>`. `tests/00main_argc_argv.ts` (the `Ref<string>` form) keeps passing.
+- Test `tslang/test/tester/lowering-errors/main_argv_string_array.ts`, registered in `tslang/test/tester/CMakeLists.txt` for `--emit=jit`, `--emit=exe` and `--emit=obj` (and as a no-error case for `--emit=dll`), passes only when the compile output contains `takes argv as Ref<string>`. `tests/00main_argc_argv.ts` (the `Ref<string>` form) keeps passing.
 
 ### Task 6: debug info
 

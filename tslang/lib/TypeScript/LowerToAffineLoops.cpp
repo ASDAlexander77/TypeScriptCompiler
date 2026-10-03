@@ -2711,6 +2711,19 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     // can only adapt the shapes a C `main` has: `argc` as an integer or a number, `argv` as the C
     // `char **` itself, a `Ref<string>` (never a `string[]`: that is an array header, not C's
     // `char **`), and an exit code that is an integer or a number.
+    //
+    // A `string[]` argv is refused in every build where `main` is the entry point (all but a DLL):
+    // ahead of time, the C runtime passes `char **` too, which would be read as an array header.
+    if (!tsContext.compileOptions.isDLL && function.getName() == MAIN_ENTRY_NAME)
+    {
+        auto mainInputs = function.getFunctionType().getInputs();
+        if (mainInputs.size() == 2 && isa<mlir_ts::ArrayType>(mainInputs[1]))
+        {
+            function.emitError("'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])");
+            return signalPassFailure();
+        }
+    }
+
     if (tsContext.compileOptions.isJit && function.getName() == MAIN_ENTRY_NAME)
     {
         auto isArgc = [](mlir::Type type) { return isa<mlir::IntegerType>(type) || isa<mlir_ts::NumberType>(type); };
@@ -2728,14 +2741,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
         auto validResults = results.size() <= 1 && llvm::all_of(results, isExitCode);
         if (!validInputs || !validResults)
         {
-            if (inputs.size() == 2 && isa<mlir_ts::ArrayType>(inputs[1]))
-            {
-                function.emitError("'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])");
-            }
-            else
-            {
-                function.emitError("expected 'main' to be 'main(argc?: i32 | number, argv?: Ref<string>): void | i32 | number'");
-            }
+            function.emitError("expected 'main' to be 'main(argc?: i32 | number, argv?: Ref<string>): void | i32 | number'");
             return signalPassFailure();
         }
     }
