@@ -919,6 +919,7 @@ namespace mlirgen
             {"Reference", true }, // to support dll import
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
+            {"Shared", true }, // a counted handle, own spec 23
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -1008,6 +1009,7 @@ namespace mlirgen
             {"Reference", true }, // to support dll import
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
+            {"Shared", true }, // a counted handle, own spec 23
             {"ThisType", true },
             //{"Array", true }
         };
@@ -1161,7 +1163,7 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
+            None, TypeOf, Reference, BoxedObject, Shared, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
             Parameters, ThisParameterType, OmitThisParameter, Uppercase, Lowercase, Capitalize, Uncapitalize
         };
 
@@ -1169,6 +1171,7 @@ namespace mlirgen
             .Case("TypeOf", EmbeddedType::TypeOf)
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
+            .Case("Shared", EmbeddedType::Shared)
             .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
             .Case("NonNullable", EmbeddedType::NonNullable)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
@@ -1204,6 +1207,8 @@ namespace mlirgen
                 return mlir_ts::RefType::get(type);
             case EmbeddedType::BoxedObject:
                 return getObjectType(type);
+            case EmbeddedType::Shared:
+                return mlir_ts::SharedType::get(type);
             case EmbeddedType::FirstTypeArgument:
                 return type;
             case EmbeddedType::NonNullable:
@@ -1260,13 +1265,14 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, ThisType, Array
+            None, TypeOf, Reference, BoxedObject, Shared, ThisType, Array
         };
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
             .Case("TypeOf", EmbeddedType::TypeOf)
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
+            .Case("Shared", EmbeddedType::Shared)
             .Case("ThisType", EmbeddedType::ThisType)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
@@ -1287,6 +1293,9 @@ namespace mlirgen
                 return mlir_ts::RefType::get(type);
             case EmbeddedType::BoxedObject:
                 return getObjectType(type);
+            case EmbeddedType::Shared:
+                // the type argument is not checked above in this variant
+                return type ? mlir_ts::SharedType::get(type) : mlir::Type();
             case EmbeddedType::ThisType:
                 return type;
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS

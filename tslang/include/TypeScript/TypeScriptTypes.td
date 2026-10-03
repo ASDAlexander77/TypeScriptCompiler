@@ -104,6 +104,34 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
   ];
 }
 
+// Shared<T> (own spec 23): a counted handle to a block whose payload is one T.
+def TypeScript_Shared : TypeScript_Type<"Shared"> {
+  let mnemonic = "shared";
+
+  let description = [{
+    Syntax:
+
+    ```
+    shared-type ::= `shared` `<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    shared<!ts.class<Node>>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }]>
+  ];
+}
+
 def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
   let mnemonic = "value_ref";
 

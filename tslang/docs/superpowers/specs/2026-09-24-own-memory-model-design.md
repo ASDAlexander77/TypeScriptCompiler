@@ -2114,9 +2114,10 @@ print(Shared.count(a), a === b);
   payload is one `T` in its storage type.
 - **`new Shared(x)`** is `ts.SharedNew`: it allocates the block and stores `x` into it, which is a
   store into a container (§2.3): `x` moves in.
-- **`s.value`** is `ts.SharedValue`, a read out of a container: a borrow of the `T` (§23.3).
-- **`s.value = x`** is `ts.SharedStore`: `x` moves in, and the old `T` is released, as a field
-  store does.
+- **`s.value`** is a `ts.Load` of the place `ts.SharedValueRef(s)`, and **`s.value = x`** stores
+  into that place the way a field store does (MLIRGen's retain, `ts.ReleaseSlot` and `ts.Store`),
+  so `x` moves in and the old `T` is released. One op instead of two lets the place-read and store
+  machinery of MLIRGen and own apply unchanged.
 - **`a === b` and `a !== b`** compare the pointers.
 - **`Shared.count(s)`** reads the header: the number of handles under rc and own, `-1` under gc
   and none, which keep no count.
@@ -2194,11 +2195,14 @@ change. It runs on every `own_shared_*` test, under own and rc.
 
 - **Positive**, under own, rc, none and gc, AOT and JIT:
   - `own_shared_basic`: two handles, `.value` read and write, `===`.
-  - `own_shared_graph`: a doubly linked list and a node with a parent link, walked with
+  - `own_shared_user_named`: a program's own class named `Shared`, and its static `count`, win over
+    the built-in (§23.1).
+  - `own_shared_graph`: a DAG (one item under two parents) and a singly linked list walked with
     `cur = cur.value.next`.
   - `own_shared_containers`: one node in two arrays, a `Shared<T> | null` field, a closure
     capturing a handle, a handle boxed into `any` and back, a handle returned from a function.
-  - `own_shared_cycle`: a cycle that is never freed, which still runs.
+  - `own_shared_cycle`: a cycle that is never freed, which still runs: a doubly linked list and a
+    node with a parent link, both cycles that leak (§23.4).
 
   Each frees every handle but one, then allocates over the freed memory (the churn pattern)
   before reading through the one left. An early free then reads reused memory.

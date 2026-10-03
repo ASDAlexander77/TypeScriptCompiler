@@ -8661,6 +8661,10 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext);
 
+    ValueOrLogicalResult mlirGenNewShared(mlir::Location location, NewExpression newExpression, const GenContext &genContext);
+
+    ValueOrLogicalResult mlirGenSharedCount(mlir::Location location, CallExpression callExpression, const GenContext &genContext);
+
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(VoidExpression voidExpression, const GenContext &genContext);

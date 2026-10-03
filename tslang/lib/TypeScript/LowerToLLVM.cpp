@@ -949,6 +949,68 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
     }
 };
 
+// `new Shared(x)` (own spec 23): a heap block with the header every block has (a count under rc
+// and own, born 0 like any block), whose payload is the value.
+class SharedNewOpLowering : public TsLlvmPattern<mlir_ts::SharedNewOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedNewOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedNewOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto elementType = mlir::cast<mlir_ts::SharedType>(op.getType()).getElementType();
+        auto handle = ch.MemoryAlloc(elementType, MemoryAllocSet::Zero);
+        rewriter.create<LLVM::StoreOp>(op->getLoc(), transformed.getValue(), handle);
+        rewriter.replaceOp(op, ValueRange{handle});
+        return success();
+    }
+};
+
+// `s.value`: the payload starts at the handle.
+class SharedValueRefOpLowering : public TsLlvmPattern<mlir_ts::SharedValueRefOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedValueRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedValueRefOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOp(op, ValueRange{transformed.getShared()});
+        return success();
+    }
+};
+
+// `Shared.count(s)`: the header word under rc and own; gc and none never write it.
+class SharedCountOpLowering : public TsLlvmPattern<mlir_ts::SharedCountOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SharedCountOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SharedCountOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+
+        auto numberType = tch.convertType(op.getType());
+        if (!tsLlvmContext->compileOptions.tracksOwnership())
+        {
+            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, numberType, rewriter.getFloatAttr(numberType, -1.0));
+            return success();
+        }
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, transformed.getShared(), llvmIndexType);
+        auto count = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, blockPtr);
+        rewriter.replaceOpWithNewOp<LLVM::SIToFPOp>(op, numberType, count);
+        return success();
+    }
+};
+
 class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
 {
   public:
@@ -7138,6 +7200,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(m.getContext());
     });
 
+    // Shared<T> (own spec 23): a pointer to the handle's payload
+    converter.addConversion([&](mlir_ts::SharedType type) {
+        return LLVM::LLVMPointerType::get(m.getContext());
+    });
+
     converter.addConversion([&](mlir_ts::ValueRefType type) {
         return LLVM::LLVMPointerType::get(m.getContext());
     });
@@ -8029,6 +8096,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
+        SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 

@@ -241,6 +241,11 @@ class MLIRTypeIterator
                                   return false;
                               return true;
                           })
+                          .Case<mlir_ts::SharedType>([&](auto t) {
+                              if (!iterate(t.getElementType()))
+                                  return false;
+                              return true;
+                          })
                           .Case<mlir_ts::TupleType>([&](auto t) {
                               for (auto subType : t.getFields())
                               {

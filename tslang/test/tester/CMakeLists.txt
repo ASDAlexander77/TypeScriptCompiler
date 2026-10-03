@@ -2609,6 +2609,17 @@ add_test(NAME test-own-string-copy-in-store-block
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
+# Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
+# test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
+# own_shared_user_named: a program's own class named Shared wins over the built-in (spec 23.1).
+set(shared_models gc none)
+foreach(shared_mm ${shared_models})
+    foreach(shared_test own_shared_basic own_shared_user_named)
+        tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+        tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
+    endforeach()
+endforeach()
+
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
 # Windows, checked against a library that lists nothing (own-shared-no-drops.cmake).

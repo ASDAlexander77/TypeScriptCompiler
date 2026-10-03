@@ -2382,6 +2382,25 @@ def TypeScript_StringCopyOp : TypeScript_Op<"StringCopy", [AllTypesMatch<["in", 
   let results = (outs Res<AnyType, "", [MemAlloc]>:$result);
 }
 
+// Shared<T> (own spec 23). `new Shared(x)`: a block of one T, which `value` moves into.
+def TypeScript_SharedNewOp : TypeScript_Op<"SharedNew"> {
+  let arguments = (ins AnyType:$value);
+  let results = (outs Res<TypeScript_Shared, "", [MemAlloc]>:$result);
+}
+
+// The place `s.value`: a reference to the handle's payload. It is read with ts.Load and written
+// with ts.Store, as a field is.
+def TypeScript_SharedValueRefOp : TypeScript_Op<"SharedValueRef"> {
+  let arguments = (ins TypeScript_Shared:$shared);
+  let results = (outs TypeScript_Ref:$result);
+}
+
+// `Shared.count(s)`: the number of handles under rc and own, -1 under gc and none.
+def TypeScript_SharedCountOp : TypeScript_Op<"SharedCount"> {
+  let arguments = (ins TypeScript_Shared:$shared);
+  let results = (outs TypeScript_Number:$result);
+}
+
 def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
   let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2, I32Attr:$code);
   let results = (outs TypeScript_Boolean:$result);
