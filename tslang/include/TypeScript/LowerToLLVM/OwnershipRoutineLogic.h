@@ -627,8 +627,9 @@ class OwnershipRoutineLogic
     // Runs `thenBody` -- the destroy half: release what the value owns, then free it -- only
     // when `payloadPtr` is non-null and the reference being dropped was the last one. Under
     // own there is no count: the one owner is giving the block up, so it goes unless it is
-    // immortal (a literal, a `typeof` tag).
-    void emitIfLastReference(mlir::Value payloadPtr, llvm::function_ref<void()> thenBody)
+    // immortal (a literal, a `typeof` tag). A `counted` block - a Shared<T> handle's (own spec
+    // 23.2) - is counted under own too.
+    void emitIfLastReference(mlir::Value payloadPtr, llvm::function_ref<void()> thenBody, bool counted = false)
     {
         TypeHelper th(rewriter);
         auto loc = op->getLoc();
@@ -643,7 +644,8 @@ class OwnershipRoutineLogic
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToEnd(decBlock);
-        auto wasLast = compileOptions.memoryModel == MemoryModelOwn ? emitIsMortal(payloadPtr) : emitDecRef(payloadPtr);
+        auto wasLast = compileOptions.memoryModel == MemoryModelOwn && !counted ? emitIsMortal(payloadPtr)
+                                                                               : emitDecRef(payloadPtr);
         rewriter.create<LLVM::CondBrOp>(loc, wasLast, thenBlock, continuationBlock);
 
         rewriter.setInsertionPointToEnd(currentBlock);
@@ -976,6 +978,18 @@ class OwnershipRoutineLogic
             return;
         }
 
+        // a handle (own spec 23.2) is counted in every model that tracks ownership: the last one
+        // releases the payload and frees the block
+        if (auto sharedType = dyn_cast<mlir_ts::SharedType>(type))
+        {
+            auto handle = rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr);
+            emitIfLastReference(handle, [&]() {
+                releaseSlot(sharedType.getElementType(), handle);
+                emitFreeBlock(handle);
+            }, /*counted=*/true);
+            return;
+        }
+
         // an "any" box owns its own block, and its payload's type is only known through the
         // tag
         if (isa<mlir_ts::AnyType>(type))
@@ -1135,9 +1149,9 @@ class OwnershipRoutineLogic
         auto ptrTy = th.getPtrType();
 
         // each of these is a reference to a block of its own: string, class and object
-        // instances, and an "any" box
-        if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::ObjectType>(type) ||
-            isa<mlir_ts::AnyType>(type))
+        // instances, a Shared<T> handle, and an "any" box
+        if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ClassType>(type) || isa<mlir_ts::SharedType>(type) ||
+            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
         {
             emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, slotPtr));
             return;

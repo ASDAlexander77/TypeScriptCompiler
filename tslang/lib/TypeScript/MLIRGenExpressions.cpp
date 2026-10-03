@@ -1288,7 +1288,11 @@ namespace mlirgen
         }
 
         CAST_A(stored, location, elementType, value, genContext);
-        return V(builder.create<mlir_ts::SharedNewOp>(location, mlir_ts::SharedType::get(elementType), stored));
+        // the block owns what it holds, as an array literal owns its elements
+        mlirGenRetainCaptured(location, mlir::ValueRange{stored});
+        auto handle = builder.create<mlir_ts::SharedNewOp>(location, mlir_ts::SharedType::get(elementType), stored);
+        markFreshBlockOwned(location, handle);
+        return V(handle);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)

@@ -2673,7 +2673,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (!isCaptured)
         {
             auto  tsStorageType = referenceType.getElementType();
-            if (isa<mlir_ts::ClassType>(tsStorageType) || isa<mlir_ts::StringType>(tsStorageType) ||
+            if (isa<mlir_ts::ClassType>(tsStorageType) || isa<mlir_ts::SharedType>(tsStorageType) || isa<mlir_ts::StringType>(tsStorageType) ||
  isa<mlir_ts::ArrayType>(tsStorageType) || isa<mlir_ts::ObjectType>(tsStorageType) ||
  isa<mlir_ts::AnyType>(tsStorageType))
             {

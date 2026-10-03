@@ -2118,6 +2118,44 @@ class MLIRTypeHelper
         return ownsHeapMemory(location, type, visiting);
     }
 
+    // A handle (own spec 23.2): Shared<T>, or a tag-free union or an optional of one with null or
+    // undefined - one pointer whose block is counted in every model that tracks ownership.
+    static bool isSharedHandleType(mlir::Type type)
+    {
+        if (isa<mlir_ts::SharedType>(type))
+        {
+            return true;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return isSharedHandleType(optionalType.getElementType());
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            mlir::Type shared;
+            for (auto member : unionType.getTypes())
+            {
+                if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member))
+                {
+                    continue;
+                }
+
+                if (!isa<mlir_ts::SharedType>(member) || (shared && shared != member))
+                {
+                    return false;
+                }
+
+                shared = member;
+            }
+
+            return !!shared;
+        }
+
+        return false;
+    }
+
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type type)
     {
@@ -3785,9 +3823,10 @@ protected:
             return false;
         }
 
-        // owns its own block
+        // owns its own block. A Shared<T> handle (own spec 23) does too, and its block's payload
+        // is released by the handle's routine, so it is not a record here
         if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ClassType>(type) ||
-            isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
+            isa<mlir_ts::SharedType>(type) || isa<mlir_ts::ObjectType>(type) || isa<mlir_ts::AnyType>(type))
         {
             return true;
         }

@@ -1055,8 +1055,9 @@ class MLIRGenImpl
         }
     }
 
-    // Gives a freshly built string, or a freshly made `any` box, the same standing as every other
-    // producer of a new heap value: the retain makes the reference real, and the mark says a
+    // Gives a freshly built string, a freshly made `any` box, or a new Shared<T> handle (own spec
+    // 23), the same standing as every other producer of a new heap value: the retain makes the
+    // reference real, and the mark says a
     // receiver may take it over rather than adding one of its own - which is also what lets §9.30
     // give it back where nothing receives it at all.
     //
@@ -1065,7 +1066,7 @@ class MLIRGenImpl
     // balanced, where a mark on its own would hand a receiver a reference nobody took.
     void markFreshBlockOwned(mlir::Location location, mlir::Value value)
     {
-        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType>(value.getType()))
+        if (!value || !isa<mlir_ts::StringType, mlir_ts::AnyType, mlir_ts::SharedType>(value.getType()))
         {
             return;
         }
@@ -1092,7 +1093,19 @@ class MLIRGenImpl
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
                isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference) ||
-               isOwnedInterfaceFieldSlot(location, reference);
+               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference);
+    }
+
+    // `s.value` (own spec 23): the payload is owned by the handle's block, as a field by its object
+    bool isOwnedSharedValueSlot(mlir::Location location, mlir::Value reference)
+    {
+        if (!reference.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        {
+            return false;
+        }
+
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && mth.ownsHeapMemory(location, refType.getElementType());
     }
 
     // A field reached through an interface: it belongs to the object behind the interface, which releases
@@ -1482,9 +1495,13 @@ class MLIRGenImpl
             // aliases the storage it was read from, so it keeps that, and a narrowed view
             // (addSafeCastStatement, a SafeCastOp) is the narrowed variable seen through
             // another type, not an array of its own.
+            //
+            // A `Shared<T>` handle (own spec 23.1) as well: `const b = a` is a second handle, and
+            // counts as one. A folded name would be `a` itself, with no reference of its own, so
+            // `a = c` would free the block `b` still reads, and `Shared.count` would miss it.
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || (isa<mlir_ts::ArrayType>(type) && !(varClass == VariableType::ConstRef)
+                || (isa<mlir_ts::ArrayType, mlir_ts::SharedType>(type) && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
             {
