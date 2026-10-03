@@ -2616,7 +2616,7 @@ set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses)
+                        own_shared_place_two_uses own_shared_global_field)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
@@ -2630,7 +2630,7 @@ endforeach()
 foreach(shared_verify_mm own rc)
     foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses)
+                        own_shared_place_two_uses own_shared_global_field)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
                          "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
@@ -2771,7 +2771,8 @@ set(own_error_cases
     "own_err_shared_borrow_reassigned|but is used here after it may be released or overwritten"
     "own_err_shared_union_owned|a Shared<Node> in a union with 'string', which -mm=own does not count, is not supported"
     "own_err_shared_place_arg|borrows a field but is used here after it may be released or overwritten"
-    "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten")
+    "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten"
+    "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

@@ -2430,7 +2430,10 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                if (isBorrow(user, current))
+                // a store of the read that rc made no retain for (an object literal's field,
+                // `{ s: (q.child = p.child) }`) keeps it uncounted: the read is checked as a
+                // borrow, and the store is its keep
+                if (isBorrow(user, current) || isUncountedStoreOf(user, current))
                 {
                     result.borrowed = true;
                 }
@@ -2452,8 +2455,10 @@ class OwnershipInferencePass
 
     // A use that gives a handle an owner rc counts: rc's retain, and what takes the value it
     // retains for - a store into a field, an element, a global or an owning local (a local that
-    // owns nothing passes the value on), a push, `new Shared`, a return - or the initializer of an
-    // owning local, which takes a count of its own (`ts.RetainSlot`).
+    // owns nothing passes the value on) that rc retained for (countedStoreRetain), a push,
+    // `new Shared`, a return - or the initializer of an owning local, which takes a count of its
+    // own (`ts.RetainSlot`). A store rc made no retain for is not one: it keeps the read without
+    // a count (`{ s: (q.child = p.child) }`'s field).
     static bool isCountedHandleReceiver(mlir::Operation *user, mlir::Value value)
     {
         if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -2470,7 +2475,7 @@ class OwnershipInferencePass
 
         if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
         {
-            return storeOp.getValue() == value;
+            return storeOp.getValue() == value && countedStoreRetain(storeOp);
         }
 
         if (auto pushOp = mlir::dyn_cast<mlir_ts::ArrayPushOp>(user))
@@ -2513,21 +2518,41 @@ class OwnershipInferencePass
                 }
 
                 auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(use.getOwner());
-                if (!storeOp || storeOp.getValue() != current)
+                if (!storeOp || storeOp.getValue() != current || !countedStoreRetain(storeOp))
                 {
                     continue;
                 }
 
-                auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode());
-                auto retainOp = releaseSlotOp ? mlir::dyn_cast_or_null<mlir_ts::RetainOp>(releaseSlotOp->getPrevNode())
-                                              : mlir_ts::RetainOp();
-                if (releaseSlotOp && retainOp && releaseSlotOp.getSlot() == storeOp.getReference() &&
-                    retainOp.getReference() == current)
+                if (auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode()))
                 {
                     releases.insert(releaseSlotOp);
                 }
             }
         }
+    }
+
+    // rc's retain for a store of a value, when it made one: `ts.Retain` of the value right before
+    // the store, or before the `ts.ReleaseSlot` of the old value right before it -
+    // `Retain(v)`, [`ReleaseSlot(slot)`], `Store(v, slot)`. Null for a store rc counts nothing for.
+    static mlir::Operation *countedStoreRetain(mlir_ts::StoreOp storeOp)
+    {
+        auto *previous = storeOp->getPrevNode();
+        if (auto releaseSlotOp = mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(previous))
+        {
+            previous = releaseSlotOp.getSlot() == storeOp.getReference() ? releaseSlotOp->getPrevNode() : nullptr;
+        }
+
+        auto retainOp = mlir::dyn_cast_or_null<mlir_ts::RetainOp>(previous);
+        return retainOp && retainOp.getReference() == storeOp.getValue() ? retainOp.getOperation() : nullptr;
+    }
+
+    // A store of a handle read that rc made no retain for (countedStoreRetain): it keeps the read
+    // with no count of its own. A store into a local that owns nothing passes the value on
+    // (passesOn) and is not seen here.
+    static bool isUncountedStoreOf(mlir::Operation *user, mlir::Value value)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+        return storeOp && storeOp.getValue() == value && !countedStoreRetain(storeOp);
     }
 
     // The call a value is the result of, when that result borrows an argument.

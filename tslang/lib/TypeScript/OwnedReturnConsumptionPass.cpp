@@ -252,7 +252,9 @@ class OwnedReturnConsumptionPass
     //
     // The producer is anything that carries an owned reference by now: `new Shared(..)`, marked
     // where MLIRGen builds it, or a call, marked above once its callee is classified - which is
-    // why MLIRGen alone cannot see it. Keyed on the global's type: no other global changes.
+    // why MLIRGen alone cannot see it. A handle read out of a field carries none, and gets a
+    // retain of its own. Keyed on the global's type: no other global changes. A read of another
+    // global is left alone (#446: it reads null today in every model).
     void claimHandleGlobalInitializers(mlir::ModuleOp module)
     {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
@@ -297,6 +299,20 @@ class OwnedReturnConsumptionPass
             if (producesOwnedResult(value))
             {
                 value.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                return;
+            }
+
+            // A field read (`holder.child`, `new P().child`, `mkP().child`) carries no reference:
+            // the field's object keeps its count, and a temporary object gives it back at the end
+            // of the region. The global takes a count of its own, retained right where it is
+            // read - before the temporary's release. Erased under gc and none.
+            if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+                loadOp && MLIRTypeHelper::isSharedHandleType(value.getType()) &&
+                loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                mlir::OpBuilder builder(loadOp->getContext());
+                builder.setInsertionPointAfter(loadOp);
+                builder.create<mlir_ts::RetainOp>(loadOp->getLoc(), value);
             }
         });
     }
