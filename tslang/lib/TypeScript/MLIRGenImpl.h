@@ -1475,6 +1475,70 @@ class MLIRGenImpl
             return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
         }
 
+        // A record read out whole from the temporary slot an object literal is built in (one that
+        // owns nothing of its own), with a field given a value read out of another object's field
+        // or element, or out of an owning local: what `{ s: p.child }` and `{ x: a }` are. Such a
+        // value carries no reference, and the literal takes none for it.
+        static bool readsLiteralSlot(MLIRTypeHelper &mth, mlir::Location location, mlir::Value value)
+        {
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (!varOp || varOp->hasAttr(OWNED_LOCAL_ATTR_NAME))
+            {
+                return false;
+            }
+
+            for (auto *user : varOp->getUsers())
+            {
+                auto fieldRef = dyn_cast<mlir_ts::PropertyRefOp>(user);
+                if (!fieldRef)
+                {
+                    continue;
+                }
+
+                for (auto *fieldUser : fieldRef->getUsers())
+                {
+                    auto storeOp = dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    if (!storeOp || storeOp.getReference() != fieldRef.getResult())
+                    {
+                        continue;
+                    }
+
+                    // only a field that owns a block counts: not a reference (a generator's
+                    // `.captured`), and not a method bound to the object it was read from (`{ ...it }`
+                    // of a generator), whose routines do not pair up for it
+                    auto storedType = storeOp.getValue().getType();
+                    if (!mth.ownsHeapMemory(location, storedType) ||
+                        isa<mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(storedType))
+                    {
+                        continue;
+                    }
+
+                    auto stored = storeOp.getValue();
+                    while (auto castOp = stored.getDefiningOp<mlir_ts::CastOp>())
+                    {
+                        stored = castOp.getIn();
+                    }
+
+                    auto storedLoad = stored.getDefiningOp<mlir_ts::LoadOp>();
+                    auto *place = storedLoad ? storedLoad.getReference().getDefiningOp() : nullptr;
+                    if (place && isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+                    {
+                        return true;
+                    }
+
+                    // a local that owns what it holds (`{ x: a }`, #454's shape), or a literal
+                    // nested in this one
+                    if (readsLocalSlot(stored) || readsLiteralSlot(mth, location, stored))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
         {
             if (mlir::failed(getVariableTypeAndInit(location, genContext)))
@@ -1518,10 +1582,17 @@ class MLIRGenImpl
             // (`let a = new C(); const b = a;`, a parameter too): folded, it would be a read of
             // that slot, holding no reference of its own, and `a = d` would free what `b` still
             // reads (#454). A const of a const, a call or a field has no slot to lose it from.
+            //
+            // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
+            // hands its fields over unretained - its receiver is the one that retains them, as a
+            // `let` does - so folded, `o` held none of them, and `p.child = d` freed what `o.s`
+            // still read (#460).
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
-                     || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type)))
+                     || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
+                     || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
+                         && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
             if (needsIdentityStorage)
