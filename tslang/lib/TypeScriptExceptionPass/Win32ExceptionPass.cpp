@@ -593,10 +593,18 @@ struct Win32ExceptionPassCode
                     CurrentBB = emptyBlockBefore->getPrevNode();
                 }
 
-                CleanupReturnInst::Create(catchRegion.cleanupPad, CSIBlock, CurrentBB);
+                // A cleanup with a handler to go on to (a `using` scope, or an owning local's
+                // release, inside a try with a catch) hands the exception straight to it, as clang
+                // does: `cleanupret unwind label <handler>`. Through the catch-all funclet below,
+                // which rethrows, the exception was lost whenever the function also allocated on
+                // the stack dynamically (a two-argument `print`): the handler did not catch the
+                // rethrow, and the program terminated (#457). The funclet is still built, for a
+                // cleanup with no handler here, and is left unreachable otherwise.
+                auto *II = catchRegion.unwindInfoOp;
+                auto *handlerPad = II ? II->getUnwindDest() : nullptr;
+                CleanupReturnInst::Create(catchRegion.cleanupPad, handlerPad ? handlerPad : CSIBlock, CurrentBB);
 
                 // add rethrow code
-                auto *II = catchRegion.unwindInfoOp;
 
                 // beside the cleanup pad, in the same parent: cleanupret unwinds to it
                 auto *CSI = CatchSwitchInst::Create(parentPadOf(catchRegionsWorkSet, catchRegion),
@@ -669,12 +677,13 @@ struct Win32ExceptionPassCode
                         if (auto *II = cast<InvokeInst>(callBase))
                         {
                             // an invoke into a pad nested in this cleanup stays as it is
-                            if (II->getUnwindDest() != CSIBlock &&
+                            auto *unwindTo = handlerPad ? handlerPad : CSIBlock;
+                            if (II->getUnwindDest() != unwindTo &&
                                 !isDescendantPad(catchRegionsWorkSet, catchRegion, II->getUnwindDest()))
                             {
                                 LLVM_DEBUG(llvm::dbgs() << "\n!! FIX INVOKE(cleanup): " << *callBase << "\n");
 
-                                auto newCallBase = ToInvoke(callBase, CSIBlock, opBundleCleanup);
+                                auto newCallBase = ToInvoke(callBase, unwindTo, opBundleCleanup);
                                 callBase->replaceAllUsesWith(newCallBase);
                                 callBase->eraseFromParent();
                             }
