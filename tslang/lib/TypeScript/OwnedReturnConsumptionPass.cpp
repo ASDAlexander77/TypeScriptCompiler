@@ -123,7 +123,7 @@ class OwnedReturnConsumptionPass
         // back even when no function here is classified as returning owned.
         if (returnsOwned.empty())
         {
-            claimHandleGlobalInitializers(module);
+            claimGlobalInitializers(mth, module);
             releaseDiscardedTemporaries(mth, module);
             return;
         }
@@ -236,29 +236,31 @@ class OwnedReturnConsumptionPass
 
         consumeConditionalResults(mth, module);
 
-        claimHandleGlobalInitializers(module);
+        claimGlobalInitializers(mth, module);
 
         releaseDiscardedTemporaries(mth, module);
     }
 
-    // A handle global (own spec 23.1) is born holding the reference its initializer carries.
+    // A global is born holding the reference its initializer carries.
     //
     // The initializer region ends in `ts.GlobalResult`, a terminator, so a value given to it
-    // straight is never released as a discarded temporary (§9.30): `let g: Shared<T> = mk()`
-    // keeps the call's +1. A value given to it through a view of the global's type is: `ts.Cast`
-    // to `Shared<T> | null`, `ts.OptionalValue` to `Shared<T> | undefined`, `ts.CreateUnionInstance`
-    // - the view is the one use the producer has, and it is releasable, so the producer's
-    // reference was given back at the end of the region and the global was born at count 0.
+    // straight is never released as a discarded temporary (§9.30): `let g = mk()` keeps the call's
+    // +1. A value given to it through a view of the global's type is: `ts.Cast` to `C | null` or
+    // `Shared<T> | null`, `ts.OptionalValue` to `C | undefined`, `ts.CreateUnionInstance` - the view
+    // is the one use the producer has, and it is releasable, so the producer's reference was given
+    // back at the end of the region and the global was born at count 0, pointing at freed memory
+    // (#459; own spec 23.1 for handles).
     //
-    // The producer is anything that carries an owned reference by now: `new Shared(..)`, marked
-    // where MLIRGen builds it, or a call, marked above once its callee is classified - which is
-    // why MLIRGen alone cannot see it. A handle read out of a field or an element carries none,
-    // and gets a retain of its own. Keyed on the global's type: no other global changes. A read of another
-    // global is left alone (#446: it reads null today in every model).
-    void claimHandleGlobalInitializers(mlir::ModuleOp module)
+    // The producer is anything that carries an owned reference by now: `new Shared(..)` or a fresh
+    // string, marked where MLIRGen builds it, or a call, marked above once its callee is classified
+    // - which is why MLIRGen alone cannot see it. A handle read out of a field or an element
+    // carries none, and gets a retain of its own (handles only: under own a retain left in a
+    // global's region is an error for any other type). A read of another global is left alone
+    // (#446: it reads null today in every model).
+    void claimGlobalInitializers(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
-            if (!MLIRTypeHelper::isSharedHandleType(globalOp.getType()))
+            if (!mth.ownsHeapMemory(globalOp.getLoc(), globalOp.getType()))
             {
                 return;
             }
