@@ -2344,7 +2344,7 @@ branch keys on `!ts.shared`, a `ts.SharedValueRef`, or `isSharedHandleType`, so 
 | Task 1: before the type existed (its RED) | `own_shared_basic` fails under gc and none, `can't resolve name: Shared` |
 | Task 2: the payload's release taken out of the handle routine | `own_shared_count` fails under rc and own: `the payload released when the outer block died` |
 | (a) the safety net and the retain loop's handle skip removed | nothing fails: the walk's early return keeps handles out first |
-| (a) extended: the walk's early return removed too | the six own positive runs and `own_shared_count`'s own verifier run fail to compile |
+| (a) extended: the walk's early return removed too | `own_shared_basic`, `own_shared_graph` and `own_shared_count` under own (AOT and JIT), and `own_shared_count`'s own verifier run, fail to compile |
 | (b) a handle root `Owned`, not `NotOwned` | `own_err_shared_borrow_call` compiles |
 | (c) the `.value` match removed from `dropsChain` | `own_err_shared_borrow_write` compiles |
 | (d) the inline push rule off | `own_err_shared_borrow_push` compiles |

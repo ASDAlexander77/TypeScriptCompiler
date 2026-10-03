@@ -1226,6 +1226,8 @@ function main() {
     recorded.
 
   Tick this plan's boxes, and annotate this step "committed; push and PR left to the user".
+
+  Committed; push and PR left to the user.
 - [x] **Step 5: Linux.** Build the branch with GCC in WSL and run
   `ctest -R "own_shared|own-err|own-no-counting|own-verify|verify-ownership-own_shared"` there.
   - The WSL clone is `~/ts/TypeScriptCompiler`, whose origin is `/mnt/i/TypeScriptCompiler`.
