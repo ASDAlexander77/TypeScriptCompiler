@@ -1740,8 +1740,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             // A handle given back may be the last one, and its payload goes with it, and with that
-            // anything the payload owns (spec 23.3).
-            if (mlir::isa<mlir_ts::ReleaseOp, mlir_ts::ReleaseSlotOp>(op) && touchesHandle(op))
+            // anything the payload owns (spec 23.3). One held by a field or an element is a place's
+            // overwrite, judged below like any other: a constructor filling its own `this` is not
+            // a drop.
+            if (mlir::isa<mlir_ts::ReleaseOp>(op) && touchesHandle(op))
             {
                 drops = true;
             }
@@ -1751,7 +1753,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 // is its declaring function's
                 auto slot = releaseSlotOp.getSlot();
                 drops = slot.getDefiningOp<mlir_ts::AddressOfOp>() || (isPlace(slot) && reachesOutside(slot, funcOp)) ||
-                        isLoadedCell(slot);
+                        isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op));
             }
             else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
             {
