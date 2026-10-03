@@ -468,6 +468,7 @@ tslang_add_test(NAME test-compile-00-in COMMAND test-runner "${PROJECT_SOURCE_DI
 tslang_add_test(NAME test-compile-00-in-method-names COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
 tslang_add_test(NAME test-compile-00-class-structural-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_structural_extends.ts")
 tslang_add_test(NAME test-compile-00-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
+tslang_add_test(NAME test-compile-00-const-of-let COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-compile-00-instanceof-union COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
 tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_to_any.ts")
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
@@ -953,6 +954,7 @@ tslang_add_test(NAME test-jit-00-in COMMAND test-runner -jit "${PROJECT_SOURCE_D
 tslang_add_test(NAME test-jit-00-in-method-names COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00in_method_names.ts")
 tslang_add_test(NAME test-jit-00-class-structural-extends COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_structural_extends.ts")
 tslang_add_test(NAME test-jit-00-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof.ts")
+tslang_add_test(NAME test-jit-00-const-of-let COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_of_let.ts")
 tslang_add_test(NAME test-jit-00-instanceof-union COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00instanceof_union.ts")
 tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_to_any.ts")
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
@@ -1769,6 +1771,7 @@ set(TSLANG_CORPUS
     00in.ts
     00infer.ts
     00instanceof.ts
+    00const_of_let.ts
     00instanceof_namespace_narrowing.ts
     00instanceof_union.ts
     00nullable_to_any.ts
@@ -2680,7 +2683,7 @@ add_test(NAME test-own-err-names-the-variable
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_const_alias_field.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/own-err-names-the-variable.obj")
 set_tests_properties(test-own-err-names-the-variable
-                     PROPERTIES PASS_REGULAR_EXPRESSION "'a' is used here after its value was moved"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "'a' is moved here while 'b' borrows it"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # Each negative program has one shape phase 0 cannot prove, and must be rejected with this text.
@@ -2694,7 +2697,7 @@ set(own_error_cases
     "own_err_borrow_finally_local|borrows .* but is used here after .* is released or overwritten"
     "own_err_borrow_derived_ref|borrows .* but is used here after .* is released or overwritten"
     "own_err_const_alias_move|borrows .* and cannot be assigned"
-    "own_err_const_alias_field|is used here after its value was moved"
+    "own_err_const_alias_field|is moved here while .* borrows it"
     "own_err_field_alias|is used here after its value was moved"
     "own_err_call_in_try_drops|borrows .* but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|is captured by a closure that escapes, and is still used here"
