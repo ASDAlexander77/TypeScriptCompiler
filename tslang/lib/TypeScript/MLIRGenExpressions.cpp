@@ -492,7 +492,10 @@ namespace mlirgen
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 }
             });
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        // a call to a void function succeeds with no value, and is awaited all the same: leaving
+        // here dropped the token, so nothing waited for the task and `await f()` went straight
+        // on (#440)
+        EXIT_IF_FAILED(result)
 
         // Registered only now, and only if the store above actually happened: an owned slot is
         // released at scope exit whatever is in it, and a slot nothing wrote holds whatever the
