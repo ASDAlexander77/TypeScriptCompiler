@@ -424,8 +424,14 @@ namespace mlirgen
             // whole discovery run over that; let the caller treat this as "unknown for
             // now" (same idiom as mlirGenCallExpression's `!result.value &&
             // genContext.allowPartialResolve` case above).
+            //
+            // It still says why: a message is shown only if the module then fails to compile,
+            // and one that does may fail in this very run, before any other run reaches the
+            // access - a function's return type is inferred this way. Without it the only error
+            // was what the caller made of no value, "the condition has no value" in an `if` (#442).
             if (genContext.dummyRun || genContext.allowPartialResolve)
             {
+                emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
                 return mlir::success();
             }
 
