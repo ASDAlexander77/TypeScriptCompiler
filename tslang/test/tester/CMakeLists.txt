@@ -3165,6 +3165,19 @@ set_tests_properties(test-compile-class-cast-unrelated-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "type A is not assignable to type B: 'v' is number, not string"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# An object literal with methods or accessors assigned to a class is an error: a class instance
+# takes its methods from its class. The cast reinterpreted the pointer, so the class read garbage
+# fields and crashed on a method call (#494).
+foreach(object_literal_to_class_name method accessor parameter return)
+    add_test(NAME test-compile-object-literal-to-class-${object_literal_to_class_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/object-literal-to-class/${object_literal_to_class_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/object-literal-to-class-${object_literal_to_class_name}.obj")
+    set_tests_properties(test-compile-object-literal-to-class-${object_literal_to_class_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "an object literal with methods or accessors cannot be assigned to class 'C'"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
 # these run. The file pairs are the default model's, verbatim.
