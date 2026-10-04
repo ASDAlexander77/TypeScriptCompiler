@@ -5947,6 +5947,37 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // A length is an integer in [0, 2^32 - 1] (TypeScript throws a RangeError). A number is
+            // checked here, before its conversion to an index drops a fraction and makes a negative
+            // or a NaN a huge size; an integer is checked against the upper bound where it is
+            // lowered (SetLengthOfOpLowering), which a negative one exceeds once sign-extended. A
+            // failed check stops the program as a failing assert does (#483).
+            if (isa<mlir_ts::NumberType>(savingValue.getType()))
+            {
+                auto numberConstant = [&](double value) -> mlir::Value {
+#ifdef NUMBER_F64
+                    return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(value));
+#else
+                    return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(value));
+#endif
+                };
+
+                auto checkLength = [&](SyntaxKind opCode, mlir::Value left, mlir::Value right) {
+                    auto holds = builder.create<mlir_ts::LogicalBinaryOp>(
+                        location, getBooleanType(), builder.getI32IntegerAttr((int)opCode), left, right);
+                    builder.create<mlir_ts::AssertOp>(location, holds, mlir::Value(),
+                                                      builder.getStringAttr("Invalid array length"));
+                };
+
+                checkLength(SyntaxKind::GreaterThanEqualsToken, savingValue, numberConstant(0));
+                checkLength(SyntaxKind::LessThanEqualsToken, savingValue, numberConstant(4294967295.0));
+
+                // an integer survives the round trip through an index
+                CAST_A(asIndex, location, builder.getIndexType(), savingValue, genContext);
+                CAST_A(backToNumber, location, getNumberType(), asIndex, genContext);
+                checkLength(SyntaxKind::EqualsEqualsToken, backToNumber, savingValue);
+            }
+
             // special case to resize array
             syncSavingValue(lengthOf.getResult().getType());
             builder.create<mlir_ts::SetLengthOfOp>(location, arrayValueLoaded, savingValue);

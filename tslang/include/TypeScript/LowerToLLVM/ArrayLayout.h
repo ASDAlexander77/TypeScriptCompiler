@@ -6,6 +6,7 @@
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
+#include "TypeScript/LowerToLLVM/AssertLogic.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
@@ -106,6 +107,9 @@ class ArrayLayout : public LLVMCodeHelperBase
     // MemoryRealloc, which keeps an rc data block's count across the move and births one grown
     // from null with the header's reference.
     //
+    // A `needed` past 2^32 - 1, a byte count that overflows, or a failed allocation stops the
+    // program before anything is stored or zeroed (#483).
+    //
     // A static header (makeStatic) must never reach the ops that change an array in place: it lives
     // in a constant global with capacity = length over static data, and pop, shift, splice and
     // `length =` would store into that global and zero slots of the static data. MLIRGen copies
@@ -139,11 +143,14 @@ class ArrayLayout : public LLVMCodeHelperBase
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, newCapacity, constant(4));
                 newCapacity = rewriter.create<LLVM::SelectOp>(loc, belowMinimum, constant(4), newCapacity);
 
+                checkLength(needed);
+                auto newBytes = bytesFor(arrayType, newCapacity);
+                auto grown = MemoryRealloc(currentData, newBytes);
+                checkAllocated(grown, newBytes);
+
                 auto sizeOfElement = rewriter.create<mlir_ts::DialectCastOp>(
                     loc, llvmIndexType,
                     rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayType.getElementType()));
-                auto newBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, newCapacity});
-                auto grown = MemoryRealloc(currentData, newBytes);
 
                 auto oldBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, capacity});
                 auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), grown, ValueRange{oldBytes});
@@ -157,6 +164,56 @@ class ArrayLayout : public LLVMCodeHelperBase
                 return grown;
             },
             [&](OpBuilder &, Location) -> mlir::Value { return currentData; });
+    }
+
+    // A length is at most 2^32 - 1, as in TypeScript (#483): past it - `length = 2^42`, or a
+    // negative integer, which is huge once sign-extended to an index - the program stops as a
+    // failing assert does. With a 32-bit index every value is in range, and the byte count and
+    // allocation checks below catch what does not fit.
+    void checkLength(mlir::Value length)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        if (llvmIndexType.getIntOrFloatBitWidth() <= 32)
+        {
+            return;
+        }
+
+        auto maxLength = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
+                                                           rewriter.getIntegerAttr(llvmIndexType, 0xFFFFFFFFll));
+        auto valid = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, length, maxLength);
+        AssertLogic(op, rewriter, typeConverter, loc, compileOptions).check(valid, "Invalid array length");
+    }
+
+    // the bytes `count` elements take; the program stops when they do not fit in an index (#483)
+    mlir::Value bytesFor(mlir_ts::ArrayType arrayType, mlir::Value count)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto sizeOfElement = rewriter.create<mlir_ts::DialectCastOp>(
+            loc, llvmIndexType, rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayType.getElementType()));
+        auto allOnes = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, -1));
+        auto maxCount = rewriter.create<LLVM::UDivOp>(loc, llvmIndexType, ValueRange{allOnes, sizeOfElement});
+        auto fits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, count, maxCount);
+        AssertLogic(op, rewriter, typeConverter, loc, compileOptions).check(fits, "Invalid array length");
+        return rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, count});
+    }
+
+    // the program stops when an allocation of `bytes` (more than none) gave no block (#483)
+    void checkAllocated(mlir::Value block, mlir::Value bytes)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto got = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, block,
+                                                 rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+        auto none = rewriter.create<LLVM::ICmpOp>(
+            loc, LLVM::ICmpPredicate::eq, bytes,
+            rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0)));
+        auto allocated = rewriter.create<LLVM::OrOp>(loc, got, none);
+        AssertLogic(op, rewriter, typeConverter, loc, compileOptions).check(allocated, "Out of memory");
     }
 
     // zero `count` elements of `data` from `index` on: the slots pop, shift, splice and a smaller

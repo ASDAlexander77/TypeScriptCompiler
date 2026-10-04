@@ -8,7 +8,7 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/LocationHelper.h"
@@ -28,7 +28,7 @@ class AssertLogic
     Operation *op;
     PatternRewriter &rewriter;
     TypeHelper th;
-    LLVMCodeHelper ch;
+    LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
 
@@ -44,14 +44,29 @@ class AssertLogic
         typeOfValueType = th.getPtrType();
     }
 
+    AssertLogic(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, Location loc, CompileOptions &compileOptions)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+    {
+        sizeType = th.getIndexType();
+        typeOfValueType = th.getPtrType();
+    }
+
     // `message`, when given, is the text known only at run time and is shown instead of `msg`
     mlir::LogicalResult logic(mlir::Value condValue, std::string msg, mlir::Value message = mlir::Value())
     {
-#ifdef WIN32
-        return logicWin32(condValue, msg, message);
-#else
-        return logicUnix(condValue, msg, message);
-#endif
+        // the test replaces the assert op, which the split left at the top of the continuation
+        failUnless(condValue, msg, message);
+        rewriter.eraseOp(op);
+        return success();
+    }
+
+    // A check in the middle of another lowering (#483): execution goes on at the insertion point
+    // when `condValue` holds, and stops with `msg` and the operation's file and line, as a failing
+    // assert does, when it does not.
+    void check(mlir::Value condValue, std::string msg)
+    {
+        auto *continuationBlock = failUnless(condValue, msg, mlir::Value());
+        rewriter.setInsertionPointToStart(continuationBlock);
     }
 
     // `_assert` and `__assert_fail` abort, which flushes no stream: what the program printed before
@@ -76,84 +91,33 @@ class AssertLogic
         return rewriter.create<LLVM::SelectOp>(loc, isNull, msgCst, message);
     }
 
-    mlir::LogicalResult logicWin32(mlir::Value condValue, std::string msg, mlir::Value message)
+  private:
+    // Splits the block at the insertion point and ends the first half with a branch on
+    // `condValue`: on to the continuation, which is returned, or to a new block that reports the
+    // failure (`_assert` on Windows, `__assert_fail` elsewhere) and never returns.
+    mlir::Block *failUnless(mlir::Value condValue, std::string msg, mlir::Value message)
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
         auto [fileName, lineAndColumn] = LLVMLocationHelper::getLineAndColumnAndFileName(loc);
         auto [line, column] = lineAndColumn;
 
-        // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getPtrType();
+#ifdef WIN32
         auto assertFuncOp =
             ch.getOrInsertFunction("_assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
-
-        // Split block at `assert` operation.
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-        // Generate IR to call `assert`.
-        auto *failureBlock = rewriter.createBlock(opBlock->getParent());
-
-        std::stringstream msgWithNUL;
-        msgWithNUL << msg;
-
-        auto opHash = std::hash<std::string>{}(msgWithNUL.str());
-
-        std::stringstream msgVarName;
-        msgVarName << "m_" << opHash;
-
-        std::stringstream fileVarName;
-        fileVarName << "f_" << hash_value(fileName);
-
-        std::stringstream fileWithNUL;
-        fileWithNUL << fileName.str();
-
-        auto msgCst = ch.getOrCreateGlobalString(msgVarName.str(), msgWithNUL.str());
-
-        auto fileCst = ch.getOrCreateGlobalString(fileVarName.str(), fileName.str());
-
-        // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
-
-        mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
-
-        flushOutput();
-        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
-        // rewriter.create<LLVM::UnreachableOp>(loc);
-        rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
-
-        // Generate assertion test.
-        rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(op, condValue, continuationBlock, failureBlock);
-
-        return success();
-    }
-
-    mlir::LogicalResult logicUnix(mlir::Value condValue, std::string msg, mlir::Value message)
-    {
-        auto unreachable = clh.FindUnreachableBlockOrCreate();
-
-        auto [fileName, lineAndColumn] = LLVMLocationHelper::getLineAndColumnAndFileName(loc);
-        auto [line, column] = lineAndColumn;
-
-        // Insert the `_assert` declaration if necessary.
-        auto i8PtrTy = th.getPtrType();
+#else
         auto assertFuncOp = ch.getOrInsertFunction(
             "__assert_fail", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
+#endif
 
-        // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-        // Generate IR to call `assert`.
         auto *failureBlock = rewriter.createBlock(opBlock->getParent());
 
-        std::stringstream msgWithNUL;
-        msgWithNUL << msg;
-
-        auto opHash = std::hash<std::string>{}(msgWithNUL.str());
+        auto opHash = std::hash<std::string>{}(msg);
 
         std::stringstream msgVarName;
         msgVarName << "m_" << opHash;
@@ -161,28 +125,24 @@ class AssertLogic
         std::stringstream fileVarName;
         fileVarName << "f_" << hash_value(fileName);
 
-        std::stringstream fileWithNUL;
-        fileWithNUL << fileName.str();
-
-        auto msgCst = ch.getOrCreateGlobalString(msgVarName.str(), msgWithNUL.str());
-
+        auto msgCst = ch.getOrCreateGlobalString(msgVarName.str(), msg);
         auto fileCst = ch.getOrCreateGlobalString(fileVarName.str(), fileName.str());
 
-        // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
-
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
-        mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
 
         flushOutput();
+#ifdef WIN32
+        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
+#else
+        mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes, funcName});
-        // rewriter.create<LLVM::UnreachableOp>(loc);
+#endif
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 
-        // Generate assertion test.
         rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(op, condValue, continuationBlock, failureBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condValue, continuationBlock, failureBlock);
 
-        return success();
+        return continuationBlock;
     }
 };
 } // namespace typescript
