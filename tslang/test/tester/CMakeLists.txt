@@ -484,6 +484,7 @@ tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-compile-00-array-growth COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-compile-00-global-from-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-compile-00-try-cleanup-then-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
@@ -983,6 +984,7 @@ tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-jit-00-array-growth COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-jit-00-global-from-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-jit-00-try-cleanup-then-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
@@ -1723,6 +1725,7 @@ set(TSLANG_CORPUS
     00class_local_decl.ts
     00class_nested.ts
     00class_new.ts
+    00array_growth.ts
     00class_or_interface_to_tuple.ts
     00class_protected_constr.ts
     00class_recursive.ts

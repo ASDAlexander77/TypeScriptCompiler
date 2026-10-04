@@ -675,67 +675,37 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         ArrayLayout layout(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto header = layout.headerForUpdate(arrayType, transformed.getOp());
-        auto currentPtrPtr = layout.dataAddress(arrayType, header);
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
-        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
-        auto newCountAsIndexType = op.getNewLength();
+        mlir::Value countAsLLVMType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
+        mlir::Value newCountAsLLVMType =
+            rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, op.getNewLength());
 
-        auto sizeOfTypeAsIndexType = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        // A longer array grows its block by doubling (a no-op while the capacity suffices), and a
+        // shorter one keeps it (spec section 6).
+        auto allocated = layout.ensureCapacity(arrayType, header, newCountAsLLVMType);
 
-        auto multSizeOfTypeValue =
-            rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeAsIndexType, newCountAsIndexType});
-
-        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-
-        // `arr.length = n` on a grown array exposes slots the allocator has not written. They read
-        // as zero: the default library's Set and Map grow their `int[]` buckets this way and take
-        // an unwritten bucket for an empty one, and under rc and own a store into a slot gives up
-        // what the slot held first (`isOwnedElementSlot`), so the release would read whatever was
-        // last in that memory - `result.length = this.length` followed by `result[i] = ..` is the
-        // default library's `Array.map`, and `arrS.map(e => e + "_")` crashed about one run in
-        // three (§9.37).
+        // The slots between the old and the new length are zeroed, whichever way the length went.
         //
-        // Every model but gc, whose collector hands back cleared memory - also when a block
-        // shrunk in place grows again, GC_realloc having cleared what the shrink gave up.
-        if (!tsLlvmContext->compileOptions.needsGCRuntime())
-        {
-            auto oldBytes = rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(),
-                                                                ValueRange{sizeOfTypeAsIndexType,
-                                                                           rewriter.create<mlir::index::CastUOp>(
-                                                                               loc, th.getIndexType(), countAsIndexType)});
-            auto grew = rewriter.create<mlir::index::CmpOp>(loc, mlir::index::IndexCmpPredicate::UGT,
-                                                            multSizeOfTypeValue, oldBytes);
+        // Growing: `arr.length = n` exposes slots past the old length, and they read as zero: the
+        // default library's Set and Map grow their `int[]` buckets this way and take an unwritten
+        // bucket for an empty one, and under rc and own a store into a slot gives up what the slot
+        // held first (`isOwnedElementSlot`), so the release would read whatever was last in that
+        // memory - `result.length = this.length` followed by `result[i] = ..` is the default
+        // library's `Array.map`, and `arrS.map(e => e + "_")` crashed about one run in three
+        // (§9.37). This holds in every model, gc included: the block is no longer reallocated to
+        // the exact length, so after a `pop` or a shrink the slots past `length` are not fresh
+        // memory from the allocator but slots the array used before.
+        //
+        // Shrinking: the slots given up are zeroed, so gc does not keep what they held alive and
+        // a later growth reads zero.
+        auto grows = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, newCountAsLLVMType, countAsLLVMType);
+        auto low = rewriter.create<LLVM::SelectOp>(loc, grows, countAsLLVMType, newCountAsLLVMType);
+        auto high = rewriter.create<LLVM::SelectOp>(loc, grows, newCountAsLLVMType, countAsLLVMType);
+        layout.zeroElements(arrayType, allocated, low,
+                            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{high, low}));
 
-            auto *currentBlock = rewriter.getInsertionBlock();
-            auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
-            auto *zeroBlock = rewriter.createBlock(continuationBlock);
-
-            rewriter.setInsertionPointToEnd(zeroBlock);
-            auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), allocated,
-                                                          ValueRange{rewriter.create<mlir::index::CastUOp>(
-                                                              loc, llvmIndexType, oldBytes)});
-            auto tailBytes = rewriter.create<mlir::index::SubOp>(loc, th.getIndexType(),
-                                                                 multSizeOfTypeValue, oldBytes);
-            rewriter.create<LLVM::MemsetOp>(
-                loc, tailStart,
-                rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
-                rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, tailBytes), /*isVolatile=*/false);
-            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
-
-            rewriter.setInsertionPointToEnd(currentBlock);
-            rewriter.create<LLVM::CondBrOp>(loc, grew, zeroBlock, continuationBlock);
-
-            rewriter.setInsertionPointToStart(continuationBlock);
-        }
-
-        auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.eraseOp(op);
 
@@ -3190,8 +3160,6 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         // TODO: use GetAddressOfArrayElement method to sync code
         ArrayLayout layout(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto header = layout.headerForUpdate(arrayType, transformed.getOp());
-        auto currentPtrPtr = layout.dataAddress(arrayType, header);
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
@@ -3200,13 +3168,8 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto newCountAsIndexType =
             rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
-
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
-
-        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
+        // room for the new elements: the block grows by doubling (spec section 6)
+        auto allocated = layout.ensureCapacity(arrayType, header, newCountAsIndexType);
 
         mlir::Value index = countAsIndexType;
         auto next = false;
@@ -3243,10 +3206,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
             next = true;
         }
 
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3282,27 +3242,28 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
-        auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
-        auto newCountAsIndexType =
-            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
+        // the block is kept (spec section 6): the last element is read, its slot zeroed and the
+        // length shortened. An empty array stays empty and gives a zeroed element - the slot
+        // before the first is an rc block's count word
+        auto isEmpty = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, countAsIndexType,
+                                                     clh.createIndexConstantOf(llvmIndexType, 0));
+        auto loadedElement = clh.conditionalExpressionLowering(
+            loc, llvmElementType, isEmpty,
+            [&](OpBuilder &, Location) -> mlir::Value { return rewriter.create<LLVM::ZeroOp>(loc, llvmElementType); },
+            [&](OpBuilder &, Location) -> mlir::Value {
+                auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
+                auto newCountAsIndexType =
+                    rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
-        // load last element
-        auto offset =
-            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{newCountAsIndexType});
-        auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
+                // load last element
+                auto offset = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr,
+                                                           ValueRange{newCountAsIndexType});
+                mlir::Value element = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
-
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
-
-        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
+                layout.zeroElements(arrayType, currentPtr, newCountAsIndexType, incSize);
+                rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+                return element;
+            });
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
         return success();
@@ -3332,8 +3293,6 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
 
         ArrayLayout layout(unshiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto header = layout.headerForUpdate(arrayType, transformed.getOp());
-        auto currentPtrPtr = layout.dataAddress(arrayType, header);
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
@@ -3345,12 +3304,9 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+        // room for the new elements: the block grows by doubling (spec section 6)
+        auto allocated = layout.ensureCapacity(arrayType, header, newCountAsIndexType);
 
-        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-
-        // realloc
         auto offset0 = allocated;
         auto offsetN = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, allocated, ValueRange{incSize});
 
@@ -3395,10 +3351,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
             next = true;
         }
 
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(unshiftOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3437,33 +3390,41 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto countAsIndexTypePtr = layout.lengthAddress(arrayType, header);
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
-        auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
-        auto newCountAsIndexType =
-            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
+        // the block is kept (spec section 6): the first element is read, the rest moved down over
+        // it, the slot that frees at the end zeroed and the length shortened. An empty array stays
+        // empty and gives a zeroed element, as pop does
+        auto isEmpty = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, countAsIndexType,
+                                                     clh.createIndexConstantOf(llvmIndexType, 0));
+        auto loadedElement = clh.conditionalExpressionLowering(
+            loc, llvmElementType, isEmpty,
+            [&](OpBuilder &, Location) -> mlir::Value { return rewriter.create<LLVM::ZeroOp>(loc, llvmElementType); },
+            [&](OpBuilder &, Location) -> mlir::Value {
+                auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
+                auto newCountAsIndexType =
+                    rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
-        // load last element
-        auto offset0 =
-            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{clh.createIndexConstantOf(llvmIndexType, 0)});
-        auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset0);
+                // load first element
+                auto offset0 = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr,
+                                                            ValueRange{clh.createIndexConstantOf(llvmIndexType, 0)});
+                mlir::Value element = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset0);
 
-        auto offset1 =
-            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{incSize});
+                auto offset1 =
+                    rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{incSize});
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+                auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+                auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+                auto multSizeOfTypeValue =
+                    rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto multSizeOfTypeValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), multSizeOfTypeValue);
-        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, multSizeOfTypeValueAdapt);
+                auto multSizeOfTypeValueAdapt =
+                    rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), multSizeOfTypeValue);
+                rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, multSizeOfTypeValueAdapt);
 
-        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
+                layout.zeroElements(arrayType, currentPtr, newCountAsIndexType, incSize);
+                rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+                return element;
+            });
 
         rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
         return success();
@@ -3570,18 +3531,19 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsLLVMType});
+        // The block grows by doubling when the array gets longer, and is kept when it gets shorter
+        // (spec section 6). Growth comes first - it may move the block - and is a no-op while the
+        // capacity suffices; then the tail after the deleted range moves to just after the
+        // inserted one, and the slots a shorter array leaves at its end, [newCount, count), are
+        // zeroed (none when it does not get shorter).
+        auto allocated = layout.ensureCapacity(arrayType, header, newCountAsLLVMType);
 
-        auto increaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-            auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-
+        {
             auto moveCountAsLLVMType =
                 rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
             moveCountAsLLVMType =
                 rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsLLVMType, decSizeAsLLVMType});
 
-            // realloc
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, allocated, ValueRange{startIndexAsLLVMType});
             auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{incSizeAsLLVMType});
@@ -3589,31 +3551,12 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             auto moveBytesAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, moveBytes);
             rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveBytesAdapt);
 
-            return allocated;
-        };
-
-        auto decreaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-
-            auto moveCountAsLLVMType =
-                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsLLVMType});
-            moveCountAsLLVMType =
-                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsLLVMType, decSizeAsLLVMType});
-
-            // realloc
-            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, currentPtr, ValueRange{startIndexAsLLVMType});
-            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
-            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, offsetStart, ValueRange{incSizeAsLLVMType});
-
-            auto moveBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, moveCountAsLLVMType});
-            auto moveBytesAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, indexType, moveBytes);
-            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveBytesAdapt);
-
-            auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
-            return allocated;
-        };
-
-        auto cond = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, incSizeAsLLVMType, decSizeAsLLVMType);
-        auto allocated = clh.conditionalExpressionLowering(loc, ptrType, cond, increaseArrayFunc, decreaseArrayFunc);
+            auto shrinks = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, decSizeAsLLVMType, incSizeAsLLVMType);
+            auto vacated = rewriter.create<LLVM::SelectOp>(
+                loc, shrinks, rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{decSizeAsLLVMType, incSizeAsLLVMType}),
+                clh.createIndexConstantOf(llvmIndexType, 0));
+            layout.zeroElements(arrayType, allocated, newCountAsLLVMType, vacated);
+        }
 
         mlir::Value indexAsLLVMType = startIndexAsLLVMType;
         auto next = false;
@@ -3650,10 +3593,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             next = true;
         }
 
-        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
-        // capacity = length until growth by doubling (spec section 6) uses it
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(spliceOp, ValueRange{newCountAsLLVMType});
         return success();
