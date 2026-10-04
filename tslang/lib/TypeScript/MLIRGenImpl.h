@@ -2533,7 +2533,10 @@ class MLIRGenImpl
                 {
                     // there is no initializer, var declration can be undefined
                     //type = getUnionType(type, getUndefinedType());
-                    if (!isa<mlir_ts::OptionalType>(type) && !hasModifier(parent, SyntaxKind::DeclareKeyword))
+                    // a variable a library declares to its importers (`@dllimport let k: s32;` in its
+                    // __decls) is defined in the library, so it has no initializer here (#448)
+                    if (!isa<mlir_ts::OptionalType>(type) && !hasModifier(parent, SyntaxKind::DeclareKeyword) &&
+                        !MLIRHelper::hasDecorator(parent, DLL_IMPORT))
                     {
                         emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
                     }

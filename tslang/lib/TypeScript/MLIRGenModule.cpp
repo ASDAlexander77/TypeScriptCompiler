@@ -793,6 +793,10 @@ namespace mlirgen
                     return mlir::success();
                 }
 
+                // the root's own statements: its variables are still the module's to export
+                GenContext rootGenContext(genContext);
+                rootGenContext.rootStatementsFuncOp = genContext.funcOp;
+
                 for (auto &statement : statements)
                 {
                     auto isVariableStatement = statement == SyntaxKind::VariableStatement;
@@ -808,11 +812,11 @@ namespace mlirgen
                                 [](auto decl) { return decl->initializer == SyntaxKind::ArrowFunction; });
                             if (!hasArrowDeclaration)
                             {
-                                variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                                variableStatement->declarationList->flags &= ~NodeFlags::Const;
                             }
                         }
 
-                        if (failed(mlirGen(statement, genContext)))
+                        if (failed(mlirGen(statement, rootGenContext)))
                         {
                             emitError(loc(statement), "failed statement");
                             return mlir::failure();
