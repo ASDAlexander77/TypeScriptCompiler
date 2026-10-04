@@ -106,11 +106,11 @@ class ArrayLayout : public LLVMCodeHelperBase
     // MemoryRealloc, which keeps an rc data block's count across the move and births one grown
     // from null with the header's reference.
     //
-    // A static header (makeStatic) is broken under the ops that change an array in place (#479):
-    // it lives in a constant global with capacity = length over static data, and pop, shift,
-    // splice and `length =` store the new length into that constant global and zero the
-    // vacated slots in the static data - undefined behaviour, which today reads back silently
-    // wrong values. Nothing here guards against it.
+    // A static header (makeStatic) must never reach the ops that change an array in place: it lives
+    // in a constant global with capacity = length over static data, and pop, shift, splice and
+    // `length =` would store into that global and zero slots of the static data. MLIRGen copies
+    // a literal's arrays to the heap before anything can change them (#479); nothing here guards
+    // against it.
     mlir::Value ensureCapacity(mlir_ts::ArrayType arrayType, mlir::Value header, mlir::Value needed)
     {
         TypeHelper th(rewriter);

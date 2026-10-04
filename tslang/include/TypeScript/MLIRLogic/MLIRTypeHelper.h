@@ -435,6 +435,33 @@ class MLIRTypeHelper
         return mlir::Attribute();
     }
 
+    // A tuple literal folded to a constant (`[1, [6, 7]]`, `{ items: [1, 2] }`) keeps each array
+    // in it as a static header over constant data (#479): such a tuple has to be rebuilt with
+    // heap copies before anything can change one of its arrays.
+    static bool constTupleHoldsArray(mlir::Type type)
+    {
+        ArrayRef<mlir_ts::FieldInfo> fields;
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields = constTupleType.getFields();
+        }
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields = tupleType.getFields();
+        }
+
+        return llvm::any_of(fields, [](auto &field) {
+            return isa<mlir_ts::ArrayType>(field.type) || constTupleHoldsArray(field.type);
+        });
+    }
+
+    // a `const` of such a tuple gets storage and is widened to a tuple, as a `const` of a constant
+    // array is widened to an array (processConstRef, adjustLocalVariableType)
+    static bool isConstTupleHoldingArray(mlir::Type type)
+    {
+        return isa<mlir_ts::ConstTupleType>(type) && constTupleHoldsArray(type);
+    }
+
     mlir::Type wideStorageType(mlir::Type type)
     {
         auto actualType = type;
