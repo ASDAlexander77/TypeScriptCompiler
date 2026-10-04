@@ -3207,6 +3207,19 @@ foreach(builtin_cast_case ${builtin_cast_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A property that does not resolve is named in the error, in a condition too: the run inferring the
+# function's return type gave no value and no message, and an `if` reported only "the condition has
+# no value" (#442).
+foreach(property_error_name if const while conditional)
+    add_test(NAME test-compile-property-error-${property_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/property-error/${property_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/property-error-${property_error_name}.obj")
+    set_tests_properties(test-compile-property-error-${property_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'foo' of type [{]x:s32[}]"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # The shared-component tier under the other two models. A shared library records the model
 # it was built under, so both halves of a pair are built with the same flag - which is what
 # these run. The file pairs are the default model's, verbatim.
