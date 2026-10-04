@@ -350,6 +350,7 @@ tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-array-literal-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-compile-00-tuple-runtime-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
 tslang_add_test(NAME test-compile-00-record-to-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
+tslang_add_test(NAME test-compile-00-array-insert-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_insert_functions.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -857,6 +858,7 @@ tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-array-literal-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-jit-00-tuple-runtime-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
 tslang_add_test(NAME test-jit-00-record-to-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
+tslang_add_test(NAME test-jit-00-array-insert-functions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_insert_functions.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -1693,6 +1695,7 @@ set(TSLANG_CORPUS
     00array_literal_copy.ts
     00tuple_runtime_arrays.ts
     00record_to_class.ts
+    00array_insert_functions.ts
     00const_record_owned_fields.ts
     00array_length_valid.ts
     00string_view_copy.ts
@@ -3175,6 +3178,29 @@ foreach(object_literal_to_class_name method accessor parameter return)
                      -o "${CMAKE_CURRENT_BINARY_DIR}/object-literal-to-class-${object_literal_to_class_name}.obj")
     set_tests_properties(test-compile-object-literal-to-class-${object_literal_to_class_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "an object literal with methods or accessors cannot be assigned to class 'C'"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# A value a builtin cannot cast to what it takes is the cast's error; the failed cast's null value
+# went on to the op's builder and crashed the compiler (#438).
+set(builtin_cast_cases
+    "push|can't assign '[(][)] => s32' to '[(][)] => number'"
+    "unshift|can't assign '[(][)] => s32' to '[(][)] => number'"
+    "splice|can't assign '[(][)] => s32' to '[(][)] => number'"
+    "push_string|invalid cast from [(][)] => s32 to string"
+    "parse_int|invalid cast from [(][)] => s32 to string"
+    "is_nan|invalid cast from [(][)] => s32 to number")
+foreach(builtin_cast_case ${builtin_cast_cases})
+    string(FIND "${builtin_cast_case}" "|" builtin_cast_sep)
+    string(SUBSTRING "${builtin_cast_case}" 0 ${builtin_cast_sep} builtin_cast_name)
+    math(EXPR builtin_cast_sep "${builtin_cast_sep} + 1")
+    string(SUBSTRING "${builtin_cast_case}" ${builtin_cast_sep} -1 builtin_cast_message)
+    add_test(NAME test-compile-builtin-cast-${builtin_cast_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/builtin-cast/${builtin_cast_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/builtin-cast-${builtin_cast_name}.obj")
+    set_tests_properties(test-compile-builtin-cast-${builtin_cast_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${builtin_cast_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 

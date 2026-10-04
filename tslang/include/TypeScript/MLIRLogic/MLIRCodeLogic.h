@@ -553,6 +553,10 @@ class MLIRCustomMethods
         if (!isa<mlir::IndexType>(bufferSize.getType()))
         {
             bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext, false);
+            if (!bufferSize)
+            {
+                return mlir::failure();
+            }
         }
 
         auto stringType = mlir_ts::StringType::get(builder.getContext());
@@ -560,6 +564,10 @@ class MLIRCustomMethods
         if (!isa<mlir_ts::StringType>(format.getType()))
         {
             format = castFn(location, stringType, format, genContext, false);
+            if (!format)
+            {
+                return mlir::failure();
+            }
         }
 
         SmallVector<mlir::Value> vals;
@@ -618,6 +626,10 @@ class MLIRCustomMethods
         if (!isa<mlir_ts::BooleanType>(op.getType()))
         {
             op = castFn(location, mlir_ts::BooleanType::get(builder.getContext()), op, genContext, false);
+            if (!op)
+            {
+                return mlir::failure();
+            }
         }
 
         auto assertOp =
@@ -626,7 +638,7 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    ValueOrLogicalResult mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto hasTwoOps = operands.size() == 2;
@@ -636,6 +648,10 @@ class MLIRCustomMethods
         if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = castFn(location, mlir_ts::StringType::get(builder.getContext()), op, genContext, false);
+            if (!op)
+            {
+                return mlir::failure();
+            }
         }
 
         if (hasTwoOps)
@@ -644,42 +660,54 @@ class MLIRCustomMethods
             if (!isa<mlir::IntegerType>(op2.getType()))
             {
                 op2 = castFn(location, mlir::IntegerType::get(builder.getContext(), 32), op2, genContext, false);
+                if (!op2)
+                {
+                    return mlir::failure();
+                }
             }
         }
 
         auto parseIntOp = hasTwoOps ? builder.create<mlir_ts::ParseIntOp>(location, builder.getI32Type(), op, op2)
                                     : builder.create<mlir_ts::ParseIntOp>(location, builder.getI32Type(), op);
 
-        return parseIntOp;
+        return V(parseIntOp);
     }
 
-    mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    ValueOrLogicalResult mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto op = operands.front();
         if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = castFn(location, mlir_ts::StringType::get(builder.getContext()), op, genContext, false);
+            if (!op)
+            {
+                return mlir::failure();
+            }
         }
 
         auto parseFloatOp =
             builder.create<mlir_ts::ParseFloatOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
 
-        return parseFloatOp;
+        return V(parseFloatOp);
     }
 
-    mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    ValueOrLogicalResult mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto op = operands.front();
         if (!isa<mlir_ts::NumberType>(op.getType()))
         {
             op = castFn(location, mlir_ts::NumberType::get(builder.getContext()), op, genContext, false);
+            if (!op)
+            {
+                return mlir::failure();
+            }
         }
 
         auto isNaNOp = builder.create<mlir_ts::IsNaNOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
 
-        return isNaNOp;
+        return V(isNaNOp);
     }
 
     mlir::Value mlirGenSizeOf(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
@@ -776,6 +804,32 @@ class MLIRCustomMethods
         }
     }
 
+    // Each value cast to `type`, into `castedValues`. A value the cast rejects fails the builtin:
+    // its null result went on to the op's builder, which crashed the compiler (#438).
+    mlir::LogicalResult castEach(const mlir::Location &location, mlir::Type type, ArrayRef<mlir::Value> values,
+        SmallVector<mlir::Value> &castedValues,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
+    {
+        for (auto value : values)
+        {
+            if (value.getType() == type)
+            {
+                castedValues.push_back(value);
+                continue;
+            }
+
+            auto casted = castFn(location, type, value, genContext, false);
+            if (casted.failed_or_no_value())
+            {
+                return mlir::failure();
+            }
+
+            castedValues.push_back(V(casted));
+        }
+
+        return mlir::success();
+    }
+
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
         std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
@@ -784,16 +838,9 @@ class MLIRCustomMethods
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
-        for (auto value : values)
+        if (mlir::failed(castEach(location, arrayElement, values, castedValues, castFn, genContext)))
         {
-            if (value.getType() != arrayElement)
-            {
-                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
-            }
-            else
-            {
-                castedValues.push_back(value);
-            }
+            return mlir::failure();
         }
 
         auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
@@ -847,16 +894,9 @@ class MLIRCustomMethods
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
-        for (auto value : values)
+        if (mlir::failed(castEach(location, arrayElement, values, castedValues, castFn, genContext)))
         {
-            if (value.getType() != arrayElement)
-            {
-                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
-            }
-            else
-            {
-                castedValues.push_back(value);
-            }
+            return mlir::failure();
         }
 
         auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
@@ -917,6 +957,10 @@ class MLIRCustomMethods
             if (value.getType() != si64Type)
             {
                 value = castFn(location, si64Type, value, genContext, false);
+                if (!value)
+                {
+                    return value;
+                }
             }
 
             return castFn(location, mlir::IndexType::get(builder.getContext()), value, genContext, false);
@@ -932,16 +976,9 @@ class MLIRCustomMethods
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
-        for (auto value : values)
+        if (mlir::failed(castEach(location, arrayElement, values, castedValues, castFn, genContext)))
         {
-            if (value.getType() != arrayElement)
-            {
-                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
-            }
-            else
-            {
-                castedValues.push_back(value);
-            }
+            return mlir::failure();
         }
 
         auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
@@ -986,16 +1023,9 @@ class MLIRCustomMethods
         auto indexType = builder.getIndexType();
 
         SmallVector<mlir::Value> castedValues;
-        for (auto value : values)
+        if (mlir::failed(castEach(location, indexType, values, castedValues, castFn, genContext)))
         {
-            if (value.getType() != indexType)
-            {
-                castedValues.push_back(castFn(location, indexType, value, genContext, false));
-            }
-            else
-            {
-                castedValues.push_back(value);
-            }
+            return mlir::failure();
         }
 
         auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
@@ -1033,6 +1063,10 @@ class MLIRCustomMethods
         if (op.getType() != int32Type)
         {
             op = castFn(location, int32Type, op, genContext, false);
+            if (!op)
+            {
+                return mlir::failure();
+            }
         }
 
         auto switchStateOp =
@@ -1765,6 +1799,10 @@ class MLIRPropertyAccessCodeLogic
                     MLIRTypeHelper mth(builder.getContext(), compileOptions);
                     auto nonConstArray = mth.convertConstArrayTypeToArrayType(expression.getType());
                     expression = castFn(location, nonConstArray, expression, genContext, false);
+                    if (!expression)
+                    {
+                        return mlir::Value();
+                    }
                 }
                 else
                 {
