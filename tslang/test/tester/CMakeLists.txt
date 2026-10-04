@@ -348,6 +348,7 @@ tslang_add_test(NAME test-compile-00-array-rest-copy COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-compile-00-array-literal-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
+tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -852,6 +853,7 @@ tslang_add_test(NAME test-jit-00-array-rest-copy COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-jit-00-array-literal-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
+tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -1685,6 +1687,7 @@ set(TSLANG_CORPUS
     00array6.ts
     00array_static_nested.ts
     00array_literal_copy.ts
+    00const_record_owned_fields.ts
     00array_length_valid.ts
     00string_view_copy.ts
     00array_data_string_alias.ts
@@ -2702,6 +2705,12 @@ add_test(NAME test-own-string-copy-in-store-block
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
+
+# A `const` record literal's slot is released under rc (#485); no run can see the leak, so the IR is read.
+add_test(NAME test-rc-const-record-release
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/const-record-release.cmake")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.

@@ -1476,9 +1476,16 @@ class MLIRGenImpl
         }
 
         // A record read out whole from the temporary slot an object literal is built in (one that
-        // owns nothing of its own), with a field given a value read out of another object's field
-        // or element, or out of an owning local: what `{ s: p.child }` and `{ x: a }` are. Such a
-        // value carries no reference, and the literal takes none for it.
+        // owns nothing of its own), with a field that owns a block and that only the literal's
+        // receiver counts - a `let` does, with RetainSlot - so a `const` of it needs storage like a
+        // `let`. Folded:
+        // - a value read out of another object's field or element, or out of an owning local
+        //   (`{ s: p.child }`, `{ x: a }`), was held with no count at all (#454, #460);
+        // - an array or tuple built in the literal (`{ items: [i, 2] }`), or a new array, born with
+        //   no count, was never given back, and under own neither was a string, a call's result or
+        //   a new instance made for it (#485).
+        // A value taken out of another record (`{ ...o }`) stays with that record's count, and a
+        // literal string is immortal.
         static bool readsLiteralSlot(MLIRTypeHelper &mth, mlir::Location location, mlir::Value value)
         {
             auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
@@ -1520,19 +1527,32 @@ class MLIRGenImpl
                         stored = castOp.getIn();
                     }
 
-                    auto storedLoad = stored.getDefiningOp<mlir_ts::LoadOp>();
-                    auto *place = storedLoad ? storedLoad.getReference().getDefiningOp() : nullptr;
-                    if (place && isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+                    auto *producer = stored.getDefiningOp();
+                    if (!producer || isa<mlir_ts::ExtractPropertyOp, mlir_ts::DeconstructTupleOp>(producer))
                     {
-                        return true;
+                        continue;
                     }
 
-                    // a local that owns what it holds (`{ x: a }`, #454's shape), or a literal
-                    // nested in this one
-                    if (readsLocalSlot(stored) || readsLiteralSlot(mth, location, stored))
+                    if (auto storedLoad = dyn_cast<mlir_ts::LoadOp>(producer))
                     {
-                        return true;
+                        auto *place = storedLoad.getReference().getDefiningOp();
+                        if ((place && isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place)) ||
+                            readsLocalSlot(stored) || readsLiteralSlot(mth, location, stored))
+                        {
+                            return true;
+                        }
+
+                        continue;
                     }
+
+                    if (isa<mlir_ts::ConstantOp>(producer) &&
+                        !isa<mlir_ts::ConstArrayType, mlir_ts::ConstTupleType>(stored.getType()))
+                    {
+                        continue;
+                    }
+
+                    // made for the literal
+                    return true;
                 }
             }
 
