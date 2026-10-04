@@ -1317,10 +1317,13 @@ class OwnershipRoutineLogic
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // the header { data, length, capacity } is the counted block (spec section 4). On its last
-        // reference: release the elements [0, length), free the data block - the header holds
-        // its only reference, so its own count is never read - and free the header. A null
-        // header (an empty array, R1) holds nothing and is skipped by emitIfLastReference; a
-        // static header (a constant array in global data) is immortal and never freed
+        // reference the header gives up its reference to the data block, and frees itself. The
+        // data block keeps its own count, as it did before the switch: a string made over it
+        // (`<string><Opaque>Ref(buffer[0])`, the default library's convertNumber) holds a
+        // reference to it and keeps it alive. On the data block's last reference: release the
+        // elements [0, length) and free it. A null header (an empty array, R1) or a null data
+        // block holds nothing and is skipped by emitIfLastReference; a static header (a constant
+        // array in global data) is immortal and never freed
         ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
         auto header = layout.headerForRead(arrayType, slotPtr);
 
@@ -1328,24 +1331,26 @@ class OwnershipRoutineLogic
             auto dataSlot = layout.dataAddress(arrayType, header);
             auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
-            auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
-            if (!elementRoutine.empty())
-            {
-                auto sizeSlot = layout.lengthAddress(arrayType, header);
-                auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, sizeSlot);
+            emitIfLastReference(dataValue, [&]() {
+                auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
+                if (!elementRoutine.empty())
+                {
+                    auto sizeSlot = layout.lengthAddress(arrayType, header);
+                    auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, sizeSlot);
 
-                emitCountedLoop(sizeValue, [&](mlir::Value index) {
-                    auto llvmElementType = tch.convertType(arrayType.getElementType());
-                    auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataValue,
-                                                                   ValueRange{index});
-                    rewriter.create<LLVM::CallOp>(loc, TypeRange{},
-                                                  FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
-                                                  ValueRange{elementPtr});
-                });
-            }
+                    emitCountedLoop(sizeValue, [&](mlir::Value index) {
+                        auto llvmElementType = tch.convertType(arrayType.getElementType());
+                        auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataValue,
+                                                                       ValueRange{index});
+                        rewriter.create<LLVM::CallOp>(loc, TypeRange{},
+                                                      FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
+                                                      ValueRange{elementPtr});
+                    });
+                }
 
-            // null for an empty array; MemoryFree passes that on to free(NULL)
-            emitFreeBlock(dataValue);
+                emitFreeBlock(dataValue);
+            });
+
             emitFreeBlock(header);
         });
     }

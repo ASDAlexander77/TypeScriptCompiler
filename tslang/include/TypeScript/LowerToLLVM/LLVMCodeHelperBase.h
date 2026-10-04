@@ -455,10 +455,12 @@ class LLVMCodeHelperBase
         mlir::Value newBlockPtr = callResults.getResult();
         if (compileOptions.tracksOwnership())
         {
-            // a block that was just made has the word an allocation is born with (_MemoryAlloc)
+            // a block that was just made - only an empty array's data reaches here with null - gets
+            // the header's reference under rc (ArrayLayout::make), and otherwise the word an
+            // allocation is born with (_MemoryAlloc)
             auto word = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, newBlockPtr);
-            auto bornWord =
-                rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 0));
+            auto bornWord = rewriter.create<LLVM::ConstantOp>(
+                loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, compileOptions.isRefCounted() ? 1 : 0));
             rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::SelectOp>(loc, isNull, bornWord, word),
                                            newBlockPtr);
         }

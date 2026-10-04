@@ -96,8 +96,18 @@ unchanged.
 - **none.** As today: nothing is freed. The header is one more allocation.
 - **rc.** The counted block is the header.
   - Retain increments the header's count (today: the data block's).
-  - Release, on the last reference: release elements `[0, length)`, free the data block, free
-    the header. The data block's own count is never read: the header holds its only reference.
+  - The header holds one counted reference to its data block (the block is given a count of 1
+    when the header is made over it, or when an empty array's first change allocates it).
+  - Release, on the header's last reference: drop the header's reference to the data block and
+    free the header; on the data block's last reference, release elements `[0, length)` and free
+    the block.
+  - Amended in Task 7: the first version freed the data block outright ("the header holds its
+    only reference"). The default library makes strings over an array's data block
+    (`<string><Opaque>Ref(buffer[0])` in `convertNumber`, `convertInteger` and the date
+    formatters), and such a string takes a reference to the block; under rc the block was freed
+    under it (five default-library tests failed ahead of time). Counting the header's reference
+    restores what main does. A reallocating change (`push`, and PR 3's growth) still moves the
+    block under such a string, as it does on main.
   - Slots `[length, capacity)` are never released (and, from PR 3, hold zero).
   - `pop` and `shift` hand the removed element's reference to the caller, as today.
 - **own.** The header is a single-owned block, like a class instance.

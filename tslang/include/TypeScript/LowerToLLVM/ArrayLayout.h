@@ -116,10 +116,24 @@ class ArrayLayout : public LLVMCodeHelperBase
         return array;
     }
 
-    // a new array over `data` (owned by the array) with `length` elements
+    // a new array over `data` (a block just allocated, or null for an empty array) with `length`
+    // elements
     mlir::Value make(mlir_ts::ArrayType arrayType, mlir::Value data, mlir::Value length)
     {
         auto loc = op->getLoc();
+        if (compileOptions.isRefCounted() && !data.getDefiningOp<LLVM::ZeroOp>())
+        {
+            // under rc the header holds a counted reference to its data block, as every copy of
+            // the array did before the switch: a string made over the block
+            // (`<string><Opaque>Ref(buffer[0])`, the default library's convertNumber) takes a
+            // reference of its own, and the block is freed by whichever of the two lets go last
+            TypeHelper th(rewriter);
+            auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+            rewriter.create<LLVM::StoreOp>(
+                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1)),
+                getBlockPtrFromPayloadPtr(loc, data, llvmIndexType));
+        }
+
         auto header = MemoryAlloc(headerType());
         rewriter.create<LLVM::StoreOp>(loc, data, fieldAddress(arrayType, header, ARRAY_DATA_INDEX));
         rewriter.create<LLVM::StoreOp>(loc, length, fieldAddress(arrayType, header, ARRAY_SIZE_INDEX));
