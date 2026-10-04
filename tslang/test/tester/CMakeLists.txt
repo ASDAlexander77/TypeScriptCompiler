@@ -349,6 +349,7 @@ tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOUR
 tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-compile-00-array-literal-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-compile-00-tuple-runtime-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
+tslang_add_test(NAME test-compile-00-record-to-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -855,6 +856,7 @@ tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOU
 tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-jit-00-array-literal-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-jit-00-tuple-runtime-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
+tslang_add_test(NAME test-jit-00-record-to-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -1690,6 +1692,7 @@ set(TSLANG_CORPUS
     00array_static_nested.ts
     00array_literal_copy.ts
     00tuple_runtime_arrays.ts
+    00record_to_class.ts
     00const_record_owned_fields.ts
     00array_length_valid.ts
     00string_view_copy.ts

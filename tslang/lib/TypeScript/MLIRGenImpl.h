@@ -9875,6 +9875,20 @@ class MLIRGenImpl
             }
         }
 
+        // a record literal made into a class instance (`const p: P = { x: 1, items: [i, 2] }`) is
+        // built with the class's field types, as for a tuple: `[i, 2]` is the field's `number[]`
+        // itself, not an `s32[]` copied into one and left with no count under rc, and `[]` is no
+        // `any[]` the field cannot take (#487)
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(receiverType))
+        {
+            auto classStorageType = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType());
+            auto index = classStorageType.getIndex(fieldName);
+            if (index >= 0 && index < (int)classStorageType.size())
+            {
+                return classStorageType.getType(index);
+            }
+        }
+
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(receiverType))
         {
             auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
