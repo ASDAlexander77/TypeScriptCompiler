@@ -1821,12 +1821,6 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        auto constTupleTypeWithReplacedThis = getConstTupleType(oli.fieldInfos);
-
-        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), oli.values);
-        auto constantVal =
-            builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
-
         // box any literal with a method/accessor as a reference-typed ObjectType, not just
         // synthetic wrappers carrying the explicit flag (see docs/object-literal-boxing-design.md
         // §3 gap 4): a method can only mutate its object through `this`, and predicting which
@@ -1837,6 +1831,49 @@ namespace mlirgen
         auto boxAsObject =
             (objectLiteral->internalFlags & InternalFlags::BoxAsObject) == InternalFlags::BoxAsObject ||
             !oli.methodInfos.empty() || !oli.methodInfosWithCaptures.empty();
+
+        // A literal built in a slot (a field known only at run time, or boxed) starts from the
+        // constant below, and an array kept in it would be a static header over constant data,
+        // which `push`, `pop` and element writes change (#479): such a field is set in the slot as a
+        // heap copy instead. A literal that stays a constant is copied where it is widened to a
+        // tuple (copyArraysOfConstTuple).
+        if (!oli.fieldsToSet.empty() || boxAsObject)
+        {
+            for (auto [index, fieldInfo] : enumerate(oli.fieldInfos))
+            {
+                auto fieldAttr = dyn_cast<mlir::ArrayAttr>(oli.values[index]);
+                if (!fieldAttr)
+                {
+                    continue;
+                }
+
+                mlir::Value literal;
+                if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(fieldInfo.type))
+                {
+                    literal = builder.create<mlir_ts::ConstantOp>(
+                        location, getConstArrayType(arrayType.getElementType(), fieldAttr.size()), fieldAttr);
+                }
+                else if (MLIRTypeHelper::constTupleHoldsArray(fieldInfo.type))
+                {
+                    literal = builder.create<mlir_ts::ConstantOp>(
+                        location, mth.convertTupleTypeToConstTupleType(fieldInfo.type), fieldAttr);
+                }
+                else
+                {
+                    continue;
+                }
+
+                CAST_A(copied, location, fieldInfo.type, literal, genContext);
+                oli.fieldsToSet.push_back({fieldInfo.id, copied});
+                oli.values[index] = builder.getUnitAttr();
+            }
+        }
+
+        auto constTupleTypeWithReplacedThis = getConstTupleType(oli.fieldInfos);
+
+        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), oli.values);
+        auto constantVal =
+            builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
 
         if (oli.fieldsToSet.empty() && !boxAsObject)
         {

@@ -304,6 +304,12 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
+            if (bornUncounted(value))
+            {
+                retainForGlobal(resultOp, resultOp->getOperand(0));
+                return;
+            }
+
             // An optional widened into a union (`let g: C | null | undefined = mkU()`, #462) is a
             // ts.If over the call made before it: each branch yields that call's value through
             // views, or a value that holds nothing (the empty optional). The global takes the call's
@@ -405,6 +411,34 @@ class OwnedReturnConsumptionPass
         });
     }
 
+    // An array or tuple built in a global's region (`const a = [1, 2]`, `const t = [1, [6, 7]]`, or
+    // a field of `const o = { items: [1, 2] }`) is born at count 0 under rc: a local takes its first
+    // count with RetainSlot, and nothing took one for the global, so the first local that read it
+    // and let go freed it. A global is a root and holds a count of its own (§9.49). Under own the
+    // global owns what it holds without a count, and a retain there is an error.
+    // A constant array reaches the global through its cast to an array, which copies it to the heap;
+    // any other constant (a string literal, an RTTI name) is static and immortal, and its global
+    // stays a constant initializer.
+    static bool bornUncounted(mlir::Value value)
+    {
+        auto *definingOp = value.getDefiningOp();
+        return definingOp && (mlir::isa<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp,
+                                        mlir_ts::CreateTupleOp>(definingOp) ||
+                              mlir::isa<mlir_ts::ConstArrayType>(value.getType()));
+    }
+
+    void retainForGlobal(mlir::Operation *before, mlir::Value value)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        mlir::OpBuilder builder(before->getContext());
+        builder.setInsertionPoint(before);
+        builder.create<mlir_ts::RetainOp>(before->getLoc(), value);
+    }
+
     // Each owned producer stored into a field of an object literal's temporary slot, through the
     // views of claimGlobalInitializers, is taken over by whoever takes the literal; a field that is
     // itself a literal read out of its own temporary slot is followed into.
@@ -451,6 +485,10 @@ class OwnedReturnConsumptionPass
                 {
                     stored.getDefiningOp()->setAttr(OWNED_RESULT_CONSUMED_ATTR_NAME,
                                                     mlir::UnitAttr::get(&getContext()));
+                }
+                else if (bornUncounted(stored))
+                {
+                    retainForGlobal(storeOp, storeOp.getValue());
                 }
                 else if (auto innerLoad = stored.getDefiningOp<mlir_ts::LoadOp>())
                 {

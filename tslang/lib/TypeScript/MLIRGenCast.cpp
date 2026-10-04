@@ -223,6 +223,54 @@ namespace mlirgen
         return mlir::success();
     }    
 
+    // A tuple literal folded to a constant keeps each array in it as a static header over constant
+    // data, so `pop`, `length =` and element writes changed a constant global and `push` reallocated
+    // one (#479). It is rebuilt here as a tuple whose arrays are heap copies, made from the
+    // literal's attributes the way castConstArrayToArray makes a nested array literal; a nested
+    // tuple literal holding an array is rebuilt in turn. Returns no value for anything else.
+    ValueOrLogicalResult MLIRGenImpl::copyArraysOfConstTuple(mlir::Location location, mlir::Value value,
+        mlir_ts::ConstTupleType constTupleType, const GenContext &genContext)
+    {
+        auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+        auto fieldAttrs = constOp ? dyn_cast<mlir::ArrayAttr>(constOp.getValue()) : mlir::ArrayAttr();
+        if (!fieldAttrs || fieldAttrs.size() != constTupleType.size() || !MLIRTypeHelper::constTupleHoldsArray(constTupleType))
+        {
+            return mlir::Value();
+        }
+
+        SmallVector<mlir::Value> values;
+        for (auto [index, fieldInfo] : enumerate(constTupleType.getFields()))
+        {
+            auto fieldAttr = dyn_cast<mlir::ArrayAttr>(fieldAttrs[index]);
+            mlir::Value literal;
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(fieldInfo.type); arrayType && fieldAttr)
+            {
+                literal = builder.create<mlir_ts::ConstantOp>(
+                    location, getConstArrayType(arrayType.getElementType(), fieldAttr.size()), fieldAttr);
+            }
+            else if (MLIRTypeHelper::constTupleHoldsArray(fieldInfo.type) && fieldAttr)
+            {
+                literal = builder.create<mlir_ts::ConstantOp>(
+                    location, mth.convertTupleTypeToConstTupleType(fieldInfo.type), fieldAttr);
+            }
+
+            if (!literal)
+            {
+                MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
+                auto fieldValue = cl.Tuple(constTupleType, true);
+                VALIDATE(fieldValue, location)
+                values.push_back(fieldValue);
+                continue;
+            }
+
+            CAST_A(copied, location, mth.convertConstTupleTypeToTupleType(fieldInfo.type), literal, genContext);
+            values.push_back(copied);
+        }
+
+        auto tupleType = mlir::cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(constTupleType));
+        return V(builder.create<mlir_ts::CreateTupleOp>(location, tupleType, values));
+    }
+
     ValueOrLogicalResult MLIRGenImpl::castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning)
     {
@@ -1042,7 +1090,8 @@ namespace mlirgen
         // copies only the outer data to the heap, and the inner arrays kept pointing at the literal's
         // constant data, so `nested[1].push(4)` reallocated a global and `nested[1][0] = 9` wrote one
         if (constArrayType.getElementType() == arrayType.getElementType()
-            && !isa<mlir_ts::ArrayType>(arrayType.getElementType()))
+            && !isa<mlir_ts::ArrayType>(arrayType.getElementType())
+            && !MLIRTypeHelper::constTupleHoldsArray(arrayType.getElementType()))
         {
             return std::nullopt;
         }
@@ -1072,7 +1121,14 @@ namespace mlirgen
         for (auto elementAttr : elementAttrs)
         {
             mlir::Value element;
-            if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr))
+            if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr);
+                nestedAttrs && MLIRTypeHelper::constTupleHoldsArray(sourceElementType))
+            {
+                // a tuple holding an array (`[[1, [2]]]`): rebuilt with copies by its cast (#479)
+                element = builder.create<mlir_ts::ConstantOp>(
+                    location, mth.convertTupleTypeToConstTupleType(sourceElementType), nestedAttrs);
+            }
+            else if (auto nestedAttrs = dyn_cast<mlir::ArrayAttr>(elementAttr))
             {
                 if (!nestedElementType)
                 {
@@ -1183,6 +1239,22 @@ namespace mlirgen
         // const tuple to tuple
         if (auto srcConstTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
         {
+            if (isa<mlir_ts::TupleType, mlir_ts::ConstTupleType, mlir_ts::ClassType>(type))
+            {
+                // the copy is a tuple of the type the casts below read the constant as
+                auto copied = copyArraysOfConstTuple(location, value, srcConstTupleType, genContext);
+                EXIT_IF_FAILED(copied)
+                if (auto copiedValue = V(copied))
+                {
+                    if (copiedValue.getType() == type)
+                    {
+                        return copied;
+                    }
+
+                    value = copiedValue;
+                }
+            }
+
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {

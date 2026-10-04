@@ -1587,8 +1587,13 @@ class MLIRGenImpl
             // hands its fields over unretained - its receiver is the one that retains them, as a
             // `let` does - so folded, `o` held none of them, and `p.child = d` freed what `o.s`
             // still read (#460).
+            //
+            // And a tuple literal folded to a constant with an array in it (`const st = [1, [6, 7]]`,
+            // `const o = { items: [1, 2] }`): its arrays are static headers over constant data, so
+            // it is widened to a tuple of heap copies once, here, like a const array literal (#479).
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
+                || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
@@ -1806,10 +1811,11 @@ class MLIRGenImpl
             // write, ...) would still `ts.Cast` a fresh, disposable !ts.array<T> copy
             // out of it instead of sharing one heap array through the slot. Every
             // other const type (generator wrapper tuples, plain values) keeps the
-            // early-return: this widening is only valid/needed for const_array. See
+            // early-return: this widening is only valid/needed for const_array (and a constant
+            // tuple holding an array, which castTupleLikeVariants rebuilds with copies, #479). See
             // docs/const-let-storage-design.md and the const-array note above
             // processConstRef.
-            if (isa<mlir_ts::ConstArrayType>(type) && variableDeclarationInfo.needsIdentityStorage)
+            if ((isa<mlir_ts::ConstArrayType>(type) || MLIRTypeHelper::isConstTupleHoldingArray(type)) && variableDeclarationInfo.needsIdentityStorage)
             {
                 auto actualType = mth.removeConstType(type);
                 if (variableDeclarationInfo.initial && actualType != type)
@@ -1858,7 +1864,7 @@ class MLIRGenImpl
             // <T,N>` snapshot, or every mutating method/element write still operates
             // on a disposable ts.Cast copy or the read-only original. See the note
             // above processConstRef / const-let-storage-design.md.
-            if (isa<mlir_ts::ConstArrayType>(variableDeclarationInfo.type))
+            if (isa<mlir_ts::ConstArrayType>(variableDeclarationInfo.type) || MLIRTypeHelper::isConstTupleHoldingArray(variableDeclarationInfo.type))
             {
                 auto type = variableDeclarationInfo.type;
                 auto actualType = mth.removeConstType(type);
@@ -9634,8 +9640,16 @@ class MLIRGenImpl
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         for (auto val : values)
         {
-            fieldInfos.push_back({mlir::Attribute(), val.value.getType(), false, mlir_ts::AccessLevel::Public});
-            arrayValues.push_back(val.value);
+            auto value = val.value;
+            // a constant tuple literal inside (`[x, [2, [3, 4]]]`) holds its arrays as static
+            // headers: it becomes a tuple of heap copies (#479)
+            if (MLIRTypeHelper::isConstTupleHoldingArray(value.getType()))
+            {
+                CAST(value, location, mth.convertConstTupleTypeToTupleType(value.getType()), value, genContext);
+            }
+
+            fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
+            arrayValues.push_back(value);
         }
 
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
@@ -12062,6 +12076,9 @@ class MLIRGenImpl
     // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false);
+
+    ValueOrLogicalResult copyArraysOfConstTuple(mlir::Location location, mlir::Value value, mlir_ts::ConstTupleType constTupleType,
+        const GenContext &genContext);
 
 
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
