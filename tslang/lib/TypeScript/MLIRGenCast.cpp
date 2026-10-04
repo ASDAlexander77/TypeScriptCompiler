@@ -1294,8 +1294,10 @@ namespace mlirgen
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
-                return mlir::failure();
+                // a record with a run-time field (`const p: P = { x: 1, items: [i, 2] }`) makes the
+                // instance from its fields, as a constant record does (#487)
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
+                return castTupleToClass(location, value, srcTupleType, fields, classType, genContext);
             }
             else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
             {
