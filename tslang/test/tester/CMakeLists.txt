@@ -335,14 +335,19 @@ tslang_add_test(NAME test-compile-00-globals2 COMMAND test-runner "${PROJECT_SOU
 tslang_add_test(NAME test-compile-00-globals3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-compile-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-compile-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
+tslang_add_test(NAME test-compile-00-array-reference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
 tslang_add_test(NAME test-compile-00-arrays3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
+tslang_add_test(NAME test-compile-00-array-zero-slots COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_zero_slots.ts")
 tslang_add_test(NAME test-compile-00-arrays4-push-pop COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
 tslang_add_test(NAME test-compile-00-array-shift COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 tslang_add_test(NAME test-compile-00-array-splice COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
 tslang_add_test(NAME test-compile-00-const-array-push COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_push.ts")
 tslang_add_test(NAME test-compile-00-array-spread-args COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_spread_args.ts")
 tslang_add_test(NAME test-compile-00-arrays5-deconstruct COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
+tslang_add_test(NAME test-compile-00-array-rest-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
+tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
+tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
 tslang_add_test(NAME test-compile-00-arrays-assignment5 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_assignment5.ts")
@@ -830,14 +835,19 @@ tslang_add_test(NAME test-jit-00-globals2 COMMAND test-runner -jit "${PROJECT_SO
 tslang_add_test(NAME test-jit-00-globals3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals3.ts")
 tslang_add_test(NAME test-jit-00-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 tslang_add_test(NAME test-jit-00-arrays2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
+tslang_add_test(NAME test-jit-00-array-reference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_reference.ts")
 tslang_add_test(NAME test-jit-00-arrays3 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
+tslang_add_test(NAME test-jit-00-array-zero-slots COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_zero_slots.ts")
 tslang_add_test(NAME test-jit-00-arrays4-push-pop COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array4_push_pop.ts")
 tslang_add_test(NAME test-jit-00-array-shift COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_shift.ts")
 tslang_add_test(NAME test-jit-00-array-splice COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_splice.ts")
 tslang_add_test(NAME test-jit-00-const-array-push COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_array_push.ts")
 tslang_add_test(NAME test-jit-00-array-spread-args COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_spread_args.ts")
 tslang_add_test(NAME test-jit-00-arrays5-deconstruct COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array5_deconst.ts")
+tslang_add_test(NAME test-jit-00-array-rest-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_rest_copy.ts")
 tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
+tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
+tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
 tslang_add_test(NAME test-jit-00-arrays-assignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_assignment5.ts")
@@ -1658,10 +1668,15 @@ set(TSLANG_CORPUS
     00const_array_push.ts
     00array.ts
     00array2.ts
+    00array_reference.ts
     00array3.ts
+    00array_zero_slots.ts
     00array4_push_pop.ts
     00array5_deconst.ts
+    00array_rest_copy.ts
     00array6.ts
+    00array_static_nested.ts
+    00array_data_string_alias.ts
     00array7.ts
     00array8_tuple_spread.ts
     00arrow_generic.ts
@@ -2540,6 +2555,34 @@ add_test(NAME test-compile-lowering-error-exit
                  -o "${CMAKE_CURRENT_BINARY_DIR}/lowering-error-exit.obj")
 set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
 
+# `main`'s argv is `Ref<string>` (C's `char **`) only. A `string[]` argv would read that `char **`
+# as an array header, so it is a compile error that says to use `Ref<string>`, under the JIT (where
+# `main` is called, so a program that wrongly compiled would run instead of matching) and ahead of
+# time. A DLL has no `main` entry point, so the same file must not draw the error there.
+set(main_argv_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/main_argv_string_array.ts")
+add_test(NAME test-jit-main-argv-string-array-error
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib "${main_argv_file}")
+set_tests_properties(test-jit-main-argv-string-array-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+foreach(argv_emit exe obj)
+    add_test(NAME test-compile-main-argv-string-array-error-${argv_emit}
+             COMMAND $<TARGET_FILE:tslang> --emit=${argv_emit} --no-default-lib "${main_argv_file}"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.${argv_emit}")
+    set_tests_properties(test-compile-main-argv-string-array-error-${argv_emit}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+# The DLL is linked, so it is given what it links from the build tree rather than the environment:
+# -mm=none needs only the runtime library (gc would need the shared collector too), and the check
+# does not depend on the model.
+add_test(NAME test-compile-main-argv-string-array-dll-no-error
+         COMMAND $<TARGET_FILE:tslang> --emit=dll --no-default-lib -mm=none
+                 "--tslang-lib-path=${CMAKE_BINARY_DIR}/lib" "${main_argv_file}"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.dll")
+set_tests_properties(test-compile-main-argv-string-array-dll-no-error
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "takes argv as Ref<string>|Stack dump|Assertion failed")
+
 # -mm=own is accepted. Phase 0: a program that allocates nothing compiles and runs under it.
 add_test(NAME test-own-flag-accepted
          COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mm=own
@@ -2608,7 +2651,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
                  own_string_copy_field own_string_copy_after_move own_string_copy_nullable
                  own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
-                 own_string_copy_branch)
+                 own_string_copy_branch own_array_param_push)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.

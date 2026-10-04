@@ -734,6 +734,8 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         auto newCountAsLLVMType = rewriter.create<mlir::index::CastUOp>(loc, llvmIndexType, newCountAsIndexType);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.eraseOp(op);
 
@@ -1687,7 +1689,10 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
-            getOrCreateGlobalArray(constantOp, arrayType, rewriter);
+            // an array value is a header pointer: a static header over the static data
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            rewriter.replaceOp(constantOp, ch.getReadOnlyRTArray(constantOp->getLoc(), arrayType,
+                                                                 cast<ArrayAttr>(constantOp.getValue())));
             return success();
         }
 
@@ -2744,8 +2749,17 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             // never written. Not a corner - it is any captured declaration without an
             // initializer, which an owned local can never be (§9.36).
             //
-            // Only under -mm=rc: nothing reads the slot before its store in any other model, and
-            // a collected build is meant to come out of this step byte-identical.
+            // Only under rc and own: in the other models nothing reads the slot before its store,
+            // so this step stores nothing there - except for an array, below, which every model
+            // starts as null.
+            rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
+        }
+        else if (!value && isa<mlir_ts::ArrayType>(referenceType.getElementType()))
+        {
+            // `let a: T[];`: an array is a header pointer, and reading one out of an unwritten
+            // slot - even only to its data - branches on whatever the frame held, which the
+            // optimizer may take as unreachable (newWithSpread.ts's `let g: C[]; g[1]` faulted).
+            // Null is no array, which reads as empty (array-reference spec, ruling R1)
             rewriter.create<LLVM::StoreOp>(location, rewriter.create<LLVM::ZeroOp>(location, storageType), allocated);
         }
 
@@ -3064,9 +3078,6 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             next = true;
         }
 
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
-
         ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
 
@@ -3102,8 +3113,6 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
 
         auto allocated = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
 
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         ArrayLayout layout(newEmptyArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -3148,9 +3157,6 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         // zeroed: its elements are not set yet, and under `-mm=rc` the first store into one
         // releases what the slot held - `malloc`'s leftovers would be released as a reference
         auto allocated = ch.MemoryAlloc(multSizeOfTypeValue, MemoryAllocSet::Zero);
-
-        // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
 
         ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, transformed.getCount());
@@ -3239,6 +3245,8 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3293,6 +3301,8 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
         return success();
@@ -3387,6 +3397,8 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(unshiftOp, ValueRange{newCountAsIndexType});
         return success();
@@ -3450,6 +3462,8 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
         return success();
@@ -3638,6 +3652,8 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
+        // capacity = length until growth by doubling (spec section 6) uses it
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, layout.capacityAddress(arrayType, header));
 
         rewriter.replaceOp(spliceOp, ValueRange{newCountAsLLVMType});
         return success();
@@ -3672,8 +3688,22 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto arrayPtr = layout.data(arrayType, transformed.getOp());
 
         auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
-        // create array type
-        auto structValue3 = layout.make(arrayType, arrayOffset, transformed.getCount());
+
+        // a copy of the slice: an array owns its data block, and a header over the middle of
+        // another array's block would free (and realloc) an interior pointer
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+        auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, transformed.getCount()});
+        auto copy = ch.MemoryAlloc(bytes);
+        rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
+
+        // the copy holds a second reference to each element, and its release gives them back
+        {
+            OwnershipRoutineLogic orl(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitRetainArrayElements(elementType, copy, transformed.getCount());
+        }
+
+        auto structValue3 = layout.make(arrayType, copy, transformed.getCount());
 
         rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});
         return success();
@@ -7223,16 +7253,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMArrayType::get(converter.convertType(type.getElementType()), type.getSize());
     });
 
+    // an array is a reference to its header { data, length, capacity } (ArrayLayout.h)
     converter.addConversion([&](mlir_ts::ArrayType type) {
-        TypeHelper th(m.getContext());
-
-        SmallVector<mlir::Type> rtArrayType;
-        // pointer to data type
-        rtArrayType.push_back(th.getPtrType());
-        // field which store length of array
-        rtArrayType.push_back(converter.convertType(th.getIndexType()));
-
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), rtArrayType, false);
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::RefType type) {

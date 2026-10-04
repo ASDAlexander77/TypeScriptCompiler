@@ -426,25 +426,33 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), descriptorType, globalPtr, ArrayRef<LLVM::GEPArg>{0, 1, 0});
     }
 
-    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
+    // the name of the global holding a constant array's data
+    std::string getGlobalArrayName(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
     {
         std::stringstream ss;
         ss << "a_" << size;
-        auto vecVarName = calc_hash_value(arrayAttr, originalElementType, ss.str().c_str());
+        return calc_hash_value(arrayAttr, originalElementType, ss.str().c_str());
+    }
+
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
+    {
+        auto vecVarName = getGlobalArrayName(originalElementType, size, arrayAttr);
         return getOrCreateGlobalArray(originalElementType, vecVarName, size, arrayAttr);
     }
 
-    mlir::Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType,
-                                   ArrayAttr arrayValue)
+    // a constant array as an array value: a static header over the static data, nothing
+    // allocated, so it can sit inside another global's initializer (ArrayLayout::makeStatic)
+    mlir::Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, ArrayAttr arrayValue)
     {
         auto size = arrayValue.size();
-        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), size, arrayValue);
+        auto vecVarName = getGlobalArrayName(originalArrayType.getElementType(), size, arrayValue);
+        // creates the data global; its address is taken again inside the header's initializer
+        getOrCreateGlobalArray(originalArrayType.getElementType(), vecVarName, size, arrayValue);
 
-        // create ReadOnlyRuntimeArrayType
-        auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, typeConverter->convertType(rewriter.getIndexType()),
-                                                           rewriter.getIndexAttr(arrayValue.size()));
-
-        return ArrayLayout(op, rewriter, typeConverter, compileOptions).makeStatic(originalArrayType, itemValArrayPtr, sizeValue);
+        // getOrCreateGlobalArray puts an immortal block word in front of the data under rc and own
+        auto dataOffsetBytes = compileOptions.tracksOwnership() ? getHeapBlockHeaderSize() : 0;
+        return ArrayLayout(op, rewriter, typeConverter, compileOptions)
+            .makeStatic(originalArrayType, vecVarName, dataOffsetBytes, size);
     }
 
     mlir::Value getArrayValue(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size,
@@ -494,7 +502,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             for (auto item : arrayAttr.getValue())
             {
                 auto arrayValue = mlir::cast<ArrayAttr>(item);
-                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, mlir::cast<LLVM::LLVMStructType>(llvmElementType), arrayValue);
+                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, arrayValue);
 
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
@@ -747,7 +755,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto itemVal =
-                    getReadOnlyRTArray(loc, mlir::cast<mlir_ts::ArrayType>(arrayType), mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
+                    getReadOnlyRTArray(loc, mlir::cast<mlir_ts::ArrayType>(arrayType), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 */
             }
@@ -757,7 +765,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto itemVal = getReadOnlyRTArray(loc, arrayType, mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
+                auto itemVal = getReadOnlyRTArray(loc, arrayType, subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))

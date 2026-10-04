@@ -1116,30 +1116,20 @@ class CastLogicHelper
             return layout.undef(arrayTypeTs);
         }
 
+        if (!byValue)
+        {
+            // `null` as an array: no array, which reads as empty (R1) and compares equal to null
+            return layout.zero(arrayTypeTs);
+        }
+
+        // a constant array's data is static: the array gets a copy of it, so a push reallocates
+        // the copy and never the read-only original
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
+        auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
+        auto copyAllocated = ch.MemoryAlloc(bytesSize);
+        rewriter.create<mlir_ts::MemoryCopyOp>(loc, copyAllocated, in, bytesSize);
 
-        mlir::Value arrayPtr;
-        if (byValue)
-        {
-            auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
-            // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
-            // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
-            auto copyAllocated = ch.MemoryAlloc(bytesSize);
-
-            auto ptrToArraySrc = in;
-            auto ptrToArrayDst = copyAllocated;
-            rewriter.create<mlir_ts::MemoryCopyOp>(loc, ptrToArrayDst, ptrToArraySrc, bytesSize);
-
-            arrayPtr = copyAllocated;
-        }
-        else
-        {
-            // copy ptr only (const ptr -> ptr)
-            // TODO: here we need to clone body to make it writable (and remove logic from VariableOp)
-            arrayPtr = in;
-        }
-
-        return layout.make(arrayTypeTs, arrayPtr, sizeValue);
+        return layout.make(arrayTypeTs, copyAllocated, sizeValue);
     }
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
@@ -1178,11 +1168,6 @@ class CastLogicHelper
                 auto nullTag = toh.typeOfLogic(loc, mlir_ts::NullType::get(rewriter.getContext()));
                 mlir::Value pointer =
                     in.getType() == inLLVMType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, inLLVMType, in);
-                if (isa<LLVM::LLVMStructType>(pointer.getType()))
-                {
-                    // an array is { data, length }: null has no data
-                    pointer = rewriter.create<LLVM::ExtractValueOp>(loc, pointer, 0);
-                }
                 auto isSet = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, pointer,
                                                            rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
                 auto tagType = setTag.getType();
@@ -1293,7 +1278,10 @@ class CastLogicHelper
     // the data pointer of an array value, for the casts to a ref of the element and to opaque
     mlir::Value extractArrayData(mlir::Value in, mlir_ts::ArrayType arrayType)
     {
-        return ArrayLayout(op, rewriter, tch.typeConverter, compileOptions).data(arrayType, in);
+        auto llvmArrayType = tch.convertType(arrayType);
+        mlir::Value inAsLLVMType =
+            in.getType() == llvmArrayType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, llvmArrayType, in);
+        return ArrayLayout(op, rewriter, tch.typeConverter, compileOptions).data(arrayType, inAsLLVMType);
     }
 
 };

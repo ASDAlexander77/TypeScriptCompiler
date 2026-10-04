@@ -370,6 +370,36 @@ class OwnershipRoutineLogic
         });
     }
 
+    // Takes one more reference for each of the `count` elements at `dataPtr`: a copy of them
+    // into a new array's block (`.view()`), whose release will release them again. Only under
+    // rc - own rejects a second reference to an element at compile time.
+    void emitRetainArrayElements(mlir::Type elementType, mlir::Value dataPtr, mlir::Value count)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        auto routineName = getOrCreateRetainRoutine(elementType);
+        if (routineName.empty())
+        {
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmElementType = tch.convertType(elementType);
+
+        emitCountedLoop(count, [&](mlir::Value index) {
+            auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataPtr, ValueRange{index});
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{}, FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
+                                          ValueRange{elementPtr});
+        });
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)
@@ -957,8 +987,8 @@ class OwnershipRoutineLogic
             return;
         }
 
-        // an array value is { data, length }; it owns the data block and, through it, the
-        // elements
+        // an array value is a pointer to its header { data, length, capacity }; the header owns
+        // the data block and, through it, the elements
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             buildArrayBody(arrayType, slotPtr);
@@ -1158,13 +1188,13 @@ class OwnershipRoutineLogic
             return;
         }
 
-        // an array value is { data, length }: the copy shares the data block, and the block
-        // already holds whatever the elements own
+        // an array value is a pointer to its header { data, length, capacity }, and the header
+        // is the counted block: the copy shares it, and it already holds whatever the elements
+        // own. A null header (an empty array, R1) is skipped by emitIncRef
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
-            auto dataSlot = layout.dataAddress(arrayType, layout.headerForRead(arrayType, slotPtr));
-            emitIncRef(rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot));
+            emitIncRef(layout.headerForRead(arrayType, slotPtr));
             return;
         }
 
@@ -1286,29 +1316,53 @@ class OwnershipRoutineLogic
         auto ptrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
+        // the header { data, length, capacity } is the counted block (spec section 4). On its last
+        // reference the header lets go of its data block, and frees itself. Under rc the data
+        // block keeps a count of its own, as it did before the switch, and the header holds one
+        // reference to it (ArrayLayout::make): a string made over it
+        // (`<string><Opaque>Ref(buffer[0])`, the default library's convertNumber) holds another
+        // and keeps it alive. On the data block's last reference: release the elements
+        // [0, length) and free it. Under own the header is the data block's only owner, so the
+        // block goes with it, as before. A null header (an empty array, R1) holds nothing and is
+        // skipped by emitIfLastReference; a static header (a constant array in global data) is
+        // immortal and never freed; a null data block is passed on to free(NULL)
         ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
         auto header = layout.headerForRead(arrayType, slotPtr);
-        auto dataSlot = layout.dataAddress(arrayType, header);
-        auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
-        emitIfLastReference(dataValue, [&]() {
-            auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
-            if (!elementRoutine.empty())
+        emitIfLastReference(header, [&]() {
+            auto dataSlot = layout.dataAddress(arrayType, header);
+            auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
+
+            auto releaseData = [&]() {
+                auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
+                if (!elementRoutine.empty())
+                {
+                    auto sizeSlot = layout.lengthAddress(arrayType, header);
+                    auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, sizeSlot);
+
+                    emitCountedLoop(sizeValue, [&](mlir::Value index) {
+                        auto llvmElementType = tch.convertType(arrayType.getElementType());
+                        auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataValue,
+                                                                       ValueRange{index});
+                        rewriter.create<LLVM::CallOp>(loc, TypeRange{},
+                                                      FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
+                                                      ValueRange{elementPtr});
+                    });
+                }
+
+                emitFreeBlock(dataValue);
+            };
+
+            if (compileOptions.isRefCounted())
             {
-                auto sizeSlot = layout.lengthAddress(arrayType, header);
-                auto sizeValue = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, sizeSlot);
-
-                emitCountedLoop(sizeValue, [&](mlir::Value index) {
-                    auto llvmElementType = tch.convertType(arrayType.getElementType());
-                    auto elementPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmElementType, dataValue,
-                                                                   ValueRange{index});
-                    rewriter.create<LLVM::CallOp>(loc, TypeRange{},
-                                                  FlatSymbolRefAttr::get(rewriter.getContext(), elementRoutine),
-                                                  ValueRange{elementPtr});
-                });
+                emitIfLastReference(dataValue, releaseData);
+            }
+            else
+            {
+                releaseData();
             }
 
-            emitFreeBlock(dataValue);
+            emitFreeBlock(header);
         });
     }
 

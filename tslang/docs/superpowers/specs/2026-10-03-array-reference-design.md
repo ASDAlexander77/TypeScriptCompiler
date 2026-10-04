@@ -67,12 +67,17 @@ struct fails. Under rc a parameter push exits with 127 and prints nothing.
   `undefined` cast to an array) reads as an empty array, and an op that changes an array through
   its slot stores a fresh empty header into a slot holding null first. This keeps today's
   behaviour, where a zeroed `{ data, length }` is an empty array (plan ruling R1).
+- A null slot passed by value to a parameter (an unset field, an element made by `length =`):
+  a push through the parameter materialises a header in the parameter's copy, so the slot's
+  owner does not see the change and, under rc and own, that header leaks. Accepted: such a slot
+  holds `undefined` in TypeScript terms, where `.push` would throw (ruling T4-D).
 - `ConstArray` (a literal's static data) is unchanged. The cast from `ConstArray` to `T[]` makes a
   header and copies the data into a fresh block on both of its paths; the path that today points
   the struct at the static data (`byValue = false`) copies as well, since `push` would otherwise
   reallocate static memory.
 - `[a, ...rest] = src` gives `rest` a new array holding a copy of the slice (#477). MLIRGen builds
-  it from a new empty array and a loop of pushes instead of emitting `ts.ArrayView`, so the
+  it as a new array of the slice's length and a loop that copies each element (ruling T3-A; the
+  plan had a loop of pushes) instead of emitting `ts.ArrayView`, so the
   ownership passes see a fresh array (plan ruling R3).
 - Layout: an array field, element, tuple slot or union payload shrinks from two words to one
   pointer; `T[] | undefined` is the pointer and its tag.
@@ -92,8 +97,18 @@ unchanged.
 - **none.** As today: nothing is freed. The header is one more allocation.
 - **rc.** The counted block is the header.
   - Retain increments the header's count (today: the data block's).
-  - Release, on the last reference: release elements `[0, length)`, free the data block, free
-    the header. The data block's own count is never read: the header holds its only reference.
+  - The header holds one counted reference to its data block (the block is given a count of 1
+    when the header is made over it, or when an empty array's first change allocates it).
+  - Release, on the header's last reference: drop the header's reference to the data block and
+    free the header; on the data block's last reference, release elements `[0, length)` and free
+    the block.
+  - Amended in Task 7: the first version freed the data block outright ("the header holds its
+    only reference"). The default library makes strings over an array's data block
+    (`<string><Opaque>Ref(buffer[0])` in `convertNumber`, `convertInteger` and the date
+    formatters), and such a string takes a reference to the block; under rc the block was freed
+    under it (five default-library tests failed ahead of time). Counting the header's reference
+    restores what main does. A reallocating change (`push`, and PR 3's growth) still moves the
+    block under such a string, as it does on main.
   - Slots `[length, capacity)` are never released (and, from PR 3, hold zero).
   - `pop` and `shift` hand the removed element's reference to the caller, as today.
 - **own.** The header is a single-owned block, like a class instance.
@@ -121,11 +136,7 @@ unchanged.
   the retain/release routines (§4).
 - **Debug info** (`LLVMDebugInfo.h`): an array's debug type becomes a pointer to a
   `{ data, length, capacity }` struct, so a debugger still shows the elements.
-- **`main(argc, argv: string[])`:** MLIRGen gives `main` a `Ref<string>` second parameter, so the
-  entry point takes C's `char **`, and binds `argv` to a new op `ts.ArrayFromCStrings(argc, argv)`
-  that makes the array with the model's allocator, copying each string (plan ruling R2). Today
-  the struct is read from C's `argv` and `envp`, which is the open `argv.length` = envp bug; this
-  fixes it. A `Ref<string>` argv still receives C's `char **` directly. Both AOT and JIT.
+- `main`'s argv is `Ref<string>` only (C's `char **`); a `string[]` argv is a compile error that names the `Ref<string>` form (owner's ruling 2026-10-04; replaces plan ruling R2).
 - **32-bit x86:** the header is three pointer-sized words; nothing is specific to x86.
 
 ## 6. Growth (PR 3)

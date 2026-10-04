@@ -2708,20 +2708,28 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
 
     // We only lower the main function as we expect that all other functions have been inlined.
     // The JIT calls `main` through a thunk with the C entry point's signature (see jit.cpp), which
-    // can only adapt the shapes a C `main` has: `argc` as an integer or a number, `argv` as a
-    // `string[]` or as the C `char **` itself, a `Ref<string>`, and an exit code that is an integer
-    // or a number.
+    // can only adapt the shapes a C `main` has: `argc` as an integer or a number, `argv` as the C
+    // `char **` itself, a `Ref<string>` (never a `string[]`: that is an array header, not C's
+    // `char **`), and an exit code that is an integer or a number.
+    //
+    // A `string[]` argv is refused in every build where `main` is the entry point (all but a DLL):
+    // ahead of time, the C runtime passes `char **` too, which would be read as an array header.
+    if (!tsContext.compileOptions.isDLL && function.getName() == MAIN_ENTRY_NAME)
+    {
+        auto mainInputs = function.getFunctionType().getInputs();
+        if (mainInputs.size() == 2 && isa<mlir_ts::ArrayType>(mainInputs[1]))
+        {
+            function.emitError("'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])");
+            return signalPassFailure();
+        }
+    }
+
     if (tsContext.compileOptions.isJit && function.getName() == MAIN_ENTRY_NAME)
     {
         auto isArgc = [](mlir::Type type) { return isa<mlir::IntegerType>(type) || isa<mlir_ts::NumberType>(type); };
         auto isArgv = [](mlir::Type type) {
-            if (auto refType = dyn_cast<mlir_ts::RefType>(type))
-            {
-                return isa<mlir_ts::StringType>(refType.getElementType());
-            }
-
-            auto arrayType = dyn_cast<mlir_ts::ArrayType>(type);
-            return arrayType && isa<mlir_ts::StringType>(arrayType.getElementType());
+            auto refType = dyn_cast<mlir_ts::RefType>(type);
+            return refType && isa<mlir_ts::StringType>(refType.getElementType());
         };
         auto isExitCode = [&](mlir::Type type) { return isa<mlir_ts::VoidType>(type) || isArgc(type); };
 
@@ -2733,7 +2741,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
         auto validResults = results.size() <= 1 && llvm::all_of(results, isExitCode);
         if (!validInputs || !validResults)
         {
-            function.emitError("expected 'main' to be 'main(argc?: i32 | number, argv?: string[] | Ref<string>): void | i32 | number'");
+            function.emitError("expected 'main' to be 'main(argc?: i32 | number, argv?: Ref<string>): void | i32 | number'");
             return signalPassFailure();
         }
     }
