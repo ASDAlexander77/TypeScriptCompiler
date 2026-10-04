@@ -3043,6 +3043,11 @@ set_tests_properties(test-compile-reference-path-import-cycle-quiet PROPERTIES F
 set(import_source_dir "${PROJECT_SOURCE_DIR}/test/tester/import-source")
 tslang_add_test(NAME test-jit-import-source-new-imported-class COMMAND test-runner -jit "${import_source_dir}/new_imported_class.ts")
 tslang_add_import_tests(import-source-new-imported-class "${import_source_dir}" new_imported_class imported_class_module)
+# A module with top-level statements, imported: they run before main, from a global constructor;
+# generated outside any function, they failed with "Global is referenced by parentless
+# instruction", and a module linked beside the program got a `main` of its own (#447).
+tslang_add_test(NAME test-jit-import-source-toplevel COMMAND test-runner -jit "${import_source_dir}/import_toplevel.ts")
+tslang_add_import_tests(import-source-toplevel "${import_source_dir}" import_toplevel toplevel_module)
 
 # The JIT cache (--emit=jit, on by default): each .ts module imported is an object of its own,
 # loaded beside the program's - imported through two others and initialized first; and a program

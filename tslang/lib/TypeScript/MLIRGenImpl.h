@@ -239,7 +239,8 @@ class MLIRGenImpl
 
     int processStatements(NodeArray<Statement> statements,
                           const GenContext &genContext,
-                          bool isRoot = false);
+                          bool isRoot = false,
+                          bool skipCode = false);
 
     bool hasGlobalCode(NodeArray<Statement> statements);
 
@@ -250,6 +251,10 @@ class MLIRGenImpl
 
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
                           bool hasDeferredStatements, const GenContext &genContext);
+
+    // an imported module's top-level statements, run from a global constructor
+    mlir::LogicalResult generateModuleInitCode(mlir::Location location, NodeArray<Statement> statements,
+                          const GenContext &genContext);
 
     mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                                           int notResolved);

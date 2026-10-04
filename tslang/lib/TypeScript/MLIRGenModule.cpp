@@ -627,7 +627,8 @@ namespace mlirgen
 
     int MLIRGenImpl::processStatements(NodeArray<Statement> statements,
                           const GenContext &genContext,
-                          bool isRoot)
+                          bool isRoot,
+                          bool skipCode)
     {
         clearState(statements);
 
@@ -650,6 +651,11 @@ namespace mlirgen
                 }
 
                 if (isRoot && (isCodeStatment(statement) || statement == SyntaxKind::VariableStatement))
+                {
+                    continue;
+                }
+
+                if (skipCode && isCodeStatment(statement))
                 {
                     continue;
                 }
@@ -749,7 +755,16 @@ namespace mlirgen
         std::string name = MAIN_ENTRY_NAME;
         auto fullGlobalFuncName = getFullNamespaceName(name);
 
-        if (theModule.lookupSymbol(fullGlobalFuncName))
+        // A library - a module linked beside the program, or one the JIT cache compiles for an
+        // import - runs its top level from a global constructor: a `main` of its own was a second
+        // one at link time (#447).
+        if (!compileOptions.generateEntryPoint && hasDeferredStatements && !theModule.lookupSymbol(fullGlobalFuncName))
+        {
+            name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
+            fullGlobalFuncName = getFullNamespaceName(name);
+            useGlobalCtor = true;
+        }
+        else if (theModule.lookupSymbol(fullGlobalFuncName))
         {
             // a user-written `main` already is the entry point, so with nothing deferred to run
             // ahead of it there is nothing left to generate
@@ -817,6 +832,39 @@ namespace mlirgen
             addGlobalConstructor(location, fullGlobalFuncName);
         }
         
+        return mlir::success();
+    }
+
+    // An imported module's top-level statements - `print("module init")` beside its exports - run
+    // when the program starts, from a global constructor of their own, after the module's variables
+    // are initialized. They were generated at the importer's module level, outside any function,
+    // which LLVM rejected ("Global is referenced by parentless instruction", #447).
+    mlir::LogicalResult MLIRGenImpl::generateModuleInitCode(mlir::Location location, NodeArray<Statement> statements,
+                          const GenContext &genContext)
+    {
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+        auto name = MLIRHelper::getAnonymousName(location, ".init", "");
+        auto fullName = getFullNamespaceName(name);
+        auto funcType = getFunctionType({}, {}, false);
+        if (mlir::failed(mlirGenFunctionBody(location, name, fullName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) {
+                for (auto &statement : statements)
+                {
+                    if (isCodeStatment(statement) && failed(mlirGen(statement, genContext)))
+                    {
+                        emitError(loc(statement), "failed statement");
+                        return mlir::failure();
+                    }
+                }
+
+                return mlir::success();
+            }, genContext, 0, true)))
+        {
+            return mlir::failure();
+        }
+
+        addGlobalConstructor(location, fullName);
         return mlir::success();
     }
 
@@ -950,7 +998,16 @@ namespace mlirgen
         }
 
         auto anyGlobalCode = hasGlobalCode(module->statements);
-        auto notResolved = processStatements(module->statements, genContext, isMain && anyGlobalCode);       
+        // An imported module's top-level code is never generated at this module's level: read as
+        // declarations it is its own object's to run, and included with its bodies it runs from a
+        // global constructor (generateModuleInitCode).
+        auto notResolved = processStatements(module->statements, genContext, isMain && anyGlobalCode, !isMain);
+        if (notResolved == 0 && !isMain && anyGlobalCode && !declarationMode &&
+            mlir::failed(generateModuleInitCode(loc(module), module->statements, genContext)))
+        {
+            notResolved = 1;
+        }
+
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
