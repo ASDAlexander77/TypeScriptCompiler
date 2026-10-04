@@ -1373,6 +1373,18 @@ namespace mlirgen
 
                 return castTupleToTuple(location, unboxedTuple, srcTupleType, fields, genContext);
             }
+
+            // an object literal is boxed for its methods and accessors, which a class instance cannot
+            // have of its own: it takes them from its class's vtable. The cast was a reinterpretation
+            // of the pointer, so the class read its fields and vtable out of the literal's layout -
+            // garbage, and a crash on a method call (#494).
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                emitError(location, "an object literal with methods or accessors cannot be assigned to class '")
+                    << to_print(classType)
+                    << "': a class instance takes its methods from its class; use 'new', or an interface type";
+                return mlir::failure();
+            }
         }
 
         return std::nullopt;
