@@ -1611,12 +1611,18 @@ class MLIRGenImpl
             // And a tuple literal folded to a constant with an array in it (`const st = [1, [6, 7]]`,
             // `const o = { items: [1, 2] }`): its arrays are static headers over constant data, so
             // it is widened to a tuple of heap copies once, here, like a const array literal (#479).
+            //
+            // And a tuple literal built at run time (`const nt = [x, [2, [3, 4]]]`), whose arrays
+            // are born with no count: folded, nothing counted them, and `nt[1][1].push(5)` had no
+            // reference to change the array through (#486).
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
+                         && mth.ownsHeapMemory(location, type))
+                     || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
@@ -9697,6 +9703,12 @@ class MLIRGenImpl
             if (MLIRTypeHelper::isConstTupleHoldingArray(value.getType()))
             {
                 CAST(value, location, mth.convertConstTupleTypeToTupleType(value.getType()), value, genContext);
+            }
+            // and a constant array (`[x, [1]]`) is an array of its own, which push and pop change:
+            // kept as the literal's constant data, `t[1].push(2)` did not resolve (#486)
+            else if (isa<mlir_ts::ConstArrayType>(value.getType()))
+            {
+                CAST(value, location, mth.convertConstArrayTypeToArrayType(value.getType()), value, genContext);
             }
 
             fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
