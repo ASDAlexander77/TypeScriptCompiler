@@ -76,7 +76,8 @@ struct fails. Under rc a parameter push exits with 127 and prints nothing.
   the struct at the static data (`byValue = false`) copies as well, since `push` would otherwise
   reallocate static memory.
 - `[a, ...rest] = src` gives `rest` a new array holding a copy of the slice (#477). MLIRGen builds
-  it from a new empty array and a loop of pushes instead of emitting `ts.ArrayView`, so the
+  it as a new array of the slice's length and a loop that copies each element (ruling T3-A; the
+  plan had a loop of pushes) instead of emitting `ts.ArrayView`, so the
   ownership passes see a fresh array (plan ruling R3).
 - Layout: an array field, element, tuple slot or union payload shrinks from two words to one
   pointer; `T[] | undefined` is the pointer and its tag.
