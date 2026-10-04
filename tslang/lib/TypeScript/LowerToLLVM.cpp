@@ -3124,20 +3124,20 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto llvmElementType = tch.convertType(elementType);
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
-
         auto countAsIndexTypeMLIR = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), transformed.getCount());
         auto countAsIndexType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, countAsIndexTypeMLIR);
 
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, countAsIndexType});
+        // a length past 2^32 - 1 (a negative one included), a size that overflows, or a failed
+        // allocation stops the program (#483)
+        ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        layout.checkLength(countAsIndexType);
+        auto multSizeOfTypeValue = layout.bytesFor(arrayType, countAsIndexType);
 
         // zeroed: its elements are not set yet, and under `-mm=rc` the first store into one
         // releases what the slot held - `malloc`'s leftovers would be released as a reference
         auto allocated = ch.MemoryAlloc(multSizeOfTypeValue, MemoryAllocSet::Zero);
+        layout.checkAllocated(allocated, multSizeOfTypeValue);
 
-        ArrayLayout layout(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto structValue3 = layout.make(arrayType, allocated, transformed.getCount());
 
         rewriter.replaceOp(newArrOp, ValueRange{structValue3});

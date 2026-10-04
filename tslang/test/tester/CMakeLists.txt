@@ -348,6 +348,7 @@ tslang_add_test(NAME test-compile-00-array-rest-copy COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-arrays6 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-compile-00-array-literal-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
+tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -851,6 +852,7 @@ tslang_add_test(NAME test-jit-00-array-rest-copy COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-arrays6 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array6.ts")
 tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_static_nested.ts")
 tslang_add_test(NAME test-jit-00-array-literal-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
+tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
@@ -1683,6 +1685,7 @@ set(TSLANG_CORPUS
     00array6.ts
     00array_static_nested.ts
     00array_literal_copy.ts
+    00array_length_valid.ts
     00string_view_copy.ts
     00array_data_string_alias.ts
     00array7.ts
@@ -3115,6 +3118,20 @@ add_test(NAME test-jit-assert-message-failing
 set_tests_properties(test-jit-assert-message-failing
                      PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: n is 7"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|unlinked")
+
+# An invalid array length stops the program with a message, after the output printed before it,
+# under every model (#483). The JIT reports it itself on every platform, as for a failing assert.
+foreach(array_length_name negative huge fraction negative_integer new_negative)
+    foreach(array_length_model gc rc none own)
+        add_test(NAME test-jit-${array_length_model}-array-length-${array_length_name}
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${array_length_model}
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                         "${PROJECT_SOURCE_DIR}/test/tester/array-length/${array_length_name}.ts")
+        set_tests_properties(test-jit-${array_length_model}-array-length-${array_length_name}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "printed before.*assertion failed: Invalid array length"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|PLEASE submit|length: ")
+    endforeach()
+endforeach()
 
 # --export=all exports the module's variables, not the locals of its functions.
 add_test(NAME test-compile-export-all-no-locals
