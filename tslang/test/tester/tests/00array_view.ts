@@ -44,4 +44,18 @@ function viewsReleased() {
 
 viewsReleased();
 
+// a view past the end is clamped to the array: `view(1, 40)` of three elements has two, and
+// under rc nothing past the end is retained
+class Boxed { constructor(public v: number) {} }
+
+function viewsClamped() {
+    const boxes: Boxed[] = [new Boxed(1), new Boxed(2), new Boxed(3)];
+    const w = boxes.view(1, 40);
+    assert(w.length == 2 && w[0].v == 2 && w[1].v == 3, "a view past the end is clamped");
+    const n = [1, 2, 3, 4];
+    assert(n.view(4, 9).length == 0, "a view starting at the end is empty");
+    assert(n.view(3, 1).length == 0, "a view that ends before it starts is empty");}
+
+viewsClamped();
+
 print("done.");

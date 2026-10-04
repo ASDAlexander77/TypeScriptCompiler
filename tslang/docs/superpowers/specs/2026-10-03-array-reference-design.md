@@ -1,7 +1,7 @@
 # Arrays as references
 
-Date: 2026-10-03. Status: design approved in conversation (sections 1-4); written spec awaiting
-review. Fixes #453 (a push onto an array parameter is lost to the caller) and #477 (a
+Date: 2026-10-03. Status: design approved; implemented in #478 (the layout helper), #480 (the
+switch) and PR 3 (growth). Fixes #453 (a push onto an array parameter is lost to the caller) and #477 (a
 destructuring rest element aliases its source). Plans go in `docs/superpowers/plans/`.
 
 ## 1. Purpose
@@ -72,17 +72,19 @@ struct fails. Under rc a parameter push exits with 127 and prints nothing.
   owner does not see the change and, under rc and own, that header leaks. Accepted: such a slot
   holds `undefined` in TypeScript terms, where `.push` would throw (ruling T4-D).
 - `ConstArray` (a literal's static data) is unchanged. The cast from `ConstArray` to `T[]` makes a
-  header and copies the data into a fresh block on both of its paths; the path that today points
-  the struct at the static data (`byValue = false`) copies as well, since `push` would otherwise
-  reallocate static memory.
+  header and copies the data into a fresh block, since `push` would otherwise reallocate static
+  memory. The other path (`byValue = false`) turned out to be reached only by `null` as an array,
+  and returns a null header, which reads as empty (controller ruling T4-A).
 - `[a, ...rest] = src` gives `rest` a new array holding a copy of the slice (#477). MLIRGen builds
   it as a new array of the slice's length and a loop that copies each element (ruling T3-A; the
   plan had a loop of pushes) instead of emitting `ts.ArrayView`, so the
   ownership passes see a fresh array (plan ruling R3).
 - Layout: an array field, element, tuple slot or union payload shrinks from two words to one
   pointer; `T[] | undefined` is the pointer and its tag.
-- ABI: every function that takes or returns an array changes. Objects built before the switch do
-  not link with objects built after it. The default library has no native code that reads an
+- ABI: every function that takes or returns an array changes. Symbol names carry no types, so an
+  object built before the switch most likely still links with one built after it, and then fails
+  at run time (one side reads a `{ data, length }` struct where the other passes a header
+  pointer). Every object and the default library must be rebuilt. The default library has no native code that reads an
   array (its C++ wrappers take none), so its sources are unchanged; it is rebuilt with the
   switch, for every model and both build types.
 
@@ -108,7 +110,7 @@ unchanged.
     formatters), and such a string takes a reference to the block; under rc the block was freed
     under it (five default-library tests failed ahead of time). Counting the header's reference
     restores what main does. A reallocating change (`push`, and PR 3's growth) still moves the
-    block under such a string, as it does on main.
+    block under such a string, as it does on main (#481).
   - Slots `[length, capacity)` are never released (and, from PR 3, hold zero).
   - `pop` and `shift` hand the removed element's reference to the caller, as today.
 - **own.** The header is a single-owned block, like a class instance.
@@ -145,6 +147,11 @@ unchanged.
   `max(4, 2 * capacity, needed)`; otherwise they write into the existing block.
 - `pop`, `shift` and a smaller `length =` keep the block. They zero each slot they vacate, so gc
   does not keep a removed element alive and a later growth reads zero.
+- `pop` and `shift` on an empty array return a zeroed element (0, null, an empty string) and the
+  length stays 0.
+- A smaller `length =` releases the elements it drops, `[new length, old length)`, before it
+  zeroes their slots, as `splice` releases the elements it removes (nothing under gc and none).
+  Without it, under rc and own, every element dropped that way leaked.
 - `length = n` larger than `length` zeroes `[length, n)` in every model, gc included: after a
   `pop` the slots past `length` are no longer fresh memory. Today's behaviour (new slots read as
   zero; the default library's `Set`, `Map` and `Array.map` rely on it, see the comment in
@@ -169,7 +176,9 @@ unchanged.
   - `00array_reference.ts`: shapes 1-14 of §2 as asserts; compile and JIT, rc and none corpora.
   - An own test with the shapes own accepts, including a push through a borrowed parameter.
   - `00array_rest_copy.ts` (#477).
-  - A `main(argc, argv: string[])` test for AOT and JIT.
+  - `main`'s argv error tests (`test/tester/lowering-errors/main_argv_string_array.ts` and
+    `main_args_string_array.ts`): an array-typed parameter of `main` is a compile error under the
+    JIT, `--emit=exe` and `--emit=obj`, and not in a DLL (§5).
 - Gates: the full Windows Release suite; the full Linux (WSL) suite, which is required because
   the Windows heap hides double frees; the own corpus with no file lost; own's memory measurement
   flat; the default library rebuilt and its suite run under every model.

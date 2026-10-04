@@ -31,5 +31,15 @@ function main() {
     q1.push(9);
     assert(p0 == 1 && q0 == 2 && q1.length == 2 && q1[1] == 9 && p1.length == 2 && p1[1] == 3, "nested and repeated rest");
 
+    // a rest from index 0 copies the whole source, and a push onto an empty rest grows it
+    const letters: string[] = ["a", "b"];
+    const [...all] = letters;
+    all.push("c");
+    assert(all.length == 3 && letters.length == 2 && all[0] == "a", "a rest from index 0");
+    const [l0, l1, l2, ...noLetters] = letters;
+    noLetters.push("q");
+    noLetters.push("r");
+    assert(noLetters.length == 2 && noLetters[1] == "r", "a push onto an empty rest");
+
     print("done.");
 }

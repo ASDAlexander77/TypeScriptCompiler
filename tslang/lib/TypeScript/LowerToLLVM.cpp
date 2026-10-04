@@ -632,8 +632,6 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
     LogicalResult matchAndRewrite(mlir_ts::LengthOfOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        TypeHelper th(rewriter);
-
         if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(op.getOp().getType()))
         {
             ArrayLayout layout(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -641,10 +639,12 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
             return success();
         }
 
-        rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(op, typeConverter->convertType(th.getIndexType()), transformed.getOp(),
-                                                                MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
-
-        return success();
+        // MLIRGen emits LengthOf only on an array (a ConstArray's length is a constant, a string's
+        // is StringLength). The op's ArrayLike operand also admits ConstArray, String,
+        // ConstArrayValueRef and Ref, none of which lowers to a { data, length } struct any more,
+        // so there is no length to extract from one: refuse it rather than read a struct field
+        // that is not there.
+        return op.emitError("length of a value of type ") << op.getOp().getType() << " is not supported";
     }
 };
 
@@ -656,19 +656,16 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
     LogicalResult matchAndRewrite(mlir_ts::SetLengthOfOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(op, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
         auto loc = op.getLoc();
 
-        auto ptrType = th.getPtrType();
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(op.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
-        auto llvmElementType = tch.convertType(elementType);
-        auto llvmIndexType = tch.convertType(th.getIndexType());        
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         LLVM_DEBUG(llvm::dbgs() << "arrayType: elementType: " << elementType << "\n";);
         LLVM_DEBUG(llvm::dbgs() << "arrayType: llvm: " << tch.convertType(arrayType) << "\n";);
@@ -697,13 +694,25 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         // the exact length, so after a `pop` or a shrink the slots past `length` are not fresh
         // memory from the allocator but slots the array used before.
         //
-        // Shrinking: the slots given up are zeroed, so gc does not keep what they held alive and
-        // a later growth reads zero.
+        // Shrinking: the elements in the slots given up, [new length, old length), are released
+        // first - under rc and own each slot held a reference, and zeroing it dropped that
+        // reference on the floor: 200k rounds of ten pushed strings and `length = 0` peaked at
+        // 65.9 MB against 4.4 for the same loop with `splice(0, 10)`, which releases the same way
+        // (emitReleaseArrayElements emits nothing under gc and none). The slots are then zeroed,
+        // so gc does not keep what they held alive and a later growth reads zero. Growing
+        // releases nothing (the count is 0), and on this branch `allocated` is the block the
+        // elements are in: a shorter length never grows it.
         auto grows = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, newCountAsLLVMType, countAsLLVMType);
         auto low = rewriter.create<LLVM::SelectOp>(loc, grows, countAsLLVMType, newCountAsLLVMType);
         auto high = rewriter.create<LLVM::SelectOp>(loc, grows, newCountAsLLVMType, countAsLLVMType);
-        layout.zeroElements(arrayType, allocated, low,
-                            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{high, low}));
+        auto changed = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{high, low});
+        {
+            auto released = rewriter.create<LLVM::SelectOp>(loc, grows, clh.createIndexConstantOf(llvmIndexType, 0), changed);
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseArrayElements(elementType, allocated, low, released);
+        }
+
+        layout.zeroElements(arrayType, allocated, low, changed);
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsLLVMType, countAsIndexTypePtr);
 
@@ -3143,14 +3152,12 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
     LogicalResult matchAndRewrite(mlir_ts::ArrayPushOp pushOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(pushOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
         auto loc = pushOp.getLoc();
 
-        auto ptrType = th.getPtrType();
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(pushOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
@@ -3492,14 +3499,14 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         // Give back what the removed elements were holding, before anything moves or frees them.
         //
-        // `splice` memmoves the tail over the deleted range and reallocs; the references those
-        // slots held are simply overwritten, so under `-mm=rc` every element it removes leaked.
-        // Measured on a loop that splices two of three boxed strings away: 16.4 MB against 4.1
-        // for the same program without the splice. See §9.74.
+        // `splice` moves the tail over the deleted range (and may grow the block first); the
+        // references those slots held are simply overwritten, so under `-mm=rc` every element it
+        // removes leaked. Measured on a loop that splices two of three boxed strings away: 16.4 MB
+        // against 4.1 for the same program without the splice. See §9.74.
         //
-        // This runs on `currentPtr` and before `conditionalExpressionLowering` below, which is
-        // the only correct place: the growing branch reallocs *first*, and a realloc may move the
-        // block, so releasing afterwards would read the deleted elements through a stale pointer.
+        // This runs on `currentPtr`, before `layout.ensureCapacity` below, which is the only
+        // correct place: growth reallocates the block, and a realloc may move it, so releasing
+        // afterwards would read the deleted elements through a stale pointer.
         //
         // The delete count is first clamped to what is actually in the array, which JavaScript's
         // `splice` also does ("if greater than the number of elements after start, then all of
@@ -3622,28 +3629,46 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        // TODO: add size check !!!
-
         ArrayLayout layout(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         auto arrayPtr = layout.data(arrayType, transformed.getOp());
+        auto length = layout.length(arrayType, transformed.getOp());
 
-        auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
+        // The slice is clamped to the array: the offset to [0, length] and the count to
+        // [0, length - offset]. `view(from, to)` arrives as offset `from` and count
+        // `to - from + 1`, unchecked, so `[a, b, c].view(1, 40)` copied 40 elements out of a
+        // block of 3 - and under rc retained each of the 37 garbage words as a reference. Both
+        // are read as signed: a negative offset is 0, and a negative count (`to < from`) is
+        // nothing.
+        auto zero = clh.createIndexConstantOf(llvmIndexType, 0);
+        mlir::Value offset = transformed.getOffset();
+        auto offsetIsNegative = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, offset, zero);
+        auto offsetFits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, offset, length);
+        offset = rewriter.create<LLVM::SelectOp>(loc, offsetIsNegative, zero,
+                                                 rewriter.create<LLVM::SelectOp>(loc, offsetFits, offset, length));
+        auto available = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{length, offset});
+        mlir::Value count = transformed.getCount();
+        auto countIsNegative = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, count, zero);
+        auto countFits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, count, available);
+        count = rewriter.create<LLVM::SelectOp>(loc, countIsNegative, zero,
+                                                rewriter.create<LLVM::SelectOp>(loc, countFits, count, available));
+
+        auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, offset);
 
         // a copy of the slice: an array owns its data block, and a header over the middle of
         // another array's block would free (and realloc) an interior pointer
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
-        auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, transformed.getCount()});
+        auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, count});
         auto copy = ch.MemoryAlloc(bytes);
         rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
 
         // the copy holds a second reference to each element, and its release gives them back
         {
             OwnershipRoutineLogic orl(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-            orl.emitRetainArrayElements(elementType, copy, transformed.getCount());
+            orl.emitRetainArrayElements(elementType, copy, count);
         }
 
-        auto structValue3 = layout.make(arrayType, copy, transformed.getCount());
+        auto structValue3 = layout.make(arrayType, copy, count);
 
         rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});
         return success();

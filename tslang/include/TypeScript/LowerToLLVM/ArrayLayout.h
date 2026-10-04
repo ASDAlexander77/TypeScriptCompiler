@@ -104,8 +104,13 @@ class ArrayLayout : public LLVMCodeHelperBase
     // Every slot in [length, capacity) reads zero: growth zeroes the new slots here, and pop,
     // shift, splice and a smaller `length =` zero each slot they vacate. The block goes through
     // MemoryRealloc, which keeps an rc data block's count across the move and births one grown
-    // from null with the header's reference. A static header (makeStatic) has capacity = length
-    // and is never written in place by growth.
+    // from null with the header's reference.
+    //
+    // A static header (makeStatic) is broken under the ops that change an array in place (#479):
+    // it lives in a constant global with capacity = length over static data, and pop, shift,
+    // splice and `length =` store the new length into that constant global and zero the
+    // vacated slots in the static data - undefined behaviour, which today reads back silently
+    // wrong values. Nothing here guards against it.
     mlir::Value ensureCapacity(mlir_ts::ArrayType arrayType, mlir::Value header, mlir::Value needed)
     {
         TypeHelper th(rewriter);
@@ -192,10 +197,19 @@ class ArrayLayout : public LLVMCodeHelperBase
     }
 
     // a new array over `data` (a block just allocated, or null for an empty array) with `length`
-    // elements
+    // elements.
+    //
+    // The contract: `data` is either a literal null (an LLVM::ZeroOp) or a fresh non-null heap
+    // allocation (MemoryAlloc) that nothing else holds. Whether there is a block to count is
+    // decided by how `data` is spelled, not by its value at run time, so a pointer that is null
+    // only at run time would have its count stored through null, and a pointer into static data
+    // (an AddressOfOp: makeStatic's job) or into another array's block would have a count stored
+    // over memory that is not a block header.
     mlir::Value make(mlir_ts::ArrayType arrayType, mlir::Value data, mlir::Value length)
     {
         auto loc = op->getLoc();
+        assert(data.getDefiningOp() && !data.getDefiningOp<LLVM::AddressOfOp>() &&
+               "ArrayLayout::make takes a literal null or a fresh allocation");
         if (compileOptions.isRefCounted() && !data.getDefiningOp<LLVM::ZeroOp>())
         {
             // under rc the header holds a counted reference to its data block, as every copy of

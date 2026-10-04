@@ -29,6 +29,7 @@ function main() {
     const a15: number[] = [1]; const x15: any = a15; const y15 = x15 as number[]; y15.push(2); assert(a15.length == 2, "15 through any");
     const c16: number[] = []; const d16: number[] = [];
     assert(!(c16 === d16), "16 two empty arrays are different arrays");
+    assert(c16 !== null, "16 an empty array is not null");
     let truthy = false; if (c16) { truthy = true; } assert(truthy, "16 an empty array is truthy");
     let n16: number[] | null = null; let falsy = true; if (n16) { falsy = false; } assert(falsy, "16 null is falsy");
 
