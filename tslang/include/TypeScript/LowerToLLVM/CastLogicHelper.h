@@ -1093,13 +1093,10 @@ class CastLogicHelper
             return mlir::Value();
         }
 
-        auto ptrType = th.getPtrType();
         auto arrayTypeTs = mlir::cast<mlir_ts::ArrayType>(arrayType);
         ArrayLayout layout(op, rewriter, tch.typeConverter, compileOptions);
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto sizeValue = clh.createIndexConstantOf(llvmIndexType, size);
-        auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
-        auto llvmDestArrayElement = tch.convertType(destArrayElement);
 
         if (isUndef)
         {

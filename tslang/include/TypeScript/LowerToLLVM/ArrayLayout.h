@@ -97,6 +97,86 @@ class ArrayLayout : public LLVMCodeHelperBase
         return fieldAddress(arrayType, header, ARRAY_CAPACITY_INDEX);
     }
 
+    // room for `needed` elements in the non-null `header` (spec section 6): when `needed` is past
+    // the capacity, the data block grows to max(4, 2 * capacity, needed) elements and what lies
+    // past the old capacity is zeroed. Returns the data pointer, already stored in the header.
+    //
+    // Every slot in [length, capacity) reads zero: growth zeroes the new slots here, and pop,
+    // shift, splice and a smaller `length =` zero each slot they vacate. The block goes through
+    // MemoryRealloc, which keeps an rc data block's count across the move and births one grown
+    // from null with the header's reference.
+    //
+    // A static header (makeStatic) is broken under the ops that change an array in place (#479):
+    // it lives in a constant global with capacity = length over static data, and pop, shift,
+    // splice and `length =` store the new length into that constant global and zero the
+    // vacated slots in the static data - undefined behaviour, which today reads back silently
+    // wrong values. Nothing here guards against it.
+    mlir::Value ensureCapacity(mlir_ts::ArrayType arrayType, mlir::Value header, mlir::Value needed)
+    {
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        auto loc = op->getLoc();
+        auto ptrType = th.getPtrType();
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+
+        auto dataPtr = dataAddress(arrayType, header);
+        auto capacityPtr = capacityAddress(arrayType, header);
+        mlir::Value currentData = rewriter.create<LLVM::LoadOp>(loc, ptrType, dataPtr);
+        mlir::Value capacity = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, capacityPtr);
+        auto mustGrow = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ugt, needed, capacity);
+        return clh.conditionalExpressionLowering(
+            loc, ptrType, mustGrow,
+            [&](OpBuilder &, Location) -> mlir::Value {
+                auto constant = [&](int64_t value) -> mlir::Value {
+                    return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType,
+                                                             rewriter.getIntegerAttr(llvmIndexType, value));
+                };
+
+                mlir::Value doubled = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{capacity, constant(2)});
+                auto doubledFits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::uge, doubled, needed);
+                mlir::Value newCapacity = rewriter.create<LLVM::SelectOp>(loc, doubledFits, doubled, needed);
+                auto belowMinimum =
+                    rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, newCapacity, constant(4));
+                newCapacity = rewriter.create<LLVM::SelectOp>(loc, belowMinimum, constant(4), newCapacity);
+
+                auto sizeOfElement = rewriter.create<mlir_ts::DialectCastOp>(
+                    loc, llvmIndexType,
+                    rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayType.getElementType()));
+                auto newBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, newCapacity});
+                auto grown = MemoryRealloc(currentData, newBytes);
+
+                auto oldBytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, capacity});
+                auto tailStart = rewriter.create<LLVM::GEPOp>(loc, ptrType, th.getI8Type(), grown, ValueRange{oldBytes});
+                auto tailBytes = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{newBytes, oldBytes});
+                rewriter.create<LLVM::MemsetOp>(
+                    loc, tailStart, rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)),
+                    tailBytes, /*isVolatile=*/false);
+
+                rewriter.create<LLVM::StoreOp>(loc, grown, dataPtr);
+                rewriter.create<LLVM::StoreOp>(loc, newCapacity, capacityPtr);
+                return grown;
+            },
+            [&](OpBuilder &, Location) -> mlir::Value { return currentData; });
+    }
+
+    // zero `count` elements of `data` from `index` on: the slots pop, shift, splice and a smaller
+    // `length =` vacate, so gc does not keep what they held alive and a later growth reads zero
+    void zeroElements(mlir_ts::ArrayType arrayType, mlir::Value data, mlir::Value index, mlir::Value count)
+    {
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto sizeOfElement = rewriter.create<mlir_ts::DialectCastOp>(
+            loc, llvmIndexType, rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayType.getElementType()));
+        auto start = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI8Type(), data,
+                                                  ValueRange{rewriter.create<LLVM::MulOp>(
+                                                      loc, llvmIndexType, ValueRange{sizeOfElement, index})});
+        auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfElement, count});
+        rewriter.create<LLVM::MemsetOp>(
+            loc, start, rewriter.create<LLVM::ConstantOp>(loc, th.getI8Type(), rewriter.getI8IntegerAttr(0)), bytes,
+            /*isVolatile=*/false);
+    }
+
     // of an array value; a null header reads as an empty array (R1)
     mlir::Value data(mlir_ts::ArrayType arrayType, mlir::Value array)
     {
@@ -117,10 +197,19 @@ class ArrayLayout : public LLVMCodeHelperBase
     }
 
     // a new array over `data` (a block just allocated, or null for an empty array) with `length`
-    // elements
+    // elements.
+    //
+    // The contract: `data` is either a literal null (an LLVM::ZeroOp) or a fresh non-null heap
+    // allocation (MemoryAlloc) that nothing else holds. Whether there is a block to count is
+    // decided by how `data` is spelled, not by its value at run time, so a pointer that is null
+    // only at run time would have its count stored through null, and a pointer into static data
+    // (an AddressOfOp: makeStatic's job) or into another array's block would have a count stored
+    // over memory that is not a block header.
     mlir::Value make(mlir_ts::ArrayType arrayType, mlir::Value data, mlir::Value length)
     {
         auto loc = op->getLoc();
+        assert(data.getDefiningOp() && !data.getDefiningOp<LLVM::AddressOfOp>() &&
+               "ArrayLayout::make takes a literal null or a fresh allocation");
         if (compileOptions.isRefCounted() && !data.getDefiningOp<LLVM::ZeroOp>())
         {
             // under rc the header holds a counted reference to its data block, as every copy of

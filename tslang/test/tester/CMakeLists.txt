@@ -484,6 +484,7 @@ tslang_add_test(NAME test-compile-00-nullable-to-any COMMAND test-runner "${PROJ
 tslang_add_test(NAME test-compile-00-ternary-new-or-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-compile-00-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-compile-00-array-growth COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-compile-00-global-from-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-compile-00-try-cleanup-then-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
@@ -983,6 +984,7 @@ tslang_add_test(NAME test-jit-00-nullable-to-any COMMAND test-runner -jit "${PRO
 tslang_add_test(NAME test-jit-00-ternary-new-or-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ternary_new_or_null.ts")
 tslang_add_test(NAME test-jit-00-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class.ts")
 tslang_add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_new.ts")
+tslang_add_test(NAME test-jit-00-array-growth COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-jit-00-global-from-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-jit-00-try-cleanup-then-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
 tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
@@ -1723,6 +1725,7 @@ set(TSLANG_CORPUS
     00class_local_decl.ts
     00class_nested.ts
     00class_new.ts
+    00array_growth.ts
     00class_or_interface_to_tuple.ts
     00class_protected_constr.ts
     00class_recursive.ts
@@ -2558,20 +2561,26 @@ set_tests_properties(test-compile-lowering-error-exit PROPERTIES WILL_FAIL TRUE)
 # `main`'s argv is `Ref<string>` (C's `char **`) only. A `string[]` argv would read that `char **`
 # as an array header, so it is a compile error that says to use `Ref<string>`, under the JIT (where
 # `main` is called, so a program that wrongly compiled would run instead of matching) and ahead of
-# time. A DLL has no `main` entry point, so the same file must not draw the error there.
+# time. A DLL has no `main` entry point, so the same file must not draw the error there. Any
+# array-typed parameter is refused, so `main(args: string[])` - one parameter, which takes argc's
+# place and compiled to a program that faulted - is checked too (main-args-string-array).
 set(main_argv_file "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/main_argv_string_array.ts")
-add_test(NAME test-jit-main-argv-string-array-error
-         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib "${main_argv_file}")
-set_tests_properties(test-jit-main-argv-string-array-error
-                     PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
-                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-foreach(argv_emit exe obj)
-    add_test(NAME test-compile-main-argv-string-array-error-${argv_emit}
-             COMMAND $<TARGET_FILE:tslang> --emit=${argv_emit} --no-default-lib "${main_argv_file}"
-                     -o "${CMAKE_CURRENT_BINARY_DIR}/main-argv-string-array.${argv_emit}")
-    set_tests_properties(test-compile-main-argv-string-array-error-${argv_emit}
+foreach(argv_case main-argv-string-array main-args-string-array)
+    string(REPLACE "-" "_" argv_case_file "${argv_case}")
+    set(argv_case_path "${PROJECT_SOURCE_DIR}/test/tester/lowering-errors/${argv_case_file}.ts")
+    add_test(NAME test-jit-${argv_case}-error
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib "${argv_case_path}")
+    set_tests_properties(test-jit-${argv_case}-error
                          PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    foreach(argv_emit exe obj)
+        add_test(NAME test-compile-${argv_case}-error-${argv_emit}
+                 COMMAND $<TARGET_FILE:tslang> --emit=${argv_emit} --no-default-lib "${argv_case_path}"
+                         -o "${CMAKE_CURRENT_BINARY_DIR}/${argv_case}.${argv_emit}")
+        set_tests_properties(test-compile-${argv_case}-error-${argv_emit}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "takes argv as Ref<string>"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
 endforeach()
 # The DLL is linked, so it is given what it links from the build tree rather than the environment:
 # -mm=none needs only the runtime library (gc would need the shared collector too), and the check

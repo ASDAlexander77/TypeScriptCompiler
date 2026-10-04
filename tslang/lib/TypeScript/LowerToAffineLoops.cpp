@@ -2714,10 +2714,12 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     //
     // A `string[]` argv is refused in every build where `main` is the entry point (all but a DLL):
     // ahead of time, the C runtime passes `char **` too, which would be read as an array header.
+    // Any array-typed parameter is refused, not only a second one: `main(args: string[])` takes
+    // `argc` as an array header and faulted ahead of time.
     if (!tsContext.compileOptions.isDLL && function.getName() == MAIN_ENTRY_NAME)
     {
         auto mainInputs = function.getFunctionType().getInputs();
-        if (mainInputs.size() == 2 && isa<mlir_ts::ArrayType>(mainInputs[1]))
+        if (llvm::any_of(mainInputs, [](mlir::Type type) { return isa<mlir_ts::ArrayType>(type); }))
         {
             function.emitError("'main' takes argv as Ref<string> (C's char **), not string[]; read an argument with Deref(argv[i])");
             return signalPassFailure();
