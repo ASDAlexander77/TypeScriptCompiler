@@ -1317,13 +1317,15 @@ class OwnershipRoutineLogic
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // the header { data, length, capacity } is the counted block (spec section 4). On its last
-        // reference the header gives up its reference to the data block, and frees itself. The
-        // data block keeps its own count, as it did before the switch: a string made over it
-        // (`<string><Opaque>Ref(buffer[0])`, the default library's convertNumber) holds a
-        // reference to it and keeps it alive. On the data block's last reference: release the
-        // elements [0, length) and free it. A null header (an empty array, R1) or a null data
-        // block holds nothing and is skipped by emitIfLastReference; a static header (a constant
-        // array in global data) is immortal and never freed
+        // reference the header lets go of its data block, and frees itself. Under rc the data
+        // block keeps a count of its own, as it did before the switch, and the header holds one
+        // reference to it (ArrayLayout::make): a string made over it
+        // (`<string><Opaque>Ref(buffer[0])`, the default library's convertNumber) holds another
+        // and keeps it alive. On the data block's last reference: release the elements
+        // [0, length) and free it. Under own the header is the data block's only owner, so the
+        // block goes with it, as before. A null header (an empty array, R1) holds nothing and is
+        // skipped by emitIfLastReference; a static header (a constant array in global data) is
+        // immortal and never freed; a null data block is passed on to free(NULL)
         ArrayLayout layout(op, rewriter, typeConverter, compileOptions);
         auto header = layout.headerForRead(arrayType, slotPtr);
 
@@ -1331,7 +1333,7 @@ class OwnershipRoutineLogic
             auto dataSlot = layout.dataAddress(arrayType, header);
             auto dataValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, dataSlot);
 
-            emitIfLastReference(dataValue, [&]() {
+            auto releaseData = [&]() {
                 auto elementRoutine = getOrCreateReleaseRoutine(arrayType.getElementType());
                 if (!elementRoutine.empty())
                 {
@@ -1349,7 +1351,16 @@ class OwnershipRoutineLogic
                 }
 
                 emitFreeBlock(dataValue);
-            });
+            };
+
+            if (compileOptions.isRefCounted())
+            {
+                emitIfLastReference(dataValue, releaseData);
+            }
+            else
+            {
+                releaseData();
+            }
 
             emitFreeBlock(header);
         });
