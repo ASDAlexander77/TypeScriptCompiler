@@ -159,6 +159,10 @@ struct GenContext
     bool insertIntoParentScope = false;
     mlir::Operation *currentOperation = nullptr;
     mlir_ts::FuncOp funcOp;
+    // The function a root's own statements are generated in when they are held back from the
+    // module level (generateGlobalEntryCode): its variables are still the module's, and an
+    // exported one is exported (#448). A function nested in them has a funcOp of its own.
+    mlir_ts::FuncOp rootStatementsFuncOp;
     FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars = nullptr;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars = nullptr;

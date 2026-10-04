@@ -1001,9 +1001,13 @@ namespace mlirgen
             // every function's locals too, and declared them to importers as `@dllimport` globals
             // in a `.f_<function>` namespace, which no library defines.
             auto itemVarClass = varClass;
+            // A root's statements held back into its entry function are still the module's
+            // (rootStatementsFuncOp): `export const k = 5` beside top-level code was not exported,
+            // and the importer of the library could not resolve k (#448).
+            auto atModuleLevel = !genContext.funcOp || genContext.funcOp == genContext.rootStatementsFuncOp;
             if (variableDeclarationListAST->parent && !exportByDecorator)
             {
-                itemVarClass.isExport = !genContext.funcOp && getExportModifier(
+                itemVarClass.isExport = atModuleLevel && getExportModifier(
                     variableDeclarationListAST->parent, MLIRHelper::getName(item->name, stringAllocator));
             }
 

@@ -3048,6 +3048,14 @@ tslang_add_import_tests(import-source-new-imported-class "${import_source_dir}" 
 # instruction", and a module linked beside the program got a `main` of its own (#447).
 tslang_add_test(NAME test-jit-import-source-toplevel COMMAND test-runner -jit "${import_source_dir}/import_toplevel.ts")
 tslang_add_import_tests(import-source-toplevel "${import_source_dir}" import_toplevel toplevel_module)
+# An exported const of a module with top-level statements, imported: the importer could not resolve
+# it under -shared ("can't resolve name: k"), and it was a `let` with no initializer otherwise (#448).
+tslang_add_test(NAME test-jit-import-source-export-const COMMAND test-runner -jit "${import_source_dir}/import_export_const.ts")
+tslang_add_import_tests(import-source-export-const "${import_source_dir}" import_export_const export_const_module)
+# the library declares k to its importer as `@dllimport let k: s32;`, defined in the library: no
+# "'let' does not have initializer" warning for it
+set_tests_properties(test-compile-shared-import-source-export-const test-jit-shared-import-source-export-const
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "does not have initializer|Stack dump|Assertion failed")
 
 # The JIT cache (--emit=jit, on by default): each .ts module imported is an object of its own,
 # loaded beside the program's - imported through two others and initialized first; and a program
