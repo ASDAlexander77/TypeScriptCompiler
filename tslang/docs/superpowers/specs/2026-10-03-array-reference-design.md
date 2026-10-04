@@ -111,6 +111,9 @@ unchanged.
     under it (five default-library tests failed ahead of time). Counting the header's reference
     restores what main does. A reallocating change (`push`, and PR 3's growth) still moves the
     block under such a string, as it does on main (#481).
+  - Since #481 such a string is a view under rc, as under own: it takes no reference to the block,
+    and where it is kept (returned, stored, pushed, captured) the keeper takes a copy. The count
+    the header holds on its data block stays; nothing else adds one now.
   - Slots `[length, capacity)` are never released (and, from PR 3, hold zero).
   - `pop` and `shift` hand the removed element's reference to the caller, as today.
 - **own.** The header is a single-owned block, like a class instance.

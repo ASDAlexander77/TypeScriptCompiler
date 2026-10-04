@@ -8,6 +8,8 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIROwnedReference.h"
 
+#include "OwnershipFacts.h"
+
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -59,6 +61,8 @@ class OwnedReturnConsumptionPass
     {
         auto module = getOperation();
         MLIRTypeHelper mth(module->getContext(), compileOptions);
+
+        copyEscapingStringViews(module);
 
         llvm::DenseSet<mlir::StringRef> returnsOwned;
         // Every method in the module, grouped by the name after the last dot: the candidate set
@@ -409,6 +413,140 @@ class OwnedReturnConsumptionPass
                 builder.create<mlir_ts::RetainOp>(loadOp->getLoc(), value);
             }
         });
+    }
+
+    // A string made over memory it does not own - `<string><Opaque>Ref(buffer[0])`, a cast out of
+    // `!ts.opaque` - is a view of that memory, not a block of its own (#481). Under rc a receiver
+    // used to retain it, counting whatever word sits in front of the pointer: the array's data
+    // block for `Ref(buffer[0])`, which then outlived the array and leaked once the array grew,
+    // and element data or another block's tail for `Ref(buffer[1])`. Now, as under own, a view
+    // keeps no count: where a receiver retains it (a return, a store into a field, an element or
+    // a global, a push, a capture), the receiver takes a copy of the string instead, made right
+    // there - after the bytes were written through the view (`sprintf_s(s, ...)`). A `let` that
+    // only ever holds a view borrows it; one that is assigned again starts from a copy, since the
+    // assignment releases what it held.
+    //
+    // A view still points into the array: used after the array grows or dies, it reads freed
+    // memory in every model, as a C pointer would. A view kept inside a tuple or record literal,
+    // or by a function it is passed to, is not copied.
+    void copyEscapingStringViews(mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        llvm::DenseSet<mlir::Operation *> viewLocals;
+        auto isView = [&](mlir::Value value) {
+            for (auto depth = 0; depth < 16 && value; depth++)
+            {
+                auto *definingOp = value.getDefiningOp();
+                if (auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp))
+                {
+                    if (mlir::isa<mlir_ts::OpaqueType>(castOp.getIn().getType()))
+                    {
+                        return true;
+                    }
+
+                    value = own_facts::isCopyableString(castOp.getIn().getType()) ? castOp.getIn() : mlir::Value();
+                }
+                else if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(definingOp))
+                {
+                    auto *slot = loadOp.getReference().getDefiningOp();
+                    value = slot && viewLocals.contains(slot)
+                                ? mlir::cast<mlir_ts::VariableOp>(slot).getInitializer()
+                                : mlir::Value();
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        };
+
+        // `let l = view`: borrowed when nothing assigns the variable again, a copy when something does.
+        // Collected first: the walk has already stepped to the op after a variable - its RetainSlot,
+        // which is erased below.
+        llvm::SmallVector<mlir_ts::VariableOp> variables;
+        module.walk([&](mlir_ts::VariableOp varOp) { variables.push_back(varOp); });
+        for (auto varOp : variables)
+        {
+            auto init = varOp.getInitializer();
+            if (!init || !own_facts::isCopyableString(init.getType()) || !isView(init) || varOp.getCaptured().value_or(false))
+            {
+                continue;
+            }
+
+            auto assignedAgain = llvm::any_of(varOp->getUsers(), [&](mlir::Operation *user) {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                return storeOp && storeOp.getReference() == varOp.getResult();
+            });
+
+            if (assignedAgain)
+            {
+                mlir::OpBuilder builder(varOp);
+                auto copy = builder.create<mlir_ts::StringCopyOp>(varOp.getLoc(), init.getType(), init);
+                varOp.getInitializerMutable().assign(copy);
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Operation *> slotOps;
+            for (auto *user : varOp->getUsers())
+            {
+                if (mlir::isa<mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
+                {
+                    slotOps.push_back(user);
+                }
+            }
+
+            for (auto *slotOp : slotOps)
+            {
+                slotOp->erase();
+            }
+
+            varOp->removeAttr(OWNED_LOCAL_ATTR_NAME);
+            viewLocals.insert(varOp);
+        }
+
+        // a receiver's retain: MLIRGen puts it right in front of the receiver, with nothing but
+        // other counting between them (`ts.Retain(v); ts.ReleaseSlot(field); ts.Store(v, field)`)
+        llvm::SmallVector<mlir_ts::RetainOp> retains;
+        module.walk([&](mlir_ts::RetainOp retainOp) {
+            auto value = retainOp.getReference();
+            if (own_facts::isCopyableString(value.getType()) && isView(value))
+            {
+                retains.push_back(retainOp);
+            }
+        });
+
+        for (auto retainOp : retains)
+        {
+            auto value = retainOp.getReference();
+            auto *receiver = retainOp->getNextNode();
+            while (receiver && mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::RetainSlotOp,
+                                         mlir_ts::ReleaseSlotOp>(receiver))
+            {
+                receiver = receiver->getNextNode();
+            }
+
+            if (!receiver || !llvm::is_contained(receiver->getOperands(), value))
+            {
+                continue;
+            }
+
+            mlir::OpBuilder builder(retainOp);
+            auto copy = builder.create<mlir_ts::StringCopyOp>(retainOp->getLoc(), value.getType(), value);
+            retainOp->setOperand(0, copy);
+            for (auto &operand : receiver->getOpOperands())
+            {
+                if (operand.get() == value)
+                {
+                    operand.set(copy);
+                }
+            }
+        }
     }
 
     // An array or tuple built in a global's region (`const a = [1, 2]`, `const t = [1, [6, 7]]`, or
