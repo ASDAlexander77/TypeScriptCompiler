@@ -22,7 +22,13 @@ if (NOT EXISTS "${TSLANG_MLIR_INCLUDE}/mlir/ExecutionEngine/AsyncRuntime.h")
 endif()
 
 set(SRC "${CMAKE_CURRENT_SOURCE_DIR}/../lib/TypeScriptAsyncRuntime")
-add_library(TypeScriptAsyncRuntime STATIC "${SRC}/AsyncRuntime.cpp" "${SRC}/DynamicRuntime.cpp")
+# The same sources as lib/TypeScriptAsyncRuntime/CMakeLists.txt: without AsyncGCThreads.cpp a `gc`
+# program using async does not link (GC_enable_threads); ProcessHeap.cpp is empty off Windows.
+add_library(TypeScriptAsyncRuntime STATIC
+  "${SRC}/AsyncRuntime.cpp"
+  "${SRC}/AsyncGCThreads.cpp"
+  "${SRC}/ProcessHeap.cpp"
+  "${SRC}/DynamicRuntime.cpp")
 target_include_directories(TypeScriptAsyncRuntime PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../include"
   "${CMAKE_CURRENT_SOURCE_DIR}/../lib"
