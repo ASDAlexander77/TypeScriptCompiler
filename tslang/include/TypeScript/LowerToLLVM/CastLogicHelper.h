@@ -407,6 +407,11 @@ class CastLogicHelper
 
         if (auto boolType = dyn_cast<mlir_ts::BooleanType>(resType))
         {
+            if (isa<mlir_ts::StringType>(inType))
+            {
+                return castStringToBool(in);
+            }
+
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
@@ -456,8 +461,19 @@ class CastLogicHelper
             {
                 // TODO: use cond switch
                 auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
-                auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+                mlir::Value val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
                 auto llvmBoolType = tch.convertType(boolType);
+                if (isa<mlir_ts::StringType>(optType.getElementType()))
+                {
+                    // a string is tested by reading its first character, and the value of an undefined
+                    // optional is no pointer at all: test null instead
+                    auto llvmPtrType = tch.convertType(optType.getElementType());
+                    mlir::Value hasValueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, hasValue);
+                    mlir::Value valAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmPtrType, val);
+                    mlir::Value nullPtr = rewriter.create<LLVM::ZeroOp>(loc, llvmPtrType);
+                    return castStringToBool(rewriter.create<LLVM::SelectOp>(loc, hasValueAsLLVMType, valAsLLVMType, nullPtr));
+                }
+
                 auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
                 if (valAsBool)
                 {
@@ -999,6 +1015,22 @@ class CastLogicHelper
 
         return rewriter.create<LLVM::SelectOp>(loc, valueAsLLVMType, ch.getOrCreateGlobalString("__true__", std::string("true")),
                                                ch.getOrCreateGlobalString("__false__", std::string("false")));
+    }
+
+    // `""` is falsy: a string is true when it is not null and its first character is not the terminator.
+    // A null string reads the terminator of a static "" instead, so there is no branch to make.
+    mlir::Value castStringToBool(mlir::Value in)
+    {
+        auto llvmPtrType = tch.convertType(mlir_ts::StringType::get(rewriter.getContext()));
+        mlir::Value ptr = in.getType() == llvmPtrType ? in : rewriter.create<mlir_ts::DialectCastOp>(loc, llvmPtrType, in);
+
+        mlir::Value nullPtr = rewriter.create<LLVM::ZeroOp>(loc, llvmPtrType);
+        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, ptr, nullPtr);
+        auto readPtr = rewriter.create<LLVM::SelectOp>(loc, isNull, ch.getOrCreateGlobalString(std::string()), ptr);
+
+        auto i8Type = rewriter.getIntegerType(8);
+        auto firstChar = rewriter.create<LLVM::LoadOp>(loc, i8Type, readPtr);
+        return rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, firstChar, clh.createIConstantOf(8, 0));
     }
 
     mlir::Value castBoolToNumber(mlir::Value in)
