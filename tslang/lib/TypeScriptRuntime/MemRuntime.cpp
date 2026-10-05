@@ -4,7 +4,7 @@
 // `_aligned_free` may release, so that pairing corrupts the CRT heap. Windows' own `malloc` is
 // already aligned enough for everything that asks, so the request is served from the ordinary
 // heap and `free` stays honest. (Under `-mm=gc` this never showed, because GCPass rewrites the
-// whole pair to GC_memalign/GC_free.)
+// whole pair to GC_malloc_uncollectable/GC_free.)
 
 #ifndef _WIN32
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)

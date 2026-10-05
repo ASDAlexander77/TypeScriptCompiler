@@ -46,8 +46,8 @@ class AsyncTargetWidthPass : public mlir::PassWrapper<AsyncTargetWidthPass, Modu
     // overflows its block; at wasm32 the call does not match the definition's signature. Retype the declaration to the pointer width and truncate the arguments at each call.
     // The values are a coroutine frame's size and alignment, which fit in 32 bits.
     //
-    // Runs directly after ConvertAsyncToLLVM and before GCPass, which renames the declaration
-    // (and its calls) to GC_memalign and so keeps the corrected signature. Under the other memory
+    // Runs directly after ConvertAsyncToLLVM and before GCPass, which rewrites the calls to
+    // GC_malloc_uncollectable(size) and so keeps the corrected size type. Under the other memory
     // models the name resolves to the runtime's aligned_alloc shim, which is (size_t, size_t) too.
     mlir::LogicalResult fixFrameAllocator(mlir::ModuleOp m)
     {

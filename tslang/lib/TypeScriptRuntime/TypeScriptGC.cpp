@@ -15,6 +15,7 @@ void init_gcruntime(llvm::StringMap<void *> &exportSymbols)
     exportSymbol("GC_malloc", &_mlir__GC_malloc);
     exportSymbol("GC_malloc_atomic", &_mlir__GC_malloc_atomic);
     exportSymbol("GC_memalign", &_mlir__GC_memalign);
+    exportSymbol("GC_malloc_uncollectable", &_mlir__GC_malloc_uncollectable);
     exportSymbol("GC_realloc", &_mlir__GC_realloc);
     exportSymbol("GC_free", &_mlir__GC_free);
     exportSymbol("GC_get_heap_size", &_mlir__GC_get_heap_size);

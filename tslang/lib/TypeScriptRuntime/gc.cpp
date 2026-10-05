@@ -45,6 +45,11 @@ void *_mlir__GC_memalign(size_t align, size_t size)
     return GC_memalign(align, size);
 }
 
+void *_mlir__GC_malloc_uncollectable(size_t size)
+{
+    return GC_MALLOC_UNCOLLECTABLE(size);
+}
+
 void *_mlir__GC_realloc(void *ptr, size_t size)
 {
     return GC_REALLOC(ptr, size);

@@ -24,6 +24,8 @@ namespace
 
 // what LLVMCodeHelperBase::_MemoryAlloc asks for when it wants a zeroed block
 constexpr auto CALLOC_NAME = "calloc";
+// what the coroutine lowering (ConvertAsyncToLLVM) allocates an async function's frame with
+constexpr auto ALIGNED_ALLOC_NAME = "aligned_alloc";
 
 class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 {
@@ -46,6 +48,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         llvm::SmallVector<LLVM::MemsetOp> redundantMemSets;
         llvm::SmallVector<LLVM::CallOp> callocCalls;
         llvm::SmallVector<LLVM::LLVMFuncOp> callocDecls;
+        llvm::SmallVector<LLVM::CallOp> frameAllocCalls;
+        llvm::SmallVector<LLVM::LLVMFuncOp> frameAllocDecls;
         m.walk([&](mlir::Operation *op) {
             // process gctors first
             if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
@@ -60,6 +64,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 if (name == CALLOC_NAME)
                 {
                     callocDecls.push_back(funcOp);
+                    return;
+                }
+
+                if (name == ALIGNED_ALLOC_NAME)
+                {
+                    frameAllocDecls.push_back(funcOp);
                     return;
                 }
 
@@ -106,6 +116,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                     return;
                 }
 
+                if (name == ALIGNED_ALLOC_NAME)
+                {
+                    frameAllocCalls.push_back(callOp);
+                    return;
+                }
+
                 renameCall(name, callOp);
             }
         });
@@ -116,6 +132,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         }
 
         replaceCallocWithGCMalloc(m, callocCalls, callocDecls);
+        replaceFrameAllocWithUncollectable(m, frameAllocCalls, frameAllocDecls);
 
         if (!added)
         {
@@ -138,25 +155,22 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: AFTER DUMP: \n" << m << "\n";);
     }
 
-    // `calloc` is deliberately absent here: it takes two arguments where GC_malloc takes one, so
-    // a rename in place would leave a call whose arity disagrees with its callee. It goes through
-    // replaceCallocWithGCMalloc instead.
+    // `calloc` and `aligned_alloc` are deliberately absent here: they take two arguments where
+    // GC_malloc and GC_malloc_uncollectable take one, so a rename in place would leave a call
+    // whose arity disagrees with its callee. They go through replaceCallocWithGCMalloc and
+    // replaceFrameAllocWithUncollectable instead.
     bool mapName(StringRef name, StringRef modeName, StringRef &newName)
     {
         if (name == "malloc")
         {
             if (modeName == "atomic")
             {
-                newName = "GC_malloc_atomic";    
+                newName = "GC_malloc_atomic";
             }
             else
             {
                 newName = "GC_malloc";
             }
-        }
-        else if (name == "aligned_alloc")
-        {
-            newName = "GC_memalign";
         }
         else if (name == "realloc")
         {
@@ -206,7 +220,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     // each call is treated as returning a distinct, non-aliasing pointer.
     void markAsAllocatorIfNeeded(StringRef newName, LLVM::LLVMFuncOp funcOp)
     {
-        if (newName != "GC_malloc" && newName != "GC_malloc_atomic" && newName != "GC_memalign")
+        if (newName != "GC_malloc" && newName != "GC_malloc_atomic" && newName != "GC_memalign" &&
+            newName != "GC_malloc_uncollectable")
         {
             return;
         }
@@ -222,7 +237,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                                                             LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
         funcOp.setMemoryEffectsAttr(memoryEffects);
 
-        // AllocFnKind::Alloc = 1<<0, Zeroed = 1<<4. GC_malloc/GC_malloc_atomic zero-fill;
+        // AllocFnKind::Alloc = 1<<0, Zeroed = 1<<4. GC_malloc/GC_malloc_atomic/GC_malloc_uncollectable zero-fill;
         // GC_memalign (GC_memalign) does not guarantee zeroing, so only mark Alloc for it.
         uint64_t allocKind = newName == "GC_memalign" ? /*Alloc*/ 1 : /*Alloc|Zeroed*/ 1 | (1 << 4);
         auto kindEntry = mlir::ArrayAttr::get(
@@ -310,6 +325,47 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
             rewriter.setInsertionPoint(callOp);
             auto gcMallocCall = rewriter.create<LLVM::CallOp>(callOp->getLoc(), gcMallocFuncOp, ValueRange{sizeValue});
             rewriter.replaceOp(callOp, gcMallocCall.getResults());
+        }
+
+        for (auto funcOp : decls)
+        {
+            funcOp.erase();
+        }
+    }
+
+    // An async function's frame is the coroutine lowering's `aligned_alloc(align, size)`, given
+    // back with `free` (GC_free) when the coroutine finishes - its lifetime is managed by hand. It
+    // must not be collectable: a frame waiting to run is held only by the runtime's pool queue or
+    // a token's awaiter list, ordinary heap the collector does not scan. A collection then freed
+    // it, and the pool resumed whatever reused the block - a crash, or another call's result -
+    // as soon as several threads awaited at once. Uncollectable memory lives until it is freed
+    // and is still scanned, so what the frame holds across a suspension stays alive too.
+    //
+    // The alignment is dropped: the frame asks for 8 (see the runtime's aligned_alloc shim), and
+    // the collector aligns every object to its granule, two words.
+    void replaceFrameAllocWithUncollectable(mlir::ModuleOp module, llvm::SmallVector<LLVM::CallOp> &calls,
+                                            llvm::SmallVector<LLVM::LLVMFuncOp> &decls)
+    {
+        if (calls.empty() && decls.empty())
+        {
+            return;
+        }
+
+        PatternRewriter rewriter(module.getContext());
+        TypeHelper th(module.getContext());
+
+        for (auto callOp : calls)
+        {
+            LLVMCodeHelper ch(callOp, rewriter, nullptr, tsContext.compileOptions);
+            auto sizeValue = callOp.getOperand(1);
+            auto allocFuncOp = ch.getOrInsertFunction(
+                "GC_malloc_uncollectable",
+                th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{sizeValue.getType()}));
+            markAsAllocatorIfNeeded("GC_malloc_uncollectable", allocFuncOp);
+
+            rewriter.setInsertionPoint(callOp);
+            auto allocCall = rewriter.create<LLVM::CallOp>(callOp->getLoc(), allocFuncOp, ValueRange{sizeValue});
+            rewriter.replaceOp(callOp, allocCall.getResults());
         }
 
         for (auto funcOp : decls)

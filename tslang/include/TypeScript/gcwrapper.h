@@ -13,6 +13,8 @@ void *_mlir__GC_malloc_atomic(size_t size);
 
 void *_mlir__GC_memalign(size_t align, size_t size);
 
+void *_mlir__GC_malloc_uncollectable(size_t size);
+
 void *_mlir__GC_realloc(void *ptr, size_t size);
 
 void _mlir__GC_free(void *ptr);

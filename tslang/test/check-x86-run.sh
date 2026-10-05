@@ -209,8 +209,8 @@ done
 # Upstream ConvertAsyncToLLVM hardcodes the coroutine frame allocator's declaration to
 # aligned_alloc(i64, i64), whatever the target. aligned_alloc takes size_t, which is pointer
 # width, so at i686 the callee reads (alignment, size=0) and the frame overflows its block.
-# The repair pass (task 2/3) must retype the declaration to the pointer width: GC_memalign is
-# GCPass's rename of aligned_alloc when a collector is linked in.
+# The repair pass (task 2/3) must retype the declaration to the pointer width. When a collector
+# is linked in, GCPass rewrites each call to GC_malloc_uncollectable(size), which keeps that width.
 emit_await_order_ir() {
     local mm="$1"
     local out="$work/await_order.$mm.ll" err status
@@ -232,12 +232,16 @@ declared_with_i32_params() {
     grep -Eq "^declare .*ptr @$1\(i32( [^,]*)?, i32( [^)]*)?\)" "$2"
 }
 
+declared_with_one_i32_param() {
+    grep -Eq "^declare .*ptr @$1\(i32( [^,)]*)?\)" "$2"
+}
+
 if out="$(emit_await_order_ir gc)"; then
-    if declared_with_i32_params GC_memalign "$out"; then
-        echo "ok   x86 IR -mm=gc: frame allocator is GC_memalign(i32, i32)"
+    if declared_with_one_i32_param GC_malloc_uncollectable "$out"; then
+        echo "ok   x86 IR -mm=gc: frame allocator is GC_malloc_uncollectable(i32)"
     else
-        echo "FAIL x86 IR -mm=gc: frame allocator is GC_memalign(i32, i32)"
-        grep -m1 -E '@GC_memalign\(|@aligned_alloc\(' "$out" | sed 's/^/    got: /'
+        echo "FAIL x86 IR -mm=gc: frame allocator is GC_malloc_uncollectable(i32)"
+        grep -m1 -E '@GC_malloc_uncollectable\(|@GC_memalign\(|@aligned_alloc\(' "$out" | sed 's/^/    got: /'
         fail=1
     fi
 fi

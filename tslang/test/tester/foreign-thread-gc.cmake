@@ -24,7 +24,11 @@
 # And with the work done on the library's own async pool (#522), which collects there. The pool's
 # threads register themselves through hooks that only the library's GC_enable_threads sets (each
 # module has its own copy of the scheduler); when only a registered thread called in, they never
-# were, and the collection a pool thread started aborted ("Collecting from unknown thread").
+# were, and the collection a pool thread started aborted ("Collecting from unknown thread"). With
+# them registered, eight host threads awaiting at once crashed on Linux, or got another call's
+# result: an async function's frame was collectable, and one waiting in the pool's queue - ordinary
+# heap the collector does not scan - was freed by a collection (GCPass now allocates frames
+# uncollectable; they are freed by hand when the coroutine finishes).
 
 cmake_minimum_required(VERSION 3.17.3)
 
