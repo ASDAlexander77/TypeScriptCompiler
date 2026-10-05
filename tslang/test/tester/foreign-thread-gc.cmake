@@ -57,14 +57,17 @@ endif()
 if(WIN32)
     set(prefix "")
     set(suffix ".dll")
+    set(pic "")
 else()
     set(prefix "lib")
     set(suffix ".so")
+    # a shared object's code has to be position independent (R_X86_64_32S otherwise)
+    set(pic "-relocation-model=pic")
 endif()
 
 foreach(name with-top-level no-top-level)
     set(library "${WORK_DIR}/${prefix}${name}${suffix}")
-    execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=gc --no-default-lib ${libs} ${name}.ts -o "${library}"
+    execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=gc --no-default-lib ${pic} ${libs} ${name}.ts -o "${library}"
         WORKING_DIRECTORY "${WORK_DIR}"
         OUTPUT_VARIABLE out
         ERROR_VARIABLE err
