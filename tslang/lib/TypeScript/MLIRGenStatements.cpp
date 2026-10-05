@@ -788,8 +788,6 @@ namespace mlirgen
 
         auto location = loc(forStatementAST);
 
-        auto hasAwait = InternalFlags::ForAwait == (forStatementAST->internalFlags & InternalFlags::ForAwait);
-
         // initializer
         // TODO: why do we have ForInitialier
         if (isExpression(forStatementAST->initializer))
@@ -851,63 +849,12 @@ namespace mlirgen
 
         // body
         builder.setInsertionPointToStart(&forOp.getBody().front());
-        if (hasAwait)
-        {
-            if (forStatementAST->statement == SyntaxKind::Block)
-            {
-                auto firstStatement = forStatementAST->statement.as<ts::Block>()->statements.front();
-                auto result = mlirGen(firstStatement, loopGenContext);
-                EXIT_IF_FAILED(result)
-            }
-
-            // TODO: we need to strip metadata to fix issue with debug info
-            // async body
-            auto isFailed = false;
-            auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
-                stripMetadata(location), mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
-                [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
-                    GenContext execOpBodyGenContext(loopGenContext);
-                    DITableScopeT debugAsyncCodeScope(debugScope);
-                    MLIRDebugInfoHelper mdi(builder, debugScope);
-                    
-                    // TODO: temp hack to break wrong chain on scopes because 'await' create extra function wrap
-                    mdi.clearDebugScope();
-                    mdi.setLexicalBlock(location);
-
-                    if (forStatementAST->statement == SyntaxKind::Block)
-                    {
-                        if (mlir::failed(mlirGen(forStatementAST->statement.as<ts::Block>(), execOpBodyGenContext, 1)))
-                        {
-                            isFailed = true;
-                        }
-                    }
-                    else
-                    {
-                        if (mlir::failed(mlirGen(forStatementAST->statement, execOpBodyGenContext))) 
-                        {
-                            isFailed = true;
-                        }
-                    }
-
-                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
-                });    
-
-            if (isFailed)
-            {
-                return mlir::failure();
-            }
-
-            // One iteration at a time, as `for await` runs its body: the next value is asked for only
-            // once this body is done. Each body was added to a group awaited after the loop, so the
-            // bodies ran as concurrent tasks - interleaved, losing each other's writes (#498).
-            builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
-        }
-        else
-        {
-            // default
-            auto result = mlirGen(forStatementAST->statement, loopGenContext);
-            EXIT_IF_FAILED(result)
-        }
+        // A `for await` body is generated in the loop as any other: an `await` in it makes its own
+        // async.execute and waits for it, so one iteration runs at a time (#498). Generated inside an
+        // async.execute of its own, a `break` or `continue` in it had no loop in its region, and a
+        // nested `for await` crashed the compiler (#502).
+        auto bodyResult = mlirGen(forStatementAST->statement, loopGenContext);
+        EXIT_IF_FAILED(bodyResult)
 
         builder.create<mlir_ts::ResultOp>(location);
 
