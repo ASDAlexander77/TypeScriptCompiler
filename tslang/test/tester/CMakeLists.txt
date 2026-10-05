@@ -350,6 +350,7 @@ tslang_add_test(NAME test-compile-00-array-static-nested COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-array-literal-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-compile-00-tuple-runtime-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
 tslang_add_test(NAME test-compile-00-record-to-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
+tslang_add_test(NAME test-compile-00-record-variable-to-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_variable_to_class.ts")
 tslang_add_test(NAME test-compile-00-array-insert-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_insert_functions.ts")
 tslang_add_test(NAME test-compile-00-await-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00await_void.ts")
 tslang_add_test(NAME test-compile-00-for-await-sequential COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_sequential.ts")
@@ -860,6 +861,7 @@ tslang_add_test(NAME test-jit-00-array-static-nested COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-array-literal-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_literal_copy.ts")
 tslang_add_test(NAME test-jit-00-tuple-runtime-arrays COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_runtime_arrays.ts")
 tslang_add_test(NAME test-jit-00-record-to-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_to_class.ts")
+tslang_add_test(NAME test-jit-00-record-variable-to-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00record_variable_to_class.ts")
 tslang_add_test(NAME test-jit-00-array-insert-functions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_insert_functions.ts")
 tslang_add_test(NAME test-jit-00-await-void COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00await_void.ts")
 tslang_add_test(NAME test-jit-00-for-await-sequential COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_sequential.ts")
@@ -1699,6 +1701,7 @@ set(TSLANG_CORPUS
     00array_literal_copy.ts
     00tuple_runtime_arrays.ts
     00record_to_class.ts
+    00record_variable_to_class.ts
     00array_insert_functions.ts
     00await_void.ts
     00for_await_sequential.ts

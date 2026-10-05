@@ -1695,6 +1695,89 @@ namespace mlirgen
         return createArrayFromArrayInfo(location, values, arrayInfo, genContext);
     }
 
+    // A record literal whose receiver is a class (`const p: P = { x: i, items: [i] }`, a P
+    // parameter, a P result), built as the instance itself from its fields' values (#492). Not
+    // for a class with a base (its storage holds the base's fields elsewhere), nor for a literal
+    // missing one of the class's fields or holding one it has not, nor for a constant field other
+    // than a number, a string or a boolean: those go through the slot and castTupleToClass.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::mlirGenObjectLiteralAsClassInstance(mlir::Location location,
+        ObjectLiteralInfo &oli, const GenContext &genContext)
+    {
+        auto classType = dyn_cast_or_null<mlir_ts::ClassType>(oli.receiverType);
+        if (!classType)
+        {
+            return std::nullopt;
+        }
+
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (!classInfo || !classInfo->baseClasses.empty())
+        {
+            return std::nullopt;
+        }
+
+        auto classFields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();
+        SmallVector<mlir::Value> values;
+        auto matched = 0;
+        for (auto &classField : classFields)
+        {
+            auto name = dyn_cast_or_null<mlir::StringAttr>(classField.id);
+            if (name && name.getValue().starts_with("."))
+            {
+                continue;
+            }
+
+            auto found = llvm::find_if(oli.fieldInfos, [&](auto &fieldInfo) { return fieldInfo.id == classField.id; });
+            if (found == oli.fieldInfos.end())
+            {
+                return std::nullopt;
+            }
+
+            auto index = std::distance(oli.fieldInfos.begin(), found);
+            auto toSet = llvm::find_if(oli.fieldsToSet, [&](auto &fieldToSet) { return fieldToSet.first == classField.id; });
+            if (toSet != oli.fieldsToSet.end())
+            {
+                values.push_back(toSet->second);
+            }
+            else if (isa<mlir::IntegerAttr, mlir::FloatAttr, mlir::StringAttr, mlir::BoolAttr>(oli.values[index]))
+            {
+                values.push_back(builder.create<mlir_ts::ConstantOp>(location, found->type, oli.values[index]));
+            }
+            else if (auto arrayAttr = dyn_cast<mlir::ArrayAttr>(oli.values[index]))
+            {
+                // a constant array (`items: []`, `items: [1, 2]`): a heap array of the instance's own,
+                // as in a literal built in a slot (#479)
+                auto arrayType = dyn_cast<mlir_ts::ArrayType>(found->type);
+                if (!arrayType)
+                {
+                    return std::nullopt;
+                }
+
+                auto literal = builder.create<mlir_ts::ConstantOp>(
+                    location, getConstArrayType(arrayType.getElementType(), arrayAttr.size()), arrayAttr);
+                auto copied = cast(location, arrayType, literal, genContext);
+                if (copied.failed_or_no_value())
+                {
+                    return ValueOrLogicalResult(mlir::failure());
+                }
+
+                values.push_back(V(copied));
+            }
+            else
+            {
+                return std::nullopt;
+            }
+
+            matched++;
+        }
+
+        if (matched != static_cast<int>(oli.fieldInfos.size()))
+        {
+            return std::nullopt;
+        }
+
+        return NewClassInstanceWithSettingFields(location, classType, classFields, values, genContext);
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         auto location = loc(objectLiteral);
@@ -1834,6 +1917,19 @@ namespace mlirgen
         auto boxAsObject =
             (objectLiteral->internalFlags & InternalFlags::BoxAsObject) == InternalFlags::BoxAsObject ||
             !oli.methodInfos.empty() || !oli.methodInfosWithCaptures.empty();
+
+        // A literal made into a class instance (`const p: P = { x: i, items: [i] }`) is the instance:
+        // each field's value is stored into a new P as it is, where it was stored into a slot the
+        // cast to P then read again - a read -mm=own takes for a borrow of the slot, which cannot
+        // be stored (#492). Only a literal whose fields are exactly the class's, and whose constant
+        // fields are plain values; any other goes through the slot and the cast (castTupleToClass).
+        if (!boxAsObject)
+        {
+            if (auto classInstance = mlirGenObjectLiteralAsClassInstance(location, oli, genContext))
+            {
+                return *classInstance;
+            }
+        }
 
         // A literal built in a slot (a field known only at run time, or boxed) starts from the
         // constant below, and an array kept in it would be a static header over constant data,
