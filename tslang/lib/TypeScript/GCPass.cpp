@@ -130,6 +130,11 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
             }
         }
 
+        if (tsContext.compileOptions.isDLL)
+        {
+            injectThreadEnter(m);
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: AFTER DUMP: \n" << m << "\n";);
     }
 
@@ -310,6 +315,58 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         for (auto funcOp : decls)
         {
             funcOp.erase();
+        }
+    }
+
+    static bool isExported(LLVM::LLVMFuncOp funcOp)
+    {
+        if (auto passthrough = funcOp->getAttrOfType<mlir::ArrayAttr>("passthrough"))
+        {
+            for (auto attr : passthrough)
+            {
+                if (auto name = dyn_cast<mlir::StringAttr>(attr))
+                {
+                    if (name.getValue() == "export" || name.getValue() == DLL_EXPORT)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // A shared library's exported functions are where its host's threads come in, and a host
+    // that is not a tslang program never registered them with the collector: each such function
+    // first registers the thread calling it, once per thread (__tslang_gc_enter, in
+    // AsyncGCThreadsCommon.inc). The global constructors are left alone: GC_init, injected
+    // there, registers the loading thread itself.
+    void injectThreadEnter(mlir::ModuleOp m)
+    {
+        llvm::SmallVector<LLVM::LLVMFuncOp> exported;
+        m.walk([&](LLVM::LLVMFuncOp funcOp) {
+            if (!funcOp.getBody().empty() && isExported(funcOp) && !funcOp.getName().starts_with(MLIR_GCTORS))
+            {
+                exported.push_back(funcOp);
+            }
+        });
+
+        if (exported.empty())
+        {
+            return;
+        }
+
+        PatternRewriter rewriter(m.getContext());
+        TypeHelper th(rewriter.getContext());
+        for (auto funcOp : exported)
+        {
+            LLVMCodeHelper ch(funcOp, rewriter, nullptr, tsContext.compileOptions);
+            auto enterFuncOp = ch.getOrInsertFunction(
+                "__tslang_gc_enter", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
+
+            rewriter.setInsertionPointToStart(&*funcOp.getBody().begin());
+            rewriter.create<LLVM::CallOp>(funcOp->getLoc(), enterFuncOp, ValueRange{});
         }
     }
 

@@ -2429,6 +2429,30 @@ foreach(android_mode codegen link)
     set_tests_properties(test-compile-android-${android_mode} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# A gc shared library called from a non-tslang host's own threads - see foreign-thread-gc.cmake.
+# Windows needs gc.dll (a shared library takes its collector from it); ELF links libgc.a in.
+if (NOT WIN32 OR TSLANG_HAVE_SHARED_GC)
+    add_executable(foreign-thread-gc-host foreign-thread-gc-host.cpp)
+    if (NOT WIN32)
+        target_link_libraries(foreign-thread-gc-host PRIVATE ${CMAKE_DL_LIBS} pthread)
+    endif()
+    if (WIN32)
+        set(gc_foreign_thread_gc_shared "-DGC_SHARED_LIB=${TEST_GC_SHARED_PREFIX}/lib")
+    else()
+        set(gc_foreign_thread_gc_shared "")
+    endif()
+    add_test(NAME test-compile-foreign-thread-gc
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DHOST=$<TARGET_FILE:foreign-thread-gc-host>"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/foreign-thread-gc"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     ${gc_foreign_thread_gc_shared}
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/foreign-thread-gc.cmake")
+endif()
+
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.
 # Skipped (not failed) when no default library has been built; the release workflows run them after
 # building one. The sources live outside tests/: without the default library they do not compile,
