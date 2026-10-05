@@ -53,9 +53,8 @@ function typeGuard(v: string | number) {
 
 function instanceOf(x: A | B) {
     let n = 0;
-    // a local: reassigning the parameter itself in this loop crashes under -mm=rc, narrowed or not (#512)
-    for (let y = x; y instanceof A; y = new B(1)) {
-        n += y.onlyA();
+    for (; x instanceof A; x = new B(1)) {
+        n += x.onlyA();
     }
 
     return n;
