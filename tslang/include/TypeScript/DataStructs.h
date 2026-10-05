@@ -28,6 +28,8 @@ struct CompileOptions
     }
     bool isWasm;
     bool isWindows;
+    // Bionic has its own assert entry points (__assert/__assert2), not glibc's __assert_fail
+    bool isAndroid = false;
     bool isExecutable;
     bool isDLL;
 

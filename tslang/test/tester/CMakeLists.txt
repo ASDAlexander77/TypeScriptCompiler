@@ -2408,6 +2408,14 @@ if (WIN32)
     endforeach()
 endif()
 
+# The CRT functions a program calls follow its target, not the host - see target-crt.cmake. IR
+# only, so every host runs it.
+add_test(NAME test-compile-target-crt
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/target-crt"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/target-crt.cmake")
+
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.
 # Skipped (not failed) when no default library has been built; the release workflows run them after
 # building one. The sources live outside tests/: without the default library they do not compile,
