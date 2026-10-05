@@ -1,3 +1,5 @@
+// @strict-null false
+// `left: null` for a Point: null is not a Point under strict null checks
 namespace A {
 
     class Point {
