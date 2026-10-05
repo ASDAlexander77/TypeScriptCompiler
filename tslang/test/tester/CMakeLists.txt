@@ -357,6 +357,7 @@ tslang_add_test(NAME test-compile-00-for-await-sequential COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-for-await-control COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_control.ts")
 tslang_add_test(NAME test-compile-00-for-optional-class-condition COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_optional_class_condition.ts")
 tslang_add_test(NAME test-compile-00-string-empty-falsy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_empty_falsy.ts")
+tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -871,6 +872,7 @@ tslang_add_test(NAME test-jit-00-for-await-sequential COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-for-await-control COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_control.ts")
 tslang_add_test(NAME test-jit-00-for-optional-class-condition COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_optional_class_condition.ts")
 tslang_add_test(NAME test-jit-00-string-empty-falsy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_empty_falsy.ts")
+tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -1714,6 +1716,7 @@ set(TSLANG_CORPUS
     00for_await_control.ts
     00for_optional_class_condition.ts
     00string_empty_falsy.ts
+    00narrowed_assign_other_member.ts
     00const_record_owned_fields.ts
     00array_length_valid.ts
     00string_view_copy.ts
