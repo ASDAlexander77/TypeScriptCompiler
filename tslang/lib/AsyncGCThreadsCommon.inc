@@ -90,11 +90,13 @@ namespace
 
 // Runs GC_enable_threads once, unless now is no time for it: false then, and a later call does.
 //
-// Not inside a DllMain while the collector's markers have not started: GC_allow_register_threads
-// starts them and waits for them to come up, which they cannot do until the loader lock is
-// released, so the load never finished. An exported function runs there when the library calls
-// one while it loads - a static constructor of an exported class, top-level code calling an
-// export (the default library hung every JIT run). Once the markers run, nothing is started.
+// Not inside a DllMain: GC_allow_register_threads starts the collector's markers and waits for
+// them to come up, which they cannot do until the loader lock is released, so the load never
+// finished. An exported function runs there when the library calls one while it loads - a static
+// constructor of an exported class, top-level code calling an export (the default library hung
+// every JIT run). Nor does such a call wait for another thread that is enabling them: that one
+// waits for the markers, and they for this thread's loader lock. The markers running already
+// (GC_get_parallel) would not tell it either: the count is set before they are waited for.
 bool enableThreads()
 {
     if (threadsEnabled.load(std::memory_order_acquire))
@@ -102,7 +104,7 @@ bool enableThreads()
         return true;
     }
 
-    if (holdsLoaderLock() && GC_get_parallel() == 0)
+    if (holdsLoaderLock())
     {
         return false;
     }
