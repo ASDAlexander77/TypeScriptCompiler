@@ -12169,8 +12169,11 @@ class MLIRGenImpl
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false);
 
-    ValueOrLogicalResult NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
+    ValueOrLogicalResult NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType,
         ArrayRef<mlir_ts::FieldInfo> fields, ArrayRef<mlir::Value> values, const GenContext &genContext);
+
+    std::optional<ValueOrLogicalResult> mlirGenObjectLiteralAsClassInstance(mlir::Location location, ObjectLiteralInfo &oli,
+        const GenContext &genContext);
 
     ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false);

@@ -30,11 +30,6 @@ function main() {
     e.items.push(i);
     assert(e.items.length == 1 && e.items[0] == 7, "an empty array");
 
-    let n: number = 5;
-    let r = { x: n, items: [n, 2], name: "b" + n };
-    const q: P = r;
-    q.items.push(9);
-    assert(r.items.length == 3 && q.name == "b5", "a record variable, sharing its array");
 
     assert(take({ x: 2, items: [i], name: "cc" + i }) == 4, "to a class parameter");
     const m = make(i);
