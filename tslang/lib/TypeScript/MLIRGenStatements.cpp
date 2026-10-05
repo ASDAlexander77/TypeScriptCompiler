@@ -815,17 +815,6 @@ namespace mlirgen
         SmallVector<mlir::Type, 0> types;
         SmallVector<mlir::Value, 0> operands;
 
-        mlir::Value asyncGroupResult;
-        if (hasAwait)
-        {
-            auto groupType = mlir::async::GroupType::get(builder.getContext());
-            auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexAttr(0));
-            auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType, blockSize);
-            asyncGroupResult = asyncGroupOp.getResult();
-            // operands.push_back(asyncGroupOp);
-            // types.push_back(groupType);
-        }
-
         auto forOp = builder.create<mlir_ts::ForOp>(location, types, operands);
         if (!label.empty())
         {
@@ -908,10 +897,10 @@ namespace mlirgen
                 return mlir::failure();
             }
 
-            // add to group
-            auto rankType = mlir::IndexType::get(builder.getContext());
-            // TODO: should i replace with value from arg0?
-            builder.create<mlir::async::AddToGroupOp>(location, rankType, asyncExecOp.getToken(), asyncGroupResult);
+            // One iteration at a time, as `for await` runs its body: the next value is asked for only
+            // once this body is done. Each body was added to a group awaited after the loop, so the
+            // bodies ran as concurrent tasks - interleaved, losing each other's writes (#498).
+            builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
         }
         else
         {
@@ -928,25 +917,6 @@ namespace mlirgen
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(forOp);
-
-        if (hasAwait)
-        {
-            // Not helping
-            /*
-            // async await all, see convert-to-llvm.mlir
-            auto asyncExecAwaitAllOp =
-                builder.create<mlir::async::ExecuteOp>(location, mlir::TypeRange{}, mlir::ValueRange{},
-            mlir::ValueRange{},
-                                                       [&](mlir::OpBuilder &builder, mlir::Location location,
-            mlir::ValueRange values) { builder.create<mlir::async::AwaitAllOp>(location, asyncGroupResult);
-                                                           builder.create<mlir::async::YieldOp>(location,
-            mlir::ValueRange{});
-                                                       });
-            */
-
-            // Wait for the completion of all subtasks.
-            builder.create<mlir::async::AwaitAllOp>(location, asyncGroupResult);
-        }
 
         return mlir::success();
     }
