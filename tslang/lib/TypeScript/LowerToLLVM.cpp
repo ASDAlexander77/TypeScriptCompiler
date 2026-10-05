@@ -837,8 +837,6 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
-        auto strcpyFuncOp = ch.getOrInsertFunction("strcpy", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
-        auto strcatFuncOp = ch.getOrInsertFunction("strcat", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
 
         SmallVector<mlir::Value> opers;
         for (auto oper : transformed.getOps())
@@ -846,12 +844,14 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
             opers.push_back(nullStringAsText(loc, oper, rewriter, tch));
         }
 
+        // each operand is measured once: the lengths size the buffer and bound every copy into it
+        SmallVector<mlir::Value> lengths;
         mlir::Value size = clh.createIndexConstantOf(llvmIndexType, 1);
-        // calc size
         for (auto oper : opers)
         {
-            auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper);
-            size = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{size, size1.getResult()});
+            auto length = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper).getResult();
+            lengths.push_back(length);
+            size = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{size, length});
         }
 
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value()
@@ -860,24 +860,17 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         mlir::Value newStringValue = allocInStack ? ch.Alloca(th.getI8Type(), size, true)
                                                   : ch.MemoryAlloc(size);
 
-        // copy
-        auto concat = false;
-        auto result = newStringValue;
-        for (auto oper : opers)
+        // copy: each operand at its offset, without its terminator, then one terminator at the end
+        mlir::Value offset = clh.createIndexConstantOf(llvmIndexType, 0);
+        for (auto [oper, length] : llvm::zip(opers, lengths))
         {
-            if (concat)
-            {
-                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{result, oper});
-                result = callResult.getResult();
-            }
-            else
-            {
-                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{result, oper});
-                result = callResult.getResult();
-            }
-
-            concat = true;
+            auto dest = rewriter.create<LLVM::GEPOp>(loc, i8PtrTy, th.getI8Type(), newStringValue, ValueRange{offset});
+            rewriter.create<LLVM::MemcpyOp>(loc, dest, oper, length, /*isVolatile=*/false);
+            offset = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{offset, length});
         }
+
+        auto end = rewriter.create<LLVM::GEPOp>(loc, i8PtrTy, th.getI8Type(), newStringValue, ValueRange{offset});
+        rewriter.create<LLVM::StoreOp>(loc, clh.createI8ConstantOf(0), end);
 
         rewriter.replaceOp(op, ValueRange{newStringValue});
 

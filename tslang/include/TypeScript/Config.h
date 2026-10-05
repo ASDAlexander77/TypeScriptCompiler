@@ -19,13 +19,6 @@
 #define ENABLE_ASYNC 1
 #define ENABLE_EXCEPTIONS 1
 
-#define USE_SPRINTF 1
-#ifndef WIN32
-#ifndef USE_SPRINTF
-#define USE_SPRINTF 1
-#endif
-#endif
-
 #define NUMBER_F64 1
 #define ANY_AS_DEFAULT 1
 // somehow it will error if set to true
