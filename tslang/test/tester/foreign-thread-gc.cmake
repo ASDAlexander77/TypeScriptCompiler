@@ -9,6 +9,13 @@
 # thousand calls collect many times, on every thread.
 #
 # Also with no top-level code: then nothing ran GC_init at load, and the first call does.
+#
+# And with exported functions called while the library loads - a static constructor of an
+# exported class, top-level code calling an export - which on Windows runs inside DllMain, under
+# the loader lock. The first call there enabled threads, which started the collector's parallel
+# marker threads and waited for them; they could not start until the load finished, and the load
+# never did (the default library hung every JIT run). The allocations escape into globals, so the
+# optimizer cannot fold the calls away.
 
 cmake_minimum_required(VERSION 3.17.3)
 
@@ -48,6 +55,18 @@ export function work(seed: number): number {
 
 file(WRITE "${WORK_DIR}/with-top-level.ts" "${work}\nlet loaded: number = 1;\n")
 file(WRITE "${WORK_DIR}/no-top-level.ts" "${work}")
+file(WRITE "${WORK_DIR}/static-constructor-at-load.ts" "${work}
+export class Registry {
+    static first: Node = new Node(1, undefined);
+}
+")
+file(WRITE "${WORK_DIR}/export-called-at-load.ts" "${work}
+export function makeNode(value: number): Node {
+    return new Node(value, undefined);
+}
+
+export let kept: Node = makeNode(1);
+")
 
 set(libs "--gc-lib-path=${GC_LIB}" "--tslang-lib-path=${TSLANG_LIB}" "--llvm-lib-path=${LLVM_LIB}")
 if(DEFINED GC_SHARED_LIB)
@@ -65,7 +84,7 @@ else()
     set(pic "-relocation-model=pic")
 endif()
 
-foreach(name with-top-level no-top-level)
+foreach(name with-top-level no-top-level static-constructor-at-load export-called-at-load)
     set(library "${WORK_DIR}/${prefix}${name}${suffix}")
     execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=gc --no-default-lib ${pic} ${libs} ${name}.ts -o "${library}"
         WORKING_DIRECTORY "${WORK_DIR}"
