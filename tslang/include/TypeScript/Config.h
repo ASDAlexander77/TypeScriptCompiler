@@ -32,12 +32,6 @@
 #define TUPLE_TYPE_PACKED false
 #define UNION_TYPE_PACKED true
 
-#ifdef WIN32
-#define WIN_LOADSHAREDLIBS 1
-#else
-#define LINUX_LOADSHAREDLIBS 1
-#endif
-
 #define USE_NEW_AS_METHOD true
 #define ADD_STATIC_MEMBERS_TO_VTABLE true
 

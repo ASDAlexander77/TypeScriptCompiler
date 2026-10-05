@@ -31,6 +31,9 @@ class AssertLogic
     LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
+    // the target's CRT decides how a failure is reported, not the host's
+    bool isWindows;
+    bool isAndroid;
 
   protected:
     mlir::Type sizeType;
@@ -38,14 +41,16 @@ class AssertLogic
 
   public:
     AssertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+          isWindows(compileOptions.isWindows), isAndroid(compileOptions.isAndroid)
     {
         sizeType = th.getIndexType();
         typeOfValueType = th.getPtrType();
     }
 
     AssertLogic(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+          isWindows(compileOptions.isWindows), isAndroid(compileOptions.isAndroid)
     {
         sizeType = th.getIndexType();
         typeOfValueType = th.getPtrType();
@@ -69,7 +74,7 @@ class AssertLogic
         rewriter.setInsertionPointToStart(continuationBlock);
     }
 
-    // `_assert` and `__assert_fail` abort, which flushes no stream: what the program printed before
+    // `_assert`, `__assert` and `__assert_fail` abort, which flushes no stream: what the program printed before
     // the failure was lost whenever stdout was not a console (a pipe, a file, the test runner)
     void flushOutput()
     {
@@ -94,7 +99,8 @@ class AssertLogic
   private:
     // Splits the block at the insertion point and ends the first half with a branch on
     // `condValue`: on to the continuation, which is returned, or to a new block that reports the
-    // failure (`_assert` on Windows, `__assert_fail` elsewhere) and never returns.
+    // failure (`_assert` on Windows, `__assert` on Android, `__assert_fail` elsewhere) and never
+    // returns.
     mlir::Block *failUnless(mlir::Value condValue, std::string msg, mlir::Value message)
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
@@ -103,13 +109,6 @@ class AssertLogic
         auto [line, column] = lineAndColumn;
 
         auto i8PtrTy = th.getPtrType();
-#ifdef WIN32
-        auto assertFuncOp =
-            ch.getOrInsertFunction("_assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
-#else
-        auto assertFuncOp = ch.getOrInsertFunction(
-            "__assert_fail", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
-#endif
 
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -131,12 +130,26 @@ class AssertLogic
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
 
         flushOutput();
-#ifdef WIN32
-        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
-#else
-        mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
-        rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes, funcName});
-#endif
+        if (isWindows)
+        {
+            auto assertFuncOp =
+                ch.getOrInsertFunction("_assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
+            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes});
+        }
+        else if (isAndroid)
+        {
+            // Bionic exports no __assert_fail; __assert(file, line, msg) takes the file first
+            auto assertFuncOp =
+                ch.getOrInsertFunction("__assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
+            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{fileCst, lineNumberRes, messageOrConstant(message, msgCst)});
+        }
+        else
+        {
+            auto assertFuncOp = ch.getOrInsertFunction(
+                "__assert_fail", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
+            mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
+            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{messageOrConstant(message, msgCst), fileCst, lineNumberRes, funcName});
+        }
         rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 
         rewriter.setInsertionPointToEnd(opBlock);

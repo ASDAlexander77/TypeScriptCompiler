@@ -1617,27 +1617,25 @@ namespace mlirgen
 
         auto stringVal = valueAttr.getValue();
 
+        // The library is named as the target names it, as --emit=dll does (utils.cpp): the path is
+        // also what the program loads at run time, so a host's naming would not be found there.
+        auto targetIsWindows = llvm::Triple(compileOptions.moduleTargetTriple).getOS() == llvm::Triple::Win32;
+
         std::string fullPath;
         fullPath += stringVal;
-#ifdef WIN_LOADSHAREDLIBS
-#endif        
-#ifdef LINUX_LOADSHAREDLIBS
-        // rebuild file path
-        auto fileName = sys::path::filename(stringVal);
-        auto path = stringVal.substr(0, stringVal.size() - fileName.size());
-        fullPath = path;
-        fullPath += "lib";
-        fullPath += fileName;
-#endif
+        if (!targetIsWindows)
+        {
+            // rebuild file path
+            auto fileName = sys::path::filename(stringVal);
+            auto path = stringVal.substr(0, stringVal.size() - fileName.size());
+            fullPath = path;
+            fullPath += "lib";
+            fullPath += fileName;
+        }
 
         if (sys::path::extension(fullPath) == "")
         {
-#ifdef WIN_LOADSHAREDLIBS
-            fullPath += ".dll";
-#endif
-#ifdef LINUX_LOADSHAREDLIBS
-            fullPath += ".so";
-#endif
+            fullPath += targetIsWindows ? ".dll" : ".so";
         }
 
         if (sys::fs::exists(fullPath))

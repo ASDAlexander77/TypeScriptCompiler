@@ -105,13 +105,10 @@ class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
         auto llvmI32Type = tch.convertType(th.getI32Type());
         auto llvmIndexType = tch.convertType(rewriter.getIndexType());
 
-#ifdef WIN32
+        // the target's CRT, not the host's: sprintf_s is MSVC only
         auto sprintfFuncOp = ch.getOrInsertFunction(
-            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType()}, true));
-#else
-        auto sprintfFuncOp = ch.getOrInsertFunction(
-            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType()}, true));
-#endif
+            tsLlvmContext->compileOptions.isWindows ? "sprintf_s" : "snprintf",
+            th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType()}, true));
 
         auto bufferSizeValue = transformed.getBufferSize();
         auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);

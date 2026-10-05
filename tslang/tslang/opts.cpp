@@ -56,6 +56,7 @@ CompileOptions prepareOptions()
     compileOptions.lldbDebugInfo = lldbDebugInfo.getValue();
     compileOptions.moduleTargetTriple = moduleTargetTriple;
     compileOptions.isWindows = TheTriple.isKnownWindowsMSVCEnvironment();
+    compileOptions.isAndroid = TheTriple.isAndroid();
     compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
     compileOptions.targetInfo = TargetInfo::fromTriple(
         TheTriple, llvm::Triple(llvm::sys::getDefaultTargetTriple()));

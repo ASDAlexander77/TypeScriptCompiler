@@ -1291,11 +1291,8 @@ genContext);
             if (!newClassPtr->isImport)
             {                           
                 declarationMode = false;
-#ifdef WIN32                
-                varClass.comdat = Select::ExactMatch;
-#else
-                varClass.comdat = Select::Any;
-#endif                
+                // decided by the target, not the host: ELF only supports Any (and NoDeduplicate)
+                varClass.comdat = compileOptions.isWindows ? Select::ExactMatch : Select::Any;
             }
             else if (newClassPtr->isDeclaration)
             {

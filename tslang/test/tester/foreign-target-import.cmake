@@ -7,6 +7,10 @@
 # compiled for x86_64 Linux. That target has the host's arch but another OS, so the DLL is read as
 # a file, as a PE32+ image. The importer is only compiled, never linked or run.
 #
+# An import is looked for under the target's name for a library, which is also what the program
+# loads at run time: `import './shared'` is ./libshared.so for x86_64 Linux. The x64 DLL is
+# therefore written as libshared.so; it is still a PE image inside.
+#
 # MODE=read    the declarations are read: the importer compiles, and uses what they declare.
 # MODE=errors  a file that is not a PE image, and a DLL for another machine, are refused with an
 #              error that says so.
@@ -52,7 +56,7 @@ set(foreign -mtriple=x86_64-unknown-linux-gnu)
 if(MODE STREQUAL "read")
     run("--emit=dll" "${WORK_DIR}" TRUE
         "${TSLANG}" --emit=dll ${common} "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
-        "${library}" -o shared.dll)
+        "${library}" -o libshared.so)
 
     # use_shared.ts calls test1/test2 and prints val_str, which only the DLL's declarations
     # declare: without them it does not compile ("can't resolve name").
@@ -72,15 +76,20 @@ if(MODE STREQUAL "read")
         endif()
     endforeach()
 
+    # ...from the library under the target's name for it
+    if(NOT ir MATCHES "libshared\\.so\\\\00\"")
+        message(FATAL_ERROR "the program does not load libshared.so:\n${ir}")
+    endif()
+
     message(STATUS "declarations read from an x64 DLL's file for a foreign target")
 elseif(MODE STREQUAL "errors")
     # 1. A file that is not a PE image.
     file(MAKE_DIRECTORY "${WORK_DIR}/not-pe")
-    file(WRITE "${WORK_DIR}/not-pe/foo.dll" "not a DLL\n")
+    file(WRITE "${WORK_DIR}/not-pe/libfoo.so" "not a DLL\n")
     file(WRITE "${WORK_DIR}/not-pe/main.ts" "import './foo'\n\nfunction main() {\n    print(\"done.\");\n}\n")
     run("importing a non-PE file for a foreign target" "${WORK_DIR}/not-pe" FALSE
         "${TSLANG}" --emit=obj ${common} ${foreign} main.ts -o main.o)
-    if(NOT run_output MATCHES "cannot read declarations from '[^']*foo\\.dll': for a target other than the host, only PE DLLs can be imported")
+    if(NOT run_output MATCHES "cannot read declarations from '[^']*libfoo\\.so': for a target other than the host, only PE DLLs can be imported")
         message(FATAL_ERROR "importing a non-PE file failed for another reason:\n${run_output}")
     endif()
 
