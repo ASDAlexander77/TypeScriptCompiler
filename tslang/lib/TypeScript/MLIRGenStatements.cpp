@@ -838,6 +838,11 @@ namespace mlirgen
         }
 
         auto conditionValue = V(result);
+        // the condition as written: a type guard's predicate is what narrows, and the boolean cast loses it
+        auto testedValue = conditionValue;
+        // a condition known to be false narrows nothing: as in mlirGen(IfStatement), narrowing would cast the
+        // tested value to a type it cannot have
+        auto narrowBody = conditionValue && getStaticBoolean(conditionValue).value_or(true);
         if (conditionValue)
         {
             // a truthiness test (`for (let n = head; n; n = n.next)`) is made a boolean as in mlirGen(WhileStatement)
@@ -859,8 +864,20 @@ namespace mlirgen
         // async.execute and waits for it, so one iteration runs at a time (#498). Generated inside an
         // async.execute of its own, a `break` or `continue` in it had no loop in its region, and a
         // nested `for await` crashed the compiler (#502).
-        auto bodyResult = mlirGen(forStatementAST->statement, loopGenContext);
-        EXIT_IF_FAILED(bodyResult)
+        {
+            // the body sees the variable the condition narrows, as a `while` body does
+            // (`for (; typeof v === "string"; v = 1) { v.length }`); the scope ends before the incrementor,
+            // which assigns the variable as it is declared
+            SymbolTableScopeT varScopeBody(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
+            if (narrowBody)
+            {
+                checkSafeCast(forStatementAST->condition, testedValue, nullptr, loopGenContext);
+            }
+
+            auto bodyResult = mlirGen(forStatementAST->statement, loopGenContext);
+            EXIT_IF_FAILED(bodyResult)
+        }
 
         builder.create<mlir_ts::ResultOp>(location);
 

@@ -6074,7 +6074,16 @@ class MLIRGenImpl
             rightExprGenContext.receiverFuncType = leftExpressionValue.getType();
         }
 
-        rightExprGenContext.receiverType = leftExpressionValue.getType();
+        // a narrowed variable (addSafeCastStatement) takes a value of the type it is declared with:
+        // after `s.kind === "sq"`, `s = { kind: "ci", r: 1 }` is an `Sq | Ci`, and typed as the narrowed
+        // `Sq` it became a `{ kind: "sq", r }` that was never stored
+        auto receiverType = leftExpressionValue.getType();
+        if (auto safeCastOp = leftExpressionValue.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            receiverType = safeCastOp.getValue().getType();
+        }
+
+        rightExprGenContext.receiverType = receiverType;
 
         auto result2 = mlirGen(rightExpression, rightExprGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
