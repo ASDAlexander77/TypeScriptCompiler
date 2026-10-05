@@ -2,7 +2,7 @@
 @rem
 @rem   scripts\build_gc_release_android.bat [arm64-v8a|x86_64]   (no argument: both)
 @rem
-@rem Needs the Android NDK (r27 or later) in ANDROID_NDK_HOME, and Ninja. Installs into
+@rem Needs the Android NDK (tested with r30) in ANDROID_NDK_HOME, and Ninja. Installs into
 @rem 3rdParty\gc\android\<abi>\release. API level 29 is the floor the default library needs
 @rem (timespec_get).
 @echo off
