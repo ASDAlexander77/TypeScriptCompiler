@@ -840,6 +840,12 @@ namespace mlirgen
         auto conditionValue = V(result);
         if (conditionValue)
         {
+            // a truthiness test (`for (let n = head; n; n = n.next)`) is made a boolean as in mlirGen(WhileStatement)
+            if (conditionValue.getType() != getBooleanType())
+            {
+                CAST(conditionValue, location, getBooleanType(), conditionValue, loopGenContext);
+            }
+
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
         }
         else
