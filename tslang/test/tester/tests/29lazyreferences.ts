@@ -9,9 +9,7 @@ class Testrec {
 function testLazyRef() {
     print("testLazyRef")
     let x = ("x" + "Y") || "foo"
-    // "" should be false for boolean
-    //let y = "" || "bXr" + "2"
-    let y = "bXr" + "2"
+    let y = "" || "bXr" + "2"
     assert(x.length == 2, "two")
     assert(y.length == 4, "emp")
 
@@ -21,9 +19,7 @@ function testLazyRef() {
     x = "x" + "12x" && "7" + "xx"
     assert(x.length == 3, "and")
 
-    // "" should be false for boolean
-    //x = "" && "blah"
-    x = ""
+    x = "" && "blah"
     assert(x == "", "andemp")
     x = "foo" && "x" + "Y"
     assert(x.length == 2, "twoand")

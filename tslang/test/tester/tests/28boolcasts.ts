@@ -12,12 +12,9 @@ function testBoolCasts() {
         boolDie();
     }
 
-    // TODO: finish it
-    /*
     if ("") {
-        boolDie()
+        boolDie();
     }
-*/
 
     let v = new BazClass();
     if (v) {
