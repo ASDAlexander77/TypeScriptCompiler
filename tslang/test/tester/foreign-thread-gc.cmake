@@ -1,0 +1,89 @@
+# A `-mm=gc` shared library called from threads its host made (foreign-thread-gc-host.cpp).
+#
+# The collector scans, and stops during a collection, only the threads registered with it. A tslang
+# program registers its own: GC_init the one it starts on, the async runtime its pool's. A host
+# that is not a tslang program - an Android app's JNI threads, a C program's - calls in on threads
+# nobody registered, and the first collection one of them started aborted ("Collecting from unknown
+# thread"). An exported function of a gc shared library now registers the thread that calls it
+# (__tslang_gc_enter, AsyncGCThreadsCommon.inc). The library allocates on every call, so a few
+# thousand calls collect many times, on every thread.
+#
+# Also with no top-level code: then nothing ran GC_init at load, and the first call does.
+
+cmake_minimum_required(VERSION 3.17.3)
+
+foreach(var TSLANG HOST WORK_DIR GC_LIB TSLANG_LIB LLVM_LIB)
+    if(NOT DEFINED ${var})
+        message(FATAL_ERROR "${var} is required")
+    endif()
+endforeach()
+
+file(REMOVE_RECURSE "${WORK_DIR}")
+file(MAKE_DIRECTORY "${WORK_DIR}")
+
+set(ENV{GC_LIB_PATH} "")
+set(ENV{GC_SHARED_LIB_PATH} "")
+set(ENV{TSLANG_LIB_PATH} "")
+
+set(work [=[
+class Node {
+    constructor(public value: number, public next: Node | undefined) {}
+}
+
+// a 200-node list per call: a loop of calls collects many times
+export function work(seed: number): number {
+    let head: Node | undefined = undefined;
+    for (let i = 0; i < 200; i++) {
+        head = new Node(seed + i, head);
+    }
+
+    let sum: number = 0;
+    for (let node = head; node !== undefined; node = node.next) {
+        sum += node.value;
+    }
+
+    return sum;
+}
+]=])
+
+file(WRITE "${WORK_DIR}/with-top-level.ts" "${work}\nlet loaded: number = 1;\n")
+file(WRITE "${WORK_DIR}/no-top-level.ts" "${work}")
+
+set(libs "--gc-lib-path=${GC_LIB}" "--tslang-lib-path=${TSLANG_LIB}" "--llvm-lib-path=${LLVM_LIB}")
+if(DEFINED GC_SHARED_LIB)
+    list(APPEND libs "--gc-shared-lib-path=${GC_SHARED_LIB}")
+endif()
+
+if(WIN32)
+    set(prefix "")
+    set(suffix ".dll")
+    set(pic "")
+else()
+    set(prefix "lib")
+    set(suffix ".so")
+    # a shared object's code has to be position independent (R_X86_64_32S otherwise)
+    set(pic "-relocation-model=pic")
+endif()
+
+foreach(name with-top-level no-top-level)
+    set(library "${WORK_DIR}/${prefix}${name}${suffix}")
+    execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=gc --no-default-lib ${pic} ${libs} ${name}.ts -o "${library}"
+        WORKING_DIRECTORY "${WORK_DIR}"
+        OUTPUT_VARIABLE out
+        ERROR_VARIABLE err
+        RESULT_VARIABLE status)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "--emit=dll ${name}: exit ${status}\n${out}\n${err}")
+    endif()
+
+    execute_process(COMMAND "${HOST}" "${library}" 8 2000
+        WORKING_DIRECTORY "${WORK_DIR}"
+        OUTPUT_VARIABLE out
+        ERROR_VARIABLE err
+        RESULT_VARIABLE status
+        TIMEOUT 240)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "${name}: the host's threads calling into the library: exit ${status}\n${out}\n${err}")
+    endif()
+    message(STATUS "${name}: ${out}")
+endforeach()
