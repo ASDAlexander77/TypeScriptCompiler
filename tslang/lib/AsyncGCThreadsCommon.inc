@@ -51,6 +51,7 @@ struct CallingThread
 
 thread_local CallingThread callingThread;
 
+std::once_flag collectorInitialized;
 std::once_flag threadsEnabled;
 
 } // namespace
@@ -63,11 +64,18 @@ extern "C" void GC_enable_threads();
 // registers the threads it makes, but a library's host makes its own. GC_init registered the one
 // it ran on; any other is registered on its first call.
 //
-// GC_enable_threads runs once here whatever ran before: GC_register_my_thread refuses every
-// thread until GC_allow_register_threads was called ("Threads explicit registering is not
-// previously enabled"), and the collector may well be initialized already without it - it
-// initializes itself on first use, so a library with no top-level code (no GC_init injected at
-// load) can find it running. Calling it again where GC_init's injection already did is harmless.
+// The collector may well be initialized already: it initializes itself on first use, so a library
+// with no top-level code (no GC_init injected at load) can find it running.
+//
+// GC_enable_threads runs only for a thread that has to be registered: GC_register_my_thread
+// refuses every thread until GC_allow_register_threads was called ("Threads explicit registering
+// is not previously enabled"). A registered thread must not run it here. An exported function can
+// be called while the library is being loaded - a static constructor of an exported class, or
+// top-level code calling an export - and on Windows that is inside DllMain, under the loader lock.
+// GC_allow_register_threads starts the parallel marker threads and waits for them to come up, and
+// a new thread cannot start until the loader lock is released: the load never finished (the
+// default library hung every JIT run). The thread a library is loaded on is the one GC_init
+// registered, or one its host registered.
 extern "C" void __tslang_gc_enter()
 {
     auto &thread = callingThread;
@@ -76,20 +84,23 @@ extern "C" void __tslang_gc_enter()
         return;
     }
 
-    std::call_once(threadsEnabled, [] {
+    thread.checked = true;
+
+    std::call_once(collectorInitialized, [] {
         if (!GC_is_init_called())
         {
             GC_init();
         }
-
-        GC_enable_threads();
     });
 
-    thread.checked = true;
-    if (!GC_thread_is_registered())
+    if (GC_thread_is_registered())
     {
-        thread.registeredHere = registerThisThread();
+        return;
     }
+
+    std::call_once(threadsEnabled, [] { GC_enable_threads(); });
+
+    thread.registeredHere = registerThisThread();
 }
 
 // Called once from the entry point: the GC pass injects the call beside GC_init, so it happens
