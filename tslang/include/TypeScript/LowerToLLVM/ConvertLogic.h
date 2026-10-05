@@ -35,58 +35,6 @@ class ConvertLogic
     {
     }
 
-    mlir::Value itoa(mlir::Value value)
-    {
-        auto i8PtrTy = th.getPtrType();
-
-        auto _itoaFuncOp = ch.getOrInsertFunction(
-            "_itoa", th.getFunctionType(th.getPtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getPtrType(), rewriter.getI32Type()}, true));
-
-        auto bufferSizeValue = clh.createI32ConstantOf(50);
-        // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
-        auto base = clh.createI32ConstantOf(10);
-
-        return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult();
-    }
-
-    mlir::Value i64toa(mlir::Value value)
-    {
-        auto i8PtrTy = th.getPtrType();
-
-        // 64-bit whatever the target: _i64toa's first parameter is `long long`
-        // (char *_i64toa(long long value, char *str, int radix)) - a fixed 64-bit integer on every
-        // target this compiler emits for, not a size_t.
-        auto _i64toaFuncOp = ch.getOrInsertFunction(
-            "_i64toa", th.getFunctionType(th.getPtrType(),
-                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getPtrType(), rewriter.getI32Type()}, true));
-
-        auto bufferSizeValue = clh.createI32ConstantOf(50);
-        // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
-        auto base = clh.createI32ConstantOf(10);
-
-        return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult();
-    }
-
-    mlir::Value gcvt(mlir::Value in)
-    {
-        auto i8PtrTy = th.getPtrType();
-
-        auto _gcvtFuncOp = ch.getOrInsertFunction(
-            "_gcvt", th.getFunctionType(th.getPtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getPtrType()}, true));
-
-        auto bufferSizeValue = clh.createI32ConstantOf(50);
-        // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
-        auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
-        auto precision = clh.createI32ConstantOf(16);
-
-        return rewriter.create<LLVM::CallOp>(loc, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue}).getResult();
-    }
-
     mlir::Value sprintf(int buffSize, std::string format, mlir::Value value)
     {
         auto i8PtrTy = th.getPtrType();
@@ -167,20 +115,12 @@ class ConvertLogic
 
     mlir::Value intToString(mlir::Value value, int width, bool isSigned)
     {
-#ifndef USE_SPRINTF
-        return itoa(value);
-#else
         return sprintfOfInt(value, width, isSigned);
-#endif
     }
 
     mlir::Value f64ToString(mlir::Value value)
     {
-#ifndef USE_SPRINTF
-        return gcvt(value);
-#else
         return sprintfOfF64(value);
-#endif
     }
 };
 } // namespace typescript

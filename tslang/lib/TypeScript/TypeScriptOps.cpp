@@ -76,7 +76,7 @@ bool mlir_ts::isEmpty(mlir::Region &condtion)
     return false;
 }
 
-// Only the printing conversions do: `ConvertLogic`'s itoa and f64ToString, and `ts.CharToString`,
+// Only the printing conversions do: `ConvertLogic`'s intToString and f64ToString, and `ts.CharToString`,
 // each allocate a buffer and write into it. Everything else that reaches the plain cast - a
 // boolean, `undefined`, a string literal - hands back a global, which is immortal and owns
 // nothing. A literal is asked about by its element type, since that is what the lowering unwraps
