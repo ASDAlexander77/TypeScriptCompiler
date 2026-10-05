@@ -2416,6 +2416,19 @@ add_test(NAME test-compile-target-crt
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/target-crt"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/target-crt.cmake")
 
+# Compiling and linking for Android - see android-link.cmake. `codegen` needs no NDK and always
+# runs; `link` is skipped (not failed) without the NDK and the Android libraries.
+foreach(android_mode codegen link)
+    add_test(NAME test-compile-android-${android_mode}
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${android_mode}"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/android-${android_mode}"
+                     "-DREPO_DIR=${PROJECT_SOURCE_DIR}/.."
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/android-link.cmake")
+    set_tests_properties(test-compile-android-${android_mode} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+endforeach()
+
 # One collector per process with the real default library in it - see defaultlib-collector.cmake.
 # Skipped (not failed) when no default library has been built; the release workflows run them after
 # building one. The sources live outside tests/: without the default library they do not compile,

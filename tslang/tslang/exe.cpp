@@ -48,6 +48,7 @@ namespace Dump
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tslanglibpath;
 extern cl::opt<std::string> emsdksysrootpath;
+extern cl::opt<std::string> androidndkpath;
 extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
 extern cl::list<std::string> objs;
@@ -132,10 +133,21 @@ bool checkFileExistsAtPath(std::string path, std::string fileName)
 // Windows x86 takes its libraries from an `x86` subdirectory of each configured lib path, so the
 // flat path has none of them by design; buildExe checks the subdirectory instead (see
 // resolveWindowsLibPath). Every other target keeps the flat layout.
+static llvm::Triple getLinkTargetTriple()
+{
+    return llvm::Triple(TargetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : llvm::Triple::normalize(TargetTriple));
+}
+
 static bool isWindowsX86Target()
 {
-    llvm::Triple triple(TargetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : llvm::Triple::normalize(TargetTriple));
+    auto triple = getLinkTargetTriple();
     return triple.getOS() == llvm::Triple::Win32 && triple.getArch() == llvm::Triple::x86;
+}
+
+// A library's file name as the target names it, not the host: gc.lib on Windows, libgc.a elsewhere.
+static std::string getTargetStaticLibName(llvm::StringRef name)
+{
+    return getLinkTargetTriple().getOS() == llvm::Triple::Win32 ? (name + ".lib").str() : ("lib" + name + ".a").str();
 }
 
 // The directory a lib path's libraries are in: its `x86` subdirectory for Windows x86, else itself.
@@ -157,12 +169,7 @@ void checkGCLibPath(std::string path)
         return;
     }
 
-#ifdef WIN32
-    const auto libName = "gc.lib";
-#else    
-    const auto libName = "libgc.a";
-#endif    
-    checkFileExistsAtPath(path, libName);
+    checkFileExistsAtPath(path, getTargetStaticLibName("gc"));
 }
 
 void checkTslangLibPath(std::string path) 
@@ -172,12 +179,7 @@ void checkTslangLibPath(std::string path)
         return;
     }
 
-#ifdef WIN32
-    const auto libName = "TypeScriptAsyncRuntime.lib";
-#else    
-    const auto libName = "libTypeScriptAsyncRuntime.a";
-#endif    
-    checkFileExistsAtPath(path, libName);
+    checkFileExistsAtPath(path, getTargetStaticLibName("TypeScriptAsyncRuntime"));
 }
 
 std::string getGCLibPath()
@@ -312,12 +314,90 @@ std::string getEMSDKSysRootPath()
         return emsdksysrootpath;
     }
 
-    if (auto emsdksysrootpathEnvValue = llvm::sys::Process::GetEnv("EMSDK_SYSROOT_PATH")) 
+    if (auto emsdksysrootpathEnvValue = llvm::sys::Process::GetEnv("EMSDK_SYSROOT_PATH"))
     {
         return emsdksysrootpathEnvValue.value();
-    }   
+    }
 
-    return "";    
+    return "";
+}
+
+std::string getAndroidNDKPath()
+{
+    if (!androidndkpath.empty())
+    {
+        return androidndkpath;
+    }
+
+    if (auto androidNDKEnvValue = llvm::sys::Process::GetEnv("ANDROID_NDK_HOME"))
+    {
+        return androidNDKEnvValue.value();
+    }
+
+    return "";
+}
+
+// The subdirectory of `dir` with the highest version-like name: one per NDK host (windows-x86_64,
+// linux-x86_64, ...) under prebuilt, one per clang version under lib/clang. Empty when there is none.
+static std::string findHighestSubdirectory(llvm::StringRef dir)
+{
+    std::string best;
+    unsigned bestVersion = 0;
+    std::error_code ec;
+    for (llvm::sys::fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec))
+    {
+        if (!llvm::sys::fs::is_directory(it->path()))
+        {
+            continue;
+        }
+
+        auto name = llvm::sys::path::filename(it->path());
+        unsigned version = 0;
+        name.getAsInteger(10, version);
+        if (best.empty() || version > bestVersion)
+        {
+            best = it->path();
+            bestVersion = version;
+        }
+    }
+
+    return best;
+}
+
+// What the driver needs from the NDK to link for Android: the sysroot (Bionic's startup objects
+// and libraries, per API level, and libc++) and the clang resource directory (compiler-rt's
+// builtins and libunwind). The NDK's own clang version, whatever it is, not tslang's.
+static bool findAndroidNDK(std::string &sysroot, std::string &resourceDir)
+{
+    auto ndkPath = getAndroidNDKPath();
+    if (ndkPath.empty())
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "linking for Android needs the Android NDK: pass --android-ndk-path or set ANDROID_NDK_HOME\n";
+        return false;
+    }
+
+    llvm::SmallString<256> prebuilt(ndkPath);
+    llvm::sys::path::append(prebuilt, "toolchains", "llvm", "prebuilt");
+    auto host = findHighestSubdirectory(prebuilt);
+
+    llvm::SmallString<256> sysrootPath(host);
+    llvm::sys::path::append(sysrootPath, "sysroot");
+
+    llvm::SmallString<256> clangDir(host);
+    llvm::sys::path::append(clangDir, "lib", "clang");
+    auto clangVersionDir = host.empty() ? std::string() : findHighestSubdirectory(clangDir);
+
+    if (host.empty() || !llvm::sys::fs::is_directory(sysrootPath) || clangVersionDir.empty())
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "'" << ndkPath << "' is not an Android NDK: no toolchains/llvm/prebuilt/<host> with a sysroot and lib/clang/<version>\n";
+        return false;
+    }
+
+    sysroot = sysrootPath.str().str();
+    resourceDir = clangVersionDir;
+    return true;
 }
 
 std::string concatIfNotEmpty(const char *prefix, std::string path)
@@ -608,7 +688,42 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 
     if (wasm)
     {
-        isTslangLibNeeded = false;        
+        isTslangLibNeeded = false;
+    }
+
+    // Android links with the NDK's sysroot and runtime libraries, everything into one
+    // position-independent binary (executables must be PIE; obj.cpp defaults the objects to PIC).
+    auto android = TheTriple.isAndroid();
+    std::string androidSysrootOpt;
+    std::string androidResourceDirOpt;
+    if (android)
+    {
+        // The API level picks the sysroot's library directory (usr/lib/<triple>/<api>); without
+        // one the driver takes the oldest, which lacks what the default library calls.
+        if (TheTriple.getEnvironmentVersion().getMajor() == 0)
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << "an Android target needs its API level in the triple, e.g. -mtriple=" << TheTriple.getArchName()
+                << "-linux-android29\n";
+            return 1;
+        }
+
+        std::string sysroot;
+        std::string resourceDir;
+        if (!findAndroidNDK(sysroot, resourceDir))
+        {
+            return 1;
+        }
+
+        androidSysrootOpt = "--sysroot=" + sysroot;
+        androidResourceDirOpt = "-resource-dir=" + resourceDir;
+        args.push_back(androidSysrootOpt.c_str());
+        args.push_back(androidResourceDirOpt.c_str());
+
+        if (!RM)
+        {
+            RM = llvm::Reloc::PIC_;
+        }
     }
 
     args.push_back(objFileName.c_str());
@@ -638,7 +753,13 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     if (shared)
     {
         args.push_back("-shared");
-        if (!win)
+        if (android)
+        {
+            // An app loads the library, so an unresolved symbol would only show when it does
+            // (UnsatisfiedLinkError); with this it is a link error here instead.
+            args.push_back("-Wl,--no-undefined");
+        }
+        else if (!win)
         {
             // added search path
             args.push_back("-Wl,-rpath=.");
@@ -672,7 +793,11 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // ...and per memory model: the default lib allocates the way the model it was built for
         // allocates, so a `gc` build linked into an `-mm=rc` program would drag Boehm in and hand
         // back objects this program's ownership rules do not describe. See getDefaultLibSubDir.
-        auto defaultLibSubDir = getDefaultLibSubDir(shared, compileOptions.generateDebugInfo,
+        // Android: a shared library links the static default library too, so the app ships one
+        // self-contained .so. Its shared default library leaves GC_* to the process, and an app's
+        // process (the Java VM) has no collector to give it.
+        auto sharedDefaultLib = shared && !android;
+        auto defaultLibSubDir = getDefaultLibSubDir(sharedDefaultLib, compileOptions.generateDebugInfo,
                                                     memoryModelName(compileOptions.memoryModel),
                                                     x86DefaultLib ? DEFAULT_LIB_ARCH_X86 : "");
         auto defaultLibDir = mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir);
@@ -910,11 +1035,24 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // TODO: review some options
         args.push_back("-frtti");
         args.push_back("-fexceptions");
-        args.push_back("-lstdc++");
-        args.push_back("-lm");
-        args.push_back("-lpthread");
-        args.push_back("-ldl");
-        args.push_back("-lrt");
+        if (android)
+        {
+            // libc++ and libc++abi, statically (the sysroot's libc++.a is a script naming both): the
+            // binary keeps its C++ runtime to itself and the app ships no libc++_shared.so for it.
+            // Bionic's libc has pthread and rt in it; there is no libcurl (the default library
+            // builds http_stub.cpp for Android instead).
+            args.push_back("-l:libc++.a");
+            args.push_back("-lm");
+            args.push_back("-ldl");
+        }
+        else
+        {
+            args.push_back("-lstdc++");
+            args.push_back("-lm");
+            args.push_back("-lpthread");
+            args.push_back("-ldl");
+            args.push_back("-lrt");
+        }
 
         // The default library's HTTP wrapper (http_linux.cpp) is implemented on
         // top of libcurl (the Linux counterpart of WinHTTP on Windows, which is
@@ -923,7 +1061,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // early with the exact install command if the development library is not
         // present, then still pass -lcurl so the linker error is emitted too if
         // it really is missing.
-        if (!compileOptions.noDefaultLib)
+        if (!compileOptions.noDefaultLib && !android)
         {
             static const char *curlSharedLibs[] = {
                 "/usr/lib/x86_64-linux-gnu/libcurl.so",

@@ -210,6 +210,13 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
         return -1;
     }
 
+    // Android executables must be PIE, and a shared library is PIC anyway: with LLVM's static
+    // default the objects would not link (buildExe makes the same choice for the link).
+    if (!RM && TheTriple.isAndroid())
+    {
+        RM = llvm::Reloc::PIC_;
+    }
+
     // TODO: research
     if (RM && *RM == llvm::Reloc::PIC_)
     {
