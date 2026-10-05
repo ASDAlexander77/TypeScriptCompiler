@@ -3214,6 +3214,10 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionParams(mlir::Location location, int firstIndex, mlir::Block::BlockArgListType arguments, const GenContext &genContext);
 
+    mlir::LogicalResult mlirGenFunctionOwnAssignedParams(mlir::Location location,
+                                                         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                         FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext);
+
     mlir::LogicalResult mlirGenFunctionCaptures(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,

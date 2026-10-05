@@ -1418,6 +1418,122 @@ namespace mlirgen
         return mlir::success();
     }    
 
+    // The names a function body assigns: `x = ...` and every compound assignment, the targets of a destructuring
+    // assignment, and the variable of `for (x of ...)` / `for (x in ...)`. Nested functions are walked as well, and
+    // a destructuring target counts every name in it: naming one too many costs a retain and a release, missing
+    // one leaves a parameter pointing at freed memory.
+    static void collectAssignedNames(ts::Node body, llvm::StringSet<> &names)
+    {
+        auto addTargets = [&](ts::Node target) {
+            while (target == SyntaxKind::ParenthesizedExpression)
+            {
+                target = target.as<ts::ParenthesizedExpression>()->expression;
+            }
+
+            if (target == SyntaxKind::Identifier)
+            {
+                names.insert(MLIRHelper::getName(target.as<ts::Identifier>()));
+            }
+            else if (target == SyntaxKind::ArrayLiteralExpression || target == SyntaxKind::ObjectLiteralExpression)
+            {
+                ts::VisitorAST targetNames([&](ts::Node node) {
+                    if (node == SyntaxKind::Identifier)
+                    {
+                        names.insert(MLIRHelper::getName(node.as<ts::Identifier>()));
+                    }
+                });
+                targetNames.visit(target);
+            }
+        };
+
+        ts::VisitorAST visitor([&](ts::Node node) {
+            if (node == SyntaxKind::BinaryExpression)
+            {
+                auto binaryExpression = node.as<ts::BinaryExpression>();
+                if (ts::isAssignmentOperator(binaryExpression->operatorToken))
+                {
+                    addTargets(binaryExpression->left);
+                }
+            }
+            else if (node == SyntaxKind::ForOfStatement)
+            {
+                auto initializer = node.as<ts::ForOfStatement>()->initializer;
+                if (initializer != SyntaxKind::VariableDeclarationList)
+                {
+                    addTargets(initializer);
+                }
+            }
+            else if (node == SyntaxKind::ForInStatement)
+            {
+                auto initializer = node.as<ts::ForInStatement>()->initializer;
+                if (initializer != SyntaxKind::VariableDeclarationList)
+                {
+                    addTargets(initializer);
+                }
+            }
+        });
+        visitor.visit(body);
+    }
+
+    // -mm=rc: a parameter is borrowed - the caller owns its value (takeOwnershipOfLocal), so its slot neither
+    // retains nor releases. One the body assigns holds values the frame made, though: `x = new B(1)` stored the
+    // instance with no reference of its own, the block it was made in released it, and `x` pointed at freed
+    // memory - in a loop, the condition read it on the next iteration (#512). A parameter the body assigns is
+    // copied into a local of the same name, which owns what it holds as any local does: a reference taken on the
+    // caller's value here, handed over by each assignment, given back at the function's exit.
+    //
+    // -mm=own refuses the assignment itself (OwnershipInferencePass), and a collector needs none of this.
+    mlir::LogicalResult MLIRGenImpl::mlirGenFunctionOwnAssignedParams(mlir::Location location,
+                                                                      FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                                      FunctionPrototypeDOM::TypePtr funcProto,
+                                                                      const GenContext &genContext)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return mlir::success();
+        }
+
+        llvm::StringSet<> assignedNames;
+        auto scanned = false;
+        for (const auto &param : funcProto->getParams())
+        {
+            if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()))
+            {
+                continue;
+            }
+
+            if (!scanned)
+            {
+                collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames);
+                scanned = true;
+            }
+
+            if (!assignedNames.contains(param->getName()))
+            {
+                continue;
+            }
+
+            auto paramValue = resolveIdentifier(location, param->getName(), genContext);
+            if (!paramValue)
+            {
+                return mlir::failure();
+            }
+
+            auto paramType = param->getType();
+            if (!registerVariable(
+                    location, param->getName(), false, VariableType::Let,
+                    [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                        return {paramType, paramValue, TypeProvided::Yes};
+                    },
+                    genContext))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionParamsBindings(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                                       mlir::Block::BlockArgListType arguments,
                                                       const GenContext &genContext)
@@ -1612,6 +1728,12 @@ namespace mlirgen
         auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
         if (!discoverParamsOnly)
         {
+            // after the list is wired in: the copy is the function's to give back at exit
+            if (failed(mlirGenFunctionOwnAssignedParams(location, functionLikeDeclarationBaseAST, funcProto, funcGenContext)))
+            {
+                return mlir::failure();
+            }
+
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
             if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
