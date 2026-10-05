@@ -10010,7 +10010,16 @@ class MLIRGenImpl
             if (type != receiverElementType)
             {
                 value = builder.getUnitAttr();
-                itemValue = cast(location, receiverElementType, itemValue, genContext);
+                // a field that cannot be the receiver's (`kind: "ci"` for a `kind: "sq"`) is an error: its
+                // failed cast was a null value, the literal came out with no value at all, and an assignment
+                // of it stored nothing - with the cast's error postponed, and so never shown (#513)
+                auto castResult = cast(location, receiverElementType, itemValue, genContext);
+                if (castResult.failed_or_no_value())
+                {
+                    return mlir::failure();
+                }
+
+                itemValue = V(castResult);
                 isConstValue = false;
             }
 

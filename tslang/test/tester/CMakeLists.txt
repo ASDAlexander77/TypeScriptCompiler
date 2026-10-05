@@ -2608,6 +2608,21 @@ endforeach()
 tslang_add_test(NAME test-jit-type-alias-not-circular COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/type-alias-circular/positive.ts")
 tslang_add_test(NAME test-compile-type-alias-not-circular COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/type-alias-circular/positive.ts")
 
+# An object literal with a field the receiver's type cannot hold (`kind: "ci"` for `kind: "sq"`) is an
+# error (issue #513). The field's failed cast was dropped: the literal had no value, an assignment of it
+# stored nothing, and the cast's error, postponed like every message, was never shown.
+foreach(literal_field_mismatch_name assign declare argument return)
+    add_test(NAME test-compile-literal-field-mismatch-${literal_field_mismatch_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/literal-field-mismatch/${literal_field_mismatch_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/literal-field-mismatch-${literal_field_mismatch_name}.obj")
+    set_tests_properties(test-compile-literal-field-mismatch-${literal_field_mismatch_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "can't cast from literal type: '\"ci\"' to '\"sq\"'"
+                                    FAIL_REGULAR_EXPRESSION "Expected 1 arguments|Stack dump|Assertion failed")
+endforeach()
+tslang_add_test(NAME test-jit-literal-field-match COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/literal-field-mismatch/positive.ts")
+tslang_add_test(NAME test-compile-literal-field-match COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/literal-field-mismatch/positive.ts")
+
 # An error reported by a pass that still returns success - a lowering pattern that cannot build a
 # value, says so and carries on - fails the compile. It used to be printed and then ignored: the object
 # file was written, and under --emit=jit the program ran and crashed. Two tests because one
