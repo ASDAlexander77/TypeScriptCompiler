@@ -6,6 +6,12 @@
 //
 // Calls work(seed) <calls> times on the loading thread, then on each of <threads> new threads,
 // and checks every result. Exits 0 when all are right.
+//
+// It also checks that the library enabled the collector's threads on the loading thread's calls,
+// before any other thread came in (#523): enabling them starts the parallel markers and only then
+// makes the allocator take its lock, so a thread that enables them races any thread already
+// allocating. The markers running (GC_get_parallel) is what shows it. A collector with no parallel
+// marking never starts them, and then there is nothing to check.
 
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +25,7 @@
 #endif
 
 using WorkFn = double (*)(double);
+using GetParallelFn = int (*)();
 
 static WorkFn work;
 static int calls;
@@ -65,6 +72,10 @@ int main(int argc, char **argv)
     }
 
     work = reinterpret_cast<WorkFn>(GetProcAddress(library, "work"));
+    // the collector is gc.dll, which the library loaded
+    auto collector = GetModuleHandleA("gc.dll");
+    auto getParallel =
+        collector ? reinterpret_cast<GetParallelFn>(GetProcAddress(collector, "GC_get_parallel")) : nullptr;
 #else
     auto library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
     if (!library)
@@ -74,6 +85,12 @@ int main(int argc, char **argv)
     }
 
     work = reinterpret_cast<WorkFn>(dlsym(library, "work"));
+    // the collector is linked into the library, or loaded beside it
+    auto getParallel = reinterpret_cast<GetParallelFn>(dlsym(library, "GC_get_parallel"));
+    if (!getParallel)
+    {
+        getParallel = reinterpret_cast<GetParallelFn>(dlsym(RTLD_DEFAULT, "GC_get_parallel"));
+    }
 #endif
     if (!work)
     {
@@ -83,6 +100,7 @@ int main(int argc, char **argv)
 
     run(0);
     std::printf("loading thread: %d calls\n", calls);
+    auto markersAfterLoadingThread = getParallel ? getParallel() : 0;
 
     std::vector<std::thread> pool;
     for (long id = 1; id <= threads; id++)
@@ -96,5 +114,18 @@ int main(int argc, char **argv)
     }
 
     std::printf("%d other threads: %d calls each\n", threads, calls);
+
+    if (!getParallel)
+    {
+        std::printf("no GC_get_parallel: not checked when the collector's threads were enabled\n");
+        return 0;
+    }
+
+    if (getParallel() > 0 && markersAfterLoadingThread == 0)
+    {
+        std::printf("the collector's threads were enabled only when another thread called in\n");
+        return 3;
+    }
+
     return 0;
 }
