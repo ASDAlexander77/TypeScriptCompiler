@@ -2799,8 +2799,8 @@ foreach(global_mm rc none gc)
 endforeach()
 
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
-# the models that do not infer ownership.
-foreach(reassign_mm rc none gc)
+# rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
+foreach(reassign_mm rc gc)
     tslang_add_test(NAME test-jit-${reassign_mm}-own_move_reassign COMMAND test-runner -jit -mm=${reassign_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_move_reassign.ts")
     tslang_add_test(NAME test-compile-${reassign_mm}-own_move_reassign COMMAND test-runner -mm=${reassign_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_move_reassign.ts")
 endforeach()
