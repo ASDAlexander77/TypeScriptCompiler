@@ -88,9 +88,9 @@ expected() {
         # sum(0..999) = 499500; sum of lengths of "round <r> of 200" for r in 0..199
         # = 200 * 13 + (10 * 1 + 90 * 2 + 100 * 3) = 3090
         gc_stress)   printf '499500\n3090\n' ;;
-        # Confirmed at x64 (docs/superpowers/plans/2026-09-22-32-bit-phase-4b-async.md): a
-        # non-async main resumes past `await g()` before g()'s body runs on the async runtime.
-        await_order) printf 'start\nafter await\nin g\n' ;;
+        # main waits on g()'s token, so g()'s body has run before main goes on (since #497; before
+        # it an await of a void async function did not wait, and the order was a race)
+        await_order) printf 'start\nin g\nafter await\n' ;;
     esac
 }
 
@@ -213,6 +213,8 @@ done
 # width, so at i686 the callee reads (alignment, size=0) and the frame overflows its block.
 # The repair pass (task 2/3) must retype the declaration to the pointer width. When a collector
 # is linked in, GCPass rewrites each call to GC_malloc_uncollectable(size), which keeps that width.
+# Under every other model on Windows, ProcessHeapPass (#412) renames aligned_alloc to the
+# process-heap allocator __tslang_heap_aligned_alloc(alignment, size), which keeps it as well.
 emit_await_order_ir() {
     local mm="$1"
     local out="$work/await_order.$mm.ll" err status
@@ -227,9 +229,9 @@ emit_await_order_ir() {
     printf '%s' "$out"
 }
 
-# Only the parameter TYPES are checked: once aligned_alloc has the target's size_t signature,
-# LLVM recognizes it as the C library function and adds attributes to the declaration, e.g.
-# `declare noalias noundef ptr @aligned_alloc(i32 allocalign noundef, i32 noundef)`.
+# Only the parameter TYPES are checked: an allocator's declaration may carry parameter attributes,
+# e.g. `declare noalias noundef ptr @aligned_alloc(i32 allocalign noundef, i32 noundef)` once LLVM
+# recognizes the C library function by its size_t signature.
 declared_with_i32_params() {
     grep -Eq "^declare .*ptr @$1\(i32( [^,]*)?, i32( [^)]*)?\)" "$2"
 }
@@ -249,11 +251,11 @@ if out="$(emit_await_order_ir gc)"; then
 fi
 
 if out="$(emit_await_order_ir none)"; then
-    if declared_with_i32_params aligned_alloc "$out"; then
-        echo "ok   x86 IR -mm=none: frame allocator is aligned_alloc(i32, i32)"
+    if declared_with_i32_params __tslang_heap_aligned_alloc "$out"; then
+        echo "ok   x86 IR -mm=none: frame allocator is __tslang_heap_aligned_alloc(i32, i32)"
     else
-        echo "FAIL x86 IR -mm=none: frame allocator is aligned_alloc(i32, i32)"
-        grep -m1 -E '@aligned_alloc\(' "$out" | sed 's/^/    got: /'
+        echo "FAIL x86 IR -mm=none: frame allocator is __tslang_heap_aligned_alloc(i32, i32)"
+        grep -m1 -E '@(__tslang_heap_)?aligned_alloc\(' "$out" | sed 's/^/    got: /'
         fail=1
     fi
 fi
