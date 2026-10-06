@@ -1,10 +1,14 @@
-// -mm=own, phase 1 rejects: `a` is assigned after its value moved into `b`. rc's assignment
-// releases what the slot holds before storing - the moved value, which `b` owns.
+// -mm=own rejects: `a` is read after its value moved into `b`. It is given a new value on one path
+// only, and on the other it still holds the moved one. (Given a new value on every path, it owns
+// that one: own_move_reassign.)
 class C { x: number = 5; }
 function main() {
     let a = new C();
     let b = a;
-    a = new C();
+    if (b.x > 3) {
+        a = new C();
+    }
+
     print(a.x, b.x);
     print("done.");
 }
