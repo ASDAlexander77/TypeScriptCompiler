@@ -272,7 +272,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
           Get-ChildItem -Path ..\3rdParty\llvm\x64\release\lib\clang -Directory | ForEach-Object { $dest = ".\resourcedir_stage\lib\clang\$($_.Name)"; New-Item -ItemType Directory -Force -Path $dest | Out-Null; Copy-Item -Path (Join-Path $_.FullName "include") -Destination $dest -Recurse -ErrorAction Stop }
-          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\tsbindgen.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage, .\resourcedir_stage, .\android_stage\android | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
+          Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\tsbindgen.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\tslang\msbuild\x64\release\bin\gc.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build, .\gcdll_stage, .\resourcedir_stage, .\android_stage | Compress-Archive -DestinationPath ..\${{ env.ASSET_NAME }}-windows-x64.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
