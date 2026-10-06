@@ -713,6 +713,10 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         }
         addSym("memset", (void*)&memset);
         addSym("memcpy", (void*)&memcpy);
+#ifdef _WIN32
+        // the bounded copy a Windows target emits (LLVMCodeHelperBase::MemoryCopy)
+        addSym("memcpy_s", (void*)&memcpy_s);
+#endif
         addSym("fflush", (void*)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
         // unattended run cannot answer
@@ -874,6 +878,9 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
         }
         addOverride("memset", (void *)&memset);
         addOverride("memcpy", (void *)&memcpy);
+#ifdef _WIN32
+        addOverride("memcpy_s", (void *)&memcpy_s);
+#endif
         addOverride("fflush", (void *)&fflush);
         // see jitAssertFailed above: bound to ucrtbase this is a modal message box, which an
         // unattended run cannot answer

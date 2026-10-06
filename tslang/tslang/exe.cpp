@@ -546,10 +546,21 @@ static llvm::Error writeAsInvokerManifestObj(llvm::COFF::MachineTypes machine, l
     }
 
     char *buf = res->getBufferStart();
+    char *bufEnd = res->getBufferEnd();
     memset(buf, 0, resSize);
 
+    // a copy bounded by what is left of the resource: memcpy_s is MSVC only
+    auto copyInto = [&](char *dest, const void *src, size_t count) {
+#ifdef _WIN32
+        memcpy_s(dest, static_cast<size_t>(bufEnd - dest), src, count);
+#else
+        assert(count <= static_cast<size_t>(bufEnd - dest));
+        memcpy(dest, src, count);
+#endif
+    };
+
     // the file header: the magic, then a null entry
-    memcpy(buf, llvm::COFF::WinResMagic, sizeof(llvm::COFF::WinResMagic));
+    copyInto(buf, llvm::COFF::WinResMagic, sizeof(llvm::COFF::WinResMagic));
     buf += llvm::object::WIN_RES_MAGIC_SIZE + llvm::object::WIN_RES_NULL_ENTRY_SIZE;
 
     auto *prefix = reinterpret_cast<llvm::object::WinResHeaderPrefix *>(buf);
@@ -570,7 +581,7 @@ static llvm::Error writeAsInvokerManifestObj(llvm::COFF::MachineTypes machine, l
     suffix->Characteristics = 0;
     buf += sizeof(llvm::object::WinResHeaderSuffix);
 
-    memcpy(buf, manifest, manifestSize);
+    copyInto(buf, manifest, manifestSize);
 
     auto resource = llvm::object::WindowsResource::createWindowsResource(res->getMemBufferRef());
     if (!resource)

@@ -249,29 +249,37 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        // A result wider than 32 bits (a bigint is an i64) needs the `long long` functions: `atoi`
-        // returns an int, and `strtol` a `long`, which is also 32 bits on Windows.
-        auto resultType = getTypeConverter()->convertType(op.getType());
-        auto wide = resultType.isIntOrFloat() && resultType.getIntOrFloatBitWidth() > 32;
-        auto parsedType = wide ? rewriter.getI64Type() : rewriter.getI32Type();
+        CodeLogicHelper clh(op, rewriter);
 
-        // Insert the `atoi` declaration if necessary.
+        auto loc = op->getLoc();
+
+        // Always `strtoll`, base 10 unless one is given: `long long` is 64 bits on every target,
+        // while `strtol` returns a `long`, 64 bits on Linux and 32 on Windows, and `atoi` leaves a
+        // value out of range undefined. strtoll saturates at the i64 range.
         auto i8PtrTy = th.getPtrType();
-        LLVM::LLVMFuncOp parseIntFuncOp;
-        if (transformed.getBase())
+        auto i64Type = rewriter.getI64Type();
+        auto parseIntFuncOp = ch.getOrInsertFunction(
+            "strtoll", th.getFunctionType(i64Type, {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
+        auto nullOp = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        mlir::Value base = transformed.getBase() ? transformed.getBase() : clh.createI32ConstantOf(10);
+        mlir::Value parsed =
+            rewriter.create<LLVM::CallOp>(loc, parseIntFuncOp, ValueRange{transformed.getArg(), nullOp, base}).getResult();
+
+        // A result narrower than 64 bits saturates at its own range, as strtoll does at i64's
+        auto resultType = getTypeConverter()->convertType(op.getType());
+        auto width = resultType.isIntOrFloat() ? resultType.getIntOrFloatBitWidth() : 64;
+        if (width < 64)
         {
-            parseIntFuncOp = ch.getOrInsertFunction(
-                wide ? "strtoll" : "strtol",
-                th.getFunctionType(parsedType, {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
-            auto nullOp = rewriter.create<LLVM::ZeroOp>(op->getLoc(), th.getPtrType());
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp,
-                                                      ValueRange{transformed.getArg(), nullOp, transformed.getBase()});
+            auto maxValue = rewriter.create<LLVM::ConstantOp>(
+                loc, i64Type, rewriter.getI64IntegerAttr(llvm::APInt::getSignedMaxValue(width).getSExtValue()));
+            auto minValue = rewriter.create<LLVM::ConstantOp>(
+                loc, i64Type, rewriter.getI64IntegerAttr(llvm::APInt::getSignedMinValue(width).getSExtValue()));
+            parsed = rewriter.create<LLVM::SMinOp>(loc, parsed, maxValue);
+            parsed = rewriter.create<LLVM::SMaxOp>(loc, parsed, minValue);
+            parsed = rewriter.create<LLVM::TruncOp>(loc, resultType, parsed);
         }
-        else
-        {
-            parseIntFuncOp = ch.getOrInsertFunction(wide ? "atoll" : "atoi", th.getFunctionType(parsedType, {i8PtrTy}));
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{transformed.getArg()});
-        }
+
+        rewriter.replaceOp(op, parsed);
 
         return success();
     }
@@ -292,12 +300,15 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
 
         auto loc = op->getLoc();
 
-        // Insert the `atof` declaration if necessary.
+        // `strtod`, not `atof`: atof leaves a value out of range undefined, strtod gives an infinity
+        // or 0
         auto i8PtrTy = th.getPtrType();
-        auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
+        auto parseFloatFuncOp = ch.getOrInsertFunction(
+            "strtod", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy, th.getPtrType()}));
+        auto nullOp = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
 
-        // atof gives a double whatever the result is: `<f32>"2.5"` wants a float
-        auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.getArg()});
+        // strtod gives a double whatever the result is: `<f32>"2.5"` wants a float
+        auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.getArg(), nullOp});
         auto resultType = getTypeConverter()->convertType(op.getType());
         if (resultType == rewriter.getF64Type())
         {
@@ -781,7 +792,7 @@ class StringResizeOpLowering : public TsLlvmPattern<mlir_ts::StringResizeOp>
         auto fits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, sourceBytes, size);
         auto copyBytes = rewriter.create<LLVM::SelectOp>(loc, fits, sourceBytes, size);
 
-        rewriter.create<LLVM::MemcpyOp>(loc, newStringValue, source, copyBytes, /*isVolatile=*/false);
+        ch.MemoryCopy(newStringValue, size, source, copyBytes);
 
         rewriter.replaceOp(op, ValueRange{newStringValue});
         return success();
@@ -865,7 +876,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         for (auto [oper, length] : llvm::zip(opers, lengths))
         {
             auto dest = rewriter.create<LLVM::GEPOp>(loc, i8PtrTy, th.getI8Type(), newStringValue, ValueRange{offset});
-            rewriter.create<LLVM::MemcpyOp>(loc, dest, oper, length, /*isVolatile=*/false);
+            auto left = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{size, offset});
+            ch.MemoryCopy(dest, left, oper, length);
             offset = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{offset, length});
         }
 
@@ -909,7 +921,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
                         loc, llvmIndexType,
                         ValueRange{bytes, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1))});
                     auto copy = ch.MemoryAlloc(bytes);
-                    rewriter.create<LLVM::MemcpyOp>(loc, copy, source, bytes, /*isVolatile=*/false);
+                    ch.MemoryCopy(copy, bytes, source, bytes);
                     return copy;
                 },
                 [&](OpBuilder &, Location) -> mlir::Value { return source; });
@@ -3650,7 +3662,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
         auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, count});
         auto copy = ch.MemoryAlloc(bytes);
-        rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
+        ch.MemoryCopy(copy, bytes, arrayOffset, bytes);
 
         // the copy holds a second reference to each element, and its release gives them back
         {
