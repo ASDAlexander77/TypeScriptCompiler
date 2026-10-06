@@ -1817,31 +1817,71 @@ class OwnershipInferencePass
     void decideSlot(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers, llvm::SetVector<mlir::Operation *> &toErase)
     {
         auto owner = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
-        if (receivers.size() == 1)
+        if (receivers.size() == 1 || takeValuesOfTheirOwn(slot, receivers))
         {
-            auto &receiver = receivers.front();
-            if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); }))
+            for (auto &receiver : receivers)
             {
-                // rc's retain goes with the move; a call that keeps the argument is the move itself
-                if (!isCall(receiver.retain))
-                {
-                    toErase.insert(receiver.retain);
-                }
-
-                return;
+                decideSlotReceiver(slot, receiver, owner, toErase);
             }
 
-            if (auto borrower = borrowerOf(receiver.retain))
-            {
-                borrowWith(borrower, receiver.retain, slotEnds(slot), owner, toErase);
-                return;
-            }
-
-            checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); // reports
             return;
         }
 
         decideSlotReceivers(slot, receivers, owner, toErase);
+    }
+
+    void decideSlotReceiver(mlir::Value slot, const SlotReceiver &receiver, llvm::StringRef owner,
+                            llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); }))
+        {
+            // rc's retain goes with the move; a call that keeps the argument is the move itself
+            if (!isCall(receiver.retain))
+            {
+                toErase.insert(receiver.retain);
+            }
+
+            return;
+        }
+
+        if (auto borrower = borrowerOf(receiver.retain))
+        {
+            borrowWith(borrower, receiver.retain, slotEnds(slot), owner, toErase);
+            return;
+        }
+
+        checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); // reports
+    }
+
+    // Receivers of one owning local that each read a value of its own (#528): `h.c = a; a = new C();
+    // g.c = a`. An assignment comes between every two of their reads on every path from one to the
+    // other, so each is decided alone, as the one receiver of the value it reads.
+    bool takeValuesOfTheirOwn(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers)
+    {
+        auto assignments = slotAssignments(slot);
+        if (assignments.empty())
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
+        if (auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            kills.push_back(varOp);
+        }
+
+        for (auto &from : receivers)
+        {
+            for (auto &to : receivers)
+            {
+                if (&from != &to && reachableAfter(from.load, to.load, kills))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     // A parameter this function keeps (`__own_params`): its caller moved the argument in, and this
@@ -4172,8 +4212,13 @@ class OwnershipInferencePass
     // A move out of an owning local: `let b = a`, `h.c = a`, `return a`. rc read the slot and
     // retained what it read for the receiver; the move erases that retain and every release of
     // the slot the move reaches, which must be dominated by it. Any other use of the slot the
-    // move reaches - a read, an assignment - is a use after the move. Reports and returns false
-    // when it is not a move.
+    // move reaches - a read, an assignment's own read of it - is a use after the move. Reports and
+    // returns false when it is not a move.
+    //
+    // An assignment the move reaches gives the slot a new value to own (#528): a path through it
+    // is a new value, as a path through the declaration is. Its release before the store goes
+    // with the move - what the slot held is the receiver's - and the releases only a path through
+    // an assignment reaches stay, to destroy the new value.
     bool checkSlotMove(mlir::Operation *retain, mlir::Value value, mlir_ts::LoadOp load,
                        llvm::SetVector<mlir::Operation *> &toErase)
     {
@@ -4188,8 +4233,15 @@ class OwnershipInferencePass
             return false;
         }
 
+        auto assignments = slotAssignments(slot);
+        llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
+        if (varOp)
+        {
+            kills.push_back(varOp);
+        }
+
         // the move's own read, met again around a loop the slot was declared outside of
-        if (reachableAfter(taker, load, varOp))
+        if (reachableAfter(taker, load, kills))
         {
             reportMovedInLoop(taker, name);
             return false;
@@ -4205,7 +4257,7 @@ class OwnershipInferencePass
                 continue;
             }
 
-            if (use != load.getOperation() && reachableAfter(taker, use, varOp))
+            if (use != load.getOperation() && reachableAfter(taker, use, kills))
             {
                 reportUseAfterMove(use, taker, name);
                 return false;
@@ -4225,7 +4277,7 @@ class OwnershipInferencePass
         llvm::SmallVector<mlir::Operation *> moved;
         for (auto *use : slot.getUsers())
         {
-            if (!mlir::isa<mlir_ts::ReleaseSlotOp>(use) || !reachableAfter(acquire, use, varOp))
+            if (!mlir::isa<mlir_ts::ReleaseSlotOp>(use) || !reachableAfter(acquire, use, kills))
             {
                 continue;
             }
@@ -4236,6 +4288,23 @@ class OwnershipInferencePass
                 return false;
             }
 
+            // a release that one path reaches holding the moved value and another holding a new
+            // one an assignment after the move stored: there is no single answer for it
+            for (auto *assignment : assignments)
+            {
+                llvm::SmallVector<mlir::Operation *, 2> movedAgain{load.getOperation()};
+                if (varOp)
+                {
+                    movedAgain.push_back(varOp);
+                }
+
+                if (reachableAfter(acquire, assignment, varOp) && reachableAfter(assignment, use, movedAgain))
+                {
+                    reportMovedOnSomePaths(taker, use, name);
+                    return false;
+                }
+            }
+
             moved.push_back(use);
         }
 
@@ -4243,8 +4312,29 @@ class OwnershipInferencePass
         return true;
     }
 
+    // The stores of the assignments to an owning local: rc releases what the slot holds right
+    // before it stores the new value (an assignment, and a `var` declaration met again).
+    static llvm::SmallVector<mlir::Operation *> slotAssignments(mlir::Value slot)
+    {
+        llvm::SmallVector<mlir::Operation *> assignments;
+        for (auto *user : slot.getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto releaseOp = storeOp ? mlir::dyn_cast_or_null<mlir_ts::ReleaseSlotOp>(storeOp->getPrevNode())
+                                     : mlir_ts::ReleaseSlotOp();
+            if (releaseOp && storeOp.getReference() == slot && releaseOp.getSlot() == slot)
+            {
+                assignments.push_back(storeOp);
+            }
+        }
+
+        return assignments;
+    }
+
     // A use of what `read` returned - directly or through casts - that the move at `taker` can
-    // reach, other than the move's own retain and taker. None if there is none.
+    // reach, other than the move's own retain and taker. None if there is none. A path back
+    // through `read` itself reaches a use of a value read again: the read, met after the move,
+    // is the slot's own use to check (around a loop, of a value an assignment stored).
     mlir::Operation *readUsedAfter(mlir_ts::LoadOp read, mlir::Operation *retain, mlir::Operation *taker,
                                    mlir::Operation *kill)
     {
@@ -4265,7 +4355,13 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                if (reachableAfter(taker, user, kill))
+                llvm::SmallVector<mlir::Operation *, 2> kills{read.getOperation()};
+                if (kill)
+                {
+                    kills.push_back(kill);
+                }
+
+                if (reachableAfter(taker, user, kills))
                 {
                     return user;
                 }

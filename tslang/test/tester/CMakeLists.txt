@@ -2764,6 +2764,7 @@ set_tests_properties(test-rc-interface-call-owned-result-marked
 # under JIT and ahead of time; each owns every block once.
 foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local own_print_number own_literals
                  own_move_const_branch own_move_let own_move_field own_move_return own_move_loop_body
+                 own_move_reassign
                  own_literal_reuse own_move_control_flow
                  own_borrow_inner_let own_borrow_loop own_borrow_branch
                  own_borrow_two_lets own_borrow_nullable
@@ -2795,6 +2796,13 @@ endforeach()
 foreach(global_mm rc none gc)
     tslang_add_test(NAME test-jit-${global_mm}-own-global-script COMMAND test-runner -jit -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
     tslang_add_test(NAME test-compile-${global_mm}-own-global-script COMMAND test-runner -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
+endforeach()
+
+# A `let` given a new value after its value moved owns the new one (#528); the same program under
+# rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
+foreach(reassign_mm rc gc)
+    tslang_add_test(NAME test-jit-${reassign_mm}-own_move_reassign COMMAND test-runner -jit -mm=${reassign_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_move_reassign.ts")
+    tslang_add_test(NAME test-compile-${reassign_mm}-own_move_reassign COMMAND test-runner -mm=${reassign_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_move_reassign.ts")
 endforeach()
 
 # Strings as values (spec 22): no model but own makes a copy, and each program means the same
@@ -2924,6 +2932,7 @@ set(own_error_cases
     "own_err_generator_map_outlives|borrows .* but is used here after .* is released or overwritten"
     "own_err_generator_place_overwritten|borrows a field but is used here after it may be released or overwritten"
     "own_err_two_owners|is used here after its value was moved"
+    "own_err_reassign_some_paths|is moved here on some paths only"
     "own_err_push_let|is used here after its value was moved"
     "own_err_push_loop|is moved inside a loop"
     "own_err_field_loop|is moved inside a loop"

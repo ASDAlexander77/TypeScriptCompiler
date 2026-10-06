@@ -1,5 +1,6 @@
 // -mm=own, phase 2 rejects: `f` is `b.m` bound to what `b` borrows, so calling it after `a` is
-// overwritten reads the old `a`. What a borrower's reads produce is the borrower too.
+// overwritten reads the old `a`. What a borrower's reads produce is the borrower too. (`a` is read
+// after `let b = a`, so `b` cannot take its value over and borrows it.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}
@@ -18,6 +19,7 @@ function churn() {
 function main() {
     let a = new C(1);
     let b = a;
+    print(a.x);
     const f = b.m;
     a = new C(2);
     churn();

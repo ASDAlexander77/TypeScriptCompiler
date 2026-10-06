@@ -2754,3 +2754,34 @@ errors and the same pattern passes 267 of 267, the Windows build's count.
   popped out of an array keeps its count (2 after the pop of a two-handle block, under rc and own
   alike). The re-review's `arronly` (a `const` read out of a global array, then `arr = []`)
   prints 2 under rc and 1 under own, as before this round.
+
+## 24. Assignment after a move (#528), 2026-10-06
+
+Phase 1 (§12.1) counted an assignment to a moved-from `let` as a use after the move: rc's
+assignment releases what the slot holds before it stores (`ts.ReleaseSlot` right before
+`ts.Store`), and after a move that is the receiver's value. So `let b = a; a = new C()` and
+`h.c = a; a = new C()` were errors, although Rust accepts both. Now the moved-from slot owns the
+new value:
+
+- **An assignment is a new value.** A path from the move through an assignment of the slot
+  reaches a new value, as a path through the declaration does. Uses only such paths reach are
+  not uses after the move. The assignment's own release goes with the move, since what the slot
+  holds is the receiver's. A release only a path through an assignment reaches stays, and
+  destroys the new value.
+- **Some paths.** A release that the move reaches both holding the moved value and holding a
+  newer one is `moved here on some paths only`. For example, `h.c = a; if (x) { a = new C(); }`
+  reaches the scope exit both ways (`own_err_reassign_some_paths`). A read on such a path is
+  still a use after the move (`own_err_assign_after_move`, now this shape).
+- **Receivers per value.** Receivers of one slot that each read a value of their own are
+  decided one at a time: `h.c = a; a = new C(); g.c = a` moves twice. Two receivers read values
+  of their own when an assignment comes between their reads on every path between them.
+  Otherwise the receivers are decided together, as before (§13).
+- **Loops.** `keep.push(a); a = new C()` in a loop body moves each iteration's value: the move's
+  read is met again only through the assignment. A path from the move back to a use of a read
+  that passes through the read again uses the value read again (`readUsedAfter`).
+
+`own_err_borrow_bound_method`, `own_err_borrow_catch_local` and `own_err_borrow_finally_local`
+used `let b = a; … a = new C()` to make `b` a borrow, but that is a move now. Each reads `a` once
+after `let b = a`, which keeps `b` a borrow. `own_move_reassign` runs the shapes under own, rc
+and gc: own holds 4.4 MB, as rc's 4.5 MB. On a quarantine heap it runs clean; with the
+assignment's release kept, it is a double free. Corpus: 467 of 628 compile under own, unchanged.
