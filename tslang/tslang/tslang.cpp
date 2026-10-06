@@ -60,6 +60,7 @@ int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir
 int createVSCodeFolder(int, char **);
 int createCMakeFolder(int, char **);
 int installDefaultLib(int, char **);
+std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
@@ -70,6 +71,7 @@ int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 int runJitCached(int, char **, CompileOptions&);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
+extern cl::opt<std::string> TargetTriple;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
 cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=exe and -emit=dll)");
@@ -167,6 +169,19 @@ cl::opt<bool> enableFastMath("fast-math", cl::desc("Allow aggressive floating-po
 cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> newCMakeFolder("cmake", cl::desc("New CMake Project"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
+
+// What a build script stages into and a CMake project links from, so neither has to spell out the
+// layout (see getDefaultLibSubDir): the subfolder of --default-lib-path for -mtriple, --di and -mm.
+enum DefaultLibKind
+{
+    DefaultLibKindNotAsked,
+    DefaultLibKindStatic,
+    DefaultLibKindShared
+};
+cl::opt<enum DefaultLibKind> printDefaultLibDir("print-default-lib-dir", cl::desc("Print the folder, relative to --default-lib-path, holding the default library built for -mtriple (default: the host), --di (debug, else release) and -mm, then exit"),
+                                       cl::values(clEnumValN(DefaultLibKindStatic, "lib", "the static library")),
+                                       cl::values(clEnumValN(DefaultLibKindShared, "dll", "the shared library")),
+                                       cl::init(DefaultLibKindNotAsked), cl::cat(TypeScriptCompilerBuildCategory));
 
 static void TslangPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
@@ -420,6 +435,14 @@ int main(int argc, char **argv)
     if (emitAction == Action::RunJIT && !enableOpt.getNumOccurrences() && optLevel != 0 && !generateDebugInfo)
     {
         enableOpt.setValue(true);
+    }
+
+    if (printDefaultLibDir != DefaultLibKindNotAsked)
+    {
+        auto triple = llvm::Triple(llvm::Triple::normalize(TargetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : TargetTriple.getValue()));
+        llvm::outs() << getDefaultLibSubDir(printDefaultLibDir == DefaultLibKindShared, generateDebugInfo,
+                                            memoryModelName(memoryModelOpt), triple) << "\n";
+        return 0;
     }
 
     if (newVSCodeFolder.getValue())

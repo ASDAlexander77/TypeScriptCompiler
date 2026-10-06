@@ -69,6 +69,7 @@ extern cl::opt<std::string> TargetTriple;
 std::string getDefaultLibPath();
 std::string getTslangLibPath();
 std::string mergeWithDefaultLibPath(std::string, std::string);
+std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 std::string makeAbsolutePath(std::string);
 
 int registerMLIRDialects(mlir::ModuleOp);
@@ -596,7 +597,8 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
         auto defaultLibSubDir =
             getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
-                                memoryModelName(compileOptions.memoryModel), /*arch=*/""); // JIT is host-only
+                                memoryModelName(compileOptions.memoryModel),
+                                llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))); // JIT is host-only
         auto defaultLibFile = mergeWithDefaultLibPath(getDefaultLibPath(),
 #ifdef WIN32
             defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"

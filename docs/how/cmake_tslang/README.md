@@ -52,7 +52,8 @@ the build matching the model it was compiled with. One variable drives both:
 cmake --preset default -DTSLANG_MEMORY_MODEL=rc
 ```
 
-It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+It selects `defaultlib/lib/<arch>/<vendor>/<os>/<env>/<debug|release>/<model>` (as
+`tslang --print-default-lib-dir=lib` names it) as the link directory and adds `-mm=<model>`
 to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
 `none`; only `gc` links Boehm.
 
@@ -69,7 +70,7 @@ cmake --preset default -DTSLANG_SHARED_GC=ON
 
 - Windows: links `gcdll/gc.lib` (gc.dll's import library) instead of the static `gc.lib`, and copies
   `gc.dll` beside the program. Ship it with `TypeScriptDefaultLib.dll`
-  (`defaultlib/dll/<release|debug>/gc`) and your libraries.
+  (`defaultlib/dll/<arch>/<vendor>/<os>/<env>/<release|debug>/gc`) and your libraries.
 - Linux: links the whole static collector and exports its `GC_*` symbols, so the shared library
   uses the program's collector.
 

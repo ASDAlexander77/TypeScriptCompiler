@@ -52,7 +52,8 @@ the build matching the model it was compiled with. One variable drives both:
 cmake --preset default -DTSLANG_MEMORY_MODEL=rc
 ```
 
-It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+It selects `defaultlib/lib/<arch>/<vendor>/<os>/<env>/<debug|release>/<model>` (as
+`tslang --print-default-lib-dir=lib` names it) as the link directory and adds `-mm=<model>`
 to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
 `none`; only `gc` links Boehm.
 

@@ -301,21 +301,27 @@ project(<<PROJECT>> CXX TSLANG)
 # Include folders
 include_directories(${CMAKE_TSLANG_DIR}/defaultlib)
 
-# The compiled default lib is split into per-build subfolders (debug/release) and then per
-# memory model (gc/rc/none); pick the pair matching this build, so that the CRT, the allocator
-# and the default-lib binaries all agree. A library built for one model cannot be linked into
-# a program built for another.
+# The compiled default lib is split per target, then per build (debug/release), then per memory
+# model (gc/rc/none); pick the one matching this build, so that the CRT, the allocator and the
+# default-lib binaries all agree. A library built for one model cannot be linked into a program
+# built for another. tslang names the folder (--print-default-lib-dir), so this never spells out
+# the layout.
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-	set(TSLANG_DEFAULTLIB_BUILD "release")
+	set(TSLANG_DEFAULTLIB_BUILD_FLAG "")
 else()
-	set(TSLANG_DEFAULTLIB_BUILD "debug")
+	set(TSLANG_DEFAULTLIB_BUILD_FLAG "--di")
 endif()
 
 set(TSLANG_MEMORY_MODEL "gc" CACHE STRING "Memory model of compiled code: gc, rc or none")
 set_property(CACHE TSLANG_MEMORY_MODEL PROPERTY STRINGS gc rc none)
 
+execute_process(COMMAND "${CMAKE_TSLANG_COMPILER}" --print-default-lib-dir=lib ${TSLANG_DEFAULTLIB_BUILD_FLAG} -mm=${TSLANG_MEMORY_MODEL}
+	OUTPUT_VARIABLE TSLANG_DEFAULTLIB_SUBDIR
+	OUTPUT_STRIP_TRAILING_WHITESPACE
+	COMMAND_ERROR_IS_FATAL ANY)
+
 # Lib folders
-link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib/${TSLANG_DEFAULTLIB_BUILD}/${TSLANG_MEMORY_MODEL})
+link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/${TSLANG_DEFAULTLIB_SUBDIR})
 
 # set options
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -480,7 +486,8 @@ the build matching the model it was compiled with. One variable drives both:
 cmake --preset default -DTSLANG_MEMORY_MODEL=rc
 ```
 
-It selects `defaultlib/lib/<debug|release>/<model>` as the link directory and adds `-mm=<model>`
+It selects `defaultlib/lib/<arch>/<vendor>/<os>/<env>/<debug|release>/<model>` (as
+`tslang --print-default-lib-dir=lib` names it) as the link directory and adds `-mm=<model>`
 to the compile flags, so the two cannot disagree. Valid values are `gc` (default), `rc` and
 `none`; only `gc` links Boehm.
 

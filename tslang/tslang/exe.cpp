@@ -56,6 +56,7 @@ extern cl::opt<bool> verbose;
 
 std::string getDefaultOutputFileName(enum Action);
 std::string mergeWithDefaultLibPath(std::string, std::string);
+std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 
 using llvm::StringRef;
 
@@ -689,9 +690,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     auto shared = emitAction == BuildDll;
     // Windows x86 and x64 link libraries whose machine tslang checks; see resolveWindowsLibPath.
     auto winX86OrX64 = win && (arch == llvm::Triple::x86 || arch == llvm::Triple::x86_64);
-    // The default library keeps a separate x86 tree, the same rule getTargetLibDir applies to
-    // the collector and the runtime; see getDefaultLibSubDir.
-    auto x86DefaultLib = win && arch == llvm::Triple::x86;
     // the same debug/release choice as the CRT below
     std::string libConfig = enableOpt ? "release" : "debug";
     
@@ -803,14 +801,15 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // Keyed on --di (generate debug info): with debug info use the debug lib.
         // ...and per memory model: the default lib allocates the way the model it was built for
         // allocates, so a `gc` build linked into an `-mm=rc` program would drag Boehm in and hand
-        // back objects this program's ownership rules do not describe. See getDefaultLibSubDir.
+        // back objects this program's ownership rules do not describe. ...and per target triple:
+        // a library built for one target fails on every symbol in a program for another. See
+        // getDefaultLibSubDir.
         // Android: a shared library links the static default library too, so the app ships one
         // self-contained .so. Its shared default library leaves GC_* to the process, and an app's
         // process (the Java VM) has no collector to give it.
         auto sharedDefaultLib = shared && !android;
         auto defaultLibSubDir = getDefaultLibSubDir(sharedDefaultLib, compileOptions.generateDebugInfo,
-                                                    memoryModelName(compileOptions.memoryModel),
-                                                    x86DefaultLib ? DEFAULT_LIB_ARCH_X86 : "");
+                                                    memoryModelName(compileOptions.memoryModel), TheTriple);
         auto defaultLibDir = mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir);
 
         // Checked here rather than left to the linker. mergeWithDefaultLibPath only joins the
@@ -821,11 +820,9 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // far harder to diagnose than a directory that is not there.
         if (!defaultLibDir.empty() && !llvm::sys::fs::is_directory(defaultLibDir))
         {
-            llvm::errs() << "error: no " << (x86DefaultLib ? "x86 " : "") << "default library built for -mm="
+            llvm::errs() << "error: no default library built for " << TheTriple.str() << " -mm="
                          << memoryModelName(compileOptions.memoryModel) << ": " << defaultLibDir
-                         << " does not exist. "
-                         << (x86DefaultLib ? "Build it in TypeScriptCompilerDefaultLib with TSLANG_ARCH=x86 (see its build.bat), "
-                                           : "Build it (see the default-lib build scripts), ")
+                         << " does not exist. Build it (see the default-lib build scripts), "
                          << "or compile with --no-default-lib.\n";
             return 1;
         }

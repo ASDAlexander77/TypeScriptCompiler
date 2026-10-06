@@ -240,7 +240,7 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
         env:
-          TSLANG_ANDROID_DEFAULT_LIB_PATH: ${{github.workspace}}/TypeScriptCompilerDefaultLib/__build/android/x86_64
+          TSLANG_ANDROID_DEFAULT_LIB_PATH: ${{github.workspace}}/TypeScriptCompilerDefaultLib/__build
         run: |
           $out = ctest -C ${{ env.BUILD_TYPE }} -R "test-compile-android-" --output-on-failure 2>&1 | Out-String
           $out
@@ -251,28 +251,24 @@ jobs:
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
         # Flatten the compiler/runtime binaries into the archive root, and add the
-        # default library as a whole tree so its per-build, per-memory-model subfolders
-        # are preserved:
-        #   defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
-        #   defaultlib/*.d.ts, defaultlib/generics/
+        # default library as a whole tree so its per-target, per-build, per-memory-model
+        # subfolders are preserved, Android's among them (tslang --print-default-lib-dir names one):
+        #   defaultlib/{dll,lib}/<arch>/<vendor>/<os>/<env>/{debug,release}/{gc,rc,none},
+        #   defaultlib/*.d.ts, defaultlib/generics/ (shared by every target)
         # plus the shared collector in its own folder, because its import library is also named
         # gc.lib: gcdll/gc.lib + gcdll/gc.dll, for programs that load a tslang shared library.
         # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>
         # (findResourceDir's "release package" candidate), so stage that layout too - its headers
         # only: the official LLVM package also puts compiler-rt's libraries under
         # lib/clang/<major>/lib, which neither tsbindgen nor tslang uses.
-        # Android, per ABI (arm64-v8a, x86_64): android/<abi>/defaultlib/... (--default-lib-path=
-        # android/<abi>) and android/<abi>/lib/{libgc.a,libTypeScriptAsyncRuntime.a} (--gc-lib-path
-        # and --tslang-lib-path).
+        # Android, per ABI (arm64-v8a, x86_64): android/<abi>/lib/{libgc.a,libTypeScriptAsyncRuntime.a}
+        # (--gc-lib-path and --tslang-lib-path); its default library is in the defaultlib tree above.
         run: |
           foreach ($abi in 'arm64-v8a', 'x86_64') {
             $dest = ".\android_stage\android\$abi"
             New-Item -ItemType Directory -Force -Path "$dest\lib" | Out-Null
-            # moved, not copied: the default library's __build, packaged whole below, would carry it twice
-            Move-Item -Path "..\TypeScriptCompilerDefaultLib\__build\android\$abi\defaultlib" -Destination $dest -ErrorAction Stop
             Copy-Item -Path "..\3rdParty\gc\android\$abi\release\lib\libgc.a", ".\tslang-runtime\release\android\$abi\libTypeScriptAsyncRuntime.a" -Destination "$dest\lib" -ErrorAction Stop
           }
-          Remove-Item -Recurse -Force -Path "..\TypeScriptCompilerDefaultLib\__build\android" -ErrorAction Stop
           New-Item -ItemType Directory -Force -Path .\gcdll_stage\gcdll | Out-Null
           Copy-Item -Path ..\3rdParty\gcdll\x64\release\lib\gc.lib, ..\3rdParty\gcdll\x64\release\bin\gc.dll -Destination .\gcdll_stage\gcdll -ErrorAction Stop
           Get-ChildItem -Path ..\3rdParty\llvm\x64\release\lib\clang -Directory | ForEach-Object { $dest = ".\resourcedir_stage\lib\clang\$($_.Name)"; New-Item -ItemType Directory -Force -Path $dest | Out-Null; Copy-Item -Path (Join-Path $_.FullName "include") -Destination $dest -Recurse -ErrorAction Stop }
@@ -453,8 +449,9 @@ jobs:
           cp ./gc/ninja/release/libgc.a ./__stage/
           cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
-          # Add the default library as a whole tree so its per-build, per-memory-model
-          # subfolders are preserved: defaultlib/{dll,lib}/{debug,release}/{gc,rc,none},
+          # Add the default library as a whole tree so its per-target, per-build, per-memory-model
+          # subfolders are preserved:
+          # defaultlib/{dll,lib}/<arch>/<vendor>/<os>/<env>/{debug,release}/{gc,rc,none},
           # defaultlib/*.d.ts, defaultlib/generics/
           cp -r ../TypeScriptCompilerDefaultLib/__build/defaultlib ./__stage/
           # tsbindgen looks for clang's resource directory next to itself as lib/clang/<major>

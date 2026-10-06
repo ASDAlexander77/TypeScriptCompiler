@@ -2437,6 +2437,12 @@ add_test(NAME test-compile-target-crt
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/target-crt"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/target-crt.cmake")
 
+# The default library's folder per target, build and model - see default-lib-dir.cmake.
+add_test(NAME test-default-lib-dir
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/default-lib-dir.cmake")
+
 # Compiling and linking for Android - see android-link.cmake. `codegen` needs no NDK and always
 # runs; `link` is skipped (not failed) without the NDK and the Android libraries.
 foreach(android_mode codegen link)
@@ -2521,7 +2527,6 @@ if (TSLANG_TEST_X86)
     add_test(NAME test-x86-compile-gc-defaultlib-collector
              COMMAND ${CMAKE_COMMAND}
                      "-DMODE=compile"
-                     "-DX86=1"
                      "-DTSLANG=$<TARGET_FILE:tslang>"
                      "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
                      "-DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib"

@@ -14,6 +14,8 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/Defines.h"
@@ -52,6 +54,24 @@ std::string getTslangLibPath();
 std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
+
+// The subfolder of --default-lib-path holding the default library's binaries for a target, a build
+// mode and a memory model; the layout and why it is keyed this way are in Defines.h. The ONE place
+// the path is composed: never spell it out elsewhere, ask this (or --print-default-lib-dir).
+std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel, const llvm::Triple &triple)
+{
+    std::string subDir = std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC);
+    // the canonical component names, not the triple as typed: i686 and i386 are one arch, and the
+    // API level of an Android triple (android29) or the version of an MSVC one is not a target
+    for (auto segment : {llvm::Triple::getArchTypeName(triple.getArch()), llvm::Triple::getVendorTypeName(triple.getVendor()),
+                         llvm::Triple::getOSTypeName(triple.getOS()), llvm::Triple::getEnvironmentTypeName(triple.getEnvironment())})
+    {
+        subDir += "/";
+        subDir += segment;
+    }
+
+    return subDir + "/" + (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
+}
 
 bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string subPath, std::string fileName)
 {
@@ -140,11 +160,11 @@ int installDefaultLib(int argc, char **argv)
     // The release build of the default memory model is always produced; verify its static lib
     // landed in the subfolder the compiler will later look in. Built from getDefaultLibSubDir
     // rather than spelled out here, so this check cannot drift away from what exe.cpp and
-    // jit.cpp resolve (defaultlib/lib/release/gc/...).
+    // jit.cpp resolve (defaultlib/lib/<host triple>/release/gc/...).
     auto result = checkFileExistsAtPath(
         builtPath,
         getDefaultLibSubDir(/*shared=*/false, /*debugBuild=*/false, memoryModelName(MemoryModelGC),
-                            /*arch=*/""), // install checks the host build
+                            llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))), // install builds for the host
 #ifdef WIN32
         DEFAULT_LIB_NAME ".lib"
 #else
