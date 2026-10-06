@@ -792,7 +792,7 @@ class StringResizeOpLowering : public TsLlvmPattern<mlir_ts::StringResizeOp>
         auto fits = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, sourceBytes, size);
         auto copyBytes = rewriter.create<LLVM::SelectOp>(loc, fits, sourceBytes, size);
 
-        rewriter.create<LLVM::MemcpyOp>(loc, newStringValue, source, copyBytes, /*isVolatile=*/false);
+        ch.MemoryCopy(newStringValue, size, source, copyBytes);
 
         rewriter.replaceOp(op, ValueRange{newStringValue});
         return success();
@@ -876,7 +876,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         for (auto [oper, length] : llvm::zip(opers, lengths))
         {
             auto dest = rewriter.create<LLVM::GEPOp>(loc, i8PtrTy, th.getI8Type(), newStringValue, ValueRange{offset});
-            rewriter.create<LLVM::MemcpyOp>(loc, dest, oper, length, /*isVolatile=*/false);
+            auto left = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{size, offset});
+            ch.MemoryCopy(dest, left, oper, length);
             offset = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{offset, length});
         }
 
@@ -920,7 +921,7 @@ class StringCopyOpLowering : public TsLlvmPattern<mlir_ts::StringCopyOp>
                         loc, llvmIndexType,
                         ValueRange{bytes, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1))});
                     auto copy = ch.MemoryAlloc(bytes);
-                    rewriter.create<LLVM::MemcpyOp>(loc, copy, source, bytes, /*isVolatile=*/false);
+                    ch.MemoryCopy(copy, bytes, source, bytes);
                     return copy;
                 },
                 [&](OpBuilder &, Location) -> mlir::Value { return source; });
@@ -3661,7 +3662,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
         auto bytes = rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, count});
         auto copy = ch.MemoryAlloc(bytes);
-        rewriter.create<LLVM::MemcpyOp>(loc, copy, arrayOffset, bytes, /*isVolatile=*/false);
+        ch.MemoryCopy(copy, bytes, arrayOffset, bytes);
 
         // the copy holds a second reference to each element, and its release gives them back
         {

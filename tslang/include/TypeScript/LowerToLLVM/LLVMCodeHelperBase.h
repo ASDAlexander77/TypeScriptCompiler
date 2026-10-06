@@ -208,6 +208,39 @@ class LLVMCodeHelperBase
         return _MemoryAlloc<int>(sizeOfAlloc, zero);
     }
 
+    // A copy of `count` bytes into a block with `destSize` bytes left, which ends the process
+    // rather than write past the block. A Windows target calls the CRT's memcpy_s (its invalid
+    // parameter handler ends the process); glibc, Bionic and Darwin have no memcpy_s, and get the
+    // fortified __memcpy_chk instead ("buffer overflow detected"), which LLVM turns back into a
+    // plain memcpy where it can prove the copy fits. Wasm has neither: llvm.memcpy.
+    void MemoryCopy(mlir::Value dest, mlir::Value destSize, mlir::Value src, mlir::Value count)
+    {
+        auto loc = op->getLoc();
+        if (compileOptions.isWasm)
+        {
+            rewriter.create<LLVM::MemcpyOp>(loc, dest, src, count, /*isVolatile=*/false);
+            return;
+        }
+
+        TypeHelper th(rewriter);
+        auto llvmIndexType = count.getType();
+        if (compileOptions.isWindows)
+        {
+            // errno_t memcpy_s(void *dest, size_t destSize, const void *src, size_t count)
+            auto memcpySFuncOp = getOrInsertFunction(
+                "memcpy_s",
+                th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType(), llvmIndexType}));
+            rewriter.create<LLVM::CallOp>(loc, memcpySFuncOp, ValueRange{dest, destSize, src, count});
+            return;
+        }
+
+        // void *__memcpy_chk(void *dest, const void *src, size_t count, size_t destSize)
+        auto memcpyChkFuncOp = getOrInsertFunction(
+            "__memcpy_chk",
+            th.getFunctionType(th.getPtrType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, llvmIndexType}));
+        rewriter.create<LLVM::CallOp>(loc, memcpyChkFuncOp, ValueRange{dest, src, count, destSize});
+    }
+
     mlir::Value MemoryAlloc(mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         TypeHelper th(rewriter);
