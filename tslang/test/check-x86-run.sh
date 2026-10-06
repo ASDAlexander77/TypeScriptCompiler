@@ -48,6 +48,8 @@ GCDLL_DIR="$REPO/3rdParty/gcdll/x64/release/lib"
 # see its build.bat). DEFAULT_LIB_PATH is unset above for hermeticity, so this is the one candidate
 # defaultlib-collector.cmake's DEFAULT_LIB_CANDIDATES pair resolves to from this repo's location.
 DEFAULTLIB_DIR="$REPO/../TypeScriptCompilerDefaultLib/__build"
+# its x86 release gc static library's folder, from tslang (getDefaultLibSubDir)
+DEFAULTLIB_X86_SUBDIR="$("$TSLANG" --print-default-lib-dir=lib -mm=gc -mtriple=i686-pc-windows-msvc)"
 DEFAULTLIB_TESTS="$REPO/tslang/test/tester/defaultlib"
 
 # The async corpus cases (gc only), from test/tester/tests. They are built with --entry-point to
@@ -259,10 +261,9 @@ fi
 # --- The x86 default library (spec Phase 4, As built) ---------------------------------------
 # Skipped, not failed, the same rule defaultlib-collector.cmake applies for the x64 collector
 # tests: this is a build product from a sibling repository, not something this script
-# can build. `defaultlib/lib/x86` is the layout Defines.h's getDefaultLibSubDir names for any
-# model/build, so its presence (regardless of model) is the gate.
-if [ ! -d "$DEFAULTLIB_DIR/defaultlib/lib/x86" ]; then
-    echo "SKIPPED: no x86 default library built at $DEFAULTLIB_DIR/defaultlib/lib/x86" \
+# can build. Its release gc tree, which every build of it produces, is the gate.
+if [ ! -d "$DEFAULTLIB_DIR/$DEFAULTLIB_X86_SUBDIR" ]; then
+    echo "SKIPPED: no x86 default library built at $DEFAULTLIB_DIR/$DEFAULTLIB_X86_SUBDIR" \
          "(build it in TypeScriptCompilerDefaultLib with TSLANG_ARCH=x86; see its build.bat)"
 else
     DL_FLAG="--default-lib-path=$DEFAULTLIB_DIR"
@@ -325,7 +326,7 @@ else
         echo "FAIL defaultlib dll: library compile failed (exit $status): $err"
         fail=1
     else
-        cp "$DEFAULTLIB_DIR/defaultlib/dll/x86/release/gc/TypeScriptDefaultLib.dll" "$dll_dir/"
+        cp "$DEFAULTLIB_DIR/$("$TSLANG" --print-default-lib-dir=dll -mm=gc -mtriple=i686-pc-windows-msvc)/TypeScriptDefaultLib.dll" "$dll_dir/"
         cp "$GCDLL_DIR/x86/gc.dll" "$dll_dir/"
         err="$(cd "$dll_dir" && "$TSLANG" --emit=exe --opt -mm=gc -mtriple=i686-pc-windows-msvc \
             "$DL_FLAG" "$GC_FLAG" "$RT_FLAG" "--gc-shared-lib-path=$GCDLL_DIR" \

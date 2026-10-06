@@ -150,7 +150,8 @@ What to ship with a Windows program that loads a tslang shared library, all in o
 
 - the program and its shared libraries,
 - `gc.dll` (from `gcdll/` in the release package),
-- `TypeScriptDefaultLib.dll` (from `defaultlib/dll/<release|debug>/gc`), which every shared library
+- `TypeScriptDefaultLib.dll` (from `defaultlib/dll/x86_64/pc/windows/msvc/<release|debug>/gc`;
+  `tslang --print-default-lib-dir=dll [--di]` names it), which every shared library
   built with the default library imports.
 
 A shared library that was linked against the static `gc.lib` anyway — by an older `tslang`, or by

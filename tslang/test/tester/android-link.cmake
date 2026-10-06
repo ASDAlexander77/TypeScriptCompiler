@@ -9,8 +9,8 @@
 #               library, collector and async runtime, through the NDK. Prints SKIPPED (CTest then
 #               reports it skipped) unless ANDROID_NDK_HOME and the Android builds of those are
 #               there: scripts/build_gc_release_android.bat, scripts/build_tslang_runtime_release_
-#               android.bat, and TypeScriptCompilerDefaultLib's scripts/build_android.bat (found
-#               next to this repository, or at TSLANG_ANDROID_DEFAULT_LIB_PATH). A shared library
+#               android.bat, and TypeScriptCompilerDefaultLib's scripts/build_android.bat (its
+#               __build next to this repository, or TSLANG_ANDROID_DEFAULT_LIB_PATH). A shared library
 #               links with --no-undefined, so a symbol Bionic lacks fails here, not in the app.
 
 cmake_minimum_required(VERSION 3.17.3)
@@ -97,15 +97,20 @@ elseif(MODE STREQUAL "link")
     if(DEFINED ENV{TSLANG_ANDROID_DEFAULT_LIB_PATH})
         set(default_lib "$ENV{TSLANG_ANDROID_DEFAULT_LIB_PATH}")
     else()
-        set(default_lib "${REPO_DIR}/../TypeScriptCompilerDefaultLib/__build/android/${abi}")
+        set(default_lib "${REPO_DIR}/../TypeScriptCompilerDefaultLib/__build")
     endif()
+    # the one default-library tree, every target in it; tslang names this one's folder
+    execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=lib -mm=gc -mtriple=${triple}
+        OUTPUT_VARIABLE default_lib_subdir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY)
 
     if("$ENV{ANDROID_NDK_HOME}" STREQUAL "")
         message("SKIPPED: ANDROID_NDK_HOME is not set")
         return()
     endif()
     foreach(file "${gc_lib}/libgc.a" "${runtime_lib}/libTypeScriptAsyncRuntime.a"
-                 "${default_lib}/defaultlib/lib/release/gc/libTypeScriptDefaultLib.a")
+                 "${default_lib}/${default_lib_subdir}/libTypeScriptDefaultLib.a")
         if(NOT EXISTS "${file}")
             message("SKIPPED: ${file} is not built")
             return()

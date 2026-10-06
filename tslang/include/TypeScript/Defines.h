@@ -318,27 +318,23 @@
 // warns about, and it is the largest instance of it, since every program that does not pass
 // `--no-default-lib` links this one.
 //
-// Layout: defaultlib/{lib,dll}/[x86/]{debug,release}/{gc,rc,none}/. The model name is exactly
-// `memoryModelName()`, so the directory and the `-mm=` flag cannot drift apart.
+// The model name is exactly `memoryModelName()`, so the directory and the `-mm=` flag cannot
+// drift apart.
 #define DEFAULT_LIB_KIND_STATIC "lib"
 #define DEFAULT_LIB_KIND_SHARED "dll"
 
-// ...and, for a Windows x86 target, per arch, outermost under lib/ or dll/ like every other x86
-// library (spec "Arch in the library layout"). Every other target, x64 included, has no arch
-// segment, so existing trees keep their shape. There is no fallback to the x64 tree: an x64
-// library links into an x86 program only to fail on every symbol.
-#define DEFAULT_LIB_ARCH_X86 "x86"
-
-inline std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memoryModel, const char *arch)
-{
-    std::string subDir = std::string(DEFAULT_LIB_DIR "/") + (shared ? DEFAULT_LIB_KIND_SHARED : DEFAULT_LIB_KIND_STATIC) + "/";
-    if (arch && *arch)
-    {
-        subDir += std::string(arch) + "/";
-    }
-
-    return subDir + (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
-}
+// ...and, outermost under lib/ or dll/, per target, as the LLVM triple names it: arch, vendor, OS
+// and environment, each the canonical name LLVM gives the parsed component, so the spellings of
+// one target (i686/i386, an Android API level, an MSVC version) share a tree. Every target is
+// keyed this way, the host included. There is no fallback to another target's tree: a library
+// built for one links into a program for another only to fail on every symbol.
+//
+// Layout: defaultlib/{lib,dll}/<arch>/<vendor>/<os>/<env>/{debug,release}/{gc,rc,none}/, e.g.
+// defaultlib/lib/x86_64/pc/windows/msvc/release/gc or defaultlib/lib/aarch64/unknown/linux/android/
+// release/gc. Everything else (*.d.ts, generics/, ...) stays at the defaultlib root, shared by
+// every build. Composed in ONE place, getDefaultLibSubDir (tslang/tslang/defaultlib.cpp), which
+// the linker, the JIT, --install-default-lib and --print-default-lib-dir all call; the build
+// scripts ask --print-default-lib-dir rather than spelling the path out.
 
 #define DEBUG_SCOPE "current"
 #define CU_DEBUG_SCOPE "compileUnit"
