@@ -26,15 +26,19 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
   - [As JIT](#run-as-jit)
   - [Debugging JIT code with GDB (Linux)](#debugging-jit-code-with-gdb-linux)
   - [As a native executable](#compile-as-binary-executable)
+  - [For Android](#compile-for-android)
   - [As WebAssembly](#compiling-as-wasm)
 - [C bindings with tsbindgen](#c-bindings-with-tsbindgen)
 - [Memory models](#memory-models)
 - [Building from source](#build)
+  - [For Android](#build-for-android)
 - [Community](#chat-room)
 - [License](#license)
 
 ## What's new
 
+- New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](#memory-models)
+- **Android** targets (`arm64-v8a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for both ABIs. See [Compile for Android](#compile-for-android)
 - Implemented `try/catch` exception handling in the **JIT** on Windows (x64 SEH unwinding via a custom LLJIT runtime)
 - Migrared to **LLVM 22.1.8**
 - Migrated to **Visual Studio 2026** (Windows build chain)
@@ -341,6 +345,53 @@ Result
 Hello World!
 ```
 
+## Compile for Android
+
+`tslang` cross-compiles for Android from a Windows host. It targets `arm64-v8a`
+(`-mtriple=aarch64-linux-android29`) and `x86_64` (`-mtriple=x86_64-linux-android29`), and links
+through the Android NDK (tested with r29 and r30). The triple has to carry the API level, and 29
+is the lowest the default library supports. Point `--android-ndk-path` (or `ANDROID_NDK_HOME`) at
+the NDK.
+
+The Windows release zip carries the Android libraries for both ABIs:
+
+| Library | Option |
+| --- | --- |
+| `android\<abi>\lib\libgc.a` | `--gc-lib-path=<zip>\android\<abi>\lib` (only under `-mm=gc`) |
+| `android\<abi>\lib\libTypeScriptAsyncRuntime.a` | `--tslang-lib-path=<zip>\android\<abi>\lib` |
+| `defaultlib\...` (the default library, beside the Windows one) | `--default-lib-path=<zip>` |
+
+To build them from source instead, see [Build for Android](#build-for-android).
+
+Build an executable for arm64-v8a:
+
+```bat
+tslang --emit=exe -mtriple=aarch64-linux-android29 --opt ^
+    --android-ndk-path=C:\Android\android-ndk-r30 ^
+    --default-lib-path=<zip> ^
+    --gc-lib-path=<zip>\android\arm64-v8a\lib ^
+    --tslang-lib-path=<zip>\android\arm64-v8a\lib ^
+    hello.ts -o hello
+```
+
+`--emit=dll` takes the same options and builds a shared library (`-o libhello.so`) for an app to
+load. Either way the output is one self-contained, position-independent binary: the default
+library, collector and libc++ are linked in statically, so it needs only Bionic's libc, libm and
+libdl. Android has no libcurl, so `fetch()` throws.
+
+Run it on a device or emulator. Run `chmod +x` because a file pushed from Windows is not executable:
+
+```bat
+adb push hello /data/local/tmp/
+adb shell "chmod +x /data/local/tmp/hello && /data/local/tmp/hello"
+```
+
+Result
+
+```text
+Hello World!
+```
+
 ## Compiling as WASM
 
 ### WASM build on Windows
@@ -620,6 +671,7 @@ How heap memory is managed is selected with `-mm=`:
 | `-mm=gc` | garbage collection (Boehm) | the default |
 | `-mm=rc` | reference counting - freed as soon as the last reference goes, no collector, no `libgc` | **does not collect reference cycles** |
 | `-mm=none` | nothing is ever freed | short-lived programs |
+| `-mm=own` | single ownership inferred at compile time - no collector, no counting | **in development**; ownership that cannot be proven is a compile error |
 
 `-mm=gc` is the default and needs no thought. `-mm=rc` reclaims memory deterministically and
 holds close to the working set - a ray tracer that reaches 114 MB under `-mm=none` holds 4.1 MB,
@@ -628,6 +680,50 @@ freed under it**, which is the same trade Swift makes with ARC.
 
 See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
 what to do about it.
+
+### `-mm=own`
+
+`-mm=own` works the way Rust's borrow checker does. Every heap block has exactly one owner: a
+local, a field, an array element or a global. When a value is aliased, the compiler either moves
+it, so the source gives it up, or borrows it for as long as the owner lives. The owner frees the
+block at a point known at compile time: when its scope ends, when it is overwritten, or when it is
+removed from its container. No reference counts are kept at run time. When the compiler cannot
+prove a single owner, it rejects the program instead of compiling it with a leak:
+
+```typescript
+class Node { constructor(public value: number) {} }
+class Holder { node: Node; }
+
+function main() {
+    const h = new Holder();
+    const g = new Holder();
+    const n = new Node(1);
+    h.node = n;     // the Node moves into h
+    g.node = n;     // a second owner: compile error
+    print(h.node.value);
+}
+```
+
+```text
+owners.ts:9:5: error: 'this value' is used here after its value was moved
+    g.node = n;     // a second owner: compile error
+    ^
+owners.ts:8:5: note: value moved here
+    h.node = n;     // the Node moves into h
+    ^
+```
+
+Shared ownership is opt-in and explicit. `Shared<T>` keeps a count, and `.value` reads or writes
+the object inside it:
+
+```typescript
+const a = new Shared<Node>(new Node(1));
+const b = a;                                          // both share the Node
+print(a.value.value, b.value.value, Shared.count(a)); // 1 1 2
+```
+
+`-mm=own` is still in development: some valid TypeScript does not compile under it yet. The
+default library has no `-mm=own` build yet, so compile with `--no-default-lib`.
 
 ## Build
 
@@ -681,6 +777,29 @@ chmod +x *.sh
 ./config_tslang_release.sh
 ./build_tslang_release.sh
 ```
+
+### Build for Android
+
+The release zip already carries these libraries. To build them yourself, use a Windows host with
+the Android NDK (r29 or r30) in `ANDROID_NDK_HOME` and Ninja on `PATH`. Run these after
+`prepare_3rdParty.bat`, which provides the gc sources and the LLVM headers they use. Each script builds both
+`arm64-v8a` and `x86_64` for API level 29, or only the ABI you pass:
+
+```bat
+cd TypeScriptCompiler
+scripts\build_gc_release_android.bat
+scripts\build_tslang_runtime_release_android.bat
+```
+
+| Script | Builds | Pass it as |
+| --- | --- | --- |
+| `build_gc_release_android.bat` | Boehm GC, static, parallel marking off ([bdwgc#980](https://github.com/bdwgc/bdwgc/issues/980)) | `--gc-lib-path=3rdParty\gc\android\<abi>\release\lib` |
+| `build_tslang_runtime_release_android.bat` | `libTypeScriptAsyncRuntime.a` | `--tslang-lib-path=__build\tslang-runtime\release\android\<abi>` |
+
+Build the default library for Android with `scripts\build_android.bat` in the
+[Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/). It
+builds the release and debug libraries under gc, rc and none into the same `__build\defaultlib` tree as
+every other target, so `--default-lib-path=<TypeScriptCompilerDefaultLib>\__build` finds them.
 
 ## License
 
