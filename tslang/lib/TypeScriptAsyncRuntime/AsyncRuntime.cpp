@@ -32,7 +32,7 @@
 // The coroutine lowering allocates an async function's frame by calling `aligned_alloc` by name
 // and releases it with plain `free`. MSVC has no `aligned_alloc`, so an executable that awaits
 // anything does not link at all unless the model rewrites the call (which only `-mm=gc` does,
-// to GC_memalign). `_aligned_malloc` is not a stand-in: its memory may only go back through
+// to GC_malloc_uncollectable). `_aligned_malloc` is not a stand-in: its memory may only go back through
 // `_aligned_free`, and pairing it with `free` corrupts the CRT heap. Windows' `malloc` is
 // already aligned enough for every request anything makes - the frame asks for 8 - so it serves
 // the request and keeps the pairing honest.

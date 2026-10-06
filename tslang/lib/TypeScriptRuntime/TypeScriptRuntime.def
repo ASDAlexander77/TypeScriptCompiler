@@ -12,6 +12,7 @@ EXPORTS
     GC_malloc=_mlir__GC_malloc
     GC_malloc_atomic=_mlir__GC_malloc_atomic
     GC_memalign=_mlir__GC_memalign
+    GC_malloc_uncollectable=_mlir__GC_malloc_uncollectable
     GC_realloc=_mlir__GC_realloc
     GC_free=_mlir__GC_free
     GC_get_heap_size=_mlir__GC_get_heap_size

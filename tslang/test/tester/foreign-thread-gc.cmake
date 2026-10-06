@@ -16,6 +16,19 @@
 # marker threads and waited for them; they could not start until the load finished, and the load
 # never did (the default library hung every JIT run). The allocations escape into globals, so the
 # optimizer cannot fold the calls away.
+#
+# The host also checks that the library enabled the collector's threads on its loading thread's
+# calls, before another thread came in (#523): enabling them starts the markers before the
+# allocator takes its lock, so a newcomer enabling them raced a registered thread's allocation.
+#
+# And with the work done on the library's own async pool (#522), which collects there. The pool's
+# threads register themselves through hooks that only the library's GC_enable_threads sets (each
+# module has its own copy of the scheduler); when only a registered thread called in, they never
+# were, and the collection a pool thread started aborted ("Collecting from unknown thread"). With
+# them registered, eight host threads awaiting at once crashed on Linux, or got another call's
+# result: an async function's frame was collectable, and one waiting in the pool's queue - ordinary
+# heap the collector does not scan - was freed by a collection (GCPass now allocates frames
+# uncollectable; they are freed by hand when the coroutine finishes).
 
 cmake_minimum_required(VERSION 3.17.3)
 
@@ -67,6 +80,36 @@ export function makeNode(value: number): Node {
 
 export let kept: Node = makeNode(1);
 ")
+file(WRITE "${WORK_DIR}/async-pool.ts" [=[
+declare function GC_gcollect(): void;
+
+class Node {
+    constructor(public value: number, public next: Node | undefined) {}
+}
+
+// runs on one of the library's pool threads, and now and then collects there
+async function sumOnThePool(seed: number): number {
+    let head: Node | undefined = undefined;
+    for (let i = 0; i < 200; i++) {
+        head = new Node(seed + i, head);
+    }
+
+    if (seed % 500 == 0) {
+        GC_gcollect();
+    }
+
+    let sum: number = 0;
+    for (let node = head; node !== undefined; node = node.next) {
+        sum += node.value;
+    }
+
+    return sum;
+}
+
+export function work(seed: number): number {
+    return await sumOnThePool(seed);
+}
+]=])
 
 set(libs "--gc-lib-path=${GC_LIB}" "--tslang-lib-path=${TSLANG_LIB}" "--llvm-lib-path=${LLVM_LIB}")
 if(DEFINED GC_SHARED_LIB)
@@ -84,7 +127,7 @@ else()
     set(pic "-relocation-model=pic")
 endif()
 
-foreach(name with-top-level no-top-level static-constructor-at-load export-called-at-load)
+foreach(name with-top-level no-top-level static-constructor-at-load export-called-at-load async-pool)
     set(library "${WORK_DIR}/${prefix}${name}${suffix}")
     execute_process(COMMAND "${TSLANG}" --emit=dll --opt -mm=gc --no-default-lib ${pic} ${libs} ${name}.ts -o "${library}"
         WORKING_DIRECTORY "${WORK_DIR}"
