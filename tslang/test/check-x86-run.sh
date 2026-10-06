@@ -11,11 +11,11 @@
 # strings and arrays; under -mm=gc that forces many collections, and the list's sum is wrong (or
 # the program crashes) if a collection freed any of it.
 #
-# Phase 4b gate: async/await programs, including `for await`, at i686. The async runtime needs
-# Boehm's thread API, so these link only under -mm=gc (rc and none fail to link at x64 too; out of
-# scope). Each corpus file asserts internally, so exiting 0 is the check, as in check-x86-eh.sh's
-# exception corpus loop. await_order.ts is the minimal repro from the phase 4b plan and gets an
-# exact-output check because its whole point is the print ORDER around the await.
+# Phase 4b gate: async/await programs, including `for await`, at i686, under -mm=gc. Each corpus
+# file asserts internally, so exiting 0 is the check, as in check-x86-eh.sh's exception corpus
+# loop. await_order.ts is the minimal repro from the phase 4b plan and gets an exact-output check
+# because its whole point is the print ORDER around the await. Since #419 an async program links
+# without the collector, so await_order also runs under -mm=rc, -mm=none and -mm=own.
 #
 # The x86 default library (spec Phase 4, As built) gate: defaultlib_smoke.ts, WITHOUT --no-default-lib, under
 # gc/rc/none release and gc again with --di, plus a gc --emit=dll library linking the default
@@ -165,9 +165,11 @@ else
     fi
 fi
 
-# await_order.ts links only under -mm=gc: async needs Boehm's thread API, and rc/none fail to
-# link even at x64 (out of scope; see the plan's Global Constraints).
+# Only gc links the collector; the other models' async programs link without it since #419.
 run_case await_order gc "$GC_FLAG" "$RT_FLAG"
+for mm in rc none own; do
+    run_case await_order "$mm" "$RT_FLAG"
+done
 
 # --- Phase 4b: async corpus files run at i686 under gc -------------------------------------
 # run_async_corpus <name> -> builds test/tester/tests/<name>.ts at i686, -mm=gc, --entry-point;
