@@ -203,6 +203,11 @@ C is a 90%-mechanical translation; C++ is not. Realistic phasing:
 | C++ 1 | Free functions, non-template classes with methods (no virtuals crossing the boundary), overloads | Bind by **mangled name**: clang provides Itanium/MSVC mangled symbols (`clang::MangleContext`); emit `declare` per overload with the mangled name attached (`@linkname("?foo@@YAHH@Z")`, an alias of `@dllname`, makes the emitted `FuncOp` symbol differ from the TS-visible name). Methods become functions taking `this: Reference<S>` first. Constructors/destructors bound explicitly; caller manages object memory (`GC_malloc_atomic` for PODs / explicit new-delete pair bindings). | 2–4 weeks after A |
 | C++ 2 | Templates, virtual dispatch, exceptions, STL types | **Do not bind directly.** Generate a flattened `extern "C"` wrapper `.cpp` (tsbindgen emits both the wrapper and its `.d.ts`), compiled with the system C++ compiler and linked via existing `-obj=`. Explicit template instantiations only; exceptions caught at the wrapper boundary and converted to error codes (C++ exceptions must never unwind into tslang frames — different personality functions, especially in JIT where Win64 unwind info is custom, see `docs/jit-gc-static-roots.md` context). | 3–6 weeks, per-need |
 
+Virtual dispatch has since become bindable without a wrapper for single-inheritance
+interfaces: a `@cppvtable` class calls a C++ object's methods through its own vtable (see
+[cppvtable-classes.md](cppvtable-classes.md)). Templates, exceptions and STL types still need
+the wrapper route.
+
 The C++ ABI reality (mangling differences, MSVC vs Itanium, RTTI, std::string
 layout) is why every successful system (Swift, Rust `cxx` crate, Zig) either uses
 clang as the importer *and* restricts the surface, or generates C wrappers. The

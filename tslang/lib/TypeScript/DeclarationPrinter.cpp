@@ -429,6 +429,14 @@ namespace typescript
         printNamespaceBegin(classType->elementNamespace);
 
         printBeforeDeclaration();
+        // as layout-relevant as `abstract` below: without it the importer numbers the slots of an
+        // ordinary class, `.instanceOf` first
+        if (classType->isCppVTable)
+        {
+            os << "@" CPP_VTABLE;
+            newline();
+        }
+
         // `abstract` is layout-relevant, not just semantic: mlirGenClassNew skips
         // synthesizing the `.new` method for abstract classes, so dropping the
         // modifier makes the reimporting module insert a `.new` vtable slot the

@@ -778,6 +778,11 @@ struct ClassInfo
     bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
+    // `@cppvtable`: a binding to C++ objects (MSVC/Itanium single inheritance) made elsewhere. The
+    // instance is the C++ object, its first word the C++ vtable, and the class's methods are that
+    // vtable's slots from 0 in declaration order, a base class's first: no `.instanceOf`, `.new`,
+    // interface or static-field slots, no RTTI, and no vtable or constructor of its own.
+    bool isCppVTable;
     ProcessingStages processingAtEvaluation;
     ProcessingStages processing;
     // the module `processing` was reached in: a discovery module is thrown away with what it holds
@@ -788,7 +793,7 @@ struct ClassInfo
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
-          isPublic(false), isDynamicImport(false), hasRTTI(false),
+          isPublic(false), isDynamicImport(false), hasRTTI(false), isCppVTable(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
@@ -901,7 +906,7 @@ struct ClassInfo
         // (mlirGenInstanceOfOpaque). A root class puts it there ahead of its interfaces, and a
         // derived class overrides it in place. Before this, a root class that implemented an
         // interface kept the interface's vtable in slot 0, and `<B>anyValue` called it.
-        if (baseClasses.empty())
+        if (baseClasses.empty() && !isCppVTable)
         {
             auto instanceOf = std::find_if(methods.begin(), methods.end(),
                                            [](auto &method) { return method.name == INSTANCEOF_NAME; });
@@ -912,7 +917,7 @@ struct ClassInfo
             }
         }
 
-        // do vtable for current class
+        // do vtable for current class (a @cppvtable class implements nothing, see isCppVTable)
         for (auto &implement : implements)
         {
             if (interfaceSlots.contains(implement.interface->fullName))
@@ -943,6 +948,11 @@ struct ClassInfo
             {
                 continue;
             }
+#else
+            if (method.isStatic && isCppVTable)
+            {
+                continue;
+            }
 #endif
 
             auto it = methodSlots.find(method.name);
@@ -966,8 +976,8 @@ struct ClassInfo
         }
 
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-        // static fields
-        for (auto &staticField : staticFields)
+        // static fields (a C++ vtable has none)
+        for (auto &staticField : isCppVTable ? llvm::MutableArrayRef<StaticFieldInfo>() : llvm::MutableArrayRef<StaticFieldInfo>(staticFields))
         {
             staticField.virtualIndex = vtable.size();
             vtable.push_back({staticField, false});

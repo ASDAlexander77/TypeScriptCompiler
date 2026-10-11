@@ -192,6 +192,8 @@
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"
 #define LINK_NAME "linkname"
+// A class laid over an existing C++ object: its vtable is the C++ one (see ClassInfo::isCppVTable)
+#define CPP_VTABLE "cppvtable"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

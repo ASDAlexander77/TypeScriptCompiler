@@ -28,6 +28,10 @@ struct TargetInfo
     // Whether tslang.exe - an x64 process - can execute this target's code in-process.
     bool supportsInProcessJit = true;
 
+    // MSVC C++ member functions are __thiscall on 32-bit x86 (`this` in ECX), not the plain C
+    // convention a class method is called with, so a @cppvtable class can't call them.
+    bool memberCallsUseThiscall = false;
+
     static TargetInfo fromTriple(const llvm::Triple &target, const llvm::Triple &host)
     {
         TargetInfo info;
@@ -50,6 +54,7 @@ struct TargetInfo
         info.stdcallDecoratesCxxThrow = msvc && x86_32;
         info.supportsInProcessJit =
             target.getArch() == host.getArch() && target.getOS() == host.getOS();
+        info.memberCallsUseThiscall = msvc && x86_32;
 
         return info;
     }

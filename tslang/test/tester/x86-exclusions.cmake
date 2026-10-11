@@ -7,9 +7,16 @@
 
 set(TSLANG_X86_EXCLUDED
     test-compile-internals
+    test-compile-00-cppvtable-class
+    test-compile-shared-export-import-cppvtable-class
     test-compile-rc-corpus-internals
     test-compile-none-corpus-internals
     )
+
+set(TSLANG_X86_EXCLUDED_REASON_test-compile-00-cppvtable-class
+    "a @cppvtable class is an error on i686: MSVC member functions are __thiscall there")
+set(TSLANG_X86_EXCLUDED_REASON_test-compile-shared-export-import-cppvtable-class
+    "a @cppvtable class is an error on i686: MSVC member functions are __thiscall there")
 
 # internals.ts, under each model: its first assert, on `inline_asm<i64>("xor $0, $0", "=r,r", v1)`,
 # fails at i686 (0xC0000409 before the first print).

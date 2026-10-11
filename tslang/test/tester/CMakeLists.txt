@@ -418,6 +418,8 @@ tslang_add_test(NAME test-compile-00-optional-loose-null COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-union-nullable-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
+# not in TSLANG_CORPUS: a @cppvtable class is an error under rc (cppvtable/memory_model.ts)
+tslang_add_test(NAME test-compile-00-cppvtable-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -947,6 +949,7 @@ tslang_add_test(NAME test-jit-00-optional-loose-null COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-union-nullable-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
+tslang_add_test(NAME test-jit-00-cppvtable-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -1464,6 +1467,7 @@ tslang_add_test(NAME test-compile-shared-export-import-class-implements-interfac
 # minimal deterministic regression pair for the vtable-slot-shift bug above (single-level abstract,
 # describe() called twice before any area() call so XMM0 luck can't hide a regression)
 tslang_add_test(NAME test-compile-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+tslang_add_test(NAME test-compile-shared-export-import-cppvtable-class COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_class.ts")
 # FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
 tslang_add_test(NAME test-compile-shared-export-import-class-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 tslang_add_test(NAME test-compile-shared-export-import-function-generic COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
@@ -1546,6 +1550,7 @@ tslang_add_test(NAME test-jit-shared-export-import-class-structural-interface CO
 # FIXED 2026-07-23 (was disabled): see the matching test-compile-shared-export-import-class-implements-interface-abstract comment above (DeclarationPrinter dropped `abstract`, shifting the reimported vtable's slots).
 tslang_add_test(NAME test-jit-shared-export-import-class-implements-interface-abstract COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_implements_interface_abstract.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_implements_interface_abstract.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-abstract-virtual-dispatch COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_abstract_virtual_dispatch.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_abstract_virtual_dispatch.ts")
+tslang_add_test(NAME test-jit-shared-export-import-cppvtable-class COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_class.ts")
 # FIXED: see the matching test-compile-export-import-class-generic comment above (2026-07-22).
 tslang_add_test(NAME test-jit-shared-export-import-class-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_generic.ts")
 tslang_add_test(NAME test-jit-shared-export-import-function-generic COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_function_generic.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_function_generic.ts")
@@ -2679,6 +2684,60 @@ add_test(NAME test-compile-interface-cast-empty
                  -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-empty.obj")
 set_tests_properties(test-compile-interface-cast-empty
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
+# A @cppvtable class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
+# would add a slot, run code of its own or ask the object what it is is an error: a slot off by one
+# would call the wrong C++ method, with no error at all.
+set(cppvtable_errors
+    "instanceof|instanceof can't be used with a @cppvtable class"
+    "box_any|can't cast 'Base' to 'any': a @cppvtable class's objects are C\\+\\+ objects"
+    "unbox_any|can't cast 'any' to 'Base': a @cppvtable class's objects are C\\+\\+ objects"
+    "to_interface|can't cast 'Base' to 'IFirst': a @cppvtable class's objects are C\\+\\+ objects"
+    "extends_plain|the @cppvtable class 'Base' can only extend a @cppvtable class, not 'Plain'"
+    "plain_extends|class 'Plain' can't extend the @cppvtable class 'Base': it has to be @cppvtable too"
+    "implements|a @cppvtable class can't implement an interface"
+    "method_body|a method of a @cppvtable class is a C\\+\\+ vtable slot: it can't have a body"
+    "static_member|a @cppvtable class can't have static members"
+    "constructor|a @cppvtable class can't have a constructor"
+    "get_accessor|a @cppvtable class can only have methods without bodies and fields"
+    "field_initializer|a field of a @cppvtable class can't have an initializer")
+foreach(cppvtable_error ${cppvtable_errors})
+    string(REPLACE "|" ";" cppvtable_error "${cppvtable_error}")
+    list(GET cppvtable_error 0 cppvtable_name)
+    list(GET cppvtable_error 1 cppvtable_message)
+    add_test(NAME test-compile-cppvtable-${cppvtable_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/${cppvtable_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-${cppvtable_name}.obj")
+    set_tests_properties(test-compile-cppvtable-${cppvtable_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${cppvtable_name}\\.ts:[0-9]+:[0-9]+: error: ${cppvtable_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# Retains and releases would write a count in the word before a C++ object: rc is an error, none
+# compiles.
+add_test(NAME test-compile-cppvtable-memory-model-rc
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-rc.obj")
+set_tests_properties(test-compile-cppvtable-memory-model-rc
+                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cppvtable class needs the gc or none memory model"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-memory-model-none
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-none.obj")
+set_tests_properties(test-compile-cppvtable-memory-model-none
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
+# MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.
+add_test(NAME test-compile-cppvtable-thiscall-target
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=i686-pc-windows-msvc
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-thiscall-target.obj")
+set_tests_properties(test-compile-cppvtable-thiscall-target
+                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cppvtable class can't be used on this target: its C\\+\\+ methods are __thiscall"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # An error inside a cast function the compiler generates (here: null in a union cast to string) is
 # reported where the cast is - line 6 - and not at the generated text's offset taken as a position
