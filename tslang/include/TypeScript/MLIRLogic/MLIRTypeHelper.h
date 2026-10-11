@@ -3329,12 +3329,33 @@ class MLIRTypeHelper
         return getUnionTypeWithMerge(location, types, mergeLiterals, mergeTypes);
     }
 
-    // Without strict null checks a nullable type (string, a class) holds null in its own pointer, so
-    // null goes away beside it. A union of several types is a tagged value, not one pointer: there
-    // null has nowhere to go but a member of its own.
+    // A type whose value is one pointer that is null when it holds null: it absorbs `| null`.
+    static bool isNullAbsorbingType(mlir::Type type)
+    {
+        return isa<mlir_ts::ClassType, mlir_ts::StringType, mlir_ts::ArrayType, mlir_ts::ObjectType, mlir_ts::OpaqueType>(type);
+    }
+
+    // A union whose members, null aside, all absorb null (`A | B | null`, `string | A | null`): stored
+    // without a null member, its value is null exactly when its value's pointer is null, whichever
+    // member's tag it carries.
+    bool isNullAbsorbingUnion(mlir_ts::UnionType unionType)
+    {
+        return llvm::all_of(unionType.getTypes(), [](mlir::Type type) {
+            return isa<mlir_ts::NullType>(type) || isNullAbsorbingType(type);
+        });
+    }
+
+    // A nullable type (string, a class) holds null in its own pointer, so null goes away beside it:
+    // `Class | null` is stored as the class. So does a union of several such types - null is a null
+    // pointer in whichever member. Only a member that cannot hold null (a number: 0 is not null)
+    // makes null a member of its own. The type still says `| null` under strict null checks, which
+    // is what allows or refuses assigning null; this is about how the value is stored.
     bool needsNullMember(mlir::ArrayRef<mlir::Type> types)
     {
-        return llvm::count_if(types, [](mlir::Type type) { return !isa<mlir_ts::NullType>(type); }) > 1;
+        auto nonNull = llvm::count_if(types, [](mlir::Type type) { return !isa<mlir_ts::NullType>(type); });
+        return nonNull > 1 && !llvm::all_of(types, [](mlir::Type type) {
+            return isa<mlir_ts::NullType>(type) || isNullAbsorbingType(type);
+        });
     }
 
     // TODO: review all union merge logic
@@ -3409,7 +3430,8 @@ class MLIRTypeHelper
             mlir::SmallVector<mlir::Type> mergedTypesAll;
             this->mergeTypes(location, typesAll, mergedTypesAll);
 
-            if (unionContext.isNullable && (compileOptions.strictNullChecks || needsNullMember(mergedTypesAll)))
+            if (unionContext.isNullable
+                && ((compileOptions.strictNullChecks && !disableStrickNullCheck) || needsNullMember(mergedTypesAll)))
             {
                 mergedTypesAll.push_back(getNullType());
             }
