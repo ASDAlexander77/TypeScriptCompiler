@@ -1463,7 +1463,9 @@ namespace mlirgen
         auto stringType = getStringType();
         SmallVector<mlir::Value, 4> strs;
 
-        auto text = convertWideToUTF8(templateExpressionAST->head->rawText);
+        // the text with its escapes processed (`text`), not as written (`rawText`): `${n}\n${n}` held
+        // a backslash and an n
+        auto text = convertWideToUTF8(templateExpressionAST->head->text);
         auto head = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(text));
 
         // first string
@@ -1483,7 +1485,7 @@ namespace mlirgen
             // expr value
             strs.push_back(exprValue);
 
-            auto spanText = convertWideToUTF8(span->literal->rawText);
+            auto spanText = convertWideToUTF8(span->literal->text);
             auto spanValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spanText));
 
             // text
@@ -1510,10 +1512,11 @@ namespace mlirgen
         SmallVector<mlir::Attribute, 4> strs;
         SmallVector<mlir::Value, 4> vals;
 
+        // the strings a tag receives have their escapes processed, as in JavaScript
         std::string text = convertWideToUTF8(
-            templateExpressionAST->head 
-                ? templateExpressionAST->head->rawText 
-                : templateExpressionAST->rawText);
+            templateExpressionAST->head
+                ? templateExpressionAST->head->text
+                : templateExpressionAST->text);
 
         // first string
         strs.push_back(getStringAttr(text));
@@ -1527,7 +1530,7 @@ namespace mlirgen
 
             vals.push_back(exprValue);
 
-            auto spanText = convertWideToUTF8(span->literal->rawText);
+            auto spanText = convertWideToUTF8(span->literal->text);
             // text
             strs.push_back(getStringAttr(spanText));
         }
