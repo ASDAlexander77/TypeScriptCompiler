@@ -39,7 +39,9 @@ set(not_compilable_alone
     00cppvtable_class.ts
     00cppvtable_hidden_return.ts
     export_cppvtable_class.ts
-    import_cppvtable_class.ts)
+    import_cppvtable_class.ts
+    export_cppvtable_hidden_return.ts
+    import_cppvtable_hidden_return.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)
