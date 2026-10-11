@@ -1382,7 +1382,7 @@ class MLIRGenImpl
         VariableDeclarationInfo(CompileOptions& compileOptions) : compileOptions(compileOptions), variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
             isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false},
-            needsIdentityStorage{false}, typeAndInitResolved{false}, disposeGuard()
+            needsIdentityStorage{false}, typeAndInitResolved{false}, inferredFromIntegerLiteral{false}, disposeGuard()
         {
         };
 
@@ -1797,6 +1797,9 @@ class MLIRGenImpl
         bool isUsed;
         bool needsIdentityStorage;
         bool typeAndInitResolved;
+        // `let s = 0`: no type given and an integer literal to infer it from, so it is an s32 -
+        // see warnIfIntegerLiteralVariableTruncates
+        bool inferredFromIntegerLiteral;
 
         // See createLocalVariable: set only for a `using` declaration hoisted out in front of a
         // TryOp, and carried onto the VariableDeclarationDOM that mlirGenDisposable walks.
@@ -1819,6 +1822,68 @@ class MLIRGenImpl
                !variableDeclarationInfo.deleted && !variableDeclarationInfo.allocateInContextThis &&
                variableDeclarationInfo.initial && variableDeclarationInfo.type &&
                mth.ownsHeapMemory(location, variableDeclarationInfo.type) && !blockIsInsideCatchOrFinally();
+    }
+
+    // `let s = 0`: no type given, and an integer literal to infer one from - integer literals are
+    // s32, so the variable is an integer where TypeScript would make it a number
+    static bool isInferredFromIntegerLiteral(struct VariableDeclarationInfo &variableDeclarationInfo, mlir::Type type)
+    {
+        if (variableDeclarationInfo.typeProvided != TypeProvided::No)
+        {
+            return false;
+        }
+
+        auto literalType = dyn_cast<mlir_ts::LiteralType>(type);
+        return literalType && isa<mlir::IntegerType>(literalType.getElementType());
+    }
+
+    // Storing a fraction into a variable whose type was inferred from an integer literal drops the
+    // fraction without a word: `let s = 0; s += 1.5` leaves 1, `let a = 0; a += values[i]` sums
+    // whole parts, where TypeScript keeps them. The inference stays (integer literals are s32);
+    // this says what happened and how to get a number.
+    void warnIfIntegerLiteralVariableTruncates(mlir::Location location, mlir::Value reference, mlir::Type destType,
+                                               mlir::Value value)
+    {
+        if (!isa<mlir::IntegerType>(destType))
+        {
+            return;
+        }
+
+        auto valueType = mth.stripLiteralType(value.getType());
+        if (!isa<mlir_ts::NumberType>(valueType) && !isa<mlir::FloatType>(valueType))
+        {
+            return;
+        }
+
+        // a whole number loses nothing
+        if (auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            if (auto floatAttr = dyn_cast<mlir::FloatAttr>(constantOp.getValue()))
+            {
+                auto number = floatAttr.getValueAsDouble();
+                if (number == std::trunc(number))
+                {
+                    return;
+                }
+            }
+        }
+
+        auto *definingOp = reference.getDefiningOp();
+        auto inferred = definingOp && definingOp->hasAttr(INTEGER_LITERAL_INFERRED_ATTR_NAME);
+        if (auto addressOfOp = dyn_cast_or_null<mlir_ts::AddressOfOp>(definingOp))
+        {
+            auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName());
+            inferred = globalOp && globalOp->hasAttr(INTEGER_LITERAL_INFERRED_ATTR_NAME);
+        }
+
+        if (!inferred)
+        {
+            return;
+        }
+
+        emitWarning(location) << "a '" << to_print(valueType) << "' is stored in a '" << to_print(destType)
+                              << "', dropping its fraction: the variable's type was inferred from an integer literal. "
+                              << "Declare it 'number' (e.g. `let s: number = 0`) to keep fractions";
     }
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -1860,6 +1925,8 @@ class MLIRGenImpl
 
             return mlir::success();
         }
+
+        variableDeclarationInfo.inferredFromIntegerLiteral = isInferredFromIntegerLiteral(variableDeclarationInfo, type);
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
@@ -1913,6 +1980,8 @@ class MLIRGenImpl
         }
 
         auto type = variableDeclarationInfo.type;
+
+        variableDeclarationInfo.inferredFromIntegerLiteral = isInferredFromIntegerLiteral(variableDeclarationInfo, type);
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
@@ -5802,6 +5871,8 @@ class MLIRGenImpl
                     storeReference = writeOp.getResult();
                 }
             }
+
+            warnIfIntegerLiteralVariableTruncates(location, loadOp.getReference(), destType, savingValue);
 
             syncSavingValue(destType);
             if (!savingValue)

@@ -19,6 +19,11 @@
 // borrows rather than owns - out of the assignment path. See MLIRGen's takeOwnershipOfLocal.
 #define OWNED_LOCAL_ATTR_NAME "__owned"
 
+// Marks a variable's storage (its ts.Variable, or its ts.Global) whose type was inferred from an
+// integer literal - `let s = 0` is an s32 - so that storing a fraction into it can be warned about.
+// See MLIRGen's warnIfIntegerLiteralVariableTruncates.
+#define INTEGER_LITERAL_INFERRED_ATTR_NAME "__int_literal_inferred"
+
 // Marks an operation whose result already carries a reference the receiver is expected to take
 // over, rather than one it must retain for itself. `new C()` is the case that matters: it lowers
 // to a call of the generated `C..new`, and every function retains its result before returning

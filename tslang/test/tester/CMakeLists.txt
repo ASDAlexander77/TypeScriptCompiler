@@ -2613,6 +2613,27 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# Storing a fraction into a variable whose type was inferred from an integer literal (`let s = 0`
+# is an s32) drops it, and is warned about; the inference itself stays.
+foreach(truncation_case "global|3:1" "local|5:9")
+    string(REPLACE "|" ";" truncation_parts "${truncation_case}")
+    list(GET truncation_parts 0 truncation_name)
+    list(GET truncation_parts 1 truncation_position)
+    add_test(NAME test-compile-integer-literal-truncation-${truncation_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/integer-literal-truncation/${truncation_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/integer-literal-truncation-${truncation_name}.obj")
+    set_tests_properties(test-compile-integer-literal-truncation-${truncation_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${truncation_name}\\.ts:${truncation_position}: warning: a 'number' is stored in a 's32', dropping its fraction"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
+add_test(NAME test-compile-integer-literal-truncation-quiet
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/integer-literal-truncation/quiet.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/integer-literal-truncation-quiet.obj")
+set_tests_properties(test-compile-integer-literal-truncation-quiet
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
+
 # A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
 # is an error under every model but gc, which alone links the collector - it used to reach the
 # linker as an unresolved symbol. Under gc the same file compiles.
