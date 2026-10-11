@@ -2751,9 +2751,9 @@ add_test(NAME test-compile-cppvtable-memory-model-none
 set_tests_properties(test-compile-cppvtable-memory-model-none
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
-# A method returning a record (tests/00cppvtable_hidden_return.ts) is MSVC's: the Itanium ABI
-# returns a record through a pointer before `this`, and only some records, so it is an error
-# anywhere else and its tests run on Windows only.
+# A method returning a record: tests/00cppvtable_hidden_return.ts's slots, made by hand, return it as
+# MSVC does, through a pointer after `this`, so they run on Windows only; the Itanium ABI's way is
+# tested against C++ below (test-jit-cppvtable-abi).
 if (WIN32)
     tslang_add_test(NAME test-compile-00-cppvtable-hidden-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
     tslang_add_test(NAME test-jit-00-cppvtable-hidden-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
@@ -2761,12 +2761,59 @@ if (WIN32)
     tslang_add_test(NAME test-jit-shared-export-import-cppvtable-hidden-return COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_hidden_return.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_hidden_return.ts")
 endif()
 add_test(NAME test-compile-cppvtable-hidden-return-target
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=i686-unknown-linux-gnu
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/hidden_return_target.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-hidden-return-target.obj")
 set_tests_properties(test-compile-cppvtable-hidden-return-target
-                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI, or the Itanium ABI on x86-64 or AArch64"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# x86-64 Itanium: a trivial record tslang can't return as the SysV classification does, unmarked
+add_test(NAME test-compile-cppvtable-itanium-record
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/itanium_record.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-itanium-record.obj")
+set_tests_properties(test-compile-cppvtable-itanium-record
+                     PROPERTIES PASS_REGULAR_EXPRESSION "itanium_record\\.ts:7:5: error: on this target a method of a @cppvtable class returns a struct in registers by its fields.*mark the method @cppnontrivial"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-nontrivial-no-struct
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/nontrivial_no_struct.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-nontrivial-no-struct.obj")
+set_tests_properties(test-compile-cppvtable-nontrivial-no-struct
+                     PROPERTIES PASS_REGULAR_EXPRESSION "nontrivial_no_struct\\.ts:[0-9]+:[0-9]+: error: @cppnontrivial is for a method of a @cppvtable class returning a struct"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# The Itanium calls' argument attributes, on any host: the hidden result pointer `sret` (X8 on
+# AArch64), narrow integers extended as a C++ caller extends them (clang's code relies on it)
+foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-android29)
+    add_test(NAME test-compile-cppvtable-itanium-call-${cppvtable_itanium_triple}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=${cppvtable_itanium_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
+    set_tests_properties(test-compile-cppvtable-itanium-call-${cppvtable_itanium_triple}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "i1 zeroext %[0-9]+, i8 zeroext %[0-9]+, i8 signext %[0-9]+\\).*\\(ptr sret\\(\\{ ptr \\}\\) %[0-9]+, ptr %[0-9]+, i32 3\\)"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
+
+# A @cppvtable class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
+# the host's compiler: its vtable, and the way its methods return records, are that compiler's ABI -
+# MSVC's (abi_msvc.ts), or the Itanium one of g++ and clang on x86-64 and AArch64 (abi_itanium.ts) -
+# not a vtable made by hand in tslang, which follows tslang's own idea of the ABI.
+if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|aarch64|arm64)$")))
+    add_library(tslang_cppvtable_abi SHARED cppvtable/abi_host.cpp)
+    if (MSVC)
+        set(cppvtable_abi msvc)
+    else()
+        set(cppvtable_abi itanium)
+    endif()
+    add_test(NAME test-jit-cppvtable-abi
+             COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=none
+                     --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                     --shared-libs=$<TARGET_FILE:tslang_cppvtable_abi>
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_${cppvtable_abi}.ts")
+    set_tests_properties(test-jit-cppvtable-abi
+                         PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Segmentation|Assertion failed")
+endif()
 
 # MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.
 add_test(NAME test-compile-cppvtable-thiscall-target

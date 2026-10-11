@@ -646,6 +646,13 @@ namespace typescript
                 newline();
             }
 
+            if (method.cppNonTrivialReturn)
+            {
+                os.indent(4);
+                os << "@" CPP_NON_TRIVIAL;
+                newline();
+            }
+
             os.indent(4);
 
             if (method.accessLevel == mlir_ts::AccessLevel::Protected)

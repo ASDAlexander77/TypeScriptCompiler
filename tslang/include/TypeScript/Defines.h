@@ -194,6 +194,16 @@
 #define LINK_NAME "linkname"
 // A class laid over an existing C++ object: its vtable is the C++ one (see ClassInfo::isCppVTable)
 #define CPP_VTABLE "cppvtable"
+// A @cppvtable method's C++ return type has a destructor or a copy constructor (see
+// mlirGenClassCppVTableHiddenReturn)
+#define CPP_NON_TRIVIAL "cppnontrivial"
+// On a call (CallIndirect, then CallInternal or Invoke): the index of the argument that is the hidden
+// pointer the callee returns a record through, which LowerToLLVM marks `sret` for the target to pass
+// it where the C++ ABI does (X8 on AArch64)
+#define SRET_ARG_ATTR_NAME "ts.sret_arg"
+// On a call: it calls a C++ method (of a @cppvtable class), whose arguments narrower than 32 bits
+// LowerToLLVM marks zeroext / signext, as a C++ caller extends them (clang relies on it)
+#define CPP_CALL_ATTR_NAME "ts.cpp_call"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

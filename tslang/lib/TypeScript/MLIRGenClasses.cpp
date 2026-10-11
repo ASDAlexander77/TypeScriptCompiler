@@ -376,13 +376,29 @@ namespace mlirgen
     // called as (this, Ref<T>, args...) -> Ref<T>, the type kept in the MethodInfo, and a call
     // (mlirGenCall) passes a local of T and reads it back. The declared type stays for
     // DeclarationPrinter, so an importer lowers it again.
+    //
+    // The Itanium ABI on x86-64 and AArch64 (clang's ItaniumCXXABI::classifyReturnType, then the
+    // SysV or AAPCS64 classification) passes the pointer before `this`, for a record with a
+    // destructor or a copy constructor - nonTrivial, the method's @cppnontrivial, as a tuple can't
+    // say so - and the call swaps the two and marks the pointer `sret` (X8 on AArch64). A trivial
+    // record of one or two 8-byte integer or pointer fields comes back in RAX:RDX / X0:X1, as tslang
+    // returns such a tuple, so the method keeps its declared type; other trivial records are packed
+    // into registers or returned in memory, which isn't done here.
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          StringRef funcName)
+                                                          StringRef funcName, bool nonTrivial)
     {
         if (!newClassPtr->isCppVTable)
         {
+            if (nonTrivial)
+            {
+                emitError(location) << "@" CPP_NON_TRIVIAL " is for a method of a @" CPP_VTABLE " class returning a struct";
+                return mlir::failure();
+            }
+
             return mlir::success();
         }
+
+        cppVTableMethods.insert(funcName);
 
         auto method = llvm::find_if(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName; });
         if (method == newClassPtr->methods.end() || method->declaredFuncType)
@@ -393,17 +409,43 @@ namespace mlirgen
         auto funcType = method->funcType;
         if (funcType.getNumResults() != 1 || !isa<mlir_ts::TupleType>(funcType.getResult(0)) || funcType.getNumInputs() < 1)
         {
+            if (nonTrivial)
+            {
+                emitError(location) << "@" CPP_NON_TRIVIAL " is for a method of a @" CPP_VTABLE " class returning a struct";
+                return mlir::failure();
+            }
+
             return mlir::success();
         }
 
-        if (!compileOptions.targetInfo.hiddenReturnPointerAfterThis)
+        auto resultType = funcType.getResult(0);
+        auto &targetInfo = compileOptions.targetInfo;
+        auto beforeThis = false;
+        method->cppNonTrivialReturn = nonTrivial;
+        if (targetInfo.hiddenReturnPointerBeforeThis)
         {
-            emitError(location) << "a method of a @" CPP_VTABLE " class returning a struct needs the MSVC ABI, which returns it "
-                                << "through a pointer after 'this'";
+            if (!nonTrivial)
+            {
+                if (isCppRecordReturnedInIntegerRegisters(mlir::cast<mlir_ts::TupleType>(resultType)))
+                {
+                    return mlir::success();
+                }
+
+                emitError(location) << "on this target a method of a @" CPP_VTABLE " class returns a struct in registers by its fields, "
+                                    << "which is supported for one or two 8-byte integer or pointer fields; one with a destructor or a "
+                                    << "copy constructor is returned through a pointer: mark the method @" CPP_NON_TRIVIAL;
+                return mlir::failure();
+            }
+
+            beforeThis = true;
+        }
+        else if (!targetInfo.hiddenReturnPointerAfterThis)
+        {
+            emitError(location) << "a method of a @" CPP_VTABLE " class returning a struct needs the MSVC ABI, or the Itanium ABI on "
+                                << "x86-64 or AArch64, which return it through a pointer next to 'this'";
             return mlir::failure();
         }
 
-        auto resultType = funcType.getResult(0);
         auto resultRefType = mlir_ts::RefType::get(resultType);
         SmallVector<mlir::Type> inputs;
         inputs.push_back(funcType.getInput(0));
@@ -413,7 +455,46 @@ namespace mlirgen
         method->declaredFuncType = funcType;
         method->funcType = getFunctionType(inputs, {resultRefType}, funcType.isVarArg());
         cppVTableHiddenReturns[funcName] = resultType;
+        if (beforeThis)
+        {
+            cppVTableHiddenReturnsBeforeThis.insert(funcName);
+        }
+
         return mlir::success();
+    }
+
+    // The SysV (AAPCS64) classification of a trivial C++ record, as far as tslang returns a tuple the
+    // same way: one or two eightbytes of class INTEGER, each a whole field (an LLVM struct of i64s
+    // and pointers comes back in RAX:RDX / X0:X1; smaller fields would be packed into one register).
+    bool MLIRGenImpl::isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType)
+    {
+        auto fields = recordType.getFields();
+        if (fields.empty() || fields.size() > 2)
+        {
+            return false;
+        }
+
+        auto isEightbyteInteger = [&](mlir::Type type) {
+            if (auto intType = dyn_cast<mlir::IntegerType>(type))
+            {
+                return intType.getWidth() == 64;
+            }
+
+            return isa<mlir_ts::OpaqueType, mlir_ts::ClassType, mlir_ts::RefType, mlir::IndexType>(type);
+        };
+
+        return llvm::all_of(fields, [&](auto &field) {
+            auto type = field.type;
+            // Opaque | null: a pointer that may be null
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+            {
+                return llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                    return isa<mlir_ts::NullType>(member) || isEightbyteInteger(member);
+                });
+            }
+
+            return isEightbyteInteger(type);
+        });
     }
 
     // A @cppvtable class only names the slots of a vtable made by C++, so everything that would add
@@ -2449,7 +2530,8 @@ genContext);
             classMethodMemberInfo.setFuncOp(funcOp);
             if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight, accessLevel))
             {
-                if (mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp.getName())))
+                if (mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp.getName(),
+                                                                   MLIRHelper::hasDecorator(funcLikeDeclaration, CPP_NON_TRIVIAL))))
                 {
                     return mlir::failure();
                 }

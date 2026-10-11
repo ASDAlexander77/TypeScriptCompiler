@@ -1752,6 +1752,14 @@ namespace mlirgen
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
 
+                // a C++ method's narrow integer arguments are extended as C++ callers extend them
+                // (LowerToLLVM)
+                SmallVector<mlir::NamedAttribute> callAttrs;
+                if (isCppVTableMethod(funcRefValue))
+                {
+                    callAttrs.push_back(builder.getNamedAttr(CPP_CALL_ATTR_NAME, builder.getUnitAttr()));
+                }
+
                 // a @cppvtable method returning a record (mlirGenClassCppVTableHiddenReturn): it
                 // writes it to a local, passed after `this`, which is the call's value
                 if (auto resultType = cppVTableHiddenReturnType(funcRefValue))
@@ -1761,8 +1769,31 @@ namespace mlirgen
                                                                          builder.getIndexAttr(0));
                     SmallVector<mlir::Value, 4> slotOperands;
                     slotOperands.push_back(resultSlot);
-                    slotOperands.append(operands.begin(), operands.end());
-                    auto callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext);
+                    ValueOrLogicalResult callResult(mlir::failure());
+                    if (cppVTableHiddenReturnBeforeThis(funcRefValue))
+                    {
+                        // the Itanium ABI: the slot is called as (Ref<T>, this, args...), the pointer
+                        // `sret`, which the target passes where the ABI does - RDI on x86-64, as the
+                        // first argument would be, but X8 on AArch64
+                        SmallVector<mlir::Type> inputs;
+                        inputs.push_back(calledFuncType.getInput(1));
+                        inputs.push_back(calledFuncType.getInput(0));
+                        inputs.append(calledFuncType.getInputs().begin() + 2, calledFuncType.getInputs().end());
+                        auto swappedFuncType = getFunctionType(inputs, calledFuncType.getResults(), calledFuncType.isVarArg());
+                        auto swappedFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, swappedFuncType, funcRefValue);
+                        slotOperands.push_back(thisValue);
+                        slotOperands.append(operands.begin(), operands.end());
+                        callAttrs.push_back(builder.getNamedAttr(SRET_ARG_ATTR_NAME, builder.getI32IntegerAttr(0)));
+                        callResult = mlirGenCallFunction(location, swappedFuncType, swappedFuncRefValue, slotOperands, genContext,
+                                                         callAttrs);
+                    }
+                    else
+                    {
+                        slotOperands.append(operands.begin(), operands.end());
+                        callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext,
+                                                         callAttrs);
+                    }
+
                     if (mlir::failed(callResult))
                     {
                         value = mlir::failure();
@@ -1773,7 +1804,7 @@ namespace mlirgen
                     return;
                 }
 
-                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext, callAttrs);
             })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =
