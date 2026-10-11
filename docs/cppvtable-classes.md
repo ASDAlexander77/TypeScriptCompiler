@@ -113,6 +113,9 @@ A generic or static class can't be `@cppvtable` either.
   caller gives back with `Release()`. A method stored in a variable and called later takes the
   hidden pointer as an argument; call it directly. tslang pre-alpha94 and earlier need the hidden
   pointer declared as a parameter: `createBuffer(ret: Ref<Opaque | null>, desc: Ref<BufferDesc>): Opaque`.
+- **Narrow parameters.** A `bool` is a `boolean`, an `uint8_t` (or an `enum class : uint8_t`) a
+  `u8`, an `int16_t` an `s16`: a call of a `@cppvtable` method extends an argument narrower than
+  32 bits as a C++ caller does (`zeroext`, `signext` for a signed type), which clang's code relies on.
 - **Structs by reference** (`const BufferDesc&`) are a `Ref<T>` to a named tuple with the C++
   layout. That layout depends on the C++ build: `std::string`, for example, is 32 bytes with the
   release CRT and 40 with the debug CRT.

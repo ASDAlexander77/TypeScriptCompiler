@@ -2130,33 +2130,63 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
     }
 };
 
-// A call's argument that is the hidden pointer the callee returns a C++ record through
-// (SRET_ARG_ATTR_NAME, a @cppvtable method under the Itanium ABI) is `sret`, so the target passes
-// it where the ABI does: RDI on x86-64, as the first argument anyway, but X8 on AArch64.
-// `argPointerOperand` is the ts operand of that argument, a Ref to the record.
+// The argument attributes of a call of a C++ method (a @cppvtable class's), from the ts call's
+// `args` (its operands after the callee):
+// - CPP_CALL_ATTR_NAME: an integer argument narrower than 32 bits, a boolean too, is `zeroext`
+//   (`signext` if signed), as a C++ caller extends it: clang's code relies on it, and tslang's
+//   otherwise leaves the register's upper bits undefined;
+// - SRET_ARG_ATTR_NAME: the hidden pointer the method returns a record through (the Itanium ABI)
+//   is `sret`, so the target passes it where the ABI does: RDI on x86-64, as the first argument
+//   anyway, but X8 on AArch64.
 template <typename LLVMCallOp>
-static void setSRetArgAttrs(Operation *tsOp, LLVMCallOp llvmOp, mlir::Value argPointerOperand, unsigned argCount,
-                            TypeConverterHelper &tch)
+static void setCallABIArgAttrs(Operation *tsOp, LLVMCallOp llvmOp, mlir::ValueRange args, TypeConverterHelper &tch)
 {
     auto sretArg = tsOp->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME);
-    if (!sretArg)
-    {
-        return;
-    }
-
-    auto refType = dyn_cast<mlir_ts::RefType>(argPointerOperand.getType());
-    auto index = sretArg.getInt();
-    if (!refType || index < 0 || index >= argCount)
+    auto cppCall = tsOp->hasAttr(CPP_CALL_ATTR_NAME);
+    if (!sretArg && !cppCall)
     {
         return;
     }
 
     auto *context = tsOp->getContext();
-    SmallVector<mlir::Attribute> argAttrs(argCount, mlir::DictionaryAttr::get(context));
-    argAttrs[index] = mlir::DictionaryAttr::get(
-        context, {mlir::NamedAttribute(mlir::StringAttr::get(context, LLVM::LLVMDialect::getStructRetAttrName()),
-                                       mlir::TypeAttr::get(tch.convertType(refType.getElementType())))});
-    llvmOp.setArgAttrsAttr(mlir::ArrayAttr::get(context, argAttrs));
+    auto name = [&](StringRef attrName) { return mlir::StringAttr::get(context, attrName); };
+    SmallVector<mlir::Attribute> argAttrs;
+    auto any = false;
+    for (auto [index, arg] : llvm::enumerate(args))
+    {
+        SmallVector<mlir::NamedAttribute> attrs;
+        auto type = arg.getType();
+        if (sretArg && sretArg.getInt() == static_cast<int64_t>(index))
+        {
+            if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+            {
+                attrs.push_back(mlir::NamedAttribute(name(LLVM::LLVMDialect::getStructRetAttrName()),
+                                                     mlir::TypeAttr::get(tch.convertType(refType.getElementType()))));
+            }
+        }
+
+        if (cppCall)
+        {
+            if (isa<mlir_ts::BooleanType>(type))
+            {
+                attrs.push_back(mlir::NamedAttribute(name(LLVM::LLVMDialect::getZExtAttrName()), mlir::UnitAttr::get(context)));
+            }
+            else if (auto intType = dyn_cast<mlir::IntegerType>(type); intType && intType.getWidth() < 32)
+            {
+                attrs.push_back(mlir::NamedAttribute(
+                    name(intType.isSigned() ? LLVM::LLVMDialect::getSExtAttrName() : LLVM::LLVMDialect::getZExtAttrName()),
+                    mlir::UnitAttr::get(context)));
+            }
+        }
+
+        any |= !attrs.empty();
+        argAttrs.push_back(mlir::DictionaryAttr::get(context, attrs));
+    }
+
+    if (any)
+    {
+        llvmOp.setArgAttrsAttr(mlir::ArrayAttr::get(context, argAttrs));
+    }
 }
 
 struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
@@ -2198,15 +2228,8 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         // generic (TypeRange, ValueRange) builder above does not set it.
         callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(transformed.getOperands().size()), 0});
         callRes.setOpBundleSizes({});
-        if (auto sretArg = op->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME))
-        {
-            // the arguments follow the callee pointer, operand #0
-            auto argIndex = sretArg.getInt() + 1;
-            if (argIndex < op.getNumOperands())
-            {
-                setSRetArgAttrs(op, callRes, op.getOperand(argIndex), op.getNumOperands() - 1, tch);
-            }
-        }
+        // the arguments follow the callee pointer, operand #0
+        setCallABIArgAttrs(op, callRes, op.getOperands().drop_front(), tch);
 
         auto returns = callRes.getResults();
         if (returns.size() > 0)
@@ -2367,16 +2390,8 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
             auto invokeOp = rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, mlir::FlatSymbolRefAttr(), transformed.getOperands(),
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
-            if (auto sretArg = op->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME))
-            {
-                // an indirect call: the arguments follow the callee pointer, call operand #0
-                auto callOperands = op.getCallOperands();
-                auto argIndex = sretArg.getInt() + 1;
-                if (argIndex < callOperands.size())
-                {
-                    setSRetArgAttrs(op, invokeOp, callOperands[argIndex], callOperands.size() - 1, tch);
-                }
-            }
+            // an indirect call: the arguments follow the callee pointer, call operand #0
+            setCallABIArgAttrs(op, invokeOp, op.getCallOperands().drop_front(), tch);
         }
 
         return success();

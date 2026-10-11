@@ -5363,6 +5363,17 @@ class MLIRGenImpl
         return false;
     }
 
+    // Whether a call of funcRef calls a C++ method: a method of a @cppvtable class
+    bool isCppVTableMethod(mlir::Value funcRef)
+    {
+        if (auto virtualSymbolRef = funcRef.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            return cppVTableMethods.contains(virtualSymbolRef.getIdentifier());
+        }
+
+        return false;
+    }
+
     // A @cppvtable class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
     // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
     // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
@@ -8317,15 +8328,17 @@ class MLIRGenImpl
 
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
-                                             SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+                                             SmallVector<mlir::Value, 4> &operands, const GenContext &genContext,
+                                             ArrayRef<mlir::NamedAttribute> callAttrs = {})
     {
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext, callAttrs);
     }
 
+    // `callAttrs` go on the call (CallIndirectOp): CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                             const GenContext &genContext)
+                                             const GenContext &genContext, ArrayRef<mlir::NamedAttribute> callAttrs = {})
     {
         // `thisValue` is the one operand a call gets that the user did not write: the object of
         // a method or constructor call (a bound function), the capture of a closure (also a
@@ -8400,6 +8413,10 @@ class MLIRGenImpl
             auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
                 MLIRHelper::getCallSiteLocation(funcRefValue, location),
                 funcRefValue, operands);
+            for (auto callAttr : callAttrs)
+            {
+                callIndirectOp->setAttr(callAttr.getName(), callAttr.getValue());
+            }
 
             if (calledFuncType.getResults().size() > 0)
             {
@@ -14106,6 +14123,8 @@ class MLIRGenImpl
     llvm::StringMap<mlir::Type> cppVTableHiddenReturns;
     // those of them whose hidden pointer goes before `this` (the Itanium ABI)
     llvm::StringSet<> cppVTableHiddenReturnsBeforeThis;
+    // the methods of @cppvtable classes (by function name), C++ methods
+    llvm::StringSet<> cppVTableMethods;
 
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 

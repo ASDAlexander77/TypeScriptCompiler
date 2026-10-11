@@ -42,6 +42,8 @@ struct Methods
     virtual Obj obj(int x) { return Obj{&storage[x + 1]}; }
     virtual Two two(int x) { return Two{0x1234567890ull + x, &storage[x + 2]}; }
     virtual int plain(int a, int b) { return a * b + value; }
+    // narrow arguments: clang's code takes them as extended to 32 bits by the caller
+    virtual int narrow(bool b, uint8_t u, int8_t s) { return (b ? 1000 : 0) + u * 10 + s; }
     int value = 7;
 };
 

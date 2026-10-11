@@ -398,6 +398,8 @@ namespace mlirgen
             return mlir::success();
         }
 
+        cppVTableMethods.insert(funcName);
+
         auto method = llvm::find_if(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName; });
         if (method == newClassPtr->methods.end() || method->declaredFuncType)
         {

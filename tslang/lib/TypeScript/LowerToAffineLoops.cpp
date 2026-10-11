@@ -2220,12 +2220,12 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
                                 : op.getOperands()) llvm::dbgs()
                                << "!! ...call -> invoke operands: " << opit << "\n";);
 
-                auto sretArg = op->getAttr(SRET_ARG_ATTR_NAME);
+                auto callAttrs = getCallABIAttrs(op);
                 auto res = rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(
                     op, op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{}, unwind, ValueRange{});
-                if (sretArg)
+                for (auto callAttr : callAttrs)
                 {
-                    res->setAttr(SRET_ARG_ATTR_NAME, sretArg);
+                    res->setAttr(callAttr.getName(), callAttr.getValue());
                 }
 
                 return success();
@@ -2236,14 +2236,30 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
         }
 
         // just replace
-        auto sretArg = op->getAttr(SRET_ARG_ATTR_NAME);
+        auto callAttrs = getCallABIAttrs(op);
         auto callInternalOp = rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getOperands());
-        if (sretArg)
+        for (auto callAttr : callAttrs)
         {
-            callInternalOp->setAttr(SRET_ARG_ATTR_NAME, sretArg);
+            callInternalOp->setAttr(callAttr.getName(), callAttr.getValue());
         }
 
         return success();
+    }
+
+    // what LowerToLLVM makes the call's argument attributes from (CPP_CALL_ATTR_NAME,
+    // SRET_ARG_ATTR_NAME): the call they are on is replaced, and they go on its replacement
+    static SmallVector<NamedAttribute> getCallABIAttrs(mlir_ts::CallIndirectOp op)
+    {
+        SmallVector<NamedAttribute> callAttrs;
+        for (auto name : {CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME})
+        {
+            if (auto attr = op->getAttr(name))
+            {
+                callAttrs.push_back(NamedAttribute(StringAttr::get(op->getContext(), name), attr));
+            }
+        }
+
+        return callAttrs;
     }
 };
 

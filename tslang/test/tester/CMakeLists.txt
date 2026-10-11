@@ -2783,6 +2783,17 @@ set_tests_properties(test-compile-cppvtable-nontrivial-no-struct
                      PROPERTIES PASS_REGULAR_EXPRESSION "nontrivial_no_struct\\.ts:[0-9]+:[0-9]+: error: @cppnontrivial is for a method of a @cppvtable class returning a struct"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# The Itanium calls' argument attributes, on any host: the hidden result pointer `sret` (X8 on
+# AArch64), narrow integers extended as a C++ caller extends them (clang's code relies on it)
+foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-android29)
+    add_test(NAME test-compile-cppvtable-itanium-call-${cppvtable_itanium_triple}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=${cppvtable_itanium_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
+    set_tests_properties(test-compile-cppvtable-itanium-call-${cppvtable_itanium_triple}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "i1 zeroext %[0-9]+, i8 zeroext %[0-9]+, i8 signext %[0-9]+\\).*\\(ptr sret\\(\\{ ptr \\}\\) %[0-9]+, ptr %[0-9]+, i32 3\\)"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
+
 # A @cppvtable class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
 # the host's compiler: its vtable, and the way its methods return records, are that compiler's ABI -
 # MSVC's (abi_msvc.ts), or the Itanium one of g++ and clang on x86-64 and AArch64 (abi_itanium.ts) -
