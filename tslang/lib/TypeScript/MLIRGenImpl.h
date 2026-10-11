@@ -14055,6 +14055,11 @@ class MLIRGenImpl
     // read of it loads the field again and casts it, so no value outlives the region it is in
     llvm::ScopedHashTable<SafeTypeKeyType, mlir::Type> safeTypesMap;
 
+    // the built-in types by name (getEmbeddedType), made on first use; not static: they belong to
+    // this module's MLIRContext, and one run can compile several modules, each in a context of its
+    // own (the JIT cache) - a type kept from an earlier one points into freed memory
+    llvm::StringMap<mlir::Type> embeddedTypeMap;
+
     // helper to get line number
     Parser parser;
     ts::SourceFile sourceFile;

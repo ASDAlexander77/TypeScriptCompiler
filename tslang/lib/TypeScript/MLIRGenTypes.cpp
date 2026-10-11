@@ -1025,7 +1025,7 @@ namespace mlirgen
 
     mlir::Type MLIRGenImpl::getEmbeddedTypeBuiltins(mlir::StringRef name)
     {
-        static llvm::StringMap<mlir::Type> embeddedTypes {
+        if (embeddedTypeMap.empty()) embeddedTypeMap = {
             {"TemplateStringsArray", getArrayType(getStringType()) },
             {"const",getConstType() },
 #ifdef ENABLE_JS_BUILTIN_TYPES
@@ -1082,13 +1082,12 @@ namespace mlirgen
             {"Opaque", getOpaqueType()},
         };
 
-        auto type = embeddedTypes[name];
-        return type;
+        return embeddedTypeMap.lookup(name);
     }
 
     mlir::Type MLIRGenImpl::getEmbeddedTypeNoBuiltins(mlir::StringRef name)
     {
-        static llvm::StringMap<mlir::Type> embeddedTypes {
+        if (embeddedTypeMap.empty()) embeddedTypeMap = {
             {"TemplateStringsArray", getArrayType(getStringType()) },
             {"const",getConstType() },
 #ifdef ENABLE_JS_BUILTIN_TYPES
@@ -1146,8 +1145,7 @@ namespace mlirgen
             {"Opaque", getOpaqueType()},
         };
 
-        auto type = embeddedTypes[name];
-        return type;
+        return embeddedTypeMap.lookup(name);
     }    
 
     mlir::Type MLIRGenImpl::getEmbeddedTypeWithParam(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,

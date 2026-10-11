@@ -3252,6 +3252,15 @@ add_test(NAME test-jit-cache-reuse-and-invalidate
                  "-DSOURCE_DIR=${jit_cache_dir}"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jit-cache-reuse"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/jit-cache.cmake")
+# Two modules compiled in one run, both naming built-in types (i32, f32): the second one used to
+# get the types made in the first one's MLIRContext, destroyed by then, and crash the compiler.
+add_test(NAME test-jit-cache-embedded-types
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${jit_cache_dir}/embedded_types.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jit-cache-embedded-types"
+                 "-DEXPECTED=done."
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/jit-cache-empty.cmake")
 
 # `import { a as b }` and `import * as M` - each used to be "can't resolve name".
 set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
