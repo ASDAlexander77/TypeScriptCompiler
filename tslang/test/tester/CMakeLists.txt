@@ -271,6 +271,7 @@ tslang_add_test(NAME test-compile-01-enums COMMAND test-runner "${PROJECT_SOURCE
 tslang_add_test(NAME test-compile-00-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00numbers.ts")
 tslang_add_test(NAME test-compile-00-equals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00equals.ts")
 tslang_add_test(NAME test-compile-00-bool-arith-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
+tslang_add_test(NAME test-compile-00-bool-const-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-compile-00-mixed-type-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
 tslang_add_test(NAME test-compile-00-generator-manual-next COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next.ts")
 tslang_add_test(NAME test-compile-00-generator-manual-next-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next2.ts")
@@ -415,6 +416,7 @@ tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
+tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
 tslang_add_test(NAME test-compile-00-length-with-negative-merge COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length_with_negative_merge.ts")
 tslang_add_test(NAME test-compile-00-length-signed-arithmetic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length_signed_arithmetic.ts")
 tslang_add_test(NAME test-compile-00-optional-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_fields.ts")
@@ -475,6 +477,7 @@ tslang_add_test(NAME test-compile-00-string-length-resize COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-array-length-grow-zeroed COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
 tslang_add_test(NAME test-compile-00-switch-char-string-cases COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
+tslang_add_test(NAME test-compile-00-switch-default-fallthrough COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_default_fallthrough.ts")
 tslang_add_test(NAME test-compile-00-generic-class-constructor-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-compile-00-generator-done-value-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
 tslang_add_test(NAME test-compile-00-any-equality-undefined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
@@ -645,6 +648,7 @@ tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runn
 tslang_add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-compile-01-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
 tslang_add_test(NAME test-compile-00-types-template-literal-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_templateliteraltype.ts")
+tslang_add_test(NAME test-compile-00-template-literal-escapes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00template_literal_escapes.ts")
 tslang_add_test(NAME test-compile-01-types-template-literal-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_templateliteraltype.ts")
 tslang_add_test(NAME test-compile-00-types-utility COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_utility.ts")
 tslang_add_test(NAME test-compile-01-types-utility COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_utility.ts")
@@ -792,6 +796,7 @@ tslang_add_test(NAME test-jit-01-enums COMMAND test-runner -jit "${PROJECT_SOURC
 tslang_add_test(NAME test-jit-00-numbers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00numbers.ts")
 tslang_add_test(NAME test-jit-00-equals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00equals.ts")
 tslang_add_test(NAME test-jit-00-bool-arith-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
+tslang_add_test(NAME test-jit-00-bool-const-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-jit-00-mixed-type-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
 tslang_add_test(NAME test-jit-00-generator-manual-next COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next.ts")
 tslang_add_test(NAME test-jit-00-generator-manual-next-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next2.ts")
@@ -936,6 +941,7 @@ tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
+tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
 tslang_add_test(NAME test-jit-00-length-with-negative-merge COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00length_with_negative_merge.ts")
 tslang_add_test(NAME test-jit-00-length-signed-arithmetic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00length_signed_arithmetic.ts")
 tslang_add_test(NAME test-jit-00-optional-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_fields.ts")
@@ -993,6 +999,7 @@ tslang_add_test(NAME test-jit-00-string-length-resize COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-array-length-grow-zeroed COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_grow_zeroed.ts")
 tslang_add_test(NAME test-jit-00-rest-args-pack-owned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00rest_args_pack_owned.ts")
 tslang_add_test(NAME test-jit-00-switch-char-string-cases COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
+tslang_add_test(NAME test-jit-00-switch-default-fallthrough COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_default_fallthrough.ts")
 tslang_add_test(NAME test-jit-00-generic-class-constructor-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-jit-00-generator-done-value-zero COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
 tslang_add_test(NAME test-jit-00-any-equality-undefined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
@@ -1169,6 +1176,7 @@ tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-jit-01-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
 tslang_add_test(NAME test-jit-00-types-template-literal-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_templateliteraltype.ts")
+tslang_add_test(NAME test-jit-00-template-literal-escapes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00template_literal_escapes.ts")
 tslang_add_test(NAME test-jit-01-types-template-literal-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_templateliteraltype.ts")
 tslang_add_test(NAME test-jit-00-types-utility COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_utility.ts")
 tslang_add_test(NAME test-jit-01-types-utility COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_utility.ts")
@@ -1747,6 +1755,7 @@ set(TSLANG_CORPUS
     00async_gc_threading.ts
     00async_result_types.ts
     00bool_arith_ops.ts
+    00bool_const_array.ts
     00break_continue_scope_exit.ts
     00break_continue.ts
     00capture_in_new_arguments.ts
@@ -1988,6 +1997,7 @@ set(TSLANG_CORPUS
     00string_length_resize.ts
     00strings.ts
     00switch.ts
+    00switch_default_fallthrough.ts
     00switch_char_string_cases.ts
     00symbol.ts
     00throw_in_catch.ts
@@ -2026,6 +2036,7 @@ set(TSLANG_CORPUS
     00types_keyof_enum.ts
     00types_mappedtype.ts
     00types_templateliteraltype.ts
+    00template_literal_escapes.ts
     00types_unknown1.ts
     00types_utility.ts
     00types.ts
@@ -2168,6 +2179,7 @@ set(TSLANG_CORPUS
     typeGuardOfFormThisMember.ts
     typeGuardOfFormTypeOfBoolean.ts
     types_vs_interfaces.ts
+    00any_number_compare.ts
     00opaque_nullable_compare.ts
     )
 

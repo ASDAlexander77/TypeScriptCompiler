@@ -575,8 +575,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             DenseElementsAttr denseAttr;
             if (isDense)
             {
-                auto vectorType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-                dataType = vectorType;
+                // A vector of elements narrower than a byte (a boolean's i1) is packed into bits, but
+                // array elements are read one byte apart: `[false, true]` read back as garbage. Such
+                // data is an array, laid out a byte per element, like the elements it is copied to.
+                auto shapeSize = static_cast<int64_t>(value.size());
+                auto packedIntoBits = llvmElementType.isInteger() && llvmElementType.getIntOrFloatBitWidth() % 8 != 0;
+                mlir::ShapedType shapedType = packedIntoBits
+                    ? (mlir::ShapedType)mlir::RankedTensorType::get({shapeSize}, llvmElementType)
+                    : (mlir::ShapedType)mlir::VectorType::get({shapeSize}, llvmElementType);
+                dataType = packedIntoBits ? arrayType : (mlir::Type)shapedType;
 
                 if (llvmElementType.isIntOrIndex())
                 {
@@ -585,7 +592,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::IntegerAttr>(value_).getValue());
                     });
 
-                    denseAttr = DenseElementsAttr::get(vectorType, values);
+                    denseAttr = DenseElementsAttr::get(shapedType, values);
                 }
                 else
                 {
@@ -594,7 +601,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                         values.push_back(cast<mlir::FloatAttr>(value_).getValue());
                     });
 
-                    denseAttr = DenseElementsAttr::get(vectorType, values);
+                    denseAttr = DenseElementsAttr::get(shapedType, values);
                 }
             }
 
