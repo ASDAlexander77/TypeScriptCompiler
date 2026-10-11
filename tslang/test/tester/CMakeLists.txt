@@ -647,6 +647,7 @@ tslang_add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runn
 tslang_add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-compile-01-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
 tslang_add_test(NAME test-compile-00-types-template-literal-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_templateliteraltype.ts")
+tslang_add_test(NAME test-compile-00-template-literal-escapes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00template_literal_escapes.ts")
 tslang_add_test(NAME test-compile-01-types-template-literal-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_templateliteraltype.ts")
 tslang_add_test(NAME test-compile-00-types-utility COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_utility.ts")
 tslang_add_test(NAME test-compile-01-types-utility COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_utility.ts")
@@ -1173,6 +1174,7 @@ tslang_add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
 tslang_add_test(NAME test-jit-01-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_mappedtype.ts")
 tslang_add_test(NAME test-jit-00-types-template-literal-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_templateliteraltype.ts")
+tslang_add_test(NAME test-jit-00-template-literal-escapes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00template_literal_escapes.ts")
 tslang_add_test(NAME test-jit-01-types-template-literal-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_templateliteraltype.ts")
 tslang_add_test(NAME test-jit-00-types-utility COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_utility.ts")
 tslang_add_test(NAME test-jit-01-types-utility COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01types_utility.ts")
@@ -2032,6 +2034,7 @@ set(TSLANG_CORPUS
     00types_keyof_enum.ts
     00types_mappedtype.ts
     00types_templateliteraltype.ts
+    00template_literal_escapes.ts
     00types_unknown1.ts
     00types_utility.ts
     00types.ts
