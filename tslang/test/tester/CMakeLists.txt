@@ -415,6 +415,7 @@ tslang_add_test(NAME test-compile-00-optional-number-compare COMMAND test-runner
 tslang_add_test(NAME test-compile-00-optional-loose-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_loose_null.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
+tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -941,6 +942,7 @@ tslang_add_test(NAME test-jit-00-optional-number-compare COMMAND test-runner -ji
 tslang_add_test(NAME test-jit-00-optional-loose-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_loose_null.ts")
 tslang_add_test(NAME test-jit-00-union-nullable-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
+tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2184,6 +2186,7 @@ set(TSLANG_CORPUS
     typeGuardOfFormTypeOfBoolean.ts
     types_vs_interfaces.ts
     00any_number_compare.ts
+    00opaque_nullable_compare.ts
     )
 
 # the default model runs these ahead of time only, so the other models do too
