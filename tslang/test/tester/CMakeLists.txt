@@ -415,6 +415,7 @@ tslang_add_test(NAME test-compile-00-optional-number-compare COMMAND test-runner
 tslang_add_test(NAME test-compile-00-optional-loose-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_loose_null.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
+tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -941,6 +942,7 @@ tslang_add_test(NAME test-jit-00-optional-number-compare COMMAND test-runner -ji
 tslang_add_test(NAME test-jit-00-optional-loose-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional_loose_null.ts")
 tslang_add_test(NAME test-jit-00-union-nullable-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
+tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2184,6 +2186,7 @@ set(TSLANG_CORPUS
     typeGuardOfFormTypeOfBoolean.ts
     types_vs_interfaces.ts
     00any_number_compare.ts
+    00opaque_nullable_compare.ts
     )
 
 # the default model runs these ahead of time only, so the other models do too
@@ -2651,6 +2654,25 @@ add_test(NAME test-compile-integer-literal-truncation-quiet
                  -o "${CMAKE_CURRENT_BINARY_DIR}/integer-literal-truncation-quiet.obj")
 set_tests_properties(test-compile-integer-literal-truncation-quiet
                      PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
+
+# A number, string, boolean or array passed where an interface with members is expected is an
+# error; it compiled to a cast lowering could not make, and the callee read garbage. An interface
+# without members still takes any value.
+foreach(interface_cast_name number string boolean array)
+    add_test(NAME test-compile-interface-cast-${interface_cast_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/interface-cast/${interface_cast_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-${interface_cast_name}.obj")
+    set_tests_properties(test-compile-interface-cast-${interface_cast_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "can't be cast to interface 'IKind': it has none of the interface's members"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+add_test(NAME test-compile-interface-cast-empty
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/interface-cast/empty.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-empty.obj")
+set_tests_properties(test-compile-interface-cast-empty
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
 # An error inside a cast function the compiler generates (here: null in a union cast to string) is
 # reported where the cast is - line 6 - and not at the generated text's offset taken as a position

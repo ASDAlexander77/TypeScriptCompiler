@@ -1054,6 +1054,24 @@ namespace mlirgen
             {
                 return castObjectToInterface(location, value, objectType, interfaceType, genContext);
             }
+
+            // A number, string, boolean or array has no fields an interface's members could be read
+            // from: passed for an `{ kind: number }` it compiled, without a word, to a cast that
+            // lowering could not make, and the callee read garbage. An interface without members
+            // takes any value, as in TypeScript.
+            auto baseValueType = mth.stripLiteralType(valueType);
+            if (baseValueType.isIntOrIndexOrFloat()
+                || isa<mlir_ts::NumberType, mlir_ts::StringType, mlir_ts::BooleanType, mlir_ts::CharType,
+                       mlir_ts::BigIntType, mlir_ts::ArrayType, mlir_ts::ConstArrayType>(baseValueType))
+            {
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                if (interfaceInfo && interfaceInfo->getVTableSize() > 0)
+                {
+                    emitError(location) << "type '" << to_print(baseValueType) << "' can't be cast to interface '"
+                                        << to_print(interfaceType) << "': it has none of the interface's members";
+                    return mlir::failure();
+                }
+            }
         }
 
         return std::nullopt;

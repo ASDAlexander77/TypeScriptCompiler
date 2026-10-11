@@ -12,17 +12,22 @@ of 2026-10-06, on Windows 11, 2026-10-11. Run each repro with:
 tslang --emit=jit --jit-cache=false docs/bugs/ntg_<name>.ts
 ```
 
-Every repro below still fails on that build: a failed assertion (exit code 3), a compile error,
-or a compiler crash.
+Every repro below failed on that build: a failed assertion (exit code 3), a compile error, or a
+compiler crash.
 
-| # | Issue | Kind | Repro |
-|---|---|---|---|
-| 1 | Comparing `Opaque` with `Opaque \| null` crashes the compiler | Compiler crash, no message | `ntg_opaque_nullable_compare.ts` |
-| 2 | Boolean array elements read back wrong | Wrong value, silent | `ntg_boolean_array_elements.ts` |
-| 3 | `let s = 0` is an integer, so `s += 1.5` truncates | Wrong value, silent | `ntg_let_zero_is_integer.ts` |
-| 4 | Escapes not processed in templates with substitutions | Wrong value, silent | `ntg_template_literal_escape.ts` |
-| 5 | `Math.max` of negative numbers returns 2.2e-308 | Wrong value, silent (default lib) | `ntg_math_max_negative.ts` |
-| 6 | `boolean && (Class \| null)` as a condition fails to compile | Compile error | `ntg_and_nullable_class.ts` |
+**Status (2026-10-11):** each issue has a fix with a regression test in the compiler's suite
+(`tslang/test/tester`); the "Fix" column links it. Issue 3 is deliberate (integer literals are
+`s32`), so its fix is a warning rather than a change of type, and `ntg_let_zero_is_integer.ts`
+keeps failing by design. The repros stay here as the record of what was reported.
+
+| # | Issue | Kind | Repro | Fix |
+|---|---|---|---|---|
+| 1 | Comparing `Opaque` with `Opaque \| null` crashes the compiler | Compiler crash, no message | `ntg_opaque_nullable_compare.ts` | [#536](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/536) |
+| 2 | Boolean array elements read back wrong | Wrong value, silent | `ntg_boolean_array_elements.ts` | [#537](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/537) |
+| 3 | `let s = 0` is an integer, so `s += 1.5` truncates | Wrong value, silent | `ntg_let_zero_is_integer.ts` | warning: [#544](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/544) |
+| 4 | Escapes not processed in templates with substitutions | Wrong value, silent | `ntg_template_literal_escape.ts` | [#539](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/539) |
+| 5 | `Math.max` of negative numbers returns 2.2e-308 | Wrong value, silent (default lib) | `ntg_math_max_negative.ts` | [DefaultLib#31](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/pull/31), and [#535](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/535) for why its test passed |
+| 6 | `boolean && (Class \| null)` as a condition fails to compile | Compile error | `ntg_and_nullable_class.ts` | [#540](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/540), and [#541](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/541) for its misplaced first error |
 
 The silent ones (2 to 5) cost the most time: the programs compile and run, and only the output
 is wrong.
@@ -47,8 +52,11 @@ no line number. Under Ninja the build step just shows `FAILED`.
 **Impact and workaround:** this happened in a renderer that tracked the currently bound pipeline
 to skip redundant binds. Finding it took a bisection, stubbing method bodies one at a time. The
 workaround is to track such state with an integer (e.g. a pipeline index, -1 for none). From
-bash the exit code shows as 127 (a missing DLL in that environment); run tslang from cmd or
-PowerShell to see `0xC00000FD`.
+bash the exit code shows as 127; run tslang from cmd or PowerShell to see `0xC00000FD`. (127 is
+how Git Bash reports that crash, not a missing DLL.)
+
+**Fixed by #536:** the lowering of `!=` for a nullable left operand and a tag-less union on the
+right called itself again with the same operand types, until the compiler's stack ran out.
 
 ## 2. Boolean array elements read back wrong
 
@@ -74,6 +82,10 @@ top level and inside namespaces.
 bounding boxes weren't rotated. The workaround is number arrays compared with `!= 0`. It looks
 like an element-type or width mismatch (i1 vs i8?) in boolean array loads.
 
+**Fixed by #537:** the guess was right. The literal's constant data was an LLVM vector
+`<4 x i1>`, which packs the elements into bits, while elements are read one byte apart. Such data
+is now an array, one byte per element.
+
 ## 3. `let s = 0` is an integer, so adding a fraction truncates
 
 ```ts
@@ -98,6 +110,10 @@ fractional value is assigned to an integer-inferred variable would catch it.
 
 **Workaround:** write `0.0`, or annotate `: number`.
 
+**Status:** by design: integer literals are `s32`, and that stays. #544 adds the suggested
+warning: storing a `number` into a variable whose type was inferred from an integer literal says
+that any fraction is dropped, and suggests declaring it `number`.
+
 ## 4. Escapes not processed in template literals with substitutions
 
 ```ts
@@ -114,6 +130,9 @@ template without substitutions (`` `a\nb` ``) and a string literal (`"a\nb"`) ar
 **Impact and workaround:** two-line ImGui labels (`` `Timestamps Period:\n ${period} ns` ``)
 showed a literal `\n` on screen. Split such texts into separate strings, or concatenate a
 `"\n"` string literal.
+
+**Fixed by #539:** the text around a substitution was taken as written instead of with its
+escapes processed. Tagged templates and template literal types had the same mistake.
 
 ## 5. `Math.max` of negative numbers returns 2.2e-308
 
@@ -133,6 +152,11 @@ beside it notes.
 arguments is `-Infinity`).
 
 **Impact and workaround:** a camera's pitch clamp broke. Clamp with explicit comparisons.
+
+**Fixed by DefaultLib#31:** `Math.max` starts from `-Infinity` and `Math.min` from `+Infinity`,
+and a NaN argument gives NaN. `tests/math.ts` didn't catch it because its `isEq(x: any, y: any)`
+uses `!==`, which answered false for a `number` and an integer boxed in `any`s. #535 fixes that,
+and with it the test reports this bug. `Number.MIN_VALUE` is unchanged.
 
 ## 6. `boolean && (Class | null)` as a condition fails to compile
 
@@ -156,6 +180,12 @@ error: failed statement
 **Expected:** compiles, and `handle` is narrowed to `Handle` inside the block.
 
 **Workaround:** nest the conditions: `if (enabled) { if (handle) { ... } }`.
+
+**Fixed by #540:** not specific to `&&`. Any truth test of a union of null and two or more other
+types failed, and `enabled && handle` is a `boolean | Handle | null`. The generated union cast
+returned null for the null member, which can't be a boolean. The repro's first error, reported
+at line 1 inside the comment, was a separate bug: errors in that generated code took its offsets
+as positions in the user's file (#541).
 
 ---
 
@@ -188,3 +218,15 @@ These aren't necessarily bugs, but each cost time because the behavior was silen
 - **`number` parameters of declared C functions are doubles.** A C++ function declared with a
   `float` parameter reads garbage, with no error (rotations came out as identity). The C side must
   take `double`.
+
+## The other repros in this folder
+
+Reviewed alongside the issues above, on the same build:
+
+| File | Status |
+|---|---|
+| `testFallThrough.ts` | A `default` clause without `break` jumped out of the switch instead of falling through. Fixed by [#538](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/538). |
+| `generic_in_generic.ts` | Nested untyped arrows with a same-named parameter, capturing a variable, failed to instantiate: their implicit type parameters had the same name. Fixed by [#542](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/542). |
+| `array_of_ifaces_cast.ts` | The error it expects (an array passed for an interface) was never reported; such a cast compiled to garbage. Now an error, by [#543](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/543). The file still stops earlier, at errors TypeScript reports too (`return null` under strict null checks, `IToken[]` to `IStateToken[]`). |
+| `bug14.ts` | Circular `typeof` / `ReturnType` aliases. TypeScript reports these as circular too; tslang reports errors and doesn't crash. Not a bug. |
+| `bug21.ts` | `g: new (x: this) => x` isn't valid TypeScript (`x` isn't a type). Not a bug. |
