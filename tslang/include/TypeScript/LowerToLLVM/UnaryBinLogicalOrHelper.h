@@ -229,7 +229,10 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
                 return cmpOp;
             }
 
-            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, baseType, right, rightType, builder, typeConverter, compileOptions);
+            // the union is the right operand, so it is the right type that becomes its base type:
+            // passing the base type as the left type and the union again as the right one came
+            // straight back here, until the compiler's stack ran out (`opaque != (opaque | null)`)
+            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, leftType, right, baseType, builder, typeConverter, compileOptions);
         }
 
         // excluded string
