@@ -16,6 +16,11 @@ class Methods {
     plain(x: s32, y: s32): s32;                 // slot 2: a number, returned as before
 }
 
+@cppvtable
+class DerivedMethods extends Methods {
+    otherPair(x: s32): Pair;                    // slot 3
+}
+
 type ObjectData = [vtable: Opaque, value: s32];
 
 function slotPair(self: Opaque, result: Ref<Pair>, x: s32): Ref<Pair> {
@@ -34,8 +39,14 @@ function slotPlain(self: Opaque, x: s32, y: s32): s32 {
     return x * y;
 }
 
+function slotOtherPair(self: Opaque, result: Ref<Pair>, x: s32): Ref<Pair> {
+    let value: Pair = [x, -x];
+    memcpy(<Opaque>result, <Opaque>Ref(value), sizeof<Pair>());
+    return result;
+}
+
 function main() {
-    let vtable: Opaque[] = [<Opaque>slotPair, <Opaque>slotTriple, <Opaque>slotPlain];
+    let vtable: Opaque[] = [<Opaque>slotPair, <Opaque>slotTriple, <Opaque>slotPlain, <Opaque>slotOtherPair];
     let data: ObjectData = [<Opaque>Ref(vtable[0]), 100];
     const methods = <Methods><Opaque>Ref(data);
 
@@ -47,6 +58,14 @@ function main() {
 
     assert(methods.plain(6, 7) == 42, "a number is still returned in a register, after them");
     assert(methods.pair(1).second == 2, "a record read from the call's value");
+
+    // a base class's method called through a derived class
+    const derived = <DerivedMethods><Opaque>Ref(data);
+    const inherited = derived.pair(3);
+    assert(inherited.first == 103 && inherited.second == 6, "an inherited method returning a record");
+    const other = derived.otherPair(4);
+    assert(other.first == 4 && other.second == -4, "and the derived class's own");
+    assert(derived.plain(2, 3) == 6, "a number through the derived class");
 
     print("done.");
 }
