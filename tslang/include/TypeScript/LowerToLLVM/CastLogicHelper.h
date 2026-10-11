@@ -628,7 +628,35 @@ class CastLogicHelper
                 bool needTag = mth.isUnionTypeNeedsTag(loc, resUnionType, baseType);
                 if (needTag)
                 {
-                    auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                    auto stringType = mlir_ts::StringType::get(rewriter.getContext());
+                    mlir::Value typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, stringType, in);
+
+                    // A class, string, array or object value that holds null is null: where the union
+                    // has a null member of its own, that member is what it becomes. Tagged as its type
+                    // instead, a null `Handle | null` widened to `boolean | Handle | null` was a class
+                    // holding a null pointer, which `=== null` did not see and `instanceof` read through.
+                    auto storageTypes = mlir::cast<mlir_ts::UnionType>(baseType).getTypes();
+                    if (isPointerNullableType(inType)
+                        && llvm::any_of(storageTypes, [](mlir::Type type) { return isa<mlir_ts::NullType>(type); }))
+                    {
+                        auto llvmStringType = tch.convertType(stringType);
+                        auto nullValue = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                        auto nullTag = rewriter.create<mlir_ts::TypeOfOp>(loc, stringType, nullValue);
+
+                        mlir::Value pointer = in;
+                        if (!isa<LLVM::LLVMPointerType>(pointer.getType()))
+                        {
+                            pointer = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getPtrType(), in);
+                        }
+
+                        auto isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, pointer,
+                                                                    rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+                        auto tag = rewriter.create<LLVM::SelectOp>(
+                            loc, isNull, rewriter.create<mlir_ts::DialectCastOp>(loc, llvmStringType, nullTag),
+                            rewriter.create<mlir_ts::DialectCastOp>(loc, llvmStringType, typeOfValue));
+                        typeOfValue = rewriter.create<mlir_ts::DialectCastOp>(loc, stringType, tag);
+                    }
+
                     auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resUnionType, in, typeOfValue);
                     return unionValue;
                 }
@@ -678,6 +706,12 @@ class CastLogicHelper
         }
 
         return mlir::Value();
+    }
+
+    // A type whose value is a single pointer that is null when it holds null.
+    static bool isPointerNullableType(mlir::Type type)
+    {
+        return isa<mlir_ts::ClassType, mlir_ts::StringType, mlir_ts::ArrayType, mlir_ts::ObjectType, mlir_ts::OpaqueType>(type);
     }
 
     bool isBool(mlir::Type type)
