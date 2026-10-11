@@ -1272,15 +1272,113 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                 return bodyCmpResult;
             },
             [&](OpBuilder &builder, Location loc) {
-                // sizes (and therefore kinds) differ: == is false, != is true; ordering
-                // ops and === / !== fall back to their pre-existing "false" behavior.
-                if (code == SyntaxKind::ExclamationEqualsToken)
-                {
-                    return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, sizeAny1, sizeAny2);
-                }
-
-                return (mlir::Value)sizesEqual;
+                // sizes (and therefore kinds) differ: == and === are false, != and !== are true,
+                // and an ordering is false
+                return (mlir::Value)clh.createI1ConstantOf(code == SyntaxKind::ExclamationEqualsToken ||
+                                                           code == SyntaxKind::ExclamationEqualsEqualsToken);
             });
+    }
+
+    // A numeric `any` as an f64, whatever width and signedness it was boxed with. Its tag names
+    // the type ("number", "f32", "s64", "u8", "index", ...): the first letter says float ("f" and
+    // "number"), unsigned ("u") or signed (the rest), and the box's data size says the width.
+    mlir::Value unboxNumericAsF64(mlir::Value anyValue, mlir::Value tag, mlir::Location loc, AnyLogic &al,
+                                  CodeLogicHelper &clh, TypeHelper &th, LLVMTypeConverterHelper &llvmtch,
+                                  ConversionPatternRewriter &rewriter) const
+    {
+        auto f64Type = th.getF64Type();
+        auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
+
+        auto firstLetter = rewriter.create<LLVM::LoadOp>(loc, th.getI8Type(), tag);
+        auto size = al.getDataSizeOfAny(anyValue);
+
+        auto letterIs = [&](char letter) {
+            return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, firstLetter,
+                                                              clh.createI8ConstantOf(letter));
+        };
+        auto sizeIs = [&](int64_t bytes) {
+            return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, size,
+                                                              clh.createIndexConstantOf(llvmIndexType, bytes));
+        };
+
+        auto readInteger = [&](bool isSigned) {
+            auto read = [&](unsigned bits) -> mlir::Value {
+                auto raw = al.UnboxAny(anyValue, rewriter.getIntegerType(bits));
+                return isSigned ? (mlir::Value)rewriter.create<LLVM::SIToFPOp>(loc, f64Type, raw)
+                                : (mlir::Value)rewriter.create<LLVM::UIToFPOp>(loc, f64Type, raw);
+            };
+
+            return clh.conditionalExpressionLowering(
+                loc, f64Type, sizeIs(8), [&](OpBuilder &, Location) { return read(64); },
+                [&](OpBuilder &, Location) {
+                    return clh.conditionalExpressionLowering(
+                        loc, f64Type, sizeIs(4), [&](OpBuilder &, Location) { return read(32); },
+                        [&](OpBuilder &, Location) {
+                            return clh.conditionalExpressionLowering(
+                                loc, f64Type, sizeIs(2), [&](OpBuilder &, Location) { return read(16); },
+                                [&](OpBuilder &, Location) { return read(8); });
+                        });
+                });
+        };
+
+        auto isFloat = rewriter.create<LLVM::OrOp>(loc, letterIs('f'), letterIs('n'));
+        return clh.conditionalExpressionLowering(
+            loc, f64Type, isFloat,
+            [&](OpBuilder &, Location) {
+                return clh.conditionalExpressionLowering(
+                    loc, f64Type, sizeIs(4),
+                    [&](OpBuilder &, Location) {
+                        return (mlir::Value)rewriter.create<LLVM::FPExtOp>(loc, f64Type,
+                                                                           al.UnboxAny(anyValue, th.getF32Type()));
+                    },
+                    [&](OpBuilder &, Location) { return al.UnboxAny(anyValue, f64Type); });
+            },
+            [&](OpBuilder &, Location) {
+                return clh.conditionalExpressionLowering(
+                    loc, f64Type, letterIs('u'), [&](OpBuilder &, Location) { return readInteger(false); },
+                    [&](OpBuilder &, Location) { return readInteger(true); });
+            });
+    }
+
+    // Two numeric `any`s compare by value, as JavaScript numbers: `1.0 === 1`, whatever widths they
+    // were boxed with. Comparing their bytes made a number and an integer never equal - and never
+    // unequal either, `!==` included - and ordered them by their bytes.
+    mlir::Value compareNumbers(mlir::Value op1, mlir::Value tag1, mlir::Value op2, mlir::Value tag2, SyntaxKind code,
+                               mlir::Location loc, AnyLogic &al, CodeLogicHelper &clh, TypeHelper &th,
+                               LLVMTypeConverterHelper &llvmtch, ConversionPatternRewriter &rewriter) const
+    {
+        auto value1 = unboxNumericAsF64(op1, tag1, loc, al, clh, th, llvmtch, rewriter);
+        auto value2 = unboxNumericAsF64(op2, tag2, loc, al, clh, th, llvmtch, rewriter);
+
+        LLVM::FCmpPredicate predicate;
+        switch (code)
+        {
+        case SyntaxKind::EqualsEqualsToken:
+        case SyntaxKind::EqualsEqualsEqualsToken:
+            predicate = LLVM::FCmpPredicate::oeq;
+            break;
+        case SyntaxKind::ExclamationEqualsToken:
+        case SyntaxKind::ExclamationEqualsEqualsToken:
+            predicate = LLVM::FCmpPredicate::une;
+            break;
+        case SyntaxKind::GreaterThanToken:
+            predicate = LLVM::FCmpPredicate::ogt;
+            break;
+        case SyntaxKind::GreaterThanEqualsToken:
+            predicate = LLVM::FCmpPredicate::oge;
+            break;
+        case SyntaxKind::LessThanToken:
+            predicate = LLVM::FCmpPredicate::olt;
+            break;
+        case SyntaxKind::LessThanEqualsToken:
+            predicate = LLVM::FCmpPredicate::ole;
+            break;
+        default:
+            emitError(loc, "unsupported 'any' comparison operator");
+            return mlir::Value();
+        }
+
+        return rewriter.create<LLVM::FCmpOp>(loc, predicate, value1, value2);
     }
 
     // JS loose equality across differing `any` payload kinds: number<->string,
@@ -1298,14 +1396,6 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto stringTy = mlir_ts::StringType::get(rewriter.getContext());
         auto booleanTy = mlir_ts::BooleanType::get(rewriter.getContext());
 
-        auto isTag = [&](mlir::Value tag, const char *name) {
-            auto tagLiteral = ch.getOrCreateGlobalString(name, std::string(name));
-            auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
-            auto cmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag, tagLiteral});
-            auto const0 = clh.createI32ConstantOf(0);
-            return (mlir::Value)rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, cmp.getResult(), const0);
-        };
-
         // typeOfAsString reports concrete-width tags ("s32"/"s64"/...) for integer
         // literals and only uses "number" for float-typed values (see
         // TypeOfOpHelper::typeOfAsString), so "is this any numeric" cannot just test the
@@ -1315,26 +1405,9 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         TypeDescriptorLogic tdl(rewriter, tch, loc);
         auto isKind = [&](mlir::Value tag, int kind) { return tdl.isKind(tag, kind); };
 
-        // unbox a numeric `any` (whatever its concrete boxed width/signedness) into
-        // a normalized f64 for comparison, dispatching on the exact tag reported at
-        // box time so we read back the same width that was stored. This one stays
-        // name-based: the descriptor's kind says "numeric", not which width, and the
-        // width is what decides how many bytes to read back.
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
         auto unboxNumericAsF64 = [&](mlir::Value numberSideAny, mlir::Value numberTag) {
-            auto asF64 = [&](mlir::Type storedTy) {
-                auto raw = al.UnboxAny(numberSideAny, tch.convertType(storedTy));
-                return storedTy == numberTy ? raw : castLogic.cast(raw, storedTy, numberTy);
-            };
-
-            return clh.conditionalExpressionLowering(
-                loc, th.getF64Type(), isTag(numberTag, "number"),
-                [&](OpBuilder &, Location) { return asF64(numberTy); },
-                [&](OpBuilder &, Location) {
-                    return clh.conditionalExpressionLowering(
-                        loc, th.getF64Type(), isTag(numberTag, "s64"),
-                        [&](OpBuilder &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 64, mlir::IntegerType::Signed)); },
-                        [&](OpBuilder &, Location) { return asF64(mlir::IntegerType::get(rewriter.getContext(), 32, mlir::IntegerType::Signed)); });
-                });
+            return this->unboxNumericAsF64(numberSideAny, numberTag, loc, al, clh, th, llvmtch, rewriter);
         };
 
         auto compareAsNumber = [&](mlir::Value numVal1, mlir::Value numVal2) {
@@ -1440,16 +1513,13 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
         auto op1 = transformed.getOp1();
         auto op2 = transformed.getOp2();
 
-        auto compareBoxes = [&]() -> mlir::Value {
+        auto compareOtherBoxes = [&](mlir::Value tag1, mlir::Value tag2) -> mlir::Value {
             // only loose equality (==/!=) coerces across differing payload kinds; strict
-            // equality and ordering compare the underlying bytes as before.
+            // equality and ordering compare the underlying bytes.
             if (code != SyntaxKind::EqualsEqualsToken && code != SyntaxKind::ExclamationEqualsToken)
             {
                 return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter);
             }
-
-            auto tag1 = al.getTypeOfAny(op1);
-            auto tag2 = al.getTypeOfAny(op2);
 
             auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {th.getPtrType(), th.getPtrType()}));
             auto tagCmp = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{tag1, tag2});
@@ -1460,6 +1530,22 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                 loc, th.getLLVMBoolType(), tagsEqual,
                 [&](OpBuilder &builder, Location loc) { return sameKindCompare(op, op1, op2, code, loc, al, clh, th, ch, llvmtch, rewriter); },
                 [&](OpBuilder &builder, Location loc) { return coerceAndCompareMixedKinds(op1, op2, tag1, tag2, code, loc, al, castLogic, clh, th, ch, tch, rewriter); });
+        };
+
+        auto compareBoxes = [&]() -> mlir::Value {
+            auto tag1 = al.getTypeOfAny(op1);
+            auto tag2 = al.getTypeOfAny(op2);
+
+            // two numbers compare by value for every operator, whichever widths they were boxed with
+            TypeDescriptorLogic tdl(rewriter, tch, loc);
+            auto bothNumbers = rewriter.create<LLVM::AndOp>(loc, tdl.isKind(tag1, TYPE_KIND_NUMBER),
+                                                            tdl.isKind(tag2, TYPE_KIND_NUMBER));
+            return clh.conditionalExpressionLowering(
+                loc, th.getLLVMBoolType(), bothNumbers,
+                [&](OpBuilder &, Location loc) {
+                    return compareNumbers(op1, tag1, op2, tag2, code, loc, al, clh, th, llvmtch, rewriter);
+                },
+                [&](OpBuilder &, Location loc) { return compareOtherBoxes(tag1, tag2); });
         };
 
         // `undefined` and `null` in an `any`, answered before any box is opened: `u == undefined`
