@@ -2072,7 +2072,7 @@ namespace mlirgen
         auto location = loc(templateLiteralTypeNode);
 
         // first string
-        auto text = convertWideToUTF8(templateLiteralTypeNode->head->rawText);
+        auto text = convertWideToUTF8(templateLiteralTypeNode->head->text);
 
         SmallVector<mlir::Type> types;
         getTemplateLiteralSpan(types, text, templateLiteralTypeNode->templateSpans, 0, genContext);
@@ -2129,7 +2129,7 @@ namespace mlirgen
         auto typeText = mlir::cast<mlir::StringAttr>(literalType.getValue()).getValue();
         ss << typeText.str();
 
-        auto spanText = convertWideToUTF8(span->literal->rawText);
+        auto spanText = convertWideToUTF8(span->literal->text);
         ss << spanText;
 
         getTemplateLiteralSpan(types, ss.str(), spans, spanIndex + 1, genContext);
