@@ -29,7 +29,7 @@ keeps failing by design. The repros stay here as the record of what was reported
 | 4 | Escapes not processed in templates with substitutions | Wrong value, silent | `ntg_template_literal_escape.ts` | [#539](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/539) |
 | 5 | `Math.max` of negative numbers returns 2.2e-308 | Wrong value, silent (default lib) | `ntg_math_max_negative.ts` | [DefaultLib#31](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/pull/31), and [#535](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/535) for why its test passed |
 | 6 | `boolean && (Class \| null)` as a condition fails to compile | Compile error | `ntg_and_nullable_class.ts` | [#540](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/540), and [#541](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/541) for its misplaced first error |
-| 7 | The JIT cache crashes a run that compiles two or more modules (pre-alpha93) | Compiler crash, no message | `ntg_jit_cache_import.ts` | open |
+| 7 | The JIT cache crashes a run that compiles two or more modules (pre-alpha93) | Compiler crash, no message | `ntg_jit_cache_import.ts` | [#549](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/549) |
 
 The silent ones (2 to 5) cost the most time: the programs compile and run, and only the output
 is wrong.
@@ -225,6 +225,14 @@ per run) every run works.
 **Impact and workaround:** every native_ts_graphics example imports `core/input_pass.ts`, which
 imports `core/donut.ts`, so every example crashed under the JIT twice before running.
 `run_jit.bat` passes `--jit-cache=false`.
+
+**Fixed by #549:** the cache compiles each module in an MLIRContext of its own, and the built-in
+types (`i32`, `f32`, `Opaque`, ...) were kept in a `static` map, made once, in the first module's
+context. Every later module in the run got types from a context destroyed by then. The map is
+now per module. The default library's declarations name such types, which is why every program
+importing a module crashed; without it (the suite runs with `--no-default-lib`) a module only
+crashed if it named one itself. Regression test: `test-jit-cache-embedded-types`, which runs from
+an empty cache every time.
 
 ---
 
