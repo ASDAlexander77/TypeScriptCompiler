@@ -5352,6 +5352,17 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
+    // Whether that hidden pointer goes before `this` (the Itanium ABI), not after it (MSVC's)
+    bool cppVTableHiddenReturnBeforeThis(mlir::Value funcRef)
+    {
+        if (auto virtualSymbolRef = funcRef.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            return cppVTableHiddenReturnsBeforeThis.contains(virtualSymbolRef.getIdentifier());
+        }
+
+        return false;
+    }
+
     // A @cppvtable class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
     // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
     // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
@@ -11219,7 +11230,9 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          StringRef funcName);
+                                                          StringRef funcName, bool nonTrivial);
+
+    bool isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType);
 
     mlir::LogicalResult mlirGenClassCppVTableCheck(mlir::Location location,
                                                    ClassLikeDeclaration classDeclarationAST,
@@ -14091,6 +14104,8 @@ class MLIRGenImpl
 
     // the @cppvtable methods returning a C++ record (by function name): the record's type
     llvm::StringMap<mlir::Type> cppVTableHiddenReturns;
+    // those of them whose hidden pointer goes before `this` (the Itanium ABI)
+    llvm::StringSet<> cppVTableHiddenReturnsBeforeThis;
 
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 

@@ -152,9 +152,12 @@ struct MethodInfo
     // @dllname: exported symbol name, empty when the method keeps funcName
     std::string dllName;
     // A @cppvtable method returning a C++ record: the type it is declared with (funcType is the
-    // one its slot is called with, the hidden result pointer after `this`, see
+    // one its slot is called with, the hidden result pointer added, see
     // mlirGenClassCppVTableHiddenReturn); null for any other method.
     mlir_ts::FunctionType declaredFuncType;
+    // @cppnontrivial: the C++ record a @cppvtable method returns has a destructor or a copy
+    // constructor, which decides how the Itanium ABI returns it
+    bool cppNonTrivialReturn = false;
 };
 
 struct GenericMethodInfo

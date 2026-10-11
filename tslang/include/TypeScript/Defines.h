@@ -194,6 +194,9 @@
 #define LINK_NAME "linkname"
 // A class laid over an existing C++ object: its vtable is the C++ one (see ClassInfo::isCppVTable)
 #define CPP_VTABLE "cppvtable"
+// A @cppvtable method's C++ return type has a destructor or a copy constructor (see
+// mlirGenClassCppVTableHiddenReturn)
+#define CPP_NON_TRIVIAL "cppnontrivial"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

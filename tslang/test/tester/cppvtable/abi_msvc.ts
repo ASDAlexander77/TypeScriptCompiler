@@ -1,0 +1,32 @@
+// The methods of a C++ object made by MSVC (abi_host.cpp): one destructor slot, and every record
+// returned through a pointer after `this`.
+
+type Ptr = [p: Opaque | null];
+type Obj = [p: Opaque | null];
+type Two = [a: u64, b: Opaque | null];
+
+declare function abi_object(): Opaque;
+declare function abi_is_storage(p: Opaque | null, index: s32): s32;
+
+@cppvtable
+class Methods {
+    value: s32;
+    destructor(): void;             // slot 0: the scalar deleting destructor
+    @cppnontrivial
+    make(x: s32): Ptr;              // slot 1
+    obj(x: s32): Obj;               // slot 2
+    two(x: s32): Two;               // slot 3
+    plain(a: s32, b: s32): s32;     // slot 4
+}
+
+function main() {
+    const methods = <Methods>abi_object();
+    assert(methods.value == 7, "the first field follows the vtable pointer");
+    assert(abi_is_storage(methods.make(3).p, 3) == 1, "a record with a destructor");
+    assert(abi_is_storage(methods.obj(4).p, 5) == 1, "a trivial 8-byte record");
+    const two = methods.two(7);
+    assert(two.a == 0x1234567890 + 7 && abi_is_storage(two.b, 9) == 1, "a trivial 16-byte record");
+    assert(methods.plain(6, 7) == 49, "a number");
+
+    print("done.");
+}

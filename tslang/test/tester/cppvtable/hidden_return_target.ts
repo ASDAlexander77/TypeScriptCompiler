@@ -1,5 +1,5 @@
-// Compiled for Linux: the Itanium ABI returns a record from a method otherwise than MSVC, through
-// a pointer before `this`, and only some records.
+// Compiled for AArch64 Linux: the Itanium ABI passes the hidden pointer a record is returned
+// through in X8 there, which an ordinary argument isn't.
 type Pair = [first: s32, second: s32];
 
 @cppvtable

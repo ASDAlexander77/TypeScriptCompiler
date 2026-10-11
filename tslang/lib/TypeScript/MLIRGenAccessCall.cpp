@@ -1761,8 +1761,26 @@ namespace mlirgen
                                                                          builder.getIndexAttr(0));
                     SmallVector<mlir::Value, 4> slotOperands;
                     slotOperands.push_back(resultSlot);
-                    slotOperands.append(operands.begin(), operands.end());
-                    auto callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext);
+                    ValueOrLogicalResult callResult(mlir::failure());
+                    if (cppVTableHiddenReturnBeforeThis(funcRefValue))
+                    {
+                        // the Itanium ABI: the slot is called as (Ref<T>, this, args...)
+                        SmallVector<mlir::Type> inputs;
+                        inputs.push_back(calledFuncType.getInput(1));
+                        inputs.push_back(calledFuncType.getInput(0));
+                        inputs.append(calledFuncType.getInputs().begin() + 2, calledFuncType.getInputs().end());
+                        auto swappedFuncType = getFunctionType(inputs, calledFuncType.getResults(), calledFuncType.isVarArg());
+                        auto swappedFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, swappedFuncType, funcRefValue);
+                        slotOperands.push_back(thisValue);
+                        slotOperands.append(operands.begin(), operands.end());
+                        callResult = mlirGenCallFunction(location, swappedFuncType, swappedFuncRefValue, slotOperands, genContext);
+                    }
+                    else
+                    {
+                        slotOperands.append(operands.begin(), operands.end());
+                        callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext);
+                    }
+
                     if (mlir::failed(callResult))
                     {
                         value = mlir::failure();
