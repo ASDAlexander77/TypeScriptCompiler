@@ -2628,6 +2628,17 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# An error inside a cast function the compiler generates (here: null in a union cast to string) is
+# reported where the cast is - line 6 - and not at the generated text's offset taken as a position
+# in the user's file, which put it inside the comment on line 1.
+add_test(NAME test-compile-diagnostic-location-generated-cast
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/generated_cast.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-generated-cast.obj")
+set_tests_properties(test-compile-diagnostic-location-generated-cast
+                     PROPERTIES PASS_REGULAR_EXPRESSION "generated_cast\\.ts:6:23: error: can't cast from 'null' to 'string'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|generated_cast\\.ts:1:")
+
 # A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
 # is an error under every model but gc, which alone links the collector - it used to reach the
 # linker as an unresolved symbol. Under gc the same file compiles.
