@@ -2168,6 +2168,7 @@ set(TSLANG_CORPUS
     typeGuardOfFormThisMember.ts
     typeGuardOfFormTypeOfBoolean.ts
     types_vs_interfaces.ts
+    00opaque_nullable_compare.ts
     )
 
 # the default model runs these ahead of time only, so the other models do too
