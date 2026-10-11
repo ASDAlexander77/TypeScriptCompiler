@@ -20,6 +20,44 @@ class Methods {
     narrow(b: boolean, u: u8, s: s8): s32;  // slot 5
 }
 
+// A C++ interface (abi_host.cpp's Callback) implemented here: C++ calls Counter's methods through the
+// vtable tslang makes for it
+@cppvtable
+class Callback {
+    destructor(): void;                         // slot 0
+    message(severity: u8, text: string): void;  // slot 1
+    count(): s32;                               // slot 2
+    isEven(x: s32): boolean;                    // slot 3
+}
+
+@cppvtable
+class Counter extends Callback {
+    total: s32 = 0;
+    unexpected = 0;
+
+    constructor(public start: s32) {
+        super();
+    }
+
+    message(severity: u8, text: string): void {
+        this.total += severity;
+        if (text != "two" && text != "three") {
+            this.unexpected++;
+        }
+    }
+
+    count(): s32 {
+        return this.total + this.start;
+    }
+
+    isEven(x: s32): boolean {
+        return x % 2 == 0;
+    }
+}
+
+declare function abi_call_callback(callback: Opaque): s32;
+declare function abi_callback_is_even(callback: Opaque, x: s32): s32;
+
 // arguments made from a wider value: the register's upper bits aren't zero
 function callNarrow(methods: Methods, big: s32): s32 {
     return methods.narrow(big > 0, <u8>big, <s8>(big - 0x1237));
@@ -34,6 +72,12 @@ function main() {
     assert(two.a == 0x1234567890 + 7 && abi_is_storage(two.b, 9) == 1, "a trivial 16-byte record");
     assert(methods.plain(6, 7) == 49, "a number");
     assert(callNarrow(methods, 0x1234) == 1000 + 0x34 * 10 - 3, "narrow arguments, extended");
+
+    const counter = new Counter(5);
+    assert(abi_call_callback(<Opaque>counter) == 10 && counter.unexpected == 0, "C++ calls the methods implemented here");
+    assert(abi_callback_is_even(<Opaque>counter, 4) == 1 && abi_callback_is_even(<Opaque>counter, 7) == 0, "a bool result");
+    const callback: Callback = counter;
+    assert(callback.count() == 10, "and tslang through the C++ interface");
 
     print("done.");
 }

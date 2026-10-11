@@ -47,6 +47,33 @@ struct Methods
     int value = 7;
 };
 
+// implemented in tslang (abi_msvc.ts, abi_itanium.ts' Counter): C++ calls its methods through the
+// vtable tslang made, as NVRHI calls an application's nvrhi::IMessageCallback
+class Callback
+{
+protected:
+    virtual ~Callback() {}
+
+public:
+    virtual void message(uint8_t severity, const char *text) = 0;
+    virtual int count() = 0;
+    virtual bool isEven(int x) = 0;
+};
+
+// two messages, then the count
+ABI_EXPORT int abi_call_callback(Callback *callback)
+{
+    callback->message(2, "two");
+    callback->message(3, "three");
+    return callback->count();
+}
+
+// a bool result, as C++ reads it
+ABI_EXPORT int abi_callback_is_even(Callback *callback, int x)
+{
+    return callback->isEven(x) ? 1 : 0;
+}
+
 ABI_EXPORT Methods *abi_object()
 {
     static Methods methods;

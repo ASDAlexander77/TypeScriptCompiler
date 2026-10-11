@@ -40,7 +40,8 @@ fields (`.rtti`, `.size`). A `@cppvtable` class has none of these. Its methods a
 slots from 0, in declaration order, with a base class's slots first.
 
 The class gets no vtable, constructor, RTTI or allocation of its own. It is a declaration: its
-methods have no bodies, and an `abstract` class with `abstract` methods reads the same.
+methods have no bodies, and an `abstract` class with `abstract` methods reads the same. (A class
+whose methods have bodies is the other way round: see "Implementing C++ methods".)
 
 Fields declared on the class are the C++ object's fields after the vtable pointer, laid out like
 a tuple's.
@@ -53,7 +54,7 @@ these are errors and not warnings.
 
 | Not allowed | Why |
 | --- | --- |
-| a method with a body, a constructor, a field initializer | the objects and their code are C++'s |
+| a constructor or a field initializer, in a class none of whose methods has a body | the objects and their code are C++'s (a method with a body makes it a class implementing C++ methods, see below) |
 | static members, `get`/`set` accessors, `accessor` fields | they would take vtable slots, and accessor slots don't follow declaration order |
 | `implements` | an implemented interface takes a slot |
 | `extends` an ordinary class, or an ordinary class extending a `@cppvtable` one | the ordinary class's slots (`.instanceOf`, `.rtti`, ...) would shift the numbering |
@@ -122,8 +123,57 @@ A generic or static class can't be `@cppvtable` either.
 - **Casting.** `<NvDevice>opaqueValue` is a plain pointer cast with no check: the object must
   really be one.
 
+## Implementing C++ methods
+
+A `@cppvtable` class whose methods have bodies implements C++ methods: C++ calls them through the
+object's vtable. An example is a callback interface such as `nvrhi::IMessageCallback`. Declare the C++ interface
+as above, and extend it:
+
+```ts
+@cppvtable
+class IMessageCallback {               // nvrhi::IMessageCallback (MSVC)
+    _destructor(): void;               // slot 0
+    message(severity: u8, text: string): void;
+}
+
+@cppvtable
+class MessageLog extends IMessageCallback {
+    errors = 0;
+
+    message(severity: u8, text: string): void {
+        if (severity >= 2) {
+            this.errors++;
+        }
+    }
+}
+
+const log = new MessageLog();          // pass <Opaque>log to C++
+```
+
+- **The vtable** is the C++ layout and nothing else: the slots in order, with no `.instanceOf`,
+  interface or static slots. `new` points the object's first word at it. A method with a body
+  overrides the base's slot of the same name. A slot left to a method of the C++ interface (a
+  method with no body, such as the destructor) is null, as a pure virtual's would be: C++ calling
+  it crashes. A method that matches no base slot appends a slot, as in C++.
+- **The object** is allocated by tslang: the vtable pointer, the C++ interface's fields, then the
+  class's own fields, laid out like a tuple's. It may have a constructor and field initializers.
+- **Calls from C++** come in as C++ calls them: `this` first, then the arguments. A narrow result
+  (`boolean`, `u8`, ...) is extended to 32 bits, as C++ callers expect. Declare by-value struct
+  parameters the way the ABI passes them (see "Writing a binding").
+- **Lifetime.** C++ keeps a raw pointer that the collector can't see. Hold the object in tslang,
+  for example in a global, for as long as C++ may call it. A `string` argument is C++'s buffer:
+  copy it to keep it past the call.
+- **Not yet supported:**
+  - returning a struct (an error);
+  - exporting the class (an error: an importer would get the methods but not the vtable);
+  - type information: C++ must not `dynamic_cast` or `typeid` the object;
+  - throwing from a method C++ calls.
+
 ## Tests
 
 - `tslang/test/tester/tests/00cppvtable_class.ts` checks the slots, fields, `extends` and
   `abstract` against a vtable made by hand. It is registered for AOT and JIT.
 - `tslang/test/tester/cppvtable/*.ts` holds one compile error per rule above.
+- `test-jit-cppvtable-abi` checks against code from a real C++ compiler. `cppvtable/abi_host.cpp` is built as a shared library by the host's compiler (MSVC, or g++/clang). `abi_msvc.ts` or `abi_itanium.ts` then:
+  - calls its object's methods, including struct returns and narrow arguments;
+  - implements its `Callback` interface (`Counter`), which C++ calls back.

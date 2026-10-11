@@ -204,6 +204,9 @@
 // On a call: it calls a C++ method (of a @cppvtable class), whose arguments narrower than 32 bits
 // LowerToLLVM marks zeroext / signext, as a C++ caller extends them (clang relies on it)
 #define CPP_CALL_ATTR_NAME "ts.cpp_call"
+// On a function: a C++ method implemented in tslang (a method with a body of a @cppvtable class),
+// called by C++, whose results narrower than 32 bits LowerToLLVM extends as C++ callers expect
+#define CPP_METHOD_ATTR_NAME "ts.cpp_method"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

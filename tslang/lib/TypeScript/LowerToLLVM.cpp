@@ -1928,7 +1928,10 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         // relies on it (x86-64 SysV). A declaration - implemented elsewhere, usually in C - says
         // so. A definition does not: a `signext` parameter makes the callee trust its caller, and
         // tslang's indirect calls carry no call-site attributes.
-        if (funcOp.getBody().empty())
+        // A C++ method implemented here (CPP_METHOD_ATTR_NAME) is called by C++ code, which takes
+        // a narrow result as extended by the callee: so it extends its results.
+        auto isDeclaration = funcOp.getBody().empty();
+        if (isDeclaration)
         {
             for (auto [index, type] : llvm::enumerate(fnType.getInputs()))
             {
@@ -1937,7 +1940,10 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                     newFuncOp.setArgAttr(index, extension, rewriter.getUnitAttr());
                 }
             }
+        }
 
+        if (isDeclaration || funcOp->hasAttr(CPP_METHOD_ATTR_NAME))
+        {
             for (auto [index, type] : llvm::enumerate(fnType.getResults()))
             {
                 if (auto extension = getIntegerExtensionAttrName(type); !extension.empty())
@@ -1949,7 +1955,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         for (const auto &namedAttr : funcOp->getAttrs())
         {
-            if (namedAttr.getName() == funcOp.getFunctionTypeAttrName())
+            if (namedAttr.getName() == funcOp.getFunctionTypeAttrName() || namedAttr.getName() == CPP_METHOD_ATTR_NAME)
             {
                 continue;
             }
