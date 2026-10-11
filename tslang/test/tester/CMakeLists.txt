@@ -2624,7 +2624,7 @@ foreach(truncation_case "global|3:1" "local|5:9")
                      "${PROJECT_SOURCE_DIR}/test/tester/integer-literal-truncation/${truncation_name}.ts"
                      -o "${CMAKE_CURRENT_BINARY_DIR}/integer-literal-truncation-${truncation_name}.obj")
     set_tests_properties(test-compile-integer-literal-truncation-${truncation_name}
-                         PROPERTIES PASS_REGULAR_EXPRESSION "${truncation_name}\\.ts:${truncation_position}: warning: a 'number' is stored in a 's32', dropping its fraction"
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${truncation_name}\\.ts:${truncation_position}: warning: a 'number' is stored in a 's32', so any fraction is dropped"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 add_test(NAME test-compile-integer-literal-truncation-quiet

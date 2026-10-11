@@ -1882,7 +1882,7 @@ class MLIRGenImpl
         }
 
         emitWarning(location) << "a '" << to_print(valueType) << "' is stored in a '" << to_print(destType)
-                              << "', dropping its fraction: the variable's type was inferred from an integer literal. "
+                              << "', so any fraction is dropped: the variable's type was inferred from an integer literal. "
                               << "Declare it 'number' (e.g. `let s: number = 0`) to keep fractions";
     }
 
