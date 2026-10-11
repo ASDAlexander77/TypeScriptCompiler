@@ -312,6 +312,17 @@ namespace mlirgen
             return variableDeclarationInfo.type;
         }
 
+        // remembered on the storage for warnIfIntegerLiteralVariableTruncates
+        if (variableDeclarationInfo.inferredFromIntegerLiteral && !variableDeclarationInfo.deleted)
+        {
+            auto varOp = variableDeclarationInfo.storage ? variableDeclarationInfo.storage.getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            mlir::Operation *storageOp = varOp ? varOp.getOperation() : variableDeclarationInfo.globalOp.getOperation();
+            if (storageOp)
+            {
+                storageOp->setAttr(INTEGER_LITERAL_INFERRED_ATTR_NAME, builder.getUnitAttr());
+            }
+        }
+
         //LLVM_DEBUG(variableDeclarationInfo.printDebugInfo(););
 
         takeOwnershipOfLocal(location, variableDeclarationInfo, genContext);
