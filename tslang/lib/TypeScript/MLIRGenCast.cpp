@@ -699,6 +699,15 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // see isCppVTableClass: `any` is unboxed and an interface made by asking the object
+        if ((isa<mlir_ts::AnyType>(valueType) && isCppVTableClass(type))
+            || ((isa<mlir_ts::AnyType>(type) || isa<mlir_ts::InterfaceType>(type)) && isCppVTableClass(valueType)))
+        {
+            emitError(location) << "can't cast '" << to_print(valueType) << "' to '" << to_print(type)
+                                << "': a @" CPP_VTABLE " class's objects are C++ objects, with no type information";
+            return mlir::failure();
+        }
+
         if (mlir::failed(verifyCastPreconditions(location, type, valueType, disableStrictNullCheck)))
         {
             return mlir::failure();

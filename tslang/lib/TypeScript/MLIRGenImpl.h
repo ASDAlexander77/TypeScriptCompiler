@@ -5335,6 +5335,30 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // A @cppvtable class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
+    // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
+    // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
+    bool isCppVTableClass(mlir::Type type)
+    {
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+        {
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            return classInfo && classInfo->isCppVTable;
+        }
+
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return isCppVTableClass(optionalType.getElementType());
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return isCppVTableClass(member); });
+        }
+
+        return false;
+    }
+
     // A failure here has to be a failure, not a null value: ValueOrLogicalResult takes a null
     // mlir::Value as success with no value, and an `if` whose condition has no value quietly
     // generates nothing - `if (a instanceof C) return a;` in the generated `___unbox<C>` lost its
@@ -5558,6 +5582,12 @@ class MLIRGenImpl
         }
 
         rightType = mth.wideStorageType(rightType);
+
+        if (isCppVTableClass(rightType) || isCppVTableClass(resultLeftfType))
+        {
+            emitError(location, "instanceof can't be used with a @" CPP_VTABLE " class: its objects are C++ objects, with no type information");
+            return mlir::failure();
+        }
 
 #ifdef ENABLE_RTTI
         if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
@@ -11170,6 +11200,10 @@ class MLIRGenImpl
 
         return mlir::failure();
     }
+
+    mlir::LogicalResult mlirGenClassCppVTableCheck(mlir::Location location,
+                                                   ClassLikeDeclaration classDeclarationAST,
+                                                   ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenClassCheckIfDeclaration(mlir::Location location,
                                                        ClassLikeDeclaration classDeclarationAST,

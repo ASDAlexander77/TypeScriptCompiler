@@ -34,7 +34,11 @@ set(not_compilable_alone
     00switch_state.ts
     import_vars.ts
     # written for `-nostrictnull`
-    raytrace-0.ts)
+    raytrace-0.ts
+    # a @cppvtable class is an error under rc and own (cppvtable/memory_model.ts)
+    00cppvtable_class.ts
+    export_cppvtable_class.ts
+    import_cppvtable_class.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

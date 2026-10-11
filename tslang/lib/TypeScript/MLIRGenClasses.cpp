@@ -177,6 +177,12 @@ namespace mlirgen
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessedStorageClass, genContext);
 
+        if (mlir::failed(mlirGenClassCppVTableCheck(location, classDeclarationAST, newClassPtr, classGenContext)))
+        {
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
+            return {mlir::failure(), ""};
+        }
+
         // if it is ClassExpression we need to know if it is declaration
         mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, classGenContext);
 
@@ -200,13 +206,16 @@ namespace mlirgen
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        if (!newClassPtr->isStatic)
+        // a @cppvtable class is never constructed, typed or allocated here: its objects come from C++
+        auto hasOwnRuntimeMembers = !newClassPtr->isStatic && !newClassPtr->isCppVTable;
+
+        if (hasOwnRuntimeMembers)
         {
             mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, classGenContext);
         }
 
 #ifdef ENABLE_RTTI
-        if (!newClassPtr->isStatic)
+        if (hasOwnRuntimeMembers)
         {
             // INFO: .instanceOf must be first element in VTable for Cast Any
             mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
@@ -215,14 +224,14 @@ namespace mlirgen
 
 #if ENABLE_TYPED_GC
         auto enabledGC = compileOptions.needsGCRuntime();
-        if (enabledGC && !newClassPtr->isStatic)
+        if (enabledGC && hasOwnRuntimeMembers)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
         }
 #endif
 
-        if (!newClassPtr->isStatic)
+        if (hasOwnRuntimeMembers)
         {
             mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
         }
@@ -261,7 +270,7 @@ namespace mlirgen
             }
         }
 
-        if (!newClassPtr->isStatic)
+        if (hasOwnRuntimeMembers)
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
             {
@@ -342,6 +351,15 @@ namespace mlirgen
                         newClassPtr->isDynamicImport = true;
                     }
                 }
+
+                // a binding to C++ objects: declared (its methods have no bodies), with a vtable
+                // field even with no `abstract` method (see ClassInfo::isCppVTable)
+                if (name == CPP_VTABLE)
+                {
+                    newClassPtr->isCppVTable = true;
+                    newClassPtr->isDeclaration = true;
+                    newClassPtr->hasVirtualTable = true;
+                }
             });
 
             getClassesMap().insert({namePtr, newClassPtr});
@@ -349,6 +367,122 @@ namespace mlirgen
         }
 
         return newClassPtr;
+    }
+
+    // A @cppvtable class only names the slots of a vtable made by C++, so everything that would add
+    // a slot, a field initializer or code of its own is an error, and so is a hierarchy mixing it
+    // with ordinary classes: a slot number off by one calls the wrong C++ method, with no error.
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableCheck(mlir::Location location,
+                                                   ClassLikeDeclaration classDeclarationAST,
+                                                   ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        if (!newClassPtr->isCppVTable)
+        {
+            // an ordinary class can't add to a C++ vtable
+            for (auto &base : newClassPtr->baseClasses)
+            {
+                if (base->isCppVTable)
+                {
+                    emitError(location) << "class '" << newClassPtr->fullName << "' can't extend the @" CPP_VTABLE " class '"
+                                        << base->fullName << "': it has to be @" CPP_VTABLE " too";
+                    return mlir::failure();
+                }
+            }
+
+            return mlir::success();
+        }
+
+        auto failed = false;
+        auto error = [&](mlir::Location errorLocation) -> mlir::InFlightDiagnostic {
+            failed = true;
+            return emitError(errorLocation);
+        };
+
+        if (compileOptions.tracksOwnership())
+        {
+            // retains and releases write a count in the word before an object, inside a C++ object
+            error(location) << "a @" CPP_VTABLE " class needs the gc or none memory model";
+        }
+
+        if (compileOptions.targetInfo.memberCallsUseThiscall)
+        {
+            error(location) << "a @" CPP_VTABLE " class can't be used on this target: its C++ methods are __thiscall";
+        }
+
+        if (newClassPtr->isStatic)
+        {
+            error(location) << "a static class can't be @" CPP_VTABLE;
+        }
+
+        if (classDeclarationAST->typeParameters.size() > 0)
+        {
+            error(location) << "a generic class can't be @" CPP_VTABLE;
+        }
+
+        for (auto &base : newClassPtr->baseClasses)
+        {
+            if (!base->isCppVTable)
+            {
+                error(location) << "the @" CPP_VTABLE " class '" << newClassPtr->fullName << "' can only extend a @" CPP_VTABLE
+                                << " class, not '" << base->fullName << "'";
+            }
+        }
+
+        for (auto &heritageClause : classDeclarationAST->heritageClauses)
+        {
+            if (heritageClause->token == SyntaxKind::ImplementsKeyword)
+            {
+                error(loc(heritageClause)) << "a @" CPP_VTABLE " class can't implement an interface";
+            }
+        }
+
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            auto memberLocation = loc(classMember);
+            if (hasModifier(classMember, SyntaxKind::StaticKeyword))
+            {
+                error(memberLocation) << "a @" CPP_VTABLE " class can't have static members";
+                continue;
+            }
+
+            if (classMember == SyntaxKind::MethodDeclaration)
+            {
+                if (classMember.as<MethodDeclaration>()->body)
+                {
+                    error(memberLocation) << "a method of a @" CPP_VTABLE " class is a C++ vtable slot: it can't have a body";
+                }
+
+                continue;
+            }
+
+            if (classMember == SyntaxKind::PropertyDeclaration)
+            {
+                // a field of the C++ object, after its vtable pointer
+                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+                if (propertyDeclaration->initializer)
+                {
+                    error(memberLocation) << "a field of a @" CPP_VTABLE " class can't have an initializer";
+                }
+
+                if (hasModifier(classMember, SyntaxKind::AccessorKeyword))
+                {
+                    error(memberLocation) << "a @" CPP_VTABLE " class can't have accessor fields";
+                }
+
+                continue;
+            }
+
+            if (classMember == SyntaxKind::Constructor)
+            {
+                error(memberLocation) << "a @" CPP_VTABLE " class can't have a constructor: its objects are made by C++";
+                continue;
+            }
+
+            // accessors are generated methods: their slots wouldn't follow the declaration order
+            error(memberLocation) << "a @" CPP_VTABLE " class can only have methods without bodies and fields";
+        }
+
+        return failed ? mlir::failure() : mlir::success();
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCheckIfDeclaration(mlir::Location location,
@@ -426,7 +560,11 @@ namespace mlirgen
         }
 
 #if ENABLE_RTTI
-        if (newClassPtr->isDynamicImport)
+        if (newClassPtr->isCppVTable)
+        {
+            // no RTTI: a C++ object can't answer `instanceof`
+        }
+        else if (newClassPtr->isDynamicImport)
         {
             mlirGenCustomRTTIDynamicImport(location, classDeclarationAST, newClassPtr, genContext);
         }
@@ -437,7 +575,7 @@ namespace mlirgen
         }
 #endif
 
-        if (!newClassPtr->isStatic)
+        if (!newClassPtr->isStatic && !newClassPtr->isCppVTable)
         {
             mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
         }
