@@ -5335,6 +5335,22 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // The record a call of funcRef returns through a hidden pointer: funcRef is a @cppvtable method
+    // declared to return a tuple (mlirGenClassCppVTableHiddenReturn); null for any other callee.
+    mlir::Type cppVTableHiddenReturnType(mlir::Value funcRef)
+    {
+        if (auto virtualSymbolRef = funcRef.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            auto it = cppVTableHiddenReturns.find(virtualSymbolRef.getIdentifier());
+            if (it != cppVTableHiddenReturns.end())
+            {
+                return it->second;
+            }
+        }
+
+        return mlir::Type();
+    }
+
     // A @cppvtable class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
     // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
     // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
@@ -11201,6 +11217,9 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    mlir::LogicalResult mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                          StringRef funcName);
+
     mlir::LogicalResult mlirGenClassCppVTableCheck(mlir::Location location,
                                                    ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
@@ -14037,6 +14056,9 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, EnumInfo::TypePtr> fullNameEnumsMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
+
+    // the @cppvtable methods returning a C++ record (by function name): the record's type
+    llvm::StringMap<mlir::Type> cppVTableHiddenReturns;
 
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 

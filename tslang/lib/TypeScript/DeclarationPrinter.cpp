@@ -662,11 +662,13 @@ namespace typescript
                 os << "abstract ";
             }
 
+            // a @cppvtable method returning a record: as declared, the importer lowers it again
+            auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
             printMethod(
                 method.isStatic,
                 method.name,
-                method.funcType.getParams(),
-                method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type(),
+                funcType.getParams(),
+                funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type(),
                 classType->classType);
 
             newline();

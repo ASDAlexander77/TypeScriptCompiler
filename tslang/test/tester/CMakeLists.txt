@@ -2730,6 +2730,23 @@ add_test(NAME test-compile-cppvtable-memory-model-none
 set_tests_properties(test-compile-cppvtable-memory-model-none
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
+# A method returning a record (tests/00cppvtable_hidden_return.ts) is MSVC's: the Itanium ABI
+# returns a record through a pointer before `this`, and only some records, so it is an error
+# anywhere else and its tests run on Windows only.
+if (WIN32)
+    tslang_add_test(NAME test-compile-00-cppvtable-hidden-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
+    tslang_add_test(NAME test-jit-00-cppvtable-hidden-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
+    tslang_add_test(NAME test-compile-shared-export-import-cppvtable-hidden-return COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_hidden_return.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_hidden_return.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-cppvtable-hidden-return COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_hidden_return.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_hidden_return.ts")
+endif()
+add_test(NAME test-compile-cppvtable-hidden-return-target
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/hidden_return_target.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-hidden-return-target.obj")
+set_tests_properties(test-compile-cppvtable-hidden-return-target
+                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.
 add_test(NAME test-compile-cppvtable-thiscall-target
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=i686-pc-windows-msvc
