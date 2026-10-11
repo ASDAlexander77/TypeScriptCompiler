@@ -1,0 +1,190 @@
+# tslang issues found while porting graphics samples (native_ts_graphics)
+
+These issues came up while porting about 100 D3D12 and Vulkan samples to TypeScript in
+[native_ts_graphics](https://github.com/ASDAlexander77/native_ts_graphics), from October 2026.
+Each one has a minimal repro beside this file (`ntg_*.ts`), written in the style of the other
+files here (`print` / `assert`, top-level code).
+
+**Verified on:** `tslang version v0.0-pre-alpha92` (LLVM 22.1.8), the `I:\tslang\tslang.exe` build
+of 2026-10-06, on Windows 11, 2026-10-11. Run each repro with:
+
+```
+tslang --emit=jit --jit-cache=false docs/bugs/ntg_<name>.ts
+```
+
+Every repro below still fails on that build: a failed assertion (exit code 3), a compile error,
+or a compiler crash.
+
+| # | Issue | Kind | Repro |
+|---|---|---|---|
+| 1 | Comparing `Opaque` with `Opaque \| null` crashes the compiler | Compiler crash, no message | `ntg_opaque_nullable_compare.ts` |
+| 2 | Boolean array elements read back wrong | Wrong value, silent | `ntg_boolean_array_elements.ts` |
+| 3 | `let s = 0` is an integer, so `s += 1.5` truncates | Wrong value, silent | `ntg_let_zero_is_integer.ts` |
+| 4 | Escapes not processed in templates with substitutions | Wrong value, silent | `ntg_template_literal_escape.ts` |
+| 5 | `Math.max` of negative numbers returns 2.2e-308 | Wrong value, silent (default lib) | `ntg_math_max_negative.ts` |
+| 6 | `boolean && (Class \| null)` as a condition fails to compile | Compile error | `ntg_and_nullable_class.ts` |
+
+The silent ones (2 to 5) cost the most time: the programs compile and run, and only the output
+is wrong.
+
+---
+
+## 1. Comparing `Opaque` with `Opaque | null` crashes the compiler
+
+```ts
+class State {
+    current: Opaque | null;
+    ...
+    set(next: Opaque): boolean {
+        if (next != this.current) { ... }
+```
+
+**Observed:** tslang exits with `0xC00000FD` (stack overflow) and prints nothing: no diagnostic,
+no line number. Under Ninja the build step just shows `FAILED`.
+
+**Expected:** compiles (it's an identity comparison of two handles), or at least a diagnostic.
+
+**Impact and workaround:** this happened in a renderer that tracked the currently bound pipeline
+to skip redundant binds. Finding it took a bisection, stubbing method bodies one at a time. The
+workaround is to track such state with an integer (e.g. a pipeline index, -1 for none). From
+bash the exit code shows as 127 (a missing DLL in that environment); run tslang from cmd or
+PowerShell to see `0xC00000FD`.
+
+## 2. Boolean array elements read back wrong
+
+```ts
+const FLAGS = [false, true, false, true];
+let n = 0;
+for (let i = 0; i < FLAGS.length; i++) {
+    if (FLAGS[i]) { n++; }
+}
+print(n);              // 10 (expected 2)
+const b: boolean = FLAGS[1];
+print(b);              // false (expected true)
+```
+
+**Observed:** `if (FLAGS[i])` is never taken for any element, a counted loop gives a nonsense
+count (10 for 4 elements), and printing the elements one by one inside a namespace function gave
+them inverted (`true false true false`). The array's `length` is right. This happens both at the
+top level and inside namespaces.
+
+**Expected:** 2, true.
+
+**Impact and workaround:** one port's table of per-axis rotation flags was silently skipped, so
+bounding boxes weren't rotated. The workaround is number arrays compared with `!= 0`. It looks
+like an element-type or width mismatch (i1 vs i8?) in boolean array loads.
+
+## 3. `let s = 0` is an integer, so adding a fraction truncates
+
+```ts
+let s = 0;
+s += 1.5;
+print(s);              // 1 (expected 1.5)
+
+function sum(values: number[]): number {
+    let a = 0;
+    for (...) a += values[i];
+    return a;          // sum([1.5, 0, 2]) gives 3, expected 3.5
+}
+```
+
+**Observed:** the variable's type is inferred from the integer literal as an integer, so every
+later `+=` / `= s + x` truncates. `let u: number = 0` works.
+
+**Expected (TypeScript semantics):** `s` is a `number` (a double). This may be a deliberate
+design choice for performance. If so, it's worth documenting prominently, because ordinary
+TypeScript code (accumulators, running totals) changes meaning silently. A warning when a
+fractional value is assigned to an integer-inferred variable would catch it.
+
+**Workaround:** write `0.0`, or annotate `: number`.
+
+## 4. Escapes not processed in template literals with substitutions
+
+```ts
+const n = 1;
+const s = `${n}\n${n}`;
+print(s.length);       // 4: "1", "\", "n", "1" (expected 3)
+```
+
+**Observed:** the characters around a substitution keep their escape sequences literally. A
+template without substitutions (`` `a\nb` ``) and a string literal (`"a\nb"`) are fine.
+
+**Expected:** 3 (a newline character).
+
+**Impact and workaround:** two-line ImGui labels (`` `Timestamps Period:\n ${period} ns` ``)
+showed a literal `\n` on screen. Split such texts into separate strings, or concatenate a
+`"\n"` string literal.
+
+## 5. `Math.max` of negative numbers returns 2.2e-308
+
+```ts
+print(Math.max(-3, -5));   // 2.22507e-308 (expected -3)
+```
+
+**Observed:** the default library's `Math.max` (TypeScriptCompilerDefaultLib `src/lib.ts`, line
+1552: `let m = Number.MIN_VALUE;`) starts its running maximum at `Number.MIN_VALUE`, the smallest
+*positive* double, rather than `-Infinity`. So any all-negative input returns 2.2e-308. The
+library's own `tests/math.ts` (line 107, `isEq(Math.max(-1, -7), -1)`) checks exactly this case.
+`Math.min` of positive numbers is fine. Also, `Number.MIN_VALUE` there is 2.22507385855e-308 (the
+smallest *normal* double); in JavaScript it is 5e-324 (the smallest subnormal), as the comment
+beside it notes.
+
+**Expected:** -3. Start from `-Infinity`, or from the first argument (and `Math.max()` with no
+arguments is `-Infinity`).
+
+**Impact and workaround:** a camera's pitch clamp broke. Clamp with explicit comparisons.
+
+## 6. `boolean && (Class | null)` as a condition fails to compile
+
+```ts
+function use(enabled: boolean, handle: Handle | null): number {
+    if (enabled && handle) {
+        return handle.value;
+    }
+    return 0;
+}
+```
+
+**Observed:**
+
+```
+error: can't instantiate function. '___cast' not all generic types can be identified
+    if (enabled && handle) {
+error: failed statement
+```
+
+**Expected:** compiles, and `handle` is narrowed to `Handle` inside the block.
+
+**Workaround:** nest the conditions: `if (enabled) { if (handle) { ... } }`.
+
+---
+
+## Seen earlier but not reproduced in minimal form
+
+These came up in larger programs during the port series, but small repros of them pass on the
+build above. Either they were fixed since, or they need more context than the obvious minimal
+form. They're listed in case they ring a bell:
+
+- **Literal-union ternaries in arithmetic:** `width * (split ? 0.5 : 1.0)` evaluated to 0, and
+  `(held ? 1.0 : 0.0) - (...)` broke a camera's movement. Assigning the ternary to a `: number`
+  local first fixed it. Separately, `const left = c ? 448.0 : 96.0` got a literal-union type that
+  wouldn't mix with other numbers in arithmetic or ternaries without a `: number` annotation.
+  Minimal versions, with `number` and with `f32` operands, now compute the right values.
+- **An array literal mixing `f32` values and number literals, passed as `number[]`:** failed with
+  `invalid cast from [f32, 0, ...]`. It now compiles and passes the right values.
+- **Methods passed as callbacks** (`pass.setRenderCallback(this.onRender)`) seemed to resolve only
+  for members declared earlier in the class, so the examples declare `init()` (which registers the
+  callbacks) last. A minimal class calling `invoke(this.onRender)` with `onRender` declared after
+  `init` works.
+
+## Interop behaviors worth documenting
+
+These aren't necessarily bugs, but each cost time because the behavior was silent:
+
+- **`string` returns from declared C functions keep the raw `char*` without copying.** A C++
+  helper that reused one `std::string` buffer for several calls handed TypeScript strings that
+  changed under it (garbage after the next call). The C side must return pointers to storage that
+  outlives the TypeScript string.
+- **`number` parameters of declared C functions are doubles.** A C++ function declared with a
+  `float` parameter reads garbage, with no error (rotations came out as identity). The C side must
+  take `double`.
