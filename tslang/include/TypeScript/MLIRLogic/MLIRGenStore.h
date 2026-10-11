@@ -790,6 +790,11 @@ struct ClassInfo
     // vtable's slots from 0 in declaration order, a base class's first: no `.instanceOf`, `.new`,
     // interface or static-field slots, no RTTI, and no vtable or constructor of its own.
     bool isCppVTable;
+    // a @cppvtable class with methods that have bodies: C++ methods implemented here, so C++ can
+    // call them through its objects. It has a vtable (the C++ one's layout: the slots and nothing
+    // else, a slot left to a declared C++ method null), may have a constructor and field
+    // initializers, and `.new`; still no RTTI. tslang allocates its objects.
+    bool isCppVTableImplementation = false;
     ProcessingStages processingAtEvaluation;
     ProcessingStages processing;
     // the module `processing` was reached in: a discovery module is thrown away with what it holds

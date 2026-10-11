@@ -2708,7 +2708,8 @@ set_tests_properties(test-compile-interface-cast-empty
 
 # A @cppvtable class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
 # would add a slot, run code of its own or ask the object what it is is an error: a slot off by one
-# would call the wrong C++ method, with no error at all.
+# would call the wrong C++ method, with no error at all. One whose methods have bodies implements
+# C++ methods (cppvtable/abi_*.ts' Counter), with limits of its own.
 set(cppvtable_errors
     "instanceof|instanceof can't be used with a @cppvtable class"
     "box_any|can't cast 'Base' to 'any': a @cppvtable class's objects are C\\+\\+ objects"
@@ -2717,10 +2718,11 @@ set(cppvtable_errors
     "extends_plain|the @cppvtable class 'Base' can only extend a @cppvtable class, not 'Plain'"
     "plain_extends|class 'Plain' can't extend the @cppvtable class 'Base': it has to be @cppvtable too"
     "implements|a @cppvtable class can't implement an interface"
-    "method_body|a method of a @cppvtable class is a C\\+\\+ vtable slot: it can't have a body"
+    "method_body|a method implementing a C\\+\\+ method \\(a @cppvtable class's, with a body\\) can't return a struct yet"
+    "export_implementation|a @cppvtable class implementing C\\+\\+ methods can't be exported"
     "static_member|a @cppvtable class can't have static members"
     "constructor|a @cppvtable class can't have a constructor"
-    "get_accessor|a @cppvtable class can only have methods without bodies and fields"
+    "get_accessor|a @cppvtable class can only have methods and fields"
     "field_initializer|a field of a @cppvtable class can't have an initializer")
 foreach(cppvtable_error ${cppvtable_errors})
     string(REPLACE "|" ";" cppvtable_error "${cppvtable_error}")
@@ -2791,6 +2793,14 @@ foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-
                      "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
     set_tests_properties(test-compile-cppvtable-itanium-call-${cppvtable_itanium_triple}
                          PROPERTIES PASS_REGULAR_EXPRESSION "i1 zeroext %[0-9]+, i8 zeroext %[0-9]+, i8 signext %[0-9]+\\).*\\(ptr sret\\(\\{ ptr \\}\\) %[0-9]+, ptr %[0-9]+, i32 3\\)"
+                                    FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+    # C++ methods implemented here (abi_itanium.ts' Counter): the vtable is the C++ one's slots and
+    # nothing else, the two destructors left null, and a bool result is extended for C++ callers
+    add_test(NAME test-compile-cppvtable-itanium-implementation-${cppvtable_itanium_triple}
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=${cppvtable_itanium_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
+    set_tests_properties(test-compile-cppvtable-itanium-implementation-${cppvtable_itanium_triple}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "@Counter\\.\\.vtbl = private global \\{ ptr, ptr, ptr, ptr, ptr \\} \\{ ptr null, ptr null, ptr @Counter\\.message, ptr @Counter\\.count, ptr @Counter\\.isEven \\}.*define zeroext i1 @Counter\\.isEven"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 

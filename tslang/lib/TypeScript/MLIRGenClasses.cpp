@@ -206,8 +206,9 @@ namespace mlirgen
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        // a @cppvtable class is never constructed, typed or allocated here: its objects come from C++
-        auto hasOwnRuntimeMembers = !newClassPtr->isStatic && !newClassPtr->isCppVTable;
+        // a @cppvtable class is never constructed, typed or allocated here: its objects come from C++;
+        // unless it implements C++ methods, which it does in an object of its own
+        auto hasOwnRuntimeMembers = !newClassPtr->isStatic && (!newClassPtr->isCppVTable || newClassPtr->isCppVTableImplementation);
 
         if (hasOwnRuntimeMembers)
         {
@@ -215,7 +216,8 @@ namespace mlirgen
         }
 
 #ifdef ENABLE_RTTI
-        if (hasOwnRuntimeMembers)
+        // no `.instanceOf`: a C++ vtable has only the C++ methods
+        if (hasOwnRuntimeMembers && !newClassPtr->isCppVTable)
         {
             // INFO: .instanceOf must be first element in VTable for Cast Any
             mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
@@ -353,12 +355,20 @@ namespace mlirgen
                 }
 
                 // a binding to C++ objects: declared (its methods have no bodies), with a vtable
-                // field even with no `abstract` method (see ClassInfo::isCppVTable)
+                // field even with no `abstract` method (see ClassInfo::isCppVTable); or, with
+                // methods that have bodies, C++ methods implemented here
+                // (ClassInfo::isCppVTableImplementation)
                 if (name == CPP_VTABLE)
                 {
                     newClassPtr->isCppVTable = true;
-                    newClassPtr->isDeclaration = true;
                     newClassPtr->hasVirtualTable = true;
+                    newClassPtr->isCppVTableImplementation = llvm::any_of(classDeclarationAST->members, [](ClassElement member) {
+                        return member == SyntaxKind::MethodDeclaration && member.as<MethodDeclaration>()->body;
+                    });
+                    if (!newClassPtr->isCppVTableImplementation)
+                    {
+                        newClassPtr->isDeclaration = true;
+                    }
                 }
             });
 
@@ -384,9 +394,14 @@ namespace mlirgen
     // record of one or two 8-byte integer or pointer fields comes back in RAX:RDX / X0:X1, as tslang
     // returns such a tuple, so the method keeps its declared type; other trivial records are packed
     // into registers or returned in memory, which isn't done here.
+    //
+    // A method with a body (of a class implementing C++ methods) is called by C++: it is marked
+    // CPP_METHOD_ATTR_NAME, and can't return a record yet (its body would have to write it through
+    // the hidden pointer).
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          StringRef funcName, bool nonTrivial)
+                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody)
     {
+        auto funcName = funcOp.getName();
         if (!newClassPtr->isCppVTable)
         {
             if (nonTrivial)
@@ -399,6 +414,10 @@ namespace mlirgen
         }
 
         cppVTableMethods.insert(funcName);
+        if (hasBody)
+        {
+            funcOp->setAttr(CPP_METHOD_ATTR_NAME, builder.getUnitAttr());
+        }
 
         auto method = llvm::find_if(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName; });
         if (method == newClassPtr->methods.end() || method->declaredFuncType)
@@ -416,6 +435,12 @@ namespace mlirgen
             }
 
             return mlir::success();
+        }
+
+        if (hasBody)
+        {
+            emitError(location) << "a method implementing a C++ method (a @" CPP_VTABLE " class's, with a body) can't return a struct yet";
+            return mlir::failure();
         }
 
         auto resultType = funcType.getResult(0);
@@ -564,6 +589,15 @@ namespace mlirgen
             }
         }
 
+        // implementing C++ methods (isCppVTableImplementation): bodies, a constructor and field
+        // initializers are its own; it is not exported, as an importer would get its declaration
+        // only, with the methods' bodies but not the vtable they are in
+        auto implementation = newClassPtr->isCppVTableImplementation;
+        if (implementation && getExportModifier(classDeclarationAST))
+        {
+            error(location) << "a @" CPP_VTABLE " class implementing C++ methods can't be exported";
+        }
+
         for (auto &classMember : classDeclarationAST->members)
         {
             auto memberLocation = loc(classMember);
@@ -573,13 +607,9 @@ namespace mlirgen
                 continue;
             }
 
+            // a method is a slot; with a body, it implements a C++ method (isCppVTableImplementation)
             if (classMember == SyntaxKind::MethodDeclaration)
             {
-                if (classMember.as<MethodDeclaration>()->body)
-                {
-                    error(memberLocation) << "a method of a @" CPP_VTABLE " class is a C++ vtable slot: it can't have a body";
-                }
-
                 continue;
             }
 
@@ -587,7 +617,7 @@ namespace mlirgen
             {
                 // a field of the C++ object, after its vtable pointer
                 auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-                if (propertyDeclaration->initializer)
+                if (propertyDeclaration->initializer && !implementation)
                 {
                     error(memberLocation) << "a field of a @" CPP_VTABLE " class can't have an initializer";
                 }
@@ -602,12 +632,17 @@ namespace mlirgen
 
             if (classMember == SyntaxKind::Constructor)
             {
-                error(memberLocation) << "a @" CPP_VTABLE " class can't have a constructor: its objects are made by C++";
+                if (!implementation)
+                {
+                    error(memberLocation) << "a @" CPP_VTABLE " class can't have a constructor: its objects are made by C++, "
+                                          << "unless its methods have bodies";
+                }
+
                 continue;
             }
 
             // accessors are generated methods: their slots wouldn't follow the declaration order
-            error(memberLocation) << "a @" CPP_VTABLE " class can only have methods without bodies and fields";
+            error(memberLocation) << "a @" CPP_VTABLE " class can only have methods and fields";
         }
 
         return failed ? mlir::failure() : mlir::success();
@@ -703,7 +738,7 @@ namespace mlirgen
         }
 #endif
 
-        if (!newClassPtr->isStatic && !newClassPtr->isCppVTable)
+        if (!newClassPtr->isStatic && (!newClassPtr->isCppVTable || newClassPtr->isCppVTableImplementation))
         {
             mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
         }
@@ -2351,7 +2386,50 @@ genContext);
                             slotType = mlir_ts::RefType::get(vtRecord.staticFieldInfo.type);
                         }
 
-                        if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
+                        // a class implementing C++ methods: a slot it leaves to a method of the
+                        // C++ class it extends, which has no body, is null, as a pure virtual's
+                        auto isUnimplementedCppMethod = [&]() {
+                            if (!newClassPtr->isCppVTable || vtRecord.isStaticField)
+                            {
+                                return false;
+                            }
+
+                            std::function<ClassInfo::TypePtr(ClassInfo::TypePtr)> findOwner =
+                                [&](ClassInfo::TypePtr cls) -> ClassInfo::TypePtr {
+                                if (llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == symbolName; }))
+                                {
+                                    return cls;
+                                }
+
+                                for (auto &base : cls->baseClasses)
+                                {
+                                    if (auto owner = findOwner(base))
+                                    {
+                                        return owner;
+                                    }
+                                }
+
+                                return ClassInfo::TypePtr();
+                            };
+
+                            auto owner = findOwner(newClassPtr);
+                            return owner && owner->isCppVTable && !owner->isCppVTableImplementation;
+                        };
+
+                        if (isUnimplementedCppMethod())
+                        {
+                            // through Opaque: a null function is no TypeScript value
+                            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                            auto nullOpaque = builder.create<mlir_ts::CastOp>(location, getOpaqueType(), nullValue);
+                            auto castResult = cast(location, slotType, nullOpaque, genContext);
+                            if (castResult.failed_or_no_value())
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                            }
+
+                            methodOrFieldNameRef = V(castResult);
+                        }
+                        else if (isOwnedByDynamicImport(symbolName, vtRecord.isStaticField))
                         {
                             auto dllSymbolName = !vtRecord.isStaticField && !vtRecord.methodInfo.dllName.empty()
                                 ? StringRef(vtRecord.methodInfo.dllName)
@@ -2530,8 +2608,11 @@ genContext);
             classMethodMemberInfo.setFuncOp(funcOp);
             if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight, accessLevel))
             {
-                if (mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp.getName(),
-                                                                   MLIRHelper::hasDecorator(funcLikeDeclaration, CPP_NON_TRIVIAL))))
+                // C++ methods: not a constructor, nor `.new` (static)
+                if (!classMethodMemberInfo.isConstructor && !classMethodMemberInfo.isStatic
+                    && mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp,
+                                                                      MLIRHelper::hasDecorator(funcLikeDeclaration, CPP_NON_TRIVIAL),
+                                                                      static_cast<bool>(funcLikeDeclaration->body))))
                 {
                     return mlir::failure();
                 }

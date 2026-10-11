@@ -11247,7 +11247,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          StringRef funcName, bool nonTrivial);
+                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody);
 
     bool isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType);
 
