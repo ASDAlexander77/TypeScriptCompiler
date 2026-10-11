@@ -420,6 +420,7 @@ tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 # not in TSLANG_CORPUS: a @cppvtable class is an error under rc (cppvtable/memory_model.ts)
 tslang_add_test(NAME test-compile-00-cppvtable-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-compile-00-cppvtable-hidden-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -950,6 +951,7 @@ tslang_add_test(NAME test-jit-00-union-nullable-array COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-cppvtable-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-jit-00-cppvtable-hidden-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_hidden_return.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2729,6 +2731,16 @@ add_test(NAME test-compile-cppvtable-memory-model-none
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-none.obj")
 set_tests_properties(test-compile-cppvtable-memory-model-none
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
+# A method returning a record (tests/00cppvtable_hidden_return.ts) is MSVC's: the Itanium ABI
+# returns a record through a pointer before `this`, and only some records.
+add_test(NAME test-compile-cppvtable-hidden-return-target
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/hidden_return_target.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-hidden-return-target.obj")
+set_tests_properties(test-compile-cppvtable-hidden-return-target
+                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.
 add_test(NAME test-compile-cppvtable-thiscall-target

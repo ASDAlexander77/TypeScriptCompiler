@@ -11,13 +11,20 @@ namespace M {
         second(x: s32): s32; // slot 1
     }
 
+    export type Pair = [first: s32, second: s32];
+
     @cppvtable
     export class Derived extends Base {
         third(x: s32, y: s32): s32; // slot 2
+        pair(x: s32): Pair;         // slot 3: a record, returned through a pointer after `this`
     }
 
     // called through this module's numbering
     export function callSecond(object: Base, x: s32): s32 {
         return object.second(x);
+    }
+
+    export function callPair(object: Derived, x: s32): Pair {
+        return object.pair(x);
     }
 }

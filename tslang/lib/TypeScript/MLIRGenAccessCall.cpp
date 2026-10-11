@@ -1751,6 +1751,28 @@ namespace mlirgen
                     getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults(), calledBoundFuncType.isVarArg());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
+
+                // a @cppvtable method returning a record (mlirGenClassCppVTableHiddenReturn): it
+                // writes it to a local, passed after `this`, which is the call's value
+                if (auto resultType = cppVTableHiddenReturnType(funcRefValue))
+                {
+                    auto resultSlot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(resultType),
+                                                                         mlir::Value(), builder.getBoolAttr(false),
+                                                                         builder.getIndexAttr(0));
+                    SmallVector<mlir::Value, 4> slotOperands;
+                    slotOperands.push_back(resultSlot);
+                    slotOperands.append(operands.begin(), operands.end());
+                    auto callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext);
+                    if (mlir::failed(callResult))
+                    {
+                        value = mlir::failure();
+                        return;
+                    }
+
+                    value = V(builder.create<mlir_ts::LoadOp>(location, resultType, resultSlot));
+                    return;
+                }
+
                 value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext);
             })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {

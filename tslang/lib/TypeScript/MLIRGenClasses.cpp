@@ -369,6 +369,53 @@ namespace mlirgen
         return newClassPtr;
     }
 
+    // MSVC returns a C++ record (struct, class - RefCountPtr<T> too) from an instance method through
+    // a hidden pointer, passed after `this` and returned in turn (clang's
+    // MicrosoftCXXABI::classifyReturnType: "MSVC always returns structs indirectly from C++ instance
+    // methods"). A @cppvtable method declared to return a tuple returns that record: its slot is
+    // called as (this, Ref<T>, args...) -> Ref<T>, the type kept in the MethodInfo, and a call
+    // (mlirGenCall) passes a local of T and reads it back. The declared type stays for
+    // DeclarationPrinter, so an importer lowers it again.
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                          StringRef funcName)
+    {
+        if (!newClassPtr->isCppVTable)
+        {
+            return mlir::success();
+        }
+
+        auto method = llvm::find_if(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName; });
+        if (method == newClassPtr->methods.end() || method->declaredFuncType)
+        {
+            return mlir::success();
+        }
+
+        auto funcType = method->funcType;
+        if (funcType.getNumResults() != 1 || !isa<mlir_ts::TupleType>(funcType.getResult(0)) || funcType.getNumInputs() < 1)
+        {
+            return mlir::success();
+        }
+
+        if (!compileOptions.targetInfo.hiddenReturnPointerAfterThis)
+        {
+            emitError(location) << "a method of a @" CPP_VTABLE " class returning a struct needs the MSVC ABI, which returns it "
+                                << "through a pointer after 'this'";
+            return mlir::failure();
+        }
+
+        auto resultType = funcType.getResult(0);
+        auto resultRefType = mlir_ts::RefType::get(resultType);
+        SmallVector<mlir::Type> inputs;
+        inputs.push_back(funcType.getInput(0));
+        inputs.push_back(resultRefType);
+        inputs.append(funcType.getInputs().begin() + 1, funcType.getInputs().end());
+
+        method->declaredFuncType = funcType;
+        method->funcType = getFunctionType(inputs, {resultRefType}, funcType.isVarArg());
+        cppVTableHiddenReturns[funcName] = resultType;
+        return mlir::success();
+    }
+
     // A @cppvtable class only names the slots of a vtable made by C++, so everything that would add
     // a slot, a field initializer or code of its own is an error, and so is a hierarchy mixing it
     // with ordinary classes: a slot number off by one calls the wrong C++ method, with no error.
@@ -2402,6 +2449,11 @@ genContext);
             classMethodMemberInfo.setFuncOp(funcOp);
             if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight, accessLevel))
             {
+                if (mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp.getName())))
+                {
+                    return mlir::failure();
+                }
+
                 funcLikeDeclaration->processed = true;
                 return mlir::success();
             }

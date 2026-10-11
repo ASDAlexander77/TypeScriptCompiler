@@ -151,6 +151,10 @@ struct MethodInfo
     mlir_ts::AccessLevel accessLevel;
     // @dllname: exported symbol name, empty when the method keeps funcName
     std::string dllName;
+    // A @cppvtable method returning a C++ record: the type it is declared with (funcType is the
+    // one its slot is called with, the hidden result pointer after `this`, see
+    // mlirGenClassCppVTableHiddenReturn); null for any other method.
+    mlir_ts::FunctionType declaredFuncType;
 };
 
 struct GenericMethodInfo

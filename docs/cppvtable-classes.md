@@ -60,6 +60,7 @@ these are errors and not warnings.
 | `instanceof`, a cast to or from `any`, a cast to an interface | each asks the object through slot 0, which is a C++ method |
 | `-mm=rc` / `-mm=own` | retains and releases write a count in the word before an object, inside the C++ object |
 | a 32-bit x86 MSVC target | C++ member functions are `__thiscall` there (`this` in ECX) |
+| a method returning a tuple, on a non-MSVC target | the Itanium ABI returns records otherwise (see below) |
 
 A generic or static class can't be `@cppvtable` either.
 
@@ -74,14 +75,27 @@ A generic or static class can't be `@cppvtable` either.
   TypeScript name. MSVC groups overloads in the vtable, and not always in declaration order:
   check the slot numbers in the layout report.
 - **Struct returned by value.** A C++ method that returns a class or struct by value (for
-  example `nvrhi::RefCountPtr<T>`) returns it through a hidden pointer. Under MSVC that pointer
-  is passed after `this`, and the method returns it. Declare the method with that parameter:
+  example `nvrhi::RefCountPtr<T>` or `nvrhi::Object`) returns a record. Declare its return type
+  as a tuple with the record's layout:
 
   ```ts
-  createBuffer(ret: Ref<Opaque | null>, desc: Ref<BufferDesc>): Opaque;  // RefCountPtr<IBuffer>
+  type RefCountPtr = [pointer: Opaque | null];          // nvrhi::RefCountPtr<T>
+  createBuffer(desc: Ref<BufferDesc>): RefCountPtr;     // const handle = device.createBuffer(Ref(desc))
   ```
 
-  The pointer it writes holds a reference, which the caller gives back with `Release()`.
+  MSVC returns a record from an instance method through a hidden pointer, whatever its size. The
+  pointer is passed after `this`, and the method returns it as well. A call to such a method
+  passes a local for the result and reads it back, so the call's value is the record. This is
+  clang's `MicrosoftCXXABI::classifyReturnType`: "MSVC always returns structs indirectly from C++
+  instance methods". A method returning a class (`getLayout(): IBindingLayout`, a C++ pointer) or
+  a number still returns it in a register.
+
+  The record isn't destroyed: a `RefCountPtr` the method returns holds a reference, which the
+  caller gives back with `Release()`. The Itanium ABI passes the pointer before `this`, and only
+  for some records, so on a non-MSVC target such a method is an error. A method stored in a
+  variable and called later takes the hidden pointer as its first argument; call it directly.
+  tslang pre-alpha94 and earlier need the hidden pointer declared as a parameter:
+  `createBuffer(ret: Ref<Opaque | null>, desc: Ref<BufferDesc>): Opaque`.
 - **Structs by reference** (`const BufferDesc&`) are a `Ref<T>` to a named tuple with the C++
   layout. That layout depends on the C++ build: `std::string`, for example, is 32 bytes with the
   release CRT and 40 with the debug CRT.

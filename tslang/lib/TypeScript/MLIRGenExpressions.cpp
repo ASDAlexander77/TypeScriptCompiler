@@ -1075,6 +1075,11 @@ namespace mlirgen
 
         SmallVector<mlir::Value, 4> operands;
         auto offsetArgs = isa<mlir_ts::BoundFunctionType>(funcType) || isa<mlir_ts::ExtensionFunctionType>(funcType) ? 1 : 0;
+        // a @cppvtable method returning a record: the arguments follow its hidden result pointer
+        if (cppVTableHiddenReturnType(funcResult))
+        {
+            offsetArgs = 2;
+        }
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))
         {
             return mlir::failure();

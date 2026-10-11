@@ -32,6 +32,12 @@ struct TargetInfo
     // convention a class method is called with, so a @cppvtable class can't call them.
     bool memberCallsUseThiscall = false;
 
+    // MSVC returns a C++ record (struct, class) from an instance method through a hidden pointer,
+    // passed after `this` and returned in turn (clang's MicrosoftCXXABI::classifyReturnType): the
+    // convention of a @cppvtable method declared to return a tuple. The Itanium ABI passes it
+    // before `this`, and only for some records.
+    bool hiddenReturnPointerAfterThis = false;
+
     static TargetInfo fromTriple(const llvm::Triple &target, const llvm::Triple &host)
     {
         TargetInfo info;
@@ -55,6 +61,7 @@ struct TargetInfo
         info.supportsInProcessJit =
             target.getArch() == host.getArch() && target.getOS() == host.getOS();
         info.memberCallsUseThiscall = msvc && x86_32;
+        info.hiddenReturnPointerAfterThis = msvc;
 
         return info;
     }
