@@ -2634,6 +2634,25 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A number, string, boolean or array passed where an interface with members is expected is an
+# error; it compiled to a cast lowering could not make, and the callee read garbage. An interface
+# without members still takes any value.
+foreach(interface_cast_name number string boolean array)
+    add_test(NAME test-compile-interface-cast-${interface_cast_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/interface-cast/${interface_cast_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-${interface_cast_name}.obj")
+    set_tests_properties(test-compile-interface-cast-${interface_cast_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "can't be cast to interface 'IKind': it has none of the interface's members"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+add_test(NAME test-compile-interface-cast-empty
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/interface-cast/empty.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-empty.obj")
+set_tests_properties(test-compile-interface-cast-empty
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
 # An error inside a cast function the compiler generates (here: null in a union cast to string) is
 # reported where the cast is - line 6 - and not at the generated text's offset taken as a position
 # in the user's file, which put it inside the comment on line 1.
