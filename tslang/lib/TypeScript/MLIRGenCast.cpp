@@ -2116,15 +2116,17 @@ namespace mlirgen
 
         auto src = ss.str();
 
-        {
-            MLIRLocationGuard vgLoc(overwriteLoc); 
-            overwriteLoc = location;
+        // The generated function's body is generated when the call below instantiates it, not when
+        // it is parsed, so the call site has to stay the location until then. Without it a
+        // diagnostic there took the generated text's offset as a position in the user's file - an
+        // error reported inside a comment on line 1.
+        MLIRLocationGuard vgLoc(overwriteLoc);
+        overwriteLoc = location;
 
-            if (mlir::failed(parsePartialStatements(src)))
-            {
-                assert(false);
-                return mlir::failure();
-            }
+        if (mlir::failed(parsePartialStatements(src)))
+        {
+            assert(false);
+            return mlir::failure();
         }
 
         auto funcResult = resolveIdentifier(location, funcName, genContext);
@@ -2308,15 +2310,14 @@ namespace mlirgen
 
                 auto src = ss.str();
 
-                {
-                    MLIRLocationGuard vgLoc(overwriteLoc); 
-                    overwriteLoc = location;
+                // kept until the call below has instantiated the function - see castPrimitiveTypeFromAny
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
 
-                    if (mlir::failed(parsePartialStatements(src)))
-                    {
-                        assert(false);
-                        return mlir::failure();
-                    }
+                if (mlir::failed(parsePartialStatements(src)))
+                {
+                    assert(false);
+                    return mlir::failure();
                 }
 
                 auto funcResult = resolveIdentifier(location, funcName, genContext);
