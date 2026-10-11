@@ -13,7 +13,8 @@ tslang --emit=jit --jit-cache=false docs/bugs/ntg_<name>.ts
 ```
 
 Every repro below failed on that build: a failed assertion (exit code 3), a compile error, or a
-compiler crash.
+compiler crash. Issue 7 is newer: it comes from pre-alpha93's JIT cache, so its repro runs *without*
+`--jit-cache=false` (see there).
 
 **Status (2026-10-11):** each issue has a fix with a regression test in the compiler's suite
 (`tslang/test/tester`); the "Fix" column links it. Issue 3 is deliberate (integer literals are
@@ -28,6 +29,7 @@ keeps failing by design. The repros stay here as the record of what was reported
 | 4 | Escapes not processed in templates with substitutions | Wrong value, silent | `ntg_template_literal_escape.ts` | [#539](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/539) |
 | 5 | `Math.max` of negative numbers returns 2.2e-308 | Wrong value, silent (default lib) | `ntg_math_max_negative.ts` | [DefaultLib#31](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/pull/31), and [#535](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/535) for why its test passed |
 | 6 | `boolean && (Class \| null)` as a condition fails to compile | Compile error | `ntg_and_nullable_class.ts` | [#540](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/540), and [#541](https://github.com/ASDAlexander77/TypeScriptCompiler/pull/541) for its misplaced first error |
+| 7 | The JIT cache crashes a run that compiles two or more modules (pre-alpha93) | Compiler crash, no message | `ntg_jit_cache_import.ts` | open |
 
 The silent ones (2 to 5) cost the most time: the programs compile and run, and only the output
 is wrong.
@@ -186,6 +188,43 @@ types failed, and `enabled && handle` is a `boolean | Handle | null`. The genera
 returned null for the null member, which can't be a boolean. The repro's first error, reported
 at line 1 inside the comment, was a separate bug: errors in that generated code took its offsets
 as positions in the user's file (#541).
+
+## 7. The JIT cache crashes a run that compiles two or more modules
+
+Found on `tslang version v0.0-pre-alpha93` (the `I:\tslang\tslang.exe` build of 2026-10-11), the
+first build with the JIT cache on by default. The repro is two files:
+
+```ts
+// ntg_jit_cache_import_lib.ts
+export function twice(x: number): number {
+    return x * 2;
+}
+
+// ntg_jit_cache_import.ts
+import { twice } from "./ntg_jit_cache_import_lib";
+print(twice(21));   // crashes before running (expected 42)
+```
+
+Run it **without** `--jit-cache=false`, from an empty cache (delete `docs/bugs/__jit` first):
+
+```
+tslang --emit=jit docs/bugs/ntg_jit_cache_import.ts
+```
+
+**Observed:** an access violation (`Exception Code: 0xC0000005`) inside `tslang.exe` before the
+program starts, with the usual "PLEASE submit a bug report" stack dump (only
+`__jit_debug_register_code` frames in a release build). The cache folder then holds the importing
+file's object only. Run it again and it works: the second run loads that object from the cache and
+compiles only the imported file. In general, a run that has to compile two or more modules crashes
+after writing the first, so each crashing run caches one more module; a program of N modules runs
+on the N-th attempt and from then on, until a source changes. With `--jit-cache=false` (one module
+per run) every run works.
+
+**Expected:** 42, done, on the first run.
+
+**Impact and workaround:** every native_ts_graphics example imports `core/input_pass.ts`, which
+imports `core/donut.ts`, so every example crashed under the JIT twice before running.
+`run_jit.bat` passes `--jit-cache=false`.
 
 ---
 
