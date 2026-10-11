@@ -636,7 +636,7 @@ class CastLogicHelper
                     // instead, a null `Handle | null` widened to `boolean | Handle | null` was a class
                     // holding a null pointer, which `=== null` did not see and `instanceof` read through.
                     auto storageTypes = mlir::cast<mlir_ts::UnionType>(baseType).getTypes();
-                    if (isPointerNullableType(inType)
+                    if (MLIRTypeHelper::isNullAbsorbingType(inType)
                         && llvm::any_of(storageTypes, [](mlir::Type type) { return isa<mlir_ts::NullType>(type); }))
                     {
                         auto llvmStringType = tch.convertType(stringType);
@@ -706,12 +706,6 @@ class CastLogicHelper
         }
 
         return mlir::Value();
-    }
-
-    // A type whose value is a single pointer that is null when it holds null.
-    static bool isPointerNullableType(mlir::Type type)
-    {
-        return isa<mlir_ts::ClassType, mlir_ts::StringType, mlir_ts::ArrayType, mlir_ts::ObjectType, mlir_ts::OpaqueType>(type);
     }
 
     bool isBool(mlir::Type type)

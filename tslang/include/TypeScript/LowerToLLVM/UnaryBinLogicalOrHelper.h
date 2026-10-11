@@ -110,6 +110,32 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             : builder.create<mlir_ts::DialectCastOp>(loc, llvmUnionType, value).getResult();
     };
 
+    // Compared with null, a tagged union tells by its tag when its actual type (isUnionTypeNeedsTag)
+    // has a null member. Without one, and with members that all hold null in their own pointer
+    // (`A | B | null`), it is null when its value's pointer is null, whichever member's tag it
+    // carries: a null `Handle` is a Handle holding a null pointer.
+    auto nullCompare = [&](mlir::Value unionValue, mlir_ts::UnionType unionType) -> mlir::Value {
+        ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        auto llvmUnion = asLLVMUnion(unionValue, unionType);
+
+        mlir::Type actualType;
+        mth.isUnionTypeNeedsTag(loc, unionType, actualType);
+        auto actualUnionType = dyn_cast<mlir_ts::UnionType>(actualType);
+        if (actualUnionType && mth.isNullAbsorbingUnion(actualUnionType))
+        {
+            // the first word of the value field: the pointer every member holds there
+            auto pointerWord = builder.create<LLVM::ExtractValueOp>(loc, llvmUnion, ArrayRef<int64_t>{UNION_VALUE_INDEX, 0, 0});
+            auto zero = builder.create<LLVM::ZeroOp>(loc, pointerWord.getType());
+            return builder.create<StdIOpTy>(loc, v1, pointerWord, zero);
+        }
+
+        auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
+                            llvmUnion, MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
+        auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
+        return builder.create<mlir_ts::StringCompareOp>(
+            loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
+    };
+
     if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
@@ -221,12 +247,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
             {
-                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
-                                    asLLVMUnion(right, unionType), MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
-                auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
-                auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
-                    loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
-                return cmpOp;
+                return nullCompare(right, unionType);
             }
 
             // the union is the right operand, so it is the right type that becomes its base type:
@@ -314,12 +335,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
                 right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero());            
             if (isRightNullValue)
             {
-                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()),
-                                    asLLVMUnion(left, unionType), MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));
-                auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
-                auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
-                    loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
-                return cmpOp;
+                return nullCompare(left, unionType);
             }
 
             emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";

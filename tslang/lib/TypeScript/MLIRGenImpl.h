@@ -6430,6 +6430,15 @@ class MLIRGenImpl
             }
         }
 
+        // Compared with null, a union stays a union: the lowering (LogicOp) asks the union itself,
+        // by its tag or, where null is a null pointer in a member, by that pointer. Cast to null
+        // first, it went through a generated cast whose `instanceof` read a null instance's vtable.
+        if ((isLeftUnion && isa<mlir_ts::NullType>(rightExpressionValue.getType()))
+            || (isRightUnion && isa<mlir_ts::NullType>(leftExpressionValue.getType())))
+        {
+            return isLeftUnion ? leftExpressionValue : rightExpressionValue;
+        }
+
         if (isLeftUnion && isRightUnion)
         {
             // TODO: finish cast between unions

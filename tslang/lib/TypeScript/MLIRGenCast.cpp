@@ -2254,6 +2254,33 @@ namespace mlirgen
                     return mlir::failure();
                 }
 
+                auto toBoolean = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
+
+                // A union whose actual type has no null member but whose members all hold null in
+                // their own pointer (`A | B | null`) is null when that pointer is null, whatever its
+                // tag: asked first, so that no member's test - `instanceof` reads the vtable - meets a
+                // null instance. A tag of its own for null is then never the one that tells.
+                mlir::Type actualType;
+                auto actualUnionType = mth.isUnionTypeNeedsTag(location, unionType, actualType)
+                    ? dyn_cast<mlir_ts::UnionType>(actualType) : mlir_ts::UnionType();
+                if (actualUnionType && mth.isNullAbsorbingUnion(actualUnionType))
+                {
+                    typeOfs.erase("null");
+
+                    // false tested for truth, the text "null" as text (`String(null)`), null where the
+                    // target takes null, and otherwise no value at all - as the end of this function
+                    auto targetTakesNull = isa<mlir_ts::NullType>(type)
+                        || (isa<mlir_ts::UnionType>(type)
+                            && llvm::any_of(mlir::cast<mlir_ts::UnionType>(type).getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); }))
+                        || (!compileOptions.strictNullChecks && MLIRTypeHelper::isNullAbsorbingType(type));
+                    ss << S("if (t === null) ")
+                       << (toBoolean ? S("return false;")
+                           : isa<mlir_ts::StringType>(type) ? S("return \"null\";")
+                           : targetTakesNull ? S("return null;")
+                           : S("throw \"Can't cast from union type\";"))
+                       << S("\n");
+                }
+
                 if (isNullDest)
                 {
                     // to null
@@ -2297,7 +2324,6 @@ namespace mlirgen
                     // to 'boolean'" - so a union of null and two or more other types, which is what
                     // `enabled && handle` makes of a boolean and a `Handle | null`, could not be
                     // tested in an `if` at all.
-                    auto toBoolean = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
 
                     // default
                     auto next = false;
@@ -2311,14 +2337,6 @@ namespace mlirgen
                         if (toBoolean && (pair.getKey() == "null" || pair.getKey() == "undefined"))
                         {
                             ss << S("return false;\n");
-                        }
-                        else if (toBoolean && pair.getKey() == "class" && classInstances.size() == 1)
-                        {
-                            // tested for truth, an instance is true and null is false - and a null
-                            // instance does carry the class's tag, when a `Class | null` became this
-                            // union (`enabled && handle` with handle null). `instanceof` would read
-                            // its vtable through the null pointer.
-                            ss << S("return t;\n");
                         }
                         else if (pair.getKey() == "class")
                         {
