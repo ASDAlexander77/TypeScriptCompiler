@@ -1340,6 +1340,27 @@ tslang_add_test(NAME test-compile-export-import-owned-returns COMMAND test-runne
 tslang_add_test(NAME test-compile-export-import-const-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-compile-export-import-const-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
 tslang_add_test(NAME test-compile-export-import-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
+# `import './export_os_suffix'` takes the target's file, export_os_suffix.win32.ts or
+# export_os_suffix.linux.ts: the host's is compiled and linked beside it, and the import's
+# declarations for each target are those of its file (the OS function that file declares).
+if (WIN32)
+    tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.win32.ts")
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    tslang_add_test(NAME test-compile-export-import-os-suffix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_os_suffix.linux.ts")
+endif()
+foreach(os_suffix "win32|x86_64-pc-windows-msvc|GetCurrentProcessId|getpid" "linux|x86_64-unknown-linux-gnu|getpid|GetCurrentProcessId")
+    string(REPLACE "|" ";" os_suffix "${os_suffix}")
+    list(GET os_suffix 0 os_name)
+    list(GET os_suffix 1 os_triple)
+    list(GET os_suffix 2 os_function)
+    list(GET os_suffix 3 os_other_function)
+    add_test(NAME test-compile-import-os-suffix-${os_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib -mtriple=${os_triple}
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/import_os_suffix.ts")
+    set_tests_properties(test-compile-import-os-suffix-${os_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Func @${os_function} "
+                                    FAIL_REGULAR_EXPRESSION "ts\\.Func @${os_other_function} |error:")
+endforeach()
 tslang_add_test(NAME test-compile-rc-export-import-owned-returns COMMAND test-runner -mm=rc "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 tslang_add_test(NAME test-compile-none-export-import-owned-returns COMMAND test-runner -mm=none "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 tslang_add_test(NAME test-compile-export-import-class-extends COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")

@@ -60,6 +60,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
@@ -13918,6 +13919,11 @@ class MLIRGenImpl
     }    
 
     // The file an `import` of a local source module names: next to the main file, `.ts` added.
+    // Without an extension, the module's file for the target comes first: `import "./m"` is m.win32.ts
+    // on Windows, m.linux.ts on Linux and Android, m.<the triple's OS name>.ts elsewhere, when it
+    // exists, else m.ts. A module with code per target (the vtables and layouts of a C++ ABI, say)
+    // is then picked as the default library picks lib.win32.ts or lib.linux.ts, while the importer
+    // names one module.
     std::string includeFilePath(StringRef fileName)
     {
         SmallString<256> fileNameStr(fileName);
@@ -13929,11 +13935,6 @@ class MLIRGenImpl
             fileNameStr.append(subStr);
         }
 
-        if (sys::path::extension(fileName) == "")
-        {
-            fileNameStr += ".ts";
-        }
-
         SmallString<256> fullPath;
 
         if (!sys::path::has_root_path(fileNameStr)) {
@@ -13943,7 +13944,38 @@ class MLIRGenImpl
         }
 
         sys::path::append(fullPath, fileNameStr);
+
+        if (sys::path::extension(fileName) == "")
+        {
+            SmallString<256> targetPath(fullPath);
+            targetPath += ".";
+            targetPath += targetOSFileSuffix();
+            targetPath += ".ts";
+            if (sys::fs::exists(targetPath))
+            {
+                return targetPath.str().str();
+            }
+
+            fullPath += ".ts";
+        }
+
         return fullPath.str().str();
+    }
+
+    // The OS part of a module's file name for the target (includeFilePath): win32, linux (Android
+    // too, as the default library builds lib.linux.ts for it), or the target triple's OS name.
+    StringRef targetOSFileSuffix()
+    {
+        llvm::Triple triple(compileOptions.moduleTargetTriple);
+        switch (triple.getOS())
+        {
+        case llvm::Triple::Win32:
+            return "win32";
+        case llvm::Triple::Linux:
+            return "linux";
+        default:
+            return llvm::Triple::getOSTypeName(triple.getOS());
+        }
     }
 
     std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fullPath)
