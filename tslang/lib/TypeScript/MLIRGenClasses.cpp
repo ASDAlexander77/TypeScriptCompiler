@@ -377,12 +377,13 @@ namespace mlirgen
     // (mlirGenCall) passes a local of T and reads it back. The declared type stays for
     // DeclarationPrinter, so an importer lowers it again.
     //
-    // The Itanium ABI on x86-64 (clang's ItaniumCXXABI::classifyReturnType, then the SysV
-    // classification) passes the pointer before `this`, for a record with a destructor or a copy
-    // constructor - nonTrivial, the method's @cppnontrivial, as a tuple can't say so - and the call
-    // swaps the two. A trivial record of one or two 8-byte integer or pointer fields comes back in
-    // RAX:RDX, as tslang returns such a tuple, so the method keeps its declared type; other trivial
-    // records are packed into registers or returned in memory, which isn't done here.
+    // The Itanium ABI on x86-64 and AArch64 (clang's ItaniumCXXABI::classifyReturnType, then the
+    // SysV or AAPCS64 classification) passes the pointer before `this`, for a record with a
+    // destructor or a copy constructor - nonTrivial, the method's @cppnontrivial, as a tuple can't
+    // say so - and the call swaps the two and marks the pointer `sret` (X8 on AArch64). A trivial
+    // record of one or two 8-byte integer or pointer fields comes back in RAX:RDX / X0:X1, as tslang
+    // returns such a tuple, so the method keeps its declared type; other trivial records are packed
+    // into registers or returned in memory, which isn't done here.
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                           StringRef funcName, bool nonTrivial)
     {
@@ -438,8 +439,8 @@ namespace mlirgen
         }
         else if (!targetInfo.hiddenReturnPointerAfterThis)
         {
-            emitError(location) << "a method of a @" CPP_VTABLE " class returning a struct needs the MSVC ABI or the x86-64 Itanium ABI, "
-                                << "which return it through a pointer next to 'this'";
+            emitError(location) << "a method of a @" CPP_VTABLE " class returning a struct needs the MSVC ABI, or the Itanium ABI on "
+                                << "x86-64 or AArch64, which return it through a pointer next to 'this'";
             return mlir::failure();
         }
 
@@ -460,9 +461,9 @@ namespace mlirgen
         return mlir::success();
     }
 
-    // The SysV classification of a trivial C++ record, as far as tslang returns a tuple the same
-    // way: one or two eightbytes of class INTEGER, each a whole field (an LLVM struct of i64s and
-    // pointers comes back in RAX:RDX; smaller fields would be packed into one register).
+    // The SysV (AAPCS64) classification of a trivial C++ record, as far as tslang returns a tuple the
+    // same way: one or two eightbytes of class INTEGER, each a whole field (an LLVM struct of i64s
+    // and pointers comes back in RAX:RDX / X0:X1; smaller fields would be packed into one register).
     bool MLIRGenImpl::isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType)
     {
         auto fields = recordType.getFields();

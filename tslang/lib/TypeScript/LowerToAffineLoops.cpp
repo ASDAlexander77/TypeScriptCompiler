@@ -2220,8 +2220,14 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
                                 : op.getOperands()) llvm::dbgs()
                                << "!! ...call -> invoke operands: " << opit << "\n";);
 
+                auto sretArg = op->getAttr(SRET_ARG_ATTR_NAME);
                 auto res = rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(
                     op, op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{}, unwind, ValueRange{});
+                if (sretArg)
+                {
+                    res->setAttr(SRET_ARG_ATTR_NAME, sretArg);
+                }
+
                 return success();
             }
 
@@ -2230,7 +2236,13 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getOperands());
+        auto sretArg = op->getAttr(SRET_ARG_ATTR_NAME);
+        auto callInternalOp = rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getOperands());
+        if (sretArg)
+        {
+            callInternalOp->setAttr(SRET_ARG_ATTR_NAME, sretArg);
+        }
+
         return success();
     }
 };

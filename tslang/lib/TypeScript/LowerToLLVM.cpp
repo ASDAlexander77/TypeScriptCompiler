@@ -2130,6 +2130,35 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
     }
 };
 
+// A call's argument that is the hidden pointer the callee returns a C++ record through
+// (SRET_ARG_ATTR_NAME, a @cppvtable method under the Itanium ABI) is `sret`, so the target passes
+// it where the ABI does: RDI on x86-64, as the first argument anyway, but X8 on AArch64.
+// `argPointerOperand` is the ts operand of that argument, a Ref to the record.
+template <typename LLVMCallOp>
+static void setSRetArgAttrs(Operation *tsOp, LLVMCallOp llvmOp, mlir::Value argPointerOperand, unsigned argCount,
+                            TypeConverterHelper &tch)
+{
+    auto sretArg = tsOp->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME);
+    if (!sretArg)
+    {
+        return;
+    }
+
+    auto refType = dyn_cast<mlir_ts::RefType>(argPointerOperand.getType());
+    auto index = sretArg.getInt();
+    if (!refType || index < 0 || index >= argCount)
+    {
+        return;
+    }
+
+    auto *context = tsOp->getContext();
+    SmallVector<mlir::Attribute> argAttrs(argCount, mlir::DictionaryAttr::get(context));
+    argAttrs[index] = mlir::DictionaryAttr::get(
+        context, {mlir::NamedAttribute(mlir::StringAttr::get(context, LLVM::LLVMDialect::getStructRetAttrName()),
+                                       mlir::TypeAttr::get(tch.convertType(refType.getElementType())))});
+    llvmOp.setArgAttrsAttr(mlir::ArrayAttr::get(context, argAttrs));
+}
+
 struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 {
     using TsLlvmPattern<mlir_ts::CallInternalOp>::TsLlvmPattern;
@@ -2169,6 +2198,15 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         // generic (TypeRange, ValueRange) builder above does not set it.
         callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(transformed.getOperands().size()), 0});
         callRes.setOpBundleSizes({});
+        if (auto sretArg = op->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME))
+        {
+            // the arguments follow the callee pointer, operand #0
+            auto argIndex = sretArg.getInt() + 1;
+            if (argIndex < op.getNumOperands())
+            {
+                setSRetArgAttrs(op, callRes, op.getOperand(argIndex), op.getNumOperands() - 1, tch);
+            }
+        }
 
         auto returns = callRes.getResults();
         if (returns.size() > 0)
@@ -2326,11 +2364,21 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         }
         else
         {
-            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, mlir::FlatSymbolRefAttr(), transformed.getOperands(),
+            auto invokeOp = rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, mlir::FlatSymbolRefAttr(), transformed.getOperands(),
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
+            if (auto sretArg = op->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME))
+            {
+                // an indirect call: the arguments follow the callee pointer, call operand #0
+                auto callOperands = op.getCallOperands();
+                auto argIndex = sretArg.getInt() + 1;
+                if (argIndex < callOperands.size())
+                {
+                    setSRetArgAttrs(op, invokeOp, callOperands[argIndex], callOperands.size() - 1, tch);
+                }
+            }
         }
-        
+
         return success();
     }
 };

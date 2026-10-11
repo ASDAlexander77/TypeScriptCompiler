@@ -197,6 +197,10 @@
 // A @cppvtable method's C++ return type has a destructor or a copy constructor (see
 // mlirGenClassCppVTableHiddenReturn)
 #define CPP_NON_TRIVIAL "cppnontrivial"
+// On a call (CallIndirect, then CallInternal or Invoke): the index of the argument that is the hidden
+// pointer the callee returns a record through, which LowerToLLVM marks `sret` for the target to pass
+// it where the C++ ABI does (X8 on AArch64)
+#define SRET_ARG_ATTR_NAME "ts.sret_arg"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

@@ -1,5 +1,5 @@
-// Compiled for AArch64 Linux: the Itanium ABI passes the hidden pointer a record is returned
-// through in X8 there, which an ordinary argument isn't.
+// Compiled for 32-bit x86 Linux: the Itanium ABI passes the hidden pointer a record is returned
+// through on the stack there, and the callee pops it, which isn't done.
 type Pair = [first: s32, second: s32];
 
 @cppvtable

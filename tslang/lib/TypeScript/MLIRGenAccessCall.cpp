@@ -1774,6 +1774,16 @@ namespace mlirgen
                         slotOperands.push_back(thisValue);
                         slotOperands.append(operands.begin(), operands.end());
                         callResult = mlirGenCallFunction(location, swappedFuncType, swappedFuncRefValue, slotOperands, genContext);
+
+                        // `sret`: the target passes it where the ABI does - RDI on x86-64, as the
+                        // first argument would be, but X8 on AArch64
+                        if (mlir::succeeded(callResult) && V(callResult))
+                        {
+                            if (auto callOp = V(callResult).getDefiningOp<mlir_ts::CallIndirectOp>())
+                            {
+                                callOp->setAttr(SRET_ARG_ATTR_NAME, builder.getI32IntegerAttr(0));
+                            }
+                        }
                     }
                     else
                     {

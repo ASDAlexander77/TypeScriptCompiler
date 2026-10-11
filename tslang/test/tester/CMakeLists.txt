@@ -2761,11 +2761,11 @@ if (WIN32)
     tslang_add_test(NAME test-jit-shared-export-import-cppvtable-hidden-return COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_cppvtable_hidden_return.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_cppvtable_hidden_return.ts")
 endif()
 add_test(NAME test-compile-cppvtable-hidden-return-target
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=aarch64-unknown-linux-gnu
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=i686-unknown-linux-gnu
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/hidden_return_target.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-hidden-return-target.obj")
 set_tests_properties(test-compile-cppvtable-hidden-return-target
-                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI or the x86-64 Itanium ABI"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI, or the Itanium ABI on x86-64 or AArch64"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # x86-64 Itanium: a trivial record tslang can't return as the SysV classification does, unmarked
 add_test(NAME test-compile-cppvtable-itanium-record
@@ -2785,9 +2785,9 @@ set_tests_properties(test-compile-cppvtable-nontrivial-no-struct
 
 # A @cppvtable class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
 # the host's compiler: its vtable, and the way its methods return records, are that compiler's ABI -
-# MSVC's (abi_msvc.ts), or x86-64 Itanium's for g++ and clang (abi_itanium.ts) - not a vtable made
-# by hand in tslang, which follows tslang's own idea of the ABI.
-if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")))
+# MSVC's (abi_msvc.ts), or the Itanium one of g++ and clang on x86-64 and AArch64 (abi_itanium.ts) -
+# not a vtable made by hand in tslang, which follows tslang's own idea of the ABI.
+if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|aarch64|arm64)$")))
     add_library(tslang_cppvtable_abi SHARED cppvtable/abi_host.cpp)
     if (MSVC)
         set(cppvtable_abi msvc)

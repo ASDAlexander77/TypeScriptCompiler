@@ -60,8 +60,8 @@ these are errors and not warnings.
 | `instanceof`, a cast to or from `any`, a cast to an interface | each asks the object through slot 0, which is a C++ method |
 | `-mm=rc` / `-mm=own` | retains and releases write a count in the word before an object, inside the C++ object |
 | a 32-bit x86 MSVC target | C++ member functions are `__thiscall` there (`this` in ECX) |
-| a method returning a tuple, on a target other than MSVC and x86-64 Itanium | AArch64 passes the hidden result pointer in X8, not as an argument (see below) |
-| on x86-64 Itanium, a method returning a trivial tuple other than one or two 8-byte integer or pointer fields | SysV packs it into registers by its fields, which a tuple isn't (see below) |
+| a method returning a tuple, on a target other than MSVC and Itanium x86-64 / AArch64 | each ABI returns records its own way (see below) |
+| on Itanium, a method returning a trivial tuple other than one or two 8-byte integer or pointer fields | SysV / AAPCS64 pack it into registers by its fields, which a tuple isn't (see below) |
 
 A generic or static class can't be `@cppvtable` either.
 
@@ -95,17 +95,19 @@ A generic or static class can't be `@cppvtable` either.
   instance methods". A method returning a class (`getLayout(): IBindingLayout`, a C++ pointer) or
   a number still returns it in a register.
 
-  The Itanium ABI (g++, clang) decides by the record, and tslang does it on x86-64:
+  The Itanium ABI (g++, clang) decides by the record, and tslang does it on x86-64 and AArch64
+  (Linux, Android):
 
   - a record with a destructor or a copy constructor - `RefCountPtr<T>` - comes back through a
-    hidden pointer passed *before* `this`. A tuple can't say the C++ type has them, so mark the
-    method `@cppnontrivial`. (A trivial record of more than 16 bytes is returned the same way, so
-    `@cppnontrivial` is right for it too.) MSVC ignores the mark;
+    hidden pointer passed *before* `this`, as the call's `sret` argument (in RDI on x86-64, X8 on
+    AArch64). A tuple can't say the C++ type has them, so mark the method `@cppnontrivial`. (A
+    trivial record of more than 16 bytes is returned the same way, so `@cppnontrivial` is right
+    for it too.) MSVC ignores the mark;
   - a trivial record of one or two 8-byte integer or pointer fields - `nvrhi::Object` - comes
-    back in RAX:RDX, as tslang returns such a tuple: no mark;
-  - any other trivial record of up to 16 bytes is packed into registers by the SysV
+    back in RAX:RDX / X0:X1, as tslang returns such a tuple: no mark;
+  - any other trivial record of up to 16 bytes is packed into registers by the SysV / AAPCS64
     classification, which isn't done: such a method is an error, as is any method returning a
-    tuple on another Itanium target (AArch64 passes the hidden pointer in X8).
+    tuple on another Itanium target (32-bit x86, say).
 
   The record isn't destroyed: a `RefCountPtr` the method returns holds a reference, which the
   caller gives back with `Release()`. A method stored in a variable and called later takes the

@@ -38,11 +38,10 @@ struct TargetInfo
     // before `this`, and only for some records.
     bool hiddenReturnPointerAfterThis = false;
 
-    // The Itanium ABI on x86-64 returns a record with a destructor or a copy constructor (marked
-    // @cppnontrivial) through a hidden pointer passed before `this` - an ordinary first argument,
-    // in RDI - and returned in turn; a record of one or two 8-byte integer or pointer fields
-    // without them comes back in RAX:RDX, as a tuple is returned. (AArch64 passes the hidden
-    // pointer in X8, which an ordinary argument isn't, so it has neither.)
+    // The Itanium ABI on x86-64 and AArch64 returns a record with a destructor or a copy
+    // constructor (marked @cppnontrivial) through a hidden pointer, passed before `this` and marked
+    // `sret` (RDI on x86-64, X8 on AArch64); a record of one or two 8-byte integer or pointer fields
+    // without them comes back in RAX:RDX / X0:X1, as a tuple is returned.
     bool hiddenReturnPointerBeforeThis = false;
 
     static TargetInfo fromTriple(const llvm::Triple &target, const llvm::Triple &host)
@@ -69,7 +68,8 @@ struct TargetInfo
             target.getArch() == host.getArch() && target.getOS() == host.getOS();
         info.memberCallsUseThiscall = msvc && x86_32;
         info.hiddenReturnPointerAfterThis = msvc;
-        info.hiddenReturnPointerBeforeThis = !msvc && target.getArch() == llvm::Triple::x86_64;
+        info.hiddenReturnPointerBeforeThis =
+            !msvc && (target.getArch() == llvm::Triple::x86_64 || target.getArch() == llvm::Triple::aarch64);
 
         return info;
     }
