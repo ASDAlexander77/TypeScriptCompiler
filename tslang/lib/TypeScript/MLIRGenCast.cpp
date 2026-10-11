@@ -2116,15 +2116,17 @@ namespace mlirgen
 
         auto src = ss.str();
 
-        {
-            MLIRLocationGuard vgLoc(overwriteLoc); 
-            overwriteLoc = location;
+        // The generated function's body is generated when the call below instantiates it, not when
+        // it is parsed, so the call site has to stay the location until then. Without it a
+        // diagnostic there took the generated text's offset as a position in the user's file - an
+        // error reported inside a comment on line 1.
+        MLIRLocationGuard vgLoc(overwriteLoc);
+        overwriteLoc = location;
 
-            if (mlir::failed(parsePartialStatements(src)))
-            {
-                assert(false);
-                return mlir::failure();
-            }
+        if (mlir::failed(parsePartialStatements(src)))
+        {
+            assert(false);
+            return mlir::failure();
         }
 
         auto funcResult = resolveIdentifier(location, funcName, genContext);
@@ -2272,6 +2274,13 @@ namespace mlirgen
                 }
                 else
                 {
+                    // Tested for truth, a null or undefined member is false, as for an `any`
+                    // (castFromAny). `return t` there cast null to boolean - "can't cast from 'null'
+                    // to 'boolean'" - so a union of null and two or more other types, which is what
+                    // `enabled && handle` makes of a boolean and a `Handle | null`, could not be
+                    // tested in an `if` at all.
+                    auto toBoolean = isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type);
+
                     // default
                     auto next = false;
                     for (auto& pair : typeOfs)
@@ -2281,7 +2290,19 @@ namespace mlirgen
                         ss << S("if (typeof t == '");
                         ss << stows(pair.getKey().str());
                         ss << S("') ");
-                        if (pair.getKey() == "class")
+                        if (toBoolean && (pair.getKey() == "null" || pair.getKey() == "undefined"))
+                        {
+                            ss << S("return false;\n");
+                        }
+                        else if (toBoolean && pair.getKey() == "class" && classInstances.size() == 1)
+                        {
+                            // tested for truth, an instance is true and null is false - and a null
+                            // instance does carry the class's tag, when a `Class | null` became this
+                            // union (`enabled && handle` with handle null). `instanceof` would read
+                            // its vtable through the null pointer.
+                            ss << S("return t;\n");
+                        }
+                        else if (pair.getKey() == "class")
                         {
                             ss << S("{ \n");
 
@@ -2308,15 +2329,14 @@ namespace mlirgen
 
                 auto src = ss.str();
 
-                {
-                    MLIRLocationGuard vgLoc(overwriteLoc); 
-                    overwriteLoc = location;
+                // kept until the call below has instantiated the function - see castPrimitiveTypeFromAny
+                MLIRLocationGuard vgLoc(overwriteLoc);
+                overwriteLoc = location;
 
-                    if (mlir::failed(parsePartialStatements(src)))
-                    {
-                        assert(false);
-                        return mlir::failure();
-                    }
+                if (mlir::failed(parsePartialStatements(src)))
+                {
+                    assert(false);
+                    return mlir::failure();
                 }
 
                 auto funcResult = resolveIdentifier(location, funcName, genContext);
