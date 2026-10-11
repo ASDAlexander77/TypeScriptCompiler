@@ -4635,9 +4635,11 @@ class MLIRGenImpl
                 }
             }
 
-            // exit;
+            // exit; without a `break` it falls through into the next clause's body - from `default`
+            // too, wherever it stands. A branch left pending after the last clause keeps the merge
+            // block it was created with.
             auto branchOp = builder.create<mlir::cf::BranchOp>(location, mergeBlock);
-            if (!hasBreak && !isDefaultCase)
+            if (!hasBreak)
             {
                 pendingBranches.push_back(branchOp);
             }
