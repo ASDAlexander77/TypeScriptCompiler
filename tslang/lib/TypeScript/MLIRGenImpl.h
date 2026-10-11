@@ -2717,10 +2717,14 @@ class MLIRGenImpl
         return mlir::StringRef(ss.str()).copy(stringAllocator);        
     }
 
-    mlir::StringRef getParameterGenericTypeName(std::string name) {
-        mlir::StringRef typeParamNamePtr;
+    // The type an untyped parameter makes its function generic in. It is named after the function
+    // too (its position): named after the parameter alone, the `x` of an arrow inside another arrow
+    // with an `x` had the outer one's type, so instantiating the outer arrow bound the inner one's
+    // type as well, and the inner arrow could no longer be instantiated.
+    mlir::StringRef getParameterGenericTypeName(std::string name, SignatureDeclarationBase signatureDeclarationBase) {
+        auto pos = signatureDeclarationBase->pos.textPos > 0 ? signatureDeclarationBase->pos.textPos : signatureDeclarationBase->pos.pos;
         std::stringstream ss;
-        ss << "TGenParam_" << name;
+        ss << "TGenParam_" << name << "_" << pos;
         return mlir::StringRef(ss.str()).copy(stringAllocator);
     }
 
@@ -10729,7 +10733,7 @@ class MLIRGenImpl
                         namePtr = getArgumentName(index);
                     }                    
 
-                    auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
+                    auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str(), signatureDeclarationBase);      
                     auto &typeParameters = signatureDeclarationBase->typeParameters;
                     auto found = std::find_if(typeParameters.begin(), typeParameters.end(),
                                             [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });
@@ -10804,7 +10808,7 @@ class MLIRGenImpl
                     namePtr = getArgumentName(index);
                 }                    
 
-                auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
+                auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str(), signatureDeclarationBase);      
                 auto typeParam = std::make_shared<TypeParameterDOM>(typeParamNamePtr.str());
                 auto result = zipTypeParameterWithArgument(
                     location, genContext.typeParamsWithArgs, typeParam, type, false, genContext);

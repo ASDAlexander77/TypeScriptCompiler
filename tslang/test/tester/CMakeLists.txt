@@ -293,6 +293,7 @@ tslang_add_test(NAME test-compile-00-funcs-generic-typeof COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-funcs-generic-arrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_generic_arrow.ts")
 tslang_add_test(NAME test-compile-00-funcs-generic-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_generic_iterator.ts")
 tslang_add_test(NAME test-compile-00-funcs-typeless-function-as-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_typeless_function_as_generic.ts")
+tslang_add_test(NAME test-compile-00-nested-implicit-generics COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_implicit_generics.ts")
 tslang_add_test(NAME test-compile-01-funcs-generic-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_generic_iterator.ts")
 tslang_add_test(NAME test-compile-02-funcs-generic-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_generic_iterator.ts")
 tslang_add_test(NAME test-compile-00-funcs-typed-generic-iterator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_typed_generic_iterator.ts")
@@ -816,6 +817,7 @@ tslang_add_test(NAME test-jit-01-funcs-generic COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-funcs-generic-typeof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_generic_with_typeof.ts")
 tslang_add_test(NAME test-jit-00-funcs-generic-arrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_generic_arrow.ts")
 tslang_add_test(NAME test-jit-00-funcs-typeless-function-as-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_typeless_function_as_generic.ts")
+tslang_add_test(NAME test-jit-00-nested-implicit-generics COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nested_implicit_generics.ts")
 tslang_add_test(NAME test-jit-00-funcs-generic-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_generic_iterator.ts")
 tslang_add_test(NAME test-jit-01-funcs-generic-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01funcs_generic_iterator.ts")
 tslang_add_test(NAME test-jit-02-funcs-generic-iterator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02funcs_generic_iterator.ts")
@@ -1842,6 +1844,7 @@ set(TSLANG_CORPUS
     00funcs_nesting.ts
     00funcs_typed_generic_iterator.ts
     00funcs_typeless_function_as_generic.ts
+    00nested_implicit_generics.ts
     00funcs_vararg.ts
     00function_overloads.ts
     00gc_allocations_distinct.ts
