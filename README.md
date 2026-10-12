@@ -671,7 +671,58 @@ declare function add(a: s32, b: s32): s32;
 declare function dist(p: Reference<Point>): f64;
 ```
 
-Only plain structs, enums and `extern "C"` functions are emitted. Classes, namespace members (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning: their symbol names are mangled, so tslang cannot link to them. To bind a C++ API, expose it through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
+Plain structs, enums and `extern "C"` functions are emitted, and polymorphic classes (below). A class without virtual methods (`lib::Widget`), namespace functions (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning. To bind those, expose them through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
+
+#### C++ classes
+
+A polymorphic class (one with virtual methods), in any namespace, becomes a [`@cpp` class](docs/cpp-classes.md): tslang calls its virtual methods through the object's vtable and its non-virtual methods by their mangled symbols, with no wrapper. clang computes the slots and the symbols for the target's ABI (`--target`), so generate the bindings once per ABI: MSVC and the Itanium ABI (Linux, Android) number the slots differently.
+
+```cpp
+namespace geo {
+struct Handle { void *p; Handle(const Handle &); ~Handle(); };
+class Shape {
+public:
+    virtual ~Shape();
+    virtual int area() const = 0;
+    virtual void scale(int by) = 0;
+    virtual void scale(double by) = 0;
+    virtual Handle handle() = 0;
+    int id(int x);
+};
+class Square : public Shape { public: int area() const override; virtual bool bigger(const Shape &other) const; int side; };
+}
+extern "C" geo::Square *make_square(int side);
+```
+
+`tsbindgen shapes.hpp --target x86_64-pc-windows-msvc` writes:
+
+```typescript
+@cpp
+class Shape { // geo::Shape
+    @slot(1) area(): s32;
+    @slot(3) scale(by: s32): void;
+    @slot(2) scale_2(by: f64): void;
+    @cppnontrivial
+    @slot(4) handle(): [p: Opaque | null];
+    @linkname("?id@Shape@geo@@QEAAHH@Z") id(x: s32): s32;
+}
+@cpp
+class Square extends Shape { // geo::Square
+    side: s32;
+    @slot(5) bigger(other: Shape): boolean;
+}
+declare function make_square(side: s32): Square;
+```
+
+- **Slots** are clang's: the destructor (slot 0 under MSVC, 0 and 1 under the Itanium ABI) and methods that aren't public are slots left out. A method overriding a base's is not declared again: the `@cpp` class's override keeps the base's slot.
+- **Overloads** get `_2`, `_3`, ... in declaration order, whatever order the ABI puts their slots in.
+- **A pointer or a reference** to an object of a bound class is the class; a reference to anything else is a pointer.
+- **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor.
+- **Fields** are declared when they are where a `@cpp` class puts them (after the vtable pointer and the base's storage).
+- **Left out, with a `// skipped:` line:** `inline` methods (no symbol to link to), struct parameters passed by value, and a non-virtual method returning a struct. Static methods and operators are left out silently.
+- **Not bound at all:** templates, classes with several bases or a virtual one, and 32-bit targets. A pointer to such a class stays `Opaque`.
+
+Compile the bindings with `-mm=gc` or `-mm=none`: a `@cpp` class's objects are C++'s.
 
 ## Memory models
 

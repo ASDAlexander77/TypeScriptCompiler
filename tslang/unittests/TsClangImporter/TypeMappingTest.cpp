@@ -61,9 +61,10 @@ TEST(TypeMapping, VoidPointerAndIncompleteStructAreOpaque)
     EXPECT_THAT(out, HasSubstr("declare function f(a: Opaque, c: Counter, o: Other): Opaque;"));
 }
 
+// (a polymorphic class is a @cpp class: CppClassTest.cpp)
 TEST(TypeMapping, PointerToCxxClassIsOpaque)
 {
-    auto out = generate("class Engine { public: virtual ~Engine(); int power; };\n"
+    auto out = generate("class Engine { public: Engine(); int power; };\n"
                         "extern \"C\" int engine_power(Engine *e);\n",
                         {}, windowsTarget, {}, "c++")
                    .text;
@@ -76,7 +77,7 @@ TEST(TypeMapping, PointerToCxxClassIsOpaque)
 // Opaque, with the C++ type in a comment - never a name the output does not declare.
 TEST(TypeMapping, PointerToANamespacedOrTemplateClassIsPlainOpaque)
 {
-    auto out = generate("namespace ns { class Engine { public: virtual ~Engine(); }; }\n"
+    auto out = generate("namespace ns { class Engine { public: Engine(); }; }\n"
                         "template <typename T> struct Box { T value; };\n"
                         "typedef Box<char> CharBox;\n"
                         "extern \"C\" int use(ns::Engine *e, Box<int> *b, CharBox *c);\n",

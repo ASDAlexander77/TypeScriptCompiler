@@ -2609,8 +2609,9 @@ endif()
 
 # tsbindgen: bindings generated from test/bindgen/fixture.h call the C library compiled from
 # fixture.c, linked (--emit=exe) and under the JIT; `namespace` does it again through
-# --namespace/--strip-prefix, which @linkname binds. And the command line's exit codes.
-foreach(bindgen_mode plain namespace)
+# --namespace/--strip-prefix, which @linkname binds; `cpp` calls the C++ classes of
+# fixture_cpp.hpp through the @cpp classes generated for them. And the command line's exit codes.
+foreach(bindgen_mode plain namespace cpp)
     add_test(NAME test-bindgen-${bindgen_mode}
              COMMAND ${CMAKE_COMMAND}
                      "-DMODE=${bindgen_mode}"

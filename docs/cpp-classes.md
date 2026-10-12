@@ -86,6 +86,11 @@ A generic or static class can't be `@cpp` either.
 
 ## Writing a binding
 
+`tsbindgen` writes the binding from the C++ header, with the slots, the mangled symbols and the
+`@cppnontrivial` marks clang computes for the target (README, "C++ classes"):
+`tsbindgen nvrhi.hpp --target x86_64-pc-windows-msvc --filter 'nvrhi::I*' -- -std=c++17`.
+Writing one by hand:
+
 - **Slot numbers.** Take them from the compiler, not by counting: MSVC prints a class's vtable
   with `cl /c /Zs /d1reportSingleClassLayout<Name> file.cpp`; clang (Itanium) with
   `clang++ -S -emit-llvm -o /dev/null -Xclang -fdump-vtable-layouts file.cpp`, for a class whose

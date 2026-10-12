@@ -4,6 +4,8 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/TargetInfo.h"
+#include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -86,10 +88,196 @@ bool TypeMapper::isPlainEnum(const clang::EnumDecl *enumDecl)
            (!enumDecl->isFixed() || canonical->isSpecificBuiltinType(clang::BuiltinType::Int));
 }
 
+std::string TypeMapper::classKey(const clang::CXXRecordDecl *record)
+{
+    return "class:" + record->getQualifiedNameAsString();
+}
+
+std::string TypeMapper::classSkipReason(const clang::CXXRecordDecl *record)
+{
+    auto *definition = record->getDefinition();
+    if (!definition)
+    {
+        return "incomplete class";
+    }
+
+    auto found = classReasons.find(definition);
+    if (found != classReasons.end())
+    {
+        return found->second;
+    }
+
+    auto reason = [&]() -> std::string {
+        if (!definition->isPolymorphic())
+        {
+            return "not polymorphic";
+        }
+
+        if (definition->getDescribedClassTemplate() || llvm::isa<clang::ClassTemplateSpecializationDecl>(definition) ||
+            definition->isDependentContext())
+        {
+            return "class template";
+        }
+
+        if (definition->getName().empty() || definition->isLocalClass())
+        {
+            return "anonymous or local class";
+        }
+
+        if (context.getTargetInfo().getPointerWidth(clang::LangAS::Default) != 64)
+        {
+            return "a 32-bit target";
+        }
+
+        if (definition->getNumVBases() > 0)
+        {
+            return "virtual base class";
+        }
+
+        if (definition->getNumBases() > 1)
+        {
+            return "multiple inheritance";
+        }
+
+        if (definition->getNumBases() == 1)
+        {
+            auto *base = definition->bases_begin()->getType()->getAsCXXRecordDecl();
+            if (!base)
+            {
+                return "base class is a template parameter";
+            }
+
+            auto baseReason = classSkipReason(base);
+            if (!baseReason.empty())
+            {
+                return "base class '" + base->getQualifiedNameAsString() + "': " + baseReason;
+            }
+        }
+
+        return "";
+    }();
+
+    classReasons[definition] = reason;
+    return reason;
+}
+
+TsType TypeMapper::mapRecordResult(clang::QualType type, bool &nonTrivial)
+{
+    auto *record = type.getCanonicalType()->getAsRecordDecl();
+    if (!record->getDefinition() && sema)
+    {
+        sema->isCompleteType(clang::SourceLocation(), type.getCanonicalType());
+    }
+
+    auto *definition = record->getDefinition();
+    if (!definition)
+    {
+        return TsType::skip("incomplete record returned by value");
+    }
+
+    auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(definition);
+    nonTrivial = !definition->canPassInRegisters();
+    if (definition->isUnion() || (cxxRecord && (cxxRecord->isPolymorphic() || cxxRecord->getNumBases() > 0)))
+    {
+        return TsType::skip("record returned by value: a union, a polymorphic or a derived class");
+    }
+
+    // the fields as a named tuple lays them out: natural alignment, field after field
+    const auto &layout = context.getASTRecordLayout(definition);
+    std::vector<std::string> names;
+    std::vector<TsType> types;
+    uint64_t offset = 0;
+    uint64_t maxAlign = 8;
+    unsigned index = 0;
+    auto integerRegisterFields = true;
+    for (auto *field : definition->fields())
+    {
+        auto fieldName = field->getName().str();
+        auto fieldType = field->getType().getCanonicalType();
+
+        // a union of 8-byte members, such as nvrhi::Object's `union { uint64_t integer; void* pointer; }`:
+        // one 8-byte field, named as its first member
+        auto *unionRecord = fieldType->getAsRecordDecl();
+        auto pointerUnion = false;
+        if (unionRecord && unionRecord->isUnion() && unionRecord->getDefinition() && context.getTypeSize(fieldType) == 64)
+        {
+            auto members = unionRecord->getDefinition()->fields();
+            auto eightBytes = !members.empty() && llvm::all_of(members, [&](const clang::FieldDecl *member) {
+                auto memberType = member->getType().getCanonicalType();
+                return !member->isBitField() && !member->getName().empty() &&
+                       (memberType->isPointerType() || (memberType->isIntegerType() && context.getTypeSize(memberType) == 64));
+            });
+            if (eightBytes)
+            {
+                pointerUnion = true;
+                if (fieldName.empty())
+                {
+                    fieldName = (*members.begin())->getName().str();
+                }
+            }
+        }
+
+        if (field->isBitField() || fieldName.empty())
+        {
+            return TsType::skip("record returned by value: a bitfield or an anonymous member");
+        }
+
+        TsType type;
+        if (pointerUnion || fieldType->isPointerType() || fieldType->isReferenceType())
+        {
+            type = TsType::builtin("Opaque | null");
+        }
+        else
+        {
+            type = map(field->getType(), Use::Field);
+            if (type.skipped())
+            {
+                return TsType::skip("record returned by value: field '" + fieldName + "': " + type.skipReason);
+            }
+
+            integerRegisterFields &= fieldType->isIntegerType() && context.getTypeSize(fieldType) == 64;
+        }
+
+        auto align = context.getTypeAlign(field->getType());
+        offset = llvm::alignTo(offset, align);
+        if (layout.getFieldOffset(index) != offset)
+        {
+            return TsType::skip("record returned by value: packed or over-aligned layout");
+        }
+
+        offset += context.getTypeSize(field->getType());
+        maxAlign = std::max<uint64_t>(maxAlign, align);
+        names.push_back(escapeReserved(fieldName));
+        types.push_back(type);
+        ++index;
+    }
+
+    if (names.empty() || llvm::alignTo(offset, maxAlign) != static_cast<uint64_t>(context.toBits(layout.getSize())))
+    {
+        return TsType::skip("record returned by value: empty, packed or over-aligned");
+    }
+
+    // MSVC returns any record through a hidden pointer, and so does the Itanium ABI one it can't
+    // pass in registers; a trivial one comes back in registers by its fields, which tslang does
+    // for one or two 8-byte integer or pointer fields, on x86-64 and AArch64
+    if (!context.getTargetInfo().getCXXABI().isMicrosoft() && !nonTrivial)
+    {
+        auto arch = context.getTargetInfo().getTriple().getArch();
+        if ((arch != llvm::Triple::x86_64 && arch != llvm::Triple::aarch64) || names.size() > 2 || !integerRegisterFields)
+        {
+            return TsType::skip("trivial record returned by value in registers by its fields");
+        }
+    }
+
+    return TsType::tuple(std::move(names), std::move(types));
+}
+
 std::string TypeMapper::referTo(const clang::TagDecl *tag)
 {
-    auto key = llvm::isa<clang::EnumDecl>(tag) ? enumKey(llvm::cast<clang::EnumDecl>(tag))
-                                                : recordKey(llvm::cast<clang::RecordDecl>(tag));
+    auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(tag);
+    auto key = llvm::isa<clang::EnumDecl>(tag)                   ? enumKey(llvm::cast<clang::EnumDecl>(tag))
+               : cxxRecord && classSkipReason(cxxRecord).empty() ? classKey(cxxRecord->getDefinition())
+                                                                 : recordKey(llvm::cast<clang::RecordDecl>(tag));
     if (referencedKeys.insert(key).second)
     {
         referenced.push_back({key, tag});
@@ -141,8 +329,10 @@ TsType TypeMapper::map(clang::QualType type, Use use)
 
         // a system header's typedefs (int32_t, uint8_t, ...) are looked through: their widths are
         // what matter, and the header is not emitted. So is one named like a tslang type
-        // (`typedef int boolean;`): tslang would ignore the alias and use its own type.
-        if (isSystem(typedefDecl) || isTsBuiltinTypeName(typedefDecl->getName().str()))
+        // (`typedef int boolean;`): tslang would ignore the alias and use its own type. And so is a
+        // C++ one in a namespace or a class (`nvrhi::MipLevel`), which has no declaration here.
+        if (isSystem(typedefDecl) || isTsBuiltinTypeName(typedefDecl->getName().str()) ||
+            (context.getLangOpts().CPlusPlus && !typedefDecl->getDeclContext()->getRedeclContext()->isTranslationUnit()))
         {
             return map(typedefDecl->getUnderlyingType(), use);
         }
@@ -164,7 +354,13 @@ TsType TypeMapper::map(clang::QualType type, Use use)
 
     if (auto *pointer = type->getAs<clang::PointerType>())
     {
-        return mapPointer(pointer, use);
+        return mapPointer(pointer->getPointeeType(), use);
+    }
+
+    // a C++ reference is passed as a pointer
+    if (auto *reference = type->getAs<clang::ReferenceType>())
+    {
+        return mapPointer(reference->getPointeeType(), use);
     }
 
     if (canonical->isBuiltinType())
@@ -187,9 +383,11 @@ TsType TypeMapper::map(clang::QualType type, Use use)
             return mapBuiltin(integer.getCanonicalType(), use);
         }
 
-        if (tagName(enumDecl).empty())
+        // an anonymous enum's values are plain integers of its underlying type, and so are those of
+        // a C++ enum in a namespace or a class, which has no declaration of its own here
+        if (tagName(enumDecl).empty() ||
+            (context.getLangOpts().CPlusPlus && !enumDecl->getDeclContext()->getRedeclContext()->isTranslationUnit()))
         {
-            // an anonymous enum's values are plain integers of its underlying type
             return mapBuiltin(enumDecl->getIntegerType().getCanonicalType(), use);
         }
 
@@ -278,9 +476,8 @@ TsType TypeMapper::mapBuiltin(clang::QualType canonical, Use use)
     return TsType::skip("unsupported type '" + canonical.getAsString() + "'");
 }
 
-TsType TypeMapper::mapPointer(const clang::PointerType *pointer, Use use)
+TsType TypeMapper::mapPointer(clang::QualType pointee, Use use)
 {
-    auto pointee = pointer->getPointeeType();
     auto canonicalPointee = pointee.getCanonicalType().getUnqualifiedType();
 
     if (isPlainChar(canonicalPointee))
@@ -303,6 +500,12 @@ TsType TypeMapper::mapPointer(const clang::PointerType *pointer, Use use)
 
     if (auto *record = canonicalPointee->getAsRecordDecl())
     {
+        // a C++ object of a class bound as a @cpp class: the class, whose values are pointers
+        if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record); cxxRecord && classSkipReason(cxxRecord).empty())
+        {
+            return TsType::named(referTo(cxxRecord));
+        }
+
         // there is no declaration a name could refer to, so no name: the C++ type is a comment
         if (!isDeclarable(record))
         {

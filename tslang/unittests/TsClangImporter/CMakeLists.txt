@@ -5,6 +5,7 @@ add_mlir_unittest(TsClangImporterTests
   SelectionTest.cpp
   NamingTest.cpp
   ParseErrorTest.cpp
+  CppClassTest.cpp
 )
 
 target_link_libraries(TsClangImporterTests

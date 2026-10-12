@@ -3,7 +3,12 @@
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/GlobalDecl.h"
+#include "clang/AST/Mangle.h"
+#include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/VTableBuilder.h"
+#include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -13,9 +18,13 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/SemaConsumer.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
@@ -218,14 +227,29 @@ class MacroCollector : public clang::PPCallbacks
 class Collector : public clang::RecursiveASTVisitor<Collector>
 {
   public:
-    Collector(clang::ASTContext &context, HeaderModel &model) : context(context), mapper(context), model(model)
+    Collector(clang::ASTContext &context, HeaderModel &model, clang::Sema *sema)
+        : context(context), mapper(context), model(model)
     {
+        mapper.setSema(sema);
     }
 
     bool VisitRecordDecl(clang::RecordDecl *record)
     {
+        if (record->isImplicit())
+        {
+            return true;
+        }
+
+        // a polymorphic C++ class, in any namespace: a @cpp class
+        if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record);
+            cxxRecord && cxxRecord->getDefinition() && mapper.classSkipReason(cxxRecord).empty())
+        {
+            addClass(cxxRecord->getDefinition());
+            return true;
+        }
+
         // the mapper spells a pointer to anything else as plain Opaque, so nothing names it
-        if (record->isImplicit() || !mapper.isDeclarable(record))
+        if (!mapper.isDeclarable(record))
         {
             return true;
         }
@@ -440,6 +464,220 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
     }
 
   private:
+    // A @cpp class: its base, its fields when they can be declared, and the methods it introduces.
+    // A method overriding a base's virtual method isn't one: the @cpp class's override keeps the
+    // base's slot by name. Destructors, and methods that aren't public, are slots left out (a @cpp
+    // class may skip slots).
+    void addClass(const clang::CXXRecordDecl *definition)
+    {
+        auto key = TypeMapper::classKey(definition);
+        if (!keys.insert(key).second)
+        {
+            return;
+        }
+
+        Decl decl;
+        decl.kind = DeclKind::CppClass;
+        decl.key = key;
+        decl.name = definition->getName().str();
+        decl.qualifiedName = definition->getQualifiedNameAsString();
+        locate(decl, definition);
+
+        const clang::CXXRecordDecl *base = nullptr;
+        if (definition->getNumBases() == 1)
+        {
+            base = definition->bases_begin()->getType()->getAsCXXRecordDecl()->getDefinition();
+            addClass(base); // declared before its use, which C++ guarantees but a referenced class may not be
+            decl.base = TypeMapper::classKey(base);
+        }
+
+        llvm::StringSet<> inherited;
+        if (base)
+        {
+            inherited = classNames[decl.base];
+        }
+
+        auto &usedNames = classNames[key];
+        usedNames = std::move(inherited);
+
+        addClassFields(decl, definition, base);
+        for (auto &field : decl.fields)
+        {
+            usedNames.insert(field.name);
+        }
+
+        for (auto *method : definition->methods())
+        {
+            if (method->isImplicit() || method->isDeleted() || method->isStatic() ||
+                llvm::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl, clang::CXXConversionDecl>(method) ||
+                method->isOverloadedOperator() || method->getDescribedFunctionTemplate() ||
+                method->getAccess() != clang::AS_public ||
+                (method->isVirtual() && method->size_overridden_methods() > 0))
+            {
+                continue;
+            }
+
+            Method bound;
+            bound.cppName = method->getName().str();
+            bound.name = escapeReserved(bound.cppName);
+            for (auto overload = 2; usedNames.count(bound.name); ++overload)
+            {
+                bound.name = escapeReserved(bound.cppName) + "_" + std::to_string(overload);
+            }
+
+            usedNames.insert(bound.name);
+            mapMethod(bound, method);
+            decl.methods.push_back(std::move(bound));
+        }
+
+        model.decls.push_back(std::move(decl));
+    }
+
+    // A class's own fields, after the vtable pointer and its base's fields, as a @cpp class lays
+    // them out: like a tuple's, the base's storage first, padded to its alignment. Left out (and so
+    // in every class derived from it) when C++ puts them elsewhere - the Itanium ABI puts a derived
+    // class's fields in its base's tail padding - or one can't be mapped.
+    void addClassFields(Decl &decl, const clang::CXXRecordDecl *definition, const clang::CXXRecordDecl *base)
+    {
+        uint64_t offset = context.getTargetInfo().getPointerWidth(clang::LangAS::Default);
+        uint64_t maxAlign = context.getTargetInfo().getPointerAlign(clang::LangAS::Default);
+        if (base)
+        {
+            auto found = fieldsEnd.find(base);
+            if (found == fieldsEnd.end())
+            {
+                decl.fieldsSkipReason = "the fields of the base class aren't declared";
+                return;
+            }
+
+            offset = found->second.first;
+            maxAlign = found->second.second;
+        }
+
+        const auto &layout = context.getASTRecordLayout(definition);
+        std::vector<Field> fields;
+        unsigned index = 0;
+        for (auto *field : definition->fields())
+        {
+            auto fieldName = field->getName().str();
+            auto reason = [&]() -> std::string {
+                if (field->isBitField() || fieldName.empty())
+                {
+                    return "a bitfield or an anonymous member";
+                }
+
+                auto type = mapper.map(field->getType(), TypeMapper::Use::Field);
+                if (type.skipped())
+                {
+                    return "field '" + fieldName + "': " + type.skipReason;
+                }
+
+                auto align = context.getTypeAlign(field->getType());
+                offset = llvm::alignTo(offset, align);
+                if (layout.getFieldOffset(index) != offset)
+                {
+                    return "field '" + fieldName + "' isn't where a tuple would put it";
+                }
+
+                offset += context.getTypeSize(field->getType());
+                maxAlign = std::max<uint64_t>(maxAlign, align);
+                fields.push_back({escapeReserved(fieldName), type});
+                return "";
+            }();
+
+            if (!reason.empty())
+            {
+                decl.fieldsSkipReason = reason;
+                return;
+            }
+
+            ++index;
+        }
+
+        decl.fields = std::move(fields);
+        fieldsEnd[definition] = {llvm::alignTo(offset, maxAlign), maxAlign};
+    }
+
+    void mapMethod(Method &bound, const clang::CXXMethodDecl *method)
+    {
+        if (method->isVariadic())
+        {
+            bound.skipReason = "variadic method";
+            return;
+        }
+
+        if (method->isVirtual())
+        {
+            auto *vtables = context.getVTableContext();
+            if (auto *microsoft = llvm::dyn_cast<clang::MicrosoftVTableContext>(vtables))
+            {
+                auto location = microsoft->getMethodVFTableLocation(clang::GlobalDecl(method));
+                if (location.VBase || !location.VFPtrOffset.isZero())
+                {
+                    bound.skipReason = "its vtable isn't the object's first";
+                    return;
+                }
+
+                bound.slot = static_cast<int>(location.Index);
+            }
+            else
+            {
+                bound.slot = static_cast<int>(
+                    llvm::cast<clang::ItaniumVTableContext>(vtables)->getMethodVTableIndex(clang::GlobalDecl(method)));
+            }
+        }
+        else
+        {
+            // defined in the class (or `inline`): no symbol unless something made one
+            if (method->isInlined())
+            {
+                bound.skipReason = "inline method: no symbol to link against";
+                return;
+            }
+
+            std::unique_ptr<clang::MangleContext> mangler(context.createMangleContext());
+            llvm::raw_string_ostream symbol(bound.symbol);
+            mangler->mangleName(clang::GlobalDecl(method), symbol);
+            symbol.flush();
+        }
+
+        for (unsigned index = 0; index < method->getNumParams(); ++index)
+        {
+            auto *parameter = method->getParamDecl(index);
+            auto parameterName = parameter->getName().empty() ? "p" + std::to_string(index)
+                                                              : escapeReserved(parameter->getName().str());
+            auto type = mapper.map(parameter->getType(), TypeMapper::Use::Parameter);
+            if (type.skipped())
+            {
+                bound.skipReason = "parameter '" + parameterName + "': " + type.skipReason;
+                return;
+            }
+
+            bound.parameters.push_back({parameterName, type});
+        }
+
+        auto resultType = method->getReturnType();
+        if (auto *record = resultType.getCanonicalType()->getAsRecordDecl())
+        {
+            if (!method->isVirtual())
+            {
+                bound.skipReason = "a non-virtual method returning a record by value isn't supported yet";
+                return;
+            }
+
+            bound.result = mapper.mapRecordResult(resultType, bound.nonTrivialReturn);
+        }
+        else
+        {
+            bound.result = mapper.map(resultType, TypeMapper::Use::Result);
+        }
+
+        if (bound.result.skipped())
+        {
+            bound.skipReason = "result: " + bound.result.skipReason;
+        }
+    }
+
     void completeRecord(size_t index, const clang::RecordDecl *record)
     {
         auto *definition = record->getDefinition();
@@ -496,24 +734,40 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
     HeaderModel &model;
     llvm::StringSet<> keys;
     std::vector<std::pair<size_t, const clang::RecordDecl *>> pendingRecords;
+    // a @cpp class's TS member names, its base's included: a later overload gets `_2`, `_3`, ...
+    llvm::StringMap<llvm::StringSet<>> classNames;
+    // where a @cpp class's declared fields end, padded to its alignment, and that alignment (bits):
+    // a derived class's fields follow
+    llvm::DenseMap<const clang::CXXRecordDecl *, std::pair<uint64_t, uint64_t>> fieldsEnd;
 };
 
-class ImportConsumer : public clang::ASTConsumer
+class ImportConsumer : public clang::SemaConsumer
 {
   public:
     explicit ImportConsumer(HeaderModel &model) : model(model)
     {
     }
 
+    void InitializeSema(clang::Sema &value) override
+    {
+        sema = &value;
+    }
+
+    void ForgetSema() override
+    {
+        sema = nullptr;
+    }
+
     void HandleTranslationUnit(clang::ASTContext &context) override
     {
-        Collector collector(context, model);
+        Collector collector(context, model, sema);
         collector.TraverseDecl(context.getTranslationUnitDecl());
         collector.finish();
     }
 
   private:
     HeaderModel &model;
+    clang::Sema *sema = nullptr;
 };
 
 class ImportAction : public clang::ASTFrontendAction
