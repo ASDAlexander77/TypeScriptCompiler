@@ -30,6 +30,15 @@ TsType TsType::reference(TsType pointee)
     return type;
 }
 
+TsType TsType::tuple(std::vector<std::string> names, std::vector<TsType> types)
+{
+    TsType type;
+    type.kind = Kind::Tuple;
+    type.fieldNames = std::move(names);
+    type.pointee = std::move(types);
+    return type;
+}
+
 TsType TsType::skip(std::string reason)
 {
     TsType type;
@@ -47,6 +56,15 @@ std::string renderType(const TsType &type, const std::function<std::string(const
         return nameOf(type.name);
     case TsType::Kind::Reference:
         return "Reference<" + renderType(type.pointee.front(), nameOf) + ">";
+    case TsType::Kind::Tuple: {
+        std::string fields;
+        for (size_t index = 0; index < type.pointee.size(); ++index)
+        {
+            fields += (index ? ", " : "") + type.fieldNames[index] + ": " + renderType(type.pointee[index], nameOf);
+        }
+
+        return "[" + fields + "]";
+    }
     }
 
     return type.name;

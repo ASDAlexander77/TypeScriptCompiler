@@ -34,8 +34,9 @@ std::vector<bool> selectDecls(const HeaderModel &model, const std::vector<llvm::
     for (size_t index = 0; index < model.decls.size(); ++index)
     {
         auto &decl = model.decls[index];
-        auto seed = globs.empty() ? decl.inMainFile
-                                  : llvm::any_of(globs, [&](const llvm::GlobPattern &glob) { return glob.match(decl.name); });
+        auto seed = globs.empty() ? decl.inMainFile : llvm::any_of(globs, [&](const llvm::GlobPattern &glob) {
+            return glob.match(decl.name) || (!decl.qualifiedName.empty() && glob.match(decl.qualifiedName));
+        });
         if (seed)
         {
             mark(index);
@@ -58,6 +59,26 @@ std::vector<bool> selectDecls(const HeaderModel &model, const std::vector<llvm::
         }
 
         collectKeys(decl.type, keys);
+        if (!decl.base.empty())
+        {
+            keys.push_back(decl.base);
+        }
+
+        for (auto &method : decl.methods)
+        {
+            if (!method.skipReason.empty())
+            {
+                continue;
+            }
+
+            for (auto &parameter : method.parameters)
+            {
+                collectKeys(parameter.type, keys);
+            }
+
+            collectKeys(method.result, keys);
+        }
+
         for (auto &key : keys)
         {
             auto found = byKey.find(key);
@@ -77,12 +98,16 @@ int group(DeclKind kind)
     {
     case DeclKind::Macro:
         return 0;
+    case DeclKind::CppClass:
+        return 2; // base before derived: the order C++ declares them in
     case DeclKind::Function:
-        return 2;
+        return 3;
     default:
         return 1; // types, in declaration order, before any function uses them
     }
 }
+
+constexpr int groups = 4;
 
 } // namespace
 
@@ -173,7 +198,8 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
         return text;
     };
 
-    for (int pass = 0; pass < 3; ++pass)
+    auto hasCppClass = false;
+    for (int pass = 0; pass < groups; ++pass)
     {
         for (size_t index = 0; index < model.decls.size(); ++index)
         {
@@ -202,6 +228,51 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
             case DeclKind::Macro:
                 line(exported + "const " + tsName + " = " + decl.value + ";");
                 break;
+            case DeclKind::CppClass: {
+                hasCppClass = true;
+                line("@cpp");
+                line(exported + "class " + tsName + (decl.base.empty() ? "" : " extends " + nameOf(decl.base)) +
+                     " { // " + decl.qualifiedName);
+                auto member = [&](const std::string &text) { line("    " + text); };
+                if (!decl.fieldsSkipReason.empty())
+                {
+                    member("// fields not declared: " + decl.fieldsSkipReason);
+                }
+
+                for (auto &field : decl.fields)
+                {
+                    member(withComment(field) + ";");
+                }
+
+                for (auto &method : decl.methods)
+                {
+                    if (!method.skipReason.empty())
+                    {
+                        member("// skipped: " + method.cppName + " \xE2\x80\x94 " + method.skipReason);
+                        result.warnings.push_back("skipped " + decl.qualifiedName + "::" + method.cppName + ": " +
+                                                  method.skipReason);
+                        continue;
+                    }
+
+                    std::string parameters;
+                    for (auto &parameter : method.parameters)
+                    {
+                        parameters += (parameters.empty() ? "" : ", ") + withComment(parameter);
+                    }
+
+                    if (method.nonTrivialReturn)
+                    {
+                        member("@cppnontrivial");
+                    }
+
+                    auto decorator = method.slot >= 0 ? "@slot(" + std::to_string(method.slot) + ") "
+                                                      : "@linkname(\"" + method.symbol + "\") ";
+                    member(decorator + method.name + "(" + parameters + "): " + renderType(method.result, nameOf) + ";");
+                }
+
+                line("}");
+                break;
+            }
             case DeclKind::OpaqueStruct:
                 line(exported + "type " + tsName + " = Opaque;");
                 break;
@@ -277,6 +348,12 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
     if (hasFunctionPointer)
     {
         result.text += "// A function pointer is Opaque: pass a function without captures, as `fn as Opaque`.\n";
+    }
+
+    if (hasCppClass)
+    {
+        result.text += "// The @cpp classes are this target's C++ ABI (generate them again for another); compile with "
+                       "-mm=gc or -mm=none.\n";
     }
 
     if (!result.text.empty())

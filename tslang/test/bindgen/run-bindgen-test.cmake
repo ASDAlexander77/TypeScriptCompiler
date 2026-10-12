@@ -4,7 +4,9 @@
 # turns fixture.h into fixture.ts; bindgen_test.ts is compiled against it and linked with the
 # object (--emit=exe), then run under the JIT against the shared library (--emit=jit). Both must
 # print expected.txt. MODE=namespace does the same through `--namespace Fx --strip-prefix fx_`,
-# which only links because @linkname binds each renamed function to its C symbol.
+# which only links because @linkname binds each renamed function to its C symbol. MODE=cpp does it
+# for fixture_cpp.hpp's C++ classes, which become @cpp classes: their virtual methods called through
+# the vtable the host's clang made, their non-virtual ones by their mangled symbols.
 
 cmake_minimum_required(VERSION 3.17.3)
 
@@ -34,10 +36,26 @@ endif()
 
 # the C library's stem differs from the bindings' on purpose: `import "./fixture"` next to a
 # fixture.dll would load that as a tslang library
+set(header "fixture.h")
+set(source "fixture.c")
+set(expected_file "expected.txt")
+set(clang_language "")
+set(tslang_mm "")
 if(MODE STREQUAL "namespace")
     set(bindings "fixture_ns.ts")
     set(program "bindgen_ns_test.ts")
     set(bindgen_args --namespace Fx --strip-prefix fx_)
+elseif(MODE STREQUAL "cpp")
+    set(header "fixture_cpp.hpp")
+    set(source "fixture_cpp.cpp")
+    set(expected_file "expected_cpp.txt")
+    set(bindings "fixture_cpp.ts")
+    set(program "bindgen_cpp_test.ts")
+    set(bindgen_args "")
+    # no destructors, RTTI or exceptions in fixture_cpp: nothing of the C++ runtime is linked
+    set(clang_language -fno-rtti -fno-exceptions)
+    # a @cpp class needs the gc or none memory model
+    set(tslang_mm -mm=gc)
 else()
     set(bindings "fixture.ts")
     set(program "bindgen_test.ts")
@@ -46,11 +64,11 @@ endif()
 
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
-file(COPY "${SOURCE_DIR}/fixture.h" "${SOURCE_DIR}/fixture.c" "${SOURCE_DIR}/${program}" DESTINATION "${WORK_DIR}")
-file(READ "${SOURCE_DIR}/expected.txt" expected)
+file(COPY "${SOURCE_DIR}/${header}" "${SOURCE_DIR}/${source}" "${SOURCE_DIR}/${program}" DESTINATION "${WORK_DIR}")
+file(READ "${SOURCE_DIR}/${expected_file}" expected)
 string(REPLACE "\r\n" "\n" expected "${expected}")
 
-set(common --no-default-lib ${OPT} ${pic} "--gc-lib-path=${GC_LIB}" "--llvm-lib-path=${LLVM_LIB}"
+set(common --no-default-lib ${OPT} ${pic} ${tslang_mm} "--gc-lib-path=${GC_LIB}" "--llvm-lib-path=${LLVM_LIB}"
     "--tslang-lib-path=${TSLANG_LIB}")
 
 # run(<what> <command...>) - fails unless it exits 0; leaves stdout in run_output
@@ -76,9 +94,9 @@ endfunction()
 
 # -O2 as a real library would be built: at -O0 clang re-extends a narrow parameter inside the callee,
 # which would hide a caller that does not extend it (the `narrow` line, on the SysV ABI)
-run("clang -c fixture.c" "${CLANG}" -O2 -c ${clang_pic} fixture.c -o "fixture${obj_suffix}")
-run("clang -shared fixture.c" "${CLANG}" -O2 -shared ${clang_pic} fixture.c -o "${fixture_library}")
-run("tsbindgen" "${TSBINDGEN}" fixture.h ${bindgen_args} -o "${bindings}")
+run("clang -c ${source}" "${CLANG}" -O2 -c ${clang_pic} ${clang_language} "${source}" -o "fixture${obj_suffix}")
+run("clang -shared ${source}" "${CLANG}" -O2 -shared ${clang_pic} ${clang_language} "${source}" -o "${fixture_library}")
+run("tsbindgen" "${TSBINDGEN}" "${header}" ${bindgen_args} -o "${bindings}")
 
 run("--emit=exe" "${TSLANG}" --emit=exe ${common} "${program}" "--obj=fixture${obj_suffix}" -o "bindgen_test${exe_suffix}")
 run("the program" "${WORK_DIR}/bindgen_test${exe_suffix}")

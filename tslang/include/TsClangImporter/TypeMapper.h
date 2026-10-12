@@ -5,6 +5,11 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
+
+namespace clang
+{
+class Sema;
+}
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringSet.h"
 
@@ -58,6 +63,26 @@ class TypeMapper
     // namespace or a class, and not a template or a template specialization (std::cmatch).
     bool isDeclarable(const clang::RecordDecl *record);
 
+    // Why a C++ class can't be a @cpp class ("" if it can): it has to be polymorphic, not a
+    // template, on a 64-bit target, with at most one base, itself bindable and not virtual - the
+    // layout a @cpp class has (the vtable pointer first, a base object the prefix of a derived one).
+    std::string classSkipReason(const clang::CXXRecordDecl *record);
+
+    // "class:nvrhi::IDevice"
+    static std::string classKey(const clang::CXXRecordDecl *record);
+
+    // A C++ record returned by value, as a method declared to return a tuple returns it: the
+    // record's fields, laid out as a tuple's, a pointer as `Opaque | null`. `nonTrivial` is set
+    // when C++ can't pass it in registers (a destructor or a copy constructor: @cppnontrivial).
+    TsType mapRecordResult(clang::QualType type, bool &nonTrivial);
+
+    // clang's semantic analysis, to complete a class template specialization only ever named as a
+    // result (`RefCountPtr<IBuffer> createBuffer(...)` doesn't instantiate it)
+    void setSema(clang::Sema *value)
+    {
+        sema = value;
+    }
+
     // Every struct and enum a mapped type has named, by key. The AST traversal does not reach a
     // struct first named inside a prototype (`void f(struct S *s);`), so the parser adds these.
     const std::vector<std::pair<std::string, const clang::TagDecl *>> &referencedTags() const
@@ -67,7 +92,7 @@ class TypeMapper
 
   private:
     std::string referTo(const clang::TagDecl *tag);
-    TsType mapPointer(const clang::PointerType *pointer, Use use);
+    TsType mapPointer(clang::QualType pointee, Use use);
     TsType mapBuiltin(clang::QualType canonical, Use use);
     std::string signatureComment(const clang::FunctionProtoType *function);
     bool isSystem(const clang::Decl *decl);
@@ -75,7 +100,9 @@ class TypeMapper
     bool leadsToOwner(clang::QualType type);
 
     clang::ASTContext &context;
+    clang::Sema *sema = nullptr;
     llvm::DenseMap<const clang::RecordDecl *, std::string> recordReasons;
+    llvm::DenseMap<const clang::CXXRecordDecl *, std::string> classReasons;
     std::vector<std::pair<std::string, const clang::TagDecl *>> referenced;
     llvm::StringSet<> referencedKeys;
     std::vector<const clang::RecordDecl *> owners; // structs whose fields are being mapped

@@ -16,12 +16,14 @@ struct TsType
     {
         Builtin,
         Named,
-        Reference
+        Reference,
+        Tuple // an inline named tuple, `[a: T1, b: T2]`: a C++ record a method returns by value
     };
 
     Kind kind = Kind::Builtin;
     std::string name;            // Builtin: the tslang spelling; Named: the key of a Decl
-    std::vector<TsType> pointee; // Reference: exactly one element
+    std::vector<TsType> pointee; // Reference: exactly one element; Tuple: the field types
+    std::vector<std::string> fieldNames; // Tuple
     std::string comment;         // shown next to the type: a function pointer's C signature, ...
     bool functionPointer = false;
     std::string skipReason;      // non-empty: the C type has no tslang mapping
@@ -34,6 +36,7 @@ struct TsType
     static TsType builtin(std::string name, std::string comment = {});
     static TsType named(std::string key);
     static TsType reference(TsType pointee);
+    static TsType tuple(std::vector<std::string> names, std::vector<TsType> types);
     static TsType skip(std::string reason);
 };
 
@@ -73,7 +76,21 @@ enum class DeclKind
     Enum,         // enum E { A = 0 }
     FixedEnum,    // type E = u8; const A = 1;
     Typedef,      // type T = ...;
+    CppClass,     // @cpp class C extends B { @slot(N) f(...): R; @linkname("...") g(...): R; }
     Function      // declare function f(...): R;
+};
+
+// A method of a C++ class bound as a @cpp class.
+struct Method
+{
+    std::string name;        // the TS name: the C++ name, `_2`, `_3`, ... for later overloads
+    std::string cppName;     // the C++ name, for messages
+    int slot = -1;           // a virtual method's vtable slot; -1 for a non-virtual one
+    std::string symbol;      // a non-virtual method's mangled symbol
+    std::vector<Field> parameters;
+    TsType result;
+    bool nonTrivialReturn = false; // returns a record with a destructor or a copy constructor
+    std::string skipReason;  // non-empty: left out, with a `// skipped:` line in its place
 };
 
 struct Decl
@@ -86,12 +103,17 @@ struct Decl
     bool inSystemHeader = false;
     std::string skipReason; // non-empty: left out, with a `// skipped:` line in its place
 
-    std::vector<Field> fields;           // Struct: fields; Function: parameters
+    std::vector<Field> fields;           // Struct, CppClass: fields; Function: parameters
     TsType type;                         // Function: result; Typedef: aliased type; FixedEnum: underlying
     bool varargs = false;                // Function
     std::vector<Enumerator> enumerators; // Enum, FixedEnum
     bool scoped = false;                 // FixedEnum from an `enum class`
     std::string value;                   // Macro: a TS literal
+
+    std::string qualifiedName;           // CppClass: the C++ name with its namespaces (`nvrhi::IDevice`)
+    std::string base;                    // CppClass: the key of the base class, or empty
+    std::vector<Method> methods;         // CppClass: the methods it introduces, in declaration order
+    std::string fieldsSkipReason;        // CppClass: non-empty when its fields aren't declared
 };
 
 struct HeaderModel
