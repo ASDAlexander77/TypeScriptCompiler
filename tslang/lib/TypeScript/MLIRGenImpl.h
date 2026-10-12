@@ -6407,6 +6407,25 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // The type of a union whose members are all literals of one type (`0.5 | 1` is a number,
+    // `"a" | "b"` a string), or null for any other type.
+    mlir::Type getLiteralUnionBaseType(mlir::Location location, mlir::Type type)
+    {
+        auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+        if (!unionType || !llvm::all_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::LiteralType>(member); }))
+        {
+            return mlir::Type();
+        }
+
+        mlir::Type baseType;
+        if (mth.isUnionTypeNeedsTag(location, unionType, baseType) || !baseType || baseType == type)
+        {
+            return mlir::Type();
+        }
+
+        return baseType;
+    }
+
     mlir::LogicalResult unwrapForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                           mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
@@ -6425,6 +6444,19 @@ class MLIRGenImpl
         if (auto rightType = dyn_cast<mlir_ts::LiteralType>(rightExpressionValue.getType()))
         {
             CAST(rightExpressionValue, location, rightType.getElementType(), rightExpressionValue, genContext);
+        }
+
+        // A union of literals, as `c ? 0.5 : 1.0` is (`0.5 | 1`), is its literals' type too. Left a
+        // union, it was cast to the other operand's type: `int * (c ? 0.5 : 1.0)` multiplied s32s,
+        // 0.5 became 0, and the product was 0.
+        if (auto leftType = getLiteralUnionBaseType(location, leftExpressionValue.getType()))
+        {
+            CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
+        }
+
+        if (auto rightType = getLiteralUnionBaseType(location, rightExpressionValue.getType()))
+        {
+            CAST(rightExpressionValue, location, rightType, rightExpressionValue, genContext);
         }
         // end of hack
 
