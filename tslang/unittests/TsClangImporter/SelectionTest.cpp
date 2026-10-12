@@ -37,7 +37,7 @@ TEST(Selection, UsedTypesArePulledInFromAnyHeader)
                    .text;
     EXPECT_THAT(out, HasSubstr("type Shared = [id: s32];"));
     EXPECT_THAT(out, HasSubstr("type sys_stat = [size: s32];"));
-    EXPECT_THAT(out, HasSubstr("declare function use(s: Reference<Shared>, st: Reference<sys_stat>): s32;"));
+    EXPECT_THAT(out, HasSubstr("declare function use(s: Reference<Shared> | null, st: Reference<sys_stat> | null): s32;"));
     EXPECT_THAT(out, Not(HasSubstr("other_unused")));
 }
 
@@ -49,7 +49,7 @@ TEST(Selection, FilterSelectsByCNameAnywhere)
                         windowsTarget, files)
                    .text;
     EXPECT_THAT(out, HasSubstr("declare function mine(): s32;"));
-    EXPECT_THAT(out, HasSubstr("declare function sys_call(s: Reference<sys_stat>): s32;"));
+    EXPECT_THAT(out, HasSubstr("declare function sys_call(s: Reference<sys_stat> | null): s32;"));
     EXPECT_THAT(out, HasSubstr("type sys_stat = [size: s32];"));
     EXPECT_THAT(out, Not(HasSubstr("yours")));
     EXPECT_THAT(out, Not(HasSubstr("SYS_VALUE")));

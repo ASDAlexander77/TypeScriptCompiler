@@ -36,6 +36,7 @@ class TypeMapper
     {
     }
 
+    // A pointer parameter or field is nullable (`T | null`); a pointer result isn't.
     TsType map(clang::QualType type, Use use);
 
     // Why a complete struct cannot be a named tuple ("" if it can). Cached; a struct that refers to
@@ -48,6 +49,8 @@ class TypeMapper
 
     // The struct/enum's own name, or the typedef that names it when it has none ("" for neither).
     static std::string tagName(const clang::TagDecl *tag);
+    // tagName with its namespaces and classes for a C++ struct out of the file scope (`nvrhi::Color`)
+    static std::string qualifiedTagName(const clang::TagDecl *tag);
     static std::string recordKey(const clang::RecordDecl *record);
     static std::string enumKey(const clang::EnumDecl *enumDecl);
     static std::string typedefKey(const clang::TypedefNameDecl *typedefDecl);
@@ -59,8 +62,9 @@ class TypeMapper
     // than int; anything else is a type alias plus constants.
     bool isPlainEnum(const clang::EnumDecl *enumDecl);
 
-    // Whether a struct can have a TS declaration of its own: in C, any; in C++, not one inside a
-    // namespace or a class, and not a template or a template specialization (std::cmatch).
+    // Whether a struct can have a TS declaration of its own: in C, any; in C++, one in a namespace or
+    // a class too (declared under its own name), but not a template, a template specialization
+    // (std::cmatch) or a class inside one, nor a class local to a function.
     bool isDeclarable(const clang::RecordDecl *record);
 
     // Why a C++ class can't be a @cpp class ("" if it can): it has to be polymorphic, not a
@@ -91,6 +95,7 @@ class TypeMapper
     }
 
   private:
+    TsType mapType(clang::QualType type, Use use);
     std::string referTo(const clang::TagDecl *tag);
     TsType mapPointer(clang::QualType pointee, Use use);
     TsType mapBuiltin(clang::QualType canonical, Use use);

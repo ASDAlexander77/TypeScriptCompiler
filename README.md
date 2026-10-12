@@ -591,8 +591,10 @@ const MAX_ITEMS = 16;
 type Point = [x: s32, y: s32];
 declare function add(a: s32, b: s32): s32;
 // skipped: helper — static function: no symbol to link against
-declare function dist(p: Reference<Point>): f64;
+declare function dist(p: Reference<Point> | null): f64;
 ```
+
+A pointer parameter or struct field is nullable (`| null`), as C lets it be null; a C++ reference (`const Point &`) and a result aren't.
 
 Include the result with `/// <reference path="simple.ts" />`, not `import`. Name it `.ts`, not `.d.ts`: a `.d.ts` file is read as declarations only, so its constants would have no value.
 
@@ -605,8 +607,8 @@ Include the result with `/// <reference path="simple.ts" />`, not `import`. Name
   ```
 
   ```typescript
-  declare function puts(_Buffer: string): s32;
-  @varargs declare function printf(_Format: string): s32;
+  declare function puts(_Buffer: string | null): s32;
+  @varargs declare function printf(_Format: string | null): s32;
   ```
 
 - **`static` and `static inline` functions are skipped**: there is no symbol to link against.
@@ -665,13 +667,15 @@ int cxx_only(int a);
 it writes:
 
 ```typescript
+// skipped: Widget — empty struct
+type Widget = Opaque;
 type Point = [x: s32, y: s32];
 enum Mode { A = 1, B = 2 }
 declare function add(a: s32, b: s32): s32;
-declare function dist(p: Reference<Point>): f64;
+declare function dist(p: Reference<Point> | null): f64;
 ```
 
-Plain structs, enums and `extern "C"` functions are emitted, and polymorphic classes (below). A class without virtual methods (`lib::Widget`), namespace functions (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning. To bind those, expose them through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
+Structs, enums and `extern "C"` functions are emitted, and polymorphic classes (below). A struct or a class without virtual methods, in any namespace or class, is a tuple when its fields are where a tuple's are: constructors, methods and member initializers don't move them, so `struct Color { float r, g, b, a; Color(); }` is `type Color = [r: f32, g: f32, b: f32, a: f32];`. It is declared under its own name, and `--filter` matches that or the qualified name (`--filter 'nvrhi::*'`); of two of one name in different namespaces, the next is named with its namespaces (`rt_Desc` for `nvrhi::rt::Desc` under `--namespace nvrhi`). One that isn't a tuple is `type Name = Opaque;`, with the reason in a `// skipped:` line: a derived class, or a field tsbindgen can't spell (a template's specialization such as `std::string` or `std::vector<T>`, an array, a bitfield, a union). Namespace functions (`lib::helper`) and functions with C++ linkage (`cxx_only`) are left out, without a warning. To bind those, expose them through `extern "C"` wrapper functions (with an opaque handle for each class) and run tsbindgen on the header that declares them.
 
 #### C++ classes
 
@@ -697,6 +701,7 @@ extern "C" geo::Square *make_square(int side);
 `tsbindgen shapes.hpp --target x86_64-pc-windows-msvc` writes:
 
 ```typescript
+type Handle = [p: Opaque | null];
 @cpp
 class Shape { // geo::Shape
     @slot(1) area(): s32;
@@ -716,7 +721,7 @@ declare function make_square(side: s32): Square;
 
 - **Slots** are clang's: the destructor (slot 0 under MSVC, 0 and 1 under the Itanium ABI) and methods that aren't public are slots left out. A method overriding a base's is not declared again: the `@cpp` class's override keeps the base's slot.
 - **Overloads** get `_2`, `_3`, ... in declaration order, whatever order the ABI puts their slots in.
-- **A pointer or a reference** to an object of a bound class is the class; a reference to anything else is a pointer.
+- **A pointer or a reference** to an object of a bound class is the class (`| null` for a pointer); a reference to a struct is a `Reference` to its tuple.
 - **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor.
 - **Fields** are declared when they are where a `@cpp` class puts them (after the vtable pointer and the base's storage).
 - **Left out, with a `// skipped:` line:** `inline` methods (no symbol to link to), struct parameters passed by value, and a non-virtual method returning a struct. Static methods and operators are left out silently.

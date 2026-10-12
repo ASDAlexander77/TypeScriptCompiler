@@ -26,6 +26,7 @@ struct TsType
     std::vector<std::string> fieldNames; // Tuple
     std::string comment;         // shown next to the type: a function pointer's C signature, ...
     bool functionPointer = false;
+    bool nullable = false;       // spelled `T | null`: a pointer parameter or field, which C lets be null
     std::string skipReason;      // non-empty: the C type has no tslang mapping
 
     bool skipped() const
@@ -46,7 +47,7 @@ std::string renderType(const TsType &type, const std::function<std::string(const
 // The declaration keys `type` refers to, in order, each once.
 void collectKeys(const TsType &type, std::vector<std::string> &keys);
 
-// "struct:Point" -> "Point"
+// "struct:Point" -> "Point", "class:nvrhi::IDevice" -> "IDevice"
 std::string nameFromKey(const std::string &key);
 
 // A name that is a TS reserved word gets a `_` suffix: `delete` -> `delete_`.
@@ -110,7 +111,7 @@ struct Decl
     bool scoped = false;                 // FixedEnum from an `enum class`
     std::string value;                   // Macro: a TS literal
 
-    std::string qualifiedName;           // CppClass: the C++ name with its namespaces (`nvrhi::IDevice`)
+    std::string qualifiedName;           // CppClass, a C++ Struct: the C++ name with its namespaces (`nvrhi::IDevice`)
     std::string base;                    // CppClass: the key of the base class, or empty
     std::vector<Method> methods;         // CppClass: the methods it introduces, in declaration order
     std::string fieldsSkipReason;        // CppClass: non-empty when its fields aren't declared

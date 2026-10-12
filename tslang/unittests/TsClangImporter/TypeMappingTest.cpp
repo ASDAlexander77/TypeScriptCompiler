@@ -43,14 +43,14 @@ TEST(TypeMapping, FloatsAndBool)
 TEST(TypeMapping, CharPointersAreStrings)
 {
     EXPECT_THAT(text("const char *f(char *a, const char *b, char **c);\n"),
-                HasSubstr("declare function f(a: string, b: string, c: Reference<string>): string;"));
+                HasSubstr("declare function f(a: string | null, b: string | null, c: Reference<string | null> | null): string;"));
 }
 
 TEST(TypeMapping, PointerToScalarOrStructIsReference)
 {
     auto out = text("struct Point { int x; int y; };\nvoid f(int *a, struct Point *p, double *d);\n");
     EXPECT_THAT(out, HasSubstr("type Point = [x: s32, y: s32];"));
-    EXPECT_THAT(out, HasSubstr("declare function f(a: Reference<s32>, p: Reference<Point>, d: Reference<f64>): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function f(a: Reference<s32> | null, p: Reference<Point> | null, d: Reference<f64> | null): void;"));
 }
 
 TEST(TypeMapping, VoidPointerAndIncompleteStructAreOpaque)
@@ -58,24 +58,26 @@ TEST(TypeMapping, VoidPointerAndIncompleteStructAreOpaque)
     auto out = text("typedef struct Counter Counter;\nvoid *f(void *a, Counter *c, struct Other *o);\n");
     EXPECT_THAT(out, HasSubstr("type Counter = Opaque;"));
     EXPECT_THAT(out, HasSubstr("type Other = Opaque;"));
-    EXPECT_THAT(out, HasSubstr("declare function f(a: Opaque, c: Counter, o: Other): Opaque;"));
+    EXPECT_THAT(out, HasSubstr("declare function f(a: Opaque | null, c: Counter | null, o: Other | null): Opaque;"));
 }
 
+// A C++ struct whose fields are where a tuple's are is a tuple, constructors and methods or not
 // (a polymorphic class is a @cpp class: CppClassTest.cpp)
-TEST(TypeMapping, PointerToCxxClassIsOpaque)
+TEST(TypeMapping, PointerToCxxStructIsReference)
 {
     auto out = generate("class Engine { public: Engine(); int power; };\n"
                         "extern \"C\" int engine_power(Engine *e);\n",
                         {}, windowsTarget, {}, "c++")
                    .text;
-    EXPECT_THAT(out, HasSubstr("type Engine = Opaque;"));
-    EXPECT_THAT(out, HasSubstr("declare function engine_power(e: Engine): s32;"));
+    EXPECT_THAT(out, HasSubstr("type Engine = [power: s32];"));
+    EXPECT_THAT(out, HasSubstr("declare function engine_power(e: Reference<Engine> | null): s32;"));
 }
 
-// A class in a namespace or a template specialization has no file-scope TS declaration to name
-// (found in the default library: regexp_* take a std::cmatch *), so a pointer to one is plain
-// Opaque, with the C++ type in a comment - never a name the output does not declare.
-TEST(TypeMapping, PointerToANamespacedOrTemplateClassIsPlainOpaque)
+// A class in a namespace is declared under its own name (see NamespacedStructTest.cpp). A template
+// specialization has no TS declaration to name (found in the default library: regexp_* take a
+// std::cmatch *), so a pointer to one is plain Opaque, with the C++ type in a comment - never a name
+// the output does not declare.
+TEST(TypeMapping, PointerToATemplateClassIsPlainOpaque)
 {
     auto out = generate("namespace ns { class Engine { public: Engine(); }; }\n"
                         "template <typename T> struct Box { T value; };\n"
@@ -83,9 +85,9 @@ TEST(TypeMapping, PointerToANamespacedOrTemplateClassIsPlainOpaque)
                         "extern \"C\" int use(ns::Engine *e, Box<int> *b, CharBox *c);\n",
                         {}, windowsTarget, {}, "c++")
                    .text;
-    EXPECT_THAT(out, HasSubstr("declare function use(e: Opaque /* ns::Engine */, b: Opaque /* Box<int> */, "
-                               "c: Opaque /* CharBox */): s32;"));
-    EXPECT_THAT(out, Not(HasSubstr("type Engine")));
+    EXPECT_THAT(out, HasSubstr("// skipped: Engine \xE2\x80\x94 empty struct\ntype Engine = Opaque;"));
+    EXPECT_THAT(out, HasSubstr("declare function use(e: Engine | null, b: Opaque | null /* Box<int> */, "
+                               "c: Opaque | null /* CharBox */): s32;"));
     EXPECT_THAT(out, Not(HasSubstr("type Box")));
 }
 
@@ -93,9 +95,9 @@ TEST(TypeMapping, FunctionPointerIsOpaqueWithItsSignature)
 {
     auto out = text("int apply(int (*fn)(int, const char *), int v);\ntypedef void (*callback_t)(void *);\n"
                     "void on(callback_t cb);\n");
-    EXPECT_THAT(out, HasSubstr("declare function apply(fn: Opaque /* (p0: s32, p1: string) => s32 */, v: s32): s32;"));
-    EXPECT_THAT(out, HasSubstr("type callback_t = Opaque; // (p0: Opaque) => void"));
-    EXPECT_THAT(out, HasSubstr("declare function on(cb: callback_t): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function apply(fn: Opaque | null /* (p0: s32, p1: string | null) => s32 */, v: s32): s32;"));
+    EXPECT_THAT(out, HasSubstr("type callback_t = Opaque; // (p0: Opaque | null) => void"));
+    EXPECT_THAT(out, HasSubstr("declare function on(cb: callback_t | null): void;"));
     EXPECT_THAT(out, HasSubstr("pass a function without captures, as `fn as Opaque`"));
 }
 
@@ -104,7 +106,7 @@ TEST(TypeMapping, CompleteStructIsANamedTuple)
     EXPECT_THAT(text("#include <stdint.h>\ntypedef struct { int8_t a; int32_t b; int64_t c; } Mixed;\n"
                      "struct Node { int value; struct Node *next; };\n"),
                 testing::AllOf(HasSubstr("type Mixed = [a: s8, b: s32, c: s64];"),
-                               HasSubstr("type Node = [value: s32, next: Opaque /* Reference<Node>: a type cannot refer to itself */];")));
+                               HasSubstr("type Node = [value: s32, next: Opaque | null /* Reference<Node>: a type cannot refer to itself */];")));
 }
 
 // tslang cannot declare a type that refers to itself (the compiler dies on one), so every pointer
@@ -115,11 +117,11 @@ TEST(TypeMapping, TypeCyclesBecomeOpaque)
     auto out = text("struct A { struct B *b; int x; };\nstruct B { struct A *a; };\n"
                     "typedef struct List *ListPtr;\nstruct List { ListPtr next; int v; };\n"
                     "void walk(struct A *a, ListPtr l);\n");
-    EXPECT_THAT(out, HasSubstr("type A = [b: Opaque /* Reference<B>: a type cannot refer to itself */, x: s32];"));
-    EXPECT_THAT(out, HasSubstr("type B = [a: Opaque /* Reference<A>: a type cannot refer to itself */];"));
-    EXPECT_THAT(out, HasSubstr("type List = [next: Opaque /* Reference<List>: a type cannot refer to itself */, v: s32];"));
+    EXPECT_THAT(out, HasSubstr("type A = [b: Opaque | null /* Reference<B>: a type cannot refer to itself */, x: s32];"));
+    EXPECT_THAT(out, HasSubstr("type B = [a: Opaque | null /* Reference<A>: a type cannot refer to itself */];"));
+    EXPECT_THAT(out, HasSubstr("type List = [next: Opaque | null /* Reference<List>: a type cannot refer to itself */, v: s32];"));
     EXPECT_THAT(out, HasSubstr("type ListPtr = Reference<List>;"));
-    EXPECT_THAT(out, HasSubstr("declare function walk(a: Reference<A>, l: ListPtr): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function walk(a: Reference<A> | null, l: ListPtr | null): void;"));
     EXPECT_THAT(out, Not(HasSubstr("fn as Opaque")));
 }
 
@@ -146,7 +148,7 @@ TEST(TypeMapping, FixedNonIntEnumIsATypeAndConstants)
 TEST(TypeMapping, VarargsKeepTheFixedParameters)
 {
     EXPECT_THAT(text("int print_all(const char *format, ...);\n"),
-                HasSubstr("@varargs declare function print_all(format: string): s32;"));
+                HasSubstr("@varargs declare function print_all(format: string | null): s32;"));
 }
 
 TEST(TypeMapping, LiteralMacrosAreConstants)
@@ -177,7 +179,7 @@ TEST(TypeMapping, TypedefIsATypeAliasUnlessItNamesTheStruct)
     EXPECT_THAT(out, Not(HasSubstr("type Point = Point")));
     EXPECT_THAT(out, HasSubstr("type Pt = Point;"));
     EXPECT_THAT(out, HasSubstr("type handle_t = u32;"));
-    EXPECT_THAT(out, HasSubstr("declare function f(p: Reference<Point>, h: handle_t): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function f(p: Reference<Point> | null, h: handle_t): void;"));
 }
 
 TEST(TypeMapping, ParameterNames)
@@ -196,7 +198,7 @@ TEST(TypeMapping, BuiltinTypeNamesAreNeverRedeclared)
     EXPECT_THAT(out, Not(HasSubstr("type boolean")));
     EXPECT_THAT(out, HasSubstr("declare function is_ok(n: f64): s32;"));
     EXPECT_THAT(out, HasSubstr("type string_ = [len: s32];"));
-    EXPECT_THAT(out, HasSubstr("declare function use(s: Reference<string_>): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function use(s: Reference<string_> | null): void;"));
 }
 
 // an enum that is declared but never defined has no enumerators to emit: its values are integers

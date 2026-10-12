@@ -126,7 +126,7 @@ TEST(CppClass, ParameterTypes)
                    "const Point &at, Kind kind, bool fill, Layer layer) = 0; }; }\n"
                    "extern \"C\" geo::Canvas *make_canvas(int width);\n");
     EXPECT_THAT(out, HasSubstr("type Point = [x: s32, y: s32];"));
-    EXPECT_THAT(out, HasSubstr("    @slot(1) draw(other: Canvas, again: Canvas, at: Reference<Point>, kind: u8, "
+    EXPECT_THAT(out, HasSubstr("    @slot(1) draw(other: Canvas, again: Canvas | null, at: Reference<Point>, kind: u8, "
                                "fill: boolean, layer: u32): void;\n"));
     EXPECT_THAT(out, Not(HasSubstr("Layer")));
     EXPECT_THAT(out, HasSubstr("declare function make_canvas(width: s32): Canvas;"));
@@ -161,7 +161,7 @@ TEST(CppClass, ClassesThatArentBound)
                    "extern \"C\" void use(Both *both, Virtual *v, Box<int> *box);\n");
     EXPECT_THAT(out, HasSubstr("// skipped: Both \xE2\x80\x94 C++ class"));
     EXPECT_THAT(out, HasSubstr("// skipped: Virtual \xE2\x80\x94 C++ class"));
-    EXPECT_THAT(out, HasSubstr("declare function use(both: Both, v: Virtual, box: Opaque /* Box<int> */): void;"));
+    EXPECT_THAT(out, HasSubstr("declare function use(both: Both | null, v: Virtual | null, box: Opaque | null /* Box<int> */): void;"));
     EXPECT_THAT(out, AllOf(HasSubstr("class A "), HasSubstr("class B ")));
 }
 

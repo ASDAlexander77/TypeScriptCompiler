@@ -31,6 +31,11 @@ Pair Shape::pair(int32_t x)
     return Pair{x, 0};
 }
 
+int32_t Shape::fits(const Extent &extent, const Extent *limit)
+{
+    return (limit ? limit->width : -1) * 1000 + extent.width * extent.height;
+}
+
 int32_t Square::area() const
 {
     return side * side;

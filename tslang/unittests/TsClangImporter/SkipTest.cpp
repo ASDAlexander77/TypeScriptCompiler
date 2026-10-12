@@ -14,7 +14,7 @@ TEST(Skip, UnionIsSkippedButItsPointerUsersStay)
 {
     auto out = generate("union Value { int i; float f; };\nvoid set(union Value *v);\nvoid pass(union Value v);\n");
     EXPECT_THAT(out.text, HasSubstr("// skipped: Value \xE2\x80\x94 union\ntype Value = Opaque;"));
-    EXPECT_THAT(out.text, HasSubstr("declare function set(v: Value): void;"));
+    EXPECT_THAT(out.text, HasSubstr("declare function set(v: Value | null): void;"));
     EXPECT_THAT(out.text, HasSubstr("// skipped: pass \xE2\x80\x94 parameter 'v': union passed by value"));
     EXPECT_THAT(out.warnings, Contains("skipped Value: union"));
 }
