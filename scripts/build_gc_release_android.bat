@@ -1,6 +1,6 @@
 @rem Android Boehm, static, for programs compiled with -mtriple=<arch>-linux-android29.
 @rem
-@rem   scripts\build_gc_release_android.bat [arm64-v8a|x86_64]   (no argument: both)
+@rem   scripts\build_gc_release_android.bat [arm64-v8a|armeabi-v7a|x86_64]   (no argument: all three)
 @rem
 @rem Needs the Android NDK (tested with r30) in ANDROID_NDK_HOME, and Ninja. Installs into
 @rem 3rdParty\gc\android\<abi>\release. API level 29 is the floor the default library needs
@@ -24,6 +24,7 @@ if not exist "%ANDROID_NDK_HOME%\build\cmake\android.toolchain.cmake" (
 
 if "%~1"=="" (
     call "%~f0" arm64-v8a || exit /b 1
+    call "%~f0" armeabi-v7a || exit /b 1
     call "%~f0" x86_64 || exit /b 1
     exit /b 0
 )

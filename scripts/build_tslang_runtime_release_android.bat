@@ -1,7 +1,7 @@
 @rem TypeScriptAsyncRuntime for Android, linked into programs compiled with
 @rem -mtriple=<arch>-linux-android29.
 @rem
-@rem   scripts\build_tslang_runtime_release_android.bat [arm64-v8a|x86_64]   (no argument: both)
+@rem   scripts\build_tslang_runtime_release_android.bat [arm64-v8a|armeabi-v7a|x86_64]   (no argument: all three)
 @rem
 @rem Needs the Android NDK in ANDROID_NDK_HOME, Ninja, the Android gc
 @rem (scripts\build_gc_release_android.bat) for gc.h, and 3rdParty\llvm\x64\release\include for
@@ -17,6 +17,7 @@ if "%ANDROID_NDK_HOME%"=="" (
 
 if "%~1"=="" (
     call "%~f0" arm64-v8a || exit /b 1
+    call "%~f0" armeabi-v7a || exit /b 1
     call "%~f0" x86_64 || exit /b 1
     exit /b 0
 )

@@ -21,7 +21,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 
 - **25 samples**, TypeScript ports of NVIDIA's Donut samples on the [Donut](https://github.com/NVIDIA-RTX/Donut) rendering framework, on **Direct3D 12** and **Vulkan**: from `basic_triangle` and `deferred_shading` to ray tracing (`rt_reflections`, `rt_shadows`, `rt_particles`), meshlets, compute n-body, order-independent transparency, terrain tessellation, variable-rate shading and work graphs
 - **Mixed C++/TypeScript** through CMake: `.ts` files are a first-class CMake language (`TSLANG`), compiled with `tslang --emit=obj` and linked with the C++ code, with incremental rebuilds
-- Runs on **Windows** and **Android** (Vulkan, `arm64-v8a` and `x86_64`): the Vulkan samples are packaged as APKs, with a script that builds the samples, starts an emulator and tests them
+- Runs on **Windows** and **Android** (Vulkan, `arm64-v8a`, `armeabi-v7a` and `x86_64`): the Vulkan samples are packaged as APKs, with a script that builds the samples, starts an emulator and tests them
 - Choose the memory model at configure time: `-DTSLANG_MEMORY_MODEL=gc|rc|none`
 
 It is a good place to see how TypeScript code drives a native C++ framework: the samples call Donut through a C interop layer (`donut_interop.d.ts`) wrapped in TypeScript classes.
@@ -50,7 +50,7 @@ It is a good place to see how TypeScript code drives a native C++ framework: the
 ## What's new
 
 - New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](#memory-models)
-- **Android** targets (`arm64-v8a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for both ABIs. See [Compile for Android](#compile-for-android)
+- **Android** targets (`arm64-v8a`, `armeabi-v7a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for all three ABIs. See [Compile for Android](#compile-for-android)
 - Implemented `try/catch` exception handling in the **JIT** on Windows (x64 SEH unwinding via a custom LLJIT runtime)
 - Migrared to **LLVM 22.1.8**
 - Migrated to **Visual Studio 2026** (Windows build chain)
@@ -358,12 +358,13 @@ Hello World!
 ## Compile for Android
 
 `tslang` cross-compiles for Android from a Windows host. It targets `arm64-v8a`
-(`-mtriple=aarch64-linux-android29`) and `x86_64` (`-mtriple=x86_64-linux-android29`), and links
+(`-mtriple=aarch64-linux-android29`), `armeabi-v7a` (`-mtriple=armv7a-linux-androideabi29`) and
+`x86_64` (`-mtriple=x86_64-linux-android29`), and links
 through the Android NDK (tested with r29 and r30). The triple has to carry the API level, and 29
 is the lowest the default library supports. Point `--android-ndk-path` (or `ANDROID_NDK_HOME`) at
 the NDK.
 
-The Windows release zip carries the Android libraries for both ABIs:
+The Windows release zip carries the Android libraries for all three ABIs:
 
 | Library | Option |
 | --- | --- |
@@ -793,7 +794,7 @@ chmod +x *.sh
 The release zip already carries these libraries. To build them yourself, use a Windows host with
 the Android NDK (r29 or r30) in `ANDROID_NDK_HOME` and Ninja on `PATH`. Run these after
 `prepare_3rdParty.bat`, which provides the gc sources and the LLVM headers they use. Each script builds both
-`arm64-v8a` and `x86_64` for API level 29, or only the ABI you pass:
+`arm64-v8a`, `armeabi-v7a` and `x86_64` for API level 29, or only the ABI you pass:
 
 ```bat
 cd TypeScriptCompiler

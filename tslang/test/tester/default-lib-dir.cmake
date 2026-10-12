@@ -25,6 +25,7 @@ check("defaultlib/lib/x86_64/pc/windows/msvc/release/gc" --print-default-lib-dir
 check("defaultlib/dll/x86_64/pc/windows/msvc/debug/rc" --print-default-lib-dir=dll --di -mm=rc -mtriple=x86_64-pc-windows-msvc)
 check("defaultlib/lib/x86_64/unknown/linux/gnu/release/none" --print-default-lib-dir=lib -mm=none -mtriple=x86_64-unknown-linux-gnu)
 check("defaultlib/lib/aarch64/unknown/linux/android/release/gc" --print-default-lib-dir=lib -mtriple=aarch64-linux-android29)
+check("defaultlib/lib/arm/unknown/linux/android/release/gc" --print-default-lib-dir=lib -mtriple=armv7a-linux-androideabi29)
 
 # the spellings of one target share its tree: the canonical arch name, no API level or version
 check("defaultlib/lib/i386/pc/windows/msvc/release/gc" --print-default-lib-dir=lib -mtriple=i686-pc-windows-msvc)
