@@ -201,7 +201,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         shell: pwsh
 
-      # Android (API 29, arm64-v8a and x86_64): the collector, the async runtime and the default
+      # Android (API 29, arm64-v8a, armeabi-v7a and x86_64): the collector, the async runtime and the default
       # library, cross-built with the runner's Android NDK by the same scripts a developer runs.
       # tslang links for Android through the NDK too (--android-ndk-path / ANDROID_NDK_HOME).
       - name: Install Ninja (Android builds)
@@ -261,10 +261,10 @@ jobs:
         # (findResourceDir's "release package" candidate), so stage that layout too - its headers
         # only: the official LLVM package also puts compiler-rt's libraries under
         # lib/clang/<major>/lib, which neither tsbindgen nor tslang uses.
-        # Android, per ABI (arm64-v8a, x86_64): android/<abi>/lib/{libgc.a,libTypeScriptAsyncRuntime.a}
+        # Android, per ABI (arm64-v8a, armeabi-v7a, x86_64): android/<abi>/lib/{libgc.a,libTypeScriptAsyncRuntime.a}
         # (--gc-lib-path and --tslang-lib-path); its default library is in the defaultlib tree above.
         run: |
-          foreach ($abi in 'arm64-v8a', 'x86_64') {
+          foreach ($abi in 'arm64-v8a', 'armeabi-v7a', 'x86_64') {
             $dest = ".\android_stage\android\$abi"
             New-Item -ItemType Directory -Force -Path "$dest\lib" | Out-Null
             Copy-Item -Path "..\3rdParty\gc\android\$abi\release\lib\libgc.a", ".\tslang-runtime\release\android\$abi\libTypeScriptAsyncRuntime.a" -Destination "$dest\lib" -ErrorAction Stop
