@@ -1076,7 +1076,7 @@ class MLIRCustomMethods
         switchStateOp.setSuccessor(block, 0);
 
         // NOTE: upward mailbox: arms variable allocation placement for the statements following the
-        // __switchstate call in the caller's scope - see docs/MLIRGen-refactoring-review.md A7
+        // __switchstate call in the caller's scope - see GenContext
         const_cast<GenContext &>(genContext).allocateVarsOutsideOfOperation = true;
         const_cast<GenContext &>(genContext).currentOperation = switchStateOp;
 

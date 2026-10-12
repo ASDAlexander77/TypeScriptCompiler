@@ -222,7 +222,7 @@ as-is), `2` for bad arguments.
 
 ### As built (2026-09-26)
 
-Measured while implementing PR 2 (see `docs/superpowers/plans/2026-09-26-tsbindgen.md`); where this
+Measured while implementing PR 2, #367; where this
 section and the text above disagree, this section is what was built.
 
 Each of these was found by running generated bindings through tslang; the spec's version does not work.

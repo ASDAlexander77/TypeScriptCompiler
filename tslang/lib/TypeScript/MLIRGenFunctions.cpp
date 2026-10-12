@@ -257,7 +257,7 @@ namespace mlirgen
             // special case, setup 'this' and type provided 
             if (namePtr == THIS_NAME && type) 
             {
-                // NOTE: upward mailbox: explicit this-parameter type must reach the prototype chain - see A7
+                // NOTE: upward mailbox: explicit this-parameter type must reach the prototype chain - see GenContext
                 const_cast<GenContext &>(genContext).thisType = type;
                 LLVM_DEBUG(dbgs() << "\n!! param " << THIS_NAME << " mapped to type " << type << "\n");
 
