@@ -21,6 +21,19 @@ into a C library exists — only the declaration authoring is manual:
 | C varargs | `func.varargs` attribute (`MLIRGen.cpp`) | `declare function printf(format: string, ...args)`-style declarations. |
 | Linking | `tslang.cpp` driver: `-lib=` (static libs, `--emit=exe`), `-obj=` (object files), `-shared-libs=` (JIT), plus `*-lib-path` options | Both AOT (lld) and JIT (ORC symbol resolution) paths exist. |
 
+Values crossing the boundary are passed as they are, with no conversion or copy. These cost
+time in real ports because nothing reports them:
+
+- **A `string` returned by a declared C function is the C `char*` itself.** tslang does not
+  copy it and does not track its lifetime. The C side must return storage that outlives every
+  use of the TypeScript string: a C++ helper that reused one `std::string` buffer for several
+  calls handed TypeScript strings that changed under it.
+- **`number` is a C `double`.** A C function declared with a `number` parameter must take a
+  `double`. A `float` parameter reads garbage with no error, so declare it `f32` instead (see the
+  table in section 2).
+- **A nullable `Ref<T>` field is declared `Ref<T> | null`.** Under strict null checks, `null`
+  can't be assigned to a plain `Ref<T>`.
+
 So "integration with C libraries" reduces to one missing piece: **automatically
 generating the `.d.ts` (or in-memory) declarations from headers** — a bindings
 generator, in the family of Rust `bindgen`, Zig `translate-c`/`@cImport`,
