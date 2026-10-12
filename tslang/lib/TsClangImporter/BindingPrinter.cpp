@@ -139,6 +139,7 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
     // name another declaration already has
     llvm::StringMap<std::string> tsNames;
     llvm::StringMap<std::string> taken;
+    llvm::StringMap<std::string> takenTypes; // a type's TS name -> its C++ name
     for (size_t index = 0; index < model.decls.size(); ++index)
     {
         if (!selected[index])
@@ -172,7 +173,45 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
             name += "_";
         }
 
+        // two C++ types of one name in different namespaces (nvrhi::ShaderDesc, nvrhi::rt::...): the
+        // first keeps it, the next is named with its namespaces (`rt_ShaderDesc` for `nvrhi::rt::`
+        // under --namespace nvrhi)
+        if (decl.kind != DeclKind::Function && decl.kind != DeclKind::Macro && !decl.qualifiedName.empty() &&
+            takenTypes.count(name))
+        {
+            llvm::StringRef qualified(decl.qualifiedName);
+            if (!options.namespaceName.empty())
+            {
+                qualified.consume_front(options.namespaceName + "::");
+            }
+
+            std::string unique;
+            for (auto c : qualified)
+            {
+                unique += std::isalnum(static_cast<unsigned char>(c)) ? c : '_';
+            }
+
+            while (unique.find("__") != std::string::npos)
+            {
+                unique.replace(unique.find("__"), 2, "_");
+            }
+
+            while (takenTypes.count(unique) || taken.count(unique))
+            {
+                unique += "_";
+            }
+
+            result.warnings.push_back("named " + decl.qualifiedName + " '" + unique + "': '" + name + "' is taken by " +
+                                      takenTypes[name]);
+            name = unique;
+        }
+
         taken[name] = decl.name;
+        if (decl.kind != DeclKind::Function && decl.kind != DeclKind::Macro)
+        {
+            takenTypes[name] = decl.qualifiedName.empty() ? decl.name : decl.qualifiedName;
+        }
+
         tsNames[decl.key] = name;
     }
 

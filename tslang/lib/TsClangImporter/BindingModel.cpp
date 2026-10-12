@@ -48,6 +48,13 @@ TsType TsType::skip(std::string reason)
 
 std::string renderType(const TsType &type, const std::function<std::string(const std::string &)> &nameOf)
 {
+    if (type.nullable)
+    {
+        auto nonNull = type;
+        nonNull.nullable = false;
+        return renderType(nonNull, nameOf) + " | null";
+    }
+
     switch (type.kind)
     {
     case TsType::Kind::Builtin:
@@ -86,7 +93,9 @@ void collectKeys(const TsType &type, std::vector<std::string> &keys)
 std::string nameFromKey(const std::string &key)
 {
     auto colon = key.find(':');
-    return colon == std::string::npos ? key : key.substr(colon + 1);
+    auto name = colon == std::string::npos ? key : key.substr(colon + 1);
+    auto scope = name.rfind("::");
+    return scope == std::string::npos ? name : name.substr(scope + 2);
 }
 
 std::string escapeReserved(std::string name)

@@ -39,7 +39,7 @@ TEST(Naming, StripPrefixRenamesDeclarationsAndTheirUses)
     auto out = generate("struct fx_point { int x; };\nint fx_len(struct fx_point *p);\nint other(void);\n", options)
                    .text;
     EXPECT_THAT(out, HasSubstr("    export type point = [x: s32];\n"));
-    EXPECT_THAT(out, HasSubstr("    @linkname(\"fx_len\") export declare function len(p: Reference<point>): s32;\n"));
+    EXPECT_THAT(out, HasSubstr("    @linkname(\"fx_len\") export declare function len(p: Reference<point> | null): s32;\n"));
     EXPECT_THAT(out, HasSubstr("    @linkname(\"other\") export declare function other(): s32;\n"));
 }
 

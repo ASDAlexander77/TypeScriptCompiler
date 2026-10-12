@@ -41,6 +41,17 @@ struct Pair
     int64_t b;
 };
 
+// a struct in a namespace, with a constructor: still a tuple, passed by reference or by a pointer
+// that may be null
+struct Extent
+{
+    int32_t width;
+    int32_t height;
+    constexpr Extent(int32_t width, int32_t height) : width(width), height(height)
+    {
+    }
+};
+
 class FX_API Shape
 {
   public:
@@ -54,6 +65,7 @@ class FX_API Shape
     virtual void scale(double by); // an overload: scale_2
     virtual Handle handle();
     virtual Pair pair(int32_t x);
+    virtual int32_t fits(const Extent &extent, const Extent *limit);
 
     // non-virtual: called by its mangled symbol
     int32_t id(int32_t x);

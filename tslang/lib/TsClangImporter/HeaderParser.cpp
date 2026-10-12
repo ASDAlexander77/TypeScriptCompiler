@@ -265,9 +265,16 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
             return true;
         }
 
-        // completed below, once the whole file is seen: its definition may come later
+        // completed below, once the whole file is seen: its definition may come later. A C++ struct
+        // in a namespace or a class is declared under its own name; --filter matches either.
         pendingRecords.push_back({model.decls.size(), record});
-        add(DeclKind::OpaqueStruct, key, TypeMapper::tagName(record), record);
+        auto &decl = add(DeclKind::OpaqueStruct, key, TypeMapper::tagName(record), record);
+        auto qualified = TypeMapper::qualifiedTagName(record);
+        if (qualified != decl.name)
+        {
+            decl.qualifiedName = qualified;
+        }
+
         return true;
     }
 

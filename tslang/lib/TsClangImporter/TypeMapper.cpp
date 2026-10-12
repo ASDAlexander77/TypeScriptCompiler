@@ -44,9 +44,29 @@ std::string TypeMapper::tagName(const clang::TagDecl *tag)
     return "";
 }
 
+std::string TypeMapper::qualifiedTagName(const clang::TagDecl *tag)
+{
+    if (!llvm::isa<clang::CXXRecordDecl>(tag) || tag->getDeclContext()->getRedeclContext()->isTranslationUnit())
+    {
+        return tagName(tag);
+    }
+
+    if (!tag->getName().empty())
+    {
+        return tag->getQualifiedNameAsString();
+    }
+
+    if (auto *typedefDecl = tag->getTypedefNameForAnonDecl())
+    {
+        return typedefDecl->getQualifiedNameAsString();
+    }
+
+    return "";
+}
+
 std::string TypeMapper::recordKey(const clang::RecordDecl *record)
 {
-    return "struct:" + tagName(record);
+    return "struct:" + qualifiedTagName(record);
 }
 
 std::string TypeMapper::enumKey(const clang::EnumDecl *enumDecl)
@@ -293,14 +313,18 @@ bool TypeMapper::isDeclarable(const clang::RecordDecl *record)
         return true; // in C, a struct declared inside another is still file-scoped
     }
 
-    if (!record->getDeclContext()->getRedeclContext()->isTranslationUnit())
+    // a template, a specialization or a class inside one (std::vector<int>'s members), and a class
+    // inside a function or a lambda's, have no name the bindings could declare
+    if (record->isDependentContext() || record->isInvalidDecl() || record->getParentFunctionOrMethod())
     {
         return false;
     }
 
     auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record);
+    // (a specialization only named, never instantiated, is TSK_Undeclared, hence the isa)
     return !cxxRecord ||
-           (!cxxRecord->getDescribedClassTemplate() && !llvm::isa<clang::ClassTemplateSpecializationDecl>(cxxRecord));
+           (!cxxRecord->getDescribedClassTemplate() && !llvm::isa<clang::ClassTemplateSpecializationDecl>(cxxRecord) &&
+            cxxRecord->getTemplateSpecializationKind() == clang::TSK_Undeclared && !cxxRecord->isLambda());
 }
 
 bool TypeMapper::isSystem(const clang::Decl *decl)
@@ -310,6 +334,20 @@ bool TypeMapper::isSystem(const clang::Decl *decl)
 }
 
 TsType TypeMapper::map(clang::QualType type, Use use)
+{
+    auto mapped = mapType(type, use);
+    // C lets a pointer argument or field be null (an optional out-parameter, a missing callback, a
+    // desc's unused buffer); a C++ reference can't be. A result isn't marked, which would make every
+    // call site check it.
+    if ((use == Use::Parameter || use == Use::Field) && !mapped.skipped() && type.getCanonicalType()->isPointerType())
+    {
+        mapped.nullable = true;
+    }
+
+    return mapped;
+}
+
+TsType TypeMapper::mapType(clang::QualType type, Use use)
 {
     type = type.getUnqualifiedType();
 
@@ -579,9 +617,19 @@ std::string TypeMapper::recordSkipReason(const clang::RecordDecl *record)
             return "union";
         }
 
+        // a C++ struct is a tuple when its fields are where a tuple's are: methods, constructors and
+        // member initializers don't move them, a vtable pointer or a base's storage does
         if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record); cxxRecord && !cxxRecord->isCLike())
         {
-            return "C++ class";
+            if (cxxRecord->isPolymorphic())
+            {
+                return "C++ class with virtual methods";
+            }
+
+            if (cxxRecord->getNumBases() > 0)
+            {
+                return "derived C++ class";
+            }
         }
 
         if (record->field_empty())
