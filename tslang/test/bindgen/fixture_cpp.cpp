@@ -36,6 +36,17 @@ int32_t Shape::fits(const Extent &extent, const Extent *limit)
     return (limit ? limit->width : -1) * 1000 + extent.width * extent.height;
 }
 
+int32_t Shape::sum(const Batch &batch)
+{
+    int32_t result = batch.total + batch.name.buf[0] + static_cast<int32_t>(batch.flags) + static_cast<int32_t>(batch.mode) * 100;
+    for (int64_t index = 0; index < batch.shapes.count; ++index)
+    {
+        result += batch.shapes.at(index)->area();
+    }
+
+    return result;
+}
+
 int32_t Square::area() const
 {
     return side * side;

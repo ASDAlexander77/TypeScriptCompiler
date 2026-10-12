@@ -87,9 +87,9 @@ TEST(NamespacedStruct, NestedInAClass)
     EXPECT_THAT(out, HasSubstr("declare function use(i: Reference<Inner> | null, o: Reference<Outer> | null): s32;"));
 }
 
-// A derived struct, and one holding a template's specialization (std::string, a container), are
-// named but Opaque: their layouts aren't a tuple's, or not one tsbindgen can spell
-TEST(NamespacedStruct, WhatStaysOpaque)
+// A derived struct has its base's fields first; a template's specialization a field holds is
+// declared under a name of its arguments (LayoutTest.cpp)
+TEST(NamespacedStruct, DerivedAndSpecializationFields)
 {
     auto out = cpp("template <typename T> struct Vec { T *data; };\n"
                    "namespace n {\n"
@@ -98,10 +98,10 @@ TEST(NamespacedStruct, WhatStaysOpaque)
                    "struct Holder { Vec<int> values; };\n"
                    "}\n"
                    "extern \"C\" void use(n::Derived *d, n::Holder *h);\n");
-    EXPECT_THAT(out, HasSubstr("// skipped: Derived \xE2\x80\x94 derived C++ class\ntype Derived = Opaque;"));
-    EXPECT_THAT(out, HasSubstr("// skipped: Holder \xE2\x80\x94 field 'values': C++ class 'struct Vec<int>'\ntype Holder = Opaque;"));
-    EXPECT_THAT(out, HasSubstr("declare function use(d: Derived | null, h: Holder | null): void;"));
-    EXPECT_THAT(out, Not(HasSubstr("type Vec")));
+    EXPECT_THAT(out, HasSubstr("type Derived = [a: s32, b: s32];"));
+    EXPECT_THAT(out, HasSubstr("type Holder = [values: Vec_int];"));
+    EXPECT_THAT(out, HasSubstr("type Vec_int = [data: Reference<s32> | null];"));
+    EXPECT_THAT(out, HasSubstr("declare function use(d: Reference<Derived> | null, h: Reference<Holder> | null): void;"));
 }
 
 // A struct passed by value is still left out: each ABI passes one its own way

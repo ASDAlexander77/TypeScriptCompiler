@@ -11,6 +11,7 @@ namespace clang
 class Sema;
 }
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 
 #include <utility>
@@ -43,13 +44,16 @@ class TypeMapper
     // itself through a pointer counts as mappable while it is being checked.
     std::string recordSkipReason(const clang::RecordDecl *record);
 
-    // A complete struct's fields. A pointer field that leads back to this struct is Opaque:
-    // tslang cannot declare a type that refers to itself.
+    // A complete struct's fields, as spellRecord lays them out. A pointer field that leads back to
+    // this struct is Opaque: tslang cannot declare a type that refers to itself.
     std::vector<Field> mapFields(const clang::RecordDecl *definition);
 
-    // The struct/enum's own name, or the typedef that names it when it has none ("" for neither).
+    // The struct/enum's own name, or the typedef that names it when it has none ("" for neither). A
+    // template's specialization is named by its arguments: `static_vector<IBindingSet *, 8>` is
+    // `static_vector_IBindingSet_8`.
     static std::string tagName(const clang::TagDecl *tag);
-    // tagName with its namespaces and classes for a C++ struct out of the file scope (`nvrhi::Color`)
+    // tagName with its namespaces and classes for a C++ struct out of the file scope (`nvrhi::Color`);
+    // a specialization's has its arguments (`nvrhi::static_vector<nvrhi::IBindingSet *, 8>`)
     static std::string qualifiedTagName(const clang::TagDecl *tag);
     static std::string recordKey(const clang::RecordDecl *record);
     static std::string enumKey(const clang::EnumDecl *enumDecl);
@@ -63,8 +67,10 @@ class TypeMapper
     bool isPlainEnum(const clang::EnumDecl *enumDecl);
 
     // Whether a struct can have a TS declaration of its own: in C, any; in C++, one in a namespace or
-    // a class too (declared under its own name), but not a template, a template specialization
-    // (std::cmatch) or a class inside one, nor a class local to a function.
+    // a class too (declared under its own name), but not a template, nor a class local to a
+    // function. A template's specialization (std::string, nvrhi::static_vector<T, N>) or a class
+    // inside one is declared once a field holds one by value, whose layout needs it; a pointer to
+    // one alone stays Opaque.
     bool isDeclarable(const clang::RecordDecl *record);
 
     // Why a C++ class can't be a @cpp class ("" if it can): it has to be polymorphic, not a
@@ -95,6 +101,31 @@ class TypeMapper
     }
 
   private:
+    // One field of a struct's tuple: its TS name and type, and where C++ puts it (bits).
+    struct Slot
+    {
+        std::string name;
+        TsType type;
+        uint64_t offset;
+        uint64_t size;
+        uint64_t align;
+    };
+
+    // The tuple a struct is, in layout order: the fields of its bases (non-virtual; an empty one has
+    // none), then its own. An array is a tuple of its elements; an anonymous struct's fields are
+    // the struct's; a union is its first member when that has the union's size and alignment, raw
+    // words otherwise; a run of bitfields raw words (named after the first); an empty
+    // [[no_unique_address]] field nothing. Returns why it isn't a tuple, or "".
+    std::string spellRecord(const clang::RecordDecl *definition, std::vector<Field> *fields);
+    // `baseEnds`: where each base's storage ends (bits), tail padding included
+    std::string collectSlots(const clang::RecordDecl *definition, uint64_t base, std::vector<Slot> &slots,
+                             std::vector<uint64_t> &baseEnds);
+    Slot unionSlot(std::string name, const clang::RecordDecl *unionRecord, uint64_t offset);
+    // `[_0: u64, _1: u64, ...]`: `bytes` as words of the largest size up to `align` that fits
+    static TsType rawWords(uint64_t bytes, uint64_t align);
+    // a template's specialization, or a class inside one, complete: declarable when a field holds it
+    bool isInstantiated(const clang::RecordDecl *record);
+
     TsType mapType(clang::QualType type, Use use);
     std::string referTo(const clang::TagDecl *tag);
     TsType mapPointer(clang::QualType pointee, Use use);
@@ -111,6 +142,7 @@ class TypeMapper
     std::vector<std::pair<std::string, const clang::TagDecl *>> referenced;
     llvm::StringSet<> referencedKeys;
     std::vector<const clang::RecordDecl *> owners; // structs whose fields are being mapped
+    llvm::SmallPtrSet<const clang::RecordDecl *, 16> heldByValue; // instantiated records a field holds
 };
 
 } // namespace tsbindgen

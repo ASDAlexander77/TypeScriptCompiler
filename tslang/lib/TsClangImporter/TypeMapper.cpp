@@ -7,7 +7,10 @@
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/MathExtras.h"
+
+#include <cctype>
 
 namespace tsbindgen
 {
@@ -21,6 +24,9 @@ bool isIndexTypedef(llvm::StringRef name)
            name == "uintptr_t";
 }
 
+// an array bigger than this is skipped rather than spelled as that many tuple fields
+constexpr uint64_t maxArrayElements = 1024;
+
 bool isPlainChar(clang::QualType canonical)
 {
     return canonical->isSpecificBuiltinType(clang::BuiltinType::Char_S) ||
@@ -29,8 +35,125 @@ bool isPlainChar(clang::QualType canonical)
 
 } // namespace
 
+namespace
+{
+
+// The class is a template's specialization, or inside one (`basic_string<char>::__rep`)
+bool inInstantiation(const clang::TagDecl *tag)
+{
+    for (const clang::DeclContext *context = tag; context; context = context->getParent())
+    {
+        if (llvm::isa<clang::ClassTemplateSpecializationDecl>(context))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// `static_vector<IBindingSet *, 8>`, `basic_string<char>::__rep`: the classes from the outermost
+// enclosing one down, each with its template arguments (the defaulted ones left out); their
+// namespaces too with `qualified`
+std::string instantiationText(const clang::TagDecl *tag, bool qualified)
+{
+    auto policy = tag->getASTContext().getPrintingPolicy();
+    policy.SuppressScope = !qualified;
+    policy.SuppressTagKeyword = true;
+
+    std::vector<const clang::TagDecl *> chain;
+    const clang::DeclContext *context = tag;
+    for (; context && llvm::isa<clang::TagDecl>(context); context = context->getParent())
+    {
+        chain.insert(chain.begin(), llvm::cast<clang::TagDecl>(context));
+    }
+
+    std::string text;
+    if (qualified && context)
+    {
+        if (auto *scope = llvm::dyn_cast<clang::NamedDecl>(context))
+        {
+            text = scope->getQualifiedNameAsString();
+        }
+    }
+
+    for (auto *part : chain)
+    {
+        text += (text.empty() ? "" : "::") + part->getName().str();
+        if (auto *specialization = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(part))
+        {
+            std::string arguments;
+            llvm::raw_string_ostream stream(arguments);
+            clang::printTemplateArgumentList(stream, specialization->getTemplateArgs().asArray(), policy,
+                                             specialization->getSpecializedTemplate()->getTemplateParameters());
+            stream.flush();
+            // SuppressScope doesn't reach the arguments' types: drop each `scope::` there too
+            if (!qualified)
+            {
+                std::string unscoped;
+                for (size_t index = 0; index < arguments.size(); ++index)
+                {
+                    if (arguments.compare(index, 2, "::") == 0)
+                    {
+                        while (!unscoped.empty() && (std::isalnum(static_cast<unsigned char>(unscoped.back())) ||
+                                                     unscoped.back() == '_'))
+                        {
+                            unscoped.pop_back();
+                        }
+
+                        ++index;
+                        continue;
+                    }
+
+                    unscoped += arguments[index];
+                }
+
+                arguments = unscoped;
+            }
+
+            text += arguments;
+        }
+    }
+
+    return text;
+}
+
+// a name of the identifier's characters: `static_vector<IBindingSet *, 8>` -> `static_vector_IBindingSet_8`
+std::string identifierOf(const std::string &text)
+{
+    std::string name;
+    auto separated = false;
+    for (unsigned char c : text)
+    {
+        if (std::isalnum(c) || c == '_')
+        {
+            name += static_cast<char>(c);
+            separated = false;
+        }
+        else if (!separated && !name.empty())
+        {
+            name += '_';
+            separated = true;
+        }
+    }
+
+    if (separated)
+    {
+        name.pop_back();
+    }
+
+    return name;
+}
+
+} // namespace
+
 std::string TypeMapper::tagName(const clang::TagDecl *tag)
 {
+    if (inInstantiation(tag) && !tag->getName().empty())
+    {
+        return identifierOf(instantiationText(tag, false));
+    }
+
     if (!tag->getName().empty())
     {
         return tag->getName().str();
@@ -46,6 +169,11 @@ std::string TypeMapper::tagName(const clang::TagDecl *tag)
 
 std::string TypeMapper::qualifiedTagName(const clang::TagDecl *tag)
 {
+    if (inInstantiation(tag) && !tag->getName().empty())
+    {
+        return instantiationText(tag, true);
+    }
+
     if (!llvm::isa<clang::CXXRecordDecl>(tag) || tag->getDeclContext()->getRedeclContext()->isTranslationUnit())
     {
         return tagName(tag);
@@ -313,11 +441,16 @@ bool TypeMapper::isDeclarable(const clang::RecordDecl *record)
         return true; // in C, a struct declared inside another is still file-scoped
     }
 
-    // a template, a specialization or a class inside one (std::vector<int>'s members), and a class
-    // inside a function or a lambda's, have no name the bindings could declare
+    // a template, and a class inside a function or a lambda's, have no name the bindings could
+    // declare; a specialization or a class inside one is declared once a field holds it by value
     if (record->isDependentContext() || record->isInvalidDecl() || record->getParentFunctionOrMethod())
     {
         return false;
+    }
+
+    if (isInstantiated(record))
+    {
+        return heldByValue.count(record->getDefinition()) > 0;
     }
 
     auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record);
@@ -325,6 +458,16 @@ bool TypeMapper::isDeclarable(const clang::RecordDecl *record)
     return !cxxRecord ||
            (!cxxRecord->getDescribedClassTemplate() && !llvm::isa<clang::ClassTemplateSpecializationDecl>(cxxRecord) &&
             cxxRecord->getTemplateSpecializationKind() == clang::TSK_Undeclared && !cxxRecord->isLambda());
+}
+
+bool TypeMapper::isInstantiated(const clang::RecordDecl *record)
+{
+    auto *definition = record->getDefinition();
+    return context.getLangOpts().CPlusPlus && definition && !definition->isDependentContext() &&
+           !definition->isInvalidDecl() && inInstantiation(definition) && !definition->getName().empty() &&
+           (!llvm::isa<clang::ClassTemplateSpecializationDecl>(definition) ||
+            llvm::cast<clang::ClassTemplateSpecializationDecl>(definition)->getSpecializationKind() !=
+                clang::TSK_Undeclared);
 }
 
 bool TypeMapper::isSystem(const clang::Decl *decl)
@@ -439,6 +582,13 @@ TsType TypeMapper::mapType(clang::QualType type, Use use)
             return TsType::skip(record->isUnion() ? "union passed by value" : "struct passed by value");
         }
 
+        // a field holding a specialization (std::string, nvrhi::static_vector<T, N>) needs its layout:
+        // it is declared, under a name of its arguments
+        if (use == Use::Field && isInstantiated(record))
+        {
+            heldByValue.insert(record->getDefinition());
+        }
+
         if (!isDeclarable(record))
         {
             return TsType::skip("C++ class '" + canonical.getAsString() + "'");
@@ -468,6 +618,36 @@ TsType TypeMapper::mapType(clang::QualType type, Use use)
         }
 
         return TsType::named(referTo(record));
+    }
+
+    // `T x[N]`: a tuple of its N elements, `[_0: T, _1: T, ...]` (tslang has no fixed-size array
+    // type), which lays them out as C does
+    if (auto *array = context.getAsConstantArrayType(canonical); array && (use == Use::Field || use == Use::Alias))
+    {
+        auto count = array->getSize().getZExtValue();
+        if (count == 0)
+        {
+            return TsType::skip("array of no elements");
+        }
+
+        if (count > maxArrayElements)
+        {
+            return TsType::skip("array of " + std::to_string(count) + " elements");
+        }
+
+        auto element = map(array->getElementType(), Use::Field);
+        if (element.skipped())
+        {
+            return TsType::skip("array of " + element.skipReason);
+        }
+
+        std::vector<std::string> names;
+        for (uint64_t index = 0; index < count; ++index)
+        {
+            names.push_back("_" + std::to_string(index));
+        }
+
+        return TsType::tuple(std::move(names), std::vector<TsType>(count, element));
     }
 
     if (canonical->isArrayType())
@@ -544,8 +724,9 @@ TsType TypeMapper::mapPointer(clang::QualType pointee, Use use)
             return TsType::named(referTo(cxxRecord));
         }
 
-        // there is no declaration a name could refer to, so no name: the C++ type is a comment
-        if (!isDeclarable(record))
+        // there is no declaration a name could refer to, so no name: the C++ type is a comment. A
+        // specialization is declared only for a field holding it, whatever the order it's met in.
+        if (isInstantiated(record) || !isDeclarable(record))
         {
             return TsType::builtin("Opaque", pointee.getUnqualifiedType().getAsString());
         }
@@ -610,78 +791,7 @@ std::string TypeMapper::recordSkipReason(const clang::RecordDecl *record)
     // a struct that points to itself is mappable while this runs
     recordReasons[record] = "";
     owners.push_back(record);
-
-    auto reason = [&]() -> std::string {
-        if (record->isUnion())
-        {
-            return "union";
-        }
-
-        // a C++ struct is a tuple when its fields are where a tuple's are: methods, constructors and
-        // member initializers don't move them, a vtable pointer or a base's storage does
-        if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(record); cxxRecord && !cxxRecord->isCLike())
-        {
-            if (cxxRecord->isPolymorphic())
-            {
-                return "C++ class with virtual methods";
-            }
-
-            if (cxxRecord->getNumBases() > 0)
-            {
-                return "derived C++ class";
-            }
-        }
-
-        if (record->field_empty())
-        {
-            return "empty struct";
-        }
-
-        // a named tuple is laid out with natural alignment, field after field; anything else would
-        // put the fields where C does not
-        const auto &layout = context.getASTRecordLayout(record);
-        uint64_t offset = 0;
-        uint64_t maxAlign = 8;
-        unsigned index = 0;
-        for (auto *field : record->fields())
-        {
-            auto fieldName = field->getName().str();
-            if (field->isBitField())
-            {
-                return "bitfield '" + fieldName + "'";
-            }
-
-            if (fieldName.empty())
-            {
-                return "anonymous member";
-            }
-
-            auto type = map(field->getType(), Use::Field);
-            if (type.skipped())
-            {
-                return "field '" + fieldName + "': " + type.skipReason;
-            }
-
-            auto align = context.getTypeAlign(field->getType());
-            offset = llvm::alignTo(offset, align);
-            if (layout.getFieldOffset(index) != offset)
-            {
-                return "packed or over-aligned layout";
-            }
-
-            offset += context.getTypeSize(field->getType());
-            maxAlign = std::max<uint64_t>(maxAlign, align);
-            ++index;
-        }
-
-        if (llvm::alignTo(offset, maxAlign) != static_cast<uint64_t>(context.toBits(layout.getSize())))
-        {
-            return "packed or over-aligned layout";
-        }
-
-        return "";
-    }();
-
+    auto reason = spellRecord(record, nullptr);
     owners.pop_back();
     recordReasons[record] = reason;
     return reason;
@@ -691,13 +801,259 @@ std::vector<Field> TypeMapper::mapFields(const clang::RecordDecl *definition)
 {
     owners.push_back(definition);
     std::vector<Field> fields;
-    for (auto *field : definition->fields())
-    {
-        fields.push_back({escapeReserved(field->getName().str()), map(field->getType(), Use::Field)});
-    }
-
+    spellRecord(definition, &fields);
     owners.pop_back();
     return fields;
+}
+
+TsType TypeMapper::rawWords(uint64_t bytes, uint64_t align)
+{
+    uint64_t word = 8;
+    while (word > 1 && (word > align || bytes % word != 0))
+    {
+        word /= 2;
+    }
+
+    std::vector<std::string> names;
+    for (uint64_t index = 0; index < bytes / word; ++index)
+    {
+        names.push_back("_" + std::to_string(index));
+    }
+
+    auto type = TsType::builtin("u" + std::to_string(word * 8));
+    return TsType::tuple(std::move(names), std::vector<TsType>(bytes / word, type));
+}
+
+TypeMapper::Slot TypeMapper::unionSlot(std::string name, const clang::RecordDecl *unionRecord, uint64_t offset)
+{
+    const auto &layout = context.getASTRecordLayout(unionRecord);
+    auto size = static_cast<uint64_t>(context.toBits(layout.getSize()));
+    auto align = static_cast<uint64_t>(context.toBits(layout.getAlignment()));
+
+    // its first member, when that alone has the union's size and alignment (`union { T *p; uint64_t
+    // n; }`); raw words otherwise (`union { char buf[16]; char *ptr; }`, a member with bitfields)
+    for (auto *member : unionRecord->fields())
+    {
+        if (member->isZeroSize(context))
+        {
+            continue;
+        }
+
+        if (!member->isBitField() && !member->isAnonymousStructOrUnion() &&
+            context.getTypeSize(member->getType()) == size && context.getTypeAlign(member->getType()) == align)
+        {
+            auto type = map(member->getType(), Use::Field);
+            if (!type.skipped())
+            {
+                return {name.empty() ? escapeReserved(member->getName().str()) : name, type, offset, size, align};
+            }
+        }
+
+        break;
+    }
+
+    return {name.empty() ? "_union" : name, rawWords(size / 8, align / 8), offset, size, align};
+}
+
+std::string TypeMapper::collectSlots(const clang::RecordDecl *definition, uint64_t base, std::vector<Slot> &slots,
+                                     std::vector<uint64_t> &baseEnds)
+{
+    const auto &layout = context.getASTRecordLayout(definition);
+
+    // the bases' fields first, where the layout puts each base: C++ member lookup sees them as the
+    // struct's own (nvrhi::static_vector's private std::array)
+    if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(definition))
+    {
+        if (cxxRecord->isPolymorphic())
+        {
+            return "C++ class with virtual methods";
+        }
+
+        if (cxxRecord->getNumVBases() > 0)
+        {
+            return "virtual base class";
+        }
+
+        for (auto &baseSpecifier : cxxRecord->bases())
+        {
+            auto *baseRecord = baseSpecifier.getType()->getAsCXXRecordDecl();
+            if (!baseRecord || !baseRecord->getDefinition())
+            {
+                return "incomplete base class";
+            }
+
+            baseRecord = baseRecord->getDefinition();
+            if (baseRecord->isEmpty())
+            {
+                continue; // no storage (allocator, std::_Compressed_pair's empty base)
+            }
+
+            auto baseOffset = base + static_cast<uint64_t>(context.toBits(layout.getBaseClassOffset(baseRecord)));
+            auto reason = collectSlots(baseRecord, baseOffset, slots, baseEnds);
+            if (!reason.empty())
+            {
+                return "base class '" + baseRecord->getQualifiedNameAsString() + "': " + reason;
+            }
+
+            // MSVC puts the next field after the base's tail padding, the Itanium ABI may put it in
+            // there: spellRecord pads up to here when the next field is here
+            baseEnds.push_back(baseOffset + static_cast<uint64_t>(context.toBits(context.getASTRecordLayout(baseRecord).getSize())));
+        }
+    }
+
+    std::vector<const clang::FieldDecl *> fields(definition->field_begin(), definition->field_end());
+    for (size_t index = 0; index < fields.size(); ++index)
+    {
+        auto *field = fields[index];
+        auto offset = base + layout.getFieldOffset(field->getFieldIndex());
+        auto fieldName = escapeReserved(field->getName().str());
+
+        // [[no_unique_address]] on an empty class (libc++'s std::string allocator): no storage
+        if (field->isZeroSize(context))
+        {
+            continue;
+        }
+
+        // a run of bitfields: raw words over the bytes they use, up to the next field
+        if (field->isBitField())
+        {
+            auto start = offset / 8 * 8;
+            auto next = index + 1;
+            while (next < fields.size() && (fields[next]->isBitField() || fields[next]->isZeroSize(context)))
+            {
+                ++next;
+            }
+
+            auto end = next < fields.size() ? base + layout.getFieldOffset(fields[next]->getFieldIndex())
+                                            : base + static_cast<uint64_t>(context.toBits(layout.getDataSize()));
+            end = llvm::alignTo(end, 8);
+            auto align = static_cast<uint64_t>(context.toBits(layout.getAlignment())) / 8;
+            auto words = rawWords((end - start) / 8, align);
+            // the words' alignment: their size, `u64` -> 64 bits
+            auto wordBits = static_cast<uint64_t>(std::stoi(words.pointee.front().name.substr(1)));
+            slots.push_back({fieldName.empty() ? "_bits" : fieldName, words, start, end - start, wordBits});
+            index = next - 1;
+            continue;
+        }
+
+        auto canonical = field->getType().getCanonicalType();
+        if (auto *fieldRecord = canonical->getAsRecordDecl())
+        {
+            auto *fieldDefinition = fieldRecord->getDefinition();
+            if (fieldDefinition && fieldDefinition->isUnion())
+            {
+                slots.push_back(unionSlot(field->isAnonymousStructOrUnion() ? "" : fieldName, fieldDefinition, offset));
+                continue;
+            }
+
+            // an anonymous struct's fields are the struct's own, as in C11
+            if (fieldDefinition && field->isAnonymousStructOrUnion())
+            {
+                auto reason = collectSlots(fieldDefinition, offset, slots, baseEnds);
+                if (!reason.empty())
+                {
+                    return "anonymous member: " + reason;
+                }
+
+                continue;
+            }
+        }
+
+        if (fieldName.empty())
+        {
+            return "anonymous member";
+        }
+
+        auto type = map(field->getType(), Use::Field);
+        if (type.skipped())
+        {
+            return "field '" + fieldName + "': " + type.skipReason;
+        }
+
+        slots.push_back({fieldName, type, offset, static_cast<uint64_t>(context.getTypeSize(field->getType())),
+                         static_cast<uint64_t>(context.getTypeAlign(field->getType()))});
+    }
+
+    return "";
+}
+
+std::string TypeMapper::spellRecord(const clang::RecordDecl *definition, std::vector<Field> *fields)
+{
+    if (definition->isUnion())
+    {
+        return "union";
+    }
+
+    std::vector<Slot> slots;
+    std::vector<uint64_t> ends;
+    auto reason = collectSlots(definition, 0, slots, ends);
+    if (!reason.empty())
+    {
+        return reason;
+    }
+
+    if (slots.empty())
+    {
+        return "empty struct";
+    }
+
+    // a named tuple is laid out with natural alignment, field after field; a C++ layout that puts a
+    // field elsewhere (packed, over-aligned, the Itanium ABI's base tail padding) isn't one
+    uint64_t offset = 0;
+    uint64_t maxAlign = 8;
+    std::vector<Slot> padded;
+    for (auto &slot : slots)
+    {
+        if (slot.offset > llvm::alignTo(offset, slot.align) && llvm::is_contained(ends, slot.offset))
+        {
+            // words no bigger than the padding's start is aligned to
+            auto start = offset / 8;
+            auto words = rawWords((slot.offset - offset) / 8, start ? (start & (~start + 1)) : 8);
+            auto wordBits = static_cast<uint64_t>(std::stoi(words.pointee.front().name.substr(1)));
+            padded.push_back({"_pad", words, offset, slot.offset - offset, wordBits});
+            offset = slot.offset;
+        }
+
+        offset = llvm::alignTo(offset, slot.align);
+        if (slot.offset != offset)
+        {
+            return "packed or over-aligned layout";
+        }
+
+        padded.push_back(slot);
+        offset += slot.size;
+        maxAlign = std::max(maxAlign, slot.align);
+    }
+
+    slots = std::move(padded);
+
+    // a tuple is aligned as its most aligned field; an alignas() struct (DECLSPEC_ALIGN(16)) more, so
+    // a struct holding one would put it elsewhere
+    const auto &layout = context.getASTRecordLayout(definition);
+    if (llvm::alignTo(offset, maxAlign) != static_cast<uint64_t>(context.toBits(layout.getSize())) ||
+        static_cast<uint64_t>(context.toBits(layout.getAlignment())) > maxAlign)
+    {
+        return "packed or over-aligned layout";
+    }
+
+    if (fields)
+    {
+        // a base's field and the struct's own may have one name: the later gets `_2`, ...
+        llvm::StringSet<> names;
+        for (auto &slot : slots)
+        {
+            auto name = slot.name;
+            for (auto suffix = 2; names.count(name); ++suffix)
+            {
+                name = slot.name + "_" + std::to_string(suffix);
+            }
+
+            names.insert(name);
+            fields->push_back({name, slot.type});
+        }
+    }
+
+    return "";
 }
 
 const clang::RecordDecl *TypeMapper::recordBehind(clang::QualType type)
