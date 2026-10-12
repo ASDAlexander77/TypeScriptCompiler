@@ -1,7 +1,7 @@
 // An `any` is unboxed by asking the object what it is, which a C++ object can't answer.
-@cppvtable
+@cpp
 class Base {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 function main() {

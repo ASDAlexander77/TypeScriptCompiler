@@ -1,4 +1,4 @@
-// A C++ object whose methods a @cppvtable class calls (abi_msvc.ts, abi_itanium.ts): built by the
+// A C++ object whose methods a @cpp class calls (abi_msvc.ts, abi_itanium.ts): built by the
 // host's C++ compiler, so its vtable and the way its methods return records are that compiler's
 // ABI - MSVC's, or the Itanium one of g++ and clang - not a vtable made by hand in tslang.
 
@@ -6,8 +6,10 @@
 
 #ifdef _WIN32
 #define ABI_EXPORT extern "C" __declspec(dllexport)
+#define ABI_MEMBER_EXPORT __declspec(dllexport)
 #else
 #define ABI_EXPORT extern "C" __attribute__((visibility("default")))
+#define ABI_MEMBER_EXPORT __attribute__((visibility("default")))
 #endif
 
 // non-trivial, as nvrhi::RefCountPtr<T>: the Itanium ABI returns it through a pointer before `this`
@@ -44,8 +46,15 @@ struct Methods
     virtual int plain(int a, int b) { return a * b + value; }
     // narrow arguments: clang's code takes them as extended to 32 bits by the caller
     virtual int narrow(bool b, uint8_t u, int8_t s) { return (b ? 1000 : 0) + u * 10 + s; }
+    // non-virtual: called by its symbol, ?scaled@Methods@@QEAAHH@Z or _ZN7Methods6scaledEi
+    ABI_MEMBER_EXPORT int scaled(int x);
     int value = 7;
 };
+
+int Methods::scaled(int x)
+{
+    return x * 100 + value;
+}
 
 // implemented in tslang (abi_msvc.ts, abi_itanium.ts' Counter): C++ calls its methods through the
 // vtable tslang made, as NVRHI calls an application's nvrhi::IMessageCallback

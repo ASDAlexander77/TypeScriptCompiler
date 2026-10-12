@@ -420,8 +420,9 @@ tslang_add_test(NAME test-compile-00-optional-loose-null COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-union-nullable-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
-# not in TSLANG_CORPUS: a @cppvtable class is an error under rc (cppvtable/memory_model.ts)
+# not in TSLANG_CORPUS: a @cpp class is an error under rc (cppvtable/memory_model.ts)
 tslang_add_test(NAME test-compile-00-cppvtable-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-compile-00-cpp-slot COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -955,6 +956,7 @@ tslang_add_test(NAME test-jit-00-union-nullable-array COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-cppvtable-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-jit-00-cpp-slot COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2715,24 +2717,32 @@ add_test(NAME test-compile-interface-cast-empty
 set_tests_properties(test-compile-interface-cast-empty
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
-# A @cppvtable class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
+# A @cpp class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
 # would add a slot, run code of its own or ask the object what it is is an error: a slot off by one
 # would call the wrong C++ method, with no error at all. One whose methods have bodies implements
 # C++ methods (cppvtable/abi_*.ts' Counter), with limits of its own.
 set(cppvtable_errors
-    "instanceof|instanceof can't be used with a @cppvtable class"
-    "box_any|can't cast 'Base' to 'any': a @cppvtable class's objects are C\\+\\+ objects"
-    "unbox_any|can't cast 'any' to 'Base': a @cppvtable class's objects are C\\+\\+ objects"
-    "to_interface|can't cast 'Base' to 'IFirst': a @cppvtable class's objects are C\\+\\+ objects"
-    "extends_plain|the @cppvtable class 'Base' can only extend a @cppvtable class, not 'Plain'"
-    "plain_extends|class 'Plain' can't extend the @cppvtable class 'Base': it has to be @cppvtable too"
-    "implements|a @cppvtable class can't implement an interface"
-    "method_body|a method implementing a C\\+\\+ method \\(a @cppvtable class's, with a body\\) can't return a struct yet"
-    "export_implementation|a @cppvtable class implementing C\\+\\+ methods can't be exported"
-    "static_member|a @cppvtable class can't have static members"
-    "constructor|a @cppvtable class can't have a constructor"
-    "get_accessor|a @cppvtable class can only have methods and fields"
-    "field_initializer|a field of a @cppvtable class can't have an initializer")
+    "instanceof|instanceof can't be used with a @cpp class"
+    "box_any|can't cast 'Base' to 'any': a @cpp class's objects are C\\+\\+ objects"
+    "unbox_any|can't cast 'any' to 'Base': a @cpp class's objects are C\\+\\+ objects"
+    "to_interface|can't cast 'Base' to 'IFirst': a @cpp class's objects are C\\+\\+ objects"
+    "extends_plain|the @cpp class 'Base' can only extend a @cpp class, not 'Plain'"
+    "plain_extends|class 'Plain' can't extend the @cpp class 'Base': it has to be @cpp too"
+    "implements|a @cpp class can't implement an interface"
+    "method_body|a method implementing a C\\+\\+ method \\(a @cpp class's, with a body\\) can't return a struct yet"
+    "export_implementation|a @cpp class implementing C\\+\\+ methods can't be exported"
+    "static_member|a @cpp class can't have static members"
+    "constructor|a @cpp class can't have a constructor"
+    "get_accessor|a @cpp class can only have methods and fields"
+    "field_initializer|a field of a @cpp class can't have an initializer"
+    "slot_old_name|@cppvtable is now @cpp, and a virtual method needs @slot\\(N\\)"
+    "slot_missing|'second' has no @slot, so it isn't virtual"
+    "slot_abstract|the abstract method 'first' of a @cpp class needs @slot\\(N\\), its vtable slot"
+    "slot_conflict|@slot: 'second' and 'first' are both in slot 1"
+    "slot_override|@slot: 'first' overrides slot 0 of a base class, not slot 2"
+    "slot_argument|@slot takes the slot number, an integer from 0"
+    "slot_plain_class|@slot is for a method of a @cpp class"
+    "nonvirtual_struct|a C\\+\\+ non-virtual method \\(a @cpp class's, without @slot\\) can't return a struct yet")
 foreach(cppvtable_error ${cppvtable_errors})
     string(REPLACE "|" ";" cppvtable_error "${cppvtable_error}")
     list(GET cppvtable_error 0 cppvtable_name)
@@ -2753,7 +2763,7 @@ add_test(NAME test-compile-cppvtable-memory-model-rc
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-rc.obj")
 set_tests_properties(test-compile-cppvtable-memory-model-rc
-                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cppvtable class needs the gc or none memory model"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cpp class needs the gc or none memory model"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-cppvtable-memory-model-none
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
@@ -2776,7 +2786,7 @@ add_test(NAME test-compile-cppvtable-hidden-return-target
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/hidden_return_target.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-hidden-return-target.obj")
 set_tests_properties(test-compile-cppvtable-hidden-return-target
-                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cppvtable class returning a struct needs the MSVC ABI, or the Itanium ABI on x86-64 or AArch64"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "hidden_return_target\\.ts:7:5: error: a method of a @cpp class returning a struct needs the MSVC ABI, or the Itanium ABI on x86-64 or AArch64"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # x86-64 Itanium: a trivial record tslang can't return as the SysV classification does, unmarked
 add_test(NAME test-compile-cppvtable-itanium-record
@@ -2784,14 +2794,14 @@ add_test(NAME test-compile-cppvtable-itanium-record
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/itanium_record.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-itanium-record.obj")
 set_tests_properties(test-compile-cppvtable-itanium-record
-                     PROPERTIES PASS_REGULAR_EXPRESSION "itanium_record\\.ts:7:5: error: on this target a method of a @cppvtable class returns a struct in registers by its fields.*mark the method @cppnontrivial"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "itanium_record\\.ts:7:5: error: on this target a method of a @cpp class returns a struct in registers by its fields.*mark the method @cppnontrivial"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-compile-cppvtable-nontrivial-no-struct
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/nontrivial_no_struct.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-nontrivial-no-struct.obj")
 set_tests_properties(test-compile-cppvtable-nontrivial-no-struct
-                     PROPERTIES PASS_REGULAR_EXPRESSION "nontrivial_no_struct\\.ts:[0-9]+:[0-9]+: error: @cppnontrivial is for a method of a @cppvtable class returning a struct"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "nontrivial_no_struct\\.ts:[0-9]+:[0-9]+: error: @cppnontrivial is for a method of a @cpp class returning a struct"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # The Itanium calls' argument attributes, on any host: the hidden result pointer `sret` (X8 on
@@ -2813,7 +2823,7 @@ foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
-# A @cppvtable class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
+# A @cpp class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
 # the host's compiler: its vtable, and the way its methods return records, are that compiler's ABI -
 # MSVC's (abi_msvc.ts), or the Itanium one of g++ and clang on x86-64 and AArch64 (abi_itanium.ts) -
 # not a vtable made by hand in tslang, which follows tslang's own idea of the ABI.
@@ -2840,7 +2850,7 @@ add_test(NAME test-compile-cppvtable-thiscall-target
                  "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
                  -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-thiscall-target.obj")
 set_tests_properties(test-compile-cppvtable-thiscall-target
-                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cppvtable class can't be used on this target: its C\\+\\+ methods are __thiscall"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cpp class can't be used on this target: its C\\+\\+ methods are __thiscall"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # An error inside a cast function the compiler generates (here: null in a union cast to string) is

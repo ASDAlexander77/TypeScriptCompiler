@@ -1075,7 +1075,7 @@ namespace mlirgen
 
         SmallVector<mlir::Value, 4> operands;
         auto offsetArgs = isa<mlir_ts::BoundFunctionType>(funcType) || isa<mlir_ts::ExtensionFunctionType>(funcType) ? 1 : 0;
-        // a @cppvtable method returning a record: the arguments follow its hidden result pointer
+        // a @cpp method returning a record: the arguments follow its hidden result pointer
         if (cppVTableHiddenReturnType(funcResult))
         {
             offsetArgs = 2;

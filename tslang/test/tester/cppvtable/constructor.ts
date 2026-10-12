@@ -1,8 +1,8 @@
-// A @cppvtable class's objects are made by C++.
-@cppvtable
+// A @cpp class's objects are made by C++.
+@cpp
 class Base {
     constructor() {}
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 function main() {

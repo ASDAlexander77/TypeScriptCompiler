@@ -28,6 +28,7 @@ function main() {
     assert(derived.second(5) == 37, "slot 1");
     assert(derived.third(6, 7) == 42, "slot 2");
     assert(M.callSecond(derived, 8) == 40, "the exporting module calls the same slot");
+    assert(derived.twice(1) == 66, "a method of TypeScript's own, from the exporting module");
 
     print("done.");
 }

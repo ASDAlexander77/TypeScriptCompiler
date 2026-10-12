@@ -1,8 +1,8 @@
 // An accessor is a generated method, and its slot wouldn't follow the declaration order.
-@cppvtable
+@cpp
 class Base {
     get size(): s32;
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 function main() {

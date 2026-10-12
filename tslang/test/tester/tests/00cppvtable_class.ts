@@ -1,25 +1,24 @@
-// A @cppvtable class is laid over an object made elsewhere (C++): its first word is the vtable, the
-// class's methods are that vtable's slots from 0 in declaration order, a base class's first, and
-// each is called as fn(this, args). The "C++ object" here is made by hand: a table of functions and
+// A @cpp class is laid over an object made elsewhere (C++): its first word is the vtable, a method
+// with @slot(N) is slot N of it (a base class's slots counted), and each is called as fn(this, args). The "C++ object" here is made by hand: a table of functions and
 // a tuple whose first field points at it.
 
-@cppvtable
+@cpp
 class Base {
     value: s32;          // the object's first field, after the vtable pointer
-    first(): s32;        // slot 0
-    second(x: s32): s32; // slot 1
+    @slot(0) first(): s32;
+    @slot(1) second(x: s32): s32;
 }
 
-@cppvtable
+@cpp
 class Derived extends Base {
-    third(x: s32, y: s32): s32; // slot 2
+    @slot(2) third(x: s32, y: s32): s32;
 }
 
 // `abstract` reads the same
-@cppvtable
+@cpp
 abstract class AbstractBase {
-    abstract first(): s32;        // slot 0
-    abstract second(x: s32): s32; // slot 1
+    @slot(0) abstract first(): s32;
+    @slot(1) abstract second(x: s32): s32;
 }
 
 type ObjectData = [vtable: Opaque, value: s32];

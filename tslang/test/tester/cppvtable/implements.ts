@@ -3,9 +3,9 @@ interface IFirst {
     first(): s32;
 }
 
-@cppvtable
+@cpp
 class Base implements IFirst {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 function main() {

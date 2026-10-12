@@ -1,7 +1,7 @@
-// Unboxing an `any` to a @cppvtable class would ask the object what it is.
-@cppvtable
+// Unboxing an `any` to a @cpp class would ask the object what it is.
+@cpp
 class Base {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 function main() {

@@ -8,29 +8,32 @@ type Two = [a: u64, b: Opaque | null];
 declare function abi_object(): Opaque;
 declare function abi_is_storage(p: Opaque | null, index: s32): s32;
 
-@cppvtable
+@cpp
 class Methods {
     value: s32;
-    destructor(): void;                     // slot 0: the scalar deleting destructor
+    @slot(0) destructor(): void;  // the scalar deleting destructor
     @cppnontrivial
-    make(x: s32): Ptr;                      // slot 1
-    obj(x: s32): Obj;                       // slot 2
-    two(x: s32): Two;                       // slot 3
-    plain(a: s32, b: s32): s32;             // slot 4
-    narrow(b: boolean, u: u8, s: s8): s32;  // slot 5
+    @slot(1) make(x: s32): Ptr;
+    @slot(2) obj(x: s32): Obj;
+    @slot(3) two(x: s32): Two;
+    @slot(4) plain(a: s32, b: s32): s32;
+    @slot(5) narrow(b: boolean, u: u8, s: s8): s32;
+    // a C++ non-virtual method (no @slot), called by its symbol
+    @linkname("?scaled@Methods@@QEAAHH@Z")
+    scaled(x: s32): s32;
 }
 
 // A C++ interface (abi_host.cpp's Callback) implemented here: C++ calls Counter's methods through the
 // vtable tslang makes for it
-@cppvtable
+@cpp
 class Callback {
-    destructor(): void;                         // slot 0
-    message(severity: u8, text: string): void;  // slot 1
-    count(): s32;                               // slot 2
-    isEven(x: s32): boolean;                    // slot 3
+    @slot(0) destructor(): void;
+    @slot(1) message(severity: u8, text: string): void;
+    @slot(2) count(): s32;
+    @slot(3) isEven(x: s32): boolean;
 }
 
-@cppvtable
+@cpp
 class Counter extends Callback {
     total: s32 = 0;
     unexpected = 0;
@@ -53,6 +56,11 @@ class Counter extends Callback {
     isEven(x: s32): boolean {
         return x % 2 == 0;
     }
+
+    // TypeScript's own (no @slot, overriding nothing): not in the vtable C++ calls through
+    doubled(): s32 {
+        return this.count() * 2;
+    }
 }
 
 declare function abi_call_callback(callback: Opaque): s32;
@@ -72,12 +80,14 @@ function main() {
     assert(two.a == 0x1234567890 + 7 && abi_is_storage(two.b, 9) == 1, "a trivial 16-byte record");
     assert(methods.plain(6, 7) == 49, "a number");
     assert(callNarrow(methods, 0x1234) == 1000 + 0x34 * 10 - 3, "narrow arguments, extended");
+    assert(methods.scaled(3) == 307, "a non-virtual method, by its symbol");
 
     const counter = new Counter(5);
     assert(abi_call_callback(<Opaque>counter) == 10 && counter.unexpected == 0, "C++ calls the methods implemented here");
     assert(abi_callback_is_even(<Opaque>counter, 4) == 1 && abi_callback_is_even(<Opaque>counter, 7) == 0, "a bool result");
     const callback: Callback = counter;
     assert(callback.count() == 10, "and tslang through the C++ interface");
+    assert(counter.doubled() == 20, "a method of TypeScript's own");
 
     print("done.");
 }

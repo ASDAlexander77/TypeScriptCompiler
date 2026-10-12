@@ -1,7 +1,7 @@
-// An ordinary class extending a @cppvtable class would add slots C++ doesn't have.
-@cppvtable
+// An ordinary class extending a @cpp class would add slots C++ doesn't have.
+@cpp
 class Base {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 class Plain extends Base {
