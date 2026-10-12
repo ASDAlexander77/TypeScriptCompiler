@@ -151,13 +151,18 @@ struct MethodInfo
     mlir_ts::AccessLevel accessLevel;
     // @dllname: exported symbol name, empty when the method keeps funcName
     std::string dllName;
-    // A @cppvtable method returning a C++ record: the type it is declared with (funcType is the
+    // A @cpp method returning a C++ record: the type it is declared with (funcType is the
     // one its slot is called with, the hidden result pointer added, see
     // mlirGenClassCppVTableHiddenReturn); null for any other method.
     mlir_ts::FunctionType declaredFuncType;
-    // @cppnontrivial: the C++ record a @cppvtable method returns has a destructor or a copy
+    // @cppnontrivial: the C++ record a @cpp method returns has a destructor or a copy
     // constructor, which decides how the Itanium ABI returns it
     bool cppNonTrivialReturn = false;
+    // @slot(N): the vtable slot of a @cpp method, -1 without @slot (a non-virtual method, or
+    // one overriding a base class's slot by name)
+    int cppSlot = -1;
+    // a slot of a @cpp class's vtable that no method names (ClassInfo::getVirtualTable)
+    bool isCppSlotGap = false;
 };
 
 struct GenericMethodInfo
@@ -785,16 +790,19 @@ struct ClassInfo
     bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
-    // `@cppvtable`: a binding to C++ objects (MSVC/Itanium single inheritance) made elsewhere. The
+    // `@cpp`: a binding to C++ objects (MSVC/Itanium single inheritance) made elsewhere. The
     // instance is the C++ object, its first word the C++ vtable, and the class's methods are that
     // vtable's slots from 0 in declaration order, a base class's first: no `.instanceOf`, `.new`,
     // interface or static-field slots, no RTTI, and no vtable or constructor of its own.
     bool isCppVTable;
-    // a @cppvtable class with methods that have bodies: C++ methods implemented here, so C++ can
+    // a @cpp class with methods that have bodies: C++ methods implemented here, so C++ can
     // call them through its objects. It has a vtable (the C++ one's layout: the slots and nothing
     // else, a slot left to a declared C++ method null), may have a constructor and field
     // initializers, and `.new`; still no RTTI. tslang allocates its objects.
     bool isCppVTableImplementation = false;
+    // two @cpp methods in one slot, or an override's @slot not its base's: found by
+    // getVirtualTable, which can't report it, and reported by its caller
+    std::string cppSlotConflict;
     ProcessingStages processingAtEvaluation;
     ProcessingStages processing;
     // the module `processing` was reached in: a discovery module is thrown away with what it holds
@@ -929,7 +937,7 @@ struct ClassInfo
             }
         }
 
-        // do vtable for current class (a @cppvtable class implements nothing, see isCppVTable)
+        // do vtable for current class (a @cpp class implements nothing, see isCppVTable)
         for (auto &implement : implements)
         {
             if (interfaceSlots.contains(implement.interface->fullName))
@@ -973,11 +981,52 @@ struct ClassInfo
                 // found method - override the inherited slot (name and type together:
                 // the overriding function's type must win over the inherited one)
                 auto index = it->second;
+                if (isCppVTable && method.cppSlot >= 0 && (size_t)method.cppSlot != index && cppSlotConflict.empty())
+                {
+                    cppSlotConflict = "'" + method.name + "' overrides slot " + std::to_string(index) + " of a base class, not slot "
+                        + std::to_string(method.cppSlot);
+                }
+
                 vtable[index].methodInfo.funcName = method.funcName;
                 vtable[index].methodInfo.funcType = method.funcType;
                 method.virtualIndex = index;
                 method.isVirtual = true;
                 vtable[index].methodInfo.isAbstract = method.isAbstract;
+            }
+            else if (method.isVirtual && isCppVTable && method.cppSlot >= 0)
+            {
+                // @slot(N): slot N, whatever the declaration order; the slots no method names
+                // are gaps, which a class implementing C++ methods leaves null
+                auto index = (size_t)method.cppSlot;
+                while (vtable.size() <= index)
+                {
+                    MethodInfo gap;
+                    gap.name = ".slot" + std::to_string(vtable.size());
+                    gap.funcType = mlir_ts::FunctionType::get(classType.getContext(), {}, {}, false);
+                    gap.isStatic = false;
+                    gap.isVirtual = true;
+                    gap.isAbstract = false;
+                    gap.virtualIndex = vtable.size();
+                    gap.orderWeight = 0;
+                    gap.accessLevel = mlir_ts::AccessLevel::Public;
+                    gap.isCppSlotGap = true;
+                    vtable.push_back({gap, false});
+                }
+
+                if (!vtable[index].methodInfo.isCppSlotGap)
+                {
+                    if (cppSlotConflict.empty())
+                    {
+                        cppSlotConflict = "'" + method.name + "' and '" + vtable[index].methodInfo.name + "' are both in slot "
+                            + std::to_string(index);
+                    }
+
+                    continue;
+                }
+
+                method.virtualIndex = index;
+                methodSlots[method.name] = index;
+                vtable[index] = {method, false};
             }
             else if (method.isVirtual)
             {

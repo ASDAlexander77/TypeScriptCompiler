@@ -1760,7 +1760,7 @@ namespace mlirgen
                     callAttrs.push_back(builder.getNamedAttr(CPP_CALL_ATTR_NAME, builder.getUnitAttr()));
                 }
 
-                // a @cppvtable method returning a record (mlirGenClassCppVTableHiddenReturn): it
+                // a @cpp method returning a record (mlirGenClassCppVTableHiddenReturn): it
                 // writes it to a local, passed after `this`, which is the call's value
                 if (auto resultType = cppVTableHiddenReturnType(funcRefValue))
                 {

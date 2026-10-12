@@ -29,12 +29,12 @@ struct TargetInfo
     bool supportsInProcessJit = true;
 
     // MSVC C++ member functions are __thiscall on 32-bit x86 (`this` in ECX), not the plain C
-    // convention a class method is called with, so a @cppvtable class can't call them.
+    // convention a class method is called with, so a @cpp class can't call them.
     bool memberCallsUseThiscall = false;
 
     // MSVC returns a C++ record (struct, class) from an instance method through a hidden pointer,
     // passed after `this` and returned in turn (clang's MicrosoftCXXABI::classifyReturnType): the
-    // convention of a @cppvtable method declared to return a tuple. The Itanium ABI passes it
+    // convention of a @cpp method declared to return a tuple. The Itanium ABI passes it
     // before `this`, and only for some records.
     bool hiddenReturnPointerAfterThis = false;
 

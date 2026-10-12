@@ -193,18 +193,23 @@
 #define DLL_NAME "dllname"
 #define LINK_NAME "linkname"
 // A class laid over an existing C++ object: its vtable is the C++ one (see ClassInfo::isCppVTable)
-#define CPP_VTABLE "cppvtable"
-// A @cppvtable method's C++ return type has a destructor or a copy constructor (see
+#define CPP_VTABLE "cpp"
+// the old name of @cpp, an error now: unknown, it would leave the class an ordinary one
+#define CPP_VTABLE_OLD_NAME "cppvtable"
+// A @cpp method's C++ return type has a destructor or a copy constructor (see
 // mlirGenClassCppVTableHiddenReturn)
 #define CPP_NON_TRIVIAL "cppnontrivial"
+// @slot(N) on a method of a @cpp class: a C++ virtual method, slot N of the vtable (counted
+// from 0, a base class's slots included); a method without it isn't virtual (see MethodInfo::cppSlot)
+#define CPP_SLOT "slot"
 // On a call (CallIndirect, then CallInternal or Invoke): the index of the argument that is the hidden
 // pointer the callee returns a record through, which LowerToLLVM marks `sret` for the target to pass
 // it where the C++ ABI does (X8 on AArch64)
 #define SRET_ARG_ATTR_NAME "ts.sret_arg"
-// On a call: it calls a C++ method (of a @cppvtable class), whose arguments narrower than 32 bits
+// On a call: it calls a C++ method (of a @cpp class), whose arguments narrower than 32 bits
 // LowerToLLVM marks zeroext / signext, as a C++ caller extends them (clang relies on it)
 #define CPP_CALL_ATTR_NAME "ts.cpp_call"
-// On a function: a C++ method implemented in tslang (a method with a body of a @cppvtable class),
+// On a function: a C++ method implemented in tslang (a method with a body of a @cpp class),
 // called by C++, whose results narrower than 32 bits LowerToLLVM extends as C++ callers expect
 #define CPP_METHOD_ATTR_NAME "ts.cpp_method"
 

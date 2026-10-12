@@ -653,6 +653,15 @@ namespace typescript
                 newline();
             }
 
+            // the slot of a @cpp class's virtual method: without it the importer takes the method
+            // for a non-virtual one
+            if (method.cppSlot >= 0)
+            {
+                os.indent(4);
+                os << "@" CPP_SLOT "(" << method.cppSlot << ")";
+                newline();
+            }
+
             os.indent(4);
 
             if (method.accessLevel == mlir_ts::AccessLevel::Protected)
@@ -669,7 +678,7 @@ namespace typescript
                 os << "abstract ";
             }
 
-            // a @cppvtable method returning a record: as declared, the importer lowers it again
+            // a @cpp method returning a record: as declared, the importer lowers it again
             auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
             printMethod(
                 method.isStatic,

@@ -2136,7 +2136,7 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
     }
 };
 
-// The argument attributes of a call of a C++ method (a @cppvtable class's), from the ts call's
+// The argument attributes of a call of a C++ method (a @cpp class's), from the ts call's
 // `args` (its operands after the callee):
 // - CPP_CALL_ATTR_NAME: an integer argument narrower than 32 bits, a boolean too, is `zeroext`
 //   (`signext` if signed), as a C++ caller extends it: clang's code relies on it, and tslang's

@@ -1,11 +1,11 @@
 // A class implementing C++ methods isn't exported: an importer would get its declaration only, with
 // the methods but not the vtable they are in.
-@cppvtable
+@cpp
 export class Base {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
-@cppvtable
+@cpp
 export class Implementation extends Base {
     first(): s32 { return 1; }
 }

@@ -5336,7 +5336,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    // The record a call of funcRef returns through a hidden pointer: funcRef is a @cppvtable method
+    // The record a call of funcRef returns through a hidden pointer: funcRef is a @cpp method
     // declared to return a tuple (mlirGenClassCppVTableHiddenReturn); null for any other callee.
     mlir::Type cppVTableHiddenReturnType(mlir::Value funcRef)
     {
@@ -5363,7 +5363,8 @@ class MLIRGenImpl
         return false;
     }
 
-    // Whether a call of funcRef calls a C++ method: a method of a @cppvtable class
+    // Whether a call of funcRef calls a C++ method: a method of a @cpp class, virtual (a slot) or not
+    // (called by its symbol)
     bool isCppVTableMethod(mlir::Value funcRef)
     {
         if (auto virtualSymbolRef = funcRef.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
@@ -5371,10 +5372,15 @@ class MLIRGenImpl
             return cppVTableMethods.contains(virtualSymbolRef.getIdentifier());
         }
 
+        if (auto symbolRef = funcRef.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return cppVTableMethods.contains(symbolRef.getIdentifier());
+        }
+
         return false;
     }
 
-    // A @cppvtable class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
+    // A @cpp class's objects are C++ objects: their slot 0 is a C++ method (the destructor),
     // not `.instanceOf`, and the class has no RTTI, so nothing may ask one what it is - not
     // `instanceof`, nor boxing into `any` (unboxed by asking), nor an interface (made by asking).
     bool isCppVTableClass(mlir::Type type)
@@ -11294,13 +11300,25 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody);
+                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody,
+                                                          bool isVirtual);
 
     bool isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType);
 
     mlir::LogicalResult mlirGenClassCppVTableCheck(mlir::Location location,
                                                    ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
+
+    int getCppSlot(ClassElement classMember, const GenContext &genContext);
+
+    bool isCppBaseSlot(ClassInfo::TypePtr classInfo, StringRef methodName);
+
+    std::string getCppMethodName(ClassElement classMember, const GenContext &genContext);
+
+    bool isCppVirtualMethod(ClassInfo::TypePtr classInfo, ClassElement classMember, const GenContext &genContext);
+
+    bool isCppVTableImplementation(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr classInfo,
+                                   const GenContext &genContext);
 
     mlir::LogicalResult mlirGenClassCheckIfDeclaration(mlir::Location location,
                                                        ClassLikeDeclaration classDeclarationAST,
@@ -11849,11 +11867,17 @@ class MLIRGenImpl
                     accessLevel,
                     dllName
                 });
+                methodInfos.back().cppSlot = cppSlot;
             }
             else
             {
                 methodInfos[methodIndex].orderWeight = orderWeight;
                 methodInfos[methodIndex].accessLevel = accessLevel;
+                if (newClassPtr->isCppVTable)
+                {
+                    methodInfos[methodIndex].cppSlot = cppSlot;
+                    methodInfos[methodIndex].isVirtual = isAbstract || isVirtual;
+                }
                 if (!dllName.empty())
                 {
                     methodInfos[methodIndex].dllName = dllName;
@@ -11947,6 +11971,8 @@ class MLIRGenImpl
         bool isForceVirtual;
         bool isVirtual;
         mlir_ts::AccessLevel accessLevel;
+        // @slot(N) of a method of a @cpp class (MethodInfo::cppSlot)
+        int cppSlot = -1;
 
         mlir_ts::FuncOp funcOp;
     };
@@ -14166,12 +14192,15 @@ class MLIRGenImpl
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
-    // the @cppvtable methods returning a C++ record (by function name): the record's type
+    // the @cpp methods returning a C++ record (by function name): the record's type
     llvm::StringMap<mlir::Type> cppVTableHiddenReturns;
     // those of them whose hidden pointer goes before `this` (the Itanium ABI)
     llvm::StringSet<> cppVTableHiddenReturnsBeforeThis;
-    // the methods of @cppvtable classes (by function name), C++ methods
+    // the methods of @cpp classes (by function name), C++ methods
     llvm::StringSet<> cppVTableMethods;
+    // the methods of @cpp classes without a body: a slot one names in a class implementing C++
+    // methods is null, as a pure virtual method's
+    llvm::StringSet<> cppMethodsWithoutBody;
 
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 

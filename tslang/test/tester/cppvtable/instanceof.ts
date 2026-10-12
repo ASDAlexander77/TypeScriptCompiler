@@ -1,7 +1,7 @@
-// `instanceof` asks slot 0, which is a C++ method in a @cppvtable class's vtable.
-@cppvtable
+// `instanceof` asks slot 0, which is a C++ method in a @cpp class's vtable.
+@cpp
 class Base {
-    first(): s32;
+    @slot(0) first(): s32;
 }
 
 class Plain {}

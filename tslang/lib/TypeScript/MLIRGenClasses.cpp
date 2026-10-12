@@ -206,7 +206,7 @@ namespace mlirgen
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        // a @cppvtable class is never constructed, typed or allocated here: its objects come from C++;
+        // a @cpp class is never constructed, typed or allocated here: its objects come from C++;
         // unless it implements C++ methods, which it does in an object of its own
         auto hasOwnRuntimeMembers = !newClassPtr->isStatic && (!newClassPtr->isCppVTable || newClassPtr->isCppVTableImplementation);
 
@@ -252,6 +252,21 @@ namespace mlirgen
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
             return {mlir::failure(), ""};
+        }
+
+        // the slots of a @cpp class's methods, each where its @slot(N) puts it: two in one slot is
+        // an error (getVirtualTable finds it, here it's reported)
+        if (newClassPtr->isCppVTable)
+        {
+            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> cppVirtualTable;
+            newClassPtr->cppSlotConflict.clear();
+            newClassPtr->getVirtualTable(cppVirtualTable);
+            if (!newClassPtr->cppSlotConflict.empty())
+            {
+                emitError(location) << "@" CPP_SLOT ": " << newClassPtr->cppSlotConflict;
+                setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
+                return {mlir::failure(), ""};
+            }
         }
 
         // generate vtable for interfaces in base class
@@ -382,7 +397,7 @@ namespace mlirgen
     // MSVC returns a C++ record (struct, class - RefCountPtr<T> too) from an instance method through
     // a hidden pointer, passed after `this` and returned in turn (clang's
     // MicrosoftCXXABI::classifyReturnType: "MSVC always returns structs indirectly from C++ instance
-    // methods"). A @cppvtable method declared to return a tuple returns that record: its slot is
+    // methods"). A @cpp method declared to return a tuple returns that record: its slot is
     // called as (this, Ref<T>, args...) -> Ref<T>, the type kept in the MethodInfo, and a call
     // (mlirGenCall) passes a local of T and reads it back. The declared type stays for
     // DeclarationPrinter, so an importer lowers it again.
@@ -399,10 +414,12 @@ namespace mlirgen
     // CPP_METHOD_ATTR_NAME, and can't return a record yet (its body would have to write it through
     // the hidden pointer).
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody)
+                                                          mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody,
+                                                          bool isVirtual)
     {
         auto funcName = funcOp.getName();
-        if (!newClassPtr->isCppVTable)
+        // a method with a body that isn't virtual is TypeScript's, not a C++ method
+        if (!newClassPtr->isCppVTable || (hasBody && !isVirtual))
         {
             if (nonTrivial)
             {
@@ -417,6 +434,10 @@ namespace mlirgen
         if (hasBody)
         {
             funcOp->setAttr(CPP_METHOD_ATTR_NAME, builder.getUnitAttr());
+        }
+        else
+        {
+            cppMethodsWithoutBody.insert(funcName);
         }
 
         auto method = llvm::find_if(newClassPtr->methods, [&](auto &method) { return method.funcName == funcName; });
@@ -440,6 +461,12 @@ namespace mlirgen
         if (hasBody)
         {
             emitError(location) << "a method implementing a C++ method (a @" CPP_VTABLE " class's, with a body) can't return a struct yet";
+            return mlir::failure();
+        }
+
+        if (!isVirtual)
+        {
+            emitError(location) << "a C++ non-virtual method (a @" CPP_VTABLE " class's, without @" CPP_SLOT ") can't return a struct yet";
             return mlir::failure();
         }
 
@@ -522,13 +549,19 @@ namespace mlirgen
         });
     }
 
-    // A @cppvtable class only names the slots of a vtable made by C++, so everything that would add
+    // A @cpp class only names the slots of a vtable made by C++, so everything that would add
     // a slot, a field initializer or code of its own is an error, and so is a hierarchy mixing it
     // with ordinary classes: a slot number off by one calls the wrong C++ method, with no error.
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableCheck(mlir::Location location,
                                                    ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
+        if (MLIRHelper::hasDecorator(classDeclarationAST, CPP_VTABLE_OLD_NAME))
+        {
+            emitError(location) << "@" CPP_VTABLE_OLD_NAME " is now @" CPP_VTABLE ", and a virtual method needs @" CPP_SLOT "(N)";
+            return mlir::failure();
+        }
+
         if (!newClassPtr->isCppVTable)
         {
             // an ordinary class can't add to a C++ vtable
@@ -538,6 +571,15 @@ namespace mlirgen
                 {
                     emitError(location) << "class '" << newClassPtr->fullName << "' can't extend the @" CPP_VTABLE " class '"
                                         << base->fullName << "': it has to be @" CPP_VTABLE " too";
+                    return mlir::failure();
+                }
+            }
+
+            for (auto &classMember : classDeclarationAST->members)
+            {
+                if (MLIRHelper::hasDecorator(classMember, CPP_SLOT))
+                {
+                    emitError(loc(classMember)) << "@" CPP_SLOT " is for a method of a @" CPP_VTABLE " class";
                     return mlir::failure();
                 }
             }
@@ -607,9 +649,45 @@ namespace mlirgen
                 continue;
             }
 
-            // a method is a slot; with a body, it implements a C++ method (isCppVTableImplementation)
+            // a method with @slot(N) is a C++ virtual method, as is one overriding a base class's
+            // slot; with a body, it implements it (isCppVTableImplementation). Without @slot, a
+            // method with a body is a TypeScript method of the class, and one without is a C++
+            // non-virtual method, called by its symbol.
             if (classMember == SyntaxKind::MethodDeclaration)
             {
+                auto slot = getCppSlot(classMember, genContext);
+                if (slot == -2)
+                {
+                    error(memberLocation) << "@" CPP_SLOT " takes the slot number, an integer from 0";
+                    continue;
+                }
+
+                auto methodName = getCppMethodName(classMember, genContext);
+                auto overrides = isCppBaseSlot(newClassPtr, methodName);
+                if (slot < 0 && !overrides)
+                {
+                    auto hasBody = static_cast<bool>(classMember.as<MethodDeclaration>()->body);
+                    if (hasModifier(classMember, SyntaxKind::AbstractKeyword))
+                    {
+                        error(memberLocation) << "the abstract method '" << methodName << "' of a @" CPP_VTABLE
+                                              << " class needs @" CPP_SLOT "(N), its vtable slot";
+                    }
+                    else if (!hasBody && !newClassPtr->isImport && !declarationMode)
+                    {
+                        auto hasLinkName = false;
+                        iterateDecorators(classMember, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                            hasLinkName |= name == DLL_NAME && !args.empty();
+                        });
+
+                        if (!hasLinkName)
+                        {
+                            error(memberLocation) << "'" << methodName << "' has no @" CPP_SLOT ", so it isn't virtual: give a "
+                                                  << "C++ virtual method its slot, @" CPP_SLOT "(N), or a non-virtual one its "
+                                                  << "symbol, @" LINK_NAME "(\"...\")";
+                        }
+                    }
+                }
+
                 continue;
             }
 
@@ -646,6 +724,81 @@ namespace mlirgen
         }
 
         return failed ? mlir::failure() : mlir::success();
+    }
+
+    // @slot(N) of a class member: N; -1 without @slot, -2 when its argument isn't a slot number
+    int MLIRGenImpl::getCppSlot(ClassElement classMember, const GenContext &genContext)
+    {
+        auto slot = -1;
+        iterateDecorators(classMember, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            if (name != CPP_SLOT)
+            {
+                return;
+            }
+
+            unsigned value;
+            if (args.size() != 1 || args.front().getAsInteger(10, value) || value > (unsigned)std::numeric_limits<int>::max())
+            {
+                slot = -2;
+                return;
+            }
+
+            slot = static_cast<int>(value);
+        });
+
+        return slot;
+    }
+
+    // Whether a base class of a @cpp class has a virtual method named methodName: a method of the
+    // class with that name overrides it, as in C++, without @slot of its own
+    bool MLIRGenImpl::isCppBaseSlot(ClassInfo::TypePtr classInfo, StringRef methodName)
+    {
+        for (auto &base : classInfo->baseClasses)
+        {
+            if (llvm::any_of(base->methods, [&](auto &method) { return method.name == methodName && method.isVirtual && !method.isStatic; })
+                || isCppBaseSlot(base, methodName))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::string MLIRGenImpl::getCppMethodName(ClassElement classMember, const GenContext &genContext)
+    {
+        std::string methodName;
+        std::string propertyName;
+        if (mlir::failed(getMethodNameOrPropertyName(false, classMember.as<SignatureDeclarationBase>(), methodName, propertyName, genContext)))
+        {
+            return std::string();
+        }
+
+        return methodName;
+    }
+
+    // A method of a @cpp class is a C++ virtual method (a vtable slot) with @slot(N), when abstract,
+    // or when it overrides a base class's slot by name; otherwise it isn't virtual
+    bool MLIRGenImpl::isCppVirtualMethod(ClassInfo::TypePtr classInfo, ClassElement classMember, const GenContext &genContext)
+    {
+        if (classMember != SyntaxKind::MethodDeclaration || hasModifier(classMember, SyntaxKind::StaticKeyword))
+        {
+            return false;
+        }
+
+        return getCppSlot(classMember, genContext) != -1 || hasModifier(classMember, SyntaxKind::AbstractKeyword)
+            || isCppBaseSlot(classInfo, getCppMethodName(classMember, genContext));
+    }
+
+    // A @cpp class implements C++ methods when one of its virtual methods has a body; a body of a
+    // method that isn't virtual is TypeScript's, and leaves the class a binding to C++ objects
+    bool MLIRGenImpl::isCppVTableImplementation(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr classInfo,
+                                                const GenContext &genContext)
+    {
+        return llvm::any_of(classDeclarationAST->members, [&](ClassElement member) {
+            return member == SyntaxKind::MethodDeclaration && member.as<MethodDeclaration>()->body
+                && isCppVirtualMethod(classInfo, member, genContext);
+        });
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCheckIfDeclaration(mlir::Location location,
@@ -720,6 +873,16 @@ namespace mlirgen
             {
                 return mlir::failure();
             }
+        }
+
+        // with the base classes known: a method with a body implements a C++ method when it
+        // overrides a base's slot, which the guess made with the class (any method with a body)
+        // couldn't tell from a method of TypeScript's own
+        if (newClassPtr->isCppVTable && newClassPtr->isCppVTableImplementation
+            && !isCppVTableImplementation(classDeclarationAST, newClassPtr, genContext))
+        {
+            newClassPtr->isCppVTableImplementation = false;
+            newClassPtr->isDeclaration = true;
         }
 
 #if ENABLE_RTTI
@@ -2474,6 +2637,18 @@ genContext);
                                 return false;
                             }
 
+                            // a slot no method names (@slot skipped it), or one named by a method of
+                            // this class without a body
+                            if (vtRecord.methodInfo.isCppSlotGap)
+                            {
+                                return true;
+                            }
+
+                            if (cppMethodsWithoutBody.contains(symbolName))
+                            {
+                                return true;
+                            }
+
                             std::function<ClassInfo::TypePtr(ClassInfo::TypePtr)> findOwner =
                                 [&](ClassInfo::TypePtr cls) -> ClassInfo::TypePtr {
                                 if (llvm::any_of(cls->methods, [&](auto &m) { return m.funcName == symbolName; }))
@@ -2602,8 +2777,11 @@ genContext);
 
         // an overload signature of a method or a constructor, as for a function: the implementation
         // that follows it is the member
+        // (a method of a @cpp class without a body is a C++ method, a class implementing some has
+        // methods of both kinds, and none is overloaded)
         auto isAmbientMember = newClassPtr->isDeclaration || newClassPtr->isImport
-            || (classMember->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
+            || (classMember->flags & NodeFlags::Ambient) == NodeFlags::Ambient
+            || (newClassPtr->isCppVTable && classMember == SyntaxKind::MethodDeclaration);
         if (!funcLikeDeclaration->body && !classMethodMemberInfo.isAbstract && !isAmbientMember
             && (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor))
         {
@@ -2621,6 +2799,14 @@ genContext);
         }
 
         assert (!classMethodMemberInfo.methodName.empty());
+
+        // a method of a @cpp class is virtual only as a C++ virtual method (isCppVirtualMethod)
+        if (newClassPtr->isCppVTable && !classMethodMemberInfo.isConstructor && !classMethodMemberInfo.isStatic)
+        {
+            classMethodMemberInfo.cppSlot = std::max(getCppSlot(classMember, genContext), -1);
+            classMethodMemberInfo.isVirtual = isCppVirtualMethod(newClassPtr, classMember, genContext);
+            classMethodMemberInfo.isForceVirtual = classMethodMemberInfo.isVirtual;
+        }
 
         // update access based on name
         if (StringRef(classMethodMemberInfo.getName()).starts_with("#")) {
@@ -2692,7 +2878,8 @@ genContext);
                 if (!classMethodMemberInfo.isConstructor && !classMethodMemberInfo.isStatic
                     && mlir::failed(mlirGenClassCppVTableHiddenReturn(loc(funcLikeDeclaration), newClassPtr, funcOp,
                                                                       MLIRHelper::hasDecorator(funcLikeDeclaration, CPP_NON_TRIVIAL),
-                                                                      static_cast<bool>(funcLikeDeclaration->body))))
+                                                                      static_cast<bool>(funcLikeDeclaration->body),
+                                                                      classMethodMemberInfo.isVirtual)))
                 {
                     return mlir::failure();
                 }

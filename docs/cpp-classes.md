@@ -1,27 +1,30 @@
-# `@cppvtable` classes — calling C++ virtual methods directly
+# `@cpp` classes — calling C++ methods directly
 
-A class decorated with `@cppvtable` is laid over objects made by C++. tslang calls the methods
-through the C++ object's own vtable, so a C++ interface such as NVRHI's `nvrhi::IDevice` can be
-used from TypeScript without a flat `extern "C"` wrapper per method:
+A class decorated with `@cpp` is laid over objects made by C++. tslang calls its virtual methods
+through the C++ object's own vtable, and its non-virtual methods by their symbols, so a C++
+interface such as NVRHI's `nvrhi::IDevice` can be used from TypeScript without a flat
+`extern "C"` wrapper per method:
 
 ```ts
-@cppvtable
+@cpp
 class NvResource {
-    _destructor(): void;   // slot 0: the C++ virtual destructor, declared only to keep the count
-    AddRef(): u32;         // slot 1
-    Release(): u32;        // slot 2
-    GetRefCount(): u32;    // slot 3
+    @slot(0) _destructor(): void;
+    @slot(1) AddRef(): u32;
+    @slot(2) Release(): u32;
+    @slot(3) GetRefCount(): u32;
 }
 
-@cppvtable
+@cpp
 class NvDevice extends NvResource {
-    // ... slots 4..38 ...
-    getGraphicsAPI(): u8;  // slot 39
+    @slot(39) getGraphicsAPI(): u8;    // slots 4..38 aren't declared: nothing calls them
 }
 
 const device = <NvDevice>Donut_GetNvrhiDevice(app);   // an Opaque from C/C++
 print(device.getGraphicsAPI());
 ```
+
+(`@cpp` was called `@cppvtable` before `@slot` existed, and numbered the methods by their order.
+The old name is an error now.)
 
 ## How it maps
 
@@ -34,14 +37,25 @@ following ways:
   function convention);
 - a base class's slots come first, and a base object is the prefix of a derived one.
 
-What `@cppvtable` changes is what the class adds to the vtable. An ordinary class has
-`.instanceOf` in slot 0, `.new`, a slot for each implemented interface, and slots for its static
-fields (`.rtti`, `.size`). A `@cppvtable` class has none of these. Its methods are the vtable's
-slots from 0, in declaration order, with a base class's slots first.
+What `@cpp` changes is what is virtual, and where. In an ordinary class every method is virtual,
+and the vtable has `.instanceOf` in slot 0, `.new`, a slot for each implemented interface, and
+slots for its static fields (`.rtti`, `.size`). A `@cpp` class has none of these, and a method is
+virtual only as in C++:
 
-The class gets no vtable, constructor, RTTI or allocation of its own. It is a declaration: its
-methods have no bodies, and an `abstract` class with `abstract` methods reads the same. (A class
-whose methods have bodies is the other way round: see "Implementing C++ methods".)
+| Method | What it is |
+| --- | --- |
+| `@slot(N) name(...): T;` | a C++ virtual method: slot N of the vtable, counted from 0 with the base classes' slots |
+| `name(...): T;` overriding a base class's `@slot` method | the same slot, as in C++ (`@slot` may be repeated, with the same number) |
+| `@linkname("symbol") name(...): T;` | a C++ non-virtual method, called by its (mangled) symbol as `symbol(this, args...)` |
+| `name(...): T { ... }` with no `@slot`, overriding nothing | a method of TypeScript's own, called directly; not in the vtable |
+
+The slots may be given in any order, and a slot no method names is skipped: declare only the
+methods you call. Two methods in one slot are an error.
+
+The class gets no vtable, constructor, RTTI or allocation of its own. It is a declaration: its C++
+methods have no bodies, and an `abstract` class with `abstract` methods (each with its `@slot`)
+reads the same. (A class whose virtual methods have bodies is the other way round: see
+"Implementing C++ methods".)
 
 Fields declared on the class are the C++ object's fields after the vtable pointer, laid out like
 a tuple's.
@@ -49,22 +63,26 @@ a tuple's.
 ## Rules
 
 The compiler rejects anything that would add a slot, run code of its own, or ask the object what
-it is. A slot number off by one calls a different C++ method with no error at all, which is why
-these are errors and not warnings.
+it is. A wrong slot calls a different C++ method with no error at all, which is why these are
+errors and not warnings.
 
 | Not allowed | Why |
 | --- | --- |
-| a constructor or a field initializer, in a class none of whose methods has a body | the objects and their code are C++'s (a method with a body makes it a class implementing C++ methods, see below) |
-| static members, `get`/`set` accessors, `accessor` fields | they would take vtable slots, and accessor slots don't follow declaration order |
+| a method without a body and without `@slot` or `@linkname`, overriding nothing | it's neither a slot nor a symbol: a forgotten `@slot` |
+| an `abstract` method without `@slot` | it is virtual, so it needs its slot |
+| `@slot` on a method of an ordinary class | an ordinary class's vtable is tslang's own |
+| a constructor or a field initializer, in a class none of whose virtual methods has a body | the objects and their code are C++'s (see "Implementing C++ methods") |
+| static members, `get`/`set` accessors, `accessor` fields | they would take vtable slots |
 | `implements` | an implemented interface takes a slot |
-| `extends` an ordinary class, or an ordinary class extending a `@cppvtable` one | the ordinary class's slots (`.instanceOf`, `.rtti`, ...) would shift the numbering |
+| `extends` an ordinary class, or an ordinary class extending a `@cpp` one | the ordinary class's slots (`.instanceOf`, `.rtti`, ...) would shift the numbering |
 | `instanceof`, a cast to or from `any`, a cast to an interface | each asks the object through slot 0, which is a C++ method |
 | `-mm=rc` / `-mm=own` | retains and releases write a count in the word before an object, inside the C++ object |
 | a 32-bit x86 MSVC target | C++ member functions are `__thiscall` there (`this` in ECX) |
-| a method returning a tuple, on a target other than MSVC and Itanium x86-64 / AArch64 | each ABI returns records its own way (see below) |
-| on Itanium, a method returning a trivial tuple other than one or two 8-byte integer or pointer fields | SysV / AAPCS64 pack it into registers by its fields, which a tuple isn't (see below) |
+| a virtual method returning a tuple, on a target other than MSVC and Itanium x86-64 / AArch64 | each ABI returns records its own way (see below) |
+| on Itanium, a virtual method returning a trivial tuple other than one or two 8-byte integer or pointer fields | SysV / AAPCS64 pack it into registers by its fields, which a tuple isn't (see below) |
+| a non-virtual C++ method returning a tuple | not supported yet: its symbol would have to be declared with the hidden result pointer |
 
-A generic or static class can't be `@cppvtable` either.
+A generic or static class can't be `@cpp` either.
 
 ## Writing a binding
 
@@ -72,21 +90,25 @@ A generic or static class can't be `@cppvtable` either.
   with `cl /c /Zs /d1reportSingleClassLayout<Name> file.cpp`; clang (Itanium) with
   `clang++ -S -emit-llvm -o /dev/null -Xclang -fdump-vtable-layouts file.cpp`, for a class whose
   vtable the file emits (it defines the first virtual method that isn't inline), where slot N is
-  entry N + 2 (entries 0 and 1 are the offset to top and the RTTI). Declare unused slots with
-  placeholder names (`_slot17(): void;`) so the methods you call keep their numbers.
+  entry N + 2 (entries 0 and 1 are the offset to top and the RTTI). The numbers differ between
+  the two ABIs (the destructor, below), so a binding for both is two files, picked by the target
+  (`<name>.<os>.ts`).
 - **The destructor** is one slot under MSVC (the scalar deleting destructor) and two under the
   Itanium ABI. Don't call it: release objects the way the C++ library does (`Release()`).
 - **Overloads.** tslang methods are identified by name, so every C++ overload needs its own
-  TypeScript name. MSVC groups overloads in the vtable, and not always in declaration order:
-  check the slot numbers in the layout report.
-- **Struct returned by value.** A C++ method that returns a class or struct by value (for
+  TypeScript name, with its own `@slot`. MSVC groups overloads in the vtable, and not always in
+  declaration order: take the numbers from the layout report.
+- **Non-virtual methods** are bound by their mangled symbol: `@linkname("?scaled@Methods@@QEAAHH@Z")`
+  under MSVC, `@linkname("_ZN7Methods6scaledEi")` under the Itanium ABI. The symbol has to be
+  exported by the C++ library (`__declspec(dllexport)` on the method or the class).
+- **Struct returned by value.** A C++ virtual method that returns a class or struct by value (for
   example `nvrhi::RefCountPtr<T>` or `nvrhi::Object`) returns a record. Declare its return type
   as a tuple with the record's layout:
 
   ```ts
   type RefCountPtr = [pointer: Opaque | null];          // nvrhi::RefCountPtr<T>
   @cppnontrivial                                        // it has a destructor
-  createBuffer(desc: Ref<BufferDesc>): RefCountPtr;     // const handle = device.createBuffer(Ref(desc))
+  @slot(17) createBuffer(desc: Ref<BufferDesc>): RefCountPtr;   // const handle = device.createBuffer(Ref(desc))
   ```
 
   MSVC returns a record from an instance method through a hidden pointer, whatever its size. The
@@ -112,35 +134,36 @@ A generic or static class can't be `@cppvtable` either.
 
   The record isn't destroyed: a `RefCountPtr` the method returns holds a reference, which the
   caller gives back with `Release()`. A method stored in a variable and called later takes the
-  hidden pointer as an argument; call it directly. tslang pre-alpha94 and earlier need the hidden
-  pointer declared as a parameter: `createBuffer(ret: Ref<Opaque | null>, desc: Ref<BufferDesc>): Opaque`.
+  hidden pointer as an argument; call it directly.
 - **Narrow parameters.** A `bool` is a `boolean`, an `uint8_t` (or an `enum class : uint8_t`) a
-  `u8`, an `int16_t` an `s16`: a call of a `@cppvtable` method extends an argument narrower than
-  32 bits as a C++ caller does (`zeroext`, `signext` for a signed type), which clang's code relies on.
+  `u8`, an `int16_t` an `s16`: a call of a C++ method extends an argument narrower than 32 bits as
+  a C++ caller does (`zeroext`, `signext` for a signed type), which clang's code relies on.
 - **Structs by reference** (`const BufferDesc&`) are a `Ref<T>` to a named tuple with the C++
   layout. That layout depends on the C++ build: `std::string`, for example, is 32 bytes with the
   release CRT and 40 with the debug CRT.
 - **Casting.** `<NvDevice>opaqueValue` is a plain pointer cast with no check: the object must
   really be one.
+- **Methods of your own.** A method with a body and no `@slot` is TypeScript's: a helper over the
+  C++ methods, compiled as an ordinary function taking `this`.
 
 ## Implementing C++ methods
 
-A `@cppvtable` class whose methods have bodies implements C++ methods: C++ calls them through the
-object's vtable. An example is a callback interface such as `nvrhi::IMessageCallback`. Declare the C++ interface
-as above, and extend it:
+A `@cpp` class whose virtual methods have bodies implements C++ methods: C++ calls them through
+the object's vtable. An example is a callback interface such as `nvrhi::IMessageCallback`. Declare
+the C++ interface as above, and extend it:
 
 ```ts
-@cppvtable
+@cpp
 class IMessageCallback {               // nvrhi::IMessageCallback (MSVC)
-    _destructor(): void;               // slot 0
-    message(severity: u8, text: string): void;
+    @slot(0) _destructor(): void;
+    @slot(1) message(severity: u8, text: string): void;
 }
 
-@cppvtable
+@cpp
 class MessageLog extends IMessageCallback {
     errors = 0;
 
-    message(severity: u8, text: string): void {
+    message(severity: u8, text: string): void {   // overrides slot 1
         if (severity >= 2) {
             this.errors++;
         }
@@ -150,11 +173,11 @@ class MessageLog extends IMessageCallback {
 const log = new MessageLog();          // pass <Opaque>log to C++
 ```
 
-- **The vtable** is the C++ layout and nothing else: the slots in order, with no `.instanceOf`,
-  interface or static slots. `new` points the object's first word at it. A method with a body
-  overrides the base's slot of the same name. A slot left to a method of the C++ interface (a
-  method with no body, such as the destructor) is null, as a pure virtual's would be: C++ calling
-  it crashes. A method that matches no base slot appends a slot, as in C++.
+- **The vtable** is the C++ layout and nothing else: the slots, with no `.instanceOf`, interface
+  or static slots. `new` points the object's first word at it. A method with a body overrides the
+  base's slot of the same name. A slot left to a method of the C++ interface (a method with no
+  body, such as the destructor), or one no method names, is null, as a pure virtual's would be:
+  C++ calling it crashes. A new virtual method takes the slot its `@slot` gives it.
 - **The object** is allocated by tslang: the vtable pointer, the C++ interface's fields, then the
   class's own fields, laid out like a tuple's. It may have a constructor and field initializers.
 - **Calls from C++** come in as C++ calls them: `this` first, then the arguments. A narrow result
@@ -172,8 +195,11 @@ const log = new MessageLog();          // pass <Opaque>log to C++
 ## Tests
 
 - `tslang/test/tester/tests/00cppvtable_class.ts` checks the slots, fields, `extends` and
-  `abstract` against a vtable made by hand. It is registered for AOT and JIT.
+  `abstract` against a vtable made by hand, and `tests/00cpp_slot.ts` slots out of order, skipped
+  slots and a method of TypeScript's own. Both are registered for AOT and JIT.
 - `tslang/test/tester/cppvtable/*.ts` holds one compile error per rule above.
 - `test-jit-cppvtable-abi` checks against code from a real C++ compiler. `cppvtable/abi_host.cpp` is built as a shared library by the host's compiler (MSVC, or g++/clang). `abi_msvc.ts` or `abi_itanium.ts` then:
-  - calls its object's methods, including struct returns and narrow arguments;
-  - implements its `Callback` interface (`Counter`), which C++ calls back.
+  - calls its object's virtual methods, including struct returns and narrow arguments, and a
+    non-virtual one by its mangled symbol;
+  - implements its `Callback` interface (`Counter`), which C++ calls back, with a method of
+    TypeScript's own beside the overrides.

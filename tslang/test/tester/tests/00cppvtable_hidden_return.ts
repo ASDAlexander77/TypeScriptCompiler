@@ -1,4 +1,4 @@
-// A @cppvtable method declared to return a tuple returns a C++ record (a struct, a class such as
+// A @cpp method declared to return a tuple returns a C++ record (a struct, a class such as
 // RefCountPtr<T>) by value. MSVC returns a record from an instance method through a hidden pointer,
 // passed after `this` and returned in turn, so the slot is called as fn(this, &result, args) and the
 // call's value is what fn wrote there. The "C++ methods" here are written in that shape.
@@ -8,17 +8,17 @@ declare function memcpy(dst: Opaque, src: Opaque, count: index): Opaque;
 type Pair = [first: s32, second: s32];        // 8 bytes: still a hidden pointer, as an instance method's
 type Triple = [a: u64, b: u64, c: u64];       // 24 bytes
 
-@cppvtable
+@cpp
 class Methods {
     value: s32;
-    pair(x: s32): Pair;                         // slot 0
-    triple(): Triple;                           // slot 1
-    plain(x: s32, y: s32): s32;                 // slot 2: a number, returned as before
+    @slot(0) pair(x: s32): Pair;
+    @slot(1) triple(): Triple;
+    @slot(2) plain(x: s32, y: s32): s32;  // a number, returned as before
 }
 
-@cppvtable
+@cpp
 class DerivedMethods extends Methods {
-    otherPair(x: s32): Pair;                    // slot 3
+    @slot(3) otherPair(x: s32): Pair;
 }
 
 type ObjectData = [vtable: Opaque, value: s32];

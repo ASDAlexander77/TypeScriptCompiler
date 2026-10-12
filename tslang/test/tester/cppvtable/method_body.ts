@@ -2,12 +2,12 @@
 // struct yet: its body would have to write it through the hidden pointer.
 type Pair = [first: s32, second: s32];
 
-@cppvtable
+@cpp
 class Base {
-    pair(x: s32): Pair;
+    @slot(0) pair(x: s32): Pair;
 }
 
-@cppvtable
+@cpp
 class Implementation extends Base {
     pair(x: s32): Pair { return [x, x]; }
 }

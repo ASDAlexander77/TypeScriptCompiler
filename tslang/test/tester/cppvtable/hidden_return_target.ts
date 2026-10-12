@@ -2,9 +2,9 @@
 // through on the stack there, and the callee pops it, which isn't done.
 type Pair = [first: s32, second: s32];
 
-@cppvtable
+@cpp
 class Methods {
-    pair(x: s32): Pair;
+    @slot(0) pair(x: s32): Pair;
 }
 
 function main() {

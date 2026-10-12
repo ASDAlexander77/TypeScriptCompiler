@@ -35,7 +35,8 @@ set(not_compilable_alone
     import_vars.ts
     # written for `-nostrictnull`
     raytrace-0.ts
-    # a @cppvtable class is an error under rc and own (cppvtable/memory_model.ts)
+    # a @cpp class is an error under rc and own (cppvtable/memory_model.ts)
+    00cpp_slot.ts
     00cppvtable_class.ts
     00cppvtable_hidden_return.ts
     export_cppvtable_class.ts

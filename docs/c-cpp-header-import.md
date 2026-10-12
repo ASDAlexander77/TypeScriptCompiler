@@ -217,8 +217,8 @@ C is a 90%-mechanical translation; C++ is not. Realistic phasing:
 | C++ 2 | Templates, virtual dispatch, exceptions, STL types | **Do not bind directly.** Generate a flattened `extern "C"` wrapper `.cpp` (tsbindgen emits both the wrapper and its `.d.ts`), compiled with the system C++ compiler and linked via existing `-obj=`. Explicit template instantiations only; exceptions caught at the wrapper boundary and converted to error codes (C++ exceptions must never unwind into tslang frames — different personality functions, especially in JIT where Win64 unwind info is custom, see `docs/jit-gc-static-roots.md` context). | 3–6 weeks, per-need |
 
 Virtual dispatch has since become bindable without a wrapper for single-inheritance
-interfaces: a `@cppvtable` class calls a C++ object's methods through its own vtable (see
-[cppvtable-classes.md](cppvtable-classes.md)). Templates, exceptions and STL types still need
+interfaces: a `@cpp` class calls a C++ object's virtual methods through its own vtable, and its
+non-virtual ones by their symbols (see [cpp-classes.md](cpp-classes.md)). Templates, exceptions and STL types still need
 the wrapper route.
 
 The C++ ABI reality (mangling differences, MSVC vs Itanium, RTTI, std::string
