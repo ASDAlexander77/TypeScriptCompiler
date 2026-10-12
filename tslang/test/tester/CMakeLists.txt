@@ -528,6 +528,7 @@ tslang_add_test(NAME test-compile-00-class-accessor-2 COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-00-class-accessor-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
 tslang_add_test(NAME test-compile-00-class-accessor-virtual COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
+tslang_add_test(NAME test-compile-00-class-implicit-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
 tslang_add_test(NAME test-compile-00-class-super-static COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
 tslang_add_test(NAME test-compile-00-class-default-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
 tslang_add_test(NAME test-compile-00-class-constructor-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_constr_fields.ts")
@@ -1057,6 +1058,7 @@ tslang_add_test(NAME test-jit-00-class-accessor-2 COMMAND test-runner -jit "${PR
 tslang_add_test(NAME test-jit-00-class-accessor-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_super.ts")
 tslang_add_test(NAME test-jit-00-class-accessor-virtual COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor_virtual.ts")
 tslang_add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
+tslang_add_test(NAME test-jit-00-class-implicit-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_implicit_constructor.ts")
 tslang_add_test(NAME test-jit-00-class-super-static COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super_static.ts")
 tslang_add_test(NAME test-jit-00-class-default-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
 tslang_add_test(NAME test-jit-00-class-static-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
@@ -1840,6 +1842,7 @@ set(TSLANG_CORPUS
     00class_structural_extends.ts
     00class_super_static.ts
     00class_super.ts
+    00class_implicit_constructor.ts
     00class_symbol_iterator.ts
     00class_var_args.ts
     00class_virtual_call.ts
@@ -2847,6 +2850,23 @@ add_test(NAME test-compile-diagnostic-location-generated-cast
 set_tests_properties(test-compile-diagnostic-location-generated-cast
                      PROPERTIES PASS_REGULAR_EXPRESSION "generated_cast\\.ts:6:23: error: can't cast from 'null' to 'string'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|generated_cast\\.ts:1:")
+
+# An error in a field initializer, or in a derived class's implicit constructor, is reported at the
+# field or the class - not at 1:1, where the code the compiler generates for them had put it.
+add_test(NAME test-compile-diagnostic-location-field-initializer
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/field_initializer.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-field-initializer.obj")
+set_tests_properties(test-compile-diagnostic-location-field-initializer
+                     PROPERTIES PASS_REGULAR_EXPRESSION "field_initializer\\.ts:6:5: error: can't cast from 'null' to 'Reference<string>'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|field_initializer\\.ts:1:")
+add_test(NAME test-compile-diagnostic-location-implicit-constructor
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/implicit_constructor.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-implicit-constructor.obj")
+set_tests_properties(test-compile-diagnostic-location-implicit-constructor
+                     PROPERTIES PASS_REGULAR_EXPRESSION "implicit_constructor\\.ts:9:1: error: Class constructor is not accessable"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|implicit_constructor\\.ts:1:")
 
 # A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
 # is an error under every model but gc, which alone links the collector - it used to reach the

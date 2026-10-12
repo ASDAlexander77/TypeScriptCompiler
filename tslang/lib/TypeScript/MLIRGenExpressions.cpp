@@ -1080,7 +1080,28 @@ namespace mlirgen
         {
             offsetArgs = 2;
         }
-        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))
+
+        // `super(...)`: the callee is the base class, and the arguments are its constructor's. Without
+        // the constructor's parameters a spread had no count to fill and passed nothing: `super(a, ...r)`
+        // gave the base an empty rest parameter.
+        auto operandsFuncType = funcResult.getType();
+        if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(funcType))
+        {
+            for (auto classInfo = getClassInfoByFullName(classStorageType.getName().getValue()); classInfo;
+                 classInfo = classInfo->baseClasses.empty() ? ClassInfo::TypePtr() : classInfo->baseClasses.front())
+            {
+                auto index = classInfo->getMethodIndex(CONSTRUCTOR_NAME);
+                if (index >= 0)
+                {
+                    operandsFuncType = classInfo->methods[index].funcType;
+                    // after `this`
+                    offsetArgs = 1;
+                    break;
+                }
+            }
+        }
+
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, operandsFuncType, genContext, offsetArgs, noReceiverTypesForGenericCall)))
         {
             return mlir::failure();
         }

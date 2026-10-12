@@ -1525,18 +1525,98 @@ genContext);
 
             NodeFactory nf(NodeFactoryFlags::None);
 
+            // errors in the generated code are reported at the class
+            auto atClass = [&](auto node) {
+                node->pos = classDeclarationAST->pos;
+                node->_end = classDeclarationAST->_end;
+                return node;
+            };
+
+            NodeArray<ParameterDeclaration> parameters;
             NodeArray<Statement> statements;
 
             if (!newClassPtr->baseClasses.empty())
             {
-                auto superExpr = nf.createToken(SyntaxKind::SuperKeyword);
-                auto callSuper = nf.createCallExpression(superExpr, undefined, undefined);
-                statements.push_back(nf.createExpressionStatement(callSuper));
+                // TypeScript's implicit `constructor(...args) { super(...args); }`: it takes the
+                // parameters of the base constructor, typed as its function is (a generic base's
+                // already specialized), and passes them on; the base applies its defaults
+                mlir_ts::FunctionType baseConstructorType;
+                for (auto baseClass = newClassPtr->baseClasses.front(); baseClass;
+                     baseClass = baseClass->baseClasses.empty() ? ClassInfo::TypePtr() : baseClass->baseClasses.front())
+                {
+                    if (baseClass->hasConstructor)
+                    {
+                        auto index = baseClass->getMethodIndex(CONSTRUCTOR_NAME);
+                        if (index >= 0)
+                        {
+                            baseConstructorType = baseClass->methods[index].funcType;
+                        }
+
+                        break;
+                    }
+                }
+
+                NodeArray<Expression> superArguments;
+                if (baseConstructorType)
+                {
+                    auto inputs = baseConstructorType.getInputs();
+                    // the first input is `this`
+                    for (auto index = 1u; index < inputs.size(); index++)
+                    {
+                        auto paramType = inputs[index];
+                        auto isRest = baseConstructorType.isVarArg() && index == inputs.size() - 1;
+                        auto isOptional = false;
+                        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(paramType))
+                        {
+                            paramType = optionalType.getElementType();
+                            isOptional = true;
+                        }
+
+                        // not a name the field initializers, run in this constructor, could mean
+                        auto paramName = ".arg" + std::to_string(index - 1);
+
+                        std::string paramTypeAlias;
+                        paramTypeAlias += ".";
+                        paramTypeAlias += newClassPtr->fullName.str();
+                        paramTypeAlias += ".";
+                        paramTypeAlias += CONSTRUCTOR_NAME;
+                        paramTypeAlias += paramName;
+                        getTypeAliasMap()[paramTypeAlias] = { paramType, undefined };
+
+                        DotDotDotToken dotDotDotToken;
+                        if (isRest)
+                        {
+                            dotDotDotToken = nf.createToken(SyntaxKind::DotDotDotToken);
+                        }
+
+                        QuestionToken questionToken;
+                        if (isOptional)
+                        {
+                            questionToken = nf.createToken(SyntaxKind::QuestionToken);
+                        }
+
+                        parameters.push_back(atClass(nf.createParameterDeclaration(
+                            undefined, dotDotDotToken, nf.createIdentifier(stows(paramName)), questionToken,
+                            nf.createTypeReferenceNode(nf.createIdentifier(stows(paramTypeAlias)), undefined))));
+
+                        Expression argument = atClass(nf.createIdentifier(stows(paramName)));
+                        if (isRest)
+                        {
+                            argument = atClass(nf.createSpreadElement(argument));
+                        }
+
+                        superArguments.push_back(argument);
+                    }
+                }
+
+                auto superExpr = atClass(nf.createToken(SyntaxKind::SuperKeyword));
+                auto callSuper = atClass(nf.createCallExpression(superExpr, undefined, superArguments));
+                statements.push_back(atClass(nf.createExpressionStatement(callSuper)));
             }
 
-            auto body = nf.createBlock(statements, /*multiLine*/ false);
+            auto body = atClass(nf.createBlock(statements, /*multiLine*/ false));
 
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, body);
+            auto generatedConstructor = atClass(nf.createConstructorDeclaration(undefined, parameters, body));
             newClassPtr->extraMembers.push_back(generatedConstructor);
         }
 
@@ -2805,6 +2885,14 @@ genContext);
                 auto _this_name_equal = nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken),
                                                                   propertyDeclaration->initializer);
                 auto expr_statement = nf.createExpressionStatement(_this_name_equal);
+
+                // errors in the assignment (the initializer's cast to the field type) are reported at
+                // the field, not at the start of the file
+                for (Node node : {Node(_this), Node(_name), Node(_this_name), Node(_this_name_equal), Node(expr_statement)})
+                {
+                    node->pos = propertyDeclaration->pos;
+                    node->_end = propertyDeclaration->_end;
+                }
 
                 // NOTE: upward mailbox: drained when the constructor body is generated - see A7
                 const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
