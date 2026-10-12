@@ -60,6 +60,19 @@ struct PassResult
     SmallVector<mlir_ts::FieldInfo> extraFieldsInThisContext;
 };
 
+// GenContext is passed by const reference and copied for nested scopes. A few places
+// const_cast it and write into the caller's copy on purpose, so that code generated *later*
+// in that scope sees the value. Each one is marked `NOTE: upward mailbox`:
+//   - generatedStatements: class field initializers queued by member processing, drained
+//     once when the constructor body is generated (clearing the copy makes it process-once);
+//   - typeAliasMap: a synthesized safe-cast alias must resolve in the following statements;
+//   - thisType: an explicit `this: T` parameter must reach the prototype chain above;
+//   - usingVars: set to null once the scope's `using` variables are disposed;
+//   - allocateVarsOutsideOfOperation/currentOperation: armed by `__switchstate` for the
+//     statements that follow it.
+// A write is visible only to contexts copied from the mutated one after the write. Replacing
+// these with explicit channels (a shared pending-statements object, a function-scope alias
+// registry, returning the `this` type and the switch state) is still open.
 struct GenContext
 {
     GenContext() = default;

@@ -2894,7 +2894,7 @@ genContext);
                     node->_end = propertyDeclaration->_end;
                 }
 
-                // NOTE: upward mailbox: drained when the constructor body is generated - see A7
+                // NOTE: upward mailbox: drained when the constructor body is generated - see GenContext
                 const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
             }
 
@@ -2938,7 +2938,7 @@ genContext);
                         nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken), _name);
                     auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
-                    // NOTE: upward mailbox: drained when the constructor body is generated - see A7
+                    // NOTE: upward mailbox: drained when the constructor body is generated - see GenContext
                     const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
                 }
             }

@@ -2,7 +2,7 @@
 
 Cross-platform graphics sample for the TypeScript native compiler (`tslang`). Application logic is written in TypeScript; GLFW windowing and bgfx rendering live in a thin C++ bridge exposed through `.d.ts` FFI declarations.
 
-Control flow matches [`cmake_vulkan`](../cmake_vulkan/) and [`cmake_winapp`](../cmake_winapp/): **C++ owns the event loop**, TypeScript creates the window and reacts via an `onMessage` callback.
+Control flow matches [`cmake_winapp`](../cmake_winapp/): **C++ owns the event loop**, TypeScript creates the window and reacts via an `onMessage` callback.
 
 ## What it does
 
@@ -134,6 +134,5 @@ built. Valid values are `gc` (default), `rc` and `none`; only `gc` links Boehm.
 ## Related samples
 
 - [`cmake_winapp`](../cmake_winapp/) — Win32 window only (C++ message loop)
-- [`cmake_vulkan`](../cmake_vulkan/) — Win32 + Vulkan cube (same onMessage pattern)
 - [`cmake_tslang`](../cmake_tslang/) — mixed C++/TypeScript with custom CMake language
 - [`c-cpp-header-import.md`](../../c-cpp-header-import.md) — FFI / native binding design

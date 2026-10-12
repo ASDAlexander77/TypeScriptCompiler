@@ -1,6 +1,6 @@
 // Private implementation header for the MLIRGen translation units.
-// MLIRGenImpl is being split across several .cpp files (see docs/MLIRGen-refactoring-review.md SS1);
-// method bodies still defined inline here are pending extraction.
+// MLIRGenImpl's methods are defined across the lib/TypeScript/MLIRGen*.cpp files; templates,
+// small helpers and RAII scopes stay inline here.
 // Include only from lib/TypeScript/MLIRGen*.cpp.
 #pragma once
 
@@ -644,7 +644,7 @@ class MLIRGenImpl
                       std::back_inserter(generatedStatements));
 
             // clean up
-            // NOTE: upward mailbox into caller context (process-once drain) - see docs/MLIRGen-refactoring-review.md A7
+            // NOTE: upward mailbox into caller context (process-once drain) - see GenContext
             const_cast<GenContext&>(genContext).generatedStatements.clear();
 
             // auto generated code
@@ -1204,7 +1204,7 @@ class MLIRGenImpl
             // remove when used
             if (disposeDepth == DisposeDepth::CurrentScope)
             {
-                // NOTE: upward mailbox into caller context (process-once) - see docs/MLIRGen-refactoring-review.md A7
+                // NOTE: upward mailbox into caller context (process-once) - see GenContext
                 const_cast<GenContext *>(genContext)->usingVars = nullptr;
             }
         }
@@ -4026,7 +4026,7 @@ class MLIRGenImpl
                                 // enable safe cast found
                                 auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                 auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
-                                // NOTE: upward mailbox: alias must stay visible for following statements - see A7
+                                // NOTE: upward mailbox: alias must stay visible for following statements - see GenContext
                                 const_cast<GenContext &>(genContext)
                                     .typeAliasMap.insert({typeAliasNameUTF8, tupleType});
 
@@ -4054,7 +4054,7 @@ class MLIRGenImpl
                                     // enable safe cast found
                                     auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                     auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
-                                    // NOTE: upward mailbox: alias must stay visible for following statements - see A7
+                                    // NOTE: upward mailbox: alias must stay visible for following statements - see GenContext
                                     const_cast<GenContext &>(genContext)
                                         .typeAliasMap.insert({typeAliasNameUTF8, interfaceType});
 
@@ -4690,7 +4690,7 @@ class MLIRGenImpl
                 }
 
                 // clean up
-                // NOTE: upward mailbox into caller context (process-once drain) - see A7
+                // NOTE: upward mailbox into caller context (process-once drain) - see GenContext
                 const_cast<GenContext &>(genContext).generatedStatements.clear();
             }
 
