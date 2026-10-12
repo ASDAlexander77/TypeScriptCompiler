@@ -271,6 +271,7 @@ tslang_add_test(NAME test-compile-01-enums COMMAND test-runner "${PROJECT_SOURCE
 tslang_add_test(NAME test-compile-00-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00numbers.ts")
 tslang_add_test(NAME test-compile-00-equals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00equals.ts")
 tslang_add_test(NAME test-compile-00-bool-arith-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
+tslang_add_test(NAME test-compile-00-int64-shift-bitwise COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_shift_bitwise.ts")
 tslang_add_test(NAME test-compile-00-bool-const-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-compile-00-mixed-type-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
 tslang_add_test(NAME test-compile-00-generator-manual-next COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next.ts")
@@ -802,6 +803,7 @@ tslang_add_test(NAME test-jit-01-enums COMMAND test-runner -jit "${PROJECT_SOURC
 tslang_add_test(NAME test-jit-00-numbers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00numbers.ts")
 tslang_add_test(NAME test-jit-00-equals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00equals.ts")
 tslang_add_test(NAME test-jit-00-bool-arith-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
+tslang_add_test(NAME test-jit-00-int64-shift-bitwise COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_shift_bitwise.ts")
 tslang_add_test(NAME test-jit-00-bool-const-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
 tslang_add_test(NAME test-jit-00-mixed-type-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00mixed_type_ops.ts")
 tslang_add_test(NAME test-jit-00-generator-manual-next COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_manual_next.ts")
@@ -1789,6 +1791,7 @@ set(TSLANG_CORPUS
     00async_gc_threading.ts
     00async_result_types.ts
     00bool_arith_ops.ts
+    00int64_shift_bitwise.ts
     00bool_const_array.ts
     00break_continue_scope_exit.ts
     00break_continue.ts

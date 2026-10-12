@@ -4005,6 +4005,13 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
                                                                transformed.getOperand2(), rewriter);
 
         case SyntaxKind::GreaterThanGreaterThanToken:
+            // the lowered operand is signless: an unsigned one (u64 keeps its type) shifts zeros in
+            if (arithmeticBinaryOp.getOperand1().getType().isUnsignedInteger())
+            {
+                return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRUIOp, arith::ShRUIOp>(
+                    arithmeticBinaryOp, transformed.getOperand1(), maskShiftAmount(arithmeticBinaryOp->getLoc(), transformed.getOperand2(), rewriter), rewriter);
+            }
+
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRSIOp, arith::ShRSIOp, arith::ShRUIOp>(
                 arithmeticBinaryOp, transformed.getOperand1(), maskShiftAmount(arithmeticBinaryOp->getLoc(), transformed.getOperand2(), rewriter), rewriter);
 

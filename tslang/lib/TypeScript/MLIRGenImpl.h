@@ -5744,7 +5744,9 @@ class MLIRGenImpl
                 result = leftInt << rightInt.urem(leftInt.getBitWidth());
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = leftInt.ashr(rightInt.urem(leftInt.getBitWidth()));
+                result = resultType.isUnsignedInteger()
+                    ? leftInt.lshr(rightInt.urem(leftInt.getBitWidth()))
+                    : leftInt.ashr(rightInt.urem(leftInt.getBitWidth()));
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
                 result = leftInt.lshr(rightInt.urem(leftInt.getBitWidth()));
@@ -6733,18 +6735,31 @@ class MLIRGenImpl
         case SyntaxKind::AmpersandToken:
         case SyntaxKind::BarToken:
         case SyntaxKind::CaretToken:
-            // cast to int
-            if (leftExpressionValue.getType() != builder.getI32Type())
+        {
+            // cast to int: JavaScript's Int32 coercion, but a 64-bit integer left operand keeps its
+            // type (and signedness), the right one is cast to it. Cast to i32, `u64 << 40` shifted
+            // by 40 mod 32 and dropped the upper half.
+            mlir::Type intType = builder.getI32Type();
+            if (auto leftIntType = dyn_cast<mlir::IntegerType>(leftExpressionValue.getType()))
             {
-                CAST(leftExpressionValue, location, builder.getI32Type(), leftExpressionValue, genContext);
+                if (leftIntType.getWidth() > 32)
+                {
+                    intType = leftIntType;
+                }
             }
 
-            if (rightExpressionValue.getType() != builder.getI32Type())
+            if (leftExpressionValue.getType() != intType)
             {
-                CAST(rightExpressionValue, location, builder.getI32Type(), rightExpressionValue, genContext);
+                CAST(leftExpressionValue, location, intType, leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType() != intType)
+            {
+                CAST(rightExpressionValue, location, intType, rightExpressionValue, genContext);
             }
 
             break;
+        }
         case SyntaxKind::SlashToken:
         case SyntaxKind::PercentToken:
         case SyntaxKind::AsteriskAsteriskToken:
