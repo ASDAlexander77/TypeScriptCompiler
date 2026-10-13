@@ -2699,6 +2699,16 @@ add_test(NAME test-compile-integer-literal-truncation-quiet
 set_tests_properties(test-compile-integer-literal-truncation-quiet
                      PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
 
+# A store to an indexed Ref<T> (`bytes[i] = x`) names the form that stores, `Deref(bytes[i]) = x`,
+# instead of "saving to constant object".
+add_test(NAME test-compile-ref-index-store
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/ref-index-store/store.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/ref-index-store.obj")
+set_tests_properties(test-compile-ref-index-store
+                     PROPERTIES PASS_REGULAR_EXPRESSION "store\\.ts:8:5: error: indexing a 'Ref<T>' gives a reference to the element; store through it with 'Deref\\(p\\[i\\]\\) = value'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A number, string, boolean or array passed where an interface with members is expected is an
 # error; it compiled to a cast lowering could not make, and the callee read garbage. An interface
 # without members still takes any value.

@@ -6192,6 +6192,13 @@ class MLIRGenImpl
         else
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
+            // `p[i]` of a `Ref<T>` is the reference to the element (as a read gives it), not the element
+            if (leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::PointerOffsetRefOp>())
+            {
+                emitError(location, "indexing a 'Ref<T>' gives a reference to the element; store through it with 'Deref(p[i]) = value'");
+                return mlir::failure();
+            }
+
             emitError(location, "saving to constant object");
             return mlir::failure();
         }
