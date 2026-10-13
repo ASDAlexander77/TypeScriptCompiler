@@ -6630,10 +6630,12 @@ class MLIRGenImpl
             // 64-bit integer types - a rung of the promotion ladder - not a size or a pointer. The
             // getIndexType() beside them is a different thing entirely and IS target-dependent; it
             // sits at this rung because that is where it promotes, not because it is 64 bits wide.
-            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
-            builder.getF32Type(), SInt(32), builder.getI32Type(),
-            builder.getF16Type(), SInt(16), builder.getI16Type(),
-            SInt(8), builder.getI8Type()
+            // An unsigned type follows the signed and signless ones of its width. Missing from the
+            // ladder, `u64 * 2` found only the literal's s32 and multiplied in 32 bits.
+            getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), UInt(64), builder.getIndexType(),
+            builder.getF32Type(), SInt(32), builder.getI32Type(), UInt(32),
+            builder.getF16Type(), SInt(16), builder.getI16Type(), UInt(16),
+            SInt(8), builder.getI8Type(), UInt(8)
         };
     }
 
@@ -6687,6 +6689,11 @@ class MLIRGenImpl
     mlir::Type SInt(int width) 
     {
         return mlir::IntegerType::get(builder.getContext(), width, mlir::IntegerType::Signed);
+    }
+
+    mlir::Type UInt(int width)
+    {
+        return mlir::IntegerType::get(builder.getContext(), width, mlir::IntegerType::Unsigned);
     }
 
     // JS/TS `===`/`!==` never coerce: operands of clearly different primitive kinds
