@@ -24,6 +24,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | `%` **fixed** by #571; `/` stays a number, as in JavaScript |
 | 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | **answered**: `Deref(bytes[i]) = x` stores; the error says so since #573 |
 | 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | **fixed** by #569 (pre-alpha100: open) |
+| 19 | A @cpp overload call rejects a class argument for a `T \| null` or base-class parameter; a call whose argument the first overload can't take fails to compile | - | **fixed** (this PR; pre-alpha101: open) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -290,6 +291,56 @@ the bare name `value`. Workaround: name the local differently.
 
 **Fixed by #569**: the member is looked up in the namespace first. A name the namespace doesn't have
 still falls back to the general lookup, so `ns.missing` can still find a local `missing`.
+
+### 19. A @cpp overload call rejects a class for `T | null`, and checks the first overload's parameters
+
+Found on pre-alpha101 in native_ts_graphics' `core/nvrhi.ts`, after tsbindgen started writing
+NVRHI's overloads under one name: `device.createGraphicsPipeline(Ref(desc), framebuffer)` with
+`framebuffer: IFramebuffer` fits neither overload, `(Ref<GraphicsPipelineDesc>, Ref<FramebufferInfo>)`
+nor `(Ref<GraphicsPipelineDesc>, IFramebuffer | null)`:
+
+```ts
+@cpp
+class Shape {
+    @slot(1) area(): s32;
+}
+
+@cpp
+class Square extends Shape {
+    @slot(2) side(): s32;
+}
+
+@cpp
+class Canvas {
+    @slot(1) draw(x: s32): s32;
+    @slot(2) draw(shape: Shape | null): s32;
+}
+
+// canvas: Canvas, shape: Shape, square: Square
+canvas.draw(shape);    // error: invalid cast from Shape to s32
+```
+
+```
+error: no overload of 'createGraphicsPipeline' takes these arguments (Reference<...>, nvrhi.IFramebuffer); it has:
+  createGraphicsPipeline(Reference<...>, Reference<...>)
+  createGraphicsPipeline(Reference<...>, nvrhi.IFramebuffer | null)
+```
+
+Two causes:
+- an argument fit a parameter only by its own type, a number conversion or `canCastFromTo` (tuples
+  and interfaces): a `Shape` didn't fit `Shape | null`, nor a `Square` a `Shape`;
+- the overload was picked in the full pass only. The partial resolve before it (finding the
+  function's types) called the first overload with the arguments, and an argument it can't be cast
+  to (`Shape` to `s32` above) failed the function. The NVRHI call gave the "no overload" error
+  instead because a class does cast to a `Ref<T>`.
+
+Workaround: pass the argument through a local of the parameter's type
+(`const arg: IFramebuffer | null = framebuffer;`).
+
+**Fixed** (this PR): a class fits its own type and a `T | null` holding it (3, the same C++
+pointer) and a base class, alone or in a union (2, a derived-to-base conversion). The overload is
+picked in a partial resolve too; there a call that fits none (or two) keeps the first overload
+without an error, and the full pass reports it.
 
 ---
 

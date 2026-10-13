@@ -103,7 +103,9 @@ Writing one by hand:
 - **Overloads.** Declare each C++ overload under the C++ name, with its own `@slot` (or
   `@linkname` for a non-virtual one). A call picks the overload from its arguments, at compile
   time as C++ does: an argument of the parameter's own type fits best, then an integer for an
-  integer or a float for a float, then any other conversion. A call that fits none, or fits two
+  integer or a float for a float, or a class derived from the parameter's class, then any other
+  conversion. A class is a C++ pointer, so `T` and `T | null` fit a `T | null` parameter alike. A
+  call that fits none, or fits two
   as well, is an error that lists the overloads. MSVC groups overloads in the vtable, in reverse
   declaration order: take the numbers from the layout report (tsbindgen does).
 

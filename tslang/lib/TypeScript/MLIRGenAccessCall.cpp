@@ -1707,13 +1707,11 @@ namespace mlirgen
             return mlir::success();
         }
 
-        if (!genContext.allowPartialResolve)
+        // in a partial resolve too: the first overload's parameters can't take another's arguments
+        actualFuncRefValue = resolveCppOverload(location, actualFuncRefValue, operands, genContext);
+        if (!actualFuncRefValue)
         {
-            actualFuncRefValue = resolveCppOverload(location, actualFuncRefValue, operands, genContext);
-            if (!actualFuncRefValue)
-            {
-                return mlir::failure();
-            }
+            return mlir::failure();
         }
 
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
@@ -1811,8 +1809,22 @@ namespace mlirgen
             return funcRefValue;
         }
 
+        // whether derivedClass is baseClass or derives from it
+        std::function<bool(mlir_ts::ClassType, mlir_ts::ClassType)> isOrDerivesFrom =
+            [&](mlir_ts::ClassType derivedClass, mlir_ts::ClassType baseClass) {
+                if (derivedClass == baseClass)
+                {
+                    return true;
+                }
+
+                auto derivedInfo = getClassInfoByFullName(derivedClass.getName().getValue());
+                return derivedInfo && llvm::any_of(derivedInfo->baseClasses, [&](ClassInfo::TypePtr base) {
+                           return isOrDerivesFrom(base->classType, baseClass);
+                       });
+            };
+
         // how well an argument fits a parameter: 3 its type, 2 an integer for an integer or a float
-        // for a float, 1 any other conversion, 0 none
+        // for a float, or a derived class for a base class, 1 any other conversion, 0 none
         auto fit = [&](mlir::Type argType, mlir::Type paramType) -> int {
             if (argType == paramType)
             {
@@ -1826,6 +1838,30 @@ namespace mlirgen
             if (baseType == paramType || (isDouble(baseType) && isDouble(paramType)))
             {
                 return 3;
+            }
+
+            // a class is a C++ pointer, and `T | null` the same pointer: a `T` fits it as `T` does,
+            // and a class derived from T as a derived-to-base conversion
+            if (auto argClass = dyn_cast<mlir_ts::ClassType>(baseType))
+            {
+                auto classFit = [&](mlir::Type type) {
+                    auto paramClass = dyn_cast<mlir_ts::ClassType>(type);
+                    return !paramClass ? 0 : argClass == paramClass ? 3 : isOrDerivesFrom(argClass, paramClass) ? 2 : 0;
+                };
+
+                auto classBest = classFit(paramType);
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(paramType))
+                {
+                    for (auto member : unionType.getTypes())
+                    {
+                        classBest = std::max(classBest, classFit(member));
+                    }
+                }
+
+                if (classBest)
+                {
+                    return classBest;
+                }
             }
 
             // an integer for an integer, a float for a float, before a conversion between the two
@@ -1907,6 +1943,12 @@ namespace mlirgen
 
         if (best.empty() || best.size() > 1)
         {
+            // a partial resolve may not know the arguments' types yet: the full one reports it
+            if (genContext.allowPartialResolve)
+            {
+                return funcRefValue;
+            }
+
             auto diagnostic = emitError(location);
             diagnostic << (best.empty() ? "no overload of '" : "the call of '") << name
                        << (best.empty() ? "' takes these arguments (" : "' is ambiguous: its arguments (");
