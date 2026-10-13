@@ -14,7 +14,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 3 | `u64` `<<` shifted by the count modulo 32 | bug | **fixed** |
 | 4 | `Ref<string>` field with a `null` initializer rejected | question | **answered**: declare it `Ref<string> \| null` |
 | 5 | `@cppvtable` overload naming (C++ overloads need distinct TypeScript names) | open | **addressed** on branch `cppvtable-slot`: `@cpp` + `@slot(N)` (docs/cpp-classes.md) |
-| 6 | C `string` return values keep the raw `char*` (no copy) | open | open, not re-checked |
+| 6 | C `string` return values keep the raw `char*` (no copy) | open | **fixed**: copied at the call (this PR; `Opaque` is the raw pointer) |
 | 7 | `Opaque` compared with `Opaque \| null` crashed the compiler | - | **fixed** by #536 (re-checked with the original drawScene shape) |
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
 | 9-12 | Bool const arrays, `Math.max`, `f32` array literal, `let x = 0` | - | fixed (#537, DefaultLib#31, works, #544 warning) |
@@ -119,6 +119,11 @@ lifetime tracking. A C helper that reused one `std::string` buffer for several c
 to TypeScript later; the project now returns pointers to storage that lives as long as the owning object.
 Decide whether this is by design; if so, the C interop docs should say the string must outlive its use,
 otherwise copying on return (or an explicit borrowed annotation) would be safer. Not re-checked.
+
+**Fixed**: worse than stale text - under `-mm=rc` the count was kept in the 8 bytes before the
+pointer, so storing `strchr(base, 'k')` rewrote two characters of `base`. A `string` returned by a
+top-level `declare function` (defined nowhere in the program) or a `@cpp` method is now copied at the
+call; declare the result `Opaque` for the pointer itself (docs/c-cpp-header-import.md).
 
 ### 13. `T` not inferred from a generic tuple alias argument
 

@@ -799,6 +799,10 @@ namespace mlirgen
             if (declared == declaredFunctions.end() || declared->second.second != theModule.getOperation())
             {
                 declaredFunctions[fullName] = {functionDeclarationAST, theModule.getOperation()};
+                if (fullName == name)
+                {
+                    rootDeclaredFunctions.insert(fullName);
+                }
             }
             else if (declared->second.first != functionDeclarationAST)
             {
