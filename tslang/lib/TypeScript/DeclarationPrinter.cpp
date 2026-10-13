@@ -680,9 +680,11 @@ namespace typescript
 
             // a @cpp method returning a record: as declared, the importer lowers it again
             auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+            // a C++ overload after the first is `name#N` here (mlirGenClassCppOverloadNames); the
+            // importer renames it again
             printMethod(
                 method.isStatic,
-                method.name,
+                StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first,
                 funcType.getParams(),
                 funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type(),
                 classType->classType);

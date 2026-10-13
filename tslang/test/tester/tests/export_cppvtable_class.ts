@@ -10,6 +10,8 @@ namespace M {
         value: s32;
         @slot(0) first(): s32;
         @slot(1) second(x: s32): s32;
+        // a C++ overload: printed with its own name and slot, the importer renames it again
+        @slot(3) second(x: f64): s32;
 
         // TypeScript's own, not a slot: the importer calls this module's function
         twice(x: s32): s32 {
@@ -20,10 +22,16 @@ namespace M {
     @cpp
     export class Derived extends Base {
         @slot(2) third(x: s32, y: s32): s32;
+        // and one of the derived class's own
+        @slot(4) second(x: s32, y: s32): s32;
     }
 
     // called through this module's numbering
     export function callSecond(object: Base, x: s32): s32 {
+        return object.second(x);
+    }
+
+    export function callSecondDouble(object: Base, x: f64): s32 {
         return object.second(x);
     }
 }

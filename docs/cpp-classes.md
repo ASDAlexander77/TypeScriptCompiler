@@ -100,9 +100,20 @@ Writing one by hand:
   (`<name>.<os>.ts`).
 - **The destructor** is one slot under MSVC (the scalar deleting destructor) and two under the
   Itanium ABI. Don't call it: release objects the way the C++ library does (`Release()`).
-- **Overloads.** tslang methods are identified by name, so every C++ overload needs its own
-  TypeScript name, with its own `@slot`. MSVC groups overloads in the vtable, and not always in
-  declaration order: take the numbers from the layout report.
+- **Overloads.** Declare each C++ overload under the C++ name, with its own `@slot` (or
+  `@linkname` for a non-virtual one). A call picks the overload from its arguments, at compile
+  time as C++ does: an argument of the parameter's own type fits best, then an integer for an
+  integer or a float for a float, then any other conversion. A call that fits none, or fits two
+  as well, is an error that lists the overloads. MSVC groups overloads in the vtable, in reverse
+  declaration order: take the numbers from the layout report (tsbindgen does).
+
+  ```ts
+  @slot(8) over(x: s32): s32;
+  @slot(7) over(x: f64): s32;
+  @slot(6) over(a: s32, b: s32): s32;   // methods.over(5), methods.over(2.5), methods.over(6, 7)
+  ```
+
+  A derived class overriding one overload names its slot: by name alone it would be ambiguous.
 - **Non-virtual methods** are bound by their mangled symbol: `@linkname("?scaled@Methods@@QEAAHH@Z")`
   under MSVC, `@linkname("_ZN7Methods6scaledEi")` under the Itanium ABI. The symbol has to be
   exported by the C++ library (`__declspec(dllexport)` on the method or the class).

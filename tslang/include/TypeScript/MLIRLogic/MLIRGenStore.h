@@ -983,7 +983,8 @@ struct ClassInfo
                 auto index = it->second;
                 if (isCppVTable && method.cppSlot >= 0 && (size_t)method.cppSlot != index && cppSlotConflict.empty())
                 {
-                    cppSlotConflict = "'" + method.name + "' overrides slot " + std::to_string(index) + " of a base class, not slot "
+                    cppSlotConflict = "'" + mlir::StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first.str() + "' overrides slot "
+                        + std::to_string(index) + " of a base class, not slot "
                         + std::to_string(method.cppSlot);
                 }
 
@@ -998,6 +999,23 @@ struct ClassInfo
                 // @slot(N): slot N, whatever the declaration order; the slots no method names
                 // are gaps, which a class implementing C++ methods leaves null
                 auto index = (size_t)method.cppSlot;
+
+                // a C++ overload of a base class's method takes other parameters: with the same ones
+                // it is that method, overridden in the wrong slot
+                auto declaredName = mlir::StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first;
+                auto params = method.funcType.getInputs().drop_front(method.funcType.getNumInputs() > 0 ? 1 : 0);
+                for (auto [slot, entry] : llvm::enumerate(vtable))
+                {
+                    auto &inherited = entry.methodInfo;
+                    if (!entry.isInterfaceVTable && !entry.isStaticField && !inherited.isCppSlotGap && slot != index
+                        && inherited.funcType && inherited.funcType.getNumInputs() > 0
+                        && mlir::StringRef(inherited.name).split(CPP_OVERLOAD_SEPARATOR).first == declaredName
+                        && inherited.funcType.getInputs().drop_front() == params && cppSlotConflict.empty())
+                    {
+                        cppSlotConflict = "'" + declaredName.str() + "' overrides slot " + std::to_string(slot)
+                            + " of a base class, not slot " + std::to_string(index);
+                    }
+                }
                 while (vtable.size() <= index)
                 {
                     MethodInfo gap;
@@ -1017,7 +1035,8 @@ struct ClassInfo
                 {
                     if (cppSlotConflict.empty())
                     {
-                        cppSlotConflict = "'" + method.name + "' and '" + vtable[index].methodInfo.name + "' are both in slot "
+                        cppSlotConflict = "'" + mlir::StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first.str() + "' and '"
+                            + mlir::StringRef(vtable[index].methodInfo.name).split(CPP_OVERLOAD_SEPARATOR).first.str() + "' are both in slot "
                             + std::to_string(index);
                     }
 

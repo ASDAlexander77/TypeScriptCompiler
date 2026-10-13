@@ -88,7 +88,7 @@ enum class DeclKind
 // A method of a C++ class bound as a @cpp class.
 struct Method
 {
-    std::string name;        // the TS name: the C++ name, `_2`, `_3`, ... for later overloads
+    std::string name;        // the TS name: the C++ name (an overload too), `_2`, ... when a field has it
     std::string cppName;     // the C++ name, for messages
     int slot = -1;           // a virtual method's vtable slot; -1 for a non-virtual one
     std::string symbol;      // a non-virtual method's mangled symbol

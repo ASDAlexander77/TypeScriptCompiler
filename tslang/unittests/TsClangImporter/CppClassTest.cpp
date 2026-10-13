@@ -44,15 +44,15 @@ std::string cpp(const std::string &header, const std::string &target = windowsTa
 
 } // namespace
 
-// MSVC: one destructor slot, and overloads grouped in reverse declaration order
+// MSVC: one destructor slot, and overloads grouped in reverse declaration order, under one name
 TEST(CppClass, MsvcSlots)
 {
     auto out = cpp(shapes);
     EXPECT_THAT(out, HasSubstr("@cpp\nclass Shape { // geo::Shape\n"
                                "    @slot(1) area(): s32;\n"
                                "    @slot(4) scale(by: s32): void;\n"
-                               "    @slot(3) scale_2(by: f32): void;\n"
-                               "    @slot(2) scale_3(by: f64): void;\n"
+                               "    @slot(3) scale(by: f32): void;\n"
+                               "    @slot(2) scale(by: f64): void;\n"
                                "    @slot(6) last(): s32;\n"
                                "}\n"));
     // the destructor (0) and the protected hidden() (5) are slots left out; overrides aren't
@@ -68,8 +68,8 @@ TEST(CppClass, ItaniumSlots)
     auto out = cpp(shapes, linuxTarget);
     EXPECT_THAT(out, HasSubstr("    @slot(2) area(): s32;\n"
                                "    @slot(3) scale(by: s32): void;\n"
-                               "    @slot(4) scale_2(by: f32): void;\n"
-                               "    @slot(5) scale_3(by: f64): void;\n"
+                               "    @slot(4) scale(by: f32): void;\n"
+                               "    @slot(5) scale(by: f64): void;\n"
                                "    @slot(7) last(): s32;\n"));
     EXPECT_THAT(out, HasSubstr("    @slot(8) contains(other: Shape): boolean;\n"));
 }

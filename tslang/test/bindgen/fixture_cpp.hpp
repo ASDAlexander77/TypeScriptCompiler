@@ -94,7 +94,7 @@ class FX_API Shape
     // defined (not pure): a pure virtual's slot would point at the C++ runtime's __cxa_pure_virtual
     virtual int32_t area() const;
     virtual void scale(int32_t by);
-    virtual void scale(double by); // an overload: scale_2
+    virtual void scale(double by); // an overload: scale too, with its own @slot
     virtual Handle handle();
     virtual Pair pair(int32_t x);
     virtual int32_t fits(const Extent &extent, const Extent *limit);

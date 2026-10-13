@@ -11395,6 +11395,14 @@ class MLIRGenImpl
 
     std::string getCppMethodName(ClassElement classMember, const GenContext &genContext);
 
+    void mlirGenClassCppOverloadNames(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                      const GenContext &genContext);
+
+    static StringRef cppOverloadedName(StringRef methodName);
+
+    mlir::Value resolveCppOverload(mlir::Location location, mlir::Value funcRefValue, mlir::ArrayRef<mlir::Value> operands,
+                                   const GenContext &genContext);
+
     bool isCppVirtualMethod(ClassInfo::TypePtr classInfo, ClassElement classMember, const GenContext &genContext);
 
     bool isCppVTableImplementation(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr classInfo,
