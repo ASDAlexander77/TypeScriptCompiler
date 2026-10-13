@@ -18,12 +18,12 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 7 | `Opaque` compared with `Opaque \| null` crashed the compiler | - | **fixed** by #536 (re-checked with the original drawScene shape) |
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
 | 9-12 | Bool const arrays, `Math.max`, `f32` array literal, `let x = 0` | - | fixed (#537, DefaultLib#31, works, #544 warning) |
-| 13 | A generic function's `T` isn't inferred from an argument of a generic tuple alias (`Vec<T>`) | - | open (pre-alpha100) |
-| 14 | A literal-union ternary (`x ? 1 : 0`) as an integer tuple field fails in codegen (`llvm.sext` of a union, no location) | - | open (pre-alpha100) |
-| 15 | `u64 * <integer literal>` is computed in 32 bits (`2^32 * 2 == 0`, `d *= 256` wraps) | - | open (pre-alpha100) |
-| 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | open (pre-alpha100) |
-| 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | open (pre-alpha100) |
-| 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | open (pre-alpha100) |
+| 13 | A generic function's `T` isn't inferred from an argument of a generic tuple alias (`Vec<T>`) | - | **fixed** by #572 (pre-alpha100: open) |
+| 14 | A literal-union ternary (`x ? 1 : 0`) as an integer tuple field fails in codegen (`llvm.sext` of a union, no location) | - | **fixed** by #568 (pre-alpha100: open) |
+| 15 | `u64 * <integer literal>` is computed in 32 bits (`2^32 * 2 == 0`, `d *= 256` wraps) | - | **fixed** by #570 (pre-alpha100: open) |
+| 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | `%` **fixed** by #571; `/` stays a number, as in JavaScript |
+| 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | **answered**: `Deref(bytes[i]) = x` stores; the error says so since #573 |
+| 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | **fixed** by #569 (pre-alpha100: open) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -145,6 +145,9 @@ function main() {
 TypeScript infers `T = Item` here (the alias is expanded and matched structurally). native_ts_graphics
 passes the type (`nvrhi.stdVectorSize<nvrhi.BindingSetItem>(...)`) until it is.
 
+**Fixed by #572**: inference had no case for `Ref<T>` (a plain `f<T>(r: Ref<T>)` failed too). The same
+PR stops `T | null` against `Item | null` from binding `T = null`: unions were paired by member position.
+
 ### 14. A literal-union ternary as an integer tuple field fails in codegen
 
 Found on pre-alpha100 writing native_ts_graphics' `nvrhi.graphicsPipelineDesc()`: a
@@ -172,6 +175,9 @@ vector of signless integer, but got '!ts.union<!ts.literal<0 : si32, si32>, !ts.
 #560 unwraps such a union for binary operators (`unwrapForBinaryOp`); the cast to a tuple field's
 type needs the same. Workaround: `let count: index = 0; if (item) { count = 1; }`.
 
+**Fixed by #568**: any cast of such a union (a variable, a parameter, a tuple field) goes through its
+literals' type first.
+
 ### 15. `u64 * <integer literal>` is computed in 32 bits
 
 Found on pre-alpha100: native_ts_graphics' `stdString()` built a `std::string`'s words with
@@ -194,6 +200,9 @@ function main() {
 The literal's type (s32) seems to win over the `u64` operand, so the multiply is done in 32 bits.
 Workaround: a typed constant (`const BYTE: u64 = 256; shift *= BYTE`).
 
+**Fixed by #570**: the numeric promotion order had no unsigned types, so only the literal's s32 matched.
+`u64 op s32` is u64 now, and so is `u64 op index`; `u32 op s32` is still s32.
+
 ### 16. `u64 %` goes through f64; `u64 /` has no integer division
 
 Found on pre-alpha100, reading the bytes of a 64-bit word:
@@ -214,6 +223,10 @@ double precision, so it is wrong once the value passes 2^53. And with `/` always
 has no exact integer division at all. Workaround: read the bytes through a pointer
 (`<Ref<u8>><Opaque>Ref(copy)`), which needs no arithmetic.
 
+**`%` fixed by #571**: with a 64-bit integer operand, `%` is done in that integer type (exact, and an
+unsigned operand takes the unsigned remainder); `x % 0` traps there instead of giving NaN. `/` is
+unchanged and still gives a number. `w >> 8` (exact since #556) with `w % 256` reads the bytes.
+
 ### 17. Storing through `Ref<u8>` indexing is rejected
 
 Found on pre-alpha100, trying to write a `std::string`'s characters into a tuple's bytes. Reading
@@ -232,6 +245,10 @@ function main() {
 
 Is there a way to store through a `Ref<T>` element (or is it by design)? If there is, the error
 could name it.
+
+**Answered**: `bytes[i]` is the element's reference for a store as for a read, so
+`Deref(bytes[i]) = 65` stores (prints 65 above). Since #573 the error says so:
+`indexing a 'Ref<T>' gives a reference to the element; store through it with 'Deref(p[i]) = value'`.
 
 ### 18. A namespace member call resolves to a same-named local
 
@@ -259,6 +276,9 @@ i18.ts:10:11: error: not a function to call
 
 `ns.value` names the namespace's member whatever is in scope; the local should only be found by
 the bare name `value`. Workaround: name the local differently.
+
+**Fixed by #569**: the member is looked up in the namespace first. A name the namespace doesn't have
+still falls back to the general lookup, so `ns.missing` can still find a local `missing`.
 
 ---
 
