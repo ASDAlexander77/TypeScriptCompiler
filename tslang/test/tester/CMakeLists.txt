@@ -571,6 +571,7 @@ tslang_add_test(NAME test-compile-00-namespace-import COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-00-namespace-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns4.ts")
 tslang_add_test(NAME test-compile-00-namespace-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns5.ts")
 tslang_add_test(NAME test-compile-00-namespace-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns_bug.ts")
+tslang_add_test(NAME test-compile-00-namespace-member-shadowed COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns_member_shadowed.ts")
 tslang_add_test(NAME test-compile-00-interface-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface.ts")
 tslang_add_test(NAME test-compile-00-interface-class-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface2.ts")
 tslang_add_test(NAME test-compile-00-interface-object COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_object.ts")
@@ -1104,6 +1105,7 @@ tslang_add_test(NAME test-jit-00-namespace-import COMMAND test-runner -jit "${PR
 tslang_add_test(NAME test-jit-00-namespace-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns4.ts")
 tslang_add_test(NAME test-jit-00-namespace-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns5.ts")
 tslang_add_test(NAME test-jit-00-namespace-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns_bug.ts")
+tslang_add_test(NAME test-jit-00-namespace-member-shadowed COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns_member_shadowed.ts")
 tslang_add_test(NAME test-jit-00-interface-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface.ts")
 tslang_add_test(NAME test-jit-00-interface-class-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface2.ts")
 tslang_add_test(NAME test-jit-00-interface-object COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_object.ts")
@@ -1977,6 +1979,7 @@ set(TSLANG_CORPUS
     00ns3.ts
     00ns4.ts
     00ns5.ts
+    00ns_member_shadowed.ts
     00numbers.ts
     00object_accessor.ts
     00object_annotated_method_extends_interface_multilevel.ts
