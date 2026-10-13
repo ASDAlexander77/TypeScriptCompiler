@@ -24,7 +24,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | `%` **fixed** by #571; `/` stays a number, as in JavaScript |
 | 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | **answered**: `Deref(bytes[i]) = x` stores; the error says so since #573 |
 | 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | **fixed** by #569 (pre-alpha100: open) |
-| 19 | A @cpp overload call rejects a class argument for a `T | null` or base-class parameter; a call whose argument the first overload can't take fails to compile | - | **fixed** (this PR; pre-alpha101: open) |
+| 19 | A @cpp overload call rejects a class argument for a `T \| null` or base-class parameter; a call whose argument the first overload can't take fails to compile | - | **fixed** (this PR; pre-alpha101: open) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
