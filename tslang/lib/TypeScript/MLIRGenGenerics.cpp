@@ -158,6 +158,22 @@ namespace mlirgen
         return false;
     }
 
+    // `Ref<T>` from a `Ref<Item>`. Without it a parameter `Ref<T>`, or a tuple alias holding one
+    // (`Vec<T> = [first: Ref<T> | null, ...]`), inferred nothing, and T had to be given explicitly.
+    bool MLIRGenImpl::tryInferRef(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                     StringMap<mlir::Type> &results, const GenContext &genContext)
+    {
+        auto tempRef = dyn_cast<mlir_ts::RefType>(templateType);
+        auto typeRef = dyn_cast<mlir_ts::RefType>(concreteType);
+        if (!tempRef || !typeRef)
+        {
+            return false;
+        }
+
+        inferType(location, tempRef.getElementType(), typeRef.getElementType(), results, genContext);
+        return true;
+    }
+
     bool MLIRGenImpl::tryInferTuple(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
                        StringMap<mlir::Type> &results, const GenContext &genContext)
     {
@@ -260,6 +276,36 @@ namespace mlirgen
                 return true;
             }
 
+            // a member both unions have (`null` of `T | null` and `Item | null`) binds nothing: pair
+            // up the rest. By position alone, the members' order decided, and `T` could take `null`.
+            SmallVector<mlir::Type> tempRest;
+            SmallVector<mlir::Type> typeRest;
+            for (auto tempSubType : tempUnionType.getTypes())
+            {
+                if (!llvm::is_contained(types, tempSubType))
+                {
+                    tempRest.push_back(tempSubType);
+                }
+            }
+
+            for (auto subType : types)
+            {
+                if (!llvm::is_contained(tempUnionType.getTypes(), subType))
+                {
+                    typeRest.push_back(subType);
+                }
+            }
+
+            if (tempRest.size() == typeRest.size())
+            {
+                for (auto [index, tempSubType] : enumerate(tempRest))
+                {
+                    inferType(location, tempSubType, typeRest[index], results, genContext);
+                }
+
+                return true;
+            }
+
             for (auto [index, tempSubType] : enumerate(tempUnionType.getTypes()))
             {
                 inferType(location, tempSubType, types[index], results, genContext);
@@ -319,6 +365,12 @@ namespace mlirgen
 
         // array -> array
         if (tryInferArray(location, templateType, concreteType, results, genContext))
+        {
+            return;
+        }
+
+        // Ref<T> -> Ref<T>
+        if (tryInferRef(location, templateType, concreteType, results, genContext))
         {
             return;
         }

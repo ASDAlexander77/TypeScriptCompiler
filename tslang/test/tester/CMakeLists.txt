@@ -488,6 +488,7 @@ tslang_add_test(NAME test-compile-00-rest-args-pack-owned COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-switch-char-string-cases COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
 tslang_add_test(NAME test-compile-00-switch-default-fallthrough COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_default_fallthrough.ts")
 tslang_add_test(NAME test-compile-00-generic-class-constructor-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
+tslang_add_test(NAME test-compile-00-generic-ref-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-compile-00-generator-done-value-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
 tslang_add_test(NAME test-compile-00-any-equality-undefined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
@@ -1019,6 +1020,7 @@ tslang_add_test(NAME test-jit-00-rest-args-pack-owned COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-switch-char-string-cases COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_char_string_cases.ts")
 tslang_add_test(NAME test-jit-00-switch-default-fallthrough COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_default_fallthrough.ts")
 tslang_add_test(NAME test-jit-00-generic-class-constructor-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
+tslang_add_test(NAME test-jit-00-generic-ref-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-jit-00-generator-done-value-zero COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
 tslang_add_test(NAME test-jit-00-any-equality-undefined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
@@ -1905,6 +1907,7 @@ set(TSLANG_CORPUS
     00generator_done_value_zero.ts
     00generic_arguments_name_conflict.ts
     00generic_class_constructor_inference.ts
+    00generic_ref_inference.ts
     00global_const_object_method.ts
     00globals.ts
     00globals2.ts

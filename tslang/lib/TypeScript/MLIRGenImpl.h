@@ -1241,6 +1241,9 @@ class MLIRGenImpl
     bool tryInferArray(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
                        StringMap<mlir::Type> &results, const GenContext &genContext);
 
+    bool tryInferRef(mlir::Location location, mlir::Type templateType, mlir::Type concreteType,
+                     StringMap<mlir::Type> &results, const GenContext &genContext);
+
     // TODO: finish it
     template <typename T>
     bool tryInferTupleFields(mlir::Location location, mlir_ts::TupleType tempTuple, T typeTuple,
