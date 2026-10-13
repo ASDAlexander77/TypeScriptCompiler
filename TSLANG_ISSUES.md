@@ -19,6 +19,10 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
 | 9-12 | Bool const arrays, `Math.max`, `f32` array literal, `let x = 0` | - | fixed (#537, DefaultLib#31, works, #544 warning) |
 | 13 | A generic function's `T` isn't inferred from an argument of a generic tuple alias (`Vec<T>`) | - | open (pre-alpha100) |
+| 14 | A literal-union ternary (`x ? 1 : 0`) as an integer tuple field fails in codegen (`llvm.sext` of a union, no location) | - | open (pre-alpha100) |
+| 15 | `u64 * <integer literal>` is computed in 32 bits (`2^32 * 2 == 0`, `d *= 256` wraps) | - | open (pre-alpha100) |
+| 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | open (pre-alpha100) |
+| 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | open (pre-alpha100) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -139,6 +143,94 @@ function main() {
 
 TypeScript infers `T = Item` here (the alias is expanded and matched structurally). native_ts_graphics
 passes the type (`nvrhi.stdVectorSize<nvrhi.BindingSetItem>(...)`) until it is.
+
+### 14. A literal-union ternary as an integer tuple field fails in codegen
+
+Found on pre-alpha100 writing native_ts_graphics' `nvrhi.graphicsPipelineDesc()`: a
+`static_vector`'s count given as `layout ? 1 : 0`. The ternary is `0 | 1` (a union of literals,
+as in #8), and storing it into an `index` field of a tuple literal emits a sign extension of the
+union itself, which the LLVM dialect rejects. The error has no source location:
+
+```ts
+type Vec = [items: [_0: Opaque | null], count: index];
+
+function make(item: Opaque | null): Vec {
+    return [[item], item ? 1 : 0];
+}
+
+function main() {
+    print(make(null).count);   // expected 0
+}
+```
+
+```
+<unknown>:0: error: 'llvm.sext' op operand #0 must be signless integer or LLVM dialect-compatible
+vector of signless integer, but got '!ts.union<!ts.literal<0 : si32, si32>, !ts.literal<1 : si32, si32>>'
+```
+
+#560 unwraps such a union for binary operators (`unwrapForBinaryOp`); the cast to a tuple field's
+type needs the same. Workaround: `let count: index = 0; if (item) { count = 1; }`.
+
+### 15. `u64 * <integer literal>` is computed in 32 bits
+
+Found on pre-alpha100: native_ts_graphics' `stdString()` built a `std::string`'s words with
+`shift *= 256`, which wrapped to 0 after four bytes, so every debug name NVRHI got was cut to its
+first four characters (and an entry point `main_vs` reached Vulkan as `main`):
+
+```ts
+function main() {
+    let a: u64 = 4294967296;   // 2^32
+    print(a * 2);              // 0, expected 8589934592
+    let d: u64 = 16777216;     // 2^24
+    d *= 256;
+    print(d);                  // 0, expected 4294967296
+    const k: u64 = 256;
+    let e: u64 = 16777216;
+    print(e * k);              // 4294967296: with a u64 operand it is right
+}
+```
+
+The literal's type (s32) seems to win over the `u64` operand, so the multiply is done in 32 bits.
+Workaround: a typed constant (`const BYTE: u64 = 256; shift *= BYTE`).
+
+### 16. `u64 %` goes through f64; `u64 /` has no integer division
+
+Found on pre-alpha100, reading the bytes of a 64-bit word:
+
+```ts
+function main() {
+    const BYTE: u64 = 256;
+    let w: u64 = 32499774568096109;   // the bytes of "main_vs\0", little-endian
+    print(w % BYTE);                  // 108, expected 109 ('m')
+    print(w / BYTE);                  // 1.26952e+014
+    let small: u64 = 1000;
+    print(small / 3);                 // 333.333
+}
+```
+
+`/` giving a float follows JavaScript, but `%` on two `u64`s should be exact; it is done in
+double precision, so it is wrong once the value passes 2^53. And with `/` always a float, a `u64`
+has no exact integer division at all. Workaround: read the bytes through a pointer
+(`<Ref<u8>><Opaque>Ref(copy)`), which needs no arithmetic.
+
+### 17. Storing through `Ref<u8>` indexing is rejected
+
+Found on pre-alpha100, trying to write a `std::string`'s characters into a tuple's bytes. Reading
+through the pointer works (`Deref(bytes[i])`); storing doesn't, `const` or `let`:
+
+```ts
+type Str = [buf: [_0: u64, _1: u64], size: index];
+
+function main() {
+    let value: Str = [[0, 0], 0];
+    let bytes = <Ref<u8>><Opaque>Ref(value);
+    bytes[0] = 65;             // error: saving to constant object
+    print(value.buf._0);       // expected 65
+}
+```
+
+Is there a way to store through a `Ref<T>` element (or is it by design)? If there is, the error
+could name it.
 
 ---
 
