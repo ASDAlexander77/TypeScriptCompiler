@@ -6798,8 +6798,32 @@ class MLIRGenImpl
 
             break;
         }
-        case SyntaxKind::SlashToken:
         case SyntaxKind::PercentToken:
+        {
+            // `%` of two integers, one of them 64-bit, is done in that 64-bit type: through a
+            // number (f64) it was wrong once the value passed 2^53. Narrower integers keep the
+            // number path, which is exact for them.
+            auto leftIntType = dyn_cast<mlir::IntegerType>(leftExpressionValue.getType());
+            auto rightIntType = dyn_cast<mlir::IntegerType>(rightExpressionValue.getType());
+            if (leftIntType && rightIntType && (leftIntType.getWidth() > 32 || rightIntType.getWidth() > 32))
+            {
+                mlir::Type intType = leftIntType.getWidth() >= rightIntType.getWidth() ? leftIntType : rightIntType;
+                if (leftExpressionValue.getType() != intType)
+                {
+                    CAST(leftExpressionValue, location, intType, leftExpressionValue, genContext);
+                }
+
+                if (rightExpressionValue.getType() != intType)
+                {
+                    CAST(rightExpressionValue, location, intType, rightExpressionValue, genContext);
+                }
+
+                break;
+            }
+
+            [[fallthrough]];
+        }
+        case SyntaxKind::SlashToken:
         case SyntaxKind::AsteriskAsteriskToken:
 
             // TODO: should it be int type especially PercentToken?

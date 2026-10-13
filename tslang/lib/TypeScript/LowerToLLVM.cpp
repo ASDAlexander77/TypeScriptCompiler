@@ -4036,6 +4036,13 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
                                                              transformed.getOperand2(), rewriter);
 
         case SyntaxKind::PercentToken:
+            // the lowered operand is signless: an unsigned one (`u64 % u64`) takes the unsigned remainder
+            if (arithmeticBinaryOp.getOperand1().getType().isUnsignedInteger())
+            {
+                return BinOp<mlir_ts::ArithmeticBinaryOp, arith::RemUIOp, arith::RemFOp>(arithmeticBinaryOp, transformed.getOperand1(),
+                                                                   transformed.getOperand2(), rewriter);
+            }
+
             return BinOp<mlir_ts::ArithmeticBinaryOp, arith::RemSIOp, arith::RemFOp, arith::RemUIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                transformed.getOperand2(), rewriter);
 
