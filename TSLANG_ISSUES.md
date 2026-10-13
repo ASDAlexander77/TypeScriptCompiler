@@ -23,6 +23,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 15 | `u64 * <integer literal>` is computed in 32 bits (`2^32 * 2 == 0`, `d *= 256` wraps) | - | open (pre-alpha100) |
 | 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | open (pre-alpha100) |
 | 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | open (pre-alpha100) |
+| 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | open (pre-alpha100) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -231,6 +232,33 @@ function main() {
 
 Is there a way to store through a `Ref<T>` element (or is it by design)? If there is, the error
 could name it.
+
+### 18. A namespace member call resolves to a same-named local
+
+Found on pre-alpha100 in native_ts_graphics' `nvrhi_direct.ts`: a local `const textureDesc =
+Deref(texture.getDesc())`, then `nvrhi.textureDesc(...)` further down the same function. The
+qualified name `nvrhi.textureDesc` is resolved to the local, which isn't callable:
+
+```ts
+namespace ns {
+    export function value(): int {
+        return 42;
+    }
+}
+
+function main() {
+    const value = ns.value();   // 42
+    print(value);
+    print(ns.value());          // error: not a function to call
+}
+```
+
+```
+i18.ts:10:11: error: not a function to call
+```
+
+`ns.value` names the namespace's member whatever is in scope; the local should only be found by
+the bare name `value`. Workaround: name the local differently.
 
 ---
 
