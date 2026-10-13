@@ -269,6 +269,7 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
         // in a namespace or a class is declared under its own name; --filter matches either.
         pendingRecords.push_back({model.decls.size(), record});
         auto &decl = add(DeclKind::OpaqueStruct, key, TypeMapper::tagName(record), record);
+        decl.instantiation = mapper.isInstantiated(record);
         auto qualified = TypeMapper::qualifiedTagName(record);
         if (qualified != decl.name)
         {
@@ -456,6 +457,18 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
                 else if (auto *enumDecl = llvm::cast<clang::EnumDecl>(tag)->getDefinition())
                 {
                     VisitEnumDecl(enumDecl);
+                }
+            }
+
+            // the generic tuples the specializations mapped so far are instances of
+            for (auto &generic : mapper.generics())
+            {
+                if (keys.insert(generic.key).second)
+                {
+                    auto &decl = add(DeclKind::Struct, generic.key, generic.name, generic.at);
+                    decl.qualifiedName = generic.qualifiedName;
+                    decl.typeParameters = generic.parameters;
+                    decl.fields = generic.fields;
                 }
             }
 

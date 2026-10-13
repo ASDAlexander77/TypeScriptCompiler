@@ -12,7 +12,8 @@ namespace tsbindgen
 namespace
 {
 
-// The selected declarations: every seed, then whatever a non-skipped selected declaration uses.
+// The selected declarations: every seed, then whatever a non-skipped selected declaration uses. A
+// specialization is no seed: it is declared for what holds it (or inlined in a generic).
 std::vector<bool> selectDecls(const HeaderModel &model, const std::vector<llvm::GlobPattern> &globs)
 {
     llvm::StringMap<size_t> byKey;
@@ -34,9 +35,9 @@ std::vector<bool> selectDecls(const HeaderModel &model, const std::vector<llvm::
     for (size_t index = 0; index < model.decls.size(); ++index)
     {
         auto &decl = model.decls[index];
-        auto seed = globs.empty() ? decl.inMainFile : llvm::any_of(globs, [&](const llvm::GlobPattern &glob) {
+        auto seed = !decl.instantiation && (globs.empty() ? decl.inMainFile : llvm::any_of(globs, [&](const llvm::GlobPattern &glob) {
             return glob.match(decl.name) || (!decl.qualifiedName.empty() && glob.match(decl.qualifiedName));
-        });
+        }));
         if (seed)
         {
             mark(index);
@@ -322,7 +323,13 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
                     fields += (fields.empty() ? "" : ", ") + withComment(field);
                 }
 
-                line(exported + "type " + tsName + " = [" + fields + "];");
+                std::string parameters;
+                for (auto &parameter : decl.typeParameters)
+                {
+                    parameters += (parameters.empty() ? "<" : ", ") + parameter;
+                }
+
+                line(exported + "type " + tsName + (parameters.empty() ? "" : parameters + ">") + " = [" + fields + "];");
                 break;
             }
             case DeclKind::Enum: {
