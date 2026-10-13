@@ -1603,6 +1603,18 @@ namespace mlirgen
             {
                 return castNullableToString(location, type, value, baseType, genContext);
             }
+
+            // A union of literals, as `c ? 1 : 0` is (`0 | 1`), is stored as its literals' type: cast
+            // it to that type first. Cast straight to another type (`index`, a tuple field's type),
+            // it reached the lowering as a union, which sign-extended the union itself.
+            if (!toAny)
+            {
+                if (auto literalBaseType = getLiteralUnionBaseType(location, valueType); literalBaseType && literalBaseType != type)
+                {
+                    CAST_A(baseValue, location, literalBaseType, value, genContext);
+                    return cast(location, type, baseValue, genContext);
+                }
+            }
         }
 
         // TODO: issue is with casting to Boolean type from union type for example, you need to cast optional type to boolean to check value
