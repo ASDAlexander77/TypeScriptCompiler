@@ -21,13 +21,20 @@ into a C library exists — only the declaration authoring is manual:
 | C varargs | `func.varargs` attribute (`MLIRGen.cpp`) | `declare function printf(format: string, ...args)`-style declarations. |
 | Linking | `tslang.cpp` driver: `-lib=` (static libs, `--emit=exe`), `-obj=` (object files), `-shared-libs=` (JIT), plus `*-lib-path` options | Both AOT (lld) and JIT (ORC symbol resolution) paths exist. |
 
-Values crossing the boundary are passed as they are, with no conversion or copy. These cost
-time in real ports because nothing reports them:
+Values crossing the boundary are passed as they are, with no conversion or copy, with one
+exception. These cost time in real ports because nothing reports them:
 
-- **A `string` returned by a declared C function is the C `char*` itself.** tslang does not
-  copy it and does not track its lifetime. The C side must return storage that outlives every
-  use of the TypeScript string: a C++ helper that reused one `std::string` buffer for several
-  calls handed TypeScript strings that changed under it.
+- **A `string` returned by C is copied.** The result of a function declared at the top level
+  with `declare function` and defined nowhere in the program, or of a `@cpp` class's method, is
+  copied into a string of the program's own (null stays null). Kept as C's `char*`, it was a
+  buffer C may reuse (`strerror`, a C++ helper's one `std::string`) or the middle of another
+  string (`strstr`), and under `-mm=rc` the reference count was kept in the 8 bytes before the
+  pointer: memory that isn't the program's. Declare the result `Opaque` to get the pointer
+  itself - for pointer arithmetic, or for a string the caller has to free (`strdup`), which a
+  copy would leak. A function in a `declare namespace` or a `declare class` is TypeScript
+  compiled elsewhere (the default library's `lib.d.ts`), and its result is not copied.
+- **A `string` going to C is the program's own `char*`**, valid for the call. A C function that
+  keeps it must copy it.
 - **`number` is a C `double`.** A C function declared with a `number` parameter must take a
   `double`. A `float` parameter reads garbage with no error, so declare it `f32` instead (see the
   table in section 2).

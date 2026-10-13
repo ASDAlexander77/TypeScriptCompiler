@@ -190,7 +190,8 @@ const log = new MessageLog();          // pass <Opaque>log to C++
   parameters the way the ABI passes them (see "Writing a binding").
 - **Lifetime.** C++ keeps a raw pointer that the collector can't see. Hold the object in tslang,
   for example in a global, for as long as C++ may call it. A `string` argument is C++'s buffer:
-  copy it to keep it past the call.
+  copy it to keep it past the call. (The other way, a `string` a C++ method returns to
+  TypeScript is copied by the call; declare the method to return `Opaque` for the pointer.)
 - **Not yet supported:**
   - returning a struct (an error);
   - exporting the class (an error: an importer would get the methods but not the vtable);

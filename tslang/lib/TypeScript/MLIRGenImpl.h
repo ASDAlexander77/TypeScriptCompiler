@@ -8518,12 +8518,51 @@ class MLIRGenImpl
                 auto hasReturn = callValue.getType() != getVoidType();
                 if (hasReturn)
                 {
+                    // A string from C is C's memory: a buffer it reuses (`strerror`), or the middle
+                    // of another string (`strstr`). Kept as it was, it changed under the program,
+                    // and rc counted it in the 8 bytes before it - someone else's memory. It is
+                    // copied into a string of the program's own; `Opaque` is the raw pointer.
+                    if (isa<mlir_ts::StringType>(callValue.getType()) && isForeignCall(funcRefValue, callAttrs))
+                    {
+                        auto copy = builder.create<mlir_ts::StringCopyOp>(location, callValue.getType(), callValue);
+                        markFreshBlockOwned(location, copy);
+                        return V(copy);
+                    }
+
                     return callValue;
                 }
             }
         }
 
         return mlir::success();
+    }
+
+    // A call into C or C++: a method of a @cpp class, or a function declared at the top level with
+    // `declare function` and defined nowhere in the program. A `declare namespace` or a `declare
+    // class` (the default library's lib.d.ts) is TypeScript compiled elsewhere.
+    bool isForeignCall(mlir::Value funcRefValue, mlir::ArrayRef<mlir::NamedAttribute> callAttrs)
+    {
+        if (llvm::any_of(callAttrs, [](auto attr) { return attr.getName() == CPP_CALL_ATTR_NAME; }))
+        {
+            return true;
+        }
+
+        auto symbolRef = funcRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolRef)
+        {
+            return false;
+        }
+
+        auto name = symbolRef.getIdentifier().str();
+        auto declared = declaredFunctions.find(name);
+        if (declared == declaredFunctions.end() || declared->second.second != theModule.getOperation()
+            || !rootDeclaredFunctions.contains(name))
+        {
+            return false;
+        }
+
+        auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
+        return funcOp && funcOp.getBody().empty();
     }
 
     // A call with fewer arguments than the callee needs is TypeScript's TS2554. Only a parameter
@@ -14193,6 +14232,8 @@ class MLIRGenImpl
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the
     // next pass; see mlirGen(FunctionDeclaration)
     std::map<std::string, std::pair<FunctionDeclaration, mlir::Operation *>> declaredFunctions;
+    // those of them declared outside any namespace: C functions, unless a definition follows (isForeignCall)
+    llvm::StringSet<> rootDeclaredFunctions;
 
     // Set while an imported source file is generated (mlirGenInclude): the errors of the file go
     // here instead of being printed, and the import hands them to the importer, whose
