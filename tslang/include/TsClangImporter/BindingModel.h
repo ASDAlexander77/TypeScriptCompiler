@@ -23,6 +23,7 @@ struct TsType
     Kind kind = Kind::Builtin;
     std::string name;            // Builtin: the tslang spelling; Named: the key of a Decl
     std::vector<TsType> pointee; // Reference: exactly one element; Tuple: the field types
+    std::vector<TsType> typeArguments; // Named: a generic's arguments, `vector<Item>`
     std::vector<std::string> fieldNames; // Tuple
     std::string comment;         // shown next to the type: a function pointer's C signature, ...
     bool functionPointer = false;
@@ -43,6 +44,9 @@ struct TsType
 
 // Spells `type`, asking `nameOf` for the TS name of each named declaration it refers to.
 std::string renderType(const TsType &type, const std::function<std::string(const std::string &)> &nameOf);
+
+// Whether two types are spelled alike (keys compared, not TS names)
+bool sameType(const TsType &a, const TsType &b);
 
 // The declaration keys `type` refers to, in order, each once.
 void collectKeys(const TsType &type, std::vector<std::string> &keys);
@@ -73,7 +77,7 @@ enum class DeclKind
 {
     Macro,        // const N = 42;
     OpaqueStruct, // type S = Opaque;
-    Struct,       // type S = [a: T1, b: T2];  (type S = Opaque; when skipped)
+    Struct,       // type S = [a: T1, b: T2];  (type S = Opaque; when skipped); type V<T> = [...] for a generic
     Enum,         // enum E { A = 0 }
     FixedEnum,    // type E = u8; const A = 1;
     Typedef,      // type T = ...;
@@ -102,9 +106,11 @@ struct Decl
     std::string symbol; // Function: the symbol it links as, when an asm label makes it differ from the name
     bool inMainFile = false;
     bool inSystemHeader = false;
+    bool instantiation = false; // a template's specialization, or a class inside one: only declared for its users
     std::string skipReason; // non-empty: left out, with a `// skipped:` line in its place
 
     std::vector<Field> fields;           // Struct, CppClass: fields; Function: parameters
+    std::vector<std::string> typeParameters; // Struct: a generic's, `type vector<T> = [...]`
     TsType type;                         // Function: result; Typedef: aliased type; FixedEnum: underlying
     bool varargs = false;                // Function
     std::vector<Enumerator> enumerators; // Enum, FixedEnum

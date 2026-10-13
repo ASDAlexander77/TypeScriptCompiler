@@ -476,6 +476,214 @@ bool TypeMapper::isSystem(const clang::Decl *decl)
     return sourceManager.isInSystemHeader(sourceManager.getExpansionLoc(decl->getLocation()));
 }
 
+TsType TypeMapper::argumentType(clang::QualType argument)
+{
+    if (auto *cxxRecord = argument.getCanonicalType()->getAsCXXRecordDecl();
+        cxxRecord && cxxRecord->getDefinition() && classSkipReason(cxxRecord).empty())
+    {
+        return TsType::named(referTo(cxxRecord->getDefinition()));
+    }
+
+    return map(argument, Use::Field);
+}
+
+const clang::RecordDecl *TypeMapper::recordOfKey(const std::string &key)
+{
+    for (auto &[referencedKey, tag] : referenced)
+    {
+        if (referencedKey == key)
+        {
+            return llvm::dyn_cast<clang::RecordDecl>(tag);
+        }
+    }
+
+    return nullptr;
+}
+
+TsType TypeMapper::abstractType(const TsType &type, const std::vector<TsType> &arguments,
+                                const std::vector<std::string> &parameters, std::vector<bool> &used, int depth)
+{
+    // an argument, nullable or not: `T`; `T | null` where the argument itself isn't nullable (a
+    // RefCountPtr<IShader>'s `IShader *`)
+    for (size_t index = 0; index < arguments.size(); ++index)
+    {
+        auto nonNull = type;
+        nonNull.nullable = arguments[index].nullable;
+        if (sameType(nonNull, arguments[index]))
+        {
+            used[index] = true;
+            auto parameter = TsType::builtin(parameters[index]);
+            parameter.nullable = type.nullable && !arguments[index].nullable;
+            return parameter;
+        }
+    }
+
+    auto abstracted = type;
+    for (auto &pointee : abstracted.pointee)
+    {
+        pointee = abstractType(pointee, arguments, parameters, used, depth);
+    }
+
+    for (auto &argument : abstracted.typeArguments)
+    {
+        argument = abstractType(argument, arguments, parameters, used, depth);
+    }
+
+    // a specialization holding an argument (MSVC's _Compressed_pair<allocator<T>, _Vector_val<...>>):
+    // its fields inline, as a tuple, as it has no name of the parameters
+    if (type.kind == TsType::Kind::Named && type.typeArguments.empty() && depth < 16)
+    {
+        auto *record = recordOfKey(type.name);
+        if (record && isInstantiated(record) && recordSkipReason(record->getDefinition()).empty())
+        {
+            std::vector<bool> inner(arguments.size(), false);
+            std::vector<std::string> names;
+            std::vector<TsType> types;
+            for (auto &field : mapFields(record->getDefinition()))
+            {
+                names.push_back(field.name);
+                types.push_back(abstractType(field.type, arguments, parameters, inner, depth + 1));
+            }
+
+            if (llvm::is_contained(inner, true))
+            {
+                for (size_t index = 0; index < used.size(); ++index)
+                {
+                    used[index] = used[index] || inner[index];
+                }
+
+                auto tuple = TsType::tuple(std::move(names), std::move(types));
+                tuple.nullable = type.nullable;
+                return tuple;
+            }
+        }
+    }
+
+    return abstracted;
+}
+
+TsType TypeMapper::genericInstance(const clang::RecordDecl *definition)
+{
+    auto *specialization = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(definition);
+    if (!specialization)
+    {
+        return TsType::skip("not a template's specialization");
+    }
+
+    auto found = instances.find(definition);
+    if (found != instances.end())
+    {
+        return found->second;
+    }
+
+    // a specialization reached again through its own arguments' layouts
+    if (!generalizing.insert(definition).second)
+    {
+        return TsType::skip("a specialization holding itself");
+    }
+
+    auto instance = [&]() -> TsType {
+        auto *classTemplate = specialization->getSpecializedTemplate();
+        auto *templateParameters = classTemplate->getTemplateParameters();
+        auto templateArguments = specialization->getTemplateArgs().asArray();
+
+        // the arguments given (not a defaulted one, std::vector's allocator): the types become the
+        // parameters, the integers part of the name (static_vector<T, 8>: `static_vector8`)
+        std::vector<TsType> arguments;
+        std::string name = classTemplate->getName().str();
+        std::string values;
+        for (size_t index = 0; index < templateArguments.size(); ++index)
+        {
+            auto &argument = templateArguments[index];
+            auto *parameter = templateParameters->getParam(std::min<size_t>(index, templateParameters->size() - 1));
+            if (clang::isSubstitutedDefaultArgument(context, argument, parameter, templateArguments,
+                                                    templateParameters->getDepth()))
+            {
+                continue;
+            }
+
+            if (argument.getKind() == clang::TemplateArgument::Type)
+            {
+                auto type = argumentType(argument.getAsType());
+                if (type.skipped())
+                {
+                    return TsType::skip("type argument: " + type.skipReason);
+                }
+
+                arguments.push_back(type);
+            }
+            else if (argument.getKind() == clang::TemplateArgument::Integral)
+            {
+                auto value = llvm::toString(argument.getAsIntegral(), 10);
+                name += (std::isdigit(static_cast<unsigned char>(name.back())) ? "_" : "") + value;
+                values += (values.empty() ? "" : ", ") + value;
+            }
+            else
+            {
+                return TsType::skip("a template argument that is neither a type nor an integer");
+            }
+        }
+
+        if (arguments.empty())
+        {
+            return TsType::skip("no type argument");
+        }
+
+        auto reason = recordSkipReason(definition);
+        if (!reason.empty())
+        {
+            return TsType::skip(reason);
+        }
+
+        std::vector<std::string> parameters;
+        for (size_t index = 0; index < arguments.size(); ++index)
+        {
+            parameters.push_back(arguments.size() == 1 ? "T" : "T" + std::to_string(index + 1));
+        }
+
+        std::vector<bool> used(arguments.size(), false);
+        auto fields = mapFields(definition);
+        for (auto &field : fields)
+        {
+            field.type = abstractType(field.type, arguments, parameters, used, 0);
+        }
+
+        if (llvm::is_contained(used, false))
+        {
+            return TsType::skip("a type argument its layout doesn't show");
+        }
+
+        auto qualified = classTemplate->getQualifiedNameAsString();
+        Generic generic{"generic:" + qualified + "<" + values + ">", name, qualified, parameters, fields, classTemplate};
+        auto known = genericIndex.find(generic.key);
+        if (known == genericIndex.end())
+        {
+            genericIndex[generic.key] = genericList.size();
+            genericList.push_back(generic);
+        }
+        else
+        {
+            // another specialization's layout, in terms of the parameters, has to be this one's
+            auto &other = genericList[known->second];
+            auto same = other.fields.size() == fields.size() &&
+                        std::equal(fields.begin(), fields.end(), other.fields.begin(),
+                                   [](const Field &a, const Field &b) { return a.name == b.name && sameType(a.type, b.type); });
+            if (!same)
+            {
+                return TsType::skip("laid out unlike " + other.name + "'s other specializations");
+            }
+        }
+
+        auto type = TsType::named(generic.key);
+        type.typeArguments = arguments;
+        return type;
+    }();
+
+    generalizing.erase(definition);
+    instances[definition] = instance;
+    return instance;
+}
+
 TsType TypeMapper::map(clang::QualType type, Use use)
 {
     auto mapped = mapType(type, use);
@@ -583,9 +791,16 @@ TsType TypeMapper::mapType(clang::QualType type, Use use)
         }
 
         // a field holding a specialization (std::string, nvrhi::static_vector<T, N>) needs its layout:
-        // it is declared, under a name of its arguments
+        // an instance of its template's generic tuple (static_vector8<IBindingSet | null>), or, when
+        // it can't be one, declared under a name of its arguments (basic_string_char)
         if (use == Use::Field && isInstantiated(record))
         {
+            auto instance = genericInstance(record->getDefinition());
+            if (!instance.skipped())
+            {
+                return instance;
+            }
+
             heldByValue.insert(record->getDefinition());
         }
 

@@ -49,8 +49,9 @@ TEST(Layout, Unions)
     EXPECT_THAT(out, HasSubstr("type Pt = [x: s32, y: s32, z: s32];"));
 }
 
-// A specialization a field holds is declared under a name of its arguments; its bases' fields come
-// first, an empty base has none. A pointer to one alone stays Opaque.
+// A specialization a field holds is an instance of its template's generic tuple, its integer
+// arguments in the name; its bases' fields come first, an empty base has none. A template named as
+// one of tslang's types (Ref) gets a `_`. A pointer to a specialization alone stays Opaque.
 TEST(Layout, SpecializationHeldByValue)
 {
     const char *header = "#include <stddef.h>\n"
@@ -69,17 +70,57 @@ TEST(Layout, SpecializationHeldByValue)
     for (auto *target : {windowsTarget, linuxTarget})
     {
         auto out = cpp(header, target);
-        EXPECT_THAT(out, HasSubstr("type State = [owner: Ref_Item, items: static_vector_Item_2];")) << target;
-        EXPECT_THAT(out, HasSubstr("type Ref_Item = [ptr_: Item | null];")) << target;
-        EXPECT_THAT(out, HasSubstr("type static_vector_Item_2 = [elems: [_0: Item | null, _1: Item | null], current_size: index];"))
-            << target;
+        EXPECT_THAT(out, HasSubstr("type State = [owner: Ref_<Item>, items: static_vector2<Item | null>];")) << target;
+        EXPECT_THAT(out, HasSubstr("type Ref_<T> = [ptr_: T | null];")) << target;
+        EXPECT_THAT(out, HasSubstr("type static_vector2<T> = [elems: [_0: T, _1: T], current_size: index];")) << target;
         EXPECT_THAT(out, HasSubstr("use(state: Reference<State> | null, other: Opaque | null /* lib::Other<int> */)")) << target;
         EXPECT_THAT(out, Not(HasSubstr("type Other"))) << target;
     }
 }
 
+// An std::vector shaped as MSVC's: its pointers two specializations down (_Compressed_pair, whose
+// allocator base is empty, then _Vector_val of _Simple_types<T>), which are inlined in its generic
+// tuple: one for every element type, the helpers declared nowhere
+TEST(Layout, MsvcShapedVectorIsOneGeneric)
+{
+    auto out = cpp("namespace stdx {\n"
+                   "template <typename T> struct allocator {};\n"
+                   "template <typename T> struct simple_types { using pointer = T *; };\n"
+                   "template <typename V> struct vector_val { typename V::pointer first, last, end; };\n"
+                   "template <typename A, typename V> struct compressed_pair : private A { V value; };\n"
+                   "template <typename T, typename A = allocator<T>> class vector {\n"
+                   "    compressed_pair<A, vector_val<simple_types<T>>> pair; };\n"
+                   "}\n"
+                   "struct Item { int id; };\n"
+                   "struct Desc { stdx::vector<Item> items; stdx::vector<int> ids; };\n"
+                   "extern \"C\" void use(const Desc *desc);\n");
+    EXPECT_THAT(out, HasSubstr("type Desc = [items: vector<Item>, ids: vector<s32>];"));
+    EXPECT_THAT(out, HasSubstr("type vector<T> = [pair: [value: [first: Reference<T> | null, last: Reference<T> | null, "
+                               "end: Reference<T> | null]]];"));
+    EXPECT_THAT(out, Not(HasSubstr("vector_val")));
+    EXPECT_THAT(out, Not(HasSubstr("compressed_pair")));
+}
+
+// A specialization laid out unlike its template's others (an explicit specialization), or whose
+// layout doesn't show its type argument, keeps a name of its arguments
+TEST(Layout, SpecializationThatIsNoInstance)
+{
+    auto out = cpp("namespace lib {\n"
+                   "template <typename T> struct Box { T value; };\n"
+                   "template <> struct Box<double> { double value; int extra; };\n"
+                   "template <typename T> struct Tag { int id; };\n"
+                   "}\n"
+                   "struct Desc { lib::Box<int> a; lib::Box<double> b; lib::Tag<float> c; };\n"
+                   "extern \"C\" void use(const Desc *desc);\n");
+    EXPECT_THAT(out, HasSubstr("type Desc = [a: Box<s32>, b: Box_double, c: Tag_float];"));
+    EXPECT_THAT(out, HasSubstr("type Box<T> = [value: T];"));
+    EXPECT_THAT(out, HasSubstr("type Box_double = [value: f64, extra: s32];"));
+    EXPECT_THAT(out, HasSubstr("type Tag_float = [id: s32];"));
+}
+
 // An std::string shaped as MSVC's: an empty allocator base (no storage), its value in a member
-// whose union holds a char buffer or a pointer
+// whose union holds a char buffer or a pointer. Its characters are raw words, which don't show its
+// argument: no generic, a name of its arguments.
 TEST(Layout, MsvcShapedString)
 {
     auto out = cpp("#include <stddef.h>\n"
@@ -94,6 +135,7 @@ TEST(Layout, MsvcShapedString)
     EXPECT_THAT(out, HasSubstr("type basic_string_char = [pair: compressed_pair_allocator_char_string_val_char];"));
     EXPECT_THAT(out, HasSubstr("type compressed_pair_allocator_char_string_val_char = [value: string_val_char];"));
     EXPECT_THAT(out, HasSubstr("type string_val_char = [bx: [_0: u64, _1: u64], size: index, res: index];"));
+    EXPECT_THAT(out, Not(HasSubstr("basic_string<")));
 }
 
 // An std::string shaped as libc++'s: its representation a union of structs with bitfields (raw

@@ -12,6 +12,7 @@ class Sema;
 }
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 
 #include <utility>
@@ -68,10 +69,13 @@ class TypeMapper
 
     // Whether a struct can have a TS declaration of its own: in C, any; in C++, one in a namespace or
     // a class too (declared under its own name), but not a template, nor a class local to a
-    // function. A template's specialization (std::string, nvrhi::static_vector<T, N>) or a class
-    // inside one is declared once a field holds one by value, whose layout needs it; a pointer to
-    // one alone stays Opaque.
+    // function. A template's specialization (std::string) or a class inside one is declared once a
+    // field holds one by value, whose layout needs it, unless it is a generic's instance
+    // (nvrhi::static_vector<T, N>: genericInstance); a pointer to one alone stays Opaque.
     bool isDeclarable(const clang::RecordDecl *record);
+
+    // a template's specialization, or a class inside one, complete: declarable when a field holds it
+    bool isInstantiated(const clang::RecordDecl *record);
 
     // Why a C++ class can't be a @cpp class ("" if it can): it has to be polymorphic, not a
     // template, on a 64-bit target, with at most one base, itself bindable and not virtual - the
@@ -91,6 +95,24 @@ class TypeMapper
     void setSema(clang::Sema *value)
     {
         sema = value;
+    }
+
+    // A template written once as a generic tuple, `type static_vector8<T> = [...]`: a field holding
+    // one of its specializations is an instance of it, `static_vector8<IBindingSet | null>`.
+    struct Generic
+    {
+        std::string key;           // "generic:nvrhi::static_vector<8>": the template, its non-type arguments
+        std::string name;          // `static_vector8`: the template's name, then its non-type arguments
+        std::string qualifiedName; // `nvrhi::static_vector`
+        std::vector<std::string> parameters;
+        std::vector<Field> fields; // in terms of the parameters
+        const clang::Decl *at;     // the template, where its declaration is from
+    };
+
+    // The generics the specializations mapped so far are instances of, in the order they were met.
+    const std::vector<Generic> &generics() const
+    {
+        return genericList;
     }
 
     // Every struct and enum a mapped type has named, by key. The AST traversal does not reach a
@@ -123,8 +145,20 @@ class TypeMapper
     Slot unionSlot(std::string name, const clang::RecordDecl *unionRecord, uint64_t offset);
     // `[_0: u64, _1: u64, ...]`: `bytes` as words of the largest size up to `align` that fits
     static TsType rawWords(uint64_t bytes, uint64_t align);
-    // a template's specialization, or a class inside one, complete: declarable when a field holds it
-    bool isInstantiated(const clang::RecordDecl *record);
+    // A specialization a field holds as an instance of a generic: its template's type arguments are
+    // its parameters, wherever they are in its layout (a nested specialization holding one inlined:
+    // MSVC's std::vector, through _Compressed_pair and _Vector_val). A skip when it can't be one: a
+    // parameter its layout doesn't show (the raw words of an std::string's characters), an argument
+    // that isn't a type or an integer, or a layout other than its template's other specializations'.
+    TsType genericInstance(const clang::RecordDecl *definition);
+    // what a type argument is in a layout: a @cpp class itself (pointers to it are the class), any
+    // other type as a field of it is
+    TsType argumentType(clang::QualType argument);
+    // `type` with each part that is `arguments[i]` replaced by `parameters[i]` (`used[i]` set), a
+    // specialization holding one inlined
+    TsType abstractType(const TsType &type, const std::vector<TsType> &arguments, const std::vector<std::string> &parameters,
+                        std::vector<bool> &used, int depth);
+    const clang::RecordDecl *recordOfKey(const std::string &key);
 
     TsType mapType(clang::QualType type, Use use);
     std::string referTo(const clang::TagDecl *tag);
@@ -143,6 +177,10 @@ class TypeMapper
     llvm::StringSet<> referencedKeys;
     std::vector<const clang::RecordDecl *> owners; // structs whose fields are being mapped
     llvm::SmallPtrSet<const clang::RecordDecl *, 16> heldByValue; // instantiated records a field holds
+    std::vector<Generic> genericList;
+    llvm::StringMap<size_t> genericIndex;                         // a generic's key -> genericList
+    llvm::DenseMap<const clang::RecordDecl *, TsType> instances;  // a specialization -> its instance, or a skip
+    llvm::SmallPtrSet<const clang::RecordDecl *, 8> generalizing; // specializations being made instances
 };
 
 } // namespace tsbindgen

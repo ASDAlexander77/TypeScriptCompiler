@@ -87,8 +87,8 @@ TEST(NamespacedStruct, NestedInAClass)
     EXPECT_THAT(out, HasSubstr("declare function use(i: Reference<Inner> | null, o: Reference<Outer> | null): s32;"));
 }
 
-// A derived struct has its base's fields first; a template's specialization a field holds is
-// declared under a name of its arguments (LayoutTest.cpp)
+// A derived struct has its base's fields first; a template's specialization a field holds is an
+// instance of the template's generic tuple (LayoutTest.cpp)
 TEST(NamespacedStruct, DerivedAndSpecializationFields)
 {
     auto out = cpp("template <typename T> struct Vec { T *data; };\n"
@@ -99,8 +99,8 @@ TEST(NamespacedStruct, DerivedAndSpecializationFields)
                    "}\n"
                    "extern \"C\" void use(n::Derived *d, n::Holder *h);\n");
     EXPECT_THAT(out, HasSubstr("type Derived = [a: s32, b: s32];"));
-    EXPECT_THAT(out, HasSubstr("type Holder = [values: Vec_int];"));
-    EXPECT_THAT(out, HasSubstr("type Vec_int = [data: Reference<s32> | null];"));
+    EXPECT_THAT(out, HasSubstr("type Holder = [values: Vec<s32>];"));
+    EXPECT_THAT(out, HasSubstr("type Vec<T> = [data: Reference<T> | null];"));
     EXPECT_THAT(out, HasSubstr("declare function use(d: Reference<Derived> | null, h: Reference<Holder> | null): void;"));
 }
 

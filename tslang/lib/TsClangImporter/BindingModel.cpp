@@ -59,8 +59,21 @@ std::string renderType(const TsType &type, const std::function<std::string(const
     {
     case TsType::Kind::Builtin:
         return type.name;
-    case TsType::Kind::Named:
-        return nameOf(type.name);
+    case TsType::Kind::Named: {
+        auto text = nameOf(type.name);
+        if (!type.typeArguments.empty())
+        {
+            std::string arguments;
+            for (auto &argument : type.typeArguments)
+            {
+                arguments += (arguments.empty() ? "" : ", ") + renderType(argument, nameOf);
+            }
+
+            text += "<" + arguments + ">";
+        }
+
+        return text;
+    }
     case TsType::Kind::Reference:
         return "Reference<" + renderType(type.pointee.front(), nameOf) + ">";
     case TsType::Kind::Tuple: {
@@ -77,6 +90,16 @@ std::string renderType(const TsType &type, const std::function<std::string(const
     return type.name;
 }
 
+bool sameType(const TsType &a, const TsType &b)
+{
+    auto same = [](const std::vector<TsType> &x, const std::vector<TsType> &y) {
+        return x.size() == y.size() && std::equal(x.begin(), x.end(), y.begin(), sameType);
+    };
+
+    return a.kind == b.kind && a.name == b.name && a.nullable == b.nullable && a.fieldNames == b.fieldNames &&
+           a.skipReason == b.skipReason && same(a.pointee, b.pointee) && same(a.typeArguments, b.typeArguments);
+}
+
 void collectKeys(const TsType &type, std::vector<std::string> &keys)
 {
     if (type.kind == TsType::Kind::Named && std::find(keys.begin(), keys.end(), type.name) == keys.end())
@@ -87,6 +110,11 @@ void collectKeys(const TsType &type, std::vector<std::string> &keys)
     for (auto &pointee : type.pointee)
     {
         collectKeys(pointee, keys);
+    }
+
+    for (auto &argument : type.typeArguments)
+    {
+        collectKeys(argument, keys);
     }
 }
 
@@ -129,7 +157,7 @@ bool isTsBuiltinTypeName(const std::string &name)
         "i8",      "i16",     "i32",     "i64",     "u8",      "u16",    "u32",    "u64",     "s8",
         "s16",     "s32",     "s64",     "f16",     "f32",     "f64",    "f128",   "half",    "float",
         "double",  "boolean", "number",  "string",  "bigint",  "any",    "void",   "never",   "unknown",
-        "object",  "symbol",  "undefined", "null",  "Opaque",  "Reference", "TypeOf", "Array", "String",
+        "object",  "symbol",  "undefined", "null",  "Opaque",  "Ref",    "Reference", "TypeOf", "Array", "String",
         "Number",  "Boolean", "Object",  "Function"};
 
     for (auto *builtin : builtins)
