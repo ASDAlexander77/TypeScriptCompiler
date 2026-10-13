@@ -23,4 +23,9 @@ function main() {
 
     const small = fx_make_square(2);
     print(square.bigger(small), small.bigger(square));
+
+    // fx::Batch: a SmallVec<Shape *, 3> (its private base's array, then its count), a union as raw
+    // words ('A' in the buffer's first byte), a run of bitfields as a raw word (flags 3, mode 2)
+    let batch: Batch = [[[square, small, null], 2], [65, 0], [3 + 2 * 8], 1000];
+    print(shape.sum(Ref(batch)));
 }

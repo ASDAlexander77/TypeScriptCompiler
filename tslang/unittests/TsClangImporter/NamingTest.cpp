@@ -82,3 +82,13 @@ TEST(Naming, AsmLabelIsTheSymbol)
     EXPECT_THAT(text("int f(int x) __asm__(\"real_f\");\n"),
                 HasSubstr("@linkname(\"real_f\") declare function f(x: s32): s32;"));
 }
+
+// an operator has no name to declare, C linkage or not (guiddef.h's operator== for GUID)
+TEST(Naming, OperatorWithCLinkageIsLeftOut)
+{
+    auto out = generate("struct G { int a; };\nextern \"C\" { bool operator==(const G &x, const G &y); int other(void); }\n",
+                        {}, windowsTarget, {}, "c++")
+                   .text;
+    EXPECT_THAT(out, HasSubstr("declare function other(): s32;"));
+    EXPECT_THAT(out, testing::Not(HasSubstr("declare function (")));
+}

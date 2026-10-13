@@ -360,8 +360,9 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
             return true;
         }
 
-        // C++ proper is v2: only what has C linkage has a C symbol
-        if (context.getLangOpts().CPlusPlus && !function->isExternC())
+        // C++ proper is v2: only what has C linkage has a C symbol. An operator has no name to
+        // declare, C linkage or not (guiddef.h's operator== for GUID).
+        if (context.getLangOpts().CPlusPlus && (!function->isExternC() || !function->getIdentifier()))
         {
             return true;
         }

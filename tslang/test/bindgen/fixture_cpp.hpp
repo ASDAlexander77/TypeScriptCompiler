@@ -52,6 +52,38 @@ struct Extent
     }
 };
 
+class Shape;
+
+// a container shaped as nvrhi::static_vector: a private array base, then a count. A field holding
+// one has tsbindgen declare the specialization (SmallVec_Shape_3).
+template <typename T, int N> struct Storage
+{
+    T items[N];
+};
+
+template <typename T, int N> struct SmallVec : private Storage<T, N>
+{
+    int64_t count;
+    T at(int64_t index) const
+    {
+        return this->items[index];
+    }
+};
+
+// with a union of a buffer and a pointer, as an std::string's, and a run of bitfields: raw words
+struct Batch
+{
+    SmallVec<Shape *, 3> shapes;
+    union
+    {
+        char buf[16];
+        char *ptr;
+    } name;
+    uint32_t flags : 3;
+    uint32_t mode : 5;
+    int32_t total;
+};
+
 class FX_API Shape
 {
   public:
@@ -66,6 +98,7 @@ class FX_API Shape
     virtual Handle handle();
     virtual Pair pair(int32_t x);
     virtual int32_t fits(const Extent &extent, const Extent *limit);
+    virtual int32_t sum(const Batch &batch);
 
     // non-virtual: called by its mangled symbol
     int32_t id(int32_t x);

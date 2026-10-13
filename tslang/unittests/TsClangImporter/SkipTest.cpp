@@ -19,13 +19,14 @@ TEST(Skip, UnionIsSkippedButItsPointerUsersStay)
     EXPECT_THAT(out.warnings, Contains("skipped Value: union"));
 }
 
-TEST(Skip, StructWithABitfieldOrAnUnmappableField)
+// A field tsbindgen can't spell skips its struct; bitfields and arrays are spelled (LayoutTest.cpp)
+TEST(Skip, StructWithAnUnmappableField)
 {
-    auto out = text("struct Flags { unsigned a : 1; };\nstruct Wide { long double x; };\n"
-                    "struct Grid { int cells[4]; };\n");
-    EXPECT_THAT(out, HasSubstr("// skipped: Flags \xE2\x80\x94 bitfield 'a'"));
+    auto out = text("struct Wide { long double x; };\nstruct Huge { char bytes[4096]; };\n"
+                    "struct Flexible { int n; int items[]; };\n");
     EXPECT_THAT(out, HasSubstr("// skipped: Wide \xE2\x80\x94 field 'x': long double"));
-    EXPECT_THAT(out, HasSubstr("// skipped: Grid \xE2\x80\x94 field 'cells': array"));
+    EXPECT_THAT(out, HasSubstr("// skipped: Huge \xE2\x80\x94 field 'bytes': array of 4096 elements"));
+    EXPECT_THAT(out, HasSubstr("// skipped: Flexible \xE2\x80\x94 field 'items': array"));
 }
 
 TEST(Skip, PackedStruct)

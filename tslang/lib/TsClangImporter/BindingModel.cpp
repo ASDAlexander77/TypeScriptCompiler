@@ -94,7 +94,8 @@ std::string nameFromKey(const std::string &key)
 {
     auto colon = key.find(':');
     auto name = colon == std::string::npos ? key : key.substr(colon + 1);
-    auto scope = name.rfind("::");
+    // the scope before the template arguments: `nvrhi::static_vector<nvrhi::IBindingSet *, 8>`
+    auto scope = name.rfind("::", name.find('<'));
     return scope == std::string::npos ? name : name.substr(scope + 2);
 }
 
