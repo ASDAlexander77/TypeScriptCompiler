@@ -426,6 +426,7 @@ tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner
 # not in TSLANG_CORPUS: a @cpp class is an error under rc (cppvtable/memory_model.ts)
 tslang_add_test(NAME test-compile-00-cppvtable-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-compile-00-cpp-slot COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
+tslang_add_test(NAME test-compile-00-cpp-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-compile-00-strict-equals-mismatched-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-compile-00-any-number-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -966,6 +967,7 @@ tslang_add_test(NAME test-jit-00-union-nullable-value COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
 tslang_add_test(NAME test-jit-00-cppvtable-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-jit-00-cpp-slot COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
+tslang_add_test(NAME test-jit-00-cpp-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2771,6 +2773,9 @@ set(cppvtable_errors
     "slot_override|@slot: 'first' overrides slot 0 of a base class, not slot 2"
     "slot_argument|@slot takes the slot number, an integer from 0"
     "slot_plain_class|@slot is for a method of a @cpp class"
+    "overload_no_match|no overload of 'write' takes these arguments \\(string\\). it has:"
+    "overload_ambiguous|the call of 'write' is ambiguous: its arguments \\(s32, s32\\) fit more than one of:"
+    "overload_override|'write' is overloaded in a base class: an override names the slot it overrides, @slot\\(N\\)"
     "nonvirtual_struct|a C\\+\\+ non-virtual method \\(a @cpp class's, without @slot\\) can't return a struct yet")
 foreach(cppvtable_error ${cppvtable_errors})
     string(REPLACE "|" ";" cppvtable_error "${cppvtable_error}")
@@ -2843,12 +2848,13 @@ foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-
                          PROPERTIES PASS_REGULAR_EXPRESSION "i1 zeroext %[0-9]+, i8 zeroext %[0-9]+, i8 signext %[0-9]+\\).*\\(ptr sret\\(\\{ ptr \\}\\) %[0-9]+, ptr %[0-9]+, i32 3\\)"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
     # C++ methods implemented here (abi_itanium.ts' Counter): the vtable is the C++ one's slots and
-    # nothing else, the two destructors left null, and a bool result is extended for C++ callers
+    # nothing else, the two destructors left null, a bool result is extended for C++ callers, and the
+    # two overloads of pick are in their slots, in declaration order
     add_test(NAME test-compile-cppvtable-itanium-implementation-${cppvtable_itanium_triple}
              COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=${cppvtable_itanium_triple}
                      "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
     set_tests_properties(test-compile-cppvtable-itanium-implementation-${cppvtable_itanium_triple}
-                         PROPERTIES PASS_REGULAR_EXPRESSION "@Counter\\.\\.vtbl = private global \\{ ptr, ptr, ptr, ptr, ptr \\} \\{ ptr null, ptr null, ptr @Counter\\.message, ptr @Counter\\.count, ptr @Counter\\.isEven \\}.*define zeroext i1 @Counter\\.isEven"
+                         PROPERTIES PASS_REGULAR_EXPRESSION "@Counter\\.\\.vtbl = private global \\{ ptr, ptr, ptr, ptr, ptr, ptr, ptr \\} \\{ ptr null, ptr null, ptr @Counter\\.message, ptr @Counter\\.count, ptr @Counter\\.isEven, ptr @Counter\\.pick, ptr @\"Counter\\.pick#1\" \\}.*define zeroext i1 @Counter\\.isEven"
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 

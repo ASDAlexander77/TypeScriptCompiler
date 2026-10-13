@@ -20,9 +20,15 @@ class Methods {
     @slot(4) two(x: s32): Two;
     @slot(5) plain(a: s32, b: s32): s32;
     @slot(6) narrow(b: boolean, u: u8, s: s8): s32;
+    // C++ overloads, each with its slot, in declaration order
+    @slot(7) over(x: s32): s32;
+    @slot(8) over(x: f64): s32;
+    @slot(9) over(a: s32, b: s32): s32;
     // a C++ non-virtual method (no @slot), called by its symbol
     @linkname("_ZN7Methods6scaledEi")
     scaled(x: s32): s32;
+    @linkname("_ZN7Methods6scaledEd")
+    scaled(x: f64): s32;
 }
 
 // A C++ interface (abi_host.cpp's Callback) implemented here: C++ calls Counter's methods through the
@@ -34,6 +40,9 @@ class Callback {
     @slot(2) message(severity: u8, text: string): void;
     @slot(3) count(): s32;
     @slot(4) isEven(x: s32): boolean;
+    // C++ overloads, in declaration order
+    @slot(5) pick(x: s32): s32;
+    @slot(6) pick(x: f64): s32;
 }
 
 @cpp
@@ -60,6 +69,15 @@ class Counter extends Callback {
         return x % 2 == 0;
     }
 
+    // overloads, each implementing its slot: C++ picks one, and so does tslang
+    @slot(5) pick(x: s32): s32 {
+        return x + this.start;
+    }
+
+    @slot(6) pick(x: f64): s32 {
+        return <s32>(x * 100);
+    }
+
     // TypeScript's own (no @slot, overriding nothing): not in the vtable C++ calls through
     doubled(): s32 {
         return this.count() * 2;
@@ -68,6 +86,7 @@ class Counter extends Callback {
 
 declare function abi_call_callback(callback: Opaque): s32;
 declare function abi_callback_is_even(callback: Opaque, x: s32): s32;
+declare function abi_callback_pick(callback: Opaque): s32;
 
 // arguments made from a wider value: the register's upper bits aren't zero
 function callNarrow(methods: Methods, big: s32): s32 {
@@ -84,6 +103,16 @@ function main() {
     assert(methods.plain(6, 7) == 49, "a number");
     assert(callNarrow(methods, 0x1234) == 1000 + 0x34 * 10 - 3, "narrow arguments, extended");
     assert(methods.scaled(3) == 307, "a non-virtual method, by its symbol");
+    const half: number = 0.5;
+    assert(methods.scaled(half) == 507, "its overload, picked by the argument");
+
+    // C++ overloads: one name, the slot picked by the arguments
+    const small: u8 = 4;
+    assert(methods.over(5) == 1005, "over(int)");
+    assert(methods.over(small) == 1004, "over(int), from a u8");
+    assert(methods.over(2.5) == 2025, "over(double)");
+    assert(methods.over(half) == 2005, "over(double), from a number");
+    assert(methods.over(6, 7) == 3042, "over(int, int)");
 
     const counter = new Counter(5);
     assert(abi_call_callback(<Opaque>counter) == 10 && counter.unexpected == 0, "C++ calls the methods implemented here");
@@ -91,6 +120,8 @@ function main() {
     const callback: Callback = counter;
     assert(callback.count() == 10, "and tslang through the C++ interface");
     assert(counter.doubled() == 20, "a method of TypeScript's own");
+    assert(abi_callback_pick(<Opaque>counter) == 80025, "C++ calls the overloads implemented here");
+    assert(counter.pick(1) == 6 && counter.pick(0.5) == 50, "and tslang picks them too");
 
     print("done.");
 }

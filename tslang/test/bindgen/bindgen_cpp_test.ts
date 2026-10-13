@@ -8,7 +8,7 @@ function main() {
     print(square.area());                   // a virtual method, overridden in C++
     square.scale(2);                        // scale(int32_t)
     print(square.area());
-    square.scale_2(0.5);                    // scale(double), the second overload
+    square.scale(0.5);                      // scale(double): an overload, picked by the argument
     print(square.area());
 
     const shape: Shape = square;

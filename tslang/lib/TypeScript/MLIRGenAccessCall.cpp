@@ -1707,7 +1707,241 @@ namespace mlirgen
             return mlir::success();
         }
 
+        if (!genContext.allowPartialResolve)
+        {
+            actualFuncRefValue = resolveCppOverload(location, actualFuncRefValue, operands, genContext);
+            if (!actualFuncRefValue)
+            {
+                return mlir::failure();
+            }
+        }
+
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
+    }
+
+    // A call of a C++ overloaded method of a @cpp class (mlirGenClassCppOverloadNames): the member
+    // access found the first method of that name; this picks the one the arguments fit best, from
+    // the class and its bases, as C++ would at compile time. funcRefValue itself for any other
+    // callee; null, with an error, when no overload fits or two fit as well.
+    mlir::Value MLIRGenImpl::resolveCppOverload(mlir::Location location, mlir::Value funcRefValue,
+                                                mlir::ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    {
+        mlir::Value thisValue;
+        StringRef identifier;
+        if (auto virtualRef = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            thisValue = virtualRef.getThisVal();
+            identifier = virtualRef.getIdentifier();
+        }
+        else if (auto symbolRef = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            thisValue = symbolRef.getThisVal();
+            identifier = symbolRef.getIdentifier();
+        }
+
+        if (!thisValue || !isCppVTableMethod(funcRefValue))
+        {
+            return funcRefValue;
+        }
+
+        // a method found in a base class is called on the object cast to it: the overloads are those
+        // of the object's own class
+        if (auto castOp = thisValue.getDefiningOp<mlir_ts::CastOp>())
+        {
+            if (isa<mlir_ts::ClassType>(castOp.getIn().getType()))
+            {
+                thisValue = castOp.getIn();
+            }
+        }
+
+        auto classType = dyn_cast<mlir_ts::ClassType>(thisValue.getType());
+        if (!classType)
+        {
+            return funcRefValue;
+        }
+
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (!classInfo)
+        {
+            return funcRefValue;
+        }
+
+        auto name = cppOverloadedName(identifier.rsplit('.').second);
+
+        // the methods of that name, the most derived class first; an override (the same slot) hides
+        // the method it overrides
+        struct Candidate
+        {
+            ClassInfo::TypePtr owner;
+            int methodIndex;
+        };
+
+        SmallVector<Candidate> candidates;
+        llvm::SmallDenseSet<int> slots;
+        llvm::StringSet<> names;
+        std::function<void(ClassInfo::TypePtr)> collect = [&](ClassInfo::TypePtr owner) {
+            for (auto [index, method] : llvm::enumerate(owner->methods))
+            {
+                if (method.isStatic || cppOverloadedName(method.name) != name)
+                {
+                    continue;
+                }
+
+                // an override has the name of the method it overrides (mlirGenClassCppOverloadNames),
+                // or its slot
+                auto hidden = !names.insert(method.name).second;
+                hidden |= method.cppSlot >= 0 && !slots.insert(method.cppSlot).second;
+                if (hidden)
+                {
+                    continue;
+                }
+
+                candidates.push_back({owner, static_cast<int>(index)});
+            }
+
+            for (auto &base : owner->baseClasses)
+            {
+                collect(base);
+            }
+        };
+        collect(classInfo);
+
+        if (candidates.size() < 2)
+        {
+            return funcRefValue;
+        }
+
+        // how well an argument fits a parameter: 3 its type, 2 an integer for an integer or a float
+        // for a float, 1 any other conversion, 0 none
+        auto fit = [&](mlir::Type argType, mlir::Type paramType) -> int {
+            if (argType == paramType)
+            {
+                return 3;
+            }
+
+            auto literalType = dyn_cast<mlir_ts::LiteralType>(argType);
+            auto baseType = literalType ? literalType.getElementType() : argType;
+            // `number` is a C `double`, as f64 is
+            auto isDouble = [](mlir::Type type) { return isa<mlir_ts::NumberType>(type) || type.isF64(); };
+            if (baseType == paramType || (isDouble(baseType) && isDouble(paramType)))
+            {
+                return 3;
+            }
+
+            // an integer for an integer, a float for a float, before a conversion between the two
+            // (C++ ranks a promotion or an integral conversion above a floating-integral one)
+            auto isFloat = [&](mlir::Type type) { return isDouble(type) || isa<mlir::FloatType>(type); };
+            if ((isa<mlir::IntegerType>(baseType) && isa<mlir::IntegerType>(paramType)) || (isFloat(baseType) && isFloat(paramType)))
+            {
+                return 2;
+            }
+
+            if ((isPromotableNumeric(baseType) && isPromotableNumeric(paramType)) || mth.canCastFromTo(location, baseType, paramType))
+            {
+                return 1;
+            }
+
+            return 0;
+        };
+
+        auto bestScore = -1;
+        SmallVector<Candidate> best;
+        for (auto &candidate : candidates)
+        {
+            auto &method = candidate.owner->methods[candidate.methodIndex];
+            auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+            // input 0 is `this`
+            auto params = funcType.getInputs().drop_front();
+            if (operands.size() > params.size())
+            {
+                continue;
+            }
+
+            auto score = 0;
+            auto fits = true;
+            for (auto [index, param] : llvm::enumerate(params))
+            {
+                if (index >= operands.size())
+                {
+                    // a parameter left out has to take `undefined`
+                    fits &= isa<mlir_ts::OptionalType, mlir_ts::UndefinedType>(param);
+                    continue;
+                }
+
+                auto argFit = fit(operands[index].getType(), param);
+                fits &= argFit > 0;
+                score += argFit;
+            }
+
+            if (!fits)
+            {
+                continue;
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best.clear();
+            }
+
+            if (score == bestScore)
+            {
+                best.push_back(candidate);
+            }
+        }
+
+        auto describe = [&](auto &diagnostic) {
+            for (auto &candidate : candidates)
+            {
+                auto &method = candidate.owner->methods[candidate.methodIndex];
+                auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+                diagnostic << "\n  " << name << "(";
+                for (auto [index, param] : llvm::enumerate(funcType.getInputs().drop_front()))
+                {
+                    diagnostic << (index ? ", " : "") << to_print(param);
+                }
+
+                diagnostic << ")";
+            }
+        };
+
+        if (best.empty() || best.size() > 1)
+        {
+            auto diagnostic = emitError(location);
+            diagnostic << (best.empty() ? "no overload of '" : "the call of '") << name
+                       << (best.empty() ? "' takes these arguments (" : "' is ambiguous: its arguments (");
+            for (auto [index, operand] : llvm::enumerate(operands))
+            {
+                auto type = operand.getType();
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+                {
+                    type = literalType.getElementType();
+                }
+
+                diagnostic << (index ? ", " : "") << to_print(type);
+            }
+
+            diagnostic << (best.empty() ? "); it has:" : ") fit more than one of:");
+            describe(diagnostic);
+            return mlir::Value();
+        }
+
+        auto chosen = best.front();
+        auto &chosenMethod = chosen.owner->methods[chosen.methodIndex];
+        if (chosenMethod.funcName == identifier)
+        {
+            return funcRefValue;
+        }
+
+        // a base class's method takes the object cast to that class, as the member access does
+        auto resolved = ClassMethodAccess(chosen.owner, location, thisValue, chosen.methodIndex, chosen.owner != classInfo,
+                                          chosenMethod.accessLevel, genContext);
+        if (resolved && funcRefValue.use_empty())
+        {
+            funcRefValue.getDefiningOp()->erase();
+        }
+
+        return resolved;
     }
 
     ValueOrLogicalResult MLIRGenImpl::NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,

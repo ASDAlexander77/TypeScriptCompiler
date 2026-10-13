@@ -713,7 +713,7 @@ type Handle = [p: Opaque | null];
 class Shape { // geo::Shape
     @slot(1) area(): s32;
     @slot(3) scale(by: s32): void;
-    @slot(2) scale_2(by: f64): void;
+    @slot(2) scale(by: f64): void;
     @cppnontrivial
     @slot(4) handle(): [p: Opaque | null];
     @linkname("?id@Shape@geo@@QEAAHH@Z") id(x: s32): s32;
@@ -727,7 +727,7 @@ declare function make_square(side: s32): Square;
 ```
 
 - **Slots** are clang's: the destructor (slot 0 under MSVC, 0 and 1 under the Itanium ABI) and methods that aren't public are slots left out. A method overriding a base's is not declared again: the `@cpp` class's override keeps the base's slot.
-- **Overloads** get `_2`, `_3`, ... in declaration order, whatever order the ABI puts their slots in.
+- **Overloads** keep the C++ name, each with its own slot (or symbol), in whatever order the ABI puts the slots: a call picks the overload by its arguments, as C++ does (`shape.scale(2)`, `shape.scale(0.5)`). A method named as a field gets `_2`, `_3`, ...
 - **A pointer or a reference** to an object of a bound class is the class (`| null` for a pointer); a reference to a struct is a `Reference` to its tuple.
 - **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor.
 - **Fields** are declared when they are where a `@cpp` class puts them (after the vtable pointer and the base's storage).

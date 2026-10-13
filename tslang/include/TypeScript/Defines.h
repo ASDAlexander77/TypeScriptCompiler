@@ -202,6 +202,8 @@
 // @slot(N) on a method of a @cpp class: a C++ virtual method, slot N of the vtable (counted
 // from 0, a base class's slots included); a method without it isn't virtual (see MethodInfo::cppSlot)
 #define CPP_SLOT "slot"
+// The name of a C++ overload after the first one declared, `write#1` (see mlirGenClassCppOverloadNames)
+#define CPP_OVERLOAD_SEPARATOR "#"
 // On a call (CallIndirect, then CallInternal or Invoke): the index of the argument that is the hidden
 // pointer the callee returns a record through, which LowerToLLVM marks `sret` for the target to pass
 // it where the C++ ABI does (X8 on AArch64)

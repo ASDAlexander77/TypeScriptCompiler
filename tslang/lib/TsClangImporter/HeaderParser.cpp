@@ -513,13 +513,17 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
         }
 
         llvm::StringSet<> inherited;
+        llvm::StringSet<> inheritedMethods;
         if (base)
         {
             inherited = classNames[decl.base];
+            inheritedMethods = classMethodNames[decl.base];
         }
 
         auto &usedNames = classNames[key];
         usedNames = std::move(inherited);
+        auto &methodNames = classMethodNames[key];
+        methodNames = std::move(inheritedMethods);
 
         addClassFields(decl, definition, base);
         for (auto &field : decl.fields)
@@ -538,15 +542,18 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
                 continue;
             }
 
+            // C++ overloads keep the C++ name, each with its own @slot or @linkname: tslang picks one
+            // by the arguments. A field of the name makes it `_2`, `_3`, ...
             Method bound;
             bound.cppName = method->getName().str();
             bound.name = escapeReserved(bound.cppName);
-            for (auto overload = 2; usedNames.count(bound.name); ++overload)
+            for (auto suffix = 2; usedNames.count(bound.name) && !methodNames.count(bound.name); ++suffix)
             {
-                bound.name = escapeReserved(bound.cppName) + "_" + std::to_string(overload);
+                bound.name = escapeReserved(bound.cppName) + "_" + std::to_string(suffix);
             }
 
             usedNames.insert(bound.name);
+            methodNames.insert(bound.name);
             mapMethod(bound, method);
             decl.methods.push_back(std::move(bound));
         }
@@ -755,8 +762,10 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
     HeaderModel &model;
     llvm::StringSet<> keys;
     std::vector<std::pair<size_t, const clang::RecordDecl *>> pendingRecords;
-    // a @cpp class's TS member names, its base's included: a later overload gets `_2`, `_3`, ...
+    // a @cpp class's TS member names, its base's included: a method named as a field gets `_2`, ...
     llvm::StringMap<llvm::StringSet<>> classNames;
+    // those that are methods: an overload keeps the name
+    llvm::StringMap<llvm::StringSet<>> classMethodNames;
     // where a @cpp class's declared fields end, padded to its alignment, and that alignment (bits):
     // a derived class's fields follow
     llvm::DenseMap<const clang::CXXRecordDecl *, std::pair<uint64_t, uint64_t>> fieldsEnd;

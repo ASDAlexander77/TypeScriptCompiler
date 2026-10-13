@@ -46,14 +46,26 @@ struct Methods
     virtual int plain(int a, int b) { return a * b + value; }
     // narrow arguments: clang's code takes them as extended to 32 bits by the caller
     virtual int narrow(bool b, uint8_t u, int8_t s) { return (b ? 1000 : 0) + u * 10 + s; }
+    // overloads: MSVC groups them in its vtable, in reverse declaration order; the Itanium ABI
+    // keeps the declaration order
+    virtual int over(int x) { return 1000 + x; }
+    virtual int over(double x) { return 2000 + (int)(x * 10); }
+    virtual int over(int a, int b) { return 3000 + a * b; }
     // non-virtual: called by its symbol, ?scaled@Methods@@QEAAHH@Z or _ZN7Methods6scaledEi
     ABI_MEMBER_EXPORT int scaled(int x);
+    // and its overload, ?scaled@Methods@@QEAAHN@Z or _ZN7Methods6scaledEd
+    ABI_MEMBER_EXPORT int scaled(double x);
     int value = 7;
 };
 
 int Methods::scaled(int x)
 {
     return x * 100 + value;
+}
+
+int Methods::scaled(double x)
+{
+    return (int)(x * 1000) + value;
 }
 
 // implemented in tslang (abi_msvc.ts, abi_itanium.ts' Counter): C++ calls its methods through the
@@ -67,6 +79,9 @@ public:
     virtual void message(uint8_t severity, const char *text) = 0;
     virtual int count() = 0;
     virtual bool isEven(int x) = 0;
+    // overloads implemented in tslang
+    virtual int pick(int x) = 0;
+    virtual int pick(double x) = 0;
 };
 
 // two messages, then the count
@@ -75,6 +90,12 @@ ABI_EXPORT int abi_call_callback(Callback *callback)
     callback->message(2, "two");
     callback->message(3, "three");
     return callback->count();
+}
+
+// C++ picks the overload: pick(int), then pick(double)
+ABI_EXPORT int abi_callback_pick(Callback *callback)
+{
+    return callback->pick(3) * 10000 + callback->pick(0.25);
 }
 
 // a bool result, as C++ reads it

@@ -177,6 +177,12 @@ namespace mlirgen
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessedStorageClass, genContext);
 
+        // the base classes are known now, and no method has been named yet
+        if (newClassPtr->isCppVTable)
+        {
+            mlirGenClassCppOverloadNames(classDeclarationAST, newClassPtr, classGenContext);
+        }
+
         if (mlir::failed(mlirGenClassCppVTableCheck(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
@@ -392,6 +398,129 @@ namespace mlirgen
         }
 
         return newClassPtr;
+    }
+
+    // C++ overloads: a @cpp class may declare one name several times, each a method of its own (its
+    // own @slot or @linkname). Methods are known by name, so an overload is renamed `name#1`,
+    // `name#2`, ... - `#` is in no identifier - and a call of `name` picks one by its arguments
+    // (resolveCppOverload). DeclarationPrinter prints the name before the `#`.
+    //
+    // A method in the slot of a base class's overload takes that overload's name, which is how it
+    // overrides it; any other method whose name is taken - by an earlier declaration here, or, with
+    // a @slot of its own, by a base class's method - takes the next free `name#N`. Run again on the
+    // same declaration (discovery, an import), it leaves the names as they are.
+    void MLIRGenImpl::mlirGenClassCppOverloadNames(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                   const GenContext &genContext)
+    {
+        struct BaseMethod
+        {
+            std::string name;
+            int slot;
+        };
+
+        llvm::StringMap<SmallVector<BaseMethod>> baseMethods;
+        std::function<void(ClassInfo::TypePtr)> collect = [&](ClassInfo::TypePtr classInfo) {
+            for (auto &base : classInfo->baseClasses)
+            {
+                for (auto &method : base->methods)
+                {
+                    if (!method.isStatic)
+                    {
+                        baseMethods[cppOverloadedName(method.name)].push_back({method.name, method.cppSlot});
+                    }
+                }
+
+                collect(base);
+            }
+        };
+        collect(newClassPtr);
+
+        auto isBaseName = [&](StringRef name) {
+            auto it = baseMethods.find(cppOverloadedName(name));
+            return it != baseMethods.end()
+                && llvm::any_of(it->second, [&](BaseMethod &method) { return method.name == name; });
+        };
+
+        SmallVector<MethodDeclaration> methods;
+        llvm::StringSet<> ownNames;
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (classMember == SyntaxKind::MethodDeclaration && !hasModifier(classMember, SyntaxKind::StaticKeyword)
+                && classMember.as<MethodDeclaration>()->name == SyntaxKind::Identifier)
+            {
+                auto methodDeclaration = classMember.as<MethodDeclaration>();
+                methods.push_back(methodDeclaration);
+                auto name = MLIRHelper::getName(methodDeclaration->name);
+                if (name.find(CPP_OVERLOAD_SEPARATOR) != std::string::npos)
+                {
+                    ownNames.insert(name);
+                }
+            }
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto rename = [&](MethodDeclaration methodDeclaration, StringRef newName) {
+            auto renamed = nf.createIdentifier(stows(newName.str()));
+            renamed->pos = methodDeclaration->name->pos;
+            renamed->_end = methodDeclaration->name->_end;
+            methodDeclaration->name = renamed;
+        };
+
+        for (auto methodDeclaration : methods)
+        {
+            auto name = MLIRHelper::getName(methodDeclaration->name);
+            if (name.find(CPP_OVERLOAD_SEPARATOR) != std::string::npos)
+            {
+                continue;
+            }
+
+            auto slot = getCppSlot(methodDeclaration, genContext);
+            if (slot >= 0)
+            {
+                // overriding a base class's overload: its name
+                auto it = baseMethods.find(name);
+                if (it != baseMethods.end())
+                {
+                    auto overridden = llvm::find_if(it->second, [&](BaseMethod &method) { return method.slot == slot; });
+                    if (overridden != it->second.end())
+                    {
+                        if (overridden->name != name)
+                        {
+                            rename(methodDeclaration, overridden->name);
+                        }
+
+                        ownNames.insert(overridden->name);
+                        continue;
+                    }
+                }
+            }
+
+            // a method without @slot keeps a base class's name: it overrides it by name, or is
+            // reported (mlirGenClassCppVTableCheck)
+            auto taken = ownNames.contains(name) || (slot >= 0 && isBaseName(name));
+            if (!taken)
+            {
+                ownNames.insert(name);
+                continue;
+            }
+
+            for (auto index = 1;; index++)
+            {
+                auto candidate = name + CPP_OVERLOAD_SEPARATOR + std::to_string(index);
+                if (!ownNames.contains(candidate) && !isBaseName(candidate))
+                {
+                    rename(methodDeclaration, candidate);
+                    ownNames.insert(candidate);
+                    break;
+                }
+            }
+        }
+    }
+
+    // The name a C++ overload was declared with: `write#1` is `write`
+    StringRef MLIRGenImpl::cppOverloadedName(StringRef methodName)
+    {
+        return methodName.split(CPP_OVERLOAD_SEPARATOR).first;
     }
 
     // MSVC returns a C++ record (struct, class - RefCountPtr<T> too) from an instance method through
@@ -664,12 +793,19 @@ namespace mlirgen
 
                 auto methodName = getCppMethodName(classMember, genContext);
                 auto overrides = isCppBaseSlot(newClassPtr, methodName);
+                if (slot < 0 && overrides && isCppBaseSlot(newClassPtr, (cppOverloadedName(methodName) + CPP_OVERLOAD_SEPARATOR "1").str()))
+                {
+                    // by name, it would take the slot of the first of them
+                    error(memberLocation) << "'" << cppOverloadedName(methodName) << "' is overloaded in a base class: an override "
+                                          << "names the slot it overrides, @" CPP_SLOT "(N)";
+                    continue;
+                }
                 if (slot < 0 && !overrides)
                 {
                     auto hasBody = static_cast<bool>(classMember.as<MethodDeclaration>()->body);
                     if (hasModifier(classMember, SyntaxKind::AbstractKeyword))
                     {
-                        error(memberLocation) << "the abstract method '" << methodName << "' of a @" CPP_VTABLE
+                        error(memberLocation) << "the abstract method '" << cppOverloadedName(methodName) << "' of a @" CPP_VTABLE
                                               << " class needs @" CPP_SLOT "(N), its vtable slot";
                     }
                     else if (!hasBody && !newClassPtr->isImport && !declarationMode)
@@ -681,7 +817,7 @@ namespace mlirgen
 
                         if (!hasLinkName)
                         {
-                            error(memberLocation) << "'" << methodName << "' has no @" CPP_SLOT ", so it isn't virtual: give a "
+                            error(memberLocation) << "'" << cppOverloadedName(methodName) << "' has no @" CPP_SLOT ", so it isn't virtual: give a "
                                                   << "C++ virtual method its slot, @" CPP_SLOT "(N), or a non-virtual one its "
                                                   << "symbol, @" LINK_NAME "(\"...\")";
                         }

@@ -13,7 +13,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 2 | The error for (1) pointed at line 1, column 1 of the base class | bug | **moot**: nothing synthesized fails any more; an explicit bad `super()` is reported at the call |
 | 3 | `u64` `<<` shifted by the count modulo 32 | bug | **fixed** |
 | 4 | `Ref<string>` field with a `null` initializer rejected | question | **answered**: declare it `Ref<string> \| null` |
-| 5 | `@cppvtable` overload naming (C++ overloads need distinct TypeScript names) | open | **addressed** on branch `cppvtable-slot`: `@cpp` + `@slot(N)` (docs/cpp-classes.md) |
+| 5 | `@cppvtable` (now `@cpp`) overload naming (C++ overloads need distinct TypeScript names) | open | **fixed**: `@slot(N)` (#561), slots from tsbindgen (#562), and overloads under one name, picked by the arguments (this PR) |
 | 6 | C `string` return values keep the raw `char*` (no copy) | open | **fixed**: copied at the call (this PR; `Opaque` is the raw pointer) |
 | 7 | `Opaque` compared with `Opaque \| null` crashed the compiler | - | **fixed** by #536 (re-checked with the original drawScene shape) |
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
@@ -111,6 +111,12 @@ From the notes on TypeScriptCompiler PR #550 (the `@cppvtable` decorator): C++ o
 interface method need distinct TypeScript names, and the MSVC slot order of overloads must be checked by
 hand (`cl /d1reportSingleClassLayout<Class>`). A way to name the C++ overload (or a tool that prints the
 slot map) would remove that manual step. See `docs/cppvtable-classes.md`. Not re-checked.
+
+**Fixed**: `@cppvtable` is now `@cpp`, and each virtual method names its slot with `@slot(N)` (#561), which
+tsbindgen takes from clang (#562), MSVC's reversed overload order included. C++ overloads are now declared
+under the C++ name, each with its own `@slot` or `@linkname`, and a call picks one by its arguments as C++
+does (`methods.over(5)`, `methods.over(2.5)`); no fit, or two equal fits, is an error listing the
+overloads. tsbindgen no longer writes `_2`, `_3` (docs/cpp-classes.md).
 
 ### 6. C `string` return values are not copied
 
