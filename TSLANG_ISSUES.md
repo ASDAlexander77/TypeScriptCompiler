@@ -18,6 +18,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 7 | `Opaque` compared with `Opaque \| null` crashed the compiler | - | **fixed** by #536 (re-checked with the original drawScene shape) |
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
 | 9-12 | Bool const arrays, `Math.max`, `f32` array literal, `let x = 0` | - | fixed (#537, DefaultLib#31, works, #544 warning) |
+| 13 | A generic function's `T` isn't inferred from an argument of a generic tuple alias (`Vec<T>`) | - | open (pre-alpha100) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -113,6 +114,31 @@ lifetime tracking. A C helper that reused one `std::string` buffer for several c
 to TypeScript later; the project now returns pointers to storage that lives as long as the owning object.
 Decide whether this is by design; if so, the C interop docs should say the string must outlive its use,
 otherwise copying on return (or an explicit borrowed annotation) would be safer. Not re-checked.
+
+### 13. `T` not inferred from a generic tuple alias argument
+
+Found on pre-alpha100, writing `stdVectorSize<T>(items: vector<T>)` for native_ts_graphics' NVRHI
+bindings (`vector<T>` a generic tuple alias, as tsbindgen now writes C++ template specializations).
+A call with a `Vec<Item>` argument doesn't infer `T`; giving it explicitly works:
+
+```ts
+type Vec<T> = [first: Ref<T> | null, last: Ref<T> | null];
+type Item = [id: s32, size: s32];
+
+function count<T>(v: Vec<T>): int {
+    return <int>((<index><Opaque>v.last - <index><Opaque>v.first) / sizeof<T>());
+}
+
+function main() {
+    let items: Item[] = [[1, 2], [3, 4]];
+    const v: Vec<Item> = [Ref(items[0]), <Ref<Item>><Opaque>(<index><Opaque>Ref(items[0]) + 2 * sizeof<Item>())];
+    print(count<Item>(v));  // 2
+    print(count(v));        // error: not all types could be inferred
+}
+```
+
+TypeScript infers `T = Item` here (the alias is expanded and matched structurally). native_ts_graphics
+passes the type (`nvrhi.stdVectorSize<nvrhi.BindingSetItem>(...)`) until it is.
 
 ---
 
