@@ -674,7 +674,16 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
             auto *parameter = method->getParamDecl(index);
             auto parameterName = parameter->getName().empty() ? "p" + std::to_string(index)
                                                               : escapeReserved(parameter->getName().str());
-            auto type = mapper.map(parameter->getType(), TypeMapper::Use::Parameter);
+            // a record by value, which a virtual method's call passes as the C++ ABI does
+            auto byValueRecord = parameter->getType().getCanonicalType()->getAsRecordDecl() != nullptr;
+            if (byValueRecord && !method->isVirtual())
+            {
+                bound.skipReason = "parameter '" + parameterName + "': a non-virtual method taking a record by value isn't supported yet";
+                return;
+            }
+
+            auto type = byValueRecord ? mapper.mapRecordParameter(parameter->getType())
+                                      : mapper.map(parameter->getType(), TypeMapper::Use::Parameter);
             if (type.skipped())
             {
                 bound.skipReason = "parameter '" + parameterName + "': " + type.skipReason;

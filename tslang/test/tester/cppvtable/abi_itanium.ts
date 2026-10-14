@@ -5,6 +5,14 @@
 type Ptr = [p: Opaque | null];
 type Obj = [p: Opaque | null];
 type Two = [a: u64, b: Opaque | null];
+// records passed by value and returned (abi_host.cpp's S4 ... R12)
+type S4 = [a: u16, b: u8, c: u8];
+type S8 = [a: u32, b: u32];
+type S12 = [a: u32, b: u32, c: u32];
+type S16 = [a: u64, b: u32, c: u32];
+type S24 = [a: u64, b: u64, c: u64];
+type Flags = [a: boolean, b: boolean, c: boolean];
+type R12 = [a: u32, b: u32, c: u32];
 
 declare function abi_object(): Opaque;
 declare function abi_is_storage(p: Opaque | null, index: s32): s32;
@@ -24,6 +32,11 @@ class Methods {
     @slot(7) over(x: s32): s32;
     @slot(8) over(x: f64): s32;
     @slot(9) over(a: s32, b: s32): s32;
+    // records by value (as each ABI passes them), and returned
+    @slot(10) byValue(k: s32, a: S4, b: S8, c: S12, d: S16, e: S24, tail: s32): u64;
+    @slot(11) pair(d: S16, tail: s32): u64;
+    @slot(12) flags(x: s32): Flags;
+    @slot(13) r12(x: s32): R12;
     // a C++ non-virtual method (no @slot), called by its symbol
     @linkname("_ZN7Methods6scaledEi")
     scaled(x: s32): s32;
@@ -122,6 +135,17 @@ function main() {
     assert(counter.doubled() == 20, "a method of TypeScript's own");
     assert(abi_callback_pick(<Opaque>counter) == 80025, "C++ calls the overloads implemented here");
     assert(counter.pick(1) == 6 && counter.pick(0.5) == 50, "and tslang picks them too");
+
+    // records by value: in registers, by a pointer to a copy, on the stack, as the ABI passes each
+    let c: S12 = [7, 8, 9];
+    let e: S24 = [13, 14, 0x987654321];
+    assert(methods.byValue(1, [2, 3, 4], [5, 6], c, [0x123456789, 11, 12], e, 16) == 2320580378263, "records passed by value");
+    assert(c.a == 7 && e.a == 13, "the callee's copies, not the caller's records");
+    assert(methods.pair([0x123456789, 11, 12], 16) == 151488270538, "a 16-byte record by value");
+    const flags = methods.flags(5);
+    assert(flags.a && !flags.b && flags.c, "a record of three booleans returned");
+    const r12 = methods.r12(7);
+    assert(r12.a == 7 && r12.b == 14 && r12.c == 21, "a 12-byte record returned");
 
     print("done.");
 }

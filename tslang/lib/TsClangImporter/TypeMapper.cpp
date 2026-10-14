@@ -309,6 +309,93 @@ std::string TypeMapper::classSkipReason(const clang::CXXRecordDecl *record)
     return reason;
 }
 
+// Whether a type holds floating-point values: itself, a record's fields (its bases' too), an
+// array's elements
+static bool hasFloatingPoint(const clang::ASTContext &context, clang::QualType type)
+{
+    auto canonical = type.getCanonicalType();
+    if (canonical->isRealFloatingType())
+    {
+        return true;
+    }
+
+    if (auto *array = context.getAsArrayType(canonical))
+    {
+        return hasFloatingPoint(context, array->getElementType());
+    }
+
+    auto *record = canonical->getAsRecordDecl();
+    if (!record || !record->getDefinition())
+    {
+        return false;
+    }
+
+    auto *definition = record->getDefinition();
+    if (auto *cxxRecord = llvm::dyn_cast<clang::CXXRecordDecl>(definition))
+    {
+        for (auto &base : cxxRecord->bases())
+        {
+            if (hasFloatingPoint(context, base.getType()))
+            {
+                return true;
+            }
+        }
+    }
+
+    return llvm::any_of(definition->fields(), [&](const clang::FieldDecl *field) { return hasFloatingPoint(context, field->getType()); });
+}
+
+// The targets whose C++ ABI tslang passes records by value with, and returns them in registers
+// (TargetInfo::cppRecordAbi): MSVC x64, the Itanium ABI on x86-64 and AArch64
+static bool hasCppRecordAbi(const clang::ASTContext &context)
+{
+    auto &target = context.getTargetInfo();
+    auto arch = target.getTriple().getArch();
+    return target.getCXXABI().isMicrosoft() ? arch == llvm::Triple::x86_64
+                                            : arch == llvm::Triple::x86_64 || arch == llvm::Triple::aarch64;
+}
+
+TsType TypeMapper::mapRecordParameter(clang::QualType type)
+{
+    auto *record = type.getCanonicalType()->getAsRecordDecl();
+    if (record->isUnion())
+    {
+        return TsType::skip("union passed by value");
+    }
+
+    // a specialization (std::optional<T>) is instantiated for its layout
+    if (!record->getDefinition() && sema)
+    {
+        sema->isCompleteType(clang::SourceLocation(), type.getCanonicalType());
+    }
+
+    auto *definition = record->getDefinition();
+    if (!definition)
+    {
+        return TsType::skip("incomplete struct passed by value");
+    }
+
+    // (MSVC passes one with a destructor in registers too, the callee destroying its copy: of a
+    // RefCountPtr, a reference the caller never added)
+    auto *cxxDefinition = llvm::dyn_cast<clang::CXXRecordDecl>(definition);
+    if (!definition->canPassInRegisters() || (cxxDefinition && !cxxDefinition->isTriviallyCopyable()))
+    {
+        return TsType::skip("struct with a destructor or a copy constructor passed by value");
+    }
+
+    if (!hasCppRecordAbi(context))
+    {
+        return TsType::skip("struct passed by value: not done for this target's C++ ABI");
+    }
+
+    if (!context.getTargetInfo().getCXXABI().isMicrosoft() && hasFloatingPoint(context, type))
+    {
+        return TsType::skip("struct with floating-point fields passed by value");
+    }
+
+    return map(type, Use::Field);
+}
+
 TsType TypeMapper::mapRecordResult(clang::QualType type, bool &nonTrivial)
 {
     auto *record = type.getCanonicalType()->getAsRecordDecl();
@@ -337,7 +424,6 @@ TsType TypeMapper::mapRecordResult(clang::QualType type, bool &nonTrivial)
     uint64_t offset = 0;
     uint64_t maxAlign = 8;
     unsigned index = 0;
-    auto integerRegisterFields = true;
     for (auto *field : definition->fields())
     {
         auto fieldName = field->getName().str();
@@ -383,7 +469,6 @@ TsType TypeMapper::mapRecordResult(clang::QualType type, bool &nonTrivial)
                 return TsType::skip("record returned by value: field '" + fieldName + "': " + type.skipReason);
             }
 
-            integerRegisterFields &= fieldType->isIntegerType() && context.getTypeSize(fieldType) == 64;
         }
 
         auto align = context.getTypeAlign(field->getType());
@@ -406,14 +491,24 @@ TsType TypeMapper::mapRecordResult(clang::QualType type, bool &nonTrivial)
     }
 
     // MSVC returns any record through a hidden pointer, and so does the Itanium ABI one it can't
-    // pass in registers; a trivial one comes back in registers by its fields, which tslang does
-    // for one or two 8-byte integer or pointer fields, on x86-64 and AArch64
+    // pass in registers or of more than 16 bytes (@cppnontrivial, the pointer before `this`); a
+    // trivial one of up to 16 bytes comes back in registers, which tslang reads back as the
+    // record for integers and pointers, on x86-64 and AArch64 - not floating-point fields (SSE
+    // registers, an HFA's)
     if (!context.getTargetInfo().getCXXABI().isMicrosoft() && !nonTrivial)
     {
-        auto arch = context.getTargetInfo().getTriple().getArch();
-        if ((arch != llvm::Triple::x86_64 && arch != llvm::Triple::aarch64) || names.size() > 2 || !integerRegisterFields)
+        if (!hasCppRecordAbi(context))
         {
-            return TsType::skip("trivial record returned by value in registers by its fields");
+            return TsType::skip("record returned by value: not done for this target's C++ ABI");
+        }
+
+        if (context.getTypeSize(type) > 128)
+        {
+            nonTrivial = true;
+        }
+        else if (hasFloatingPoint(context, type))
+        {
+            return TsType::skip("trivial record with floating-point fields returned in registers");
         }
     }
 

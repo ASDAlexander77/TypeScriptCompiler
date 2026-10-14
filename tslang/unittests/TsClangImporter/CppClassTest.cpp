@@ -110,10 +110,55 @@ TEST(CppClass, RecordsReturnedByValue)
     auto linux = cpp(header, linuxTarget);
     EXPECT_THAT(linux, HasSubstr("    @cppnontrivial\n    @slot(2) make(x: s32): [p: Opaque | null];\n"));
     EXPECT_THAT(linux, HasSubstr("    @slot(4) two(): [a: u64, b: Opaque | null];\n"));
-    // the Itanium ABI returns a trivial record in registers by its fields, which tslang does for
-    // one or two 8-byte integer or pointer fields only
-    EXPECT_THAT(linux, HasSubstr("// skipped: three \xE2\x80\x94 result: trivial record returned by value in "
-                                 "registers by its fields"));
+    // the Itanium ABI returns a trivial record of up to 16 bytes in registers, which tslang reads
+    // back as the record
+    EXPECT_THAT(linux, HasSubstr("    @slot(5) three(): [a: s32, b: s32, c: s32];\n"));
+}
+
+// The Itanium ABI returns a trivial record of more than 16 bytes through a pointer before `this`,
+// as one with a destructor (@cppnontrivial); one of floating-point fields comes back in SSE
+// registers, which tslang doesn't do
+TEST(CppClass, RecordsReturnedInMemoryOrFloatRegisters)
+{
+    auto header = "struct Big { unsigned long long a, b, c; };\n"
+                  "struct Floats { float x; float y; };\n"
+                  "class Maker { public: virtual ~Maker(); virtual Big big() = 0; virtual Floats floats() = 0; };\n";
+    auto linux = cpp(header, linuxTarget);
+    EXPECT_THAT(linux, HasSubstr("    @cppnontrivial\n    @slot(2) big(): [a: u64, b: u64, c: u64];\n"));
+    EXPECT_THAT(linux, HasSubstr("// skipped: floats \xE2\x80\x94 result: trivial record with floating-point fields "
+                                 "returned in registers"));
+    // MSVC: both through the pointer after `this`
+    auto windows = cpp(header);
+    EXPECT_THAT(windows, HasSubstr("    @slot(1) big(): [a: u64, b: u64, c: u64];\n"));
+    EXPECT_THAT(windows, HasSubstr("    @slot(2) floats(): [x: f32, y: f32];\n"));
+}
+
+// A record a virtual method takes by value is its own type, which tslang passes as the ABI does;
+// one C++ can't pass in registers, a union, and (Itanium) one of floating-point fields are skipped,
+// and so is a non-virtual method taking one
+TEST(CppClass, RecordsPassedByValue)
+{
+    auto header = "struct Range { unsigned int first, count; unsigned int base, size; };\n"
+                  "struct Owned { void *p; ~Owned(); };\n"
+                  "union Either { int i; float f; };\n"
+                  "struct Floats { float x; float y; };\n"
+                  "class Taker { public: virtual ~Taker(); virtual void range(Range r, int tail) = 0;\n"
+                  "virtual void owned(Owned o) = 0; virtual void either(Either e) = 0; virtual void floats(Floats f) = 0;\n"
+                  "void plain(Range r); };\n";
+    for (auto target : {std::string(windowsTarget), std::string(linuxTarget)})
+    {
+        auto out = cpp(header, target);
+        EXPECT_THAT(out, HasSubstr("type Range = [first: u32, count: u32, base: u32, size: u32];"));
+        EXPECT_THAT(out, HasSubstr(") range(r: Range, tail: s32): void;\n"));
+        EXPECT_THAT(out, HasSubstr("// skipped: owned \xE2\x80\x94 parameter 'o': struct with a destructor or a copy "
+                                   "constructor passed by value"));
+        EXPECT_THAT(out, HasSubstr("// skipped: either \xE2\x80\x94 parameter 'e': union passed by value"));
+        EXPECT_THAT(out, HasSubstr("// skipped: plain \xE2\x80\x94 parameter 'r': a non-virtual method taking a record "
+                                   "by value isn't supported yet"));
+    }
+    EXPECT_THAT(cpp(header), HasSubstr(") floats(f: Floats): void;\n"));
+    EXPECT_THAT(cpp(header, linuxTarget), HasSubstr("// skipped: floats \xE2\x80\x94 parameter 'f': struct with "
+                                                    "floating-point fields passed by value"));
 }
 
 // A pointer or a reference to a @cpp class's object is the class; a C++ reference to anything

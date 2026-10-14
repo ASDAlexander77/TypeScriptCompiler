@@ -36,6 +36,16 @@ struct Two
 
 static char storage[64];
 
+// records passed by value (abi_msvc.ts, abi_itanium.ts' byValue, pair), as each ABI classifies them:
+struct S4 { uint16_t a; uint8_t b, c; };    // MSVC: a register, of 4 bytes; Itanium: one register
+struct S8 { uint32_t a, b; };               // MSVC: a register, of 8 bytes
+struct S12 { uint32_t a, b, c; };           // MSVC: a pointer to a copy; Itanium: two registers
+struct S16 { uint64_t a; uint32_t b, c; };  // SysV: two registers, or the stack if two don't remain
+struct S24 { uint64_t a, b, c; };           // MSVC, AAPCS64: a pointer to a copy; SysV: the stack
+// and returned: MSVC through a pointer after `this`; Itanium in RAX / X0, RAX:RDX / X0:X1
+struct Flags { bool a, b, c; };
+struct R12 { uint32_t a, b, c; };
+
 // MSVC returns every one of these records through a pointer after `this`
 struct Methods
 {
@@ -51,6 +61,20 @@ struct Methods
     virtual int over(int x) { return 1000 + x; }
     virtual int over(double x) { return 2000 + (int)(x * 10); }
     virtual int over(int a, int b) { return 3000 + a * b; }
+    // every field weighed by a prime of its own, so a field read from the wrong place shows; the
+    // copies changed, which the caller's records mustn't see
+    virtual uint64_t byValue(int k, S4 a, S8 b, S12 c, S16 d, S24 e, int tail)
+    {
+        uint64_t sum = k * 3ull + a.a * 5ull + a.b * 7ull + a.c * 11ull + b.a * 13ull + b.b * 17ull + c.a * 19ull + c.b * 23ull
+            + c.c * 29ull + d.a * 31ull + d.b * 37ull + d.c * 41ull + e.a * 43ull + e.b * 47ull + e.c * 53ull + tail * 59ull;
+        c.a = 0;
+        e.a = 0;
+        return sum;
+    }
+    // a 16-byte record when two registers remain (SysV)
+    virtual uint64_t pair(S16 d, int tail) { return d.a * 31ull + d.b * 37ull + d.c * 41ull + tail * 59ull; }
+    virtual Flags flags(int x) { return Flags{(x & 1) != 0, (x & 2) != 0, (x & 4) != 0}; }
+    virtual R12 r12(int x) { return R12{uint32_t(x), uint32_t(x * 2), uint32_t(x * 3)}; }
     // non-virtual: called by its symbol, ?scaled@Methods@@QEAAHH@Z or _ZN7Methods6scaledEi
     ABI_MEMBER_EXPORT int scaled(int x);
     // and its overload, ?scaled@Methods@@QEAAHN@Z or _ZN7Methods6scaledEd

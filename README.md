@@ -729,7 +729,8 @@ declare function make_square(side: s32): Square;
 - **Slots** are clang's: the destructor (slot 0 under MSVC, 0 and 1 under the Itanium ABI) and methods that aren't public are slots left out. A method overriding a base's is not declared again: the `@cpp` class's override keeps the base's slot.
 - **Overloads** keep the C++ name, each with its own slot (or symbol), in whatever order the ABI puts the slots: a call picks the overload by its arguments, as C++ does (`shape.scale(2)`, `shape.scale(0.5)`). A method named as a field gets `_2`, `_3`, ...
 - **A pointer or a reference** to an object of a bound class is the class (`| null` for a pointer); a reference to a struct is a `Reference` to its tuple.
-- **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor.
+- **A record returned by value** is a tuple with its layout, `@cppnontrivial` when it has a destructor or a copy constructor, or (Itanium) is more than 16 bytes; under the Itanium ABI one with floating-point fields is skipped.
+- **A record passed by value** to a virtual method is its own type (a tuple), which tslang passes as the C++ ABI does (docs/cpp-classes.md, "Structs passed by value"); one that isn't trivially copyable, a union, and (Itanium) one with floating-point fields are skipped, and so is a non-virtual method taking one.
 - **Fields** are declared when they are where a `@cpp` class puts them (after the vtable pointer and the base's storage).
 - **Left out, with a `// skipped:` line:** `inline` methods (no symbol to link to), struct parameters passed by value, and a non-virtual method returning a struct. Static methods and operators are left out silently.
 - **Not bound at all:** templates, classes with several bases or a virtual one, and 32-bit targets. A pointer to such a class stays `Opaque`.

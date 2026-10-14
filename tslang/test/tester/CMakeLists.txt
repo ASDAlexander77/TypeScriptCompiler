@@ -2858,6 +2858,37 @@ foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
+# Records passed by value as each ABI passes them (abi_host.cpp's byValue: 4, 8, 12, 16, 24 bytes,
+# then an int), on any host: MSVC x64 integers of 4 and 8 bytes, then pointers to copies; SysV the
+# 4- and 8-byte ones in a register each, the 12-byte one in two, the 16- and 24-byte ones on the
+# stack (`byval`: no two registers remain); AAPCS64 registers in pairs, the 24-byte one by a pointer
+add_test(NAME test-compile-cppvtable-records-msvc
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=x86_64-pc-windows-msvc
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_msvc.ts" -o -)
+set_tests_properties(test-compile-cppvtable-records-msvc
+                     PROPERTIES PASS_REGULAR_EXPRESSION "call i64 %[0-9]+\\(ptr %[0-9]+, i32 1, i32 %[0-9]+, i64 %[0-9]+, ptr %[0-9]+, ptr %[0-9]+, ptr %[0-9]+, i32 16\\)"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-records-x86_64-unknown-linux-gnu
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
+set_tests_properties(test-compile-cppvtable-records-x86_64-unknown-linux-gnu
+                     PROPERTIES PASS_REGULAR_EXPRESSION "call i64 %[0-9]+\\(ptr %[0-9]+, i32 1, i64 %[0-9]+, i64 %[0-9]+, i64 %[0-9]+, i64 %[0-9]+, ptr byval\\(\\[2 x i64\\]\\) align 8 %[0-9]+, ptr byval\\(\\[3 x i64\\]\\) align 8 %[0-9]+, i32 16\\).*call \\{ i64, i64 \\} %[0-9]+\\(ptr %[0-9]+, i32 7\\)"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+add_test(NAME test-compile-cppvtable-records-aarch64-unknown-linux-android29
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=aarch64-unknown-linux-android29
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_itanium.ts" -o -)
+set_tests_properties(test-compile-cppvtable-records-aarch64-unknown-linux-android29
+                     PROPERTIES PASS_REGULAR_EXPRESSION "call i64 %[0-9]+\\(ptr %[0-9]+, i32 1, i64 %[0-9]+, i64 %[0-9]+, \\[2 x i64\\] %[0-9]+, \\[2 x i64\\] %[0-9]+, ptr %[0-9]+, i32 16\\)"
+                                FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+# x86-64 Itanium: a record of floats by value (SSE registers) is an error, not a wrong call
+add_test(NAME test-compile-cppvtable-itanium-float-param
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none -mtriple=x86_64-unknown-linux-gnu
+                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/itanium_float_param.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-itanium-float-param.obj")
+set_tests_properties(test-compile-cppvtable-itanium-float-param
+                     PROPERTIES PASS_REGULAR_EXPRESSION "error: a record with floating-point fields passed by value to a C\\+\\+ method isn't supported on this target yet"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A @cpp class calling the methods of an object C++ made (cppvtable/abi_host.cpp), built by
 # the host's compiler: its vtable, and the way its methods return records, are that compiler's ABI -
 # MSVC's (abi_msvc.ts), or the Itanium one of g++ and clang on x86-64 and AArch64 (abi_itanium.ts) -
