@@ -44,6 +44,19 @@ struct TargetInfo
     // without them comes back in RAX:RDX / X0:X1, as a tuple is returned.
     bool hiddenReturnPointerBeforeThis = false;
 
+    // How the C++ ABI passes a record (a trivially copyable struct, a tuple) to a method by value,
+    // and returns one in registers (LowerToLLVM's lowerCppCallArgs, after clang's
+    // MicrosoftCXXABI / X86_64ABIInfo / AArch64ABIInfo): MSVC x64, the SysV x86-64 one, AAPCS64 -
+    // or none it does that for.
+    enum class CppRecordAbi
+    {
+        None,
+        MicrosoftX64,
+        SysVX86_64,
+        AAPCS64
+    };
+    CppRecordAbi cppRecordAbi = CppRecordAbi::None;
+
     static TargetInfo fromTriple(const llvm::Triple &target, const llvm::Triple &host)
     {
         TargetInfo info;
@@ -70,6 +83,9 @@ struct TargetInfo
         info.hiddenReturnPointerAfterThis = msvc;
         info.hiddenReturnPointerBeforeThis =
             !msvc && (target.getArch() == llvm::Triple::x86_64 || target.getArch() == llvm::Triple::aarch64);
+        info.cppRecordAbi = target.getArch() == llvm::Triple::x86_64 ? (msvc ? CppRecordAbi::MicrosoftX64 : CppRecordAbi::SysVX86_64)
+                            : target.getArch() == llvm::Triple::aarch64 && !msvc ? CppRecordAbi::AAPCS64
+                                                                                  : CppRecordAbi::None;
 
         return info;
     }

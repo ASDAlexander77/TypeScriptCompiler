@@ -79,8 +79,11 @@ errors and not warnings.
 | `-mm=rc` / `-mm=own` | retains and releases write a count in the word before an object, inside the C++ object |
 | a 32-bit x86 MSVC target | C++ member functions are `__thiscall` there (`this` in ECX) |
 | a virtual method returning a tuple, on a target other than MSVC and Itanium x86-64 / AArch64 | each ABI returns records its own way (see below) |
-| on Itanium, a virtual method returning a trivial tuple other than one or two 8-byte integer or pointer fields | SysV / AAPCS64 pack it into registers by its fields, which a tuple isn't (see below) |
-| a non-virtual C++ method returning a tuple | not supported yet: its symbol would have to be declared with the hidden result pointer |
+| on Itanium, a virtual method returning a trivial tuple with floating-point fields, unmarked | SysV / AAPCS64 return it in SSE registers / as an HFA, which isn't done (see below) |
+| on Itanium, a call of a method returning a trivial tuple of more than 16 bytes, unmarked | it is returned in memory: mark the method `@cppnontrivial` (see below) |
+| on Itanium, a call passing a tuple with floating-point fields by value | SysV / AAPCS64 pass it in SSE registers / as an HFA, which isn't done (see below) |
+| a non-virtual C++ method returning or taking a tuple | not supported yet: its symbol would have to be declared as each ABI passes records |
+| a method implementing a C++ method (with a body) taking a tuple | not supported yet: its body would have to read it as the ABI passes it |
 
 A generic or static class can't be `@cpp` either.
 
@@ -141,18 +144,43 @@ Writing one by hand:
 
   - a record with a destructor or a copy constructor - `RefCountPtr<T>` - comes back through a
     hidden pointer passed *before* `this`, as the call's `sret` argument (in RDI on x86-64, X8 on
-    AArch64). A tuple can't say the C++ type has them, so mark the method `@cppnontrivial`. (A
-    trivial record of more than 16 bytes is returned the same way, so `@cppnontrivial` is right
-    for it too.) MSVC ignores the mark;
-  - a trivial record of one or two 8-byte integer or pointer fields - `nvrhi::Object` - comes
-    back in RAX:RDX / X0:X1, as tslang returns such a tuple: no mark;
-  - any other trivial record of up to 16 bytes is packed into registers by the SysV / AAPCS64
-    classification, which isn't done: such a method is an error, as is any method returning a
-    tuple on another Itanium target (32-bit x86, say).
+    AArch64). A tuple can't say the C++ type has them, so mark the method `@cppnontrivial`. A
+    trivial record of more than 16 bytes is returned the same way, so mark that one too (a call
+    of it unmarked is an error). MSVC ignores the mark;
+  - a trivial record of up to 16 bytes of integers and pointers - `nvrhi::Object`, a struct of
+    three `bool`s, one of three `uint32_t`s - comes back in RAX:RDX / X0:X1, packed as the record
+    is in memory: the call reads the two registers back as the record. No mark;
+  - one with floating-point fields comes back in SSE registers (SysV) or as an HFA (AAPCS64),
+    which isn't done: such a method is an error, as is any method returning a tuple on another
+    Itanium target (32-bit x86, say).
 
   The record isn't destroyed: a `RefCountPtr` the method returns holds a reference, which the
   caller gives back with `Release()`. A method stored in a variable and called later takes the
   hidden pointer as an argument; call it directly.
+- **Structs passed by value.** A parameter of a virtual method that is a trivially copyable
+  struct by value (`nvrhi::TextureSubresourceSet subresources`, `nvrhi::Object texture`) is a
+  tuple with its layout, passed as the C++ ABI passes the struct:
+
+  ```ts
+  type TextureSubresourceSet = [baseMipLevel: u32, numMipLevels: u32, baseArraySlice: u32, numArraySlices: u32];
+  @slot(9) clearTextureFloat(t: ITexture | null, subresources: TextureSubresourceSet, clearColor: Ref<Color>): void;
+  // commandList.clearTextureFloat(texture, [0, 1, 0, 1], Ref(color))
+  ```
+
+  The call copies the tuple into a slot of its own (at least 16 bytes, zeroed), then:
+  - MSVC x64 passes a struct of 1, 2, 4 or 8 bytes in a register, as an integer of its size, and
+    any other by a pointer to the copy (which the callee may change: the caller's tuple doesn't);
+  - SysV x86-64 passes one of up to 16 bytes of integers and pointers in one or two 64-bit
+    registers, when that many of the six remain (else all of it on the stack), and a bigger one on
+    the stack (`byval`);
+  - AAPCS64 passes one of up to 16 bytes in one or two consecutive 64-bit registers (`[N x i64]`,
+    all of it in registers or all on the stack), and a bigger one by a pointer to the copy.
+
+  A struct with a destructor or a copy constructor (which MSVC destroys in the callee, and the
+  Itanium ABI passes by a pointer to a copy the caller destroys) can't be a tuple parameter: take
+  it as a `Ref<T>` in a wrapper of your own, or leave the method out. Nor can a struct with
+  floating-point fields under the Itanium ABI (SSE registers, an HFA's), nor any struct taken by a
+  non-virtual method or by one with a body.
 - **Narrow parameters.** A `bool` is a `boolean`, an `uint8_t` (or an `enum class : uint8_t`) a
   `u8`, an `int16_t` an `s16`: a call of a C++ method extends an argument narrower than 32 bits as
   a C++ caller does (`zeroext`, `signext` for a signed type), which clang's code relies on.

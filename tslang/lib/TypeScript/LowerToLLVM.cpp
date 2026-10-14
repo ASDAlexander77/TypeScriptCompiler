@@ -2136,32 +2136,188 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
     }
 };
 
-// The argument attributes of a call of a C++ method (a @cpp class's), from the ts call's
-// `args` (its operands after the callee):
+// A call of a C++ method (a @cpp class's) as the target's C++ ABI makes it, from the ts call's
+// `args` (its operands after the callee) and their LLVM values:
 // - CPP_CALL_ATTR_NAME: an integer argument narrower than 32 bits, a boolean too, is `zeroext`
 //   (`signext` if signed), as a C++ caller extends it: clang's code relies on it, and tslang's
 //   otherwise leaves the register's upper bits undefined;
 // - SRET_ARG_ATTR_NAME: the hidden pointer the method returns a record through (the Itanium ABI)
 //   is `sret`, so the target passes it where the ABI does: RDI on x86-64, as the first argument
-//   anyway, but X8 on AArch64.
-template <typename LLVMCallOp>
-static void setCallABIArgAttrs(Operation *tsOp, LLVMCallOp llvmOp, mlir::ValueRange args, TypeConverterHelper &tch)
+//   anyway, but X8 on AArch64;
+// - a record (a tuple: a trivially copyable C++ struct) passed by value is passed as the C++ ABI
+//   passes it (clang's MicrosoftCXXABI, X86_64ABIInfo and AArch64ABIInfo classifications), from a
+//   copy of it in a zeroed slot of 16 bytes or more (TargetInfo::cppRecordAbi):
+//   - MSVC x64: a record of 1, 2, 4 or 8 bytes in a register, as an integer of its size; any other
+//     by a pointer to the copy, which the callee may change;
+//   - SysV x86-64: one of up to 16 bytes of integers and pointers in one or two 64-bit registers,
+//     if that many of the six remain, else on the stack (`byval`), as a bigger one is;
+//   - AAPCS64: one of up to 16 bytes in one or two consecutive 64-bit registers ([N x i64], which
+//     the backend places in registers all or none), a bigger one by a pointer to the copy;
+//   a record with floating-point fields is left for the SSE registers or an HFA's on the Itanium
+//   targets, which isn't done here (an error);
+// - a record the Itanium ABI returns in registers (a tuple result: MSVC's come back through the
+//   hidden pointer, and so do the Itanium ABI's marked @cppnontrivial) comes back in one or two
+//   64-bit registers, up to 16 bytes of integers and pointers (more is returned in memory: an
+//   error, unless the method is @cppnontrivial), read back through a slot as the record.
+struct CppCallABI
+{
+    // the call's LLVM arguments (the callee's not among them) and their attributes
+    SmallVector<mlir::Value> args;
+    SmallVector<mlir::Attribute> argAttrs;
+    bool anyArgAttr = false;
+    // a record returned in registers: its type, and the registers' the call returns instead
+    mlir::Type recordResult;
+    mlir::Type registersResult;
+};
+
+// Whether an LLVM type is made of integers and pointers only (no floating point, nor vectors)
+static bool isIntegerOnlyType(mlir::Type type)
+{
+    if (isa<mlir::IntegerType, LLVM::LLVMPointerType>(type))
+    {
+        return true;
+    }
+
+    if (auto structType = dyn_cast<LLVM::LLVMStructType>(type))
+    {
+        return llvm::all_of(structType.getBody(), isIntegerOnlyType);
+    }
+
+    if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
+    {
+        return isIntegerOnlyType(arrayType.getElementType());
+    }
+
+    return false;
+}
+
+// A slot of slotType (at the function's top, as allocas go), zeroed, holding value of valueType
+static mlir::Value spillToSlot(Operation *op, ConversionPatternRewriter &rewriter, mlir::Type slotType, mlir::Value value)
+{
+    auto loc = op->getLoc();
+    TypeHelper th(rewriter);
+    mlir::Value slot;
+    {
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+        if (auto parentFuncOp = op->getParentOfType<LLVM::LLVMFuncOp>())
+        {
+            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+        }
+
+        auto one = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1));
+        slot = rewriter.create<LLVM::AllocaOp>(loc, th.getPtrType(), slotType, one);
+    }
+
+    rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, slotType), slot);
+    if (value)
+    {
+        rewriter.create<LLVM::StoreOp>(loc, value, slot);
+    }
+
+    return slot;
+}
+
+// The 64-bit registers a record of `size` bytes takes: i64, or two (SysV: `{i64, i64}`, two
+// arguments; AAPCS64: `[2 x i64]`, placed together)
+static mlir::Type registersOf(mlir::MLIRContext *context, uint64_t size, TargetInfo::CppRecordAbi abi)
+{
+    auto i64 = mlir::IntegerType::get(context, 64);
+    if (size <= 8)
+    {
+        return i64;
+    }
+
+    return abi == TargetInfo::CppRecordAbi::AAPCS64 ? mlir::Type(LLVM::LLVMArrayType::get(i64, 2))
+                                                    : mlir::Type(LLVM::LLVMStructType::getLiteral(context, {i64, i64}));
+}
+
+static LogicalResult lowerCppCallArgs(Operation *tsOp, mlir::ValueRange tsArgs, mlir::ValueRange llvmArgs,
+                                      mlir::TypeRange tsResults, ConversionPatternRewriter &rewriter, TypeConverterHelper &tch,
+                                      LLVMTypeConverterHelper &llvmtch, const CompileOptions &compileOptions, CppCallABI &out)
 {
     auto sretArg = tsOp->getAttrOfType<mlir::IntegerAttr>(SRET_ARG_ATTR_NAME);
     auto cppCall = tsOp->hasAttr(CPP_CALL_ATTR_NAME);
-    if (!sretArg && !cppCall)
-    {
-        return;
-    }
-
     auto *context = tsOp->getContext();
+    auto loc = tsOp->getLoc();
     auto name = [&](StringRef attrName) { return mlir::StringAttr::get(context, attrName); };
-    SmallVector<mlir::Attribute> argAttrs;
-    auto any = false;
-    for (auto [index, arg] : llvm::enumerate(args))
+    auto abi = compileOptions.targetInfo.cppRecordAbi;
+    auto i64 = rewriter.getI64Type();
+    // SysV x86-64: the general purpose registers the arguments take, of six
+    unsigned gprs = 0;
+    for (auto [index, tsArg] : llvm::enumerate(tsArgs))
     {
         SmallVector<mlir::NamedAttribute> attrs;
-        auto type = arg.getType();
+        auto type = tsArg.getType();
+        auto llvmArg = llvmArgs[index];
+        if (cppCall && isa<mlir_ts::TupleType>(type))
+        {
+            auto llvmType = llvmArg.getType();
+            auto size = llvmtch.getTypeAllocSizeInBytes(llvmType);
+            auto align = llvmtch.getTypeAlignSizeInBits(llvmType) / 8;
+            // a slot as big as the record or its registers, so that both read and write all of it
+            auto slotType = LLVM::LLVMArrayType::get(i64, std::max<uint64_t>(2, (size + 7) / 8));
+            auto slot = spillToSlot(tsOp, rewriter, slotType, llvmArg);
+            auto inRegisters = size <= 16 && abi != TargetInfo::CppRecordAbi::MicrosoftX64;
+            if (abi != TargetInfo::CppRecordAbi::MicrosoftX64 && abi != TargetInfo::CppRecordAbi::None && !isIntegerOnlyType(llvmType))
+            {
+                return tsOp->emitError("a record with floating-point fields passed by value to a C++ method isn't supported on this target yet");
+            }
+
+            switch (abi)
+            {
+            case TargetInfo::CppRecordAbi::MicrosoftX64:
+                if (size == 1 || size == 2 || size == 4 || size == 8)
+                {
+                    auto intType = mlir::IntegerType::get(context, size * 8);
+                    out.args.push_back(rewriter.create<LLVM::LoadOp>(loc, intType, slot));
+                }
+                else
+                {
+                    out.args.push_back(slot);
+                }
+                break;
+            case TargetInfo::CppRecordAbi::SysVX86_64:
+                if (inRegisters && gprs + (size + 7) / 8 <= 6)
+                {
+                    out.args.push_back(rewriter.create<LLVM::LoadOp>(loc, i64, slot));
+                    attrs.clear();
+                    if (size > 8)
+                    {
+                        out.argAttrs.push_back(mlir::DictionaryAttr::get(context, attrs));
+                        auto second = rewriter.create<LLVM::GEPOp>(loc, slot.getType(), slotType, slot, ArrayRef<LLVM::GEPArg>{0, 1});
+                        out.args.push_back(rewriter.create<LLVM::LoadOp>(loc, i64, second));
+                        gprs++;
+                    }
+                    gprs++;
+                }
+                else
+                {
+                    // in memory: the stack, a copy the call makes of the slot
+                    out.args.push_back(slot);
+                    attrs.push_back(mlir::NamedAttribute(name(LLVM::LLVMDialect::getByValAttrName()), mlir::TypeAttr::get(slotType)));
+                    attrs.push_back(mlir::NamedAttribute(name(LLVM::LLVMDialect::getAlignAttrName()),
+                                                         rewriter.getI64IntegerAttr(std::max<uint64_t>(8, align))));
+                }
+                break;
+            case TargetInfo::CppRecordAbi::AAPCS64:
+                if (inRegisters)
+                {
+                    out.args.push_back(rewriter.create<LLVM::LoadOp>(loc, registersOf(context, size, abi), slot));
+                }
+                else
+                {
+                    out.args.push_back(slot);
+                }
+                break;
+            case TargetInfo::CppRecordAbi::None:
+                return tsOp->emitError("a record passed by value to a C++ method needs the MSVC ABI on x86-64, or the Itanium ABI on x86-64 or AArch64");
+            }
+
+            out.anyArgAttr |= !attrs.empty();
+            out.argAttrs.push_back(mlir::DictionaryAttr::get(context, attrs));
+            continue;
+        }
+
         if (sretArg && sretArg.getInt() == static_cast<int64_t>(index))
         {
             if (auto refType = dyn_cast<mlir_ts::RefType>(type))
@@ -2185,14 +2341,46 @@ static void setCallABIArgAttrs(Operation *tsOp, LLVMCallOp llvmOp, mlir::ValueRa
             }
         }
 
-        any |= !attrs.empty();
-        argAttrs.push_back(mlir::DictionaryAttr::get(context, attrs));
+        // an integer or a pointer takes a general purpose register (floats take SSE registers)
+        if (!isa<mlir::FloatType>(llvmArg.getType()))
+        {
+            gprs++;
+        }
+
+        out.args.push_back(llvmArg);
+        out.anyArgAttr |= !attrs.empty();
+        out.argAttrs.push_back(mlir::DictionaryAttr::get(context, attrs));
     }
 
-    if (any)
+    // a record returned in registers (the Itanium ABI)
+    if (cppCall && tsResults.size() == 1 && isa<mlir_ts::TupleType>(tsResults.front())
+        && (abi == TargetInfo::CppRecordAbi::SysVX86_64 || abi == TargetInfo::CppRecordAbi::AAPCS64))
     {
-        llvmOp.setArgAttrsAttr(mlir::ArrayAttr::get(context, argAttrs));
+        auto llvmType = tch.convertType(tsResults.front());
+        auto size = llvmtch.getTypeAllocSizeInBytes(llvmType);
+        if (!isIntegerOnlyType(llvmType))
+        {
+            return tsOp->emitError("a C++ method returning a record with floating-point fields in registers isn't supported on this target yet");
+        }
+
+        if (size > 16)
+        {
+            return tsOp->emitError("a C++ method returns a record of more than 16 bytes through a pointer on this target: mark it @" CPP_NON_TRIVIAL);
+        }
+
+        out.recordResult = llvmType;
+        out.registersResult = registersOf(context, size, abi);
     }
+
+    return success();
+}
+
+// The record a call returned in registers (CppCallABI::registersResult), read back through a slot
+static mlir::Value recordFromRegisters(Operation *op, ConversionPatternRewriter &rewriter, const CppCallABI &abi, mlir::Value registers)
+{
+    auto slotType = LLVM::LLVMArrayType::get(rewriter.getI64Type(), 2);
+    auto slot = spillToSlot(op, rewriter, slotType, registers);
+    return rewriter.create<LLVM::LoadOp>(op->getLoc(), abi.recordResult, slot);
 }
 
 struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
@@ -2228,17 +2416,40 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             return success();
         }
 
-        auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, transformed.getOperands());
+        // the arguments follow the callee pointer, operand #0, as the C++ ABI passes them to a C++ method
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+        CppCallABI abi;
+        if (failed(lowerCppCallArgs(op, op.getOperands().drop_front(), transformed.getOperands().drop_front(), op.getResultTypes(),
+                                    rewriter, tch, llvmtch, tsLlvmContext->compileOptions, abi)))
+        {
+            return failure();
+        }
+
+        if (abi.registersResult)
+        {
+            llvmTypes.assign({abi.registersResult});
+        }
+
+        SmallVector<mlir::Value> callOperands;
+        callOperands.push_back(transformed.getOperands().front());
+        callOperands.append(abi.args.begin(), abi.args.end());
+        auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, callOperands);
         // indirect call: callee pointer is operand #0, the rest are call arguments;
         // AttrSizedOperandSegments requires this split to be set explicitly, the
         // generic (TypeRange, ValueRange) builder above does not set it.
-        callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(transformed.getOperands().size()), 0});
+        callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(callOperands.size()), 0});
         callRes.setOpBundleSizes({});
-        // the arguments follow the callee pointer, operand #0
-        setCallABIArgAttrs(op, callRes, op.getOperands().drop_front(), tch);
+        if (abi.anyArgAttr)
+        {
+            callRes.setArgAttrsAttr(mlir::ArrayAttr::get(rewriter.getContext(), abi.argAttrs));
+        }
 
         auto returns = callRes.getResults();
-        if (returns.size() > 0)
+        if (abi.registersResult)
+        {
+            rewriter.replaceOp(op, recordFromRegisters(op, rewriter, abi, returns.front()));
+        }
+        else if (returns.size() > 0)
         {
             rewriter.replaceOp(op, returns);
         }
@@ -2393,11 +2604,44 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         }
         else
         {
-            auto invokeOp = rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, mlir::FlatSymbolRefAttr(), transformed.getOperands(),
+            // an indirect call: the arguments follow the callee pointer, call operand #0, as the C++
+            // ABI passes them to a C++ method
+            LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+            CppCallABI abi;
+            auto callOperands = transformed.getOperands().take_front(op.getCallOperands().size());
+            if (failed(lowerCppCallArgs(op, op.getCallOperands().drop_front(), callOperands.drop_front(), op.getResultTypes(),
+                                        rewriter, tch, llvmtch, tsLlvmContext->compileOptions, abi)))
+            {
+                return failure();
+            }
+
+            if (abi.registersResult)
+            {
+                llvmTypes.assign({abi.registersResult});
+            }
+
+            SmallVector<mlir::Value> operands;
+            operands.push_back(callOperands.front());
+            operands.append(abi.args.begin(), abi.args.end());
+            auto invokeOp = rewriter.create<LLVM::InvokeOp>(op->getLoc(), llvmTypes, mlir::FlatSymbolRefAttr(), operands,
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
-            // an indirect call: the arguments follow the callee pointer, call operand #0
-            setCallABIArgAttrs(op, invokeOp, op.getCallOperands().drop_front(), tch);
+            if (abi.anyArgAttr)
+            {
+                invokeOp.setArgAttrsAttr(mlir::ArrayAttr::get(rewriter.getContext(), abi.argAttrs));
+            }
+
+            if (abi.registersResult)
+            {
+                // the record, read back where the call returns to
+                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(op.getNormalDest());
+                rewriter.replaceOp(op, recordFromRegisters(op, rewriter, abi, invokeOp.getResult()));
+            }
+            else
+            {
+                rewriter.replaceOp(op, invokeOp.getResults());
+            }
         }
 
         return success();

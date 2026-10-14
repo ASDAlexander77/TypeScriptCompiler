@@ -533,15 +533,19 @@ namespace mlirgen
     //
     // The Itanium ABI on x86-64 and AArch64 (clang's ItaniumCXXABI::classifyReturnType, then the
     // SysV or AAPCS64 classification) passes the pointer before `this`, for a record with a
-    // destructor or a copy constructor - nonTrivial, the method's @cppnontrivial, as a tuple can't
-    // say so - and the call swaps the two and marks the pointer `sret` (X8 on AArch64). A trivial
-    // record of one or two 8-byte integer or pointer fields comes back in RAX:RDX / X0:X1, as tslang
-    // returns such a tuple, so the method keeps its declared type; other trivial records are packed
-    // into registers or returned in memory, which isn't done here.
+    // destructor or a copy constructor, or of more than 16 bytes - the method's @cppnontrivial, as a
+    // tuple can't say so - and the call swaps the two and marks the pointer `sret` (X8 on AArch64).
+    // A trivial record of up to 16 bytes of integers and pointers comes back in RAX:RDX / X0:X1, the
+    // method keeping its declared type: the call reads the registers back as the record
+    // (LowerToLLVM's lowerCppCallArgs). One with floating-point fields isn't done here.
+    //
+    // A record passed by value (a tuple parameter) is passed as each ABI does, by the call's lowering
+    // too (lowerCppCallArgs).
     //
     // A method with a body (of a class implementing C++ methods) is called by C++: it is marked
-    // CPP_METHOD_ATTR_NAME, and can't return a record yet (its body would have to write it through
-    // the hidden pointer).
+    // CPP_METHOD_ATTR_NAME, and can't take or return a record yet (its body would have to read it
+    // as the ABI passes it, write it through the hidden pointer); nor can a C++ non-virtual method,
+    // called by its symbol.
     mlir::LogicalResult MLIRGenImpl::mlirGenClassCppVTableHiddenReturn(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                           mlir_ts::FuncOp funcOp, bool nonTrivial, bool hasBody,
                                                           bool isVirtual)
@@ -576,6 +580,15 @@ namespace mlirgen
         }
 
         auto funcType = method->funcType;
+        if ((hasBody || !isVirtual)
+            && llvm::any_of(funcType.getInputs().drop_front(), [](mlir::Type type) { return isa<mlir_ts::TupleType>(type); }))
+        {
+            emitError(location) << (hasBody ? "a method implementing a C++ method (a @" CPP_VTABLE " class's, with a body)"
+                                            : "a C++ non-virtual method (a @" CPP_VTABLE " class's, without @" CPP_SLOT ")")
+                                << " can't take a struct by value yet";
+            return mlir::failure();
+        }
+
         if (funcType.getNumResults() != 1 || !isa<mlir_ts::TupleType>(funcType.getResult(0)) || funcType.getNumInputs() < 1)
         {
             if (nonTrivial)
@@ -613,8 +626,9 @@ namespace mlirgen
                 }
 
                 emitError(location) << "on this target a method of a @" CPP_VTABLE " class returns a struct in registers by its fields, "
-                                    << "which is supported for one or two 8-byte integer or pointer fields; one with a destructor or a "
-                                    << "copy constructor is returned through a pointer: mark the method @" CPP_NON_TRIVIAL;
+                                    << "which is supported for up to 16 bytes of integers and pointers, not floating-point ones; one "
+                                    << "with a destructor or a copy constructor, or of more than 16 bytes, is returned through a "
+                                    << "pointer: mark the method @" CPP_NON_TRIVIAL;
                 return mlir::failure();
             }
 
@@ -647,35 +661,41 @@ namespace mlirgen
     // The SysV (AAPCS64) classification of a trivial C++ record, as far as tslang returns a tuple the
     // same way: one or two eightbytes of class INTEGER, each a whole field (an LLVM struct of i64s
     // and pointers comes back in RAX:RDX / X0:X1; smaller fields would be packed into one register).
+    // Whether a record is made of integers and pointers only (booleans, a pointer that may be null,
+    // records of them too), as the Itanium ABI returns in general purpose registers; its size, up
+    // to 16 bytes, is the call lowering's to check (lowerCppCallArgs)
     bool MLIRGenImpl::isCppRecordReturnedInIntegerRegisters(mlir_ts::TupleType recordType)
     {
         auto fields = recordType.getFields();
-        if (fields.empty() || fields.size() > 2)
+        if (fields.empty())
         {
             return false;
         }
 
-        auto isEightbyteInteger = [&](mlir::Type type) {
-            if (auto intType = dyn_cast<mlir::IntegerType>(type))
+        std::function<bool(mlir::Type)> isInteger = [&](mlir::Type type) {
+            if (isa<mlir::IntegerType, mlir_ts::BooleanType, mlir_ts::OpaqueType, mlir_ts::ClassType, mlir_ts::RefType,
+                    mlir::IndexType>(type))
             {
-                return intType.getWidth() == 64;
+                return true;
             }
 
-            return isa<mlir_ts::OpaqueType, mlir_ts::ClassType, mlir_ts::RefType, mlir::IndexType>(type);
-        };
-
-        return llvm::all_of(fields, [&](auto &field) {
-            auto type = field.type;
             // Opaque | null: a pointer that may be null
             if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
             {
                 return llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
-                    return isa<mlir_ts::NullType>(member) || isEightbyteInteger(member);
+                    return isa<mlir_ts::NullType>(member) || isInteger(member);
                 });
             }
 
-            return isEightbyteInteger(type);
-        });
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+            {
+                return isCppRecordReturnedInIntegerRegisters(tupleType);
+            }
+
+            return false;
+        };
+
+        return llvm::all_of(fields, [&](auto &field) { return isInteger(field.type); });
     }
 
     // A @cpp class only names the slots of a vtable made by C++, so everything that would add

@@ -90,6 +90,13 @@ class TypeMapper
     // when C++ can't pass it in registers (a destructor or a copy constructor: @cppnontrivial).
     TsType mapRecordResult(clang::QualType type, bool &nonTrivial);
 
+    // A record a C++ (virtual) method takes by value: the record's own type, which tslang passes
+    // as the target's C++ ABI does (in registers, by a pointer to a copy, on the stack). Skipped
+    // when C++ can't pass it in registers (a destructor or a copy constructor), for a union, for
+    // one with floating-point fields under the Itanium ABI (SSE registers, HFAs: not done), and on
+    // targets other than MSVC x64 and the Itanium ABI on x86-64 and AArch64.
+    TsType mapRecordParameter(clang::QualType type);
+
     // clang's semantic analysis, to complete a class template specialization only ever named as a
     // result (`RefCountPtr<IBuffer> createBuffer(...)` doesn't instantiate it)
     void setSema(clang::Sema *value)
