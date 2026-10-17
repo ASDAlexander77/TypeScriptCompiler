@@ -1232,7 +1232,10 @@ class MLIRGenImpl
 
         if (genContext->usingVars != nullptr)
         {
-            for (auto vi : *genContext->usingVars)
+            // reverse declaration order, as JS disposes a scope (and as mlirGenReleaseOwned releases
+            // one): a later `using` may still need an earlier one while its `[Symbol.dispose]()` runs.
+            // The unwind cleanup region comes through here too, so it unwinds in the same order.
+            for (auto vi : llvm::reverse(*genContext->usingVars))
             {
                 auto varInTable = symbolTable.lookup(vi->getName());
                 if (!varInTable.first)

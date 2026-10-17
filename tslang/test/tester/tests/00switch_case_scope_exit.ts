@@ -47,6 +47,22 @@ function fallThrough(i: number) {
     trail += "after;";
 }
 
+// the cases share the switch's scope, so a `using` in each of two cases are two `using`s in one
+// scope: disposed in reverse declaration order, the one the path skipped not at all
+function usingInTwoCases(i: number) {
+    switch (i) {
+        case 0:
+            using a = new Res("a");
+            trail += "body0;";
+        case 1:
+            using b = new Res("b");
+            trail += "body1;";
+            break;
+    }
+
+    trail += "after;";
+}
+
 function bracedCases(i: number) {
     switch (i) {
         case 0: {
@@ -178,6 +194,8 @@ function main() {
     check(() => caseWithBreak(5), "after;", "no case matched");
     check(() => fallThrough(0), "body0;body1;a;after;", "falling through");
     check(() => fallThrough(7), "default;after;", "default");
+    check(() => usingInTwoCases(0), "body0;body1;b;a;after;", "a using in each of two cases");
+    check(() => usingInTwoCases(1), "body1;b;after;", "a using in each of two cases, first skipped");
     check(() => bracedCases(0), "body0;a;body1;b;after;", "braced cases falling through");
     check(() => breakFromIf(0), "a;after;fn;", "break from an if in a case");
     check(() => breakFromIf(1), "body1;after;fn;", "break from an if, case not taken");
