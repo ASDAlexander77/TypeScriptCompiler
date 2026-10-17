@@ -807,23 +807,7 @@ class MLIRGenImpl
 
         if (genContext->ownedVars != nullptr)
         {
-            // reverse declaration order, the order a scope is unwound in: a later local may
-            // hold the only other reference to what an earlier one points at
-            for (auto storage : llvm::reverse(*genContext->ownedVars))
-            {
-                // Two different debts, and a slot can carry either, both or neither. A cell is
-                // released as a cell whatever its contents are owned by - the block has to go
-                // back regardless. A slot that is neither is here only because it might have
-                // turned into a cell and did not; see trackPossibleCell.
-                if (isCapturedVariableCell(storage))
-                {
-                    builder.create<mlir_ts::ReleaseCellOp>(location, storage);
-                }
-                else if (isOwnedLocalSlot(storage))
-                {
-                    builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
-                }
-            }
+            releaseScopeOwnedVars(location, *genContext->ownedVars);
 
             // Process-once, as for usingVars: CurrentScopeKeepAfterUse is what the try body
             // passes so that the cleanup region, generated after it, still sees the list.
@@ -850,6 +834,57 @@ class MLIRGenImpl
         }
 
         return mlir::success();
+    }
+
+    void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars)
+    {
+        // reverse declaration order, the order a scope is unwound in: a later local may
+        // hold the only other reference to what an earlier one points at
+        for (auto storage : llvm::reverse(ownedVars))
+        {
+            // Two different debts, and a slot can carry either, both or neither. A cell is
+            // released as a cell whatever its contents are owned by - the block has to go
+            // back regardless. A slot that is neither is here only because it might have
+            // turned into a cell and did not; see trackPossibleCell.
+            if (isCapturedVariableCell(storage))
+            {
+                builder.create<mlir_ts::ReleaseCellOp>(location, storage);
+            }
+            else if (isOwnedLocalSlot(storage))
+            {
+                builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+            }
+        }
+    }
+
+    // The rest of the unwind leg of a catch-less TryOp's cleanup region - the one wrapped around
+    // a block or a switch for its `using`. Once the region has given back its own scope, the
+    // exception keeps unwinding, and the scopes around it that have no cleanup region of their
+    // own get no other chance: a function's body holding `let s = a + b` and, further in,
+    // `{ using r = new R(); ... }` leaked `s` on every exception through the inner block.
+    //
+    // Walks outwards from the scope around the wrapped one, releasing as it goes, and stops at
+    // the first scope that is itself a TryOp's body (isUnwindCleanupScope) without touching its
+    // list: the exception lands on that TryOp's landing pad, whose own cleanup releases that
+    // scope - and, when it has a catch, everything further out is still live after it. Otherwise
+    // the walk ends at the function (whose context ends the chain), parameters included, as a
+    // `return` does.
+    //
+    // Release only, and nothing is marked processed. No disposal: a scope with a `using` it can
+    // dispose on unwind is wrapped, and so is where the walk stops. The scopes' lists stay as
+    // they are for their own exits, which come later in the IR and on other paths. Only the
+    // locals declared ahead of the wrapped scope are in the lists yet, so every slot released
+    // here has had its store - or, hoisted in front of a switch whose case did not run, is
+    // null, which a release does nothing with (VariableOpLowering).
+    void mlirGenReleaseOwnedOnUnwind(mlir::Location location, const GenContext *genContext)
+    {
+        for (; genContext != nullptr && !genContext->isUnwindCleanupScope; genContext = genContext->parentBlockContext)
+        {
+            if (genContext->ownedVars != nullptr)
+            {
+                releaseScopeOwnedVars(location, *genContext->ownedVars);
+            }
+        }
     }
 
     // Does this reference address a captured variable's cell - a heap block the frame shares

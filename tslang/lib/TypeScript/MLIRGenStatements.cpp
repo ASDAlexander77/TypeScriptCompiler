@@ -189,6 +189,7 @@ namespace mlirgen
         genContextUsing.labelledScopeLabel.clear();
         // nor the switch's, when this block is a case's
         genContextUsing.isSwitchScope = false;
+        genContextUsing.isUnwindCleanupScope = false;
         genContextUsing.isLoop = false;
 
         DITableScopeT debugBlockScope(debugScope);
@@ -264,6 +265,7 @@ namespace mlirgen
             tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
             tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isSwitchScope = false;
+            tryBodyGenContext.isUnwindCleanupScope = true;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
@@ -283,6 +285,8 @@ namespace mlirgen
             // well as in the body.
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+            // and, with no catch here, what the scopes around it owe
+            mlirGenReleaseOwnedOnUnwind(location, tryBodyGenContext.parentBlockContext);
 
             builder.create<mlir_ts::ResultOp>(location);
         }
@@ -690,6 +694,7 @@ namespace mlirgen
         branchContext.isLoop = false;
         branchContext.labelledScopeLabel.clear();
         branchContext.isSwitchScope = false;
+        branchContext.isUnwindCleanupScope = false;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         branchContext.usingVars = usingVars.get();
@@ -1076,6 +1081,7 @@ namespace mlirgen
         labelledContext.labelledScopeLabel = label;
         labelledContext.isLoopBodyScope = false;
         labelledContext.isSwitchScope = false;
+        labelledContext.isUnwindCleanupScope = false;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         labelledContext.usingVars = usingVars.get();
@@ -1197,6 +1203,7 @@ namespace mlirgen
         // had, which crashed the compiler.
         switchGenContext.parentBlockContext = &genContext;
         switchGenContext.isSwitchScope = true;
+        switchGenContext.isUnwindCleanupScope = static_cast<bool>(tryOp);
         switchGenContext.isLoopBodyScope = false;
         switchGenContext.labelledScopeLabel.clear();
         switchGenContext.isLoop = false;
@@ -1281,6 +1288,7 @@ namespace mlirgen
 
             builder.setInsertionPointToStart(&tryOp.getCleanup().front());
             EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &switchGenContext));
+            mlirGenReleaseOwnedOnUnwind(location, switchGenContext.parentBlockContext);
             builder.create<mlir_ts::ResultOp>(location);
 
             builder.setInsertionPointToStart(&tryOp.getCatches().front());
@@ -1464,6 +1472,8 @@ namespace mlirgen
             tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
             tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isSwitchScope = false;
+            // where the unwind leg of a wrapped scope inside stops (mlirGenReleaseOwnedOnUnwind)
+            tryBodyGenContext.isUnwindCleanupScope = true;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
