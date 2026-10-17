@@ -1467,6 +1467,17 @@ namespace mlirgen
         tryGenContext.allocateScopeOwnedVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
 
+        // The scope around the `try` as its body and catch clause see it on the way out, when it
+        // has a `finally`: a `return` from either stops here, and the finally's copy for the
+        // `return` releases the rest (GenContext::finallyGuardScope). A copy of tryGenContext,
+        // because the finally itself is generated in tryGenContext, and a `return` in the
+        // finally is not one this finally runs after.
+        GenContext finallyGuardGenContext(tryGenContext);
+        if (tryStatementAST->finallyBlock)
+        {
+            finallyGuardGenContext.finallyGuardScope = &finallyGuardGenContext;
+        }
+
         SmallVector<mlir::Type, 0> types;
 
         /*auto *body =*/builder.createBlock(&tryOp.getBody(), {}, types);
@@ -1481,7 +1492,7 @@ namespace mlirgen
             // prepare custom scope
             SymbolTableScopeT varScope(symbolTable);
             GenContext tryBodyGenContext(tryGenContext);
-            tryBodyGenContext.parentBlockContext = &tryGenContext;
+            tryBodyGenContext.parentBlockContext = &finallyGuardGenContext;
 
             // as in mlirGen(Block): this is the block's own scope, so it is where a break or
             // continue walking outwards stops
@@ -1549,10 +1560,11 @@ namespace mlirgen
             // With a finally, an exception out of the catch clause unwinds into the finally's
             // unwind copy, which releases the scopes around the `try` (below) - so a `throw` in
             // the clause must stop short of them, as it does at a TryOp's body
-            GenContext catchGenContext(tryGenContext);
+            GenContext catchGenContext(finallyGuardGenContext);
             if (tryStatementAST->finallyBlock)
             {
                 catchGenContext.isUnwindCleanupScope = true;
+                catchGenContext.finallyGuardScope = &catchGenContext;
             }
 
             auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
@@ -1576,6 +1588,11 @@ namespace mlirgen
             // TryOpLowering drops them from the copies normal completion, `return` and `break`
             // run, where those scopes are still live.
             mlirGenReleaseOwnedOnUnwind(location, &tryGenContext, /*unwindOnly=*/true);
+
+            // And the copy a `return` from the body or the catch clause runs: the rest of that
+            // `return`'s scope exit, which it left for after the finally (finallyGuardScope).
+            // Marked return-only, so TryOpLowering drops them from the other copies.
+            mlirGenReleaseOwnedOnReturn(location, &tryGenContext);
         }
 
         // terminator

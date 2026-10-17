@@ -242,6 +242,14 @@ struct GenContext
     // scope nested further in releases the scopes between, and stops here
     // (mlirGenReleaseOwnedOnUnwind).
     bool isUnwindCleanupScope = false;
+    // Points at itself on the context that stands, in the walk outwards, for the scope around a
+    // `try` with a `finally` - the parent of its body's scope, and its catch clause's context. A
+    // `return` from inside the body or the catch releases the scopes up to here and no further:
+    // the finally still runs before the function returns, and it can read the scopes from here
+    // outwards, so the copy of the finally that a `return` runs releases them once it is done
+    // (mlirGenReleaseOwnedOnReturn). A pointer rather than a flag, so that it needs no clearing:
+    // every context copied from this one points at this one, not at itself.
+    const GenContext *finallyGuardScope = nullptr;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

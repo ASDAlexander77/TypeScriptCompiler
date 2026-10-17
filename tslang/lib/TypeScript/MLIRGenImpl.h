@@ -828,6 +828,13 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        // a `return` stops at a `try` whose `finally` still has to run: that finally's copy for
+        // the `return` releases the scopes from here outwards (mlirGenReleaseOwnedOnReturn)
+        if (disposeDepth == DisposeDepth::FullStack && genContext->finallyGuardScope == genContext)
+        {
+            return mlir::success();
+        }
+
         if (genContext->ownedVars != nullptr)
         {
             releaseScopeOwnedVars(location, *genContext->ownedVars);
@@ -859,8 +866,10 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // `onlyOnAttr` names the copies of a hand-written finally the releases are kept in -
+    // UNWIND_ONLY_ATTR_NAME or RETURN_ONLY_ATTR_NAME - or is empty for an ordinary release
     void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars,
-                               bool unwindOnly = false)
+                               StringRef onlyOnAttr = {})
     {
         // reverse declaration order, the order a scope is unwound in: a later local may
         // hold the only other reference to what an earlier one points at
@@ -880,9 +889,9 @@ class MLIRGenImpl
                 releaseOp = builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
             }
 
-            if (releaseOp && unwindOnly)
+            if (releaseOp && !onlyOnAttr.empty())
             {
-                releaseOp->setAttr(UNWIND_ONLY_ATTR_NAME, builder.getUnitAttr());
+                releaseOp->setAttr(onlyOnAttr, builder.getUnitAttr());
             }
         }
     }
@@ -917,7 +926,28 @@ class MLIRGenImpl
         {
             if (genContext->ownedVars != nullptr)
             {
-                releaseScopeOwnedVars(location, *genContext->ownedVars, unwindOnly);
+                releaseScopeOwnedVars(location, *genContext->ownedVars, unwindOnly ? UNWIND_ONLY_ATTR_NAME : "");
+            }
+        }
+    }
+
+    // The end of the copy of a hand-written `finally` that a `return` from its `try` body or catch
+    // clause runs (RETURN_ONLY_ATTR_NAME): the rest of that `return`'s scope exit. The `return`
+    // released the scopes inside the `try` and stopped at its finallyGuardScope, because the
+    // finally can still read every scope from there outwards - `let s = ...; try { return x; }
+    // finally { log(s); }` read `s` after the `return` had given it back.
+    //
+    // Walks outwards from the scope around the `try`, as a `return` does, and stops at the
+    // finallyGuardScope of the next `try` out with a `finally`: the `return` goes on through that
+    // finally's own copy (TryOpLowering chains them), which releases from there.
+    void mlirGenReleaseOwnedOnReturn(mlir::Location location, const GenContext *genContext)
+    {
+        for (; genContext != nullptr && genContext->finallyGuardScope != genContext;
+             genContext = genContext->parentBlockContext)
+        {
+            if (genContext->ownedVars != nullptr)
+            {
+                releaseScopeOwnedVars(location, *genContext->ownedVars, RETURN_ONLY_ATTR_NAME);
             }
         }
     }
