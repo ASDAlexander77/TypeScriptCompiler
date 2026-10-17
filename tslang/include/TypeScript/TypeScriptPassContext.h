@@ -131,6 +131,8 @@ struct TSContext
         landingBlockOf.beginRun();
         leavesCatch.beginRun();
         catchPadIdOf.beginRun();
+        finallyPadIdOf.beginRun();
+        inParentTryFinallyPad.beginRun();
     }
 
     // options
@@ -161,6 +163,11 @@ struct TSContext
     // catch clause can name it as the funclet they are nested in - see tagPad in TryOpLowering
     // and ts.internal.eh_pad in Win32ExceptionPass. Ids are unique within the module.
     OpSideTable<int> catchPadIdOf{"catchPadIdOf"};
+    // Windows: the same for the pad a try's finally is entered through on the exceptional path,
+    // and whether a try sits in that copy of its parentTryOp's finally - the one copy that runs
+    // inside the pad's funclet, where the other copies (normal exit, return, break) do not.
+    OpSideTable<int> finallyPadIdOf{"finallyPadIdOf"};
+    OpSideTable<bool> inParentTryFinallyPad{"inParentTryFinallyPad"};
     int nextCatchPadId = 0;
     mlir::Block *returnBlock;
 };

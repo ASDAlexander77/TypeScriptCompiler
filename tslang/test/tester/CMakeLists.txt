@@ -655,6 +655,7 @@ tslang_add_test(NAME test-compile-00-try-catch-return COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-00-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
 tslang_add_test(NAME test-compile-01-try-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-compile-00-try-finally-return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
+tslang_add_test(NAME test-compile-00-try-finally-funclet COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
 tslang_add_test(NAME test-compile-00-try-finally-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-compile-00-try-catch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 tslang_add_test(NAME test-compile-00-try-catch-mismatch-rethrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_mismatch_rethrow.ts")
@@ -1201,6 +1202,7 @@ tslang_add_test(NAME test-jit-00-try-catch-return COMMAND test-runner -jit "${PR
 tslang_add_test(NAME test-jit-00-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally.ts")
 tslang_add_test(NAME test-jit-01-try-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_finally.ts")
 tslang_add_test(NAME test-jit-00-try-finally-return COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_return.ts")
+tslang_add_test(NAME test-jit-00-try-finally-funclet COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_funclet.ts")
 tslang_add_test(NAME test-jit-00-try-finally-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_finally_break_continue.ts")
 tslang_add_test(NAME test-jit-00-try-catch-rethrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch_rethrow.ts")
 # pre-existing JIT limitation (reproduces on unmodified main too): the JIT's
@@ -2111,6 +2113,7 @@ set(TSLANG_CORPUS
     00try_catch.ts
     00try_finally_break_continue.ts
     00try_finally_return.ts
+    00try_finally_funclet.ts
     00try_in_catch_with_finally.ts
     00try_finally.ts
     00try_using_catch.ts
