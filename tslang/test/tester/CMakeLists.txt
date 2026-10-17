@@ -2766,6 +2766,16 @@ set_tests_properties(test-compile-ref-index-store
                      PROPERTIES PASS_REGULAR_EXPRESSION "store\\.ts:8:5: error: indexing a 'Ref<T>' gives a reference to the element; store through it with 'Deref\\(p\\[i\\]\\) = value'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
+# `in` with a number, a boolean or a bigint on the right is an error: it was quietly false. A
+# string on the right stays an extension (its `length`).
+add_test(NAME test-compile-diagnostic-location-in-primitive
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/in_primitive.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-in-primitive.obj")
+set_tests_properties(test-compile-diagnostic-location-in-primitive
+                     PROPERTIES PASS_REGULAR_EXPRESSION "in_primitive\\.ts:7:18: error: The right-hand side of an 'in' expression must not be a primitive: '5'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|in_primitive\\.ts:6:")
+
 # A number, string, boolean or array passed where an interface with members is expected is an
 # error; it compiled to a cast lowering could not make, and the callee read garbage. An interface
 # without members still takes any value.

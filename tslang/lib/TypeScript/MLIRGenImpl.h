@@ -5323,6 +5323,17 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
         auto rightExpressionValue = V(resultRight);
 
+        // a number, a boolean or a bigint has no fields to look up (a string's `length` is an
+        // extension: tests/00in_method_names.ts)
+        auto rightBaseType = mth.getBaseType(rightExpressionValue.getType());
+        if (mth.isNumericType(rightBaseType) || isa<mlir_ts::BooleanType>(rightBaseType)
+            || isa<mlir_ts::BigIntType>(rightBaseType))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'in' expression must not be a primitive: '")
+                << to_print(rightExpressionValue.getType()) << "'";
+            return mlir::failure();
+        }
+
         if (isa<mlir_ts::UnionType>(rightExpressionValue.getType()))
         {
             emitError(loc(binaryExpressionAST->right), "not supported");
