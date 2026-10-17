@@ -37,6 +37,13 @@ class Canvas {
     @slot(4) fill(shape: Shape): s32;
 }
 
+// overloads told apart by their number of parameters alone
+@cpp
+class Mixer {
+    @slot(1) mix(a: s32, b: s32): s32;
+    @slot(2) mix(a: s32, b: s32, c: s32): s32;
+}
+
 type ObjectData = [vtable: Opaque, value: s32];
 
 function slot0(self: Opaque): s32 { return -1; }
@@ -50,6 +57,9 @@ function canvasDrawInt(self: Opaque, x: s32): s32 { return 1000 + x; }
 function canvasDrawShape(self: Opaque, shape: Opaque): s32 { return 2000; }
 function canvasFillSquare(self: Opaque, shape: Opaque): s32 { return 3000; }
 function canvasFillShape(self: Opaque, shape: Opaque): s32 { return 4000; }
+
+function mix2(self: Opaque, a: s32, b: s32): s32 { return 10 * a + b; }
+function mix3(self: Opaque, a: s32, b: s32, c: s32): s32 { return 100 * a + 10 * b + c; }
 
 function main() {
     let vtable: Opaque[] = [<Opaque>slot0, <Opaque>slot1, <Opaque>slot2, <Opaque>slot3, <Opaque>slot4, <Opaque>slot5];
@@ -84,6 +94,23 @@ function main() {
     assert(canvas.draw(square) == 2000, "a Square: draw(Shape | null), derived to base");
     assert(canvas.fill(square) == 3000, "a Square: fill(Square) over fill(Shape)");
     assert(canvas.fill(shape) == 4000, "a Shape: fill(Shape)");
+
+    let mixerVtable: Opaque[] = [<Opaque>slot0, <Opaque>mix2, <Opaque>mix3];
+    let mixerData: ObjectData = [<Opaque>Ref(mixerVtable[0]), 0];
+    const mixer = <Mixer><Opaque>Ref(mixerData);
+    assert(mixer.mix(1, 2) == 12, "two arguments: mix(s32, s32)");
+    assert(mixer.mix(1, 2, 3) == 123, "three arguments: mix(s32, s32, s32)");
+
+    // `?.`: the call picks among the overloads as a direct call does
+    const maybeMixer: Mixer | null = mixer;
+    assert(maybeMixer?.mix(4, 5) == 45, "?. with two arguments: mix(s32, s32)");
+    assert(maybeMixer?.mix(4, 5, 6) == 456, "?. with three arguments: mix(s32, s32, s32)");
+    const maybeDerived: Derived | null = derived;
+    assert(maybeDerived?.write(2.5) == 225, "?. on a derived class: its override");
+    assert(maybeDerived?.write("abcd") == 504, "?. on a derived class: its own overload");
+    assert(maybeDerived?.write(2, 3) == 306, "?. on a derived class: a base overload");
+    const noMixer: Mixer | null = null;
+    assert(noMixer?.mix(1, 2, 3) === undefined, "?. on null calls nothing");
 
     print("done.");
 }

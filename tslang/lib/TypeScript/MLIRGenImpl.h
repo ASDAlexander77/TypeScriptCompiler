@@ -11665,6 +11665,9 @@ class MLIRGenImpl
     mlir::Value resolveCppOverload(mlir::Location location, mlir::Value funcRefValue, mlir::ArrayRef<mlir::Value> operands,
                                    const GenContext &genContext);
 
+    mlir::Value cppMethodAccessAgain(mlir::Location location, mlir::Value optFuncRefValue, mlir::Value funcRefValue,
+                                     const GenContext &genContext);
+
     bool isCppVirtualMethod(ClassInfo::TypePtr classInfo, ClassElement classMember, const GenContext &genContext);
 
     bool isCppVTableImplementation(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr classInfo,
