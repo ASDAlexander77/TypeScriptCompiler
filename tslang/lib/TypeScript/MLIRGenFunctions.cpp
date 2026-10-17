@@ -1751,6 +1751,8 @@ namespace mlirgen
         // context has a list of its own, since the walk used to stop at the first context
         // without one.
         funcGenContext.parentBlockContext = nullptr;
+        // nor is it the body of an enclosing function's TryOp
+        funcGenContext.isUnwindCleanupScope = false;
 
         // if we need params only we do not need to process body
         auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;

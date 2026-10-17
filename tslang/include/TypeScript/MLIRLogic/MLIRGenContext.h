@@ -83,6 +83,7 @@ struct GenContext
         capturedVars = nullptr;
         usingVars = nullptr;
         ownedVars = nullptr;
+        isUnwindCleanupScope = false;
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
@@ -234,6 +235,13 @@ struct GenContext
     // is, for every scope nested in it. An unlabelled `break` walking outwards stops here; a
     // `continue` passes through it to the loop.
     bool isSwitchScope = false;
+    // Set on a scope that is the body of a TryOp - a `try` statement's, or the catch-less one
+    // wrapped around a block or a switch for its `using` - and cleared, as isSwitchScope is, for
+    // every scope nested in it. An exception leaving such a scope lands on that TryOp's own
+    // landing pad, whose cleanup region gives back what the scope owns; the unwind leg of a
+    // scope nested further in releases the scopes between, and stops here
+    // (mlirGenReleaseOwnedOnUnwind).
+    bool isUnwindCleanupScope = false;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;
