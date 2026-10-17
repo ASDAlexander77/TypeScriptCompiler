@@ -4615,6 +4615,26 @@ class MLIRGenImpl
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             caseValue = V(result);
 
+            // a case of another kind of primitive than the switch's (`switch (5) { case "a": }`)
+            // can never match: the cast made one out of the other instead
+            auto primitiveKind = [&](mlir::Type type) {
+                auto baseType = mth.getBaseType(type);
+                if (mth.isNumericType(baseType)) return 1;
+                if (isa<mlir_ts::StringType>(baseType)) return 2;
+                if (isa<mlir_ts::BooleanType>(baseType)) return 3;
+                if (isa<mlir_ts::BigIntType>(baseType)) return 4;
+                return 0;
+            };
+
+            auto switchKind = primitiveKind(switchValue.getType());
+            auto caseKind = primitiveKind(caseValue.getType());
+            if (switchKind && caseKind && switchKind != caseKind)
+            {
+                emitError(loc(caseExpr)) << "Type '" << to_print(caseValue.getType()) << "' is not comparable to type '"
+                                         << to_print(switchValue.getType()) << "'";
+                return mlir::failure();
+            }
+
             auto switchValueEffective = switchValue;
             auto actualCaseType = mth.stripLiteralType(caseValue.getType());
             if (switchValue.getType() != actualCaseType)
