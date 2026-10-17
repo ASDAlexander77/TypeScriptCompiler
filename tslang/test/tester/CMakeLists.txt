@@ -2758,6 +2758,23 @@ add_test(NAME test-compile-integer-literal-truncation-quiet
 set_tests_properties(test-compile-integer-literal-truncation-quiet
                      PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
 
+# A type predicate whose constraint fails (the DefaultLib's `__is<V extends T, T>` / `__is_any`)
+# folds to `false` without a warning; a real constraint violation warns once, not also from the
+# inference pass ("Type 1 ..." beside "Type s32 ...").
+add_test(NAME test-compile-constraint-warning-type-predicate
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/constraint-warning/type_predicate.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/constraint-warning-type-predicate.obj")
+set_tests_properties(test-compile-constraint-warning-type-predicate
+                     PROPERTIES FAIL_REGULAR_EXPRESSION "does not satisfy the constraint|warning:|error:|Stack dump|Assertion failed")
+add_test(NAME test-compile-constraint-warning-violation
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/constraint-warning/violation.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/constraint-warning-violation.obj")
+set_tests_properties(test-compile-constraint-warning-violation
+                     PROPERTIES PASS_REGULAR_EXPRESSION "violation\\.ts:4:25: warning: Type s32 does not satisfy the constraint string\\."
+                                FAIL_REGULAR_EXPRESSION "Type 1 does not satisfy|Stack dump|Assertion failed")
+
 # A switch's case of another kind of primitive (a string for a number) is an error, as it can never
 # match: the switch's value was cast to the case's type instead.
 add_test(NAME test-compile-diagnostic-location-switch-case-type
