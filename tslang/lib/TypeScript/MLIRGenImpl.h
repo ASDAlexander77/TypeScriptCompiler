@@ -5634,6 +5634,18 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // a number, a string, a boolean or a bigint is no class to test against. A type of one
+        // (`type str = TypeOf<"">`) is: the test compares the types (tests/00instanceof.ts).
+        auto rightBaseType = mth.getBaseType(rightType);
+        if (!resultRightValue.getDefiningOp<mlir_ts::TypeRefOp>()
+            && (mth.isNumericType(rightBaseType) || isa<mlir_ts::StringType>(rightBaseType)
+                || isa<mlir_ts::BooleanType>(rightBaseType) || isa<mlir_ts::BigIntType>(rightBaseType)))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'instanceof' expression must be a class, not '")
+                << to_print(rightType) << "'";
+            return mlir::failure();
+        }
+
         rightType = mth.wideStorageType(rightType);
 
         if (isCppVTableClass(rightType) || isCppVTableClass(resultLeftfType))
