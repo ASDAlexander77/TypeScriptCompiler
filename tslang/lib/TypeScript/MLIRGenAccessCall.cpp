@@ -1667,8 +1667,15 @@ namespace mlirgen
 
             // value if true
 
-            auto innerFuncRef =
+            mlir::Value innerFuncRef =
                 builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), actualFuncRefValue);
+            innerFuncRef = cppMethodAccessAgain(location, actualFuncRefValue, innerFuncRef, genContext);
+            if (!innerFuncRef)
+            {
+                builder.setInsertionPoint(ifOp);
+                ifOp.erase();
+                return mlir::failure();
+            }
 
             auto result = mlirGenCallExpression(location, innerFuncRef, typeArguments, operands, genContext);
             // a failed call (e.g. too few arguments) must fail the expression, not leave an
@@ -1981,6 +1988,69 @@ namespace mlirgen
         }
 
         return resolved;
+    }
+
+    // `obj?.method(...)`: the member access is made in a conditional of its own, and its callee comes
+    // to the call as the value of that conditional's optional result, which no longer says which
+    // method it is - resolveCppOverload kept the first overload (`mix(a, b)` took `mix(1, 2, 3)`), and
+    // the call wasn't a C++ call. A @cpp method is accessed again here, from the object the callee is
+    // bound to, so the call sees the member access itself. funcRefValue for any other callee; null,
+    // with an error, when the access fails.
+    mlir::Value MLIRGenImpl::cppMethodAccessAgain(mlir::Location location, mlir::Value optFuncRefValue,
+                                                  mlir::Value funcRefValue, const GenContext &genContext)
+    {
+        auto ifOp = optFuncRefValue.getDefiningOp<mlir_ts::IfOp>();
+        if (!ifOp || ifOp.getThenRegion().empty())
+        {
+            return funcRefValue;
+        }
+
+        auto resultOp = dyn_cast<mlir_ts::ResultOp>(ifOp.getThenRegion().front().getTerminator());
+        if (!resultOp)
+        {
+            return funcRefValue;
+        }
+
+        auto optionalValueOp = resultOp.getOperand(mlir::cast<mlir::OpResult>(optFuncRefValue).getResultNumber())
+                                   .getDefiningOp<mlir_ts::OptionalValueOp>();
+        if (!optionalValueOp || !isCppVTableMethod(optionalValueOp.getIn()))
+        {
+            return funcRefValue;
+        }
+
+        mlir::Value thisValue;
+        StringRef identifier;
+        if (auto virtualRef = optionalValueOp.getIn().getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            thisValue = virtualRef.getThisVal();
+            identifier = virtualRef.getIdentifier();
+        }
+        else if (auto symbolRef = optionalValueOp.getIn().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            thisValue = symbolRef.getThisVal();
+            identifier = symbolRef.getIdentifier();
+        }
+
+        // the object's own class, of which a method found in a base class took the object cast to
+        // that class: the overloads are those of the object's class (resolveCppOverload)
+        auto thisType = thisValue.getType();
+        if (auto castOp = thisValue.getDefiningOp<mlir_ts::CastOp>())
+        {
+            if (isa<mlir_ts::ClassType>(castOp.getIn().getType()))
+            {
+                thisType = castOp.getIn().getType();
+            }
+        }
+
+        auto objectValue = builder.create<mlir_ts::GetThisOp>(location, thisType, funcRefValue);
+        auto result = mlirGenPropertyAccessExpression(location, objectValue, cppOverloadedName(identifier.rsplit('.').second),
+                                                      genContext);
+        if (result.failed_or_no_value())
+        {
+            return mlir::Value();
+        }
+
+        return V(result);
     }
 
     ValueOrLogicalResult MLIRGenImpl::NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
