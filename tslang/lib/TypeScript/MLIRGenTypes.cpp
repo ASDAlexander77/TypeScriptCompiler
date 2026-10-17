@@ -295,7 +295,8 @@ namespace mlirgen
     }
 
     Reason MLIRGenImpl::testConstraint(mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
-        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext) {
+        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext,
+        bool reportFailure) {
         // we need to add current type into context to be able to use it in resolving "extends" constraints
         GenContext constraintGenContext(genContext);
         for (auto &typeParamWithArg : pairs)
@@ -340,8 +341,11 @@ namespace mlirgen
             LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
                                     << constraintType << ".";);
 
-            emitWarning(location, "") << "Type " << to_print(type) << " does not satisfy the constraint "
-                                    << to_print(constraintType) << ".";
+            if (reportFailure)
+            {
+                emitWarning(location, "") << "Type " << to_print(type) << " does not satisfy the constraint "
+                                        << to_print(constraintType) << ".";
+            }
 
             return Reason::FailedConstraint;
         }
@@ -407,7 +411,7 @@ namespace mlirgen
         if (constraint)
         {
             // we ignore the test result but we need infered types, constraint will be checked later
-            testConstraint(location, pairs, typeParam, type, genContext);
+            testConstraint(location, pairs, typeParam, type, genContext, /*reportFailure*/ false);
         }
 
         return {mlir::success(), IsGeneric::False};

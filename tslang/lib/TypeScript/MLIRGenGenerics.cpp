@@ -992,7 +992,12 @@ namespace mlirgen
 
                 if (typeParam.getValue().first->getConstraint())
                 {
-                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, instantiateGenContext);
+                    // a type predicate with a failed constraint is a compile-time type test that folds to
+                    // `false` (below), not an error: don't warn for it
+                    auto isTypePredicate = functionGenericTypeInfo->funcType.getNumResults() > 0
+                        && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0));
+                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, instantiateGenContext,
+                        /*reportFailure*/ !isTypePredicate);
                     if (reason == Reason::Failure)
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
@@ -1001,11 +1006,10 @@ namespace mlirgen
 
                     if (reason == Reason::FailedConstraint)
                     {
-                        if (functionGenericTypeInfo->funcType.getNumResults() > 0
-                            && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                        if (isTypePredicate)
                         {
                             return {
-                                mlir::success(), 
+                                mlir::success(),
                                 mlir_ts::FunctionType::get(builder.getContext(), {}, { getBooleanLiteral(false) }, false), 
                                 ""
                             };
