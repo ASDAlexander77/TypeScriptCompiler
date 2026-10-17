@@ -157,6 +157,12 @@ namespace mlirgen
         // that is an exit the scope's owned locals have to be released before - see
         // blockHasTypedCatch. Same wrapping, same cleanup region, different reason to want it.
         //
+        // So are a block's own locals, once the block sits inside a TryOp's body: the TryOp's
+        // cleanup releases its body's scope and no other, so an exception out of a nested block
+        // - `try { { let s = a + b; h(); } } catch {}` - left `s` behind. The wrap's cleanup
+        // gives back the block's scope and the scopes between it and that body
+        // (mlirGenReleaseOwnedOnUnwind). Outside any TryOp nothing would run it.
+        //
         // The two remaining conditions each guard against a real, still-open bug the wrapping
         // would otherwise hit (see their comments). blockUsingInitializersAreAllNewExpr is
         // about disposing a `using`, so it only has a say when there is one - but it keeps its
@@ -167,7 +173,8 @@ namespace mlirgen
         auto declaresUsing = blockDeclaresUsing(blockAST, skipStatements);
         auto usingIsDisposable = !declaresUsing || blockUsingInitializersAreAllNewExpr(blockAST, skipStatements);
         auto rethrowNeedsCleanup = !compileOptions.isWindows && blockHasTypedCatch(blockAST, skipStatements);
-        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup) && !blockIsInsideCatchOrFinally())
+        auto localsNeedCleanup = isInsideUnwindCleanupScope(genContext) && blockDeclaresLocals(blockAST, skipStatements);
+        if (usingIsDisposable && (declaresUsing || rethrowNeedsCleanup || localsNeedCleanup) && !blockIsInsideCatchOrFinally())
         {
             return mlirGenBlockWithUnwindCleanup(blockAST, genContext, skipStatements);
         }
@@ -1395,6 +1402,16 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exception = V(result);
 
+        // The exception leaves every scope from here out to the nearest TryOp body, and those
+        // scopes have no landing pad of their own to release their locals from - the function's
+        // body, a `catch` clause's enclosing scopes. So the throw gives them back itself, as a
+        // `return` would, and first takes a reference for the exception, as a `return` does for
+        // its caller: `throw s` must not be freed by the release of `s`. Nothing gives that
+        // reference back - a caught value is not owned (takeOwnershipOfLocal) - so a thrown heap
+        // value leaks rather than dangles.
+        mlirGenRetainCaptured(location, mlir::ValueRange{exception}, /*atLastUse=*/true);
+        mlirGenReleaseOwnedOnUnwind(location, &genContext);
+
         auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
         if (!genContext.allowPartialResolve)
@@ -1527,7 +1544,16 @@ namespace mlirgen
                 }
             }
 
-            auto result = mlirGen(tryStatementAST->catchClause->block, tryGenContext);
+            // With a finally, an exception out of the catch clause unwinds into the finally's
+            // unwind copy, which releases the scopes around the `try` (below) - so a `throw` in
+            // the clause must stop short of them, as it does at a TryOp's body
+            GenContext catchGenContext(tryGenContext);
+            if (tryStatementAST->finallyBlock)
+            {
+                catchGenContext.isUnwindCleanupScope = true;
+            }
+
+            auto result = mlirGen(tryStatementAST->catchClause->block, catchGenContext);
             EXIT_IF_FAILED(result)
         }
 
@@ -1540,6 +1566,14 @@ namespace mlirgen
         {
             auto result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
             EXIT_IF_FAILED(result)
+
+            // The copy of the finally that runs on the unwind leg resumes the exception past the
+            // `try`, so it is the last chance the scopes around it get, up to the nearest TryOp
+            // body, as in a catch-less TryOp's cleanup. It cannot be the cleanup region itself:
+            // that runs before the finally, which may still read them. Marked unwind-only, so
+            // TryOpLowering drops them from the copies normal completion, `return` and `break`
+            // run, where those scopes are still live.
+            mlirGenReleaseOwnedOnUnwind(location, &tryGenContext, /*unwindOnly=*/true);
         }
 
         // terminator

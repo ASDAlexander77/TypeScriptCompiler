@@ -61,6 +61,15 @@
 // MLIROwnedReference.h.
 #define OWNED_RESULT_NAMED_ATTR_NAME "__owned_result_named"
 
+// Marks a release MLIRGen put at the end of a hand-written `finally` for the exceptional leg only:
+// what the scopes around the `try` owe once the exception carries on past it. The finally region
+// is one region in MLIRGen but several copies after TryOpLowering - the copy the landing pad runs
+// before resuming, and the copies normal completion, a `return` and a `break` run - and only the
+// first leaves the function's scopes behind; on every other copy they are still live, and their
+// own exits release them. TryOpLowering keeps these in the unwind copy and erases them from the
+// rest.
+#define UNWIND_ONLY_ATTR_NAME "__unwind_only"
+
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
 // rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
 // only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of

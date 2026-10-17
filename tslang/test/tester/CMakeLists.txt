@@ -337,6 +337,7 @@ tslang_add_test(NAME test-compile-00-labelled-scope-exit COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-switch-case-scope-exit COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_case_scope_exit.ts")
 tslang_add_test(NAME test-compile-00-using-dispose-order COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_dispose_order.ts")
 tslang_add_test(NAME test-compile-00-using-unwind-outer-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_outer_locals.ts")
+tslang_add_test(NAME test-compile-00-try-unwind-outer-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_unwind_outer_locals.ts")
 tslang_add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -880,6 +881,7 @@ tslang_add_test(NAME test-jit-00-labelled-scope-exit COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-switch-case-scope-exit COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch_case_scope_exit.ts")
 tslang_add_test(NAME test-jit-00-using-dispose-order COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_dispose_order.ts")
 tslang_add_test(NAME test-jit-00-using-unwind-outer-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00using_unwind_outer_locals.ts")
+tslang_add_test(NAME test-jit-00-try-unwind-outer-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_unwind_outer_locals.ts")
 tslang_add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -1834,6 +1836,7 @@ set(TSLANG_CORPUS
     00switch_case_scope_exit.ts
     00using_dispose_order.ts
     00using_unwind_outer_locals.ts
+    00try_unwind_outer_locals.ts
     00capture_in_new_arguments.ts
     00cast_to_f32.ts
     00catch_untyped_value.ts

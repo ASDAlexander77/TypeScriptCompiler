@@ -1618,6 +1618,36 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             tsContext->finallyBlockOf[tryOp.getOperation()] = finallyBlock;
             finallyBlockLast = continuation->getPrevNode();
 
+            // That copy is the one the landing pad runs before the exception carries on, and the
+            // only one whose way out leaves the scopes around the try: the releases MLIRGen put at
+            // the end of the finally for them stay in it and go from every later copy. Not from a
+            // try nested in the finally - its own lowering sorts its own.
+            //
+            // Erased from each later copy through its mapping, and from the region itself only once
+            // the last copy is made: the rewriter defers an erasure, so an op erased from the
+            // region still goes into every copy cloned from it afterwards.
+            SmallVector<Operation *> unwindOnlyOps;
+            tryOp.getFinally().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+                if (isa<mlir_ts::TryOp>(op))
+                {
+                    return WalkResult::skip();
+                }
+
+                if (op->hasAttr(UNWIND_ONLY_ATTR_NAME))
+                {
+                    unwindOnlyOps.push_back(op);
+                }
+
+                return WalkResult::advance();
+            });
+
+            auto eraseUnwindOnlyOps = [&](const mlir::IRMapping &mapping) {
+                for (auto *op : unwindOnlyOps)
+                {
+                    rewriter.eraseOp(mapping.lookup(op));
+                }
+            };
+
             // add clone for 'return'
             if (returns.size() > 0)
             {
@@ -1625,6 +1655,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 rewriter.cloneRegionBefore(tryOp.getFinally(), *continuation->getParent(), continuation->getIterator(),
                                             returnFinallyMapping);
                 propagateTsContextEntries(returnFinallyMapping);
+                eraseUnwindOnlyOps(returnFinallyMapping);
                 auto returnFinallyBlockLast = continuation->getPrevNode();
                 rewriter.setInsertionPoint(returnFinallyBlockLast->getTerminator());
                 auto resultOpOfReturnFinallyBlock = cast<mlir_ts::ResultOp>(returnFinallyBlockLast->getTerminator());
@@ -1655,6 +1686,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         rewriter.cloneRegionBefore(tryOp.getFinally(), *continuation->getParent(),
                                                     continuation->getIterator(), jumpFinallyMapping);
                         propagateTsContextEntries(jumpFinallyMapping);
+                        eraseUnwindOnlyOps(jumpFinallyMapping);
                         auto jumpFinallyBlockLast = continuation->getPrevNode();
                         rewriter.setInsertionPoint(jumpFinallyBlockLast->getTerminator());
                         auto resultOpOfJumpFinallyBlock = cast<mlir_ts::ResultOp>(jumpFinallyBlockLast->getTerminator());
@@ -1677,6 +1709,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     // mirroring the return-from-catch handling
                     tsContext->unwind[op] = catchesBlock;
                 }
+            }
+
+            for (auto *op : unwindOnlyOps)
+            {
+                rewriter.eraseOp(op);
             }
 
             rewriter.inlineRegionBefore(tryOp.getFinally(), continuation);
