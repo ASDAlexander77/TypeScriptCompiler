@@ -796,6 +796,10 @@ namespace mlirgen
 
         auto location = loc(forStatementAST);
 
+        // the loop's label, taken before the initializer: generating it can generate a loop of its own
+        auto loopLabel = label;
+        label = "";
+
         // initializer
         // TODO: why do we have ForInitialier
         if (isExpression(forStatementAST->initializer))
@@ -822,15 +826,15 @@ namespace mlirgen
         SmallVector<mlir::Value, 0> operands;
 
         auto forOp = builder.create<mlir_ts::ForOp>(location, types, operands);
-        if (!label.empty())
+        if (!loopLabel.empty())
         {
-            forOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
-            label = "";
+            forOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(loopLabel));
         }
 
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
-        loopGenContext.loopLabel = label;
+        // empty, as at the other loop sites: see scopeExitContinuesOutwards
+        loopGenContext.loopLabel = "";
 
         /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
@@ -948,6 +952,11 @@ namespace mlirgen
     {
         auto location = loc(forOfStatementAST);
 
+        // the loop's label, handed back to the `for` the loop is made into: generating the iterated value or its
+        // iterator can generate functions whose own loops would take it
+        auto loopLabel = label;
+        label = "";
+
         auto result = mlirGen(forOfStatementAST->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
@@ -969,6 +978,7 @@ namespace mlirgen
             auto propertyType = evaluateProperty(location, exprValue, ITERATOR_NEXT, genContext);
             if (propertyType)
             {
+                label = loopLabel;
                 if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
                 {
                     return mlir::success();
@@ -976,6 +986,7 @@ namespace mlirgen
             }
         }
 
+        label = loopLabel;
         return mlirGenES3(forOfStatementAST, exprValue, genContext);
     }
 
@@ -992,13 +1003,52 @@ namespace mlirgen
             return mlir::success();
         }
 
-        auto noLabelOp = kind == SyntaxKind::WhileStatement || kind == SyntaxKind::DoStatement ||
-                         kind == SyntaxKind::ForStatement || kind == SyntaxKind::ForInStatement ||
-                         kind == SyntaxKind::ForOfStatement;
+        auto isLoop = [](SyntaxKind kind) {
+            return kind == SyntaxKind::WhileStatement || kind == SyntaxKind::DoStatement ||
+                   kind == SyntaxKind::ForStatement || kind == SyntaxKind::ForInStatement ||
+                   kind == SyntaxKind::ForOfStatement;
+        };
 
-        if (noLabelOp)
+        if (isLoop(kind))
         {
             return mlirGen(labeledStatementAST->statement, genContext);
+        }
+
+        // `a: b: for (...)`: both labels name the loop, which carries only the innermost one. A LabelOp
+        // for `a` would make `continue a` restart its region - the loop from its initializer, skipping
+        // the incrementor - so `a` becomes another name for `b` instead.
+        if (kind == SyntaxKind::LabeledStatement)
+        {
+            auto innermost = labeledStatementAST->statement.as<LabeledStatement>();
+            while ((SyntaxKind)innermost->statement == SyntaxKind::LabeledStatement)
+            {
+                innermost = innermost->statement.as<LabeledStatement>();
+            }
+
+            if (isLoop((SyntaxKind)innermost->statement))
+            {
+                // restored, not erased: a function generated inside the loop can have a chain of the same name
+                auto alias = label;
+                auto it = loopLabelAliases.find(alias);
+                std::optional<std::string> previous;
+                if (it != loopLabelAliases.end())
+                {
+                    previous = it->second;
+                }
+
+                loopLabelAliases[alias] = MLIRHelper::getName(innermost->label);
+                auto res = mlirGen(labeledStatementAST->statement, genContext);
+                if (previous)
+                {
+                    loopLabelAliases[alias] = *previous;
+                }
+                else
+                {
+                    loopLabelAliases.erase(alias);
+                }
+
+                return res;
+            }
         }
 
         auto labelOp = builder.create<mlir_ts::LabelOp>(location, builder.getStringAttr(label));
@@ -1028,7 +1078,7 @@ namespace mlirgen
     {
         auto location = loc(continueStatementAST);
 
-        auto label = MLIRHelper::getName(continueStatementAST->label);
+        auto label = resolveLoopLabelAlias(MLIRHelper::getName(continueStatementAST->label));
 
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
@@ -1040,7 +1090,7 @@ namespace mlirgen
     {
         auto location = loc(breakStatementAST);
 
-        auto label = MLIRHelper::getName(breakStatementAST->label);
+        auto label = resolveLoopLabelAlias(MLIRHelper::getName(breakStatementAST->label));
 
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
