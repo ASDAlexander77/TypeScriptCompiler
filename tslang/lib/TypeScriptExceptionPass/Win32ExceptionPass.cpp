@@ -353,6 +353,16 @@ struct Win32ExceptionPassCode
             }
         }
 
+        // a region the scan found no end for cannot be made a funclet; say so rather than crash
+        for (auto &catchRegion : catchRegionsWorkSet)
+        {
+            if (!catchRegion.end)
+            {
+                report_fatal_error(Twine("Win32ExceptionPass: no end found for the exception handling region of a landing pad in '") +
+                                   F.getName() + "'");
+            }
+        }
+
         chooseUnwindInfoOps(catchRegionsWorkSet);
 
         // create begin of catch block (a parent comes before the regions nested in it)
@@ -538,7 +548,38 @@ struct Win32ExceptionPassCode
 
             if (catchRegion.isCatch())
             {
-                if (!endInvoke)
+                if (isa<ResumeInst>(I))
+                {
+                    // A catch-all that ends the way a cleanup does: the copy of a `finally` on the
+                    // exceptional path, which TryOpLowering enters through a catch when it holds a
+                    // try or a `return` (a cleanup funclet can do neither). Run to its end, the
+                    // finally hands the exception on: rethrow it from inside the funclet, to the
+                    // handler the region unwinds to, or to the caller.
+                    llvm::SmallVector<OperandBundleDef> opBundle;
+                    opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.catchPad));
+
+                    auto throwFunc = getThrowFn(Ctx, F.getParent());
+                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(Ctx, 0));
+                    auto nullTI = ConstantPointerNull::get(cast<llvm::PointerType>(throwFunc.getFunctionType()->params()[1]));
+
+                    // With a handler to go on to, the end-of-catch marker is an invoke that ends
+                    // a block of its own, and is removed with the rest: the rethrow takes its place.
+                    auto *rethrowAt = isa_and_nonnull<InvokeInst>(catchRegion.cxaEndCatch) ? catchRegion.cxaEndCatch : I;
+                    auto *II = catchRegion.unwindInfoOp;
+                    if (auto *handlerPad = II ? II->getUnwindDest() : nullptr)
+                    {
+                        auto *unreachableBB = BasicBlock::Create(Ctx, "rethrow.cont", &F);
+                        new UnreachableInst(Ctx, unreachableBB);
+                        InvokeInst::Create(throwFunc, unreachableBB, handlerPad, {nullI8Ptr, nullTI}, opBundle, "",
+                                           rethrowAt->getIterator());
+                    }
+                    else
+                    {
+                        CallInst::Create(throwFunc, {nullI8Ptr, nullTI}, opBundle, "", rethrowAt->getIterator());
+                        new UnreachableInst(Ctx, rethrowAt->getIterator());
+                    }
+                }
+                else if (!endInvoke)
                 {
                     assert(catchRegion.catchPad);
                     auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
