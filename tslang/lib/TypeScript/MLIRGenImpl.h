@@ -502,6 +502,29 @@ class MLIRGenImpl
         return false;
     }
 
+    // Whether this block declares a `let` or `const` of its own - a local that may own a
+    // reference, and that the TryOp around it would not release if an exception left the block
+    // (see mlirGen(Block)). Over-approximates: the type that decides it is not known yet.
+    bool blockDeclaresLocals(ts::Block blockAST, int skipStatements = 0)
+    {
+        auto index = 0;
+        for (auto statement : blockAST->statements)
+        {
+            if (index++ < skipStatements || (SyntaxKind)statement != SyntaxKind::VariableStatement)
+            {
+                continue;
+            }
+
+            auto flags = statement.as<VariableStatement>()->declarationList->flags;
+            if ((flags & NodeFlags::Let) == NodeFlags::Let || (flags & NodeFlags::Const) == NodeFlags::Const)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // Whether every top-level `using` this block declares initializes directly from
     // `new SomeClass(...)`.
     //
@@ -836,7 +859,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars)
+    void releaseScopeOwnedVars(mlir::Location location, const SmallVector<mlir::Value> &ownedVars,
+                               bool unwindOnly = false)
     {
         // reverse declaration order, the order a scope is unwound in: a later local may
         // hold the only other reference to what an earlier one points at
@@ -846,22 +870,33 @@ class MLIRGenImpl
             // released as a cell whatever its contents are owned by - the block has to go
             // back regardless. A slot that is neither is here only because it might have
             // turned into a cell and did not; see trackPossibleCell.
+            mlir::Operation *releaseOp = nullptr;
             if (isCapturedVariableCell(storage))
             {
-                builder.create<mlir_ts::ReleaseCellOp>(location, storage);
+                releaseOp = builder.create<mlir_ts::ReleaseCellOp>(location, storage);
             }
             else if (isOwnedLocalSlot(storage))
             {
-                builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+                releaseOp = builder.create<mlir_ts::ReleaseSlotOp>(location, storage);
+            }
+
+            if (releaseOp && unwindOnly)
+            {
+                releaseOp->setAttr(UNWIND_ONLY_ATTR_NAME, builder.getUnitAttr());
             }
         }
     }
 
     // The rest of the unwind leg of a catch-less TryOp's cleanup region - the one wrapped around
-    // a block or a switch for its `using`. Once the region has given back its own scope, the
-    // exception keeps unwinding, and the scopes around it that have no cleanup region of their
-    // own get no other chance: a function's body holding `let s = a + b` and, further in,
-    // `{ using r = new R(); ... }` leaked `s` on every exception through the inner block.
+    // a block or a switch for its `using`, or around a block with locals inside a try body. Once
+    // the region has given back its own scope, the exception keeps unwinding, and the scopes
+    // around it that have no cleanup region of their own get no other chance: a function's body
+    // holding `let s = a + b` and, further in, `{ using r = new R(); ... }` leaked `s` on every
+    // exception through the inner block.
+    //
+    // The same walk serves the two other places an exception leaves a scope: a `throw` statement,
+    // which raises it there, and the copy of a hand-written `finally` that runs on the unwind leg
+    // and then resumes it (`unwindOnly`, see UNWIND_ONLY_ATTR_NAME).
     //
     // Walks outwards from the scope around the wrapped one, releasing as it goes, and stops at
     // the first scope that is itself a TryOp's body (isUnwindCleanupScope) without touching its
@@ -876,15 +911,30 @@ class MLIRGenImpl
     // locals declared ahead of the wrapped scope are in the lists yet, so every slot released
     // here has had its store - or, hoisted in front of a switch whose case did not run, is
     // null, which a release does nothing with (VariableOpLowering).
-    void mlirGenReleaseOwnedOnUnwind(mlir::Location location, const GenContext *genContext)
+    void mlirGenReleaseOwnedOnUnwind(mlir::Location location, const GenContext *genContext, bool unwindOnly = false)
     {
         for (; genContext != nullptr && !genContext->isUnwindCleanupScope; genContext = genContext->parentBlockContext)
         {
             if (genContext->ownedVars != nullptr)
             {
-                releaseScopeOwnedVars(location, *genContext->ownedVars);
+                releaseScopeOwnedVars(location, *genContext->ownedVars, unwindOnly);
             }
         }
+    }
+
+    // Whether an exception out of a scope opened in this context lands on a TryOp's landing pad
+    // in this function: some scope between here and the function is a TryOp's body.
+    static bool isInsideUnwindCleanupScope(const GenContext &genContext)
+    {
+        for (auto *context = &genContext; context != nullptr; context = context->parentBlockContext)
+        {
+            if (context->isUnwindCleanupScope)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Does this reference address a captured variable's cell - a heap block the frame shares
