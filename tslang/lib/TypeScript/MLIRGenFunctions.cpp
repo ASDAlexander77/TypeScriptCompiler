@@ -1650,7 +1650,12 @@ namespace mlirgen
         // the labels around a function are not the body's to jump to
         auto outerLabels = std::move(activeLabels);
         activeLabels.clear();
-        auto restoreLabels = llvm::make_scope_exit([&]() { activeLabels = std::move(outerLabels); });
+        auto outerLoopLabelAliases = std::move(loopLabelAliases);
+        loopLabelAliases.clear();
+        auto restoreLabels = llvm::make_scope_exit([&]() {
+            activeLabels = std::move(outerLabels);
+            loopLabelAliases = std::move(outerLoopLabelAliases);
+        });
 
         auto location = loc(functionLikeDeclarationBaseAST);
 

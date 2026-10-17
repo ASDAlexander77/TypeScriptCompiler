@@ -753,6 +753,11 @@ class MLIRGenImpl
         // outwards instead, but the loop sites clear `label` before storing it, so a labelled
         // loop's context holds an empty one too - and `continue cont1` then relies on the outer
         // loop matching that empty label. 02disposable.ts is the case that proves it.
+        // (The `for` site now takes the label before its initializer and stores "" outright.)
+        // Known gap: a labelled `continue` written inside an `if` in an inner loop stops at the
+        // inner loop's body, so the outer body's `using` is not disposed. Carrying real labels
+        // needs the loop context, which stands in for the enclosing body scope in this walk, to
+        // keep that scope's label apart from the label of the loop it starts.
         auto isTargetLoop = genContext->isLoopBodyScope && genContext->loopLabel == loopLabel;
         return !isTargetLoop;
     }
@@ -14434,6 +14439,16 @@ class MLIRGenImpl
 
 private:
     std::string label;
+    // `a: b: for (...)`: the outer labels of a chain that ends in a loop, each mapped to the innermost
+    // one, the label the loop carries (see mlirGen(LabeledStatement))
+    llvm::StringMap<std::string> loopLabelAliases;
+
+    std::string resolveLoopLabelAlias(std::string label)
+    {
+        auto it = loopLabelAliases.find(label);
+        return it != loopLabelAliases.end() ? it->second : label;
+    }
+
     mlir::Block* tempEntryBlock;
     mlir::ModuleOp tempModule;
     mlir_ts::FuncOp tempFuncOp;

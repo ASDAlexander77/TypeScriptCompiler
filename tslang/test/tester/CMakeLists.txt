@@ -332,6 +332,7 @@ tslang_add_test(NAME test-compile-00-while COMMAND test-runner "${PROJECT_SOURCE
 tslang_add_test(NAME test-compile-00-for COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for.ts")
 tslang_add_test(NAME test-compile-00-for-infinite-result COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_infinite_result.ts")
 tslang_add_test(NAME test-compile-00-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue.ts")
+tslang_add_test(NAME test-compile-00-label-chain-loop COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00label_chain_loop.ts")
 tslang_add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -870,6 +871,7 @@ tslang_add_test(NAME test-jit-00-while COMMAND test-runner -jit "${PROJECT_SOURC
 tslang_add_test(NAME test-jit-00-for COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for.ts")
 tslang_add_test(NAME test-jit-00-for-infinite-result COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_infinite_result.ts")
 tslang_add_test(NAME test-jit-00-break-continue COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue.ts")
+tslang_add_test(NAME test-jit-00-label-chain-loop COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00label_chain_loop.ts")
 tslang_add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -1819,6 +1821,7 @@ set(TSLANG_CORPUS
     00bool_const_array.ts
     00break_continue_scope_exit.ts
     00break_continue.ts
+    00label_chain_loop.ts
     00capture_in_new_arguments.ts
     00cast_to_f32.ts
     00catch_untyped_value.ts
