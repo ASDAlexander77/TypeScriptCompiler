@@ -1748,6 +1748,19 @@ namespace mlirgen
                 EXIT_IF_FAILED(result);
             }
 
+            // A C variadic function is called with C's variadic convention and a TypeScript
+            // function is not, so neither stands in for the other: through a value of the wrong
+            // kind the extra arguments would land in the wrong registers.
+            if (isCVarArgFunctionType(valueType) != isCVarArgFunctionType(type))
+            {
+                // the printed types look alike: only the C variadic one is told apart
+                auto cVarArgLabel = [&](mlir::Type t) { return isCVarArgFunctionType(t) ? " (C variadic, @varargs)" : ""; };
+                emitError(location, "can't assign '")
+                    << to_print(valueType) << "'" << cVarArgLabel(valueType) << " to '" << to_print(type) << "'"
+                    << cVarArgLabel(type) << ": only one of them is a C variadic function";
+                return mlir::failure();
+            }
+
             // fall through to finish cast operation
             if (!mth.CanCastFunctionTypeToFunctionType(valueType, type))
             {

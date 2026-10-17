@@ -2111,7 +2111,8 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
         else if (auto tsFuncOp = dyn_cast_or_null<mlir_ts::FuncOp>(funcOp))
         {
             auto tsFuncType = tsFuncOp.getFunctionType();
-            llvmFuncType = tch.convertFunctionSignature(op.getContext(), tsFuncType.getResults(), tsFuncType.getInputs(), tsFuncType.isVarArg());
+            llvmFuncType = tch.convertFunctionSignature(op.getContext(), tsFuncType.getResults(), tsFuncType.getInputs(),
+                                                       tsFuncType.isVarArg() || tsFuncType.isCVarArg());
         }
 
         if (!llvmFuncType)
@@ -2383,6 +2384,30 @@ static mlir::Value recordFromRegisters(Operation *op, ConversionPatternRewriter 
     return rewriter.create<LLVM::LoadOp>(op->getLoc(), abi.recordResult, slot);
 }
 
+// An indirect call of a C variadic function (`@varargs`, the callee's !ts.func says so) is a
+// variadic call: `var_callee_type` names the fixed parameters, and the arguments after them go
+// to `...` as the C ABI passes those (on Win64 a double goes in both its XMM and its integer
+// register). Without it LLVM passes every argument as a fixed one, where printf does not look.
+template <typename CallOpTy>
+static void markCVarArgCall(CallOpTy callOp, mlir::Type calleeType, mlir::ValueRange args, mlir::TypeRange llvmResults)
+{
+    auto funcType = dyn_cast<mlir_ts::FunctionType>(calleeType);
+    if (!funcType || !funcType.isCVarArg())
+    {
+        return;
+    }
+
+    SmallVector<mlir::Type> params;
+    for (auto arg : args.take_front(funcType.getNumInputs()))
+    {
+        params.push_back(arg.getType());
+    }
+
+    auto *context = callOp->getContext();
+    auto result = llvmResults.empty() ? LLVM::LLVMVoidType::get(context) : llvmResults.front();
+    callOp.setVarCalleeTypeAttr(mlir::TypeAttr::get(LLVM::LLVMFunctionType::get(result, params, /*isVarArg=*/true)));
+}
+
 struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 {
     using TsLlvmPattern<mlir_ts::CallInternalOp>::TsLlvmPattern;
@@ -2439,6 +2464,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         // generic (TypeRange, ValueRange) builder above does not set it.
         callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(callOperands.size()), 0});
         callRes.setOpBundleSizes({});
+        markCVarArgCall(callRes, op.getOperand(0).getType(), abi.args, llvmTypes);
         if (abi.anyArgAttr)
         {
             callRes.setArgAttrsAttr(mlir::ArrayAttr::get(rewriter.getContext(), abi.argAttrs));
@@ -2626,6 +2652,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
             auto invokeOp = rewriter.create<LLVM::InvokeOp>(op->getLoc(), llvmTypes, mlir::FlatSymbolRefAttr(), operands,
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
+            markCVarArgCall(invokeOp, op.getCallOperands().front().getType(), abi.args, llvmTypes);
             if (abi.anyArgAttr)
             {
                 invokeOp.setArgAttrsAttr(mlir::ArrayAttr::get(rewriter.getContext(), abi.argAttrs));

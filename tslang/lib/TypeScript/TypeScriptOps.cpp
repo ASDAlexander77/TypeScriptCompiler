@@ -183,7 +183,7 @@ mlir_ts::FunctionType mlir_ts::FunctionType::clone(mlir::TypeRange inputs, mlir:
         clonedResults.push_back(type);
     }
 
-    return get(getContext(), clonedInputs, clonedResults, isVarArg());
+    return get(getContext(), clonedInputs, clonedResults, isVarArg(), isCVarArg());
 }
 
 /// Returns a new function type with the specified arguments and results

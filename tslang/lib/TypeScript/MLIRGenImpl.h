@@ -2151,8 +2151,9 @@ class MLIRGenImpl
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
-        // this is 'let', if 'let' is func, it should be HybridFunction
-        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+        // this is 'let', if 'let' is func, it should be HybridFunction. Not a C variadic
+        // function: it captures nothing, and a call through it must stay a variadic call.
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
         {
             actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
         }
@@ -2213,7 +2214,7 @@ class MLIRGenImpl
         // call's arguments landed in the wrong place and it returned garbage.
         if (variableDeclarationInfo.isExport || variableDeclarationInfo.isImport || variableDeclarationInfo.isExternal)
         {
-            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
             {
                 actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
             }
@@ -8711,7 +8712,7 @@ class MLIRGenImpl
         }
 
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
-                                             hiddenOperandsCount, isCVarArgCall(funcRefValue), genContext)))
+                                             hiddenOperandsCount, isCVarArgFunctionType(calledFuncType), genContext)))
         {
             return mlir::failure();
         }
@@ -8830,29 +8831,13 @@ class MLIRGenImpl
         return funcOp && funcOp.getBody().empty();
     }
 
-    // A call of a C variadic function, declared `@varargs declare function f(n: s32)` (tsbindgen
-    // writes them so): its arguments after the declared ones go to C's `...`. The function type
-    // does not say so, only the decorator - and the `func.varargs` attribute it puts on the
-    // function, which may not exist yet when the call is generated.
-    bool isCVarArgCall(mlir::Value funcRefValue)
+    // A C variadic function, declared `@varargs declare function f(n: s32)` (tsbindgen writes
+    // them so): its arguments after the declared ones go to C's `...`. Its type says so, whether
+    // it is called by name or through a value of it.
+    static bool isCVarArgFunctionType(mlir::Type type)
     {
-        auto symbolRef = funcRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
-        if (!symbolRef)
-        {
-            return false;
-        }
-
-        auto name = symbolRef.getIdentifier().str();
-        auto declared = declaredFunctions.find(name);
-        if (declared != declaredFunctions.end() && declared->second.second == theModule.getOperation()
-            && MLIRHelper::hasDecorator(declared->second.first, "varargs"))
-        {
-            return true;
-        }
-
-        auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
-        auto isVarArgAttr = funcOp ? funcOp->getAttrOfType<mlir::BoolAttr>("func.varargs") : mlir::BoolAttr();
-        return isVarArgAttr && isVarArgAttr.getValue();
+        auto funcType = dyn_cast<mlir_ts::FunctionType>(type);
+        return funcType && funcType.isCVarArg();
     }
 
     // A call with fewer arguments than the callee needs, or more than it takes, is TypeScript's
@@ -8865,7 +8850,7 @@ class MLIRGenImpl
     // `operandsCount` and the indices of `argFuncTypes` include the `hiddenOperandsCount`
     // leading operands the compiler inserted (`this`, a closure's capture, a @cpp method's
     // result slot); the message counts only what the user wrote. A C variadic callee
-    // (`isCVarArg`, isCVarArgCall) takes any number of arguments after its declared ones.
+    // (`isCVarArg`, isCVarArgFunctionType) takes any number of arguments after its declared ones.
     mlir::LogicalResult checkCallArity(mlir::Location location, int operandsCount, mlir::ArrayRef<mlir::Type> argFuncTypes,
                                        bool isVarArg, int hiddenOperandsCount, bool isCVarArg)
     {
@@ -8922,6 +8907,40 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    // C's default argument promotions, which a caller applies to what it passes to `...`: a float
+    // narrower than a double is passed as a double, an integer narrower than an int (and a
+    // boolean) as an int. printf reads `%f` as a double; an f32 passed as is printed 0.000000.
+    mlir::LogicalResult promoteCVarArgOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
+                                               int fixedOperandsCount, const GenContext &genContext)
+    {
+        for (auto i = fixedOperandsCount; i < (int)operands.size(); i++)
+        {
+            auto type = mth.stripLiteralType(operands[i].getType());
+            mlir::Type promotedType;
+            if (auto floatType = dyn_cast<mlir::FloatType>(type); floatType && floatType.getWidth() < 64)
+            {
+                promotedType = getNumberType();
+            }
+            else if (auto intType = dyn_cast<mlir::IntegerType>(type); intType && intType.getWidth() < 32)
+            {
+                promotedType = builder.getIntegerType(32, intType.getSignedness());
+            }
+            else if (isa<mlir_ts::BooleanType>(type))
+            {
+                promotedType = builder.getIntegerType(32, mlir::IntegerType::Signed);
+            }
+
+            if (promotedType)
+            {
+                auto result = cast(location, promotedType, operands[i], genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                operands[i] = V(result);
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenPrepareCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg,
                                             int hiddenOperandsCount, bool isCVarArg, const GenContext &genContext)
@@ -8935,6 +8954,11 @@ class MLIRGenImpl
         }
 
         if (mlir::failed(mlirGenAdjustOperandTypes(location, operands, argFuncTypes, isVarArg, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (isCVarArg && mlir::failed(promoteCVarArgOperands(location, operands, funcArgsCount, genContext)))
         {
             return mlir::failure();
         }
