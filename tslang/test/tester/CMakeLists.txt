@@ -2710,7 +2710,9 @@ set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
 
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
-# not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
+# not padded with undef; so is one with more arguments than the callee has parameters
+# (too_many_*), which went silently into a slot the callee does not have (a rest parameter
+# takes any number). Each file in call-arity/ makes one bad call; the test passes when
 # the compiler prints the expected message. The counts are what the user wrote, so `this`
 # (a method, a constructor) and a closure's capture are not counted. Plain add_test: these
 # compile nothing, so they need no x86 twin.
@@ -2724,7 +2726,13 @@ set(call_arity_cases
     "declared|Expected 2 arguments, but got 1\\."
     "varargs|Expected at least 1 arguments, but got 0\\."
     "optional_call|Expected 2 arguments, but got 1\\."
-    "optional_call_value|Expected 2 arguments, but got 1\\.")
+    "optional_call_value|Expected 2 arguments, but got 1\\."
+    "too_many_plain|Expected 2 arguments, but got 3\\."
+    "too_many_optional|Expected 2\\-3 arguments, but got 4\\."
+    "too_many_method|Expected 2 arguments, but got 3\\."
+    "too_many_constructor|Expected 2 arguments, but got 3\\."
+    "too_many_closure|Expected 2 arguments, but got 3\\."
+    "too_many_optional_call|Expected 2 arguments, but got 3\\.")
 foreach(call_arity_case ${call_arity_cases})
     string(FIND "${call_arity_case}" "|" call_arity_sep)
     string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)

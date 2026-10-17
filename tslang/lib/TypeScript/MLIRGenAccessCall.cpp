@@ -2135,13 +2135,13 @@ namespace mlirgen
                         slotOperands.append(operands.begin(), operands.end());
                         callAttrs.push_back(builder.getNamedAttr(SRET_ARG_ATTR_NAME, builder.getI32IntegerAttr(0)));
                         callResult = mlirGenCallFunction(location, swappedFuncType, swappedFuncRefValue, slotOperands, genContext,
-                                                         callAttrs);
+                                                         callAttrs, /*hiddenOperandsCount=*/2);
                     }
                     else
                     {
                         slotOperands.append(operands.begin(), operands.end());
                         callResult = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, slotOperands, genContext,
-                                                         callAttrs);
+                                                         callAttrs, /*hiddenOperandsCount=*/1);
                     }
 
                     if (mlir::failed(callResult))

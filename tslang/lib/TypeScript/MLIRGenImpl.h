@@ -8685,30 +8685,33 @@ class MLIRGenImpl
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              SmallVector<mlir::Value, 4> &operands, const GenContext &genContext,
-                                             ArrayRef<mlir::NamedAttribute> callAttrs = {})
+                                             ArrayRef<mlir::NamedAttribute> callAttrs = {}, int hiddenOperandsCount = 0)
     {
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext, callAttrs);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext, callAttrs,
+                                   hiddenOperandsCount);
     }
 
     // `callAttrs` go on the call (CallIndirectOp): CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME
+    // `hiddenOperandsCount`: the leading `operands` the user did not write either (a @cpp method's
+    // result slot, and its `this` when that is passed after the slot)
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                             const GenContext &genContext, ArrayRef<mlir::NamedAttribute> callAttrs = {})
+                                             const GenContext &genContext, ArrayRef<mlir::NamedAttribute> callAttrs = {},
+                                             int hiddenOperandsCount = 0)
     {
         // `thisValue` is the one operand a call gets that the user did not write: the object of
         // a method or constructor call (a bound function), the capture of a closure (also a
         // bound function) or the receiver of an extension function. Callees reached without
         // it take only what the user wrote.
-        auto hiddenOperandsCount = 0;
         if (thisValue)
         {
             operands.insert(operands.begin(), thisValue);
-            hiddenOperandsCount = 1;
+            hiddenOperandsCount++;
         }
 
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
-                                             hiddenOperandsCount, genContext)))
+                                             hiddenOperandsCount, isCVarArgCall(funcRefValue), genContext)))
         {
             return mlir::failure();
         }
@@ -8827,17 +8830,44 @@ class MLIRGenImpl
         return funcOp && funcOp.getBody().empty();
     }
 
-    // A call with fewer arguments than the callee needs is TypeScript's TS2554. Only a parameter
-    // whose type admits `undefined` itself may be left out - an optional (`b?: T`) or a
-    // default-valued (`b = 5`) one, both typed !ts.optional, and an `undefined` or `void` one.
-    // A rest parameter is never required. Any other missing parameter is an error; padding it
-    // with undef would hand the callee garbage.
+    // A call of a C variadic function, declared `@varargs declare function f(n: s32)` (tsbindgen
+    // writes them so): its arguments after the declared ones go to C's `...`. The function type
+    // does not say so, only the decorator - and the `func.varargs` attribute it puts on the
+    // function, which may not exist yet when the call is generated.
+    bool isCVarArgCall(mlir::Value funcRefValue)
+    {
+        auto symbolRef = funcRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
+        if (!symbolRef)
+        {
+            return false;
+        }
+
+        auto name = symbolRef.getIdentifier().str();
+        auto declared = declaredFunctions.find(name);
+        if (declared != declaredFunctions.end() && declared->second.second == theModule.getOperation()
+            && MLIRHelper::hasDecorator(declared->second.first, "varargs"))
+        {
+            return true;
+        }
+
+        auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
+        auto isVarArgAttr = funcOp ? funcOp->getAttrOfType<mlir::BoolAttr>("func.varargs") : mlir::BoolAttr();
+        return isVarArgAttr && isVarArgAttr.getValue();
+    }
+
+    // A call with fewer arguments than the callee needs, or more than it takes, is TypeScript's
+    // TS2554. Only a parameter whose type admits `undefined` itself may be left out - an optional
+    // (`b?: T`) or a default-valued (`b = 5`) one, both typed !ts.optional, and an `undefined` or
+    // `void` one. A rest parameter is never required and takes any number of arguments. Any other
+    // missing parameter is an error; padding it with undef would hand the callee garbage. An
+    // extra argument would be passed in a slot the callee does not have.
     //
     // `operandsCount` and the indices of `argFuncTypes` include the `hiddenOperandsCount`
-    // leading operands the compiler inserted (`this`, a closure's capture); the message counts
-    // only what the user wrote. Too many arguments is not checked here.
+    // leading operands the compiler inserted (`this`, a closure's capture, a @cpp method's
+    // result slot); the message counts only what the user wrote. A C variadic callee
+    // (`isCVarArg`, isCVarArgCall) takes any number of arguments after its declared ones.
     mlir::LogicalResult checkCallArity(mlir::Location location, int operandsCount, mlir::ArrayRef<mlir::Type> argFuncTypes,
-                                       bool isVarArg, int hiddenOperandsCount)
+                                       bool isVarArg, int hiddenOperandsCount, bool isCVarArg)
     {
         auto isOmittable = [](mlir::Type type) {
             return isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::VoidType>(type);
@@ -8846,17 +8876,17 @@ class MLIRGenImpl
         // the parameters before the rest parameter, if any
         int paramsEnd = argFuncTypes.size() - (isVarArg ? 1 : 0);
 
-        auto missingRequired = false;
+        auto wrongCount = !isVarArg && !isCVarArg && operandsCount > paramsEnd;
         for (auto i = operandsCount; i < paramsEnd; i++)
         {
             if (!isOmittable(argFuncTypes[i]))
             {
-                missingRequired = true;
+                wrongCount = true;
                 break;
             }
         }
 
-        if (!missingRequired)
+        if (!wrongCount)
         {
             return mlir::success();
         }
@@ -8894,10 +8924,15 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenPrepareCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg,
-                                            int hiddenOperandsCount, const GenContext &genContext)
+                                            int hiddenOperandsCount, bool isCVarArg, const GenContext &genContext)
     {
         int opArgsCount = operands.size();
         int funcArgsCount = argFuncTypes.size();
+
+        if (mlir::failed(checkCallArity(location, opArgsCount, argFuncTypes, isVarArg, hiddenOperandsCount, isCVarArg)))
+        {
+            return mlir::failure();
+        }
 
         if (mlir::failed(mlirGenAdjustOperandTypes(location, operands, argFuncTypes, isVarArg, genContext)))
         {
@@ -8906,11 +8941,6 @@ class MLIRGenImpl
 
         if (funcArgsCount > opArgsCount)
         {
-            if (mlir::failed(checkCallArity(location, opArgsCount, argFuncTypes, isVarArg, hiddenOperandsCount)))
-            {
-                return mlir::failure();
-            }
-
             auto lastArgIndex = argFuncTypes.size() - 1;
 
             // -1 to exclude count params
