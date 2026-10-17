@@ -230,6 +230,10 @@ struct GenContext
     // at the loop's own scope - and `isLoop` alone reads true for all of them, which is what
     // made a `break` written inside an `if` skip the lot.
     bool isLoopBodyScope = false;
+    // Set on the scope of a `switch` - the one its cases share - and cleared, as isLoopBodyScope
+    // is, for every scope nested in it. An unlabelled `break` walking outwards stops here; a
+    // `continue` passes through it to the loop.
+    bool isSwitchScope = false;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

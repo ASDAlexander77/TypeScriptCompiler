@@ -850,6 +850,18 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
 
         auto *casesRegion = &switchOp.getCasesRegion().front();
 
+        // An unlabelled `break` at the end of a case is already a branch to the merge block
+        // (mlirGenSwitchCase); one written further in - in an `if`, say - is a BreakOp, and had
+        // no target: lowering it crashed. It goes past the merge block, whose scope exit the
+        // `break` has already done on its way out. A labelled one belongs to its LabelOp.
+        visitBreakContinueInScope(switchOp.getCasesRegion(), mlir::StringAttr(), /*eligibleForUnlabeledBreak*/ true,
+                                   /*eligibleForUnlabeledContinue*/ false, [&](Operation *op, bool isBreak) {
+                                       if (isBreak)
+                                       {
+                                           tsContext->jumps[op] = continuation;
+                                       }
+                                   });
+
         auto *casesRegionWithMerge = &switchOp.getCasesRegion().back();
         for (auto &block : switchOp.getCasesRegion())
         {
