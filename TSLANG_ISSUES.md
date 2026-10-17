@@ -13,8 +13,8 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 2 | The error for (1) pointed at line 1, column 1 of the base class | bug | **moot**: nothing synthesized fails any more; an explicit bad `super()` is reported at the call |
 | 3 | `u64` `<<` shifted by the count modulo 32 | bug | **fixed** |
 | 4 | `Ref<string>` field with a `null` initializer rejected | question | **answered**: declare it `Ref<string> \| null` |
-| 5 | `@cppvtable` (now `@cpp`) overload naming (C++ overloads need distinct TypeScript names) | open | **fixed**: `@slot(N)` (#561), slots from tsbindgen (#562), and overloads under one name, picked by the arguments (this PR) |
-| 6 | C `string` return values keep the raw `char*` (no copy) | open | **fixed**: copied at the call (this PR; `Opaque` is the raw pointer) |
+| 5 | `@cppvtable` (now `@cpp`) overload naming (C++ overloads need distinct TypeScript names) | open | **fixed**: `@slot(N)` (#561), slots from tsbindgen (#562), and overloads under one name, picked by the arguments (#576) |
+| 6 | C `string` return values keep the raw `char*` (no copy) | open | **fixed**: copied at the call (#575; `Opaque` is the raw pointer) |
 | 7 | `Opaque` compared with `Opaque \| null` crashed the compiler | - | **fixed** by #536 (re-checked with the original drawScene shape) |
 | 8 | A ternary of number literals in arithmetic truncated to the other operand's integer type | - | **fixed** by #560 (still wrong on pre-alpha97) |
 | 9-12 | Bool const arrays, `Math.max`, `f32` array literal, `let x = 0` | - | fixed (#537, DefaultLib#31, works, #544 warning) |
@@ -24,7 +24,7 @@ https://github.com/ASDAlexander77/native_ts_graphics
 | 16 | `u64 %` goes through f64 (wrong above 2^53); `u64 /` has no integer division | - | `%` **fixed** by #571; `/` stays a number, as in JavaScript |
 | 17 | Storing through `Ref<u8>` indexing (`bytes[i] = x`) is rejected: "saving to constant object" | - | **answered**: `Deref(bytes[i]) = x` stores; the error says so since #573 |
 | 18 | `ns.f()` resolves to a local variable named `f` declared earlier in the function: "not a function to call" | - | **fixed** by #569 (pre-alpha100: open) |
-| 19 | A @cpp overload call rejects a class argument for a `T \| null` or base-class parameter; a call whose argument the first overload can't take fails to compile | - | **fixed** (this PR; pre-alpha101: open) |
+| 19 | A @cpp overload call rejects a class argument for a `T \| null` or base-class parameter; a call whose argument the first overload can't take fails to compile | - | **fixed** by #577 (pre-alpha101: open) |
 
 Verified downstream: native_ts_graphics dropped its 71 forwarding constructors (PR #49) and rebuilt
 everything with pre-alpha97 (all objects deleted first): Windows build clean, CTest 61/61, Android
@@ -104,7 +104,7 @@ class Holder {
 
 ---
 
-## Open
+## Fixed after pre-alpha97
 
 ### 5. `@cppvtable`: overload naming
 
@@ -113,7 +113,7 @@ interface method need distinct TypeScript names, and the MSVC slot order of over
 hand (`cl /d1reportSingleClassLayout<Class>`). A way to name the C++ overload (or a tool that prints the
 slot map) would remove that manual step. See `docs/cppvtable-classes.md`. Not re-checked.
 
-**Fixed**: `@cppvtable` is now `@cpp`, and each virtual method names its slot with `@slot(N)` (#561), which
+**Fixed by #576**: `@cppvtable` is now `@cpp`, and each virtual method names its slot with `@slot(N)` (#561), which
 tsbindgen takes from clang (#562), MSVC's reversed overload order included. C++ overloads are now declared
 under the C++ name, each with its own `@slot` or `@linkname`, and a call picks one by its arguments as C++
 does (`methods.over(5)`, `methods.over(2.5)`); no fit, or two equal fits, is an error listing the
@@ -127,7 +127,7 @@ to TypeScript later; the project now returns pointers to storage that lives as l
 Decide whether this is by design; if so, the C interop docs should say the string must outlive its use,
 otherwise copying on return (or an explicit borrowed annotation) would be safer. Not re-checked.
 
-**Fixed**: worse than stale text - under `-mm=rc` the count was kept in the 8 bytes before the
+**Fixed by #575**: worse than stale text - under `-mm=rc` the count was kept in the 8 bytes before the
 pointer, so storing `strchr(base, 'k')` rewrote two characters of `base`. A `string` returned by a
 top-level `declare function` (defined nowhere in the program) or a `@cpp` method is now copied at the
 call; declare the result `Opaque` for the pointer itself (docs/c-cpp-header-import.md).
@@ -337,7 +337,7 @@ Two causes:
 Workaround: pass the argument through a local of the parameter's type
 (`const arg: IFramebuffer | null = framebuffer;`).
 
-**Fixed** (this PR): a class fits its own type and a `T | null` holding it (3, the same C++
+**Fixed by #577**: a class fits its own type and a `T | null` holding it (3, the same C++
 pointer) and a base class, alone or in a union (2, a derived-to-base conversion). The overload is
 picked in a partial resolve too; there a call that fits none (or two) keeps the first overload
 without an error, and the full pass reports it.
