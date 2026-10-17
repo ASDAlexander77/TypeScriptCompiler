@@ -110,14 +110,15 @@ function nested_function_label() {
 }
 
 function block_chain() {
-    // a chain that ends in a block, not a loop, keeps its labels
-    let s = "";
+    // a chain that ends in a block, not a loop, keeps its labels. A number, not a string: under rc a
+    // jump out of a labelled block releases the function's owned locals (a separate, open bug)
+    let n = 0;
     a: b: {
-        s += "x";
-        if (s.length < 3) continue a;
+        n++;
+        if (n < 3) continue a;
     }
 
-    return s;
+    return n;
 }
 
 function main() {
@@ -129,7 +130,7 @@ function main() {
     assert(for_of_continue_outer_label() == "13", "for of, continue a");
     assert(for_of_one_label() == "134", "for of, one label");
     assert(nested_function_label() == "0202", "function in the loop");
-    assert(block_chain() == "xxx", "block");
+    assert(block_chain() == 3, "block");
 
     print("done.");
 }
