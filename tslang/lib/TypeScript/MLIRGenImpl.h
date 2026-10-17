@@ -124,7 +124,10 @@ enum class DisposeDepth
 {
     CurrentScope,
     CurrentScopeKeepAfterUse,
+    // a `continue`: up to the body of the loop it targets
     LoopScope,
+    // a `break`: as LoopScope, except that an unlabelled one stops at a `switch` too
+    BreakScope,
     FullStack
 };
 
@@ -470,8 +473,14 @@ class MLIRGenImpl
     // insertion point and there is no clean way to wrap them retroactively.
     bool blockDeclaresUsing(ts::Block blockAST, int skipStatements = 0)
     {
+        return blockDeclaresUsing(blockAST->statements, skipStatements);
+    }
+
+    // the same over a list of statements: a `switch`'s case clauses have no block of their own
+    bool blockDeclaresUsing(const NodeArray<Statement> &statements, int skipStatements = 0)
+    {
         auto index = 0;
-        for (auto statement : blockAST->statements)
+        for (auto statement : statements)
         {
             if (index++ < skipStatements)
             {
@@ -505,8 +514,13 @@ class MLIRGenImpl
     // syntactic proxy, and it costs nothing to check.
     bool blockUsingInitializersAreAllNewExpr(ts::Block blockAST, int skipStatements = 0)
     {
+        return blockUsingInitializersAreAllNewExpr(blockAST->statements, skipStatements);
+    }
+
+    bool blockUsingInitializersAreAllNewExpr(const NodeArray<Statement> &statements, int skipStatements = 0)
+    {
         auto index = 0;
-        for (auto statement : blockAST->statements)
+        for (auto statement : statements)
         {
             if (index++ < skipStatements)
             {
@@ -559,6 +573,11 @@ class MLIRGenImpl
     // the cleanup region, TryOpLowering sees an empty one, and the wrapping leaves no trace.
     bool blockHasTypedCatch(ts::Block blockAST, int skipStatements = 0)
     {
+        return blockHasTypedCatch(blockAST->statements, skipStatements);
+    }
+
+    bool blockHasTypedCatch(const NodeArray<Statement> &statements, int skipStatements = 0)
+    {
         auto found = false;
         ts::FilterVisitorSkipFuncsAST<CatchClause> visitor(SyntaxKind::CatchClause, [&](CatchClause catchClauseNode) {
             if (catchClauseNode->variableDeclaration && catchClauseNode->variableDeclaration->type)
@@ -568,7 +587,7 @@ class MLIRGenImpl
         });
 
         auto index = 0;
-        for (auto statement : blockAST->statements)
+        for (auto statement : statements)
         {
             if (index++ < skipStatements)
             {
@@ -726,7 +745,8 @@ class MLIRGenImpl
 
     // Whether a scope exit that has just finished with this scope still owes the scopes outside
     // it. `FullStack` - a `return` - owes all of them. A `break` or `continue` owes every scope
-    // up to and including the body scope of the loop it targets.
+    // up to and including the body scope of the loop it targets - or, for an unlabelled
+    // `break` in a case, the scope of the switch.
     //
     // The loop test belongs here, and on `isLoopBodyScope`. Written as
     // `disposeDepth == LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel`
@@ -743,7 +763,7 @@ class MLIRGenImpl
             return true;
         }
 
-        if (disposeDepth != DisposeDepth::LoopScope)
+        if (disposeDepth != DisposeDepth::LoopScope && disposeDepth != DisposeDepth::BreakScope)
         {
             return false;
         }
@@ -758,9 +778,15 @@ class MLIRGenImpl
         // `continue outer` written in an `if` in an inner loop skipped the outer body's `using`.
         // A jump to a labelled block matched nothing and ran on to the function's scope,
         // disposing its `using` and releasing its locals there and then.
+        //
+        // An unlabelled `break` belongs to a `switch` as much as to a loop, and stops at the
+        // nearer of the two; a `continue` passes through a switch. Without the switch's scope the
+        // walk took a `break` out of a case on to the scopes around the switch - releasing their
+        // locals - and found nothing of the case's own.
         if (loopLabel.empty())
         {
-            return !genContext->isLoopBodyScope;
+            return !genContext->isLoopBodyScope &&
+                   !(disposeDepth == DisposeDepth::BreakScope && genContext->isSwitchScope);
         }
 
         auto isTarget = (genContext->isLoopBodyScope && genContext->loopBodyLabel == loopLabel) ||
@@ -4571,10 +4597,12 @@ class MLIRGenImpl
         auto statements = caseBlock->statements;
         // inline block
         // TODO: should I inline block as it is isolator of local vars?
+        // Not one that declares a `using`: that is disposed where the block ends, before a case
+        // falling through runs the next one, so the block keeps its scope (mlirGen(Block)).
         if (statements.size() == 1)
         {
             auto firstStatement = statements.front();
-            if ((SyntaxKind)firstStatement == SyntaxKind::Block)
+            if ((SyntaxKind)firstStatement == SyntaxKind::Block && !blockDeclaresUsing(firstStatement.as<ts::Block>()))
             {
                 statements = statements.front().as<ts::Block>()->statements;
             }

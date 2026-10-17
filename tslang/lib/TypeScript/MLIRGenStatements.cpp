@@ -187,6 +187,8 @@ namespace mlirgen
         genContextUsing.loopBodyLabel = genContext.loopLabel;
         // a scope of its own, not the labelled statement's: see labelledContext in mlirGen(LabeledStatement)
         genContextUsing.labelledScopeLabel.clear();
+        // nor the switch's, when this block is a case's
+        genContextUsing.isSwitchScope = false;
         genContextUsing.isLoop = false;
 
         DITableScopeT debugBlockScope(debugScope);
@@ -261,6 +263,7 @@ namespace mlirgen
             tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
             tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
             tryBodyGenContext.labelledScopeLabel.clear();
+            tryBodyGenContext.isSwitchScope = false;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
@@ -686,6 +689,7 @@ namespace mlirgen
         branchContext.loopBodyLabel = genContext.loopLabel;
         branchContext.isLoop = false;
         branchContext.labelledScopeLabel.clear();
+        branchContext.isSwitchScope = false;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         branchContext.usingVars = usingVars.get();
@@ -1071,6 +1075,7 @@ namespace mlirgen
         labelledContext.parentBlockContext = &genContext;
         labelledContext.labelledScopeLabel = label;
         labelledContext.isLoopBodyScope = false;
+        labelledContext.isSwitchScope = false;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         labelledContext.usingVars = usingVars.get();
@@ -1129,7 +1134,7 @@ namespace mlirgen
         }
         label = resolveLoopLabelAlias(label);
 
-        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
+        EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::BreakScope, label, &genContext));
 
         builder.create<mlir_ts::BreakOp>(location, builder.getStringAttr(label));
         return mlir::success();
@@ -1146,18 +1151,65 @@ namespace mlirgen
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto switchValue = V(result);
 
+        auto &clauses = switchStatementAST->caseBlock->clauses;
+
+        // The cases' scope needs an unwind cleanup on the same terms a block does (mlirGen(Block)):
+        // without one, an exception after a case's `using` was stored reached the cleanup of an
+        // enclosing scope, which knows nothing of the switch's locals.
+        auto declaresUsing = false;
+        auto usingIsDisposable = true;
+        auto hasTypedCatch = false;
+        for (auto &clause : clauses)
+        {
+            declaresUsing |= blockDeclaresUsing(clause->statements);
+            usingIsDisposable &= blockUsingInitializersAreAllNewExpr(clause->statements);
+            hasTypedCatch |= !compileOptions.isWindows && blockHasTypedCatch(clause->statements);
+        }
+
+        mlir_ts::TryOp tryOp;
+        if (usingIsDisposable && (declaresUsing || hasTypedCatch) && !blockIsInsideCatchOrFinally())
+        {
+            mlir_ts::FuncOp funcOp = genContext.funcOp;
+            funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+
+            tryOp = builder.create<mlir_ts::TryOp>(location);
+
+            SmallVector<mlir::Type, 0> types;
+            builder.createBlock(&tryOp.getBody(), {}, types);
+            builder.createBlock(&tryOp.getCleanup(), {}, types);
+            builder.createBlock(&tryOp.getCatches(), {}, types);
+            builder.createBlock(&tryOp.getFinally(), {}, types);
+
+            builder.setInsertionPointToStart(&tryOp.getBody().front());
+        }
+
         auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
 
         GenContext switchGenContext(genContext);
         switchGenContext.allocateVarsOutsideOfOperation = true;
-        switchGenContext.currentOperation = switchOp;
+        // in front of the TryOp when there is one, so that its cleanup region sees the storage
+        switchGenContext.currentOperation = tryOp ? tryOp.getOperation() : switchOp.getOperation();
         switchGenContext.insertIntoParentScope = true;
+
+        // The scope the cases share, made as mlirGen(Block) makes one. The cases used to be generated
+        // with a copy of the enclosing context, sharing its lists: a `using` in a case was disposed
+        // at the end of the enclosing scope, by a name the switch's symbol table scope no longer
+        // had, which crashed the compiler.
+        switchGenContext.parentBlockContext = &genContext;
+        switchGenContext.isSwitchScope = true;
+        switchGenContext.isLoopBodyScope = false;
+        switchGenContext.labelledScopeLabel.clear();
+        switchGenContext.isLoop = false;
+
+        auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        switchGenContext.usingVars = usingVars.get();
+
+        auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+        switchGenContext.ownedVars = ownedVars.get();
 
         // add merge block
         switchOp.addMergeBlock();
         auto *mergeBlock = switchOp.getMergeBlock();
-
-        auto &clauses = switchStatementAST->caseBlock->clauses;
 
         SmallVector<mlir::cf::CondBranchOp> pendingConditions;
         SmallVector<mlir::cf::BranchOp> pendingBranches;
@@ -1174,14 +1226,18 @@ namespace mlirgen
             auto name = propertyAccessExpressionOp->name;
 
             safeCastLogic = [=, &switchGenContext](Expression caseExpr, mlir::Value constVal) {
+                // The narrowed binding is the case's own. This used to clear the flag on
+                // switchGenContext itself, so every later case declared its variables in its own
+                // symbol table scope too - gone by the time the switch's scope exit looks a
+                // `using` up by name.
                 GenContext safeCastGenContext(switchGenContext);
-                switchGenContext.insertIntoParentScope = false;
+                safeCastGenContext.insertIntoParentScope = false;
 
                 // Safe Cast
-                if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, false, nullptr, switchGenContext)))
+                if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, false, nullptr, safeCastGenContext)))
                 {
                     checkSafeCastPropertyAccessLogic(caseExpr, objAccessExpression, typeOfObject, name, constVal,
-                                                     false, nullptr, switchGenContext);
+                                                     false, nullptr, safeCastGenContext);
                 }
             };
         }
@@ -1199,6 +1255,41 @@ namespace mlirgen
             {
                 return mlir::failure();
             }
+        }
+
+        // Every way out of a case but a jump ends in the merge block - a `break` at the end of a
+        // case, the last case falling off its end, and no case matching. A `break` written
+        // further in, a `continue` or a `return` has done its own share of this on the way out
+        // (scopeExitContinuesOutwards) and does not come here. A `using` in a case the path did
+        // not run is skipped: its storage is hoisted in front of the switch, and so is a guard
+        // that only the initializer's store arms (createLocalVariable). An owned local there is
+        // released as null, which is nothing to do (VariableOpLowering).
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPoint(mergeBlock->getTerminator());
+            EXIT_IF_FAILED(mlirGenScopeExit(location,
+                                            tryOp ? DisposeDepth::CurrentScopeKeepAfterUse : DisposeDepth::CurrentScope,
+                                            {}, &switchGenContext));
+        }
+
+        if (tryOp)
+        {
+            // as in mlirGenBlockWithUnwindCleanup: the cleanup does what the merge block does,
+            // reached only from the unwind edge; no catch clause, no finally
+            builder.setInsertionPointAfter(switchOp);
+            builder.create<mlir_ts::ResultOp>(location);
+
+            builder.setInsertionPointToStart(&tryOp.getCleanup().front());
+            EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &switchGenContext));
+            builder.create<mlir_ts::ResultOp>(location);
+
+            builder.setInsertionPointToStart(&tryOp.getCatches().front());
+            builder.create<mlir_ts::ResultOp>(location);
+
+            builder.setInsertionPointToStart(&tryOp.getFinally().front());
+            builder.create<mlir_ts::ResultOp>(location);
+
+            builder.setInsertionPointAfter(tryOp);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! SWITCH: " << switchOp << "\n");
@@ -1372,6 +1463,7 @@ namespace mlirgen
             tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
             tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
             tryBodyGenContext.labelledScopeLabel.clear();
+            tryBodyGenContext.isSwitchScope = false;
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();

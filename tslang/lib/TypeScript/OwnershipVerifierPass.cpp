@@ -66,8 +66,27 @@ class OwnershipVerifierPass : public mlir::PassWrapper<OwnershipVerifierPass, Ty
             {
                 if (varOp->hasAttr(OWNED_LOCAL_CONSUMED_ATTR_NAME))
                 {
-                    acquisitions.emplace_back(varOp.getResult(), varOp.getOperation());
                     acquiredSlots.insert(varOp.getResult());
+                    if (varOp.getInitializer())
+                    {
+                        acquisitions.emplace_back(varOp.getResult(), varOp.getOperation());
+                    }
+                    else
+                    {
+                        // Storage hoisted out in front of a TryOp or a SwitchOp: the declaration
+                        // is the store that stayed behind, and the slot is null until it runs
+                        // (VariableOpLowering) - a release has nothing to give back on a path
+                        // that never reaches it. Blaming the hoisted slot itself reported a
+                        // `break` written ahead of the declaration, in a case or a try body.
+                        for (auto *user : varOp.getResult().getUsers())
+                        {
+                            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                            if (storeOp && storeOp.getReference() == varOp.getResult())
+                            {
+                                acquisitions.emplace_back(varOp.getResult(), storeOp.getOperation());
+                            }
+                        }
+                    }
                 }
             }
         });
