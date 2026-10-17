@@ -2,6 +2,8 @@
 
 #include "MLIRGenImpl.h"
 
+#include "llvm/ADT/ScopeExit.h"
+
 namespace typescript
 {
 namespace mlirgen
@@ -339,6 +341,18 @@ namespace mlirgen
             if (isa<mlir_ts::NeverType>(type))
             {
                 emitError(location, "'Never' can't be used as parameter type");
+                return {mlir::failure(), isGenericTypes, params};
+            }
+
+            // the arguments a rest parameter takes are put in an array: one of a number type only
+            // failed the module's verification
+            auto restBaseType = mth.getBaseType(type);
+            if (isMultiArgs
+                && (mth.isNumericType(restBaseType) || isa<mlir_ts::StringType>(restBaseType)
+                    || isa<mlir_ts::BooleanType>(restBaseType) || isa<mlir_ts::BigIntType>(restBaseType)
+                    || isa<mlir_ts::CharType>(restBaseType)))
+            {
+                emitError(loc(arg)) << "A rest parameter must be of an array type, not '" << to_print(type) << "'";
                 return {mlir::failure(), isGenericTypes, params};
             }
 
@@ -1632,6 +1646,16 @@ namespace mlirgen
 
         SymbolTableScopeT varScope(symbolTable);
         BoundRefCacheScopeT boundRefCacheScope(boundRefMaterializedCache);
+
+        // the labels around a function are not the body's to jump to
+        auto outerLabels = std::move(activeLabels);
+        activeLabels.clear();
+        auto outerLoopLabelAliases = std::move(loopLabelAliases);
+        loopLabelAliases.clear();
+        auto restoreLabels = llvm::make_scope_exit([&]() {
+            activeLabels = std::move(outerLabels);
+            loopLabelAliases = std::move(outerLoopLabelAliases);
+        });
 
         auto location = loc(functionLikeDeclarationBaseAST);
 

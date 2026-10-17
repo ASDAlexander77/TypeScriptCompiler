@@ -4620,6 +4620,26 @@ class MLIRGenImpl
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             caseValue = V(result);
 
+            // a case of another kind of primitive than the switch's (`switch (5) { case "a": }`)
+            // can never match: the cast made one out of the other instead
+            auto primitiveKind = [&](mlir::Type type) {
+                auto baseType = mth.getBaseType(type);
+                if (mth.isNumericType(baseType)) return 1;
+                if (isa<mlir_ts::StringType>(baseType)) return 2;
+                if (isa<mlir_ts::BooleanType>(baseType)) return 3;
+                if (isa<mlir_ts::BigIntType>(baseType)) return 4;
+                return 0;
+            };
+
+            auto switchKind = primitiveKind(switchValue.getType());
+            auto caseKind = primitiveKind(caseValue.getType());
+            if (switchKind && caseKind && switchKind != caseKind)
+            {
+                emitError(loc(caseExpr)) << "Type '" << to_print(caseValue.getType()) << "' is not comparable to type '"
+                                         << to_print(switchValue.getType()) << "'";
+                return mlir::failure();
+            }
+
             auto switchValueEffective = switchValue;
             auto actualCaseType = mth.stripLiteralType(caseValue.getType());
             if (switchValue.getType() != actualCaseType)
@@ -5308,6 +5328,17 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
         auto rightExpressionValue = V(resultRight);
 
+        // a number, a boolean or a bigint has no fields to look up (a string's `length` is an
+        // extension: tests/00in_method_names.ts)
+        auto rightBaseType = mth.getBaseType(rightExpressionValue.getType());
+        if (mth.isNumericType(rightBaseType) || isa<mlir_ts::BooleanType>(rightBaseType)
+            || isa<mlir_ts::BigIntType>(rightBaseType))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'in' expression must not be a primitive: '")
+                << to_print(rightExpressionValue.getType()) << "'";
+            return mlir::failure();
+        }
+
         if (isa<mlir_ts::UnionType>(rightExpressionValue.getType()))
         {
             emitError(loc(binaryExpressionAST->right), "not supported");
@@ -5636,6 +5667,18 @@ class MLIRGenImpl
         if (mth.isNoneType(rightType))
         {
             emitError(location, "type of instanceOf can't be resolved.");
+            return mlir::failure();
+        }
+
+        // a number, a string, a boolean or a bigint is no class to test against. A type of one
+        // (`type str = TypeOf<"">`) is: the test compares the types (tests/00instanceof.ts).
+        auto rightBaseType = mth.getBaseType(rightType);
+        if (!resultRightValue.getDefiningOp<mlir_ts::TypeRefOp>()
+            && (mth.isNumericType(rightBaseType) || isa<mlir_ts::StringType>(rightBaseType)
+                || isa<mlir_ts::BooleanType>(rightBaseType) || isa<mlir_ts::BigIntType>(rightBaseType)))
+        {
+            emitError(loc(binaryExpressionAST->right), "The right-hand side of an 'instanceof' expression must be a class, not '")
+                << to_print(rightType) << "'";
             return mlir::failure();
         }
 
@@ -14388,6 +14431,11 @@ class MLIRGenImpl
     mlir::SmallPtrSet<mlir::Type, 32> exportedTypes;
 
     Stages stage;
+
+    // The labels of the statements around the code being generated, innermost last: a labeled
+    // `break` or `continue` has to name one of them. A function body starts with none: a jump
+    // can't leave a function.
+    SmallVector<std::string> activeLabels;
 
 private:
     std::string label;

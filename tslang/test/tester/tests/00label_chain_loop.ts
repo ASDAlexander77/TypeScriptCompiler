@@ -89,6 +89,26 @@ function for_of_one_label() {
     return s;
 }
 
+// a function inside the loop has labels of its own: its `a` is not another name for the outer `b`
+function nested_function_label() {
+    let s = "";
+    a: b: for (let i = 0; i < 2; i++) {
+        const f = () => {
+            let r = "";
+            a: for (let j = 0; j < 3; j++) {
+                if (j == 1) continue a;
+                r += j;
+            }
+
+            return r;
+        };
+
+        s += f();
+    }
+
+    return s;
+}
+
 function block_chain() {
     // a chain that ends in a block, not a loop, keeps its labels
     let s = "";
@@ -108,6 +128,7 @@ function main() {
     assert(do_continue_outer_label() == "13", "do, continue a");
     assert(for_of_continue_outer_label() == "13", "for of, continue a");
     assert(for_of_one_label() == "134", "for of, one label");
+    assert(nested_function_label() == "0202", "function in the loop");
     assert(block_chain() == "xxx", "block");
 
     print("done.");

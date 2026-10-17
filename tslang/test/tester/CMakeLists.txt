@@ -2669,6 +2669,16 @@ foreach(ownership_shard RANGE ${ownership_last})
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
 endforeach()
 
+# A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
+# MLIR verifier, which failed the module at 1:1.
+add_test(NAME test-compile-diagnostic-location-rest-parameter-type
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/rest_parameter_type.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-rest-parameter-type.obj")
+set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
+                     PROPERTIES PASS_REGULAR_EXPRESSION "rest_parameter_type\\.ts:6:12: error: A rest parameter must be of an array type, not 's32'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
+
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
 # not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
 # the compiler prints the expected message. The counts are what the user wrote, so `this`
@@ -2701,6 +2711,23 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A `continue` or `break` naming a label that no statement around it has is an error (a label
+# outside the function doesn't count); it compiled to a jump with nowhere to go.
+add_test(NAME test-compile-diagnostic-location-continue-label
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/continue_label.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-continue-label.obj")
+set_tests_properties(test-compile-diagnostic-location-continue-label
+                     PROPERTIES PASS_REGULAR_EXPRESSION "continue_label\\.ts:7:13: error: A 'continue' statement can only jump to a label of an enclosing statement"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|continue_label\\.ts:6:")
+add_test(NAME test-compile-diagnostic-location-break-label
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/break_label.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-break-label.obj")
+set_tests_properties(test-compile-diagnostic-location-break-label
+                     PROPERTIES PASS_REGULAR_EXPRESSION "break_label\\.ts:7:17: error: A 'break' statement can only jump to a label of an enclosing statement"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|break_label\\.ts:10:")
+
 # Storing a fraction into a variable whose type was inferred from an integer literal (`let s = 0`
 # is an s32) drops it, and is warned about; the inference itself stays.
 foreach(truncation_case "global|3:1" "local|5:9")
@@ -2722,6 +2749,16 @@ add_test(NAME test-compile-integer-literal-truncation-quiet
 set_tests_properties(test-compile-integer-literal-truncation-quiet
                      PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
 
+# A switch's case of another kind of primitive (a string for a number) is an error, as it can never
+# match: the switch's value was cast to the case's type instead.
+add_test(NAME test-compile-diagnostic-location-switch-case-type
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/switch_case_type.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-switch-case-type.obj")
+set_tests_properties(test-compile-diagnostic-location-switch-case-type
+                     PROPERTIES PASS_REGULAR_EXPRESSION "switch_case_type\\.ts:8:14: error: Type '\"a\"' is not comparable to type '5'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|switch_case_type\\.ts:7:")
+
 # A store to an indexed Ref<T> (`bytes[i] = x`) names the form that stores, `Deref(bytes[i]) = x`,
 # instead of "saving to constant object".
 add_test(NAME test-compile-ref-index-store
@@ -2731,6 +2768,16 @@ add_test(NAME test-compile-ref-index-store
 set_tests_properties(test-compile-ref-index-store
                      PROPERTIES PASS_REGULAR_EXPRESSION "store\\.ts:8:5: error: indexing a 'Ref<T>' gives a reference to the element; store through it with 'Deref\\(p\\[i\\]\\) = value'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# `in` with a number, a boolean or a bigint on the right is an error: it was quietly false. A
+# string on the right stays an extension (its `length`).
+add_test(NAME test-compile-diagnostic-location-in-primitive
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/in_primitive.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-in-primitive.obj")
+set_tests_properties(test-compile-diagnostic-location-in-primitive
+                     PROPERTIES PASS_REGULAR_EXPRESSION "in_primitive\\.ts:7:18: error: The right-hand side of an 'in' expression must not be a primitive: '5'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|in_primitive\\.ts:6:")
 
 # A number, string, boolean or array passed where an interface with members is expected is an
 # error; it compiled to a cast lowering could not make, and the callee read garbage. An interface
@@ -2750,6 +2797,16 @@ add_test(NAME test-compile-interface-cast-empty
                  -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-empty.obj")
 set_tests_properties(test-compile-interface-cast-empty
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
+# `instanceof` with a number, a string, a boolean or a bigint value on the right is an error: the
+# test compared the two types. A type there (`type str = TypeOf<"">`) stays an extension.
+add_test(NAME test-compile-diagnostic-location-instanceof-primitive
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/instanceof_primitive.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-instanceof-primitive.obj")
+set_tests_properties(test-compile-diagnostic-location-instanceof-primitive
+                     PROPERTIES PASS_REGULAR_EXPRESSION "instanceof_primitive\\.ts:8:24: error: The right-hand side of an 'instanceof' expression must be a class, not '3'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|instanceof_primitive\\.ts:7:")
 
 # A @cpp class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
 # would add a slot, run code of its own or ask the object what it is is an error: a slot off by one
@@ -2933,6 +2990,16 @@ set_tests_properties(test-compile-diagnostic-location-generated-cast
                      PROPERTIES PASS_REGULAR_EXPRESSION "generated_cast\\.ts:6:23: error: can't cast from 'null' to 'string'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|generated_cast\\.ts:1:")
 
+# `delete` of a local holding a number is an error: it compiled, as the error made for it was
+# dropped. A class instance (or an array, or a value made by `new`) can still be deleted.
+add_test(NAME test-compile-diagnostic-location-delete-local
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/delete_local.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-delete-local.obj")
+set_tests_properties(test-compile-diagnostic-location-delete-local
+                     PROPERTIES PASS_REGULAR_EXPRESSION "delete_local\\.ts:9:5: error: The operand of a 'delete' operator must be a property reference"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|delete_local\\.ts:7:")
+
 # An error in a field initializer, or in a derived class's implicit constructor, is reported at the
 # field or the class - not at 1:1, where the code the compiler generates for them had put it.
 add_test(NAME test-compile-diagnostic-location-field-initializer
@@ -2957,6 +3024,16 @@ add_test(NAME test-compile-diagnostic-location-implicit-constructor
 set_tests_properties(test-compile-diagnostic-location-implicit-constructor
                      PROPERTIES PASS_REGULAR_EXPRESSION "implicit_constructor\\.ts:9:1: error: Class constructor is not accessable"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|implicit_constructor\\.ts:1:")
+
+# An enum member after a string member needs an initializer: it took the count of the members
+# before it.
+add_test(NAME test-compile-diagnostic-location-enum-member-initializer
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/enum_member_initializer.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-enum-member-initializer.obj")
+set_tests_properties(test-compile-diagnostic-location-enum-member-initializer
+                     PROPERTIES PASS_REGULAR_EXPRESSION "enum_member_initializer\\.ts:7:5: error: Enum member 'B' must have initializer"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|enum_member_initializer\\.ts:5:")
 
 # An error in the code the compiler makes for a statement (a for...of's or for...in's loop) is
 # reported at the statement, and one in a `using`'s dispose call at the declaration - not at 1:1,
