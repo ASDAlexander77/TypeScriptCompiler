@@ -14384,6 +14384,11 @@ class MLIRGenImpl
 
     Stages stage;
 
+    // The labels of the statements around the code being generated, innermost last: a labeled
+    // `break` or `continue` has to name one of them. A function body starts with none: a jump
+    // can't leave a function.
+    SmallVector<std::string> activeLabels;
+
 private:
     std::string label;
     mlir::Block* tempEntryBlock;

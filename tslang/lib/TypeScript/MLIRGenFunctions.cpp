@@ -2,6 +2,8 @@
 
 #include "MLIRGenImpl.h"
 
+#include "llvm/ADT/ScopeExit.h"
+
 namespace typescript
 {
 namespace mlirgen
@@ -1632,6 +1634,11 @@ namespace mlirgen
 
         SymbolTableScopeT varScope(symbolTable);
         BoundRefCacheScopeT boundRefCacheScope(boundRefMaterializedCache);
+
+        // the labels around a function are not the body's to jump to
+        auto outerLabels = std::move(activeLabels);
+        activeLabels.clear();
+        auto restoreLabels = llvm::make_scope_exit([&]() { activeLabels = std::move(outerLabels); });
 
         auto location = loc(functionLikeDeclarationBaseAST);
 

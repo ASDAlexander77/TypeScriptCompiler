@@ -6,6 +6,8 @@
 
 #include "mlir/Dialect/Async/IR/Async.h"
 
+#include "llvm/ADT/ScopeExit.h"
+
 #undef DEBUG_TYPE
 #define DEBUG_TYPE "mlir"
 
@@ -996,6 +998,9 @@ namespace mlirgen
                          kind == SyntaxKind::ForStatement || kind == SyntaxKind::ForInStatement ||
                          kind == SyntaxKind::ForOfStatement;
 
+        activeLabels.push_back(label);
+        auto popLabel = llvm::make_scope_exit([&]() { activeLabels.pop_back(); });
+
         if (noLabelOp)
         {
             return mlirGen(labeledStatementAST->statement, genContext);
@@ -1029,6 +1034,13 @@ namespace mlirgen
         auto location = loc(continueStatementAST);
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
+        // a `continue` to the label of a block (not a loop) starts the block again: an extension
+        // TypeScript doesn't have (tests/00break_continue.ts)
+        if (!label.empty() && !llvm::is_contained(activeLabels, label))
+        {
+            emitError(location, "A 'continue' statement can only jump to a label of an enclosing statement");
+            return mlir::failure();
+        }
 
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
@@ -1041,6 +1053,11 @@ namespace mlirgen
         auto location = loc(breakStatementAST);
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
+        if (!label.empty() && !llvm::is_contained(activeLabels, label))
+        {
+            emitError(location, "A 'break' statement can only jump to a label of an enclosing statement");
+            return mlir::failure();
+        }
 
         EXIT_IF_FAILED(mlirGenScopeExit(location, DisposeDepth::LoopScope, label, &genContext));
 
