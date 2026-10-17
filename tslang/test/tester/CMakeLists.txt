@@ -2666,6 +2666,16 @@ foreach(ownership_shard RANGE ${ownership_last})
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify-ownership.cmake")
 endforeach()
 
+# A rest parameter of a number, string or boolean type is an error at the parameter: it reached the
+# MLIR verifier, which failed the module at 1:1.
+add_test(NAME test-compile-diagnostic-location-rest-parameter-type
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/rest_parameter_type.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-rest-parameter-type.obj")
+set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
+                     PROPERTIES PASS_REGULAR_EXPRESSION "rest_parameter_type\\.ts:6:12: error: A rest parameter must be of an array type, not 's32'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
+
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
 # not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
 # the compiler prints the expected message. The counts are what the user wrote, so `this`
