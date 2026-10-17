@@ -2939,6 +2939,14 @@ add_test(NAME test-compile-diagnostic-location-field-initializer
 set_tests_properties(test-compile-diagnostic-location-field-initializer
                      PROPERTIES PASS_REGULAR_EXPRESSION "field_initializer\\.ts:6:5: error: can't cast from 'null' to 'Reference<string>'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|field_initializer\\.ts:1:")
+# A static field's initializer is checked like an instance field's: it compiled with no error at all.
+add_test(NAME test-compile-diagnostic-location-static-field-initializer
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/static_field_initializer.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-static-field-initializer.obj")
+set_tests_properties(test-compile-diagnostic-location-static-field-initializer
+                     PROPERTIES PASS_REGULAR_EXPRESSION "static_field_initializer\\.ts:6:32: error: can't cast from 'null' to 'Reference<string>' in 'strict null mode'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|static_field_initializer\\.ts:1:")
 add_test(NAME test-compile-diagnostic-location-implicit-constructor
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
                  "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/implicit_constructor.ts"

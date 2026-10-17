@@ -1540,6 +1540,13 @@ namespace mlirgen
             },
             genContext);
 
+        // a failed initializer (e.g. `null` for a `Ref<string>`) leaves no type; going on with
+        // none dropped its diagnostic, since those are only shown when the module fails
+        if (!staticFieldType)
+        {
+            return mlir::failure();
+        }
+
         auto &staticFieldInfos = newClassPtr->staticFields;
         pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, accessLevel);
 
