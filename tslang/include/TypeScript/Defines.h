@@ -70,6 +70,13 @@
 // rest.
 #define UNWIND_ONLY_ATTR_NAME "__unwind_only"
 
+// The `return` counterpart: a release MLIRGen put at the end of a hand-written `finally` for what
+// the scopes around the `try` owe once a `return` from its body or catch clause has run the
+// finally. The `return` itself stops short of those scopes, since the finally may still read them
+// (GenContext::finallyGuardScope). TryOpLowering keeps these in the copy a `return` runs and
+// erases them from the rest.
+#define RETURN_ONLY_ATTR_NAME "__return_only"
+
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
 // rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
 // only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of

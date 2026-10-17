@@ -84,8 +84,8 @@ function completeThroughFinally(pre: string) {
     return s;
 }
 
-// no unwind-only release in the copy a `return` runs. The finally does not read `s`: the return
-// releases the frame before its finally runs, a separate bug.
+// no unwind-only release in the copy a `return` runs (00try_return_through_finally.ts has more on
+// a `return` through a finally)
 function returnThroughFinally(pre: string) {
     let s = pre + "4";
     try {
@@ -93,7 +93,7 @@ function returnThroughFinally(pre: string) {
     }
     finally {
         churn();
-        trail += "f;";
+        trail += s + ";";
     }
 }
 
@@ -266,7 +266,7 @@ function main() {
     let r = returnThroughFinally(pre);
     churn();
     print("return through a finally: " + r + " " + trail);
-    assert(r == "p4r" && trail == "f;", "return through a finally");
+    assert(r == "p4r" && trail == "p4;", "return through a finally");
 
     trail = "";
     let b = breakThroughFinally(pre);
