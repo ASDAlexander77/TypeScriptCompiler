@@ -817,6 +817,41 @@ class MLIRGenImpl
         return !isTarget;
     }
 
+    // Whether a scope exit walking outwards stops here, at a `try` whose `finally` still has to
+    // run first (GenContext::finallyGuardScope): a `return`, or a `break` or `continue` that
+    // leaves the `try`. The finally can read this scope and the ones outside it, so the copy of
+    // the finally that the jump runs disposes and releases them once it is done
+    // (mlirGenScopeExitAfterFinally). A `break` or `continue` is noted on the guard, for the
+    // finally to know where it goes; the two walks of one scope exit both come by, hence the
+    // check for one already there.
+    static bool scopeExitStopsAtFinallyGuard(DisposeDepth disposeDepth, const std::string &loopLabel,
+                                             const GenContext *genContext)
+    {
+        if (genContext->finallyGuardScope != genContext)
+        {
+            return false;
+        }
+
+        if (disposeDepth == DisposeDepth::FullStack)
+        {
+            return true;
+        }
+
+        if (disposeDepth != DisposeDepth::LoopScope && disposeDepth != DisposeDepth::BreakScope)
+        {
+            return false;
+        }
+
+        std::pair<bool, std::string> jump(disposeDepth == DisposeDepth::BreakScope, loopLabel);
+        auto &escapingJumps = *genContext->finallyEscapingJumps;
+        if (!llvm::is_contained(escapingJumps, jump))
+        {
+            escapingJumps.push_back(jump);
+        }
+
+        return true;
+    }
+
     // Drops the reference each local of this scope took when it was declared. Shaped after
     // mlirGenDisposable, and walks outwards on the same terms, so that a `return` from a
     // nested block releases every scope it leaves and a `break` releases up to the loop.
@@ -828,9 +863,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        // a `return` stops at a `try` whose `finally` still has to run: that finally's copy for
-        // the `return` releases the scopes from here outwards (mlirGenReleaseOwnedOnReturn)
-        if (disposeDepth == DisposeDepth::FullStack && genContext->finallyGuardScope == genContext)
+        if (scopeExitStopsAtFinallyGuard(disposeDepth, loopLabel, genContext))
         {
             return mlir::success();
         }
@@ -931,25 +964,42 @@ class MLIRGenImpl
         }
     }
 
-    // The end of the copy of a hand-written `finally` that a `return` from its `try` body or catch
-    // clause runs (RETURN_ONLY_ATTR_NAME): the rest of that `return`'s scope exit. The `return`
-    // released the scopes inside the `try` and stopped at its finallyGuardScope, because the
+    // The end of the copy of a hand-written `finally` that a `return`, `break` or `continue` from
+    // its `try` body or catch clause runs: the rest of that jump's scope exit. The jump disposed
+    // and released the scopes inside the `try` and stopped at its finallyGuardScope, because the
     // finally can still read every scope from there outwards - `let s = ...; try { return x; }
     // finally { log(s); }` read `s` after the `return` had given it back.
     //
-    // Walks outwards from the scope around the `try`, as a `return` does, and stops at the
-    // finallyGuardScope of the next `try` out with a `finally`: the `return` goes on through that
-    // finally's own copy (TryOpLowering chains them), which releases from there.
-    void mlirGenReleaseOwnedOnReturn(mlir::Location location, const GenContext *genContext)
+    // Walks outwards from the scope around the `try` on the jump's own terms, and so stops where
+    // it goes, or at the finallyGuardScope of the next `try` out with a `finally`: the jump goes
+    // on through that finally's own copy (TryOpLowering chains them), which goes on from there.
+    //
+    // Inside a `ts.If` on a constant true, tagged `onlyOnAttr` (RETURN_ONLY_ATTR_NAME or
+    // JUMP_ONLY_ATTR_NAME) with `onlyOnValue`, so that TryOpLowering can keep the lot in the one
+    // copy of the finally it belongs to and erase it from every other. Nothing at all when the
+    // scopes owe nothing.
+    mlir::LogicalResult mlirGenScopeExitAfterFinally(mlir::Location location, DisposeDepth disposeDepth,
+                                                     std::string loopLabel, const GenContext *genContext,
+                                                     StringRef onlyOnAttr, mlir::Attribute onlyOnValue)
     {
-        for (; genContext != nullptr && genContext->finallyGuardScope != genContext;
-             genContext = genContext->parentBlockContext)
+        auto alwaysTrue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, alwaysTrue, /*withElseRegion=*/false);
+        ifOp->setAttr(onlyOnAttr, onlyOnValue);
+
         {
-            if (genContext->ownedVars != nullptr)
-            {
-                releaseScopeOwnedVars(location, *genContext->ownedVars, RETURN_ONLY_ATTR_NAME);
-            }
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            EXIT_IF_FAILED(mlirGenScopeExit(location, disposeDepth, loopLabel, genContext));
         }
+
+        auto &thenBlock = ifOp.getThenRegion().front();
+        if (&thenBlock.front() == thenBlock.getTerminator())
+        {
+            ifOp->erase();
+            alwaysTrue->erase();
+        }
+
+        return mlir::success();
     }
 
     // Whether an exception out of a scope opened in this context lands on a TryOp's landing pad
@@ -1341,6 +1391,13 @@ class MLIRGenImpl
     {
         // as in mlirGenReleaseOwned: the walk outwards ends at the function
         if (genContext == nullptr)
+        {
+            return mlir::success();
+        }
+
+        // and at a `try` whose `finally` reads this scope before it may be disposed - `{ using r =
+        // ...; try { return; } finally { r.read(); } }` disposed `r` and then ran the finally
+        if (scopeExitStopsAtFinallyGuard(disposeDepth, loopLabel, genContext))
         {
             return mlir::success();
         }

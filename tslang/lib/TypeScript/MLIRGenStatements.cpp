@@ -1468,14 +1468,17 @@ namespace mlirgen
         tryGenContext.currentOperation = tryOp;
 
         // The scope around the `try` as its body and catch clause see it on the way out, when it
-        // has a `finally`: a `return` from either stops here, and the finally's copy for the
-        // `return` releases the rest (GenContext::finallyGuardScope). A copy of tryGenContext,
-        // because the finally itself is generated in tryGenContext, and a `return` in the
-        // finally is not one this finally runs after.
+        // has a `finally`: a `return`, `break` or `continue` from either stops here, and the
+        // finally's copy for that jump disposes and releases the rest
+        // (GenContext::finallyGuardScope). A copy of tryGenContext, because the finally itself is
+        // generated in tryGenContext, and a jump in the finally is not one this finally runs
+        // after.
+        SmallVector<std::pair<bool, std::string>> finallyEscapingJumps;
         GenContext finallyGuardGenContext(tryGenContext);
         if (tryStatementAST->finallyBlock)
         {
             finallyGuardGenContext.finallyGuardScope = &finallyGuardGenContext;
+            finallyGuardGenContext.finallyEscapingJumps = &finallyEscapingJumps;
         }
 
         SmallVector<mlir::Type, 0> types;
@@ -1591,8 +1594,19 @@ namespace mlirgen
 
             // And the copy a `return` from the body or the catch clause runs: the rest of that
             // `return`'s scope exit, which it left for after the finally (finallyGuardScope).
-            // Marked return-only, so TryOpLowering drops them from the other copies.
-            mlirGenReleaseOwnedOnReturn(location, &tryGenContext);
+            // Marked return-only, so TryOpLowering drops it from the other copies.
+            EXIT_IF_FAILED(mlirGenScopeExitAfterFinally(location, DisposeDepth::FullStack, {}, &tryGenContext,
+                                                        RETURN_ONLY_ATTR_NAME, builder.getUnitAttr()));
+
+            // The same for each place a `break` or `continue` from them goes, marked with that
+            // place, so TryOpLowering keeps it in the copy that jump runs and no other
+            for (auto &[isBreak, label] : finallyEscapingJumps)
+            {
+                auto key = std::string(isBreak ? JUMP_ONLY_BREAK_KEY : JUMP_ONLY_CONTINUE_KEY) + label;
+                EXIT_IF_FAILED(mlirGenScopeExitAfterFinally(
+                    location, isBreak ? DisposeDepth::BreakScope : DisposeDepth::LoopScope, label, &tryGenContext,
+                    JUMP_ONLY_ATTR_NAME, builder.getStringAttr(key)));
+            }
         }
 
         // terminator
