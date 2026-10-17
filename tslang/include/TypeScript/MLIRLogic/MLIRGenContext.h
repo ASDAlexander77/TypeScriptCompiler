@@ -215,7 +215,15 @@ struct GenContext
     // Set by a loop on the context it hands its body, and inherited by every context copied
     // from it - so it answers "somewhere inside a loop", not "is the loop".
     bool isLoop = false;
+    // the label of the loop that set `isLoop`, handed to its body (see loopBodyLabel)
     std::string loopLabel;
+    // With isLoopBodyScope: the label of the loop this is the body of. Kept apart from `loopLabel`
+    // because a loop's context is a copy of the scope around it and stands in for that scope in the
+    // walk outwards - it overwrites `loopLabel` for its own body, and keeps this for the scope it copies.
+    std::string loopBodyLabel;
+    // Set on the scope of a labelled statement that is not a loop (`a: { ... }`): where a
+    // `break a` or `continue a` walking outwards stops.
+    std::string labelledScopeLabel;
     // Set by the block that becomes the loop's own body scope, and cleared for anything nested
     // further in. That is the distinction a `break` or `continue` needs: it owes a dispose and
     // a release to every scope between itself and the loop, so the walk outwards can only stop

@@ -184,6 +184,9 @@ namespace mlirgen
         // the context it handed down. Take it, and clear the offer so a block nested further in
         // does not claim to be the loop as well - see GenContext::isLoopBodyScope.
         genContextUsing.isLoopBodyScope = genContext.isLoop;
+        genContextUsing.loopBodyLabel = genContext.loopLabel;
+        // a scope of its own, not the labelled statement's: see labelledContext in mlirGen(LabeledStatement)
+        genContextUsing.labelledScopeLabel.clear();
         genContextUsing.isLoop = false;
 
         DITableScopeT debugBlockScope(debugScope);
@@ -256,6 +259,8 @@ namespace mlirgen
             // as in mlirGen(Block): this is the block's own scope, so it is where a break or
             // continue walking outwards stops
             tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
+            tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
@@ -662,6 +667,10 @@ namespace mlirgen
     // generator's iterator, a `using` - belongs to the branch, whose region it is defined in, not
     // to the block around the `if`, whose end is outside that region (#458). A braced branch is a
     // Block and makes this scope itself.
+    //
+    // A loop's body written without braces (`for (...) if (c) continue;`) is made a scope here too,
+    // and, as in mlirGen(Block), the loop's body scope: without one a `break` or `continue` found no
+    // body to stop at and disposed and released the scopes around the loop.
     mlir::LogicalResult MLIRGenImpl::mlirGenBranchStatement(Statement statement, const GenContext &genContext)
     {
         if (statement == SyntaxKind::Block)
@@ -673,7 +682,10 @@ namespace mlirgen
 
         GenContext branchContext(genContext);
         branchContext.parentBlockContext = &genContext;
-        branchContext.isLoopBodyScope = false;
+        branchContext.isLoopBodyScope = genContext.isLoop;
+        branchContext.loopBodyLabel = genContext.loopLabel;
+        branchContext.isLoop = false;
+        branchContext.labelledScopeLabel.clear();
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         branchContext.usingVars = usingVars.get();
@@ -696,22 +708,23 @@ namespace mlirgen
         SmallVector<mlir::Value, 0> operands;
 
         auto doWhileOp = builder.create<mlir_ts::DoWhileOp>(location, types, operands);
-        if (!label.empty())
+        auto loopLabel = label;
+        label = "";
+        if (!loopLabel.empty())
         {
-            doWhileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
-            label = "";
+            doWhileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(loopLabel));
         }
 
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
-        loopGenContext.loopLabel = label;
+        loopGenContext.loopLabel = loopLabel;
 
         /*auto *cond =*/builder.createBlock(&doWhileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&doWhileOp.getBody(), {}, types);
 
         // body in condition
         builder.setInsertionPointToStart(&doWhileOp.getBody().front());
-        auto result2 = mlirGen(doStatementAST->statement, loopGenContext);
+        auto result2 = mlirGenBranchStatement(doStatementAST->statement, loopGenContext);
         EXIT_IF_FAILED(result2)
         // just simple return, as body in cond
         builder.create<mlir_ts::ResultOp>(location);
@@ -742,15 +755,16 @@ namespace mlirgen
         SmallVector<mlir::Value, 0> operands;
 
         auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
-        if (!label.empty())
+        auto loopLabel = label;
+        label = "";
+        if (!loopLabel.empty())
         {
-            whileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
-            label = "";
+            whileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(loopLabel));
         }
 
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
-        loopGenContext.loopLabel = label;
+        loopGenContext.loopLabel = loopLabel;
 
         /*auto *cond =*/builder.createBlock(&whileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&whileOp.getBody(), {}, types);
@@ -782,7 +796,7 @@ namespace mlirgen
             SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, loopGenContext);
 
-            auto result2 = mlirGen(whileStatementAST->statement, loopGenContext);
+            auto result2 = mlirGenBranchStatement(whileStatementAST->statement, loopGenContext);
             EXIT_IF_FAILED(result2)
         }
 
@@ -835,8 +849,7 @@ namespace mlirgen
 
         GenContext loopGenContext(genContext);
         loopGenContext.isLoop = true;
-        // empty, as at the other loop sites: see scopeExitContinuesOutwards
-        loopGenContext.loopLabel = "";
+        loopGenContext.loopLabel = loopLabel;
 
         /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
@@ -889,7 +902,7 @@ namespace mlirgen
                 checkSafeCast(forStatementAST->condition, testedValue, nullptr, loopGenContext);
             }
 
-            auto bodyResult = mlirGen(forStatementAST->statement, loopGenContext);
+            auto bodyResult = mlirGenBranchStatement(forStatementAST->statement, loopGenContext);
             EXIT_IF_FAILED(bodyResult)
         }
 
@@ -1049,7 +1062,27 @@ namespace mlirgen
 
         builder.setInsertionPointToStart(mergeBlock);
 
-        auto res = mlirGen(labeledStatementAST->statement, genContext);
+        // The labelled statement's own scope, made as mlirGenBranchStatement makes one: where a
+        // `break label` or `continue label` walking outwards stops (scopeExitContinuesOutwards).
+        // `isLoopBodyScope` is cleared because this context is a copy of the scope around it - one that
+        // may stand in for a loop's body, and an unlabelled jump would stop here, short of the body's
+        // own lists.
+        GenContext labelledContext(genContext);
+        labelledContext.parentBlockContext = &genContext;
+        labelledContext.labelledScopeLabel = label;
+        labelledContext.isLoopBodyScope = false;
+
+        auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        labelledContext.usingVars = usingVars.get();
+
+        auto ownedVars = std::make_unique<SmallVector<mlir::Value>>();
+        labelledContext.ownedVars = ownedVars.get();
+
+        auto res = mlirGen(labeledStatementAST->statement, labelledContext);
+        if (mlir::succeeded(res))
+        {
+            res = mlirGenScopeExit(location, DisposeDepth::CurrentScope, {}, &labelledContext);
+        }
 
         builder.setInsertionPointAfter(labelOp);
 
@@ -1337,6 +1370,8 @@ namespace mlirgen
             // as in mlirGen(Block): this is the block's own scope, so it is where a break or
             // continue walking outwards stops
             tryBodyGenContext.isLoopBodyScope = tryGenContext.isLoop;
+            tryBodyGenContext.loopBodyLabel = tryGenContext.loopLabel;
+            tryBodyGenContext.labelledScopeLabel.clear();
             tryBodyGenContext.isLoop = false;
 
             auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();

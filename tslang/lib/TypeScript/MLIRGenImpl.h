@@ -748,18 +748,24 @@ class MLIRGenImpl
             return false;
         }
 
-        // The label comparison is left exactly as it was, including the empty label the
-        // recursion below hands the parent. It looks like it should carry the target label
-        // outwards instead, but the loop sites clear `label` before storing it, so a labelled
-        // loop's context holds an empty one too - and `continue cont1` then relies on the outer
-        // loop matching that empty label. 02disposable.ts is the case that proves it.
-        // (The `for` site now takes the label before its initializer and stores "" outright.)
-        // Known gap: a labelled `continue` written inside an `if` in an inner loop stops at the
-        // inner loop's body, so the outer body's `using` is not disposed. Carrying real labels
-        // needs the loop context, which stands in for the enclosing body scope in this walk, to
-        // keep that scope's label apart from the label of the loop it starts.
-        auto isTargetLoop = genContext->isLoopBodyScope && genContext->loopLabel == loopLabel;
-        return !isTargetLoop;
+        // The target label is carried outwards unchanged. An unlabelled jump stops at the nearest
+        // loop body. A labelled one stops at the body of the loop of that label, or at the scope of
+        // the labelled statement (`a: { ... break a; }`), and owes every scope it passes on the way,
+        // the bodies of inner loops included.
+        //
+        // This used to hand the parent an empty label, and every loop's context held an empty one
+        // too, so a labelled jump stopped at the first loop body after the one it started in: a
+        // `continue outer` written in an `if` in an inner loop skipped the outer body's `using`.
+        // A jump to a labelled block matched nothing and ran on to the function's scope,
+        // disposing its `using` and releasing its locals there and then.
+        if (loopLabel.empty())
+        {
+            return !genContext->isLoopBodyScope;
+        }
+
+        auto isTarget = (genContext->isLoopBodyScope && genContext->loopBodyLabel == loopLabel) ||
+                        genContext->labelledScopeLabel == loopLabel;
+        return !isTarget;
     }
 
     // Drops the reference each local of this scope took when it was declared. Shaped after
@@ -814,7 +820,7 @@ class MLIRGenImpl
         // OwnedReturnConsumptionPass, not this.
         if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
         {
-            EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, {}, genContext->parentBlockContext));
+            EXIT_IF_FAILED(mlirGenReleaseOwned(location, disposeDepth, loopLabel, genContext->parentBlockContext));
         }
 
         return mlir::success();
@@ -1225,7 +1231,7 @@ class MLIRGenImpl
         // something a program was found to need.
         if (scopeExitContinuesOutwards(disposeDepth, loopLabel, genContext))
         {
-            EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
+            EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, loopLabel, genContext->parentBlockContext));
         }
 
         return mlir::success();
