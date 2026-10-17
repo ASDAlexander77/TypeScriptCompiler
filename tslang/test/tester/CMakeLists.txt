@@ -2947,6 +2947,16 @@ set_tests_properties(test-compile-diagnostic-location-implicit-constructor
                      PROPERTIES PASS_REGULAR_EXPRESSION "implicit_constructor\\.ts:9:1: error: Class constructor is not accessable"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|implicit_constructor\\.ts:1:")
 
+# An enum member after a string member needs an initializer: it took the count of the members
+# before it.
+add_test(NAME test-compile-diagnostic-location-enum-member-initializer
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/enum_member_initializer.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-enum-member-initializer.obj")
+set_tests_properties(test-compile-diagnostic-location-enum-member-initializer
+                     PROPERTIES PASS_REGULAR_EXPRESSION "enum_member_initializer\\.ts:7:5: error: Enum member 'B' must have initializer"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|enum_member_initializer\\.ts:5:")
+
 # An error in the code the compiler makes for a statement (a for...of's or for...in's loop) is
 # reported at the statement, and one in a `using`'s dispose call at the declaration - not at 1:1,
 # as a node the compiler makes has no position of its own.

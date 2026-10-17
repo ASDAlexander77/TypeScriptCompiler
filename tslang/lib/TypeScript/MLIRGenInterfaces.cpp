@@ -42,6 +42,8 @@ namespace mlirgen
         auto activeBits = 32;
         mlir::IntegerType::SignednessSemantics currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
         llvm::APInt currentEnumValue(32, 0);
+        // a member after a string member has no value to count on from
+        auto previousIsString = false;
         for (auto enumMember : enumDeclarationAST->members)
         {
             auto location = loc(enumMember);
@@ -104,6 +106,12 @@ namespace mlirgen
             }
             else
             {
+                if (previousIsString)
+                {
+                    emitError(loc(enumMember)) << "Enum member '" << memberNamePtr << "' must have initializer";
+                    return mlir::failure();
+                }
+
                 if (appending && currentEnumValue == 0 && stage == Stages::Discovering && !enumValues.contains(memberNamePtr))
                 {
                     emitError(loc(enumMember))
@@ -126,6 +134,7 @@ namespace mlirgen
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
             enumValues[memberNamePtr] = enumValueAttr;
+            previousIsString = isa<mlir::StringAttr>(enumValueAttr);
 
             // update enum to support req. access
             SmallVector<mlir::NamedAttribute> namedEnumValues;
