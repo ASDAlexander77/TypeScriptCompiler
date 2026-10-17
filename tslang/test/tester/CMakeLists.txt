@@ -2947,6 +2947,26 @@ set_tests_properties(test-compile-diagnostic-location-implicit-constructor
                      PROPERTIES PASS_REGULAR_EXPRESSION "implicit_constructor\\.ts:9:1: error: Class constructor is not accessable"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|implicit_constructor\\.ts:1:")
 
+# An error in the code the compiler makes for a statement (a for...of's or for...in's loop) is
+# reported at the statement, and one in a `using`'s dispose call at the declaration - not at 1:1,
+# as a node the compiler makes has no position of its own.
+set(diagnostic_location_statement_cases
+    "for_of|for_of\\.ts:6:5: error: Can't resolve property 'length' of type s32"
+    "for_in|for_in\\.ts:6:5: error: Can't resolve property 'length' of type s32"
+    "using|using\\.ts:5:11: error: Can't resolve property 'dispose' of type s32")
+foreach(diagnostic_location_case ${diagnostic_location_statement_cases})
+    string(REPLACE "|" ";" diagnostic_location_parts "${diagnostic_location_case}")
+    list(GET diagnostic_location_parts 0 diagnostic_location_name)
+    list(GET diagnostic_location_parts 1 diagnostic_location_error)
+    add_test(NAME test-compile-diagnostic-location-${diagnostic_location_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/${diagnostic_location_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-${diagnostic_location_name}.obj")
+    set_tests_properties(test-compile-diagnostic-location-${diagnostic_location_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${diagnostic_location_error}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|${diagnostic_location_name}\\.ts:1:")
+endforeach()
+
 # A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
 # is an error under every model but gc, which alone links the collector - it used to reach the
 # linker as an unresolved symbol. Under gc the same file compiles.
