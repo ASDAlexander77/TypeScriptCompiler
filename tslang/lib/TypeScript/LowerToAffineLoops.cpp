@@ -1480,7 +1480,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto cleanupHasOps =
             llvm::any_of(tryOp.getCleanup(), [](auto &block) { return &block.front() != block.getTerminator(); });
+        // an empty `catch { }` still catches: HAS_CATCH_ATTR_NAME tells it from no catch clause
         auto catchHasOps =
+            tryOp->hasAttr(HAS_CATCH_ATTR_NAME) ||
             llvm::any_of(tryOp.getCatches(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto finallyHasOps =
             llvm::any_of(tryOp.getFinally(), [](auto &block) { return &block.front() != block.getTerminator(); });
