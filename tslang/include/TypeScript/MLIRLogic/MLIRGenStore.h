@@ -1270,6 +1270,9 @@ struct NamespaceInfo
 
     bool isFunctionNamespace;
 
+    // `import * as M`: M has nothing in it, its names are the module's, which are at the top level
+    bool isModuleImport = false;
+
     NamespaceInfo::TypePtr parentNamespace;
 };
 
