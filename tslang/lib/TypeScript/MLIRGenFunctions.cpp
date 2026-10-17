@@ -342,6 +342,18 @@ namespace mlirgen
                 return {mlir::failure(), isGenericTypes, params};
             }
 
+            // the arguments a rest parameter takes are put in an array: one of a number type only
+            // failed the module's verification
+            auto restBaseType = mth.getBaseType(type);
+            if (isMultiArgs
+                && (mth.isNumericType(restBaseType) || isa<mlir_ts::StringType>(restBaseType)
+                    || isa<mlir_ts::BooleanType>(restBaseType) || isa<mlir_ts::BigIntType>(restBaseType)
+                    || isa<mlir_ts::CharType>(restBaseType)))
+            {
+                emitError(loc(arg)) << "A rest parameter must be of an array type, not '" << to_print(type) << "'";
+                return {mlir::failure(), isGenericTypes, params};
+            }
+
             if (isBindingPattern)
             {
                 params.push_back(
