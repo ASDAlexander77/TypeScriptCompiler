@@ -471,8 +471,8 @@ struct ResultOpLowering : public TsPattern<mlir_ts::ResultOp>
 };
 
 // Populates tsContext->jumps for break/continue ops that belong to this loop/label scope.
-// An unlabeled break/continue binds to the *nearest* enclosing loop/label (continue) or
-// loop/label/switch (break), so once the walk descends past such a boundary it must stop
+// An unlabeled break/continue binds to the *nearest* enclosing loop (continue) or
+// loop/switch (break), so once the walk descends past such a boundary it must stop
 // treating unlabeled break/continue as claimable by this (outer) scope -- otherwise it can
 // steal a jump target that belongs to the nested scope, depending on which scope's pattern
 // happens to run last in the dialect-conversion worklist. A nested Switch is a boundary for
@@ -514,14 +514,15 @@ static void visitBreakContinueInScope(mlir::Region &region, mlir::StringAttr sco
                 continue;
             }
 
-            auto isLoopOrLabelBoundary = isa<mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp, mlir_ts::LabelOp>(op);
+            // not a LabelOp: an unlabelled break or continue never targets a labelled block
+            auto isLoopBoundary = isa<mlir_ts::WhileOp, mlir_ts::DoWhileOp, mlir_ts::ForOp>(op);
             auto isSwitchBoundary = isa<mlir_ts::SwitchOp>(op);
 
             for (auto &nested : op.getRegions())
             {
                 visitBreakContinueInScope(nested, scopeLabel,
-                                           eligibleForUnlabeledBreak && !isLoopOrLabelBoundary && !isSwitchBoundary,
-                                           eligibleForUnlabeledContinue && !isLoopOrLabelBoundary, onMatch);
+                                           eligibleForUnlabeledBreak && !isLoopBoundary && !isSwitchBoundary,
+                                           eligibleForUnlabeledContinue && !isLoopBoundary, onMatch);
             }
         }
     }
@@ -737,8 +738,10 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
 
         // logic to support continue/break
 
-        visitBreakContinueInScope(labelOp.getLabelRegion(), labelAttr, /*eligibleForUnlabeledBreak*/ true,
-                                   /*eligibleForUnlabeledContinue*/ true, [&](Operation *op, bool isBreak) {
+        // only its own label: in JS an unlabelled break or continue in a labelled block belongs to the
+        // loop or switch around it
+        visitBreakContinueInScope(labelOp.getLabelRegion(), labelAttr, /*eligibleForUnlabeledBreak*/ false,
+                                   /*eligibleForUnlabeledContinue*/ false, [&](Operation *op, bool isBreak) {
                                        tsContext->jumps[op] = isBreak ? continuation : begin;
                                    });
 
