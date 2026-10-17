@@ -1678,6 +1678,7 @@ namespace mlirgen
             auto namespaceName = MLIRHelper::getName(namedBindings.as<NamespaceImport>()->name, stringAllocator);
             MLIRNamespaceGuard nsGuard(currentNamespace);
             registerNamespace(namespaceName);
+            currentNamespace->isModuleImport = true;
             return mlir::success();
         }
 

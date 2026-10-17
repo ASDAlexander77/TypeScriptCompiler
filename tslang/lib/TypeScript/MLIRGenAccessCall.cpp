@@ -341,11 +341,12 @@ namespace mlirgen
                     assert(namespaceInfo);
 
                     MLIRNamespaceGuard ng(currentNamespace);
-                    currentNamespace = namespaceInfo;
-
                     // `ns.value` names the namespace's member and nothing else: a local variable
                     // `value` of the calling function, or a `value` of an outer namespace, is not
-                    // `ns.value`. A name the namespace hasn't got is the error below.
+                    // `ns.value`. A name the namespace hasn't got is the error below. The names of
+                    // `import * as M` are the module's, declared at the top level (see
+                    // mlirGenImportBindings).
+                    currentNamespace = namespaceInfo->isModuleImport ? rootNamespace : namespaceInfo;
                     return resolveIdentifierInNamespace(location, name, genContext);
                 })
                 .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {

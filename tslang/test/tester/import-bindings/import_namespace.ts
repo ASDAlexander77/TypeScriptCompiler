@@ -20,4 +20,12 @@ const b = new M.Box<number>(6);
 assert(b.v == 6);
 assert(M.identity<number>(7) == 7);
 
+// M.ANSWER is the module's, whatever a local ANSWER is
+function shadowed() {
+    const ANSWER = 1;
+    assert(M.ANSWER == 42);
+    assert(ANSWER == 1);
+}
+shadowed();
+
 print("done.");
