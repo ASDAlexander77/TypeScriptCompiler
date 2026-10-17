@@ -104,6 +104,51 @@ function returnThroughTwoFinallys(pre: string) {
     }
 }
 
+// the inner try sits in the outer one's catch clause: the `return` ends the catch, then runs both
+function returnFromTryInCatch(pre: string) {
+    let a = pre + "9";
+    try {
+        h();
+    }
+    catch {
+        let b = a + "b";
+        try {
+            return b;
+        }
+        finally {
+            churn();
+            trail += "i:" + a + ";";
+        }
+    }
+    finally {
+        churn();
+        trail += "o:" + a + ";";
+    }
+
+    return "";
+}
+
+// an empty inner finally gets the releases left for a `return` - none comes through it here - and
+// an exception through it still reaches the outer catch with `s` intact
+function throwThroughEmptyInnerFinally(pre: string) {
+    let s = pre + "a";
+    try {
+        let t = s + "t";
+        try {
+            h();
+        }
+        finally {
+        }
+    }
+    catch {
+        churn();
+        trail += s + ";";
+    }
+
+    churn();
+    return s;
+}
+
 // the scope around the `try` is a loop body's, and the `return` leaves the loop too
 function returnInLoop(pre: string) {
     let s = pre + "6";
@@ -187,6 +232,18 @@ function main() {
     churn();
     print("return through two finallys: " + r5 + " " + trail);
     assert(r5 == "p5bc" && trail == "i:p5b;o:p5;", "return through two finallys");
+
+    trail = "";
+    let r9 = returnFromTryInCatch(pre);
+    churn();
+    print("return from a try in a catch: " + r9 + " " + trail);
+    assert(r9 == "p9b" && trail == "i:p9;o:p9;", "return from a try in a catch");
+
+    trail = "";
+    let ra = throwThroughEmptyInnerFinally(pre);
+    churn();
+    print("throw through an empty inner finally: " + ra + " " + trail);
+    assert(ra == "pa" && trail == "pa;", "throw through an empty inner finally");
 
     trail = "";
     let r6 = returnInLoop(pre);
