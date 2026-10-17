@@ -2947,6 +2947,20 @@ set_tests_properties(test-compile-diagnostic-location-implicit-constructor
                      PROPERTIES PASS_REGULAR_EXPRESSION "implicit_constructor\\.ts:9:1: error: Class constructor is not accessable"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|implicit_constructor\\.ts:1:")
 
+# `ns.name` is the namespace's member or an error: a local or an outer namespace's `name` isn't it.
+foreach(namespace_member_case missing_member outer_member)
+    add_test(NAME test-compile-namespace-member-${namespace_member_case}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/namespace-member/${namespace_member_case}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/namespace-member-${namespace_member_case}.obj")
+endforeach()
+set_tests_properties(test-compile-namespace-member-missing_member
+                     PROPERTIES PASS_REGULAR_EXPRESSION "missing_member\\.ts:12:11: error: Can't resolve property 'missing' of type ns"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+set_tests_properties(test-compile-namespace-member-outer_member
+                     PROPERTIES PASS_REGULAR_EXPRESSION "outer_member\\.ts:15:11: error: Can't resolve property 'outer' of type ns"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A call to the collector's API (GC_gcollect, or the weak-link functions DefaultLib's WeakRef uses)
 # is an error under every model but gc, which alone links the collector - it used to reach the
 # linker as an unresolved symbol. Under gc the same file compiles.

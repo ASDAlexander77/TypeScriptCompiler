@@ -343,14 +343,10 @@ namespace mlirgen
                     MLIRNamespaceGuard ng(currentNamespace);
                     currentNamespace = namespaceInfo;
 
-                    // `ns.value` names the namespace's member: look there before the local scope,
-                    // which resolved it to a local variable `value` of the calling function.
-                    if (auto member = resolveIdentifierInNamespace(location, name, genContext))
-                    {
-                        return member;
-                    }
-
-                    return V(mlirGen(location, name, genContext));
+                    // `ns.value` names the namespace's member and nothing else: a local variable
+                    // `value` of the calling function, or a `value` of an outer namespace, is not
+                    // `ns.value`. A name the namespace hasn't got is the error below.
+                    return resolveIdentifierInNamespace(location, name, genContext);
                 })
                 .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                     LLVM_DEBUG(llvm::dbgs() << "\n\t...field: \t" << cl.getName(););

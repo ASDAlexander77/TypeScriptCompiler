@@ -18,7 +18,26 @@ namespace ns {
     }
 }
 
+// a member declared after its use, and one in a second block of the same namespace
+function early(): int {
+    return ns2.later() + ns2.second();
+}
+
+namespace ns2 {
+    export function later(): int {
+        return 1;
+    }
+}
+
+namespace ns2 {
+    export function second(): int {
+        return 2;
+    }
+}
+
 function main() {
+    assert(early() == 3);
+
     const value = ns.value();
     assert(value == 42);
     assert(ns.value() == 42);
