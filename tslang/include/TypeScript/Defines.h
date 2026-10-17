@@ -73,6 +73,12 @@
 // so would be given a frame's reference it has no owner for. A box's owner is the closure.
 #define CAPTURE_BOX_ATTR_NAME "__capture_box"
 
+// On a `ts.Try`: the statement has a catch clause. Its catches region may still hold nothing but
+// the terminator - an untyped `catch { }` emits no ops - and without this marker it would be
+// indistinguishable from the catch-less TryOps that only wrap a scope for its cleanup, so the
+// lowering would make no landing pad and the exception would go uncaught.
+#define HAS_CATCH_ATTR_NAME "__has_catch"
+
 // -mm=own only, set by OwnershipInferencePass for the lowering. On a `ts.CreateBoundFunction`: the
 // closure does not escape, so its box borrows what it captures - the box's routine frees the box
 // and nothing it holds. On a `ts.ReleaseCell`: the cell borrows its value (a captured parameter's,

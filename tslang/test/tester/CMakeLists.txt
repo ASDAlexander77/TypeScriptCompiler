@@ -529,6 +529,7 @@ tslang_add_test(NAME test-compile-00-class-new COMMAND test-runner "${PROJECT_SO
 tslang_add_test(NAME test-compile-00-array-growth COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-compile-00-global-from-global COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-compile-00-try-cleanup-then-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
+tslang_add_test(NAME test-compile-00-try-empty-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_empty_catch.ts")
 tslang_add_test(NAME test-compile-00-global-union-from-call COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-compile-00-capture-in-new-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 tslang_add_test(NAME test-compile-01-class-new COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
@@ -1073,6 +1074,7 @@ tslang_add_test(NAME test-jit-00-class-new COMMAND test-runner -jit "${PROJECT_S
 tslang_add_test(NAME test-jit-00-array-growth COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_growth.ts")
 tslang_add_test(NAME test-jit-00-global-from-global COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_from_global.ts")
 tslang_add_test(NAME test-jit-00-try-cleanup-then-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_cleanup_then_catch.ts")
+tslang_add_test(NAME test-jit-00-try-empty-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_empty_catch.ts")
 tslang_add_test(NAME test-jit-00-global-union-from-call COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_union_from_call.ts")
 tslang_add_test(NAME test-jit-00-capture-in-new-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00capture_in_new_arguments.ts")
 tslang_add_test(NAME test-jit-01-class-new COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01class_new.ts")
@@ -1949,6 +1951,7 @@ set(TSLANG_CORPUS
     00in.ts
     00global_from_global.ts
     00try_cleanup_then_catch.ts
+    00try_empty_catch.ts
     00global_object_literal.ts
     00infer.ts
     00const_object_literal_field.ts

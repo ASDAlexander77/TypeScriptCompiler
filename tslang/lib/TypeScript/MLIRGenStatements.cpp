@@ -1504,6 +1504,8 @@ namespace mlirgen
         builder.setInsertionPointToStart(&tryOp.getCatches().front());
         if (catchClause && catchClause->block)
         {
+            tryOp->setAttr(HAS_CATCH_ATTR_NAME, builder.getUnitAttr());
+
             auto location = loc(catchClause->block);
             if (!varName.empty())
             {
