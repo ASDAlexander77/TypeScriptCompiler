@@ -292,6 +292,14 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(Statement statementAST, const GenContext &genContext)
     {
+        // what the compiler makes for this statement is reported where the statement is; a
+        // statement it made itself keeps the anchor of the one it was made for
+        MLIRLocationGuard anchorGuard(generatedNodesAnchor);
+        if (!statementAST->isTextRangeEmpty())
+        {
+            generatedNodesAnchor = locWithoutScope(statementAST);
+        }
+
         auto kind = (SyntaxKind)statementAST;
         if (kind == SyntaxKind::FunctionDeclaration)
         {

@@ -161,7 +161,8 @@ class MLIRGenImpl
           path(pathParam),
           declarationMode(false),
           tempEntryBlock(nullptr),
-          overwriteLoc(mlir::UnknownLoc::get(builder.getContext()))
+          overwriteLoc(mlir::UnknownLoc::get(builder.getContext())),
+          generatedNodesAnchor(mlir::UnknownLoc::get(builder.getContext()))
     {
         setCompileOptions(compileOptions);
 
@@ -1157,6 +1158,10 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenDisposeOne(mlir::Location location, ts::VariableDeclarationDOM::TypePtr varDecl,
                                           mlir::Value varValue, const GenContext &genContext)
     {
+        // the call is made at the scope's exit, but an error in it belongs to the declaration
+        MLIRLocationGuard anchorGuard(generatedNodesAnchor);
+        generatedNodesAnchor = stripMetadata(varDecl->getLoc());
+
         auto disposeGuard = varDecl->getDisposeGuard();
         if (!disposeGuard)
         {
@@ -13947,13 +13952,23 @@ class MLIRGenImpl
             return mlir::UnknownLoc::get(builder.getContext());
         }
 
+        // a node the compiler made (a for...of's loop, a `using`'s dispose call) has no position:
+        // it is where the code it was made for is, not at the start of the file
+        if (loc->isTextRangeEmpty() && !isa<mlir::UnknownLoc>(generatedNodesAnchor))
+        {
+            return locFuseWithScope(combine(overwriteLoc, generatedNodesAnchor));
+        }
+
+        return locFuseWithScope(combine(overwriteLoc, locWithoutScope(loc)));
+    }
+
+    // where the node is in the source, without the debug scope and the overwriteLoc loc() adds
+    mlir::Location locWithoutScope(TextRange loc)
+    {
         auto pos = loc->pos.textPos > 0 ? loc->pos.textPos : loc->pos.pos;
         //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
-        return locFuseWithScope(
-                    combine(
-                        overwriteLoc,
-                        loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos)));
+        return loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos);
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
@@ -14375,6 +14390,9 @@ private:
     mlir::ModuleOp tempModule;
     mlir_ts::FuncOp tempFuncOp;
     mlir::Location overwriteLoc;
+    // where the innermost statement being generated is (no debug scope: loc() adds the current
+    // one): the location of the nodes the compiler makes for it, which have none of their own
+    mlir::Location generatedNodesAnchor;
 };
 } // namespace mlirgen
 } // namespace typescript
