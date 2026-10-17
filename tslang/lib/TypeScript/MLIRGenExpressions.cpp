@@ -129,7 +129,8 @@ namespace mlirgen
         }
         else if (kind == SyntaxKind::DeleteExpression)
         {
-            mlirGen(expressionAST.as<DeleteExpression>(), genContext);
+            // its failure was dropped, and with it the error: `delete n` of a local compiled
+            EXIT_IF_FAILED(mlirGen(expressionAST.as<DeleteExpression>(), genContext));
             return mlir::success();
         }
         else if (kind == SyntaxKind::ThisKeyword)
@@ -1365,6 +1366,13 @@ namespace mlirgen
             {
                 CAST(expr, location, mlir_ts::RefType::get(arrayType.getElementType()), expr, genContext);
             }
+            else if (deleteExpression->expression == SyntaxKind::Identifier)
+            {
+                // `delete n` of a local holding a number: nothing to free (a class instance, an
+                // array or a value made by `new`, which can be freed, took the paths above)
+                emitError(location, "The operand of a 'delete' operator must be a property reference");
+                return mlir::failure();
+            }
             else
             {
                 // e.g. `delete obj.a` where `a` is a plain, non-optional field of a value-tuple
@@ -1409,8 +1417,11 @@ namespace mlirgen
             if (reference && isOwningSlot(location, reference))
             {
                 auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
-                mlir::Value clearedValue;
-                CAST(clearedValue, location, expr.getType(), nullValue, genContext);
+                // not a null the program stores, so no strict-null check: it failed this cast for
+                // `let c = new C()`, and the store was never made
+                auto clearedResult = cast(location, expr.getType(), nullValue, genContext, /*disableStrictNullCheck*/ true);
+                EXIT_IF_FAILED_OR_NO_VALUE(clearedResult)
+                auto clearedValue = V(clearedResult);
                 builder.create<mlir_ts::StoreOp>(location, clearedValue, reference);
             }
         }

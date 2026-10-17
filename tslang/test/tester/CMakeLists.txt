@@ -2987,6 +2987,16 @@ set_tests_properties(test-compile-diagnostic-location-generated-cast
                      PROPERTIES PASS_REGULAR_EXPRESSION "generated_cast\\.ts:6:23: error: can't cast from 'null' to 'string'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|generated_cast\\.ts:1:")
 
+# `delete` of a local holding a number is an error: it compiled, as the error made for it was
+# dropped. A class instance (or an array, or a value made by `new`) can still be deleted.
+add_test(NAME test-compile-diagnostic-location-delete-local
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/delete_local.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-delete-local.obj")
+set_tests_properties(test-compile-diagnostic-location-delete-local
+                     PROPERTIES PASS_REGULAR_EXPRESSION "delete_local\\.ts:9:5: error: The operand of a 'delete' operator must be a property reference"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|delete_local\\.ts:7:")
+
 # An error in a field initializer, or in a derived class's implicit constructor, is reported at the
 # field or the class - not at 1:1, where the code the compiler generates for them had put it.
 add_test(NAME test-compile-diagnostic-location-field-initializer
