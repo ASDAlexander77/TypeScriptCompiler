@@ -2765,6 +2765,16 @@ add_test(NAME test-compile-interface-cast-empty
 set_tests_properties(test-compile-interface-cast-empty
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 
+# `instanceof` with a number, a string, a boolean or a bigint value on the right is an error: the
+# test compared the two types. A type there (`type str = TypeOf<"">`) stays an extension.
+add_test(NAME test-compile-diagnostic-location-instanceof-primitive
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/instanceof_primitive.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-instanceof-primitive.obj")
+set_tests_properties(test-compile-diagnostic-location-instanceof-primitive
+                     PROPERTIES PASS_REGULAR_EXPRESSION "instanceof_primitive\\.ts:8:24: error: The right-hand side of an 'instanceof' expression must be a class, not '3'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|instanceof_primitive\\.ts:7:")
+
 # A @cpp class names the slots of a vtable made by C++ (tests/00cppvtable_class.ts), so what
 # would add a slot, run code of its own or ask the object what it is is an error: a slot off by one
 # would call the wrong C++ method, with no error at all. One whose methods have bodies implements
