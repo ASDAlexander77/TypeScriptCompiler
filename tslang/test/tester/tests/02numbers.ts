@@ -139,7 +139,8 @@ function testNums(): void {
     testRightU(0x30000004, 0, 0x30000004)
     testLeft(1, 29, 0x20000000)
     testLeft(1, 30, 0x40000000)
-    testLeft(1, 31, 0x80000000 >> 0)
+    // 0x80000000 is an s64 literal, so `0x80000000 >> 0` no longer narrows it to 32 bits
+    testLeft(1, 31, -2147483648)
     //testLeft(1, 32, 1);
 
     tt = 2;

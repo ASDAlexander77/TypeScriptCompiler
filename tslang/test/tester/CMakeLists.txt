@@ -273,6 +273,7 @@ tslang_add_test(NAME test-compile-00-equals COMMAND test-runner "${PROJECT_SOURC
 tslang_add_test(NAME test-compile-00-bool-arith-ops COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
 tslang_add_test(NAME test-compile-00-int64-shift-bitwise COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_shift_bitwise.ts")
 tslang_add_test(NAME test-compile-00-int64-mul-literal COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_mul_literal.ts")
+tslang_add_test(NAME test-compile-00-int-literal-above-s32 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00int_literal_above_s32.ts")
 tslang_add_test(NAME test-compile-00-literal-union-arith COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_arith.ts")
 tslang_add_test(NAME test-compile-00-literal-union-cast COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_cast.ts")
 tslang_add_test(NAME test-compile-00-bool-const-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
@@ -826,6 +827,7 @@ tslang_add_test(NAME test-jit-00-equals COMMAND test-runner -jit "${PROJECT_SOUR
 tslang_add_test(NAME test-jit-00-bool-arith-ops COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_arith_ops.ts")
 tslang_add_test(NAME test-jit-00-int64-shift-bitwise COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_shift_bitwise.ts")
 tslang_add_test(NAME test-jit-00-int64-mul-literal COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00int64_mul_literal.ts")
+tslang_add_test(NAME test-jit-00-int-literal-above-s32 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00int_literal_above_s32.ts")
 tslang_add_test(NAME test-jit-00-literal-union-arith COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_arith.ts")
 tslang_add_test(NAME test-jit-00-literal-union-cast COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00literal_union_cast.ts")
 tslang_add_test(NAME test-jit-00-bool-const-array COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bool_const_array.ts")
@@ -1836,6 +1838,7 @@ set(TSLANG_CORPUS
     00bool_arith_ops.ts
     00int64_shift_bitwise.ts
     00int64_mul_literal.ts
+    00int_literal_above_s32.ts
     00literal_union_arith.ts
     00literal_union_cast.ts
     00bool_const_array.ts

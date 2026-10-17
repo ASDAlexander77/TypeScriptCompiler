@@ -9645,7 +9645,8 @@ class MLIRGenImpl
         {
         //case 8:
         //case 16:
-        case 32:
+        // a literal in [2^31, 2^32) does not fit s32; it takes s64 (default branch), not u32,
+        // so arithmetic with other integer literals does not wrap
         case 64:
         case 128:
             unsignedVal = true;
