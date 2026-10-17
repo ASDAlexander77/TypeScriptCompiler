@@ -2698,6 +2698,23 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# A `continue` or `break` naming a label that no statement around it has is an error (a label
+# outside the function doesn't count); it compiled to a jump with nowhere to go.
+add_test(NAME test-compile-diagnostic-location-continue-label
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/continue_label.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-continue-label.obj")
+set_tests_properties(test-compile-diagnostic-location-continue-label
+                     PROPERTIES PASS_REGULAR_EXPRESSION "continue_label\\.ts:7:13: error: A 'continue' statement can only jump to a label of an enclosing statement"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|continue_label\\.ts:6:")
+add_test(NAME test-compile-diagnostic-location-break-label
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/break_label.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-break-label.obj")
+set_tests_properties(test-compile-diagnostic-location-break-label
+                     PROPERTIES PASS_REGULAR_EXPRESSION "break_label\\.ts:7:17: error: A 'break' statement can only jump to a label of an enclosing statement"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|break_label\\.ts:10:")
+
 # Storing a fraction into a variable whose type was inferred from an integer literal (`let s = 0`
 # is an s32) drops it, and is warned about; the inference itself stays.
 foreach(truncation_case "global|3:1" "local|5:9")
