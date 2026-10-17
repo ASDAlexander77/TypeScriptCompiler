@@ -32,6 +32,9 @@ struct CatchRegion
     llvm::Instruction *saveCatch;
     llvm::Instruction *cxaEndCatch;
     llvm::Instruction *end;
+    // the end-of-catch markers of a catch's other ways out besides `end`, each of which needs its
+    // own catchret: a return, break or continue out of the clause (see findOtherCatchExits)
+    llvm::SmallVector<llvm::Instruction *, 0> otherEndMarkers;
     // every invoke in the region, in order - unwindInfoOp is chosen from these once all the
     // regions are known (see chooseUnwindInfoOps)
     llvm::SmallVector<InvokeInst *> invokes;
@@ -353,6 +356,8 @@ struct Win32ExceptionPassCode
             }
         }
 
+        findOtherCatchExits(catchRegionsWorkSet, toRemoveWorkSet);
+
         // a region the scan found no end for cannot be made a funclet; say so rather than crash
         for (auto &catchRegion : catchRegionsWorkSet)
         {
@@ -589,6 +594,11 @@ struct Win32ExceptionPassCode
                         BI->replaceAllUsesWith(CR);
                         toRemoveWorkSet.push_back(&*BI);
                     }
+                }
+
+                for (auto *marker : catchRegion.otherEndMarkers)
+                {
+                    catchReturnAt(catchRegion, marker, toRemoveWorkSet);
                 }
 
                 // convert call to Invoke with the same unwind
@@ -845,6 +855,268 @@ struct Win32ExceptionPassCode
                 }
             }
         }
+    }
+
+    static bool isCallTo(llvm::Instruction *I, StringRef name)
+    {
+        auto *CB = dyn_cast<CallBase>(I);
+        return CB && CB->getCalledFunction() != nullptr && CB->getCalledFunction()->hasName() &&
+               CB->getCalledFunction()->getName() == name;
+    }
+
+    static bool isAncestorRegion(llvm::SmallVector<CatchRegion> &regions, int ancestor, int index)
+    {
+        for (auto parent = regions[index].parent; parent >= 0; parent = regions[parent].parent)
+        {
+            if (parent == ancestor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // A catch clause can be left along more than one path - a `return`, `break` or `continue`
+    // out of it, besides the end it falls through to - and each path ends the catch with its own
+    // `__cxa_end_catch` marker. The scan in runOnFunction follows the layout, so it closes the
+    // region at whichever marker comes first: every other way out was left a bare branch out of
+    // the catchpad, and the calls on the way to it had no funclet bundle. WinEHPrepare turns both
+    // into unreachable code, and the program hits a breakpoint (0x80000003) instead. With a catch
+    // nested in another, the layout can even hand the inner catch's marker to the outer one.
+    //
+    // So walk each clause by its control flow from the pad, along normal edges up to each marker
+    // it reaches: those are its ends, and every call on the way belongs to it. A catch nested in
+    // the clause is walked first, and the clause's walk goes on after each of the nested catch's
+    // ends, where it returns. The scan's `end` stays the region's end when it is one of them, and
+    // the others become otherEndMarkers. A call that belongs to an unrelated region means the walk
+    // has left the clause, so it stops there.
+    static void findOtherCatchExits(llvm::SmallVector<CatchRegion> &regions,
+                                    llvm::SmallVector<llvm::Instruction *> &toRemoveWorkSet)
+    {
+        DenseMap<CallBase *, int> callOwner;
+        for (auto index = 0; index < static_cast<int>(regions.size()); index++)
+        {
+            for (auto *CB : regions[index].calls)
+            {
+                callOwner[CB] = index;
+            }
+        }
+
+        auto related = [&](int one, int other) {
+            return isAncestorRegion(regions, one, other) || isAncestorRegion(regions, other, one);
+        };
+
+        auto takeCall = [&](CallBase *CB, int index) {
+            auto owner = callOwner.find(CB);
+            if (owner != callOwner.end())
+            {
+                if (owner->second == index)
+                {
+                    return true;
+                }
+
+                if (!related(owner->second, index))
+                {
+                    return false;
+                }
+
+                auto &ownerRegion = regions[owner->second];
+                ownerRegion.calls.erase(llvm::find(ownerRegion.calls, CB));
+                if (auto *II = dyn_cast<InvokeInst>(CB))
+                {
+                    auto it = llvm::find(ownerRegion.invokes, II);
+                    if (it != ownerRegion.invokes.end())
+                    {
+                        ownerRegion.invokes.erase(it);
+                    }
+                }
+            }
+
+            regions[index].calls.push_back(CB);
+            if (auto *II = dyn_cast<InvokeInst>(CB))
+            {
+                regions[index].invokes.push_back(II);
+            }
+
+            callOwner[CB] = index;
+            return true;
+        };
+
+        // every end-of-catch marker of each catch region, in the order its walk reaches them
+        llvm::SmallVector<llvm::SmallVector<llvm::Instruction *, 2>> exits(regions.size());
+
+        // a region nested in another comes after it, so walking backwards walks a nested catch first
+        for (auto index = static_cast<int>(regions.size()) - 1; index >= 0; index--)
+        {
+            auto &region = regions[index];
+            if (!region.isCatch())
+            {
+                continue;
+            }
+
+            SmallPtrSet<llvm::Instruction *, 16> visited;
+            llvm::SmallVector<llvm::Instruction *> worklist;
+            auto pushStart = [&](llvm::Instruction *I) {
+                if (I && visited.insert(I).second)
+                {
+                    worklist.push_back(I);
+                }
+            };
+
+            // where control goes on in this clause after one of a nested catch's ends
+            auto pushAfterEnd = [&](llvm::Instruction *marker) {
+                if (auto *II = dyn_cast<InvokeInst>(marker))
+                {
+                    pushStart(&II->getNormalDest()->front());
+                }
+                else
+                {
+                    pushStart(marker->getNextNode());
+                }
+            };
+
+            pushStart(region.landingPad->getNextNode());
+            while (!worklist.empty())
+            {
+                for (auto *I = worklist.pop_back_val(); I; I = I->getNextNode())
+                {
+                    if (isCallTo(I, "__cxa_end_catch"))
+                    {
+                        // an Itanium marker with no Win64 counterpart, whichever region the scan put it in
+                        if (!llvm::is_contained(toRemoveWorkSet, I))
+                        {
+                            toRemoveWorkSet.push_back(I);
+                        }
+
+                        // an invoked one says where exceptions leaving the region go (chooseUnwindInfoOps),
+                        // which a rethrow at this end needs
+                        auto *II = dyn_cast<InvokeInst>(I);
+                        if (II && !llvm::is_contained(region.invokes, II))
+                        {
+                            region.invokes.push_back(II);
+                        }
+
+                        exits[index].push_back(I);
+                        break;
+                    }
+
+                    // a throw leaves the clause; see the scan for why it carries no bundle
+                    if (isCallTo(I, "_CxxThrowException"))
+                    {
+                        break;
+                    }
+
+                    auto *CB = dyn_cast<CallBase>(I);
+                    if (CB && !isCallTo(I, "__cxa_begin_catch") && !isCallTo(I, EH_PAD_FUNC_NAME) &&
+                        !isCallTo(I, "ts.internal.save_catch_var") && !takeCall(CB, index))
+                    {
+                        break;
+                    }
+
+                    if (!I->isTerminator())
+                    {
+                        continue;
+                    }
+
+                    // not an invoke's unwind edge: that goes to another region's pad - unless it is a
+                    // catch nested in this clause, which comes back here at its ends
+                    if (auto *II = dyn_cast<InvokeInst>(I))
+                    {
+                        pushStart(&II->getNormalDest()->front());
+                        for (auto nested = index + 1; nested < static_cast<int>(regions.size()); nested++)
+                        {
+                            if (regions[nested].parent == index && regions[nested].padBlock == II->getUnwindDest() &&
+                                regions[nested].isCatch())
+                            {
+                                for (auto *marker : exits[nested])
+                                {
+                                    pushAfterEnd(marker);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (auto *succ : successors(I->getParent()))
+                        {
+                            pushStart(&succ->front());
+                        }
+                    }
+                }
+            }
+
+            if (exits[index].empty())
+            {
+                continue;
+            }
+
+            auto isScanEnd = [&](llvm::Instruction *marker) {
+                return marker == region.cxaEndCatch || marker == region.end || marker->getNextNode() == region.end;
+            };
+
+            // An end that hands the exception on (the copy of a finally entered through a catch, run
+            // to its end: end-of-catch, then `resume`) is one only the end-of-catch loop can finish,
+            // by rethrowing from inside the funclet - so it is the region's `end` whatever the scan
+            // took, and a `return` out of that finally is the other end.
+            auto resumeAfter = [](llvm::Instruction *marker) -> llvm::Instruction * {
+                auto *next = isa<InvokeInst>(marker) ? &cast<InvokeInst>(marker)->getNormalDest()->front()
+                                                     : marker->getNextNode();
+                return isa_and_nonnull<ResumeInst>(next) ? next : nullptr;
+            };
+
+            auto primary = llvm::find_if(exits[index], resumeAfter);
+            if (primary != exits[index].end())
+            {
+                region.cxaEndCatch = *primary;
+                region.end = resumeAfter(*primary);
+            }
+            else
+            {
+                primary = llvm::find_if(exits[index], isScanEnd);
+            }
+
+            if (primary == exits[index].end())
+            {
+                // the scan gave this region another catch's end: take its own first one instead
+                primary = exits[index].begin();
+                region.cxaEndCatch = *primary;
+                region.end = isa<InvokeInst>(*primary) ? *primary : (*primary)->getNextNode();
+            }
+
+            for (auto *marker : exits[index])
+            {
+                if (marker != *primary)
+                {
+                    region.otherEndMarkers.push_back(marker);
+                }
+            }
+        }
+    }
+
+    // The catchret after one of a catch's otherEndMarkers, as the end-of-catch loop makes one for
+    // `end`. The marker itself is already on the removal list. Not the instruction after it: that
+    // can be a call the funclet-bundle loop has since replaced. An invoked marker ends its block
+    // and is the end itself, as in the scan.
+    static void catchReturnAt(CatchRegion &catchRegion, llvm::Instruction *marker,
+                              llvm::SmallVector<llvm::Instruction *> &toRemoveWorkSet)
+    {
+        auto *I = isa<InvokeInst>(marker) ? marker : marker->getNextNode();
+        if (isCatchEndingInvoke(I))
+        {
+            return;
+        }
+
+        auto *BI = dyn_cast<BranchInst>(I);
+        if (!BI || !BI->isUnconditional())
+        {
+            auto *retBlock = I->getParent()->splitBasicBlock(I, "end.of.exception");
+            BI = cast<BranchInst>(retBlock->getPrevNode()->getTerminator());
+        }
+
+        auto *CR = CatchReturnInst::Create(catchRegion.catchPad, BI->getSuccessor(0), BI->getParent());
+        BI->replaceAllUsesWith(CR);
+        toRemoveWorkSet.push_back(BI);
     }
 
     // the pad a region's own pads are created within: its parent region's, or none

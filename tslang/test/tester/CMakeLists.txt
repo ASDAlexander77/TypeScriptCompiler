@@ -340,6 +340,7 @@ tslang_add_test(NAME test-compile-00-using-unwind-outer-locals COMMAND test-runn
 tslang_add_test(NAME test-compile-00-try-unwind-outer-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_unwind_outer_locals.ts")
 tslang_add_test(NAME test-compile-00-try-return-through-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_return_through_finally.ts")
 tslang_add_test(NAME test-compile-00-try-scope-exit-through-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_scope_exit_through_finally.ts")
+tslang_add_test(NAME test-compile-00-try-jump-from-catch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_jump_from_catch.ts")
 tslang_add_test(NAME test-compile-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-compile-00-var-bindings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-compile-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -888,6 +889,7 @@ tslang_add_test(NAME test-jit-00-using-unwind-outer-locals COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-try-unwind-outer-locals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_unwind_outer_locals.ts")
 tslang_add_test(NAME test-jit-00-try-return-through-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_return_through_finally.ts")
 tslang_add_test(NAME test-jit-00-try-scope-exit-through-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_scope_exit_through_finally.ts")
+tslang_add_test(NAME test-jit-00-try-jump-from-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_jump_from_catch.ts")
 tslang_add_test(NAME test-jit-00-vars COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 tslang_add_test(NAME test-jit-00-var-bindings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00var_bindings.ts")
 tslang_add_test(NAME test-jit-00-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
@@ -1847,6 +1849,7 @@ set(TSLANG_CORPUS
     00try_unwind_outer_locals.ts
     00try_return_through_finally.ts
     00try_scope_exit_through_finally.ts
+    00try_jump_from_catch.ts
     00capture_in_new_arguments.ts
     00cast_to_f32.ts
     00catch_untyped_value.ts
