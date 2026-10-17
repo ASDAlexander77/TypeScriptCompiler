@@ -83,6 +83,15 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
     }
 };
 
+// end the catch clauses a return, break or continue leaves (TSContext::catchesLeft)
+static void endCatches(PatternRewriter &rewriter, Location loc, int count)
+{
+    for (auto i = 0; i < count; i++)
+    {
+        rewriter.create<mlir_ts::EndCatchOp>(loc);
+    }
+}
+
 struct ExitOpLowering : public TsPattern<mlir_ts::ExitOp>
 {
     using TsPattern<mlir_ts::ExitOp>::TsPattern;
@@ -111,10 +120,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
         assert(tsContext->returnBlock);
 
         auto retBlock = tsContext->returnBlock;
-        if (auto unwind = tsContext->unwind.lookup(op))
-        {
-            rewriter.create<mlir_ts::EndCatchOp>(loc);
-        }
+        endCatches(rewriter, loc, tsContext->catchesLeft.lookup(op));
 
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -152,10 +158,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         // save value into return
         rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.getOperand(), op.getReference());
-        if (auto unwind = tsContext->unwind.lookup(op))
-        {
-            rewriter.create<mlir_ts::EndCatchOp>(loc);
-        }
+        endCatches(rewriter, loc, tsContext->catchesLeft.lookup(op));
         
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -797,10 +800,7 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         auto jump = tsContext->jumps.lookup(breakOp);
         assert(jump);
 
-        if (auto unwind = tsContext->unwind.lookup(breakOp))
-        {
-            rewriter.create<mlir_ts::EndCatchOp>(loc);
-        }
+        endCatches(rewriter, loc, tsContext->catchesLeft.lookup(breakOp));
 
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(breakOp, jump);
         clh.CutBlock();
@@ -823,10 +823,7 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         auto jump = tsContext->jumps.lookup(continueOp);
         assert(jump);
 
-        if (auto unwind = tsContext->unwind.lookup(continueOp))
-        {
-            rewriter.create<mlir_ts::EndCatchOp>(loc);
-        }
+        endCatches(rewriter, loc, tsContext->catchesLeft.lookup(continueOp));
 
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(continueOp, jump);
         clh.CutBlock();
@@ -1564,13 +1561,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             // logic to set Invoke attribute CallOp
             auto visitorReturnOpContinue = [&](Operation *op) {
-                if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
+                if (isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp>(op))
                 {
-                    tsContext->unwind[op] = catchesBlock;
-                }
-                else if (auto returnValOp = dyn_cast_or_null<mlir_ts::ReturnValOp>(op))
-                {
-                    tsContext->unwind[op] = catchesBlock;
+                    tsContext->catchesLeft[op] = tsContext->catchesLeft.lookup(op) + 1;
                 }
                 else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
                 {
@@ -1611,6 +1604,14 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     continue;
                 }
             } while (false);
+
+            // A break/continue out of the try leaves the catch clause just as a return does and
+            // owes it the same end-of-catch, finally or not. Only the escaping ones: a jump to a
+            // loop inside the catch clause stays in it.
+            for (auto op : escapingJumpsCatches)
+            {
+                tsContext->catchesLeft[op] = tsContext->catchesLeft.lookup(op) + 1;
+            }
         }
         else
         {
@@ -1678,7 +1679,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // to be ended on the way out, as a catch clause's `return` ends it
             for (auto op : escapingOpsFinally)
             {
-                tsContext->unwind[finallyMapping.lookup(op)] = beforeFinallyBlock->getNextNode();
+                tsContext->catchesLeft[finallyMapping.lookup(op)] = tsContext->catchesLeft.lookup(op) + 1;
             }
 
             finallyBlock = beforeFinallyBlock->getNextNode();
@@ -1858,9 +1859,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 for (auto op : escapingJumpsCatches)
                 {
                     routeThroughFinally(op);
-                    // leaving a catch clause abruptly must end the active catch first,
-                    // mirroring the return-from-catch handling
-                    tsContext->unwind[op] = catchesBlock;
                 }
             }
 

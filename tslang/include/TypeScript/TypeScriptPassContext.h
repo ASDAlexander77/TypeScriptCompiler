@@ -130,6 +130,7 @@ struct TSContext
         finallyBlockOf.beginRun();
         landingBlockOf.beginRun();
         leavesCatch.beginRun();
+        catchesLeft.beginRun();
         catchPadIdOf.beginRun();
         finallyPadIdOf.beginRun();
         inParentTryFinallyPad.beginRun();
@@ -155,10 +156,12 @@ struct TSContext
     OpSideTable<mlir::Block *> finallyBlockOf{"finallyBlockOf"};
     OpSideTable<mlir::Block *> landingBlockOf{"landingBlockOf"};
     // Throws that sit inside a catch clause and therefore have to end the active catch before
-    // they leave it. `return`, `break` and `continue` carry the same meaning in `unwind`, but
-    // a throw cannot: `unwind` already means its invoke destination, which is a different
-    // question with a different answer.
+    // they leave it. It cannot go in `unwind`: for a throw that already means its invoke
+    // destination, which is a different question with a different answer.
     OpSideTable<bool> leavesCatch{"leavesCatch"};
+    // How many catch clauses a `return`, `break` or `continue` leaves - one end-of-catch each,
+    // innermost first. More than one for a jump out of a catch nested in another catch clause.
+    OpSideTable<int> catchesLeft{"catchesLeft"};
     // Windows: the id a try's catch landing pad goes by, so that the pads of a try inside that
     // catch clause can name it as the funclet they are nested in - see tagPad in TryOpLowering
     // and ts.internal.eh_pad in Win32ExceptionPass. Ids are unique within the module.
