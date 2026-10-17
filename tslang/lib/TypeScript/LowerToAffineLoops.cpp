@@ -1485,32 +1485,31 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         collectEscapingJumps(tryOp.getBody(), escapingJumpsBody);
         collectEscapingJumps(tryOp.getCatches(), escapingJumpsCatches);
 
-        // Windows: the copy of the finally on the exceptional path runs in a cleanup funclet,
-        // which can do two things a finally may need only from a catch funclet:
+        // The copy of the finally on the exceptional path is entered through a cleanup pad, which
+        // can do two things a finally may need only from a catch:
         // - return to normal flow: a `return`, or a break/continue out of the try, ends the
-        //   exception there and then (`finally { return s; }` swallows it), where a cleanup
-        //   can only carry on unwinding;
-        // - hold pads of its own: a try in the finally. LLVM numbers no EH state for a pad in a
-        //   cleanup funclet (the MSVC personality does not allow one), so an exception thrown
-        //   in that try was never caught there, and the process terminated.
+        //   exception there and then (`finally { return s; }` swallows it), where a cleanup can
+        //   only carry on unwinding. On Windows the funclet had no way out; on the Itanium path
+        //   an exception with only cleanups to run is never unwound at all - the search phase
+        //   finds no handler and the program terminates before the finally runs.
+        // - hold pads of its own (Windows): a try in the finally. LLVM numbers no EH state for a
+        //   pad in a cleanup funclet (the MSVC personality does not allow one), so an exception
+        //   thrown in that try was never caught there, and the process terminated.
         // Such a finally is entered through a catch-all pad instead, which rethrows at its end
-        // (see windowsFinallyCatches).
+        // (see windowsFinallyCatches and linuxFinallyCatches).
         mlir::SmallVector<Operation *> escapingOpsFinally;
         auto finallyHasTry = false;
-        if (tsContext->compileOptions.isWindows)
-        {
-            tryOp.getFinally().walk([&](Operation *op) {
-                if (isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp>(op) ||
-                    (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.contains(op)))
-                {
-                    escapingOpsFinally.push_back(op);
-                }
-                else if (isa<mlir_ts::TryOp>(op))
-                {
-                    finallyHasTry = true;
-                }
-            });
-        }
+        tryOp.getFinally().walk([&](Operation *op) {
+            if (isa<mlir_ts::ReturnOp, mlir_ts::ReturnValOp>(op) ||
+                (isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(op) && tsContext->jumps.contains(op)))
+            {
+                escapingOpsFinally.push_back(op);
+            }
+            else if (isa<mlir_ts::TryOp>(op))
+            {
+                finallyHasTry = true;
+            }
+        });
 
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
@@ -1625,6 +1624,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto finallyPadId = 0;
         auto windowsFinallyCatches =
             tsContext->compileOptions.isWindows && finallyHasOps && (!escapingOpsFinally.empty() || finallyHasTry);
+        // with a try around it in the function the Itanium finally pad is a catch-all already
+        auto linuxFinallyCatches = !tsContext->compileOptions.isWindows && finallyHasOps && !enclosingHandler &&
+                                   !escapingOpsFinally.empty();
         if (finallyHasOps)
         {
             // cloneRegionBefore makes brand-new Operation* instances, so any tsContext
@@ -1668,13 +1670,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         tsContext->inParentTryFinallyPad[newOp] = true;
                     }
                 }
+            }
 
-                // and the catch-all pad such a copy is entered through has to be ended on the
-                // way out, as a catch clause's `return` ends it
-                for (auto op : escapingOpsFinally)
-                {
-                    tsContext->unwind[finallyMapping.lookup(op)] = beforeFinallyBlock->getNextNode();
-                }
+            // the catch-all pad a finally that can leave is entered through (on either path) has
+            // to be ended on the way out, as a catch clause's `return` ends it
+            for (auto op : escapingOpsFinally)
+            {
+                tsContext->unwind[finallyMapping.lookup(op)] = beforeFinallyBlock->getNextNode();
             }
 
             finallyBlock = beforeFinallyBlock->getNextNode();
@@ -1833,7 +1835,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         mlir::Value catchAll;
         if (enclosingHandler && finallyHasOps || linuxHasCleanups && rttih.hasType() ||
-            linuxCleanupOnlyChainsToParent || linuxTypedCatchChains || windowsFinallyCatches)
+            linuxCleanupOnlyChainsToParent || linuxTypedCatchChains || windowsFinallyCatches ||
+            linuxFinallyCatches)
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
@@ -2042,7 +2045,29 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
             else
             {
-                if (!enclosingHandler)
+                if (linuxFinallyCatches)
+                {
+                    // see escapingOpsFinally: a catch-all, which a `return` in it ends; run to
+                    // its end, it rethrows - the shape the enclosingHandler case below has
+                    rewriter.setInsertionPointToStart(linuxHasCleanupsForFinally ? cleanupBlock : finallyBlock);
+
+                    auto landingPadCatchAllOp = rewriter.create<mlir_ts::LandingPadOp>(
+                        loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+
+                    if (linuxHasCleanupsForFinally)
+                    {
+                        rewriter.setInsertionPointToStart(finallyBlock);
+                    }
+
+                    rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCatchAllOp);
+
+                    rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
+                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+                    auto resultOpOfFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
+                    rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpOfFinally, nullVal);
+                }
+                else if (!enclosingHandler)
                 {
                     rewriter.setInsertionPointToStart(linuxHasCleanupsForFinally ? cleanupBlock : finallyBlock);
 
