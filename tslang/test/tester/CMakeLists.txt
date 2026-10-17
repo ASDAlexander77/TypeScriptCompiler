@@ -2719,6 +2719,16 @@ add_test(NAME test-compile-integer-literal-truncation-quiet
 set_tests_properties(test-compile-integer-literal-truncation-quiet
                      PROPERTIES FAIL_REGULAR_EXPRESSION "warning:|error:|Stack dump|Assertion failed")
 
+# A switch's case of another kind of primitive (a string for a number) is an error, as it can never
+# match: the switch's value was cast to the case's type instead.
+add_test(NAME test-compile-diagnostic-location-switch-case-type
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/diagnostic-location/switch_case_type.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/diagnostic-location-switch-case-type.obj")
+set_tests_properties(test-compile-diagnostic-location-switch-case-type
+                     PROPERTIES PASS_REGULAR_EXPRESSION "switch_case_type\\.ts:8:14: error: Type '\"a\"' is not comparable to type '5'"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|switch_case_type\\.ts:7:")
+
 # A store to an indexed Ref<T> (`bytes[i] = x`) names the form that stores, `Deref(bytes[i]) = x`,
 # instead of "saving to constant object".
 add_test(NAME test-compile-ref-index-store
