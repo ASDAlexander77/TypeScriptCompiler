@@ -70,12 +70,20 @@
 // rest.
 #define UNWIND_ONLY_ATTR_NAME "__unwind_only"
 
-// The `return` counterpart: a release MLIRGen put at the end of a hand-written `finally` for what
-// the scopes around the `try` owe once a `return` from its body or catch clause has run the
-// finally. The `return` itself stops short of those scopes, since the finally may still read them
-// (GenContext::finallyGuardScope). TryOpLowering keeps these in the copy a `return` runs and
-// erases them from the rest.
+// The `return` counterpart: the `ts.If` MLIRGen put at the end of a hand-written `finally` around
+// what the scopes around the `try` owe - their `using`s to dispose and their locals to release -
+// once a `return` from its body or catch clause has run the finally. The `return` itself stops
+// short of those scopes, since the finally may still read them (GenContext::finallyGuardScope).
+// TryOpLowering keeps it in the copy a `return` runs and erases it from the rest.
 #define RETURN_ONLY_ATTR_NAME "__return_only"
+
+// The same for a `break` or `continue` out of the `try` body or catch clause, one `ts.If` per
+// place they go. Its value names the jump: JUMP_ONLY_BREAK_KEY or JUMP_ONLY_CONTINUE_KEY followed
+// by the label (empty when there is none), as the jump's BreakOp or ContinueOp carries it.
+// TryOpLowering keeps it in the copy that jump runs and erases it from the rest.
+#define JUMP_ONLY_ATTR_NAME "__jump_only"
+#define JUMP_ONLY_BREAK_KEY "break:"
+#define JUMP_ONLY_CONTINUE_KEY "continue:"
 
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
 // rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and

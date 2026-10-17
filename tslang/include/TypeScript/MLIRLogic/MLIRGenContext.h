@@ -244,12 +244,17 @@ struct GenContext
     bool isUnwindCleanupScope = false;
     // Points at itself on the context that stands, in the walk outwards, for the scope around a
     // `try` with a `finally` - the parent of its body's scope, and its catch clause's context. A
-    // `return` from inside the body or the catch releases the scopes up to here and no further:
-    // the finally still runs before the function returns, and it can read the scopes from here
-    // outwards, so the copy of the finally that a `return` runs releases them once it is done
-    // (mlirGenReleaseOwnedOnReturn). A pointer rather than a flag, so that it needs no clearing:
-    // every context copied from this one points at this one, not at itself.
+    // `return`, `break` or `continue` from inside the body or the catch that gets this far
+    // disposes and releases the scopes up to here and no further: the finally still runs first,
+    // and it can read the scopes from here outwards, so the copy of the finally that the jump
+    // runs disposes and releases them once it is done (mlirGenScopeExitAfterFinally). A pointer
+    // rather than a flag, so that it needs no clearing: every context copied from this one points
+    // at this one, not at itself.
     const GenContext *finallyGuardScope = nullptr;
+    // On a finallyGuardScope: the `break`s (true) and `continue`s (false), by label, that stopped
+    // there - one entry for each place they go, and the finally gets the rest of the scope exit
+    // for each. Shared by the body's guard and the catch clause's, which is a copy of it.
+    mlir::SmallVector<std::pair<bool, std::string>> *finallyEscapingJumps = nullptr;
     // out-of-band cancellation signal; mutable so stop() stays callable through the const& threading
     mutable bool stopProcess = false;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages = nullptr;

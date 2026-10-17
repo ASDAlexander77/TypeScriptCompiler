@@ -1629,10 +1629,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // the last copy is made: the rewriter defers an erasure, so an op erased from the
             // region still goes into every copy cloned from it afterwards.
             //
-            // The releases a `return` left for after the finally (RETURN_ONLY_ATTR_NAME) the other
-            // way round: kept in the copy a `return` runs, and gone from every other.
+            // The scope exit a `return` left for after the finally (RETURN_ONLY_ATTR_NAME) the other
+            // way round: kept in the copy a `return` runs, and gone from every other. And the one
+            // each `break` or `continue` left (JUMP_ONLY_ATTR_NAME), kept in the copy for that
+            // jump alone. Each is a `ts.If` holding the lot, so erasing it erases them all.
             SmallVector<Operation *> unwindOnlyOps;
             SmallVector<Operation *> returnOnlyOps;
+            SmallVector<Operation *> jumpOnlyOps;
             tryOp.getFinally().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
                 if (isa<mlir_ts::TryOp>(op))
                 {
@@ -1647,6 +1650,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 if (op->hasAttr(RETURN_ONLY_ATTR_NAME))
                 {
                     returnOnlyOps.push_back(op);
+                    return WalkResult::skip();
+                }
+
+                if (op->hasAttr(JUMP_ONLY_ATTR_NAME))
+                {
+                    jumpOnlyOps.push_back(op);
+                    return WalkResult::skip();
                 }
 
                 return WalkResult::advance();
@@ -1659,7 +1669,44 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 }
             };
 
+            // the key MLIRGen tagged a jump's scope exit with: the kind of jump and its label
+            auto jumpKey = [](Operation *op) {
+                auto label = op->getAttrOfType<StringAttr>("label");
+                return std::string(isa<mlir_ts::BreakOp>(op) ? JUMP_ONLY_BREAK_KEY : JUMP_ONLY_CONTINUE_KEY) +
+                       (label ? label.getValue().str() : std::string());
+            };
+
+            // In the copy it belongs to, the `ts.If` goes and what it holds stays in its place:
+            // lowered as it is, the constant condition became a conditional branch, and to the
+            // ownership verifier its other edge was a path that never released.
+            auto unwrapOps = [&](ArrayRef<Operation *> ops, const mlir::IRMapping &mapping) {
+                for (auto *op : ops)
+                {
+                    auto ifOp = cast<mlir_ts::IfOp>(mapping.lookup(op));
+                    auto &thenBlock = ifOp.getThenRegion().front();
+                    auto *terminator = thenBlock.getTerminator();
+                    rewriter.inlineBlockBefore(&thenBlock, ifOp);
+                    rewriter.eraseOp(terminator);
+                    rewriter.eraseOp(ifOp);
+                }
+            };
+
+            auto keepJumpOnlyOps = [&](StringRef keepKey, const mlir::IRMapping &mapping) {
+                for (auto *op : jumpOnlyOps)
+                {
+                    if (op->getAttrOfType<StringAttr>(JUMP_ONLY_ATTR_NAME).getValue() == keepKey)
+                    {
+                        unwrapOps(op, mapping);
+                    }
+                    else
+                    {
+                        rewriter.eraseOp(mapping.lookup(op));
+                    }
+                }
+            };
+
             eraseOps(returnOnlyOps, finallyMapping);
+            eraseOps(jumpOnlyOps, finallyMapping);
 
             // add clone for 'return'
             if (returns.size() > 0)
@@ -1669,6 +1716,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                             returnFinallyMapping);
                 propagateTsContextEntries(returnFinallyMapping);
                 eraseOps(unwindOnlyOps, returnFinallyMapping);
+                eraseOps(jumpOnlyOps, returnFinallyMapping);
+                unwrapOps(returnOnlyOps, returnFinallyMapping);
                 auto returnFinallyBlockLast = continuation->getPrevNode();
                 rewriter.setInsertionPoint(returnFinallyBlockLast->getTerminator());
                 auto resultOpOfReturnFinallyBlock = cast<mlir_ts::ResultOp>(returnFinallyBlockLast->getTerminator());
@@ -1677,7 +1726,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 // A `try` around this one lowered first and sent these returns to its own finally
                 // copy. The return this copy ends with goes there in their stead, so the outer
                 // finally still runs - pointing the returns at this copy alone skipped it - and
-                // releases the scopes it guards (mlirGenReleaseOwnedOnReturn).
+                // releases the scopes it guards (mlirGenScopeExitAfterFinally).
                 mlir::Block *outerCleanup = nullptr;
                 for (auto retOp : returns)
                 {
@@ -1705,12 +1754,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // real target. Nested try/finally chains compose naturally: this try lowers
             // before any nested one, so a nested try later re-points the same op at its
             // own finally copy, which branches here.
+            //
+            // A copy ends with the rest of its jump's scope exit (JUMP_ONLY_ATTR_NAME), and that is
+            // MLIRGen's to say by the jump's kind and label, so a copy is per target and key: an
+            // unlabelled `break` and a `break outer` for the same loop go to one place, and each
+            // finds its own scope exit in its copy.
             if (escapingJumpsBody.size() > 0 || escapingJumpsCatches.size() > 0)
             {
-                mlir::DenseMap<mlir::Block *, mlir::Block *> finallyCopyPerTarget;
+                std::map<std::pair<mlir::Block *, std::string>, mlir::Block *> finallyCopyPerTarget;
                 auto routeThroughFinally = [&](Operation *op) {
                     auto target = tsContext->jumps.lookup(op);
-                    auto &finallyCopy = finallyCopyPerTarget[target];
+                    auto key = jumpKey(op);
+                    auto &finallyCopy = finallyCopyPerTarget[{target, key}];
                     if (!finallyCopy)
                     {
                         mlir::IRMapping jumpFinallyMapping;
@@ -1719,6 +1774,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         propagateTsContextEntries(jumpFinallyMapping);
                         eraseOps(unwindOnlyOps, jumpFinallyMapping);
                         eraseOps(returnOnlyOps, jumpFinallyMapping);
+                        keepJumpOnlyOps(key, jumpFinallyMapping);
                         auto jumpFinallyBlockLast = continuation->getPrevNode();
                         rewriter.setInsertionPoint(jumpFinallyBlockLast->getTerminator());
                         auto resultOpOfJumpFinallyBlock = cast<mlir_ts::ResultOp>(jumpFinallyBlockLast->getTerminator());
@@ -1743,7 +1799,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 }
             }
 
-            for (auto *op : llvm::concat<Operation *const>(unwindOnlyOps, returnOnlyOps))
+            for (auto *op : llvm::concat<Operation *const>(unwindOnlyOps, returnOnlyOps, jumpOnlyOps))
             {
                 rewriter.eraseOp(op);
             }

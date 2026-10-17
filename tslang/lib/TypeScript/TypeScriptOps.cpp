@@ -1719,6 +1719,13 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
             return failure();
         }
 
+        // the scope exit a `return` or a jump left at the end of a `finally`: TryOpLowering still
+        // has to find it by its tag, to keep it in that jump's copy of the finally alone
+        if (op->hasAttr(RETURN_ONLY_ATTR_NAME) || op->hasAttr(JUMP_ONLY_ATTR_NAME))
+        {
+            return failure();
+        }
+
         if (cast<BoolAttr>(constant.getValue()).getValue())
         {
             replaceOpWithRegion(rewriter, op, op.getThenRegion());
