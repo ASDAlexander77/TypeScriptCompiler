@@ -145,17 +145,16 @@ choice of file - lib or dll, debug or release, Android - is made today in `exe.c
 after MLIRGen. The builder moves that choice to a function MLIRGen can call, so both read the same
 answer.
 
-### 5.4 Reading from `-shared` imports too (my call; open, see below)
+### 5.4 Static libraries given with `--lib`, never `-shared` imports (my call for `--lib`)
 
-**Open:** a `-shared` import is a DLL link, which §2 now excludes for the default library. Either
-the same rule applies here (and the tests need another way to get a library whose facts they
-control), or `-shared` imports are an exception.
+A `-shared` import is a DLL link and reads no facts (§2, the user's rule).
 
-The reading code runs on the default library and on every shared library the program imports. The
-code path already exists for `__tsown_`. And the tests need a library whose facts they control: the
-runner builds every test with `--no-default-lib`, so a default-library-only reader could not be
-tested in the ordinary suite. Enabling `-shared` libraries costs nothing beyond this; turning it off
-would cost a test-only switch.
+The reader also runs on every static library given to an `--emit=exe` link with `--lib`: the file
+read is the file linked, which is the same guarantee the default library's archive gives. This is
+how the tests get a library whose facts they control. The runner builds every test with
+`--no-default-lib`, so a default-library-only reader could not be tested in the ordinary suite. A
+test builds a small library with `--emit=lib`, then compiles a program against it with
+`--emit=exe --lib=<it>`, declaring the library's functions with `declare`.
 
 ## 6. Soundness
 
@@ -172,13 +171,16 @@ would cost a test-only switch.
 - **Producer:** a library module with functions that borrow, keep, return and hand to a callback
   their parameters. Check its emitted symbol text, by reading the built binary or by a dump flag of
   the builder's choosing. Every case gets a positive and a negative.
-- **Consumer:** a program importing that library as `-shared`, with a decision test per case: the
+- **Consumer:** a program linking that library with `--emit=exe --lib=`, with a decision test per
+  case (the remark is printed during the `--emit=exe` compile): the
   `--stack-promotion-report` remark says `stack` for a borrowed argument and `heap: argument` or
   `heap: unknown-callee` otherwise. Run tests under gc, rc, own and none.
 - **Stale or missing facts:** a program against a library built without facts (an old build, or
   the symbol stripped) still compiles and promotes nothing through those calls.
-- **Virtual-call rule:** a library class with a virtual method; one program importing only that
-  library, and one also importing a second library that subclasses it. Expected: stack in the
+- **No facts from DLLs:** the same library built with `--emit=dll` and imported as `-shared`: every
+  call stays `heap`. Likewise `--emit=obj` of the program reads nothing.
+- **Virtual-call rule:** a library class with a virtual method; one program linking only that
+  library, and one also linking a second library that subclasses it. Expected: stack in the
   first, heap in the second.
 - **Default library end to end:** a program using `new RegExp` with `replace`, compiled with the
   default library (outside the runner's `--no-default-lib` suite, as the default-library tests
