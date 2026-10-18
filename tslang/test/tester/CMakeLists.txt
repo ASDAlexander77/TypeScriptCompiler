@@ -4137,13 +4137,18 @@ endif()
 set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned
     ctor_local borrow_uses pass_to_reader pass_to_keeper method_keeps_this virtual_one_keeps ctor_keeps_this
     to_interface to_any pass_to_print loop_carried
-    fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle)
+    fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle
+    too_big frame_budget recursive async_local generator_local thrown)
 # Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
 # they say nothing about promotion under own.
 set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
 foreach(stack_mm gc rc own none)
     foreach(stack_test ${stack_promotion_run_tests})
         if (stack_mm STREQUAL "own" AND stack_test IN_LIST stack_promotion_not_own)
+            continue()
+        endif()
+        # async under rc and own fails to link in the JIT without promotion too
+        if ((stack_mm STREQUAL "rc" OR stack_mm STREQUAL "own") AND stack_test STREQUAL "async_local")
             continue()
         endif()
         tslang_add_test(NAME test-jit-${stack_mm}-stack-${stack_test} COMMAND test-runner -jit -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
@@ -4188,7 +4193,13 @@ set(stack_promotion_decision_tests
     "field_overwrite|field_overwrite\.ts:10:15: remark: stack-promotion: stack"
     "return_field|return_field\.ts:11:15: remark: stack-promotion: stack"
     "try_region|try_region\.ts:10:15: remark: stack-promotion: heap: try-region"
-    "conditional_alloc|conditional_alloc\.ts:12:19: remark: stack-promotion: stack")
+    "conditional_alloc|conditional_alloc\.ts:12:19: remark: stack-promotion: stack"
+    "too_big|too_big\.ts:47:15: remark: stack-promotion: heap: too-big"
+    "frame_budget|frame_budget\.ts:67:17: remark: stack-promotion: stack.*frame_budget\.ts:69:17: remark: stack-promotion: heap: frame-budget"
+    "recursive|recursive\.ts:16:15: remark: stack-promotion: heap: recursive"
+    "async_local|async_local\.ts:10:15: remark: stack-promotion: heap: coroutine"
+    "generator_local|generator_local\.ts:11:19: remark: stack-promotion: heap: coroutine"
+    "thrown|thrown\.ts:10:15: remark: stack-promotion: heap: thrown")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
@@ -4219,3 +4230,10 @@ foreach(stack_case "gc|stack" "none|stack" "rc|heap: shared-handle" "own|heap: s
                          PROPERTIES PASS_REGULAR_EXPRESSION "shared_handle\.ts:14:14: remark: stack-promotion: ${stack_expected}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# The object limit is a flag.
+add_test(NAME test-stack-decision-max-object
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=gc --stack-promotion-report --stack-promotion-max-object=512
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/too_big.ts")
+set_tests_properties(test-stack-decision-max-object
+                     PROPERTIES PASS_REGULAR_EXPRESSION "too_big\.ts:47:15: remark: stack-promotion: stack"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")

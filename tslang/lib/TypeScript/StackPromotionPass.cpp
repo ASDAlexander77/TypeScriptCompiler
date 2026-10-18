@@ -11,6 +11,7 @@
 
 #include "StackEscapeFacts.h"
 
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -41,6 +42,7 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     // shared: a pass is copied when the pass manager clones it
     llvm::DenseMap<mlir::Operation *, std::shared_ptr<mlir::CFGLoopInfo>> loopInfos;
     llvm::DenseMap<mlir::Operation *, bool> tryRegions;
+    llvm::DenseMap<mlir::Operation *, bool> coroutines;
     bool moduleUsesShared = false;
 
   public:
@@ -83,9 +85,17 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             });
         });
 
+        // every site decided before any is promoted: a promotion rewrites the IR the others read
+        llvm::SmallVector<llvm::StringRef> reasons;
         for (auto *site : sites)
         {
-            auto reason = decide(site);
+            reasons.push_back(decide(site));
+        }
+
+        applyFrameBudget(sites, reasons);
+
+        for (auto [site, reason] : llvm::zip(sites, reasons))
+        {
             if (limits.report)
             {
                 if (reason.empty())
@@ -176,10 +186,30 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             }
         }
 
+        auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
+
         // version 1: an unwind path would need its own ts.ReleaseContents
-        if (hasTryRegion(site->getParentOfType<mlir_ts::FuncOp>()))
+        if (hasTryRegion(funcOp))
         {
             return "try-region";
+        }
+
+        // version 1: a frame that is left and re-entered - at an await, at a yield - is not one
+        // stack frame
+        if (isCoroutine(funcOp))
+        {
+            return "coroutine";
+        }
+
+        // every frame of a recursion would carry the object
+        if (facts->isRecursive(funcOp))
+        {
+            return "recursive";
+        }
+
+        if (blockBytes(storageType) - headerBytes() > limits.maxObjectBytes)
+        {
+            return "too-big";
         }
 
         if (isa<mlir_ts::SymbolCallInternalOp>(site) && newMethodBody(newMethodOf(site)).empty())
@@ -313,6 +343,144 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         }
 
         return {};
+    }
+
+    unsigned headerBytes()
+    {
+        return compileOptions.sizeBits() / 8;
+    }
+
+    // What a site's block takes in the frame: the header word and the payload. An estimate - every
+    // field rounded up to 8 bytes - because the exact layout is only known once lowered to LLVM;
+    // it bounds how much stack promotion takes, which needs no more precision than that.
+    uint64_t blockBytes(mlir::Type storageType)
+    {
+        llvm::SmallPtrSet<mlir::Type, 8> visiting;
+        return headerBytes() + estimateBytes(storageType, visiting);
+    }
+
+    uint64_t estimateBytes(mlir::Type type, llvm::SmallPtrSetImpl<mlir::Type> &visiting)
+    {
+        auto word = static_cast<uint64_t>(headerBytes());
+        auto roundUp = [](uint64_t bytes) { return (bytes + 7) / 8 * 8; };
+        if (!visiting.insert(type).second)
+        {
+            return word;
+        }
+
+        uint64_t bytes = word;
+        if (isa<mlir_ts::TupleType, mlir_ts::ClassStorageType, mlir_ts::ObjectStorageType>(type))
+        {
+            MLIRTypeHelper mth(&getContext(), compileOptions);
+            bytes = 0;
+            for (auto fieldType : mth.getOwnershipFieldTypes(type))
+            {
+                bytes += roundUp(estimateBytes(fieldType, visiting));
+            }
+        }
+        else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            bytes = 0;
+            for (auto &field : constTupleType.getFields())
+            {
+                bytes += roundUp(estimateBytes(field.type, visiting));
+            }
+        }
+        else if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+        {
+            // the tag, then the largest member
+            uint64_t largest = 0;
+            for (auto memberType : unionType.getTypes())
+            {
+                largest = std::max(largest, estimateBytes(memberType, visiting));
+            }
+
+            bytes = 8 + roundUp(largest);
+        }
+        else if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            bytes = 8 + roundUp(estimateBytes(optionalType.getElementType(), visiting));
+        }
+        else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            bytes = estimateBytes(literalType.getElementType(), visiting);
+        }
+        else if (isa<mlir_ts::InterfaceType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type))
+        {
+            bytes = 2 * word;
+        }
+
+        visiting.erase(type);
+        return bytes;
+    }
+
+    // The frame budget: per function, sites in loops first - where a heap allocation costs most -
+    // then in source order, until the next would not fit.
+    void applyFrameBudget(llvm::ArrayRef<mlir::Operation *> sites, llvm::MutableArrayRef<llvm::StringRef> reasons)
+    {
+        llvm::MapVector<mlir::Operation *, llvm::SmallVector<unsigned>> byFunction;
+        for (auto [index, site] : llvm::enumerate(sites))
+        {
+            if (reasons[index].empty())
+            {
+                byFunction[site->getParentOfType<mlir_ts::FuncOp>()].push_back(index);
+            }
+        }
+
+        for (auto &entry : byFunction)
+        {
+            auto &indexes = entry.second;
+            llvm::stable_sort(indexes, [&](unsigned left, unsigned right) {
+                return inLoop(sites[left]) && !inLoop(sites[right]);
+            });
+
+            uint64_t used = 0;
+            for (auto index : indexes)
+            {
+                auto bytes = blockBytes(storageTypeOf(sites[index]->getResult(0).getType()));
+                if (used + bytes > limits.maxFrameBytes)
+                {
+                    reasons[index] = "frame-budget";
+                    continue;
+                }
+
+                used += bytes;
+            }
+        }
+    }
+
+    bool inLoop(mlir::Operation *site)
+    {
+        auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
+        auto &body = funcOp.getBody();
+        if (body.hasOneBlock())
+        {
+            return false;
+        }
+
+        return loopInfoOf(funcOp).getLoopFor(body.findAncestorOpInRegion(*site)->getBlock()) != nullptr;
+    }
+
+    // A function whose frame is left and re-entered: an async one, which holds async-dialect ops
+    // once `await` is expanded, or a generator's step function, which dispatches on its state.
+    bool isCoroutine(mlir_ts::FuncOp funcOp)
+    {
+        auto it = coroutines.find(funcOp);
+        if (it != coroutines.end())
+        {
+            return it->second;
+        }
+
+        auto found = funcOp
+                         .walk([](mlir::Operation *op) {
+                             return isa<mlir_ts::SwitchStateInternalOp, mlir_ts::SwitchStateOp>(op) ||
+                                            op->getDialect()->getNamespace() == "async"
+                                        ? mlir::WalkResult::interrupt()
+                                        : mlir::WalkResult::advance();
+                         })
+                         .wasInterrupted();
+        coroutines[funcOp] = found;
+        return found;
     }
 
     // A function with a try region: after the affine lowering, one with a landing pad.

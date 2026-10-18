@@ -97,8 +97,67 @@ class StackEscapeFacts
         return "";
     }
 
+    // On a cycle of the module's call graph - calls by name, and virtual calls through every
+    // method they may reach.
+    bool isRecursive(mlir_ts::FuncOp funcOp)
+    {
+        auto it = recursive.find(funcOp);
+        if (it != recursive.end())
+        {
+            return it->second;
+        }
+
+        llvm::SmallPtrSet<mlir::Operation *, 16> seen;
+        llvm::SmallVector<mlir_ts::FuncOp> work{funcOp};
+        auto found = false;
+        while (!work.empty() && !found)
+        {
+            auto current = work.pop_back_val();
+            for (auto callee : calleesOfFunction(current))
+            {
+                auto calleeOp = module.lookupSymbol<mlir_ts::FuncOp>(callee);
+                if (!calleeOp)
+                {
+                    continue;
+                }
+
+                if (calleeOp == funcOp)
+                {
+                    found = true;
+                    break;
+                }
+
+                if (seen.insert(calleeOp).second)
+                {
+                    work.push_back(calleeOp);
+                }
+            }
+        }
+
+        recursive[funcOp] = found;
+        return found;
+    }
+
   private:
     mlir::ModuleOp module;
+    llvm::DenseMap<mlir::Operation *, bool> recursive;
+
+    llvm::SmallVector<mlir::FlatSymbolRefAttr> calleesOfFunction(mlir_ts::FuncOp funcOp)
+    {
+        llvm::SmallVector<mlir::FlatSymbolRefAttr> callees;
+        funcOp.walk([&](mlir::Operation *op) {
+            if (auto callOp = dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
+            {
+                callees.push_back(callOp.getCalleeAttr());
+            }
+            else if (auto callOp = dyn_cast<mlir_ts::CallInternalOp>(op))
+            {
+                calleesOf(callOp->getOperand(0), callees);
+            }
+        });
+
+        return callees;
+    }
     llvm::DenseMap<std::pair<mlir::Operation *, unsigned>, bool> paramEscapes;
 
     struct VTable
@@ -371,7 +430,7 @@ class StackEscapeFacts
                 return argumentEscapes(candidates, use.getOperandNumber() - 1);
             })
             .Case<mlir_ts::ReturnInternalOp, mlir_ts::ReturnValOp>([&](auto) { return "returned"; })
-            .Case<mlir_ts::ThrowOp>([&](auto) { return "thrown"; })
+            .Case<mlir_ts::ThrowOp, mlir_ts::ThrowCallOp, mlir_ts::ThrowUnwindOp>([&](auto) { return "thrown"; })
             .Default([&](auto) { return "unclassified"; });
     }
 };
