@@ -305,6 +305,7 @@ tslang_add_test(NAME test-compile-00-funcs-nesting COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-funcs-nesting-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_generic.ts")
 tslang_add_test(NAME test-compile-00-funcs-nesting-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 tslang_add_test(NAME test-compile-00-funcs-hybrid-null-this COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
+tslang_add_test(NAME test-compile-00-funcs-c-varargs-storage COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_c_varargs_storage.ts")
 tslang_add_test(NAME test-compile-00-typeof-static-fold COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
 tslang_add_test(NAME test-compile-00-typeof-function-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
@@ -857,6 +858,7 @@ tslang_add_test(NAME test-jit-00-funcs-nesting COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-funcs-nesting-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_generic.ts")
 tslang_add_test(NAME test-jit-00-funcs-nesting-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 tslang_add_test(NAME test-jit-00-funcs-hybrid-null-this COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
+tslang_add_test(NAME test-jit-00-funcs-c-varargs-storage COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_c_varargs_storage.ts")
 tslang_add_test(NAME test-jit-00-typeof-static-fold COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
 tslang_add_test(NAME test-jit-00-typeof-function-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
@@ -1383,6 +1385,7 @@ tslang_add_test(NAME test-compile-export-import-declare-linkname COMMAND test-ru
 tslang_add_test(NAME test-compile-export-import-owned-returns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 tslang_add_test(NAME test-compile-export-import-const-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-compile-export-import-const-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-compile-export-import-c-varargs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-compile-export-import-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 # `import './export_os_suffix'` takes the target's file, export_os_suffix.win32.ts or
 # export_os_suffix.linux.ts: the host's is compiled and linked beside it, and the import's
@@ -1491,6 +1494,7 @@ tslang_add_test(NAME test-compile-shared-export-import-owned-returns COMMAND tes
 tslang_add_test(NAME test-compile-shared-export-import-gc-single-collector COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 tslang_add_test(NAME test-compile-shared-export-import-const-locals COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-compile-shared-export-import-const-functions COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-compile-shared-export-import-c-varargs COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-compile-shared-export-import-generators COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-compile-shared-export-import-throw-class COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
@@ -1602,6 +1606,7 @@ tslang_add_test(NAME test-jit-shared-export-import-owned-returns COMMAND test-ru
 tslang_add_test(NAME test-jit-shared-export-import-gc-single-collector COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 tslang_add_test(NAME test-jit-shared-export-import-const-locals COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-jit-shared-export-import-const-functions COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-jit-shared-export-import-c-varargs COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-jit-shared-export-import-generators COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-jit-shared-export-import-throw-class COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
@@ -1922,6 +1927,7 @@ set(TSLANG_CORPUS
     00for_of.ts
     00for.ts
     00funcs_bindings.ts
+    00funcs_c_varargs_storage.ts
     00funcs_capture.ts
     00funcs_expression_generic.ts
     00funcs_expression_iterator.ts

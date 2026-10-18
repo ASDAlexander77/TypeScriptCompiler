@@ -1686,7 +1686,8 @@ namespace mlirgen
             {
                 auto funcValue = builder.create<mlir_ts::CastOp>(
                     location,
-                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg()),
+                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(),
+                                               hybridFuncType.isVarArg(), hybridFuncType.isCVarArg()),
                     value);
                 return V(builder.create<mlir_ts::CastOp>(location, type, funcValue));
             }
@@ -1753,11 +1754,8 @@ namespace mlirgen
             // kind the extra arguments would land in the wrong registers.
             if (isCVarArgFunctionType(valueType) != isCVarArgFunctionType(type))
             {
-                // the printed types look alike: only the C variadic one is told apart
-                auto cVarArgLabel = [&](mlir::Type t) { return isCVarArgFunctionType(t) ? " (C variadic, @varargs)" : ""; };
                 emitError(location, "can't assign '")
-                    << to_print(valueType) << "'" << cVarArgLabel(valueType) << " to '" << to_print(type) << "'"
-                    << cVarArgLabel(type) << ": only one of them is a C variadic function";
+                    << to_print(valueType) << "' to '" << to_print(type) << "': only one of them is a C variadic function";
                 return mlir::failure();
             }
 

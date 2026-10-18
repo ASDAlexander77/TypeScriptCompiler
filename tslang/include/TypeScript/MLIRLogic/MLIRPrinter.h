@@ -63,6 +63,22 @@ class MLIRPrinter
         printAttribute(out, id, true);
     }
 
+    // a C variadic function type (`@varargs`) reads back as `CVarArgs<(...) => ...>`; an arrow
+    // type alone would read back as a TypeScript function, called another way
+    template <typename T, typename F>
+    void printCVarArgsOrFuncType(T &out, F t)
+    {
+        if (t.isCVarArg())
+        {
+            out << "CVarArgs<";
+            printFuncType(out, t);
+            out << ">";
+            return;
+        }
+
+        printFuncType(out, t);
+    }
+
     template <typename T, typename F>
     void printFuncType(T &out, F t)
     {
@@ -223,7 +239,10 @@ class MLIRPrinter
             // it would parse back as HybridFunctionType instead - a different,
             // wider (two-pointer-struct vs single-pointer) storage layout that
             // silently misaligns every subsequent read through the field.
-            if (allowMethodSignature && field.id && isa<mlir_ts::FunctionType>(field.type))
+            // A C variadic function field is a value, not a method: it prints as `CVarArgs<...>`,
+            // which reads back as the same one-pointer type.
+            if (allowMethodSignature && field.id && isa<mlir_ts::FunctionType>(field.type)
+                && !mlir::cast<mlir_ts::FunctionType>(field.type).isCVarArg())
             {
                 printFieldName(out, field.id);
                 printFuncTypeAsMethodSignature(out, mlir::cast<mlir_ts::FunctionType>(field.type));
@@ -408,10 +427,10 @@ class MLIRPrinter
                 out << t.getName().getValue().str().c_str();
             })
             .template Case<mlir_ts::FunctionType>([&](auto t) {
-                printFuncType(out, t);
+                printCVarArgsOrFuncType(out, t);
             })
             .template Case<mlir_ts::HybridFunctionType>([&](auto t) {
-                printFuncType(out, t);
+                printCVarArgsOrFuncType(out, t);
             })
             .template Case<mlir_ts::ConstructFunctionType>([&](auto t) {
                 out << "new ";

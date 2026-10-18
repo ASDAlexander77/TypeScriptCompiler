@@ -835,23 +835,30 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
   let summary = "Map from a list of inputs to a list of results with/without 'this' reference";
   let description = [{
   }];
-  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
+  // `isCVarArg`: as for TypeScript_Function - a C variadic function, which a hybrid value holds
+  // with no `this`. Printed only when set.
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg,
+                        DefaultValuedParameter<"bool", "false">:$isCVarArg);
 
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-     TypeBuilder<(ins "ArrayRef<Type>":$inputs, "ArrayRef<Type>":$results, "bool":$isVarArg), [{
-       return Base::get($_ctxt, inputs, results, isVarArg);
+     TypeBuilder<(ins "ArrayRef<Type>":$inputs, "ArrayRef<Type>":$results, "bool":$isVarArg, CArg<"bool", "false">:$isCVarArg), [{
+       return Base::get($_ctxt, inputs, results, isVarArg, isCVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
-       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg(),
+                        funcType.isCVarArg());
      }]>
-  ]; 
+  ];
 
-  let skipDefaultBuilders = 1;  
+  let skipDefaultBuilders = 1;
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
     bool isVarArg() const;
+
+    /// A C variadic function (`@varargs`): the extra arguments of a call go to C's `...`.
+    bool isCVarArg() const { return getIsCVarArg(); }
 
     /// Input types.
     unsigned getNumInputs() const;

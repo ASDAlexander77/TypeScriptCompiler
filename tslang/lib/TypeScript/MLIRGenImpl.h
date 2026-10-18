@@ -2152,7 +2152,7 @@ class MLIRGenImpl
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
         // this is 'let', if 'let' is func, it should be HybridFunction. Not a C variadic
-        // function: it captures nothing, and a call through it must stay a variadic call.
+        // function: it is one pointer, as in C (see getCVarArgsType).
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
         {
             actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
@@ -2211,7 +2211,9 @@ class MLIRGenImpl
         // (adjustLocalVariableType): as a hybrid function. Its declaration in __decls,
         // `let f : (p0: number) => number`, reads back as one, so a library inferring a plain
         // function from its initializer stored a smaller value than its importers loaded - the
-        // call's arguments landed in the wrong place and it returned garbage.
+        // call's arguments landed in the wrong place and it returned garbage. A C variadic
+        // function stays one pointer: its declaration, `let f : CVarArgs<(p0: string) => s32>`,
+        // reads back as one (getCVarArgsType).
         if (variableDeclarationInfo.isExport || variableDeclarationInfo.isImport || variableDeclarationInfo.isExternal)
         {
             if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
@@ -8833,11 +8835,10 @@ class MLIRGenImpl
 
     // A C variadic function, declared `@varargs declare function f(n: s32)` (tsbindgen writes
     // them so): its arguments after the declared ones go to C's `...`. Its type says so, whether
-    // it is called by name or through a value of it.
-    static bool isCVarArgFunctionType(mlir::Type type)
+    // it is called by name or through a value of it (a function or a hybrid function).
+    bool isCVarArgFunctionType(mlir::Type type)
     {
-        auto funcType = dyn_cast<mlir_ts::FunctionType>(type);
-        return funcType && funcType.isCVarArg();
+        return mth.getCVarArgFromFuncRef(type);
     }
 
     // A call with fewer arguments than the callee needs, or more than it takes, is TypeScript's
@@ -13208,6 +13209,8 @@ class MLIRGenImpl
                                           bool isVarArg);
 
     mlir_ts::ExtensionFunctionType getExtensionFunctionType(mlir_ts::FunctionType funcType);
+
+    mlir::Type getCVarArgsType(mlir::Type type);
 
     mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext);
 
