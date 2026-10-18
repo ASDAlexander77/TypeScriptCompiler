@@ -182,6 +182,11 @@ endif()
 # Off by default: the default suite and its test names do not change.
 option(TSLANG_TEST_X86 "Also register the 32-bit (i686) twin of every non-JIT test" OFF)
 
+# With TSLANG_TEST_NO_STACK_PROMOTION on, every `test-runner` registration builds with every
+# allocation on the heap: run the suite both ways and the pass/fail lists must be the same
+# (docs/superpowers/specs/2026-10-18-stack-promotion-design.md section 9).
+option(TSLANG_TEST_NO_STACK_PROMOTION "Build every test-runner test with --no-stack-promotion" OFF)
+
 if (TSLANG_TEST_X86)
     if (NOT WIN32)
         message(FATAL_ERROR "TSLANG_TEST_X86: the x86 twins build Windows i686 programs, so they need a Windows host")
@@ -236,6 +241,10 @@ function(tslang_add_test)
     # Checked whether the twins are on or not, so a name that could not have one fails every configure.
     if (NOT arg_NAME MATCHES "^test-")
         message(FATAL_ERROR "tslang_add_test(${arg_NAME}): the name must start with test-")
+    endif()
+
+    if (TSLANG_TEST_NO_STACK_PROMOTION)
+        list(INSERT arg_COMMAND 1 -no-stack-promotion)
     endif()
 
     add_test(NAME ${arg_NAME} COMMAND ${arg_COMMAND})
