@@ -232,10 +232,13 @@ class OwnershipRoutineLogic
     }
 
     // What destroying a block of `storageType` at `payloadPtr` releases, without freeing the block:
-    // a promoted object's fields when its frame is done with it (ts.ReleaseContents).
+    // a promoted object's fields when its frame is done with it (ts.ReleaseContents). Each field
+    // given back is nulled, so that the block never holds a reference it no longer owns: a second
+    // ts.ReleaseContents, or a release of a field, finds nothing to give back. At a return the
+    // stores are dead, and LLVM drops them.
     void emitReleaseContents(mlir::Type storageType, mlir::Value payloadPtr)
     {
-        releaseFields(storageType, payloadPtr);
+        releaseFields(storageType, payloadPtr, /*nullReleased=*/true);
     }
 
     // Drops one reference held by the value in `slotPtr`, whose TypeScript type is `type`.
@@ -730,8 +733,9 @@ class OwnershipRoutineLogic
                                       FlatSymbolRefAttr::get(rewriter.getContext(), routineName), ValueRange{slotPtr});
     }
 
-    // Releases each field a record-shaped value owns. `basePtr` addresses the record itself.
-    void releaseFields(mlir::Type recordType, mlir::Value basePtr)
+    // Releases each field a record-shaped value owns. `basePtr` addresses the record itself. With
+    // `nullReleased`, each field released is then zeroed.
+    void releaseFields(mlir::Type recordType, mlir::Value basePtr, bool nullReleased = false)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -784,6 +788,11 @@ class OwnershipRoutineLogic
             rewriter.create<LLVM::CallOp>(loc, TypeRange{},
                                           FlatSymbolRefAttr::get(rewriter.getContext(), routineName),
                                           ValueRange{fieldPtr});
+            if (nullReleased)
+            {
+                auto llvmFieldType = tch.convertType(fieldType);
+                rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, llvmFieldType), fieldPtr);
+            }
         }
     }
 

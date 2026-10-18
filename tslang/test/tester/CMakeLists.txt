@@ -4149,7 +4149,8 @@ set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_lo
     fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle
     too_big frame_budget recursive async_local generator_local thrown
     array_local_fixed array_local_push array_returned closure_local closure_escapes
-    virtual_exported_subclass recursive_closure)
+    virtual_exported_subclass recursive_closure loop_exit_use closure_direct_call closure_nested recursive_mutual
+    try_catch_reads)
 # Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
 # they say nothing about promotion under own.
 set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
@@ -4203,7 +4204,6 @@ set(stack_promotion_decision_tests
     "fields_object|fields_object\.ts:17:15: remark: stack-promotion: stack.*fields_object\.ts:17:25: remark: stack-promotion: heap: argument"
     "field_overwrite|field_overwrite\.ts:10:15: remark: stack-promotion: stack"
     "return_field|return_field\.ts:11:15: remark: stack-promotion: stack"
-    "try_region|try_region\.ts:10:15: remark: stack-promotion: heap: try-region"
     "conditional_alloc|conditional_alloc\.ts:12:19: remark: stack-promotion: stack"
     "too_big|too_big\.ts:47:15: remark: stack-promotion: heap: too-big"
     "frame_budget|frame_budget\.ts:67:17: remark: stack-promotion: stack.*frame_budget\.ts:69:17: remark: stack-promotion: heap: frame-budget"
@@ -4215,7 +4215,9 @@ set(stack_promotion_decision_tests
     "array_local_push|array_local_push\.ts:3:25: remark: stack-promotion: heap: growable"
     "array_returned|array_returned\.ts:3:15: remark: stack-promotion: heap: returned"
     "virtual_exported_subclass|virtual_exported_subclass\.ts:23:18: remark: stack-promotion: heap: unknown-callee"
-    "recursive_closure|recursive_closure\.ts:17:15: remark: stack-promotion: heap: recursive")
+    "recursive_closure|recursive_closure\.ts:17:15: remark: stack-promotion: heap: recursive"
+    "loop_exit_use|loop_exit_use\.ts:12:19: remark: stack-promotion: stack.*loop_exit_use\.ts:23:19: remark: stack-promotion: stack"
+    "recursive_mutual|recursive_mutual\.ts:11:15: remark: stack-promotion: heap: recursive.*recursive_mutual\.ts:16:15: remark: stack-promotion: heap: recursive.*recursive_mutual\.ts:21:15: remark: stack-promotion: stack")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
@@ -4253,13 +4255,26 @@ add_test(NAME test-stack-decision-max-object
 set_tests_properties(test-stack-decision-max-object
                      PROPERTIES PASS_REGULAR_EXPRESSION "too_big\.ts:47:15: remark: stack-promotion: stack"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-# A capture box: on the stack where nothing counts, and only while its closures stay in the function.
+# Decisions that depend on the model, `<model>|<file>|<line:col: remark>`. A capture box: on the
+# stack where nothing counts, and only while its closures stay in the function - called by name or
+# passed to a reader, nested in another closure. A function with a try region: refused only where
+# an unwind path would have to give back what the object owns.
 foreach(stack_case "gc|closure_local|10:11: remark: stack-promotion: stack"
                    "none|closure_local|10:11: remark: stack-promotion: stack"
                    "rc|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
                    "own|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
                    "gc|closure_escapes|4:12: remark: stack-promotion: heap: returned"
-                   "none|closure_escapes|4:12: remark: stack-promotion: heap: returned")
+                   "none|closure_escapes|4:12: remark: stack-promotion: heap: returned"
+                   "gc|closure_direct_call|4:15: remark: stack-promotion: stack"
+                   "none|closure_direct_call|4:15: remark: stack-promotion: stack"
+                   "gc|closure_nested|11:11: remark: stack-promotion: stack"
+                   "none|closure_nested|11:11: remark: stack-promotion: stack"
+                   "gc|try_region|11:15: remark: stack-promotion: stack"
+                   "none|try_region|11:15: remark: stack-promotion: stack"
+                   "rc|try_region|11:15: remark: stack-promotion: heap: try-region"
+                   "own|try_region|11:15: remark: stack-promotion: heap: try-region"
+                   "gc|try_catch_reads|19:19: remark: stack-promotion: stack"
+                   "none|try_catch_reads|19:19: remark: stack-promotion: stack")
     string(REPLACE "|" ";" stack_parts "${stack_case}")
     list(GET stack_parts 0 stack_mm)
     list(GET stack_parts 1 stack_name)
@@ -4269,5 +4284,14 @@ foreach(stack_case "gc|closure_local|10:11: remark: stack-promotion: stack"
                      "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
     set_tests_properties(test-stack-decision-${stack_mm}-${stack_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "${stack_name}\.ts:${stack_expected}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+# ts.ReleaseContents nulls each field it gives back: the release call is followed by a null store.
+foreach(stack_mm rc own)
+    add_test(NAME test-stack-release-contents-nulls-${stack_mm}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-llvm --no-default-lib -mm=${stack_mm}
+                     "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/fields_string.ts")
+    set_tests_properties(test-stack-release-contents-nulls-${stack_mm}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "llvm\\.call @tsrel_[0-9]+\\(%[0-9]+\\) : \\(!llvm\\.ptr\\) -> \\(\\)[\r\n]+ +%[0-9]+ = llvm\\.mlir\\.zero : !llvm\\.ptr[\r\n]+ +llvm\\.store"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
