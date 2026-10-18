@@ -9,7 +9,7 @@
 
 cmake_minimum_required(VERSION 3.17.3)
 
-foreach(var TSLANG SOURCE_DIR WORK_DIR GC_LIB LLVM_LIB TSLANG_LIB DEFAULT_LIB_CANDIDATES)
+foreach(var TSLANG SOURCE_DIR WORK_DIR AR GC_LIB LLVM_LIB TSLANG_LIB DEFAULT_LIB_CANDIDATES)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "${var} is required")
     endif()
@@ -69,6 +69,24 @@ foreach(mm gc rc own none)
     if(NOT EXISTS "${static_lib}" OR NOT EXISTS "${shared_lib}")
         continue()
     endif()
+
+    # The default library is linked by the file its facts were read from, never searched for: a
+    # stray library of that name in the build folder is not linked. (This one defines none of it.)
+    set(stray_dir "${WORK_DIR}/${mm}-stray")
+    file(REMOVE_RECURSE "${stray_dir}")
+    file(MAKE_DIRECTORY "${stray_dir}")
+    file(WRITE "${stray_dir}/stray.ts" "export function strayOnly(): number { return 1; }\n")
+    run("${stray_dir}" "-mm=${mm} stray object" out
+        "${TSLANG}" --emit=obj --no-default-lib -mm=${mm} stray.ts -o stray.obj)
+    if(WIN32)
+        run("${stray_dir}" "-mm=${mm} stray library" out "${AR}" /NOLOGO /OUT:${static_name} stray.obj)
+    else()
+        run("${stray_dir}" "-mm=${mm} stray library" out "${AR}" rcs ${static_name} stray.obj)
+    endif()
+    run("${stray_dir}" "-mm=${mm} --emit=exe beside a stray ${static_name}" out
+        "${TSLANG}" --emit=exe -mm=${mm} "--default-lib-path=${default_lib}"
+        "--gc-lib-path=${GC_LIB}" "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}"
+        "${source}" -o use.exe)
 
     execute_process(COMMAND "${TSLANG}" --print-borrow-facts=${static_lib} OUTPUT_VARIABLE static_facts)
     if(NOT static_facts MATCHES "\nMath[.]max 0\n")

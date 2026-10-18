@@ -677,6 +677,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     std::string tslangLibPathOpt;
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
+    std::string defaultLibFile;
     std::string defaultLibFileOpt;
     // Windows x86 programs: the asInvoker manifest's resource object, removed after the link
     llvm::SmallString<128> manifestObjFileName;
@@ -798,8 +799,6 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 
     if (!compileOptions.noDefaultLib)
     {
-        // default lib file
-        args.push_back("-l" DEFAULT_LIB_NAME);    
 
         // default lib path (per-build subfolder: debug/release must match how
         // this program is being compiled so the CRT and default-lib binaries agree).
@@ -862,12 +861,24 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             }
         }
 
-        defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
-        if (!defaultLibPathOpt.empty())
+        // The static library by its path: the file the borrow facts were read from
+        // (borrowfacts.cpp) is the file linked, never one of that name the linker finds first,
+        // such as a stray copy in the current folder. The DLL's import library is searched for.
+        if (!sharedDefaultLib && !defaultLibDir.empty())
         {
-            args.push_back(defaultLibPathOpt.c_str());
+            defaultLibFile = getDefaultLibBinary(/*shared=*/false, compileOptions, TheTriple);
+            args.push_back(defaultLibFile.c_str());
         }
-    }    
+        else
+        {
+            args.push_back("-l" DEFAULT_LIB_NAME);
+            defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
+            if (!defaultLibPathOpt.empty())
+            {
+                args.push_back(defaultLibPathOpt.c_str());
+            }
+        }
+    }
 
     // Which Boehm. A shared library, and a program that loads one, share a process with other gc
     // code, so they take the collector from gc.dll: linked statically, each binary brings a

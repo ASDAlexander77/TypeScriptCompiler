@@ -4294,6 +4294,7 @@ add_test(NAME test-borrow-facts-defaultlib
                  "-DTSLANG=$<TARGET_FILE:tslang>"
                  "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/stack-promotion"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/borrow-facts-defaultlib"
+                 "-DAR=${CMAKE_AR}"
                  "-DGC_LIB=${TEST_GC_LIBDIR}"
                  "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
                  "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
