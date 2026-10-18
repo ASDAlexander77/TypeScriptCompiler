@@ -4131,3 +4131,13 @@ if (WIN32)
         endforeach()
     endforeach()
 endif()
+
+# Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
+# model, JIT and ahead of time; the output must not depend on where an object lives.
+set(stack_promotion_run_tests class_call_same_as_new)
+foreach(stack_mm gc rc own none)
+    foreach(stack_test ${stack_promotion_run_tests})
+        tslang_add_test(NAME test-jit-${stack_mm}-stack-${stack_test} COMMAND test-runner -jit -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
+        tslang_add_test(NAME test-compile-${stack_mm}-stack-${stack_test} COMMAND test-runner -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
+    endforeach()
+endforeach()

@@ -8676,11 +8676,8 @@ class MLIRGenImpl
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext);
 
-    ValueOrLogicalResult NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
-                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
-
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
-                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false);
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
