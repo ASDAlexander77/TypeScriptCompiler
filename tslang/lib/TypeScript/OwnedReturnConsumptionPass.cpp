@@ -169,8 +169,9 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
-            // Already settled at the point the call was built - `new C()` is marked there,
-            // where the callee is known outright. Nothing left to remove.
+            // Already settled at the point the call was built - `new C()` of another module's
+            // class calls its `C..new`, and is marked there, where the callee is known outright.
+            // Nothing left to remove.
             if (callOp->hasAttr(OWNED_RESULT_ATTR_NAME))
             {
                 return;

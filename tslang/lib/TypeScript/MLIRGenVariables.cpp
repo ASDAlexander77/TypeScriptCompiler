@@ -200,7 +200,7 @@ namespace mlirgen
         varOp->setAttr(OWNED_LOCAL_ATTR_NAME, builder.getUnitAttr());
 
         // When the initializer already carries a reference for its receiver - `let x = new C()`,
-        // whose `C..new` retained the instance on the way out (§9.24) - taking another would put
+        // whose instance arrives owned (OWNED_RESULT_ATTR_NAME) - taking another would put
         // the slot one owner above the truth and nothing would ever be freed. Consume that
         // reference instead: no retain here, and the scope-exit release is what gives it back.
         // The pair stays balanced, so this cannot over-release; it is only the retain that moves.

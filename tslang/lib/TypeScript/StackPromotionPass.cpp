@@ -1,5 +1,4 @@
 #include "mlir/Pass/Pass.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/Analysis/CFGLoopInfo.h"
 
@@ -33,9 +32,9 @@ constexpr llvm::StringLiteral NewMethodSuffix("..new");
 // Every other allocation stays on the heap, silently. Runs at the affine level, where control
 // flow is an ordinary CFG and every allocation and ownership op is still present.
 //
-// An allocation site is a `ts.New` (a boxed object literal, a class expression) or a call of a
-// class's `C..new` defined in this module, which is how `new C()` reaches the caller. A promoted
-// `C..new` call is replaced by its body: a `ts.New` on the stack plus the vtable store.
+// An allocation site is a `ts.New`: a boxed object literal, a class expression, or `new C()` of a
+// class defined in this module, which MLIRGen allocates in place rather than through `C..new`.
+// `new C()` of a class from elsewhere calls that module's `C..new`, an unknown callee: a heap site.
 class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::OperationPass<mlir::ModuleOp>>
 {
     CompileOptions compileOptions;
@@ -158,28 +157,7 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return !op->hasAttr(STACK_ALLOC_ATTR_NAME);
         }
 
-        return static_cast<bool>(newMethodOf(op));
-    }
-
-    // The `C..new` a call allocates through, when it is one defined here with a body. A class
-    // imported as a declaration has none: an unknown callee, so a heap site.
-    mlir_ts::FuncOp newMethodOf(mlir::Operation *op)
-    {
-        auto callOp = dyn_cast<mlir_ts::SymbolCallInternalOp>(op);
-        if (!callOp || !callOp.getCallOperands().empty() || callOp->getNumResults() != 1 ||
-            !isa<mlir_ts::ClassType>(callOp->getResult(0).getType()) ||
-            !callOp.getCallee().ends_with(NewMethodSuffix))
-        {
-            return {};
-        }
-
-        auto funcOp = getOperation().lookupSymbol<mlir_ts::FuncOp>(callOp.getCalleeAttr());
-        if (!funcOp || funcOp.getBody().empty())
-        {
-            return {};
-        }
-
-        return funcOp;
+        return false;
     }
 
     // The storage the object's block holds, which is what goes on the stack.
@@ -422,11 +400,6 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "too-big";
         }
 
-        if (isa<mlir_ts::SymbolCallInternalOp>(site) && newMethodBody(newMethodOf(site)).empty())
-        {
-            return "unclassified";
-        }
-
         stack_escape::StackEscapeFacts::Walk walk;
         auto reason = facts->escapes(value, walk);
         if (!reason.empty())
@@ -532,56 +505,6 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         }
 
         return *entry;
-    }
-
-    // The ops of `C..new` that make the object: its `ts.New` and what follows it up to the point
-    // the object is handed to the return slot - the vtable store. Empty when the body is not of
-    // that shape, which keeps the site on the heap.
-    llvm::SmallVector<mlir::Operation *> newMethodBody(mlir_ts::FuncOp newMethod)
-    {
-        llvm::SmallVector<mlir::Operation *> ops;
-        mlir_ts::NewOp newOp;
-        for (auto &op : newMethod.getBody().front())
-        {
-            if (!newOp)
-            {
-                newOp = dyn_cast<mlir_ts::NewOp>(&op);
-                if (newOp)
-                {
-                    ops.push_back(&op);
-                }
-
-                continue;
-            }
-
-            if (isa<mlir_ts::RetainOp, mlir_ts::ReturnInternalOp>(&op))
-            {
-                return ops;
-            }
-
-            if (auto storeOp = dyn_cast<mlir_ts::StoreOp>(&op); storeOp && storeOp.getValue() == newOp.getResult())
-            {
-                return ops;
-            }
-
-            if (!isa<mlir_ts::PropertyRefOp, mlir_ts::AddressOfOp, mlir_ts::StoreOp, mlir_ts::ConstantOp>(&op))
-            {
-                return {};
-            }
-
-            // everything it reads is made in this run of ops: nothing to map from elsewhere
-            for (auto operand : op.getOperands())
-            {
-                if (!llvm::is_contained(ops, operand.getDefiningOp()))
-                {
-                    return {};
-                }
-            }
-
-            ops.push_back(&op);
-        }
-
-        return {};
     }
 
     unsigned headerBytes()
@@ -753,46 +676,13 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
         auto &entryBlock = funcOp.getBody().front();
 
-        mlir::Value stackObject;
+        auto newOp = cast<mlir_ts::NewOp>(site);
         mlir::OpBuilder builder(site);
-        if (auto newOp = dyn_cast<mlir_ts::NewOp>(site))
-        {
-            newOp.setStackAllocAttr(builder.getBoolAttr(true));
-            stackObject = newOp.getResult();
-            // where the allocation was - so before it moves, which the builder's position follows
-            builder.create<mlir_ts::ReleaseContentsOp>(site->getLoc(), stackObject, builder.getUnitAttr());
-            newOp->moveBefore(&entryBlock, entryBlock.begin());
-        }
-        else
-        {
-            // `new C()`: the body of `C..new` in place of the call, its `ts.New` on the stack
-            auto body = newMethodBody(newMethodOf(site));
-            mlir::IRMapping mapping;
-            for (auto *op : body)
-            {
-                if (auto newOp = dyn_cast<mlir_ts::NewOp>(op))
-                {
-                    mlir::OpBuilder entryBuilder(&entryBlock, entryBlock.begin());
-                    auto stackNewOp = entryBuilder.create<mlir_ts::NewOp>(site->getLoc(), newOp.getType(),
-                                                                          entryBuilder.getBoolAttr(true));
-                    // the call's ownership marks (`__owned_result`) describe the object it made
-                    for (auto attr : site->getDiscardableAttrs())
-                    {
-                        stackNewOp->setAttr(attr.getName(), attr.getValue());
-                    }
-
-                    stackObject = stackNewOp.getResult();
-                    mapping.map(newOp.getResult(), stackObject);
-                    builder.create<mlir_ts::ReleaseContentsOp>(site->getLoc(), stackObject, builder.getUnitAttr());
-                    continue;
-                }
-
-                builder.clone(*op, mapping)->setLoc(site->getLoc());
-            }
-
-            site->getResult(0).replaceAllUsesWith(stackObject);
-            site->erase();
-        }
+        newOp.setStackAllocAttr(builder.getBoolAttr(true));
+        mlir::Value stackObject = newOp.getResult();
+        // where the allocation was - so before it moves, which the builder's position follows
+        builder.create<mlir_ts::ReleaseContentsOp>(site->getLoc(), stackObject, builder.getUnitAttr());
+        newOp->moveBefore(&entryBlock, entryBlock.begin());
 
         if (!compileOptions.tracksOwnership())
         {
