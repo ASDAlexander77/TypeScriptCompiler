@@ -3143,6 +3143,11 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
             allocated = ch.Alloca(storageType, count);
         }
+        else if (varOp->hasAttr(STACK_ALLOC_ATTR_NAME))
+        {
+            // a capture box stack promotion put in the frame: its closures never leave it
+            allocated = ch.StackBlockAlloc(storageType);
+        }
         else
         {
 
@@ -3511,7 +3516,11 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue);
+        // a promoted literal: the elements in a block in the frame, immortal like a heap block that
+        // is never freed (StackBlockAlloc)
+        auto onStack = createArrayOp->hasAttr(STACK_ALLOC_ATTR_NAME);
+        auto allocated = onStack ? ch.StackBlockAlloc(LLVM::LLVMArrayType::get(llvmElementType, createArrayOp.getItems().size()))
+                                 : ch.MemoryAlloc(multSizeOfTypeValue);
 
         mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
         auto next = false;
@@ -3544,6 +3553,17 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         }
 
         ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        if (onStack)
+        {
+            // its header too: nothing counts either block, nothing frees them
+            auto header = ch.StackBlockAlloc(layout.headerType());
+            rewriter.create<LLVM::StoreOp>(loc, allocated, layout.dataAddress(arrayType, header));
+            rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.lengthAddress(arrayType, header));
+            rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
+            rewriter.replaceOp(createArrayOp, ValueRange{header});
+            return success();
+        }
+
         auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
 
         rewriter.replaceOp(createArrayOp, ValueRange{structValue3});

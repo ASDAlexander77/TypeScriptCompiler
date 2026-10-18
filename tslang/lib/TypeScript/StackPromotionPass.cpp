@@ -123,6 +123,16 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return !(newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value());
         }
 
+        if (isa<mlir_ts::CreateArrayOp>(op))
+        {
+            return !op->hasAttr(STACK_ALLOC_ATTR_NAME);
+        }
+
+        if (isa<mlir_ts::VariableOp>(op) && op->hasAttr(CAPTURE_BOX_ATTR_NAME))
+        {
+            return !op->hasAttr(STACK_ALLOC_ATTR_NAME);
+        }
+
         return static_cast<bool>(newMethodOf(op));
     }
 
@@ -163,9 +173,159 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         return {};
     }
 
+    // What every kind of site is refused for by where it is, not by what it does.
+    llvm::StringRef frameReason(mlir_ts::FuncOp funcOp)
+    {
+        // version 1: an unwind path would need its own ts.ReleaseContents
+        if (hasTryRegion(funcOp))
+        {
+            return "try-region";
+        }
+
+        // version 1: a frame that is left and re-entered - at an await, at a yield - is not one
+        // stack frame
+        if (isCoroutine(funcOp))
+        {
+            return "coroutine";
+        }
+
+        // every frame of a recursion would carry the object
+        if (facts->isRecursive(funcOp))
+        {
+            return "recursive";
+        }
+
+        return "";
+    }
+
+    // An array literal: its header and its elements on the stack, when the elements are known now,
+    // the array never changes length, and - under rc and own - its elements own nothing, so that
+    // nothing has to be given back when the function returns (version 1).
+    llvm::StringRef decideArray(mlir_ts::CreateArrayOp arrayOp)
+    {
+        auto reason = frameReason(arrayOp->getParentOfType<mlir_ts::FuncOp>());
+        if (!reason.empty())
+        {
+            return reason;
+        }
+
+        auto elementType = cast<mlir_ts::ArrayType>(arrayOp.getType()).getElementType();
+        MLIRTypeHelper mth(&getContext(), compileOptions);
+        if (compileOptions.tracksOwnership() && mth.ownsHeapMemory(arrayOp.getLoc(), elementType))
+        {
+            return "owning-elements";
+        }
+
+        if (arrayDataBytes(arrayOp) > limits.maxObjectBytes)
+        {
+            return "too-big";
+        }
+
+        stack_escape::StackEscapeFacts::Walk walk;
+        reason = facts->escapes(arrayOp.getResult(), walk);
+        if (!reason.empty())
+        {
+            return reason;
+        }
+
+        return loopCarried(arrayOp, walk) ? "loop-carried" : "";
+    }
+
+    // A closure's capture box: on the stack when the closure never leaves the function. Only where
+    // nothing counts (version 1): under rc and own the box's release routine is what gives back
+    // the cells it holds, and an immortal box would never run it.
+    llvm::StringRef decideBox(mlir_ts::VariableOp boxOp)
+    {
+        if (compileOptions.tracksOwnership())
+        {
+            return "counted-capture";
+        }
+
+        auto reason = frameReason(boxOp->getParentOfType<mlir_ts::FuncOp>());
+        if (!reason.empty())
+        {
+            return reason;
+        }
+
+        auto storageType = boxOp.getType().getElementType();
+        if (blockBytes(storageType) - headerBytes() > limits.maxObjectBytes)
+        {
+            return "too-big";
+        }
+
+        // filled through its fields, then made into closures: the closures are what may escape
+        stack_escape::StackEscapeFacts::Walk walk;
+        for (auto &use : boxOp.getResult().getUses())
+        {
+            auto *user = use.getOwner();
+            if (auto propertyRefOp = dyn_cast<mlir_ts::PropertyRefOp>(user))
+            {
+                for (auto *fieldUser : propertyRefOp.getResult().getUsers())
+                {
+                    auto storeOp = dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    if (!isa<mlir_ts::LoadOp>(fieldUser) && !(storeOp && storeOp.getReference() == propertyRefOp.getResult()))
+                    {
+                        return "unclassified";
+                    }
+                }
+
+                continue;
+            }
+
+            if (auto boundOp = dyn_cast<mlir_ts::CreateBoundFunctionOp>(user); boundOp && use.getOperandNumber() == 0)
+            {
+                reason = facts->escapes(boundOp.getResult(), walk);
+                if (!reason.empty())
+                {
+                    return reason;
+                }
+
+                continue;
+            }
+
+            return "unclassified";
+        }
+
+        return loopCarried(boxOp, walk) ? "loop-carried" : "";
+    }
+
+    uint64_t arrayDataBytes(mlir_ts::CreateArrayOp arrayOp)
+    {
+        llvm::SmallPtrSet<mlir::Type, 8> visiting;
+        auto elementType = cast<mlir_ts::ArrayType>(arrayOp.getType()).getElementType();
+        return arrayOp.getItems().size() * ((estimateBytes(elementType, visiting) + 7) / 8 * 8);
+    }
+
+    // What a site takes in the frame, headers included.
+    uint64_t siteBytes(mlir::Operation *site)
+    {
+        if (auto arrayOp = dyn_cast<mlir_ts::CreateArrayOp>(site))
+        {
+            // the header block { data, length, capacity }, then the element block
+            return headerBytes() + 3 * headerBytes() + headerBytes() + arrayDataBytes(arrayOp);
+        }
+
+        if (auto boxOp = dyn_cast<mlir_ts::VariableOp>(site))
+        {
+            return blockBytes(boxOp.getType().getElementType());
+        }
+
+        return blockBytes(storageTypeOf(site->getResult(0).getType()));
+    }
+
     // Empty when the site may go on the stack; otherwise why not.
     llvm::StringRef decide(mlir::Operation *site)
     {
+        if (auto arrayOp = dyn_cast<mlir_ts::CreateArrayOp>(site))
+        {
+            return decideArray(arrayOp);
+        }
+
+        if (auto boxOp = dyn_cast<mlir_ts::VariableOp>(site))
+        {
+            return decideBox(boxOp);
+        }
+
         auto value = site->getResult(0);
         auto storageType = storageTypeOf(value.getType());
         if (!storageType)
@@ -186,25 +346,10 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             }
         }
 
-        auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
-
-        // version 1: an unwind path would need its own ts.ReleaseContents
-        if (hasTryRegion(funcOp))
+        auto frame = frameReason(site->getParentOfType<mlir_ts::FuncOp>());
+        if (!frame.empty())
         {
-            return "try-region";
-        }
-
-        // version 1: a frame that is left and re-entered - at an await, at a yield - is not one
-        // stack frame
-        if (isCoroutine(funcOp))
-        {
-            return "coroutine";
-        }
-
-        // every frame of a recursion would carry the object
-        if (facts->isRecursive(funcOp))
-        {
-            return "recursive";
+            return frame;
         }
 
         if (blockBytes(storageType) - headerBytes() > limits.maxObjectBytes)
@@ -437,7 +582,7 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             uint64_t used = 0;
             for (auto index : indexes)
             {
-                auto bytes = blockBytes(storageTypeOf(sites[index]->getResult(0).getType()));
+                auto bytes = siteBytes(sites[index]);
                 if (used + bytes > limits.maxFrameBytes)
                 {
                     reasons[index] = "frame-budget";
@@ -503,6 +648,14 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     // object owns is given back at every return too.
     void promote(mlir::Operation *site)
     {
+        // an array or a box gives nothing back at a return (decideArray, decideBox): its blocks
+        // only change where they are allocated
+        if (isa<mlir_ts::CreateArrayOp, mlir_ts::VariableOp>(site))
+        {
+            site->setAttr(STACK_ALLOC_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            return;
+        }
+
         auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
         auto &entryBlock = funcOp.getBody().front();
 

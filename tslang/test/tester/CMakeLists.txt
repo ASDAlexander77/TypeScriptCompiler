@@ -4138,7 +4138,8 @@ set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_lo
     ctor_local borrow_uses pass_to_reader pass_to_keeper method_keeps_this virtual_one_keeps ctor_keeps_this
     to_interface to_any pass_to_print loop_carried
     fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle
-    too_big frame_budget recursive async_local generator_local thrown)
+    too_big frame_budget recursive async_local generator_local thrown
+    array_local_fixed array_local_push array_returned closure_local closure_escapes)
 # Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
 # they say nothing about promotion under own.
 set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
@@ -4199,7 +4200,10 @@ set(stack_promotion_decision_tests
     "recursive|recursive\.ts:16:15: remark: stack-promotion: heap: recursive"
     "async_local|async_local\.ts:10:15: remark: stack-promotion: heap: coroutine"
     "generator_local|generator_local\.ts:11:19: remark: stack-promotion: heap: coroutine"
-    "thrown|thrown\.ts:10:15: remark: stack-promotion: heap: thrown")
+    "thrown|thrown\.ts:10:15: remark: stack-promotion: heap: thrown"
+    "array_local_fixed|array_local_fixed\.ts:3:15: remark: stack-promotion: stack"
+    "array_local_push|array_local_push\.ts:3:25: remark: stack-promotion: heap: growable"
+    "array_returned|array_returned\.ts:3:15: remark: stack-promotion: heap: returned")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
@@ -4237,3 +4241,21 @@ add_test(NAME test-stack-decision-max-object
 set_tests_properties(test-stack-decision-max-object
                      PROPERTIES PASS_REGULAR_EXPRESSION "too_big\.ts:47:15: remark: stack-promotion: stack"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A capture box: on the stack where nothing counts, and only while its closures stay in the function.
+foreach(stack_case "gc|closure_local|10:11: remark: stack-promotion: stack"
+                   "none|closure_local|10:11: remark: stack-promotion: stack"
+                   "rc|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
+                   "own|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
+                   "gc|closure_escapes|4:12: remark: stack-promotion: heap: returned"
+                   "none|closure_escapes|4:12: remark: stack-promotion: heap: returned")
+    string(REPLACE "|" ";" stack_parts "${stack_case}")
+    list(GET stack_parts 0 stack_mm)
+    list(GET stack_parts 1 stack_name)
+    list(GET stack_parts 2 stack_expected)
+    add_test(NAME test-stack-decision-${stack_mm}-${stack_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                     "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
+    set_tests_properties(test-stack-decision-${stack_mm}-${stack_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${stack_name}\.ts:${stack_expected}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()

@@ -97,6 +97,11 @@
 // so would be given a frame's reference it has no owner for. A box's owner is the closure.
 #define CAPTURE_BOX_ATTR_NAME "__capture_box"
 
+// On a `ts.CreateArray` or a capture box's `ts.Variable` that stack promotion put on the stack
+// (docs/superpowers/specs/2026-10-18-stack-promotion-design.md): its blocks go in the frame, with
+// immortal headers, instead of on the heap.
+#define STACK_ALLOC_ATTR_NAME "__stack_alloc"
+
 // On a `ts.Try`: the statement has a catch clause. Its catches region may still hold nothing but
 // the terminator - an untyped `catch { }` emits no ops - and without this marker it would be
 // indistinguishable from the catch-less TryOps that only wrap a scope for its cleanup, so the

@@ -340,6 +340,12 @@ class StackEscapeFacts
                 continue;
             }
 
+            // an array changed in place through the slot holding it
+            if (isGrowth(user) && use.getOperandNumber() == 0)
+            {
+                return "growable";
+            }
+
             return "unclassified";
         }
 
@@ -370,8 +376,21 @@ class StackEscapeFacts
         return "";
     }
 
+    // What may change an array's length - and so move its elements to a block of another size.
+    static bool isGrowth(mlir::Operation *op)
+    {
+        return isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp,
+                   mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op);
+    }
+
     llvm::StringRef useEscapes(mlir::Value value, mlir::OpOperand &use, Walk &walk)
     {
+        if (isGrowth(use.getOwner()))
+        {
+            // the array itself, or a value going into it
+            return use.getOperandNumber() == 0 ? "growable" : "stored";
+        }
+
         auto *user = use.getOwner();
         return llvm::TypeSwitch<mlir::Operation *, llvm::StringRef>(user)
             .Case<mlir_ts::PropertyRefOp>([&](auto propertyRefOp) { return fieldRefEscapes(propertyRefOp.getResult()); })
@@ -390,13 +409,17 @@ class StackEscapeFacts
                 return "stored";
             })
             .Case<mlir_ts::VariableOp>([&](auto slot) { return slotEscapes(slot, walk); })
-            .Case<mlir_ts::LoadOp>([&](auto) { return ""; })
+            .Case<mlir_ts::LoadOp, mlir_ts::LengthOfOp>([&](auto) { return ""; })
+            .Case<mlir_ts::ElementRefOp>([&](auto elementRefOp) -> llvm::StringRef {
+                return use.getOperandNumber() == 0 ? fieldRefEscapes(elementRefOp.getResult()) : "unclassified";
+            })
             .Case<mlir_ts::RetainOp, mlir_ts::ReleaseOp>([&](auto) { return ""; })
             .Case<mlir_ts::LogicalBinaryOp>([&](auto) { return ""; })
             .Case<mlir_ts::CastOp>([&](auto castOp) -> llvm::StringRef {
                 // a view of the same object - a boxed literal seen as an object, a class as its
                 // own type - is the object; anything else converts it
-                if (isa<mlir_ts::ObjectType, mlir_ts::ClassType, mlir_ts::ValueRefType>(castOp.getType()))
+                if (isa<mlir_ts::ObjectType, mlir_ts::ClassType, mlir_ts::ValueRefType, mlir_ts::BoundFunctionType,
+                        mlir_ts::HybridFunctionType, mlir_ts::FunctionType>(castOp.getType()))
                 {
                     return escapes(castOp.getResult(), walk);
                 }
@@ -416,9 +439,10 @@ class StackEscapeFacts
                 return argumentEscapes({callOp.getCalleeAttr()}, use.getOperandNumber());
             })
             .Case<mlir_ts::CallInternalOp>([&](auto callOp) -> llvm::StringRef {
+                // a closure being called: running it hands its capture box to nothing
                 if (use.getOperandNumber() == 0)
                 {
-                    return "unclassified";
+                    return "";
                 }
 
                 llvm::SmallVector<mlir::FlatSymbolRefAttr> candidates;
