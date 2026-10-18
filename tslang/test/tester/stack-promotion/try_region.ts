@@ -1,4 +1,5 @@
-// A function with a try region promotes nothing in version 1.
+// A function with a try region promotes nothing under rc and own in version 1, where the unwind
+// path would have to give back what the object owns; under gc and none it promotes.
 class Holder {
     s: string;
     constructor(s: string) {

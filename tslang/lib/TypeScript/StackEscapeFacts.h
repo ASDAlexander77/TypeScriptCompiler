@@ -104,46 +104,148 @@ class StackEscapeFacts
     // method they may reach.
     bool isRecursive(mlir_ts::FuncOp funcOp)
     {
-        auto it = recursive.find(funcOp);
-        if (it != recursive.end())
+        if (!recursive)
         {
-            return it->second;
+            collectRecursive();
         }
 
-        llvm::SmallPtrSet<mlir::Operation *, 16> seen;
-        llvm::SmallVector<mlir_ts::FuncOp> work{funcOp};
-        auto found = false;
-        while (!work.empty() && !found)
+        return recursive->contains(funcOp);
+    }
+
+    // Whether argument `argIndex` of a call through `candidates` may outlive the call: empty when
+    // every candidate's parameter stays inside it.
+    llvm::StringRef argumentEscapes(llvm::ArrayRef<mlir::FlatSymbolRefAttr> candidates, unsigned argIndex)
+    {
+        for (auto candidate : candidates)
         {
-            auto current = work.pop_back_val();
-            for (auto callee : calleesOfFunction(current))
+            auto funcOp = module.lookupSymbol<mlir_ts::FuncOp>(candidate);
+            if (!funcOp || funcOp.getBody().empty() || argIndex >= funcOp.getBody().getNumArguments())
             {
-                auto calleeOp = module.lookupSymbol<mlir_ts::FuncOp>(callee);
-                if (!calleeOp)
-                {
-                    continue;
-                }
+                return "unknown-callee";
+            }
 
-                if (calleeOp == funcOp)
-                {
-                    found = true;
-                    break;
-                }
-
-                if (seen.insert(calleeOp).second)
-                {
-                    work.push_back(calleeOp);
-                }
+            if (paramEscapes.lookup({funcOp, argIndex}))
+            {
+                return "argument";
             }
         }
 
-        recursive[funcOp] = found;
-        return found;
+        return "";
     }
 
   private:
     mlir::ModuleOp module;
-    llvm::DenseMap<mlir::Operation *, bool> recursive;
+    std::optional<llvm::SmallPtrSet<mlir::Operation *, 16>> recursive;
+
+    // Every function on a cycle of the call graph, in one pass (Tarjan's strongly connected
+    // components, iterative: a module's call chains may be deeper than the native stack): a
+    // function is recursive when its component holds another function, or it calls itself.
+    void collectRecursive()
+    {
+        recursive.emplace();
+
+        llvm::SmallVector<mlir_ts::FuncOp> funcs;
+        llvm::DenseMap<mlir::Operation *, unsigned> numberOf;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            numberOf[funcOp] = funcs.size();
+            funcs.push_back(funcOp);
+        });
+
+        // the edges, each callee once; a callee with no definition here is on no cycle of ours
+        llvm::SmallVector<llvm::SmallVector<unsigned>> edges(funcs.size());
+        llvm::SmallVector<bool> callsItself(funcs.size(), false);
+        for (auto [index, funcOp] : llvm::enumerate(funcs))
+        {
+            llvm::SmallPtrSet<mlir::Operation *, 16> seen;
+            for (auto callee : calleesOfFunction(funcOp))
+            {
+                auto calleeOp = module.lookupSymbol<mlir_ts::FuncOp>(callee);
+                if (!calleeOp || !seen.insert(calleeOp).second)
+                {
+                    continue;
+                }
+
+                auto calleeIndex = numberOf.lookup(calleeOp);
+                callsItself[index] = callsItself[index] || calleeIndex == index;
+                edges[index].push_back(calleeIndex);
+            }
+        }
+
+        constexpr unsigned unvisited = ~0u;
+        llvm::SmallVector<unsigned> order(funcs.size(), unvisited);
+        llvm::SmallVector<unsigned> lowLink(funcs.size(), 0);
+        llvm::SmallVector<bool> onStack(funcs.size(), false);
+        llvm::SmallVector<unsigned> stack;
+        // the depth-first path: a function and the index of the next of its edges to follow
+        llvm::SmallVector<std::pair<unsigned, unsigned>> path;
+        unsigned nextOrder = 0;
+
+        for (auto root : llvm::seq<unsigned>(0, funcs.size()))
+        {
+            if (order[root] != unvisited)
+            {
+                continue;
+            }
+
+            auto visit = [&](unsigned node) {
+                order[node] = lowLink[node] = nextOrder++;
+                stack.push_back(node);
+                onStack[node] = true;
+                path.push_back({node, 0});
+            };
+
+            visit(root);
+            while (!path.empty())
+            {
+                auto &[node, edgeIndex] = path.back();
+                if (edgeIndex < edges[node].size())
+                {
+                    auto callee = edges[node][edgeIndex++];
+                    if (order[callee] == unvisited)
+                    {
+                        visit(callee);
+                    }
+                    else if (onStack[callee])
+                    {
+                        lowLink[node] = std::min(lowLink[node], order[callee]);
+                    }
+
+                    continue;
+                }
+
+                // every edge followed: `node` closes a component when nothing below reached higher
+                auto done = node;
+                path.pop_back();
+                if (!path.empty())
+                {
+                    auto parent = path.back().first;
+                    lowLink[parent] = std::min(lowLink[parent], lowLink[done]);
+                }
+
+                if (lowLink[done] != order[done])
+                {
+                    continue;
+                }
+
+                llvm::SmallVector<unsigned> component;
+                unsigned member;
+                do
+                {
+                    member = stack.pop_back_val();
+                    onStack[member] = false;
+                    component.push_back(member);
+                } while (member != done);
+
+                if (component.size() > 1 || callsItself[done])
+                {
+                    for (auto index : component)
+                    {
+                        recursive->insert(funcs[index]);
+                    }
+                }
+            }
+        }
+    }
 
     // What a function may call. A call through a value the module cannot resolve may reach any
     // function whose address is taken somewhere in it - a closure, a function stored in a variable -
@@ -266,26 +368,6 @@ class StackEscapeFacts
         }
 
         return !candidates.empty();
-    }
-
-    // Whether argument `argIndex` of a call through `candidates` may outlive the call.
-    llvm::StringRef argumentEscapes(llvm::ArrayRef<mlir::FlatSymbolRefAttr> candidates, unsigned argIndex)
-    {
-        for (auto candidate : candidates)
-        {
-            auto funcOp = module.lookupSymbol<mlir_ts::FuncOp>(candidate);
-            if (!funcOp || funcOp.getBody().empty() || argIndex >= funcOp.getBody().getNumArguments())
-            {
-                return "unknown-callee";
-            }
-
-            if (paramEscapes.lookup({funcOp, argIndex}))
-            {
-                return "argument";
-            }
-        }
-
-        return "";
     }
 
     // The functions a call's callee value may be, when the module can tell.

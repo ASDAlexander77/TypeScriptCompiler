@@ -129,8 +129,10 @@ includes an object that is:
 - returned, thrown, stored in a field, array, global or captured variable, or converted to
   `any`, an interface or a union;
 - passed to a function in another module, including the default library;
-- made in a function that has a `try`, or is `async`, a generator, or recursive;
-- still in use when the next iteration of its loop makes a new one.
+- made in a function that is `async`, a generator, or recursive, or - under `-mm=rc` and
+  `-mm=own` - one that has a `try`;
+- still in use when the next iteration of its loop makes a new one. A use on the way out of the
+  loop - a `return` or a `break` out of a search - is not.
 
 Under `-mm=rc` and `-mm=own`, an object that owns memory stays on the heap in a module that uses
 `Shared<T>`, because `Shared.count` would see its contents given back later.

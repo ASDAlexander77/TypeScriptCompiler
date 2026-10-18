@@ -56,6 +56,10 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     void runOnOperation() override
     {
         auto module = getOperation();
+        // keyed by operation: one left from an earlier module could name an op of this one
+        loopInfos.clear();
+        tryRegions.clear();
+        coroutines.clear();
         stack_escape::StackEscapeFacts moduleFacts(module);
         facts = &moduleFacts;
         moduleUsesShared = module
@@ -176,8 +180,10 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     // What every kind of site is refused for by where it is, not by what it does.
     llvm::StringRef frameReason(mlir_ts::FuncOp funcOp)
     {
-        // version 1: an unwind path would need its own ts.ReleaseContents
-        if (hasTryRegion(funcOp))
+        // version 1: under rc and own an unwind path would need its own ts.ReleaseContents; under
+        // gc and none an object gives nothing back, and the unwind edges are in the CFG the loop
+        // rule reads
+        if (compileOptions.tracksOwnership() && hasTryRegion(funcOp))
         {
             return "try-region";
         }
@@ -253,7 +259,14 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "too-big";
         }
 
-        // filled through its fields, then made into closures: the closures are what may escape
+        // Filled through its fields, then made into closures: the closures are what may escape.
+        //
+        // A closure's body - and every closure nested in it - reaches the captured variables
+        // through the cells the box's fields hold: a nested closure gets a box of its own, filled
+        // with those cells, and never holds the outer box. That is why running a closure lets
+        // nothing of the box out (StackEscapeFacts, a ts.CallInternal's callee). It is checked,
+        // not assumed: what is stored into a field must not be a capture box, and the body of
+        // every closure made from the box must keep its `this` - the box - inside it.
         stack_escape::StackEscapeFacts::Walk walk;
         for (auto &use : boxOp.getResult().getUses())
         {
@@ -267,6 +280,12 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
                     {
                         return "unclassified";
                     }
+
+                    auto *stored = storeOp ? storeOp.getValue().getDefiningOp() : nullptr;
+                    if (stored && stored->hasAttr(CAPTURE_BOX_ATTR_NAME))
+                    {
+                        return "captured-box";
+                    }
                 }
 
                 continue;
@@ -274,7 +293,30 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
 
             if (auto boundOp = dyn_cast<mlir_ts::CreateBoundFunctionOp>(user); boundOp && use.getOperandNumber() == 0)
             {
-                reason = facts->escapes(boundOp.getResult(), walk);
+                auto symbolRefOp = boundOp->getOperand(1).getDefiningOp<mlir_ts::SymbolRefOp>();
+                if (!symbolRefOp)
+                {
+                    return "unclassified";
+                }
+
+                reason = facts->argumentEscapes({symbolRefOp.getIdentifierAttr()}, 0);
+                if (reason.empty())
+                {
+                    reason = facts->escapes(boundOp.getResult(), walk);
+                }
+
+                if (!reason.empty())
+                {
+                    return reason;
+                }
+
+                continue;
+            }
+
+            // the closure called by name (`const g = () => ...; g()`): the box is its `this`
+            if (auto callOp = dyn_cast<mlir_ts::SymbolCallInternalOp>(user))
+            {
+                reason = facts->argumentEscapes({callOp.getCalleeAttr()}, use.getOperandNumber());
                 if (!reason.empty())
                 {
                     return reason;
@@ -286,6 +328,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "unclassified";
         }
 
+        // the box is used where it is filled and called by name as well as through its closures
+        walk.aliases.insert(boxOp.getResult());
         return loopCarried(boxOp, walk) ? "loop-carried" : "";
     }
 
@@ -373,9 +417,11 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     }
 
     // One stack slot per site, reused by every iteration of a loop around it: the object of one
-    // iteration must be gone by the next. It is when nothing that is the object is used outside the
-    // innermost loop holding the site, and every local slot it was stored into is declared in that
-    // loop with an initializer - so each iteration re-initialises it before anything reads it.
+    // iteration must be gone by the next. It is when every local slot it was stored into is
+    // declared in the innermost loop holding the site, with an initializer - so each iteration
+    // re-initialises it before anything reads it - and nothing that is the object is used outside
+    // that loop where the site can run again afterwards. A use on the way out - a `return`, a
+    // `break` out of a search - comes after the last iteration and sees its object.
     bool loopCarried(mlir::Operation *site, stack_escape::StackEscapeFacts::Walk &walk)
     {
         auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
@@ -398,14 +444,44 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return ancestor && loop->contains(ancestor->getBlock());
         };
 
-        for (auto alias : walk.aliases)
-        {
-            for (auto *user : alias.getUsers())
+        // whether the site may run again after `op`, along every edge of the CFG - unwind edges too
+        auto *siteBlock = siteOp->getBlock();
+        auto siteReachableFrom = [&](mlir::Operation *op) {
+            auto *ancestor = body.findAncestorOpInRegion(*op);
+            if (!ancestor)
             {
-                if (!inLoop(user))
+                return true;
+            }
+
+            llvm::SmallPtrSet<mlir::Block *, 16> seen;
+            llvm::SmallVector<mlir::Block *> work{ancestor->getBlock()};
+            while (!work.empty())
+            {
+                auto *block = work.pop_back_val();
+                if (block == siteBlock)
                 {
                     return true;
                 }
+
+                for (auto *successor : block->getSuccessors())
+                {
+                    if (seen.insert(successor).second)
+                    {
+                        work.push_back(successor);
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        auto carriedUse = [&](mlir::Operation *user) { return !inLoop(user) && siteReachableFrom(user); };
+
+        for (auto alias : walk.aliases)
+        {
+            if (llvm::any_of(alias.getUsers(), carriedUse))
+            {
+                return true;
             }
         }
 
@@ -416,12 +492,9 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
                 return true;
             }
 
-            for (auto *user : slot->getUsers())
+            if (llvm::any_of(slot->getUsers(), carriedUse))
             {
-                if (!inLoop(user))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 

@@ -144,7 +144,9 @@ Strings are not in the first version (they are produced by runtime/DefaultLib ca
 All promoted allocas go in the entry block (already what `Alloca` does). A site inside a loop
 reuses one slot per iteration, which is correct only if the object does not live into the next
 iteration: a value from iteration *n* still reachable in iteration *n+1* (stored in a local
-declared outside the loop, for instance) is an escape for this purpose.
+declared outside the loop, for instance) is an escape for this purpose. A use outside the loop
+from which the site cannot run again - a `return` or a `break` out of a search - sees the last
+iteration's object and is not.
 
 ## 6. Per memory model
 
