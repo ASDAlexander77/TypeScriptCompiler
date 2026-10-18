@@ -138,6 +138,79 @@ if(NOT MM STREQUAL "own")
     endif()
 endif()
 
+# Another input defining a symbol a library published facts for: the linker may take that
+# definition, so the fact decides nothing. Here facts_lib_other defines `sumOf` and keeps its argument.
+if(NOT MM STREQUAL "own")
+    file(MAKE_DIRECTORY "${dir}/other")
+    if(WIN32)
+        set(other_obj facts_lib_other.obj)
+        set(other_archive facts_lib_other.lib)
+    else()
+        set(other_obj facts_lib_other.o)
+        set(other_archive libfacts_lib_other.a)
+    endif()
+    run("${dir}/other" "--emit=obj facts_lib_other" ok out
+        "${TSLANG}" --emit=obj --no-default-lib -mm=${MM} "${SOURCE_DIR}/facts_lib_other.ts" -o ${other_obj})
+    if(WIN32)
+        run("${dir}/other" "archive" ok out "${AR}" /NOLOGO /OUT:${other_archive} ${other_obj})
+    else()
+        run("${dir}/other" "archive" ok out "${AR}" rcs ${other_archive} ${other_obj})
+    endif()
+
+    # decided(<what> <out-var> <command...>): the remarks, whether or not the link then succeeds
+    function(decided what out_var)
+        execute_process(COMMAND ${ARGN} WORKING_DIRECTORY "${dir}" OUTPUT_VARIABLE out ERROR_VARIABLE err)
+        if("${out}${err}" MATCHES "Stack dump|Assertion failed")
+            message(FATAL_ERROR "${what}: crashed
+${out}
+${err}")
+        endif()
+        set(${out_var} "${out}${err}" PARENT_SCOPE)
+    endfunction()
+
+    set(sum_heap "facts_use[.]ts:20:15: remark: stack-promotion: heap")
+    decided("--lib=facts_lib --lib=other/facts_lib_other" out
+        "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+        "--lib=${dir}/other/${other_archive}" "${SOURCE_DIR}/facts_use.ts" -o collide1.exe)
+    if(NOT out MATCHES "${sum_heap}" OR NOT out MATCHES "facts_use[.]ts:53:15: remark: stack-promotion: stack")
+        message(FATAL_ERROR "two libraries defining sumOf: expected sumOf heap, Geo.len stack
+${out}")
+    endif()
+    decided("--lib=facts_lib --obj=other/facts_lib_other" out
+        "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+        "--obj=${dir}/other/${other_obj}" "${SOURCE_DIR}/facts_use.ts" -o collide2.exe)
+    if(NOT out MATCHES "${sum_heap}")
+        message(FATAL_ERROR "an object defining sumOf: expected sumOf heap
+${out}")
+    endif()
+
+    # a library the linker searches for itself: what it defines is unknown, so no fact is trusted
+    if(WIN32)
+        set(searched kernel32)
+    else()
+        set(searched m)
+    endif()
+    decided("--lib=facts_lib --lib=${searched}" out
+        "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+        --lib=${searched} "${SOURCE_DIR}/facts_use.ts" -o searched.exe)
+    if(out MATCHES "remark: stack-promotion: stack")
+        message(FATAL_ERROR "a searched library: expected no fact trusted
+${out}")
+    endif()
+endif()
+
+# A -shared import defines what it exports: here the DLL facts_lib (from facts_dll.ts) defines
+# `sumOf`, and the static library's `sumOf 0` must not apply to it.
+if(WIN32 AND NOT MM STREQUAL "gc" AND NOT MM STREQUAL "own")
+    execute_process(COMMAND "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs}
+        "--lib=${dir}/${archive}" "${SOURCE_DIR}/facts_shared_use.ts" -o shared_use.exe
+        WORKING_DIRECTORY "${dir}/dll" OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT "${out}${err}" MATCHES "facts_shared_use[.]ts:8:15: remark: stack-promotion: heap")
+        message(FATAL_ERROR "a -shared import's sumOf: expected heap
+${out}${err}")
+    endif()
+endif()
+
 # the same program, nothing promoted: the same output
 run("${dir}" "--emit=exe ${use_source} --no-stack-promotion" ok out
     "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --no-stack-promotion ${link_libs} --lib=facts_lib

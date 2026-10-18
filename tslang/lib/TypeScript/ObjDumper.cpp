@@ -175,6 +175,91 @@ static void readCStringSymbolsOf(const ObjectFile &objFile, Symbols symbols, Str
 namespace Dump
 {
 
+template <typename Symbols>
+static void definedSymbolsOf(Symbols symbols, std::vector<std::string> &result)
+{
+    for (auto symbol : symbols)
+    {
+        auto flags = symbol.getFlags();
+        if (!flags)
+        {
+            consumeError(flags.takeError());
+            continue;
+        }
+
+        if (!(*flags & SymbolRef::SF_Global) || (*flags & SymbolRef::SF_Undefined))
+        {
+            continue;
+        }
+
+        auto name = symbol.getName();
+        if (!name)
+        {
+            consumeError(name.takeError());
+            continue;
+        }
+
+        result.push_back(name->str());
+    }
+}
+
+std::vector<std::string> definedSymbols(StringRef path)
+{
+    std::vector<std::string> result;
+    auto expectedOwningBinary = createBinary(path);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return result;
+    }
+
+    auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *archive = dyn_cast<Archive>(binary))
+    {
+        for (auto &symbol : archive->symbols())
+        {
+            result.push_back(symbol.getName().str());
+        }
+
+        return result;
+    }
+
+    if (auto *coffObj = dyn_cast<COFFObjectFile>(binary); coffObj && (coffObj->getPE32Header() || coffObj->getPE32PlusHeader()))
+    {
+        for (const ExportDirectoryEntryRef &entry : coffObj->export_directories())
+        {
+            StringRef name;
+            if (Error err = entry.getSymbolName(name))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            result.push_back(name.str());
+        }
+
+        return result;
+    }
+
+    if (auto *elfObj = dyn_cast<ELFObjectFileBase>(binary))
+    {
+        definedSymbolsOf(elfObj->symbols(), result);
+        if (!elfObj->isRelocatableObject())
+        {
+            definedSymbolsOf(elfObj->getDynamicSymbolIterators(), result);
+        }
+
+        return result;
+    }
+
+    if (auto *objFile = dyn_cast<ObjectFile>(binary))
+    {
+        definedSymbolsOf(objFile->symbols(), result);
+    }
+
+    return result;
+}
+
 std::vector<std::pair<std::string, std::string>> readCStringSymbols(StringRef path, StringRef prefix)
 {
     std::vector<std::pair<std::string, std::string>> result;

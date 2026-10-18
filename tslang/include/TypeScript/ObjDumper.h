@@ -101,6 +101,11 @@ namespace Dump
     // Members that are not objects (import members, bitcode) and an unreadable file give nothing.
     std::vector<std::pair<std::string, std::string>> readCStringSymbols(llvm::StringRef path,
                                                                         llvm::StringRef prefix);
+
+    // The global symbols a link input defines: a static library's symbol table, an object file's
+    // defined globals, a DLL's exports, a shared object's defined dynamic symbols. Empty for a file
+    // that cannot be read.
+    std::vector<std::string> definedSymbols(llvm::StringRef path);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);

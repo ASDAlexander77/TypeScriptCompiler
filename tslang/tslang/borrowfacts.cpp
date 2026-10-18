@@ -2,6 +2,9 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -22,6 +25,7 @@ namespace cl = llvm::cl;
 
 extern cl::opt<enum Action> emitAction;
 extern cl::list<std::string> libs;
+extern cl::list<std::string> objs;
 
 llvm::Triple getLinkTargetTriple();
 std::string getTargetStaticLibName(llvm::StringRef);
@@ -31,6 +35,7 @@ std::string getDefaultLibBinary(bool, const CompileOptions &, const llvm::Triple
 namespace Dump
 {
     std::vector<std::pair<std::string, std::string>> readCStringSymbols(llvm::StringRef, llvm::StringRef);
+    std::vector<std::string> definedSymbols(llvm::StringRef);
 }
 
 // The file a `--lib` value names, when this compile can tell: the value itself if it is a file, else
@@ -52,19 +57,55 @@ std::string resolveLinkLibrary(llvm::StringRef value)
     return "";
 }
 
-static void appendBorrowFacts(CompileOptions &compileOptions, llvm::StringRef file)
+// The facts of `files`, each line kept only when no other of `files` or `others` defines its symbol:
+// the linker may take that other definition, which the fact does not describe.
+static void appendBorrowFacts(CompileOptions &compileOptions, llvm::ArrayRef<std::string> files,
+                              llvm::ArrayRef<std::string> others = {})
 {
-    if (llvm::sys::fs::exists(file))
+    llvm::SmallVector<llvm::StringSet<>> defined;
+    for (auto &file : files)
     {
-        compileOptions.importedBorrowFactsFiles.push_back(file.str());
+        defined.emplace_back();
+        for (auto &symbol : Dump::definedSymbols(file))
+        {
+            defined.back().insert(symbol);
+        }
     }
 
-    for (auto &[symbol, text] : Dump::readCStringSymbols(file, SHARED_LIB_BORROW_FACTS))
+    llvm::StringSet<> definedByOthers;
+    for (auto &file : others)
     {
-        compileOptions.importedBorrowFacts += text;
-        if (!text.empty() && text.back() != '\n')
+        for (auto &symbol : Dump::definedSymbols(file))
         {
-            compileOptions.importedBorrowFacts += '\n';
+            definedByOthers.insert(symbol);
+        }
+    }
+
+    for (auto [index, file] : llvm::enumerate(files))
+    {
+        if (llvm::sys::fs::exists(file))
+        {
+            compileOptions.importedBorrowFactsFiles.push_back(file);
+        }
+
+        for (auto &[symbol, text] : Dump::readCStringSymbols(file, SHARED_LIB_BORROW_FACTS))
+        {
+            llvm::SmallVector<llvm::StringRef> lines;
+            llvm::StringRef(text).split(lines, '\n', -1, /*KeepEmpty=*/false);
+            for (auto line : lines)
+            {
+                auto name = line.split(' ').first;
+                auto elsewhere = definedByOthers.contains(name);
+                for (auto other : llvm::seq<size_t>(0, files.size()))
+                {
+                    elsewhere |= other != index && defined[other].contains(name);
+                }
+
+                if (!elsewhere)
+                {
+                    compileOptions.importedBorrowFacts += line.str() + "\n";
+                }
+            }
         }
     }
 }
@@ -80,8 +121,8 @@ void readBorrowFacts(CompileOptions &compileOptions)
         {
             // the JIT is host-only, and loads this file (jit.cpp, prepareJitProcess)
             appendBorrowFacts(compileOptions,
-                              getDefaultLibBinary(/*shared=*/true, compileOptions,
-                                                  llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))));
+                              {getDefaultLibBinary(/*shared=*/true, compileOptions,
+                                                   llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple())))});
         }
 
         return;
@@ -92,17 +133,23 @@ void readBorrowFacts(CompileOptions &compileOptions)
         return;
     }
 
+    std::vector<std::string> files;
     if (!compileOptions.noDefaultLib)
     {
-        appendBorrowFacts(compileOptions, getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+        files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
     }
 
     for (auto &lib : libs)
     {
         auto file = resolveLinkLibrary(lib);
-        if (!file.empty())
+        if (file.empty())
         {
-            appendBorrowFacts(compileOptions, file);
+            // one the linker searches for itself may define anything, under any name
+            return;
         }
+
+        files.push_back(file);
     }
+
+    appendBorrowFacts(compileOptions, files, std::vector<std::string>(objs.begin(), objs.end()));
 }

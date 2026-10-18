@@ -9,6 +9,8 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
+#include "TypeScript/ObjDumper.h"
+
 #include "StackEscapeFacts.h"
 
 #include "llvm/ADT/MapVector.h"
@@ -54,6 +56,22 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         : compileOptions(compileOptions), limits(limits),
           importedFacts(stack_escape::parseBorrowFacts(compileOptions.importedBorrowFacts))
     {
+        // A module the JIT cache compiles apart from the modules it imports declares their
+        // functions, and one of them may have a name a library published facts for.
+        if (compileOptions.isJit && compileOptions.jitCache && !compileOptions.sourceImports.empty())
+        {
+            importedFacts.clear();
+        }
+
+        // A -shared import defines what it exports: a fact for one of those names may describe
+        // another function.
+        for (auto &library : compileOptions.sharedLibraryImports)
+        {
+            for (auto &symbol : Dump::definedSymbols(library))
+            {
+                importedFacts.erase(symbol);
+            }
+        }
     }
 
     void runOnOperation() override
