@@ -25,6 +25,11 @@ void SourceMgrDiagnosticHandlerEx::emit(mlir::Diagnostic &diag)
 
 namespace typescript
 {
+::std::string moduleSymbolSuffix(llvm::StringRef filePath)
+{
+    return mlirgen::MLIRGenImpl::moduleSymbolSuffix(filePath);
+}
+
 ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source)
 {
     auto showLineCharPos = false;

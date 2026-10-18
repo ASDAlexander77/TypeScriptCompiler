@@ -8373,6 +8373,30 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
 // linker itself, which is how this went unnoticed once already. A JIT run has no C runtime reading
 // a return register, and a DLL's `main` is not an entry point and may be something an importer
 // resolves, so those two are the exclusions.
+// The module's borrow facts (BorrowFactsExportPass) as the exported char array importers read: a
+// char array, NUL included, so its bytes sit in the object file where the symbol points.
+// ExportFixPass makes it dllexport on Windows, so the JIT finds it in the default library's DLL.
+static void emitBorrowFacts(mlir::ModuleOp m)
+{
+    auto facts = m->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_BORROW_FACTS_ATTR_NAME);
+    if (!facts)
+    {
+        return;
+    }
+
+    m->removeAttr(SHARED_LIB_BORROW_FACTS_ATTR_NAME);
+    auto name = mlir::cast<mlir::StringAttr>(facts[0]).getValue();
+    auto text = mlir::cast<mlir::StringAttr>(facts[1]).getValue().str();
+    text.push_back(char(0));
+
+    mlir::OpBuilder builder(m.getBodyRegion());
+    builder.setInsertionPointToEnd(m.getBody());
+    auto arrayType = LLVM::LLVMArrayType::get(builder.getI8Type(), text.size());
+    auto globalOp = builder.create<LLVM::GlobalOp>(m.getLoc(), arrayType, /*isConstant=*/true, LLVM::Linkage::External,
+                                                   name, builder.getStringAttr(text));
+    globalOp.setSection(llvm::StringRef(DLL_EXPORT));
+}
+
 static void giveEntryPointAnExitCode(mlir::ModuleOp m, CompileOptions &compileOptions)
 {
     if (compileOptions.isJit || compileOptions.isDLL)
@@ -8715,6 +8739,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     cleanupUnrealizedConversionCast(m);
 
     giveEntryPointAnExitCode(m, tsContext.compileOptions);
+
+    emitBorrowFacts(m);
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << m << "\n";);
 

@@ -100,8 +100,261 @@ static std::optional<ArrayRef<uint8_t>> imageBytesAt(const COFFObjectFile &coffO
     return std::nullopt;
 }
 
+// readCStringSymbols for one object file or ELF shared object: each defined symbol starting with
+// `prefix`, its text read from its section's contents at its offset, up to the first NUL or the
+// section's end.
+template <typename Symbols>
+static void readCStringSymbolsOf(const ObjectFile &objFile, Symbols symbols, StringRef prefix,
+                                 std::vector<std::pair<std::string, std::string>> &result)
+{
+    for (auto symbol : symbols)
+    {
+        auto name = symbol.getName();
+        if (!name)
+        {
+            consumeError(name.takeError());
+            continue;
+        }
+
+        if (!name->starts_with(prefix))
+        {
+            continue;
+        }
+
+        auto section = symbol.getSection();
+        if (!section)
+        {
+            consumeError(section.takeError());
+            continue;
+        }
+
+        if (*section == objFile.section_end())
+        {
+            // undefined, or absolute
+            continue;
+        }
+
+        auto contents = (*section)->getContents();
+        if (!contents)
+        {
+            consumeError(contents.takeError());
+            continue;
+        }
+
+        // in a relocatable object a symbol's value is its offset in its section; in a shared
+        // object, its address
+        auto value = symbol.getValue();
+        if (!value)
+        {
+            consumeError(value.takeError());
+            continue;
+        }
+
+        auto offset = *value;
+        if (!objFile.isRelocatableObject())
+        {
+            auto sectionAddress = (*section)->getAddress();
+            if (offset < sectionAddress)
+            {
+                continue;
+            }
+
+            offset -= sectionAddress;
+        }
+
+        if (offset >= contents->size())
+        {
+            continue;
+        }
+
+        auto text = contents->drop_front(offset);
+        result.push_back({name->str(), text.substr(0, text.find(char(0))).str()});
+    }
+}
+
 namespace Dump
 {
+
+template <typename Symbols>
+static void definedSymbolsOf(Symbols symbols, std::vector<std::string> &result)
+{
+    for (auto symbol : symbols)
+    {
+        auto flags = symbol.getFlags();
+        if (!flags)
+        {
+            consumeError(flags.takeError());
+            continue;
+        }
+
+        if (!(*flags & SymbolRef::SF_Global) || (*flags & SymbolRef::SF_Undefined))
+        {
+            continue;
+        }
+
+        auto name = symbol.getName();
+        if (!name)
+        {
+            consumeError(name.takeError());
+            continue;
+        }
+
+        result.push_back(name->str());
+    }
+}
+
+std::vector<std::string> definedSymbols(StringRef path)
+{
+    std::vector<std::string> result;
+    auto expectedOwningBinary = createBinary(path);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return result;
+    }
+
+    auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *archive = dyn_cast<Archive>(binary))
+    {
+        for (auto &symbol : archive->symbols())
+        {
+            result.push_back(symbol.getName().str());
+        }
+
+        return result;
+    }
+
+    if (auto *coffObj = dyn_cast<COFFObjectFile>(binary); coffObj && (coffObj->getPE32Header() || coffObj->getPE32PlusHeader()))
+    {
+        for (const ExportDirectoryEntryRef &entry : coffObj->export_directories())
+        {
+            StringRef name;
+            if (Error err = entry.getSymbolName(name))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            result.push_back(name.str());
+        }
+
+        return result;
+    }
+
+    if (auto *elfObj = dyn_cast<ELFObjectFileBase>(binary))
+    {
+        definedSymbolsOf(elfObj->symbols(), result);
+        if (!elfObj->isRelocatableObject())
+        {
+            definedSymbolsOf(elfObj->getDynamicSymbolIterators(), result);
+        }
+
+        return result;
+    }
+
+    if (auto *objFile = dyn_cast<ObjectFile>(binary))
+    {
+        definedSymbolsOf(objFile->symbols(), result);
+    }
+
+    return result;
+}
+
+std::vector<std::pair<std::string, std::string>> readCStringSymbols(StringRef path, StringRef prefix)
+{
+    std::vector<std::pair<std::string, std::string>> result;
+    auto expectedOwningBinary = createBinary(path);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return result;
+    }
+
+    auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *coffObj = dyn_cast<COFFObjectFile>(binary); coffObj && (coffObj->getPE32Header() || coffObj->getPE32PlusHeader()))
+    {
+        // a PE image (a DLL): no symbol table, only its exports
+        for (const ExportDirectoryEntryRef &entry : coffObj->export_directories())
+        {
+            StringRef name;
+            if (Error err = entry.getSymbolName(name))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            bool forwarder = false;
+            if (Error err = entry.isForwarder(forwarder))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            uint32_t rva = 0;
+            if (!name.starts_with(prefix) || forwarder)
+            {
+                continue;
+            }
+
+            if (Error err = entry.getExportRVA(rva))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            if (auto bytes = imageBytesAt(*coffObj, rva))
+            {
+                StringRef text(reinterpret_cast<const char *>(bytes->data()), bytes->size());
+                result.push_back({name.str(), text.substr(0, text.find(char(0))).str()});
+            }
+        }
+
+        return result;
+    }
+
+    if (auto *elfObj = dyn_cast<ELFObjectFileBase>(binary))
+    {
+        // a shared object exports through its dynamic symbols; it may have no other table
+        readCStringSymbolsOf(*elfObj, elfObj->symbols(), prefix, result);
+        if (!elfObj->isRelocatableObject())
+        {
+            readCStringSymbolsOf(*elfObj, elfObj->getDynamicSymbolIterators(), prefix, result);
+        }
+
+        return result;
+    }
+
+    if (auto *objFile = dyn_cast<ObjectFile>(binary))
+    {
+        readCStringSymbolsOf(*objFile, objFile->symbols(), prefix, result);
+        return result;
+    }
+
+    auto *archive = dyn_cast<Archive>(binary);
+    if (!archive)
+    {
+        return result;
+    }
+
+    Error err = Error::success();
+    for (auto &child : archive->children(err))
+    {
+        auto childBinary = child.getAsBinary();
+        if (!childBinary)
+        {
+            consumeError(childBinary.takeError());
+            continue;
+        }
+
+        if (auto *objFile = dyn_cast<ObjectFile>(childBinary->get()))
+        {
+            readCStringSymbolsOf(*objFile, objFile->symbols(), prefix, result);
+        }
+    }
+
+    consumeError(std::move(err));
+    return result;
+}
 
 void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols, llvm::BumpPtrAllocator &stringAllocator)
 {

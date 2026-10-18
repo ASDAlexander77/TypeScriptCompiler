@@ -70,6 +70,7 @@ std::string getDefaultLibPath();
 std::string getTslangLibPath();
 std::string mergeWithDefaultLibPath(std::string, std::string);
 std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
+std::string getDefaultLibBinary(bool, const CompileOptions &, const llvm::Triple &);
 std::string makeAbsolutePath(std::string);
 
 int registerMLIRDialects(mlir::ModuleOp);
@@ -595,17 +596,8 @@ static int prepareJitProcess(CompileOptions &compileOptions)
         // Keyed on --di (generate debug info): with debug info use the debug lib.
         // ...and per memory model, for the same reason the linker path is: the default lib
         // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
-        auto defaultLibSubDir =
-            getDefaultLibSubDir(/*shared=*/true, compileOptions.generateDebugInfo,
-                                memoryModelName(compileOptions.memoryModel),
-                                llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))); // JIT is host-only
-        auto defaultLibFile = mergeWithDefaultLibPath(getDefaultLibPath(),
-#ifdef WIN32
-            defaultLibSubDir + "/" DEFAULT_LIB_NAME ".dll"
-#else
-            defaultLibSubDir + "/lib" DEFAULT_LIB_NAME ".so"
-#endif
-        );
+        auto defaultLibFile = getDefaultLibBinary(/*shared=*/true, compileOptions,
+                                                  llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))); // JIT is host-only
 
         // Named here rather than left to the loader, for the reason exe.cpp checks the link
         // directory: a model that has not been built otherwise surfaces as the platform's

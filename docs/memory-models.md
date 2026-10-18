@@ -128,7 +128,8 @@ includes an object that is:
 
 - returned, thrown, stored in a field, array, global or captured variable, or converted to
   `any`, an interface or a union;
-- passed to a function in another module, including the default library;
+- passed to a function in another module, unless that module's own analysis showed the function
+  only reads the argument (see below);
 - made in a function that is `async`, a generator, or recursive, or - under `-mm=rc` and
   `-mm=own` - one that has a `try`;
 - still in use when the next iteration of its loop makes a new one. A use on the way out of the
@@ -136,6 +137,20 @@ includes an object that is:
 
 Under `-mm=rc` and `-mm=own`, an object that owns memory stays on the heap in a module that uses
 `Shared<T>`, because `Shared.count` would see its contents given back later.
+
+### Calls into other modules
+
+Every module the compiler builds ahead of time records, inside its object file, which parameters of its functions
+are only read and never kept (the `__tsborrow_` symbol). A program reads these facts from the
+libraries it links statically - the default library's static library and any `--lib` - and, under
+`--emit=jit`, from the default library's DLL it loads. An object passed to such a parameter may then
+go on the stack: `Math.max(a, b, c)`, for instance, builds its argument array on the stack.
+
+The facts are read only where the file read is the file that will run. A program linked against a
+DLL, a `-shared` import and `--emit=obj` read none, and every call into them stays on the heap, as
+does a call through a library class's virtual method. A library built before this feature publishes
+nothing, which is not an error. `tslang --print-borrow-facts=<file>` prints what an object file,
+static library or DLL publishes.
 
 Two limits keep frames small: one object may take at most 256 bytes
 (`--stack-promotion-max-object=`), and one function at most 4096 bytes in all

@@ -574,6 +574,12 @@ class JitUnitBuilder
             addDep(library, fileHash(library));
         }
 
+        // the libraries whose borrow facts decided what went on the stack (borrowfacts.cpp)
+        for (auto &library : options.importedBorrowFactsFiles)
+        {
+            addDep(library, fileHash(library));
+        }
+
         registerMLIRDialects(*module);
 
         llvm::LLVMContext llvmContext;
