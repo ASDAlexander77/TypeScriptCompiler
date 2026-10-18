@@ -285,6 +285,35 @@ class LLVMCodeHelperBase
         return allocated;
     }
 
+    // A promoted object (docs/superpowers/specs/2026-10-18-stack-promotion-design.md section 6):
+    // a block in the function's frame laid out exactly as a heap block - the header word, then the
+    // payload - so everything that reads a header reads one. The header is HEAP_BLOCK_IMMORTAL, so
+    // no retain, release or destroy ever counts or frees it. The slot is in the entry block; it is
+    // initialised here, at the allocation, so a loop gets a fresh object every iteration, as `new`
+    // gives it. Returns the payload pointer, as MemoryAlloc does.
+    mlir::Value StackBlockAlloc(mlir::Type llvmStorageType)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        // packed: the payload starts right after the header word, where a heap block's does
+        auto blockType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, llvmStorageType},
+                                                          /*isPacked=*/true);
+        auto blockPtr = Alloca(blockType, 1);
+        // what malloc guarantees a heap block, so the payload's alignment is the same as on the heap
+        cast<LLVM::AllocaOp>(blockPtr.getDefiningOp()).setAlignment(2 * getHeapBlockHeaderSize());
+
+        rewriter.create<LLVM::StoreOp>(
+            loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+            blockPtr);
+        auto payloadPtr = getPayloadPtrFromBlockPtr(loc, blockPtr, llvmIndexType);
+        rewriter.create<LLVM::StoreOp>(loc, rewriter.create<LLVM::ZeroOp>(loc, llvmStorageType), payloadPtr);
+        return payloadPtr;
+    }
+
     mlir::Value Alloca(mlir::Type elementType, mlir::Value count, bool inalloca = false)
     {
         auto location = op->getLoc();

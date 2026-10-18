@@ -35,6 +35,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipInferencePass.cpp
     OwnershipSignaturePass.cpp
     OwnedReturnConsumptionPass.cpp
+    StackPromotionPass.cpp
     GCPass.cpp
     ProcessHeapPass.cpp
     InlinedLocationPass.cpp

@@ -45,6 +45,22 @@ std::unique_ptr<mlir::Pass> createOwnershipSignaturePass();
 /// needs every function to be present - see docs/reference-counting-evaluation.md section 9.27.
 std::unique_ptr<mlir::Pass> createOwnedReturnConsumptionPass(CompileOptions&);
 
+/// The limits stack promotion works within, and whether it reports its decisions. See
+/// docs/superpowers/specs/2026-10-18-stack-promotion-design.md section 5.4.
+struct StackPromotionLimits
+{
+    // the most one object may take on the stack, header included
+    unsigned maxObjectBytes = 256;
+    // the most one function may promote, all its sites together
+    unsigned maxFrameBytes = 4096;
+    // a remark at every allocation site: stack, or heap and why
+    bool report = false;
+};
+
+/// Puts allocations that provably never outlive their function on the stack, under every memory
+/// model. Runs on the whole module at the affine level, after own's inference.
+std::unique_ptr<mlir::Pass> createStackPromotionPass(CompileOptions &, StackPromotionLimits);
+
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 std::unique_ptr<mlir::Pass> createProcessHeapPass();

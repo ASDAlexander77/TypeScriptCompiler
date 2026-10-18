@@ -2053,29 +2053,13 @@ namespace mlirgen
         return V(result);
     }
 
-    ValueOrLogicalResult MLIRGenImpl::NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
+    ValueOrLogicalResult MLIRGenImpl::NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
-        // seems we are calling type constructor
-        // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
-        // using Class..new(true) method
-
-        return NewClassInstance(location, classType, operands, genContext, true /*on stack*/);
-    }
-
-    ValueOrLogicalResult MLIRGenImpl::NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
-                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack)
-    {
+        // `C(...)` and `new C(...)` are one thing: where the object lives is the stack promotion
+        // pass's decision, not the spelling's (docs/superpowers/specs/2026-10-18-stack-promotion-design.md)
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-        if (onStack && classInfo->hasVirtualTable)
-        {
-            emitError(location, "") << "can't instantiate new instance of " << to_print(classType) << " which has 'virtual table' on stack";
-            return mlir::failure();
-        }
-
-        auto newOp = onStack 
-            ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
-            : ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
+        auto newOp = ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
         EXIT_IF_FAILED_OR_NO_VALUE(newOp)
         if (mlir::failed(mlirGenCallConstructor(location, classInfo, V(newOp), operands, false, genContext)))
         {
@@ -2172,7 +2156,7 @@ namespace mlirgen
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
-                value = NewClassInstanceOnStack(location, classType, operands, genContext);
+                value = NewClassInstance(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder, compileOptions);

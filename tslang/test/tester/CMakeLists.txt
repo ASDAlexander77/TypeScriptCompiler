@@ -182,6 +182,11 @@ endif()
 # Off by default: the default suite and its test names do not change.
 option(TSLANG_TEST_X86 "Also register the 32-bit (i686) twin of every non-JIT test" OFF)
 
+# With TSLANG_TEST_NO_STACK_PROMOTION on, every `test-runner` registration builds with every
+# allocation on the heap: run the suite both ways and the pass/fail lists must be the same
+# (docs/superpowers/specs/2026-10-18-stack-promotion-design.md section 9).
+option(TSLANG_TEST_NO_STACK_PROMOTION "Build every test-runner test with --no-stack-promotion" OFF)
+
 if (TSLANG_TEST_X86)
     if (NOT WIN32)
         message(FATAL_ERROR "TSLANG_TEST_X86: the x86 twins build Windows i686 programs, so they need a Windows host")
@@ -236,6 +241,10 @@ function(tslang_add_test)
     # Checked whether the twins are on or not, so a name that could not have one fails every configure.
     if (NOT arg_NAME MATCHES "^test-")
         message(FATAL_ERROR "tslang_add_test(${arg_NAME}): the name must start with test-")
+    endif()
+
+    if (TSLANG_TEST_NO_STACK_PROMOTION)
+        list(INSERT arg_COMMAND 1 -no-stack-promotion)
     endif()
 
     add_test(NAME ${arg_NAME} COMMAND ${arg_COMMAND})
@@ -4131,3 +4140,134 @@ if (WIN32)
         endforeach()
     endforeach()
 endif()
+
+# Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
+# model, JIT and ahead of time; the output must not depend on where an object lives.
+set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned
+    ctor_local borrow_uses pass_to_reader pass_to_keeper method_keeps_this virtual_one_keeps ctor_keeps_this
+    to_interface to_any pass_to_print loop_carried
+    fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle
+    too_big frame_budget recursive async_local generator_local thrown
+    array_local_fixed array_local_push array_returned closure_local closure_escapes
+    virtual_exported_subclass recursive_closure)
+# Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
+# they say nothing about promotion under own.
+set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
+foreach(stack_mm gc rc own none)
+    foreach(stack_test ${stack_promotion_run_tests})
+        if (stack_mm STREQUAL "own" AND stack_test IN_LIST stack_promotion_not_own)
+            continue()
+        endif()
+        # async under rc and own fails to link in the JIT without promotion too
+        if ((stack_mm STREQUAL "rc" OR stack_mm STREQUAL "own") AND stack_test STREQUAL "async_local")
+            continue()
+        endif()
+        tslang_add_test(NAME test-jit-${stack_mm}-stack-${stack_test} COMMAND test-runner -jit -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
+        tslang_add_test(NAME test-compile-${stack_mm}-stack-${stack_test} COMMAND test-runner -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
+    endforeach()
+endforeach()
+
+# The report reaches stderr, and the pass runs before --emit=mlir-affine stops the pipeline: every
+# decision test below depends on both.
+add_test(NAME test-stack-promotion-report-reaches-stderr
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+set_tests_properties(test-stack-promotion-report-reaches-stderr
+                     PROPERTIES PASS_REGULAR_EXPRESSION "remark: stack-promotion: "
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-stack-promotion-off
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report --no-stack-promotion
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+set_tests_properties(test-stack-promotion-off
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Func"
+                                FAIL_REGULAR_EXPRESSION "stack-promotion:|Stack dump|Assertion failed")
+tslang_add_test(NAME test-jit-gc-stack-off-class-call COMMAND test-runner -jit -mm=gc -no-stack-promotion "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+
+# Decision tests: `<file>|<regex>`; the remark at the allocation site says stack, or heap and why.
+set(stack_promotion_decision_tests
+    "literal_boxed_local|literal_boxed_local\.ts:6:19: remark: stack-promotion: stack"
+    "leaf_local|leaf_local\.ts:11:19: remark: stack-promotion: stack"
+    "leaf_returned|leaf_returned\.ts:8:15: remark: stack-promotion: heap: returned"
+    "ctor_local|ctor_local\.ts:14:19: remark: stack-promotion: stack"
+    "borrow_uses|borrow_uses\.ts:17:15: remark: stack-promotion: stack.*borrow_uses\.ts:18:15: remark: stack-promotion: stack"
+    "pass_to_reader|pass_to_reader\.ts:18:19: remark: stack-promotion: stack"
+    "pass_to_keeper|pass_to_keeper\.ts:16:15: remark: stack-promotion: heap: argument"
+    "method_keeps_this|method_keeps_this\.ts:15:15: remark: stack-promotion: heap: argument"
+    "virtual_one_keeps|virtual_one_keeps\.ts:26:18: remark: stack-promotion: heap: argument"
+    "ctor_keeps_this|ctor_keeps_this\.ts:13:15: remark: stack-promotion: heap: argument"
+    "to_interface|to_interface\.ts:14:15: remark: stack-promotion: heap: converted"
+    "to_any|to_any\.ts:10:15: remark: stack-promotion: heap: converted"
+    "pass_to_print|pass_to_print\.ts:13:15: remark: stack-promotion: stack"
+    "loop_carried|loop_carried\.ts:13:19: remark: stack-promotion: heap: loop-carried"
+    "fields_string|fields_string\.ts:15:19: remark: stack-promotion: stack"
+    "fields_object|fields_object\.ts:17:15: remark: stack-promotion: stack.*fields_object\.ts:17:25: remark: stack-promotion: heap: argument"
+    "field_overwrite|field_overwrite\.ts:10:15: remark: stack-promotion: stack"
+    "return_field|return_field\.ts:11:15: remark: stack-promotion: stack"
+    "try_region|try_region\.ts:10:15: remark: stack-promotion: heap: try-region"
+    "conditional_alloc|conditional_alloc\.ts:12:19: remark: stack-promotion: stack"
+    "too_big|too_big\.ts:47:15: remark: stack-promotion: heap: too-big"
+    "frame_budget|frame_budget\.ts:67:17: remark: stack-promotion: stack.*frame_budget\.ts:69:17: remark: stack-promotion: heap: frame-budget"
+    "recursive|recursive\.ts:16:15: remark: stack-promotion: heap: recursive"
+    "async_local|async_local\.ts:10:15: remark: stack-promotion: heap: coroutine"
+    "generator_local|generator_local\.ts:11:19: remark: stack-promotion: heap: coroutine"
+    "thrown|thrown\.ts:10:15: remark: stack-promotion: heap: thrown"
+    "array_local_fixed|array_local_fixed\.ts:3:15: remark: stack-promotion: stack"
+    "array_local_push|array_local_push\.ts:3:25: remark: stack-promotion: heap: growable"
+    "array_returned|array_returned\.ts:3:15: remark: stack-promotion: heap: returned"
+    "virtual_exported_subclass|virtual_exported_subclass\.ts:23:18: remark: stack-promotion: heap: unknown-callee"
+    "recursive_closure|recursive_closure\.ts:17:15: remark: stack-promotion: heap: recursive")
+foreach(stack_mm gc rc own none)
+    foreach(stack_case ${stack_promotion_decision_tests})
+        string(FIND "${stack_case}" "|" stack_sep)
+        string(SUBSTRING "${stack_case}" 0 ${stack_sep} stack_name)
+        math(EXPR stack_sep "${stack_sep} + 1")
+        string(SUBSTRING "${stack_case}" ${stack_sep} -1 stack_regex)
+        if (stack_mm STREQUAL "own" AND stack_name IN_LIST stack_promotion_not_own)
+            continue()
+        endif()
+        add_test(NAME test-stack-decision-${stack_mm}-${stack_name}
+                 COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                         "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
+        set_tests_properties(test-stack-decision-${stack_mm}-${stack_name}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "${stack_regex}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
+endforeach()
+# The same site is a stack site where nothing counts, and a heap site where a Shared count would see it.
+foreach(stack_case "gc|stack" "none|stack" "rc|heap: shared-handle" "own|heap: shared-handle")
+    string(FIND "${stack_case}" "|" stack_sep)
+    string(SUBSTRING "${stack_case}" 0 ${stack_sep} stack_mm)
+    math(EXPR stack_sep "${stack_sep} + 1")
+    string(SUBSTRING "${stack_case}" ${stack_sep} -1 stack_expected)
+    add_test(NAME test-stack-decision-${stack_mm}-shared_handle
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                     "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/shared_handle.ts")
+    set_tests_properties(test-stack-decision-${stack_mm}-shared_handle
+                         PROPERTIES PASS_REGULAR_EXPRESSION "shared_handle\.ts:14:14: remark: stack-promotion: ${stack_expected}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+# The object limit is a flag.
+add_test(NAME test-stack-decision-max-object
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=gc --stack-promotion-report --stack-promotion-max-object=512
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/too_big.ts")
+set_tests_properties(test-stack-decision-max-object
+                     PROPERTIES PASS_REGULAR_EXPRESSION "too_big\.ts:47:15: remark: stack-promotion: stack"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A capture box: on the stack where nothing counts, and only while its closures stay in the function.
+foreach(stack_case "gc|closure_local|10:11: remark: stack-promotion: stack"
+                   "none|closure_local|10:11: remark: stack-promotion: stack"
+                   "rc|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
+                   "own|closure_local|10:11: remark: stack-promotion: heap: counted-capture"
+                   "gc|closure_escapes|4:12: remark: stack-promotion: heap: returned"
+                   "none|closure_escapes|4:12: remark: stack-promotion: heap: returned")
+    string(REPLACE "|" ";" stack_parts "${stack_case}")
+    list(GET stack_parts 0 stack_mm)
+    list(GET stack_parts 1 stack_name)
+    list(GET stack_parts 2 stack_expected)
+    add_test(NAME test-stack-decision-${stack_mm}-${stack_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                     "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
+    set_tests_properties(test-stack-decision-${stack_mm}-${stack_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${stack_name}\.ts:${stack_expected}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()

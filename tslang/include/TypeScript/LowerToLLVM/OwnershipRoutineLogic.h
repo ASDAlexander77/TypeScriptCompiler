@@ -231,6 +231,13 @@ class OwnershipRoutineLogic
                                       FlatSymbolRefAttr::get(rewriter.getContext(), wrapperName), ValueRange{value});
     }
 
+    // What destroying a block of `storageType` at `payloadPtr` releases, without freeing the block:
+    // a promoted object's fields when its frame is done with it (ts.ReleaseContents).
+    void emitReleaseContents(mlir::Type storageType, mlir::Value payloadPtr)
+    {
+        releaseFields(storageType, payloadPtr);
+    }
+
     // Drops one reference held by the value in `slotPtr`, whose TypeScript type is `type`.
     // Emits nothing when the type owns no heap memory.
     //

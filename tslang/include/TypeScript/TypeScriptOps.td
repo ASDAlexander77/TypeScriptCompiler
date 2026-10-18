@@ -611,6 +611,20 @@ def TypeScript_ReleaseCellOp : TypeScript_Op<"ReleaseCell"> {
   let arguments = (ins TypeScript_Ref:$slot);
 }
 
+def TypeScript_ReleaseContentsOp : TypeScript_Op<"ReleaseContents"> {
+  let summary = "give back what a stack object owns, keeping the object";
+  let description = [{
+    A promoted object (docs/superpowers/specs/2026-10-18-stack-promotion-design.md) lives in its
+    function's frame, so nothing frees it, and its immortal header keeps every release from
+    destroying it. This gives back what its fields own - under rc and own, where something does;
+    nothing under gc and none - and leaves the object in place. With `reset`, it also zeroes the
+    object, making it a fresh one: that is what stands where the allocation was, once the
+    allocation itself is moved to the entry block.
+  }];
+
+  let arguments = (ins AnyType:$instance, UnitAttr:$reset);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

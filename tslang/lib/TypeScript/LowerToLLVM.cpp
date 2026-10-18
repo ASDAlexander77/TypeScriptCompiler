@@ -484,6 +484,51 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
     }
 };
 
+// A promoted object's fields given back without freeing the object, and with `reset` the object
+// zeroed - a fresh one where its allocation was.
+class ReleaseContentsOpLowering : public TsLlvmPattern<mlir_ts::ReleaseContentsOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseContentsOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseContentsOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto instanceType = op.getInstance().getType();
+        mlir::Type storageType;
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(instanceType))
+        {
+            storageType = classType.getStorageType();
+        }
+        else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(instanceType))
+        {
+            storageType = valueRefType.getElementType();
+        }
+        else
+        {
+            return op.emitError("ts.ReleaseContents of a type with no storage: ") << instanceType;
+        }
+
+        if (tsLlvmContext->compileOptions.tracksOwnership())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseContents(storageType, transformed.getInstance());
+        }
+
+        if (op.getReset())
+        {
+            auto llvmStorageType = tch.convertType(storageType);
+            rewriter.create<LLVM::StoreOp>(op.getLoc(), rewriter.create<LLVM::ZeroOp>(op.getLoc(), llvmStorageType),
+                                           transformed.getInstance());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 // The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
 // access with it - there is no load to leave behind in a collected build.
 class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
@@ -3098,6 +3143,11 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
             allocated = ch.Alloca(storageType, count);
         }
+        else if (varOp->hasAttr(STACK_ALLOC_ATTR_NAME))
+        {
+            // a capture box stack promotion put in the frame: its closures never leave it
+            allocated = ch.StackBlockAlloc(storageType);
+        }
         else
         {
 
@@ -3325,7 +3375,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = ch.Alloca(tch.convertType(storageType), 1);
+            value = ch.StackBlockAlloc(tch.convertType(storageType));
         }
         else
         {
@@ -3466,7 +3516,11 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue);
+        // a promoted literal: the elements in a block in the frame, immortal like a heap block that
+        // is never freed (StackBlockAlloc)
+        auto onStack = createArrayOp->hasAttr(STACK_ALLOC_ATTR_NAME);
+        auto allocated = onStack ? ch.StackBlockAlloc(LLVM::LLVMArrayType::get(llvmElementType, createArrayOp.getItems().size()))
+                                 : ch.MemoryAlloc(multSizeOfTypeValue);
 
         mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
         auto next = false;
@@ -3499,6 +3553,17 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         }
 
         ArrayLayout layout(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        if (onStack)
+        {
+            // its header too: nothing counts either block, nothing frees them
+            auto header = ch.StackBlockAlloc(layout.headerType());
+            rewriter.create<LLVM::StoreOp>(loc, allocated, layout.dataAddress(arrayType, header));
+            rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.lengthAddress(arrayType, header));
+            rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, layout.capacityAddress(arrayType, header));
+            rewriter.replaceOp(createArrayOp, ValueRange{header});
+            return success();
+        }
+
         auto structValue3 = layout.make(arrayType, allocated, newCountAsIndexType);
 
         rewriter.replaceOp(createArrayOp, ValueRange{structValue3});
@@ -8582,7 +8647,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 

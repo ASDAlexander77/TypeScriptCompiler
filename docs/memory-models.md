@@ -105,6 +105,67 @@ than falling back to another model's copy — that would link and then misbehave
 Build them with the default library's `build.bat` (`build.sh` on Linux), which produces all
 three.
 
+## Stack promotion
+
+Under every model, an object that provably never outlives the function that made it is put in
+that function's stack frame instead of on the heap. This happens automatically, and you never
+see it: the program does exactly what it did before, only with fewer heap allocations. `new C()`
+and `C()` are the same thing, and either may end up on the stack.
+
+The compiler promotes:
+
+- **class instances** and **object literals with methods**, when the object is only read and
+  written through its fields, has its methods called, is compared, or is passed to functions in
+  the same module that do not keep it;
+- **array literals** that never change length (no `push`, `pop`, `splice`, `length =`) and are
+  never handed somewhere that might change or keep them; under `-mm=rc` and `-mm=own`, only when
+  the elements own no memory (numbers, booleans);
+- a **closure's capture box**, when the closure never leaves the function; under `-mm=gc` and
+  `-mm=none` only.
+
+Anything the compiler cannot prove safe stays on the heap, silently. In this version that
+includes an object that is:
+
+- returned, thrown, stored in a field, array, global or captured variable, or converted to
+  `any`, an interface or a union;
+- passed to a function in another module, including the default library;
+- made in a function that has a `try`, or is `async`, a generator, or recursive;
+- still in use when the next iteration of its loop makes a new one.
+
+Under `-mm=rc` and `-mm=own`, an object that owns memory stays on the heap in a module that uses
+`Shared<T>`, because `Shared.count` would see its contents given back later.
+
+Two limits keep frames small: one object may take at most 256 bytes
+(`--stack-promotion-max-object=`), and one function at most 4096 bytes in all
+(`--stack-promotion-max-frame=`). These are estimates, made before the exact layout is known.
+
+`--no-stack-promotion` turns the feature off. `--stack-promotion-report` prints, for every
+allocation, whether it went on the stack and, if not, why:
+
+```
+p.ts:11:19: remark: stack-promotion: stack
+p.ts:8:15: remark: stack-promotion: heap: returned
+```
+
+Measured, best of three, ahead-of-time build with `--opt --opt_level=3`, in milliseconds. Each
+cell is `--no-stack-promotion` → default:
+
+| program | `-mm=gc` | `-mm=rc` | `-mm=own` | `-mm=none` |
+| --- | --- | --- | --- | --- |
+| vector temporaries, 5 million iterations | 18 → 20 | 296 → 16 | 287 → 27 | 27 → 20 |
+| ray tracer | 342 → 341 | 153 → 170 | — | 182 → 157 |
+
+The gain is where a heap allocation is expensive: under `-mm=rc` and `-mm=own`, an object made
+and dropped in a loop costs a `malloc` and a `free` per iteration, and promotion removes both.
+Under `-mm=gc` the optimiser already deletes an allocation nothing reads, so there is little left
+to gain. `—`: the program does not compile under `-mm=own`.
+
+The ray tracer under `-mm=rc` is slower with promotion, although only two objects in its one-time
+scene setup are promoted, and the code of its hot loop is identical either way. A build that runs
+the analysis but promotes nothing times the same as `--no-stack-promotion`, so the difference
+follows the two promotions themselves, most likely because two fewer heap allocations at start-up
+move where later objects land. It is not understood beyond that.
+
 ## Other limits of `-mm=rc`
 
 - **Objects crossing between differently-managed modules are never freed.** If you link a
