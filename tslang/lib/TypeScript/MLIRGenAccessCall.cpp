@@ -2539,6 +2539,22 @@ namespace mlirgen
                                              const GenContext &genContext)
     {
 #ifdef USE_NEW_AS_METHOD
+        // A class defined in this module allocates in place, with the body `C..new` would run:
+        // the `ts.New` and the vtable store. The instance arrives owned, as from the call, whose
+        // return retained it (§9.24): the `ts.New` carries the mark, and the block it makes starts
+        // with that one reference (NewOpLowering) rather than gaining it through a `ts.Retain`
+        // the ownership passes would have to account for in the caller. `C..new` is still
+        // generated, for the vtable's `.new` slot and for other modules. A class from elsewhere -
+        // a declaration, an import, a dynamic import - goes through its `C..new`, which allocates
+        // in the module that knows its layout and vtable. A @cpp class keeps the call as well.
+        if (asMethodCall && !classInfo->isDeclaration && !classInfo->isImport && !classInfo->isDynamicImport &&
+            !classInfo->isCppVTable)
+        {
+            auto newOp = NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
+            newOp.getDefiningOp()->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+            return newOp;
+        }
+
         if (asMethodCall)
         {
             auto classRefVal = builder.create<mlir_ts::ClassRefOp>(

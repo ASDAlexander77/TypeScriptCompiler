@@ -3380,6 +3380,19 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         else
         {
             value = ch.MemoryAlloc(storageType, MemoryAllocSet::Zero);
+
+            // `new C()` of a class defined here (MLIRGen's NewClassInstanceAsMethodCallOp): the
+            // block is handed over owned, as `C..new`'s retained return hands it, so under rc it
+            // starts with that one reference. A block is otherwise born with none, and whoever
+            // keeps it retains it. Under own the block starts as it did from `C..new`, whose
+            // retain ownership inference erased, and under gc or none there is no count.
+            if (tsLlvmContext->compileOptions.isRefCounted() && newOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+            {
+                auto llvmIndexType = tch.convertType(th.getIndexType());
+                auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, value, llvmIndexType);
+                auto one = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, 1));
+                rewriter.create<LLVM::StoreOp>(loc, one, blockPtr);
+            }
         }
 
         rewriter.replaceOp(newOp, ValueRange{value});
