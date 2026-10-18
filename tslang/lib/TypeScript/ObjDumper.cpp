@@ -100,12 +100,14 @@ static std::optional<ArrayRef<uint8_t>> imageBytesAt(const COFFObjectFile &coffO
     return std::nullopt;
 }
 
-// readCStringSymbols for one object: each defined symbol starting with `prefix`, its text read from
-// its section's contents at its offset, up to the first NUL or the section's end.
-static void readCStringSymbolsOf(const ObjectFile &objFile, StringRef prefix,
-                               std::vector<std::pair<std::string, std::string>> &result)
+// readCStringSymbols for one object file or ELF shared object: each defined symbol starting with
+// `prefix`, its text read from its section's contents at its offset, up to the first NUL or the
+// section's end.
+template <typename Symbols>
+static void readCStringSymbolsOf(const ObjectFile &objFile, Symbols symbols, StringRef prefix,
+                                 std::vector<std::pair<std::string, std::string>> &result)
 {
-    for (auto &symbol : objFile.symbols())
+    for (auto symbol : symbols)
     {
         auto name = symbol.getName();
         if (!name)
@@ -139,20 +141,33 @@ static void readCStringSymbolsOf(const ObjectFile &objFile, StringRef prefix,
             continue;
         }
 
-        // in a relocatable object, a symbol's value is its offset in its section
-        auto offset = symbol.getValue();
-        if (!offset)
+        // in a relocatable object a symbol's value is its offset in its section; in a shared
+        // object, its address
+        auto value = symbol.getValue();
+        if (!value)
         {
-            consumeError(offset.takeError());
+            consumeError(value.takeError());
             continue;
         }
 
-        if (*offset >= contents->size())
+        auto offset = *value;
+        if (!objFile.isRelocatableObject())
+        {
+            auto sectionAddress = (*section)->getAddress();
+            if (offset < sectionAddress)
+            {
+                continue;
+            }
+
+            offset -= sectionAddress;
+        }
+
+        if (offset >= contents->size())
         {
             continue;
         }
 
-        auto text = contents->drop_front(*offset);
+        auto text = contents->drop_front(offset);
         result.push_back({name->str(), text.substr(0, text.find(char(0))).str()});
     }
 }
@@ -171,9 +186,62 @@ std::vector<std::pair<std::string, std::string>> readCStringSymbols(StringRef pa
     }
 
     auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *coffObj = dyn_cast<COFFObjectFile>(binary); coffObj && (coffObj->getPE32Header() || coffObj->getPE32PlusHeader()))
+    {
+        // a PE image (a DLL): no symbol table, only its exports
+        for (const ExportDirectoryEntryRef &entry : coffObj->export_directories())
+        {
+            StringRef name;
+            if (Error err = entry.getSymbolName(name))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            bool forwarder = false;
+            if (Error err = entry.isForwarder(forwarder))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            uint32_t rva = 0;
+            if (!name.starts_with(prefix) || forwarder)
+            {
+                continue;
+            }
+
+            if (Error err = entry.getExportRVA(rva))
+            {
+                consumeError(std::move(err));
+                continue;
+            }
+
+            if (auto bytes = imageBytesAt(*coffObj, rva))
+            {
+                StringRef text(reinterpret_cast<const char *>(bytes->data()), bytes->size());
+                result.push_back({name.str(), text.substr(0, text.find(char(0))).str()});
+            }
+        }
+
+        return result;
+    }
+
+    if (auto *elfObj = dyn_cast<ELFObjectFileBase>(binary))
+    {
+        // a shared object exports through its dynamic symbols; it may have no other table
+        readCStringSymbolsOf(*elfObj, elfObj->symbols(), prefix, result);
+        if (!elfObj->isRelocatableObject())
+        {
+            readCStringSymbolsOf(*elfObj, elfObj->getDynamicSymbolIterators(), prefix, result);
+        }
+
+        return result;
+    }
+
     if (auto *objFile = dyn_cast<ObjectFile>(binary))
     {
-        readCStringSymbolsOf(*objFile, prefix, result);
+        readCStringSymbolsOf(*objFile, objFile->symbols(), prefix, result);
         return result;
     }
 
@@ -195,7 +263,7 @@ std::vector<std::pair<std::string, std::string>> readCStringSymbols(StringRef pa
 
         if (auto *objFile = dyn_cast<ObjectFile>(childBinary->get()))
         {
-            readCStringSymbolsOf(*objFile, prefix, result);
+            readCStringSymbolsOf(*objFile, objFile->symbols(), prefix, result);
         }
     }
 

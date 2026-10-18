@@ -95,8 +95,9 @@ namespace Dump
     // does not export `symbol`, or the pointer or string lies outside the file's data.
     std::optional<std::string> readExportedCString(llvm::StringRef path, llvm::StringRef symbol);
 
-    // Every defined symbol starting with `prefix` in an object file (COFF or ELF) or in the object
-    // members of a static library, with the NUL-terminated char array it names: (symbol, text).
+    // Every defined symbol starting with `prefix` in an object file (COFF or ELF), in the object
+    // members of a static library, among a DLL's exports or an ELF shared object's symbols, with the
+    // NUL-terminated char array it names: (symbol, text). Read from the file, nothing loaded.
     // Members that are not objects (import members, bitcode) and an unreadable file give nothing.
     std::vector<std::pair<std::string, std::string>> readCStringSymbols(llvm::StringRef path,
                                                                         llvm::StringRef prefix);

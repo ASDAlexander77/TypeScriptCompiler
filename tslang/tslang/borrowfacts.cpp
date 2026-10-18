@@ -5,6 +5,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
 #define DEBUG_TYPE "tslang"
@@ -15,9 +16,9 @@ namespace cl = llvm::cl;
 // which parameters of a library's functions their bodies only borrow, read from the library itself so
 // stack promotion may put an object passed to one on the stack. Read only from a file this compile
 // links or loads, because the facts must describe the code that runs: the static libraries of an
-// --emit=exe link. Never from a DLL a program links, nor a -shared import - those load whatever copy
-// sits beside the program at run time. Missing or unreadable facts are not an error: no facts, every
-// call an escape.
+// --emit=exe link, and the default library's DLL the JIT loads. Never from a DLL a program links,
+// nor a -shared import - those load whatever copy sits beside the program at run time. Missing or
+// unreadable facts are not an error: no facts, every call an escape.
 
 extern cl::opt<enum Action> emitAction;
 extern cl::list<std::string> libs;
@@ -53,6 +54,11 @@ std::string resolveLinkLibrary(llvm::StringRef value)
 
 static void appendBorrowFacts(CompileOptions &compileOptions, llvm::StringRef file)
 {
+    if (llvm::sys::fs::exists(file))
+    {
+        compileOptions.importedBorrowFactsFiles.push_back(file.str());
+    }
+
     for (auto &[symbol, text] : Dump::readCStringSymbols(file, SHARED_LIB_BORROW_FACTS))
     {
         compileOptions.importedBorrowFacts += text;
@@ -63,10 +69,24 @@ static void appendBorrowFacts(CompileOptions &compileOptions, llvm::StringRef fi
     }
 }
 
+// Called before the module is compiled: stack promotion reads them.
 // --emit=exe: the facts of the default library's static library and of every --lib this compile can
-// find. Called before the module is compiled: stack promotion reads them.
-void readStaticBorrowFacts(CompileOptions &compileOptions)
+// find. --emit=jit: those of the default library's DLL the JIT loads, read from its file.
+void readBorrowFacts(CompileOptions &compileOptions)
 {
+    if (emitAction == Action::RunJIT)
+    {
+        if (!compileOptions.noDefaultLib)
+        {
+            // the JIT is host-only, and loads this file (jit.cpp, prepareJitProcess)
+            appendBorrowFacts(compileOptions,
+                              getDefaultLibBinary(/*shared=*/true, compileOptions,
+                                                  llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))));
+        }
+
+        return;
+    }
+
     if (emitAction != Action::BuildExe)
     {
         return;

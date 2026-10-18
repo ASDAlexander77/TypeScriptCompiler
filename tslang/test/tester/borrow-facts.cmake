@@ -79,6 +79,9 @@ if(WIN32 AND NOT MM STREQUAL "gc")
         "${TSLANG}" --emit=obj --no-default-lib -mm=${MM} facts_dll.ts -o facts_dll.obj)
     run("${dir}/dll" "facts of the DLL's object" "sumOf 0" out
         "${TSLANG}" --print-borrow-facts=facts_dll.obj)
+    # what the JIT reads from the default library's DLL: its exports, from the file
+    run("${dir}/dll" "facts of the DLL" "__tsborrow_facts_dll_[0-9]+\nsumOf 0\n" out
+        "${TSLANG}" --print-borrow-facts=facts_lib.dll)
     run("${dir}/dll" "facts of the import library" ok out
         "${TSLANG}" --print-borrow-facts=facts_lib.lib)
     if(NOT out STREQUAL "")

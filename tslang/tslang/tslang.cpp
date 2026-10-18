@@ -58,7 +58,7 @@ namespace Dump
 }
 
 CompileOptions prepareOptions();
-void readStaticBorrowFacts(CompileOptions &);
+void readBorrowFacts(CompileOptions &);
 std::string getDefaultOutputFileName(enum Action);
 std::string getDefaultExt(enum Action);
 std::string getDefaultLibPath();
@@ -497,7 +497,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    readStaticBorrowFacts(compileOptions);
+    readBorrowFacts(compileOptions);
 
     // The JIT with its cache compiles each file it needs by itself, and only if it has to.
     if (emitAction == Action::RunJIT && compileOptions.jitCache)

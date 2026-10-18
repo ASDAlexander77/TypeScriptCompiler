@@ -71,6 +71,8 @@ struct CompileOptions
     // statically against or, under the JIT, loads: see
     // docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md. Empty: none.
     std::string importedBorrowFacts;
+    // the files they were read from: a JIT cache entry depends on them
+    std::vector<std::string> importedBorrowFactsFiles;
     // an import led back to a file still being generated: the modules in the cycle cannot be
     // compiled one by one (the JIT cache then compiles the program as one module)
     bool importCycle = false;
