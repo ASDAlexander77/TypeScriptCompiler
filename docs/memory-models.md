@@ -163,10 +163,12 @@ Under `-mm=gc` the optimiser already deletes an allocation nothing reads, so the
 to gain. `—`: the program does not compile under `-mm=own`.
 
 The ray tracer under `-mm=rc` is slower with promotion, although only two objects in its one-time
-scene setup are promoted, and the code of its hot loop is identical either way. A build that runs
-the analysis but promotes nothing times the same as `--no-stack-promotion`, so the difference
-follows the two promotions themselves, most likely because two fewer heap allocations at start-up
-move where later objects land. It is not understood beyond that.
+scene setup are promoted and the code of its hot loop is identical either way. Promotion costs
+nothing here: the two objects were the program's first heap allocations, and without them every
+later object lands somewhere else on the heap, which this program's speed happens to depend on. Put
+two throwaway heap allocations of the same size back at the same point and the promoted build runs
+at the unpromoted speed (157 ms against 158). Expect the same kind of swing, in either direction,
+from any change to what a program allocates early.
 
 ## Other limits of `-mm=rc`
 
