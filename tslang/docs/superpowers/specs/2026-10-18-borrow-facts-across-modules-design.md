@@ -26,6 +26,12 @@ will build on.
 - **Facts are stored inside the library binary** as exported symbols, beside the existing
   `__tsmm_` and `__tsown_` markers, so they can never disagree with the code they describe.
 - **The compiler reads the default library binary on every compile**, AOT and JIT alike.
+- **Version 1 may be almost pure plumbing.** A small gain from the default library alone (§4.2)
+  is acceptable; changing the library or the analysis so more of its calls benefit is not part of
+  version 1.
+- **Platforms: Windows, Linux and the JIT.** Linux ahead-of-time builds read the facts from the
+  static archive (`.a`) or shared object they link, so `Dump` needs ELF and `ar` support beside
+  its PE support.
 
 ## 3. Goals, non-goals, anti-goals
 
