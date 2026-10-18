@@ -5,6 +5,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -38,15 +39,30 @@ namespace Dump
     std::vector<std::string> definedSymbols(llvm::StringRef);
 }
 
-// The file a `--lib` value names, when this compile can tell: the value itself if it is a file, else
-// the target's static library of that name (`<name>.lib`, `lib<name>.a`) in the current directory.
-// Empty otherwise - the linker searches for it, and its facts are not read. exe.cpp links a resolved
-// library by this path, so the file read is the file linked.
+// A static library or an object file: linked into the program, so what it publishes describes the
+// code that runs. Not a DLL or shared object, whose copy at run time may be another.
+static bool isStaticLinkInput(llvm::StringRef file)
+{
+    llvm::file_magic magic;
+    if (llvm::identify_magic(file, magic))
+    {
+        return false;
+    }
+
+    return magic == llvm::file_magic::archive || magic == llvm::file_magic::coff_object ||
+           magic == llvm::file_magic::elf_relocatable;
+}
+
+// The static library a `--lib` value names, when this compile can tell: the value itself if it is
+// one, else the target's static library of that name (`<name>.lib`, `lib<name>.a`) in the current
+// directory. Empty otherwise - the linker searches for it, or it is linked dynamically, and then no
+// borrow facts are trusted at all (readBorrowFacts). exe.cpp links a resolved library by this path,
+// so the file read is the file linked.
 std::string resolveLinkLibrary(llvm::StringRef value)
 {
     for (auto candidate : {value.str(), getTargetStaticLibName(value)})
     {
-        if (llvm::sys::fs::is_regular_file(candidate))
+        if (llvm::sys::fs::is_regular_file(candidate) && isStaticLinkInput(candidate))
         {
             llvm::SmallString<256> absolute(candidate);
             llvm::sys::fs::make_absolute(absolute);

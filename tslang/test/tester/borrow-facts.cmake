@@ -211,6 +211,17 @@ ${out}${err}")
     endif()
 endif()
 
+# --lib naming a DLL: linked dynamically, so whatever copy runs is not the file read - no facts
+if(WIN32 AND NOT MM STREQUAL "gc" AND NOT MM STREQUAL "own")
+    execute_process(COMMAND "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs}
+        "--lib=${dir}/dll/facts_lib.dll" "${SOURCE_DIR}/facts_use.ts" -o dll_lib.exe
+        WORKING_DIRECTORY "${dir}" OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if("${out}${err}" MATCHES "remark: stack-promotion: stack")
+        message(FATAL_ERROR "--lib naming a DLL: expected no facts read
+${out}${err}")
+    endif()
+endif()
+
 # the same program, nothing promoted: the same output
 run("${dir}" "--emit=exe ${use_source} --no-stack-promotion" ok out
     "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --no-stack-promotion ${link_libs} --lib=facts_lib
