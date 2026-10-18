@@ -1,11 +1,15 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/Analysis/CFGLoopInfo.h"
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+
+#include "StackEscapeFacts.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -33,6 +37,9 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
 {
     CompileOptions compileOptions;
     mlir_ts::StackPromotionLimits limits;
+    stack_escape::StackEscapeFacts *facts = nullptr;
+    // shared: a pass is copied when the pass manager clones it
+    llvm::DenseMap<mlir::Operation *, std::shared_ptr<mlir::CFGLoopInfo>> loopInfos;
 
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StackPromotionPass)
@@ -45,6 +52,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     void runOnOperation() override
     {
         auto module = getOperation();
+        stack_escape::StackEscapeFacts moduleFacts(module);
+        facts = &moduleFacts;
 
         llvm::SmallVector<mlir::Operation *> sites;
         module.walk([&](mlir_ts::FuncOp funcOp) {
@@ -154,99 +163,82 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "unclassified";
         }
 
-        return escapes(value);
-    }
-
-    // Empty when every use of `value` - the object's pointer - keeps it inside the function.
-    llvm::StringRef escapes(mlir::Value value)
-    {
-        for (auto &use : value.getUses())
+        stack_escape::StackEscapeFacts::Walk walk;
+        auto reason = facts->escapes(value, walk);
+        if (!reason.empty())
         {
-            auto *user = use.getOwner();
-            auto reason =
-                llvm::TypeSwitch<mlir::Operation *, llvm::StringRef>(user)
-                    .Case<mlir_ts::PropertyRefOp>([&](auto propertyRefOp) { return fieldRefEscapes(propertyRefOp.getResult()); })
-                    .Case<mlir_ts::StoreOp>([&](auto storeOp) -> llvm::StringRef {
-                        // into the object's own storage, or the object stored somewhere
-                        if (storeOp.getReference() == value && storeOp.getValue() != value)
-                        {
-                            return "";
-                        }
-
-                        return storesIntoReturnSlot(storeOp) ? "returned" : "stored";
-                    })
-                    .Case<mlir_ts::LoadOp>([&](auto) { return ""; })
-                    .Case<mlir_ts::RetainOp, mlir_ts::ReleaseOp>([&](auto) { return ""; })
-                    .Case<mlir_ts::CastOp>([&](auto castOp) -> llvm::StringRef {
-                        // a view of the same object - a boxed literal seen as an object, a class
-                        // as its own type - is the object; anything else converts it
-                        if (isa<mlir_ts::ObjectType, mlir_ts::ClassType, mlir_ts::ValueRefType>(castOp.getType()))
-                        {
-                            return escapes(castOp.getResult());
-                        }
-
-                        return "converted";
-                    })
-                    .Case<mlir_ts::ReturnInternalOp, mlir_ts::ReturnValOp>([&](auto) { return "returned"; })
-                    .Default([&](auto) { return "unclassified"; });
-            if (!reason.empty())
-            {
-                return reason;
-            }
+            return reason;
         }
 
-        return "";
+        return loopCarried(site, walk) ? "loop-carried" : "";
     }
 
-    // A reference into the object: only loaded through or stored through. Anything else - a call
-    // taking it, a store of the reference itself - lets the object's address out.
-    llvm::StringRef fieldRefEscapes(mlir::Value fieldRef)
+    // One stack slot per site, reused by every iteration of a loop around it: the object of one
+    // iteration must be gone by the next. It is when nothing that is the object is used outside the
+    // innermost loop holding the site, and every local slot it was stored into is declared in that
+    // loop with an initializer - so each iteration re-initialises it before anything reads it.
+    bool loopCarried(mlir::Operation *site, stack_escape::StackEscapeFacts::Walk &walk)
     {
-        for (auto &use : fieldRef.getUses())
-        {
-            auto *user = use.getOwner();
-            if (isa<mlir_ts::LoadOp>(user))
-            {
-                continue;
-            }
-
-            if (auto storeOp = dyn_cast<mlir_ts::StoreOp>(user);
-                storeOp && storeOp.getReference() == fieldRef && storeOp.getValue() != fieldRef)
-            {
-                continue;
-            }
-
-            return "unclassified";
-        }
-
-        return "";
-    }
-
-    // `return p`: after the affine lowering a return stores into the function's return slot, which
-    // the single return block loads and returns.
-    static bool storesIntoReturnSlot(mlir_ts::StoreOp storeOp)
-    {
-        auto slot = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
-        if (!slot)
+        auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
+        auto &body = funcOp.getBody();
+        // one block has no loop, and has no dominator tree to ask
+        if (body.hasOneBlock())
         {
             return false;
         }
 
-        for (auto *user : slot->getUsers())
+        auto *siteOp = body.findAncestorOpInRegion(*site);
+        auto *loop = loopInfoOf(funcOp).getLoopFor(siteOp->getBlock());
+        if (!loop)
         {
-            if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(user))
+            return false;
+        }
+
+        auto inLoop = [&](mlir::Operation *op) {
+            auto *ancestor = body.findAncestorOpInRegion(*op);
+            return ancestor && loop->contains(ancestor->getBlock());
+        };
+
+        for (auto alias : walk.aliases)
+        {
+            for (auto *user : alias.getUsers())
             {
-                for (auto *loadUser : loadOp->getUsers())
+                if (!inLoop(user))
                 {
-                    if (isa<mlir_ts::ReturnInternalOp>(loadUser))
-                    {
-                        return true;
-                    }
+                    return true;
+                }
+            }
+        }
+
+        for (auto *slot : walk.slots)
+        {
+            if (!inLoop(slot) || slot->getNumOperands() == 0)
+            {
+                return true;
+            }
+
+            for (auto *user : slot->getUsers())
+            {
+                if (!inLoop(user))
+                {
+                    return true;
                 }
             }
         }
 
         return false;
+    }
+
+    mlir::CFGLoopInfo &loopInfoOf(mlir_ts::FuncOp funcOp)
+    {
+        auto &entry = loopInfos[funcOp];
+        if (!entry)
+        {
+            auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+            entry = std::make_shared<mlir::CFGLoopInfo>(domInfo.getDomTree(&funcOp.getBody()));
+        }
+
+        return *entry;
     }
 
     // The ops of `C..new` that make the object: its `ts.New` and what follows it up to the point

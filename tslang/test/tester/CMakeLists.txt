@@ -4134,9 +4134,17 @@ endif()
 
 # Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
 # model, JIT and ahead of time; the output must not depend on where an object lives.
-set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned)
+set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned
+    ctor_local borrow_uses pass_to_reader pass_to_keeper method_keeps_this virtual_one_keeps ctor_keeps_this
+    to_interface to_any pass_to_print loop_carried)
+# Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
+# they say nothing about promotion under own.
+set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
 foreach(stack_mm gc rc own none)
     foreach(stack_test ${stack_promotion_run_tests})
+        if (stack_mm STREQUAL "own" AND stack_test IN_LIST stack_promotion_not_own)
+            continue()
+        endif()
         tslang_add_test(NAME test-jit-${stack_mm}-stack-${stack_test} COMMAND test-runner -jit -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
         tslang_add_test(NAME test-compile-${stack_mm}-stack-${stack_test} COMMAND test-runner -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
     endforeach()
@@ -4162,13 +4170,27 @@ tslang_add_test(NAME test-jit-gc-stack-off-class-call COMMAND test-runner -jit -
 set(stack_promotion_decision_tests
     "literal_boxed_local|literal_boxed_local\.ts:6:19: remark: stack-promotion: stack"
     "leaf_local|leaf_local\.ts:11:19: remark: stack-promotion: stack"
-    "leaf_returned|leaf_returned\.ts:8:15: remark: stack-promotion: heap: returned")
+    "leaf_returned|leaf_returned\.ts:8:15: remark: stack-promotion: heap: returned"
+    "ctor_local|ctor_local\.ts:14:19: remark: stack-promotion: stack"
+    "borrow_uses|borrow_uses\.ts:17:15: remark: stack-promotion: stack.*borrow_uses\.ts:18:15: remark: stack-promotion: stack"
+    "pass_to_reader|pass_to_reader\.ts:18:19: remark: stack-promotion: stack"
+    "pass_to_keeper|pass_to_keeper\.ts:16:15: remark: stack-promotion: heap: argument"
+    "method_keeps_this|method_keeps_this\.ts:15:15: remark: stack-promotion: heap: argument"
+    "virtual_one_keeps|virtual_one_keeps\.ts:26:18: remark: stack-promotion: heap: argument"
+    "ctor_keeps_this|ctor_keeps_this\.ts:13:15: remark: stack-promotion: heap: argument"
+    "to_interface|to_interface\.ts:14:15: remark: stack-promotion: heap: converted"
+    "to_any|to_any\.ts:10:15: remark: stack-promotion: heap: converted"
+    "pass_to_print|pass_to_print\.ts:13:15: remark: stack-promotion: stack"
+    "loop_carried|loop_carried\.ts:13:19: remark: stack-promotion: heap: loop-carried")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
         string(SUBSTRING "${stack_case}" 0 ${stack_sep} stack_name)
         math(EXPR stack_sep "${stack_sep} + 1")
         string(SUBSTRING "${stack_case}" ${stack_sep} -1 stack_regex)
+        if (stack_mm STREQUAL "own" AND stack_name IN_LIST stack_promotion_not_own)
+            continue()
+        endif()
         add_test(NAME test-stack-decision-${stack_mm}-${stack_name}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
                          "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
