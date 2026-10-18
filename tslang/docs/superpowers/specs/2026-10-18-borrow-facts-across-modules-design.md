@@ -1,6 +1,6 @@
 # Borrow facts across modules
 
-Status: design, 2026-10-18. Not implemented. Follows
+Status: implemented 2026-10-18 on branch docs-borrow-facts-design (plan docs/superpowers/plans/2026-10-18-borrow-facts-across-modules.md). Follows
 `2026-10-18-stack-promotion-design.md` (sections 8.1 and 8.2) and its v1 and v1.1 implementations
 (PRs #605, #606).
 
