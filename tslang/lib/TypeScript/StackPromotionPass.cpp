@@ -40,6 +40,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     stack_escape::StackEscapeFacts *facts = nullptr;
     // shared: a pass is copied when the pass manager clones it
     llvm::DenseMap<mlir::Operation *, std::shared_ptr<mlir::CFGLoopInfo>> loopInfos;
+    llvm::DenseMap<mlir::Operation *, bool> tryRegions;
+    bool moduleUsesShared = false;
 
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StackPromotionPass)
@@ -54,6 +56,16 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         auto module = getOperation();
         stack_escape::StackEscapeFacts moduleFacts(module);
         facts = &moduleFacts;
+        moduleUsesShared = module
+                               .walk([](mlir::Operation *op) {
+                                   auto isShared = [](mlir::Type type) { return isa<mlir_ts::SharedType>(type); };
+                                   return isa<mlir_ts::SharedNewOp, mlir_ts::SharedCountOp, mlir_ts::SharedValueRefOp>(op) ||
+                                                  llvm::any_of(op->getResultTypes(), isShared) ||
+                                                  llvm::any_of(op->getOperandTypes(), isShared)
+                                              ? mlir::WalkResult::interrupt()
+                                              : mlir::WalkResult::advance();
+                               })
+                               .wasInterrupted();
 
         llvm::SmallVector<mlir::Operation *> sites;
         module.walk([&](mlir_ts::FuncOp funcOp) {
@@ -151,11 +163,23 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "unclassified";
         }
 
-        // version 1, until what the object owns is given back at scope exit (task 5)
-        MLIRTypeHelper mth(&getContext(), compileOptions);
-        if (mth.ownsHeapMemory(site->getLoc(), storageType))
+        // A promoted object gives back what it owns when its function returns, later than the heap
+        // object it replaces would have been destroyed. Only a Shared<T> handle's count can see
+        // that, so under the models that count, a module using Shared keeps every object that
+        // owns memory on the heap: a field of class type may hold a subclass with a handle in it.
+        if (compileOptions.tracksOwnership() && moduleUsesShared)
         {
-            return "unclassified";
+            MLIRTypeHelper mth(&getContext(), compileOptions);
+            if (mth.ownsHeapMemory(site->getLoc(), storageType))
+            {
+                return "shared-handle";
+            }
+        }
+
+        // version 1: an unwind path would need its own ts.ReleaseContents
+        if (hasTryRegion(site->getParentOfType<mlir_ts::FuncOp>()))
+        {
+            return "try-region";
         }
 
         if (isa<mlir_ts::SymbolCallInternalOp>(site) && newMethodBody(newMethodOf(site)).empty())
@@ -291,38 +315,97 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         return {};
     }
 
+    // A function with a try region: after the affine lowering, one with a landing pad.
+    bool hasTryRegion(mlir_ts::FuncOp funcOp)
+    {
+        auto it = tryRegions.find(funcOp);
+        if (it != tryRegions.end())
+        {
+            return it->second;
+        }
+
+        auto found = funcOp.walk([](mlir_ts::LandingPadOp) { return mlir::WalkResult::interrupt(); }).wasInterrupted();
+        tryRegions[funcOp] = found;
+        return found;
+    }
+
+    // The object goes to the function's entry block, where it is made once per call and dominates
+    // every use and every return; where the allocation was, ts.ReleaseContents `reset` gives back
+    // what the previous iteration's object owned and makes a fresh one. Under rc and own what the
+    // object owns is given back at every return too.
     void promote(mlir::Operation *site)
     {
+        auto funcOp = site->getParentOfType<mlir_ts::FuncOp>();
+        auto &entryBlock = funcOp.getBody().front();
+
+        mlir::Value stackObject;
+        mlir::OpBuilder builder(site);
         if (auto newOp = dyn_cast<mlir_ts::NewOp>(site))
         {
-            newOp.setStackAllocAttr(mlir::BoolAttr::get(&getContext(), true));
+            newOp.setStackAllocAttr(builder.getBoolAttr(true));
+            stackObject = newOp.getResult();
+            // where the allocation was - so before it moves, which the builder's position follows
+            builder.create<mlir_ts::ReleaseContentsOp>(site->getLoc(), stackObject, builder.getUnitAttr());
+            newOp->moveBefore(&entryBlock, entryBlock.begin());
+        }
+        else
+        {
+            // `new C()`: the body of `C..new` in place of the call, its `ts.New` on the stack
+            auto body = newMethodBody(newMethodOf(site));
+            mlir::IRMapping mapping;
+            for (auto *op : body)
+            {
+                if (auto newOp = dyn_cast<mlir_ts::NewOp>(op))
+                {
+                    mlir::OpBuilder entryBuilder(&entryBlock, entryBlock.begin());
+                    auto stackNewOp = entryBuilder.create<mlir_ts::NewOp>(site->getLoc(), newOp.getType(),
+                                                                          entryBuilder.getBoolAttr(true));
+                    // the call's ownership marks (`__owned_result`) describe the object it made
+                    for (auto attr : site->getDiscardableAttrs())
+                    {
+                        stackNewOp->setAttr(attr.getName(), attr.getValue());
+                    }
+
+                    stackObject = stackNewOp.getResult();
+                    mapping.map(newOp.getResult(), stackObject);
+                    builder.create<mlir_ts::ReleaseContentsOp>(site->getLoc(), stackObject, builder.getUnitAttr());
+                    continue;
+                }
+
+                builder.clone(*op, mapping)->setLoc(site->getLoc());
+            }
+
+            site->getResult(0).replaceAllUsesWith(stackObject);
+            site->erase();
+        }
+
+        if (!compileOptions.tracksOwnership())
+        {
             return;
         }
 
-        // `new C()`: the body of `C..new` in place of the call, its `ts.New` on the stack
-        auto body = newMethodBody(newMethodOf(site));
-        mlir::OpBuilder builder(site);
-        mlir::IRMapping mapping;
-        mlir::Value stackObject;
-        for (auto *op : body)
+        // nothing counts or destroys an immortal block: the object's own retains and releases are
+        // no-ops, and they go
+        for (auto *user : llvm::make_early_inc_range(stackObject.getUsers()))
         {
-            auto *clone = builder.clone(*op, mapping);
-            clone->setLoc(site->getLoc());
-            if (auto newOp = dyn_cast<mlir_ts::NewOp>(clone))
+            if (isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user))
             {
-                newOp.setStackAllocAttr(builder.getBoolAttr(true));
-                // the call's ownership marks (`__owned_result`) describe the object it made
-                for (auto attr : site->getDiscardableAttrs())
-                {
-                    newOp->setAttr(attr.getName(), attr.getValue());
-                }
-
-                stackObject = newOp.getResult();
+                user->erase();
             }
         }
 
-        site->getResult(0).replaceAllUsesWith(stackObject);
-        site->erase();
+        MLIRTypeHelper mth(&getContext(), compileOptions);
+        if (!mth.ownsHeapMemory(stackObject.getLoc(), storageTypeOf(stackObject.getType())))
+        {
+            return;
+        }
+
+        // A returned value was retained where the return stored it, before the branch to the
+        // return block: giving back the object's fields here cannot take it away.
+        funcOp.walk([&](mlir_ts::ReturnInternalOp returnOp) {
+            mlir::OpBuilder returnBuilder(returnOp);
+            returnBuilder.create<mlir_ts::ReleaseContentsOp>(returnOp.getLoc(), stackObject, mlir::UnitAttr());
+        });
     }
 };
 

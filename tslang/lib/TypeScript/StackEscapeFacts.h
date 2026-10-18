@@ -293,7 +293,8 @@ class StackEscapeFacts
     {
         for (auto *user : fieldRef.getUsers())
         {
-            if (isa<mlir_ts::LoadOp>(user))
+            // a release of the old value before a store, a retain of what it holds
+            if (isa<mlir_ts::LoadOp, mlir_ts::RetainSlotOp, mlir_ts::ReleaseSlotOp>(user))
             {
                 continue;
             }

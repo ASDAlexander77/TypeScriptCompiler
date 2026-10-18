@@ -484,6 +484,51 @@ class ReleaseOpLowering : public TsLlvmPattern<mlir_ts::ReleaseOp>
     }
 };
 
+// A promoted object's fields given back without freeing the object, and with `reset` the object
+// zeroed - a fresh one where its allocation was.
+class ReleaseContentsOpLowering : public TsLlvmPattern<mlir_ts::ReleaseContentsOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::ReleaseContentsOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReleaseContentsOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto instanceType = op.getInstance().getType();
+        mlir::Type storageType;
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(instanceType))
+        {
+            storageType = classType.getStorageType();
+        }
+        else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(instanceType))
+        {
+            storageType = valueRefType.getElementType();
+        }
+        else
+        {
+            return op.emitError("ts.ReleaseContents of a type with no storage: ") << instanceType;
+        }
+
+        if (tsLlvmContext->compileOptions.tracksOwnership())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitReleaseContents(storageType, transformed.getInstance());
+        }
+
+        if (op.getReset())
+        {
+            auto llvmStorageType = tch.convertType(storageType);
+            rewriter.create<LLVM::StoreOp>(op.getLoc(), rewriter.create<LLVM::ZeroOp>(op.getLoc(), llvmStorageType),
+                                           transformed.getInstance());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 // The slot-addressed forms. Same erasure rule, and erasing one of these takes the whole
 // access with it - there is no load to leave behind in a collected build.
 class RetainSlotOpLowering : public TsLlvmPattern<mlir_ts::RetainSlotOp>
@@ -8582,7 +8627,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 

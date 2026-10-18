@@ -4136,7 +4136,8 @@ endif()
 # model, JIT and ahead of time; the output must not depend on where an object lives.
 set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned
     ctor_local borrow_uses pass_to_reader pass_to_keeper method_keeps_this virtual_one_keeps ctor_keeps_this
-    to_interface to_any pass_to_print loop_carried)
+    to_interface to_any pass_to_print loop_carried
+    fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle)
 # Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
 # they say nothing about promotion under own.
 set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
@@ -4181,7 +4182,13 @@ set(stack_promotion_decision_tests
     "to_interface|to_interface\.ts:14:15: remark: stack-promotion: heap: converted"
     "to_any|to_any\.ts:10:15: remark: stack-promotion: heap: converted"
     "pass_to_print|pass_to_print\.ts:13:15: remark: stack-promotion: stack"
-    "loop_carried|loop_carried\.ts:13:19: remark: stack-promotion: heap: loop-carried")
+    "loop_carried|loop_carried\.ts:13:19: remark: stack-promotion: heap: loop-carried"
+    "fields_string|fields_string\.ts:15:19: remark: stack-promotion: stack"
+    "fields_object|fields_object\.ts:17:15: remark: stack-promotion: stack.*fields_object\.ts:17:25: remark: stack-promotion: heap: argument"
+    "field_overwrite|field_overwrite\.ts:10:15: remark: stack-promotion: stack"
+    "return_field|return_field\.ts:11:15: remark: stack-promotion: stack"
+    "try_region|try_region\.ts:10:15: remark: stack-promotion: heap: try-region"
+    "conditional_alloc|conditional_alloc\.ts:12:19: remark: stack-promotion: stack")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
@@ -4198,4 +4205,17 @@ foreach(stack_mm gc rc own none)
                              PROPERTIES PASS_REGULAR_EXPRESSION "${stack_regex}"
                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
     endforeach()
+endforeach()
+# The same site is a stack site where nothing counts, and a heap site where a Shared count would see it.
+foreach(stack_case "gc|stack" "none|stack" "rc|heap: shared-handle" "own|heap: shared-handle")
+    string(FIND "${stack_case}" "|" stack_sep)
+    string(SUBSTRING "${stack_case}" 0 ${stack_sep} stack_mm)
+    math(EXPR stack_sep "${stack_sep} + 1")
+    string(SUBSTRING "${stack_case}" ${stack_sep} -1 stack_expected)
+    add_test(NAME test-stack-decision-${stack_mm}-shared_handle
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                     "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/shared_handle.ts")
+    set_tests_properties(test-stack-decision-${stack_mm}-shared_handle
+                         PROPERTIES PASS_REGULAR_EXPRESSION "shared_handle\.ts:14:14: remark: stack-promotion: ${stack_expected}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
