@@ -4134,7 +4134,7 @@ endif()
 
 # Stack promotion (docs/superpowers/specs/2026-10-18-stack-promotion-design.md). Run tests: every
 # model, JIT and ahead of time; the output must not depend on where an object lives.
-set(stack_promotion_run_tests class_call_same_as_new)
+set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_local leaf_returned)
 foreach(stack_mm gc rc own none)
     foreach(stack_test ${stack_promotion_run_tests})
         tslang_add_test(NAME test-jit-${stack_mm}-stack-${stack_test} COMMAND test-runner -jit -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
@@ -4148,12 +4148,32 @@ add_test(NAME test-stack-promotion-report-reaches-stderr
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report
                  "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
 set_tests_properties(test-stack-promotion-report-reaches-stderr
-                     PROPERTIES PASS_REGULAR_EXPRESSION "remark: stack-promotion: pass-ran"
+                     PROPERTIES PASS_REGULAR_EXPRESSION "remark: stack-promotion: "
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 add_test(NAME test-stack-promotion-off
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report --no-stack-promotion
                  "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
 set_tests_properties(test-stack-promotion-off
                      PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Func"
-                                FAIL_REGULAR_EXPRESSION "pass-ran|Stack dump|Assertion failed")
+                                FAIL_REGULAR_EXPRESSION "stack-promotion:|Stack dump|Assertion failed")
 tslang_add_test(NAME test-jit-gc-stack-off-class-call COMMAND test-runner -jit -mm=gc -no-stack-promotion "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+
+# Decision tests: `<file>|<regex>`; the remark at the allocation site says stack, or heap and why.
+set(stack_promotion_decision_tests
+    "literal_boxed_local|literal_boxed_local\.ts:6:19: remark: stack-promotion: stack"
+    "leaf_local|leaf_local\.ts:11:19: remark: stack-promotion: stack"
+    "leaf_returned|leaf_returned\.ts:8:15: remark: stack-promotion: heap: returned")
+foreach(stack_mm gc rc own none)
+    foreach(stack_case ${stack_promotion_decision_tests})
+        string(FIND "${stack_case}" "|" stack_sep)
+        string(SUBSTRING "${stack_case}" 0 ${stack_sep} stack_name)
+        math(EXPR stack_sep "${stack_sep} + 1")
+        string(SUBSTRING "${stack_case}" ${stack_sep} -1 stack_regex)
+        add_test(NAME test-stack-decision-${stack_mm}-${stack_name}
+                 COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${stack_mm} --stack-promotion-report
+                         "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_name}.ts")
+        set_tests_properties(test-stack-decision-${stack_mm}-${stack_name}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "${stack_regex}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
+endforeach()

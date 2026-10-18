@@ -3325,7 +3325,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = ch.Alloca(tch.convertType(storageType), 1);
+            value = ch.StackBlockAlloc(tch.convertType(storageType));
         }
         else
         {
