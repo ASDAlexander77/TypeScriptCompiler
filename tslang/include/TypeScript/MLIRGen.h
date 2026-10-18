@@ -24,6 +24,10 @@ class StringRef;
 namespace typescript
 {
 
+// `<stem>_<hash of the canonical path>`: the suffix of a module's exported marker symbols
+// (`__tsmm_`, `__tsown_`, `__tsborrow_`), unique per source file.
+::std::string moduleSymbolSuffix(llvm::StringRef filePath);
+
 ::std::string dumpFromSource(const llvm::StringRef &, const llvm::StringRef &);
 
 mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromMainSource(

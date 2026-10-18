@@ -212,6 +212,13 @@
 // under own report more, while the facts a callee's body relies on cannot be seen by an importer
 // that re-parses source, and would free twice there.
 #define SHARED_LIB_OWN_FACTS "__tsown_"
+// Which parameters of a module's functions their bodies only borrow, for stack promotion in a
+// program linked statically against it: `__tsborrow_<file>_<hash>`, a NUL-terminated char array
+// (not a pointer, so it can be read from an object file without relocations), one line per
+// function: `<symbol> <index>...`. See docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md.
+#define SHARED_LIB_BORROW_FACTS "__tsborrow_"
+// [symbol name, text]: set by BorrowFactsExportPass, made into the symbol by the LLVM lowering
+#define SHARED_LIB_BORROW_FACTS_ATTR_NAME "ts.borrow_facts"
 // a module attribute, so it has to carry the dialect's prefix
 #define SHARED_LIB_OWN_NO_DROPS_ATTR_NAME "ts.own_imported_no_drops"
 

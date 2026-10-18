@@ -80,6 +80,7 @@ extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
 extern cl::opt<bool> ownSkipInference;
 extern cl::opt<bool> noStackPromotion;
+extern cl::opt<bool> noBorrowFactsExport;
 extern cl::opt<unsigned> stackPromotionMaxObject;
 extern cl::opt<unsigned> stackPromotionMaxFrame;
 extern cl::opt<bool> stackPromotionReport;
@@ -152,6 +153,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
             // an `await`'s continuation and a `for await` body, outlined by the async lowering
             pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
+        }
+
+        // What this module promises importers about its parameters, whether or not it promotes
+        // anything itself. Nothing imports a JIT-run program.
+        if (!compileOptions.isJit && !noBorrowFactsExport)
+        {
+            pm.addPass(mlir::typescript::createBorrowFactsExportPass(
+                SHARED_LIB_BORROW_FACTS + typescript::moduleSymbolSuffix(inputFilename)));
         }
 
         // Under every model, after own's inference: what it decides about a stack object's retains

@@ -61,6 +61,11 @@ struct StackPromotionLimits
 /// model. Runs on the whole module at the affine level, after own's inference.
 std::unique_ptr<mlir::Pass> createStackPromotionPass(CompileOptions &, StackPromotionLimits);
 
+/// Writes the module's borrow facts - which parameters of its functions their bodies only borrow -
+/// into the exported char array `symbolName` (`__tsborrow_<file>_<hash>`), for programs linked
+/// statically against it. See docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md.
+std::unique_ptr<mlir::Pass> createBorrowFactsExportPass(std::string symbolName);
+
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions&);
 std::unique_ptr<mlir::Pass> createProcessHeapPass();

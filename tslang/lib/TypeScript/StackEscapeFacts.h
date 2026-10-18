@@ -30,10 +30,18 @@ namespace stack_escape
 
 namespace mlir_ts = mlir::typescript;
 
+// Facts another module published (its __tsborrow_ text): function symbol -> the indexes of the
+// parameters its body only borrows.
+using BorrowFactsMap = llvm::StringMap<llvm::SmallVector<unsigned>>;
+
 class StackEscapeFacts
 {
   public:
-    explicit StackEscapeFacts(mlir::ModuleOp module) : module(module)
+    // trustLocalVTables: whether a vtable this module keeps to itself lists every method a virtual
+    // call may reach. Not when the facts are for importers, who may subclass any class.
+    explicit StackEscapeFacts(mlir::ModuleOp module, bool trustLocalVTables = true,
+                              const BorrowFactsMap *imported = nullptr)
+        : module(module), trustLocalVTables(trustLocalVTables), imported(imported)
     {
         collectVTables();
 
@@ -112,6 +120,13 @@ class StackEscapeFacts
         return recursive->contains(funcOp);
     }
 
+    // A parameter of a function with a body that nothing done with it lets outlive the call.
+    bool paramBorrowed(mlir_ts::FuncOp funcOp, unsigned index) const
+    {
+        auto it = paramEscapes.find({funcOp, index});
+        return it != paramEscapes.end() && !it->second;
+    }
+
     // Whether argument `argIndex` of a call through `candidates` may outlive the call: empty when
     // every candidate's parameter stays inside it.
     llvm::StringRef argumentEscapes(llvm::ArrayRef<mlir::FlatSymbolRefAttr> candidates, unsigned argIndex)
@@ -135,6 +150,8 @@ class StackEscapeFacts
 
   private:
     mlir::ModuleOp module;
+    bool trustLocalVTables;
+    const BorrowFactsMap *imported;
     std::optional<llvm::SmallPtrSet<mlir::Operation *, 16>> recursive;
 
     // Every function on a cycle of the call graph, in one pass (Tarjan's strongly connected
@@ -322,7 +339,7 @@ class StackEscapeFacts
 
             auto &vtable = vtables[name.drop_back(strlen("..vtbl"))];
             auto linkage = globalOp->getAttrOfType<mlir::LLVM::LinkageAttr>("linkage");
-            vtable.local = linkage && (linkage.getLinkage() == mlir::LLVM::Linkage::Private ||
+            vtable.local = trustLocalVTables && linkage && (linkage.getLinkage() == mlir::LLVM::Linkage::Private ||
                                        linkage.getLinkage() == mlir::LLVM::Linkage::Internal);
             globalOp.walk([&](mlir_ts::InsertPropertyOp insertOp) {
                 auto symbolRef = insertOp.getValue().getDefiningOp<mlir_ts::SymbolRefOp>();
