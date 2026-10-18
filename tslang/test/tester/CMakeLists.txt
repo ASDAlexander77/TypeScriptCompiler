@@ -631,6 +631,7 @@ tslang_add_test(NAME test-compile-00-interface-instanceof COMMAND test-runner "$
 tslang_add_test(NAME test-compile-01-any COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01any.ts")
 tslang_add_test(NAME test-compile-00-any-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
 tslang_add_test(NAME test-compile-00-any-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_compare.ts")
+tslang_add_test(NAME test-compile-00-any-truthiness-objects COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_truthiness_objects.ts")
 tslang_add_test(NAME test-compile-00-any-generic-equals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_generic_equals.ts")
 tslang_add_test(NAME test-compile-00-generator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator.ts")
 tslang_add_test(NAME test-compile-00-generator-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator2.ts")
@@ -1183,6 +1184,7 @@ tslang_add_test(NAME test-jit-00-interface-instanceof COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-01-any COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01any.ts")
 tslang_add_test(NAME test-jit-00-any-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_types.ts")
 tslang_add_test(NAME test-jit-00-any-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_compare.ts")
+tslang_add_test(NAME test-jit-00-any-truthiness-objects COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_truthiness_objects.ts")
 tslang_add_test(NAME test-jit-00-any-generic-equals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_generic_equals.ts")
 tslang_add_test(NAME test-jit-00-generator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator.ts")
 tslang_add_test(NAME test-jit-00-generator-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator2.ts")
@@ -1785,6 +1787,7 @@ tslang_add_test(NAME test-jit-none-strings COMMAND test-runner -jit -mm=none "${
 
 # every single-file test the default model runs, in either tier
 set(TSLANG_CORPUS
+    00any_truthiness_objects.ts
     00add_promotes_both_operands.ts
     00conditional_owned_result.ts
     00const_array_nested_elements.ts
