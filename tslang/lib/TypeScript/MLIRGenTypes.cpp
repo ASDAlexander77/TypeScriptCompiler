@@ -924,6 +924,7 @@ namespace mlirgen
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"Shared", true }, // a counted handle, own spec 23
+            {"CVarArgs", true }, // a C variadic function type, see getCVarArgsType
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -1014,6 +1015,7 @@ namespace mlirgen
             {"Ref", true }, // alias of Reference
             {"BoxedObject", true }, // an object held by reference, see MLIRPrinter::printBoxedObjectTypes
             {"Shared", true }, // a counted handle, own spec 23
+            {"CVarArgs", true }, // a C variadic function type, see getCVarArgsType
             {"ThisType", true },
             //{"Array", true }
         };
@@ -1165,7 +1167,7 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, Shared, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
+            None, TypeOf, Reference, BoxedObject, Shared, CVarArgs, FirstTypeArgument, NonNullable, Array, ReadonlyArray, ReturnType,
             Parameters, ThisParameterType, OmitThisParameter, Uppercase, Lowercase, Capitalize, Uncapitalize
         };
 
@@ -1174,6 +1176,7 @@ namespace mlirgen
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("Shared", EmbeddedType::Shared)
+            .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Cases("Readonly", "Partial", "Required", "ThisType", EmbeddedType::FirstTypeArgument)
             .Case("NonNullable", EmbeddedType::NonNullable)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
@@ -1211,6 +1214,8 @@ namespace mlirgen
                 return getObjectType(type);
             case EmbeddedType::Shared:
                 return mlir_ts::SharedType::get(type);
+            case EmbeddedType::CVarArgs:
+                return getCVarArgsType(type);
             case EmbeddedType::FirstTypeArgument:
                 return type;
             case EmbeddedType::NonNullable:
@@ -1267,7 +1272,7 @@ namespace mlirgen
     {
         enum class EmbeddedType
         {
-            None, TypeOf, Reference, BoxedObject, Shared, ThisType, Array
+            None, TypeOf, Reference, BoxedObject, Shared, CVarArgs, ThisType, Array
         };
 
         auto kind = llvm::StringSwitch<EmbeddedType>(name)
@@ -1275,6 +1280,7 @@ namespace mlirgen
             .Cases("Reference", "Ref", EmbeddedType::Reference)
             .Case("BoxedObject", EmbeddedType::BoxedObject)
             .Case("Shared", EmbeddedType::Shared)
+            .Case("CVarArgs", EmbeddedType::CVarArgs)
             .Case("ThisType", EmbeddedType::ThisType)
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
             .Case("Array", EmbeddedType::Array)
@@ -1298,6 +1304,8 @@ namespace mlirgen
             case EmbeddedType::Shared:
                 // the type argument is not checked above in this variant
                 return type ? mlir_ts::SharedType::get(type) : mlir::Type();
+            case EmbeddedType::CVarArgs:
+                return type ? getCVarArgsType(type) : mlir::Type();
             case EmbeddedType::ThisType:
                 return type;
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS
@@ -2875,6 +2883,29 @@ namespace mlirgen
                                           bool isVarArg)
     {
         return mlir_ts::FunctionType::get(builder.getContext(), inputs, results, isVarArg);
+    }
+
+    // `CVarArgs<(format: string) => s32>`: the type of a C variadic function, as
+    // `@varargs declare function printf(format: string): s32` has it - how a declaration names
+    // one (__decls prints it so, see MLIRPrinter). It is a plain function (one pointer, as in C)
+    // even where the arrow type alone would be a hybrid one: C code has no `this` to pass, and an
+    // importer must store it the way its library does. Not a function type: no type.
+    mlir::Type MLIRGenImpl::getCVarArgsType(mlir::Type type)
+    {
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+        {
+            return mlir_ts::FunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults(),
+                                              funcType.isVarArg(), /*isCVarArg=*/true);
+        }
+
+        if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(type))
+        {
+            return mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(),
+                                              hybridFuncType.getResults(), hybridFuncType.isVarArg(),
+                                              /*isCVarArg=*/true);
+        }
+
+        return mlir::Type();
     }
 
     mlir_ts::ExtensionFunctionType MLIRGenImpl::getExtensionFunctionType(mlir_ts::FunctionType funcType)

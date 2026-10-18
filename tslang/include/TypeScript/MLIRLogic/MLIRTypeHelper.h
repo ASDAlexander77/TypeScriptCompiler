@@ -910,6 +910,23 @@ class MLIRTypeHelper
         return isVarArg;
     }
 
+    // a C variadic function (`@varargs`), held as a function or a hybrid function
+    bool getCVarArgFromFuncRef(mlir::Type funcType)
+    {
+        funcType = stripOptionalType(funcType);
+        if (auto func = dyn_cast<mlir_ts::FunctionType>(funcType))
+        {
+            return func.isCVarArg();
+        }
+
+        if (auto hybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(funcType))
+        {
+            return hybridFunc.isCVarArg();
+        }
+
+        return false;
+    }
+
     mlir::Type getOmitThisFunctionTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
@@ -1806,6 +1823,13 @@ class MLIRTypeHelper
         auto leftIsVarArg = getVarArgFromFuncRef(typeLeft);
         auto rightIsVarArg = getVarArgFromFuncRef(typeRight);
 
+        // a C variadic function and a TypeScript one are called differently: no common type
+        auto isCVarArg = getCVarArgFromFuncRef(typeLeft);
+        if (isCVarArg != getCVarArgFromFuncRef(typeRight))
+        {
+            return mlir::Type();
+        }
+
         auto hybridFuncIsNeeded = false;
         if (!isLeftTypeFunc)
         {
@@ -1844,7 +1868,7 @@ class MLIRTypeHelper
                 return typeLeft;
             }
 
-            return mlir_ts::HybridFunctionType::get(context, leftInputs, leftResults, leftIsVarArg);
+            return mlir_ts::HybridFunctionType::get(context, leftInputs, leftResults, leftIsVarArg, isCVarArg);
         }
 
         return mlir::Type();

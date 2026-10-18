@@ -2151,8 +2151,9 @@ class MLIRGenImpl
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
-        // this is 'let', if 'let' is func, it should be HybridFunction
-        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+        // this is 'let', if 'let' is func, it should be HybridFunction. Not a C variadic
+        // function: it is one pointer, as in C (see getCVarArgsType).
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
         {
             actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
         }
@@ -2210,10 +2211,12 @@ class MLIRGenImpl
         // (adjustLocalVariableType): as a hybrid function. Its declaration in __decls,
         // `let f : (p0: number) => number`, reads back as one, so a library inferring a plain
         // function from its initializer stored a smaller value than its importers loaded - the
-        // call's arguments landed in the wrong place and it returned garbage.
+        // call's arguments landed in the wrong place and it returned garbage. A C variadic
+        // function stays one pointer: its declaration, `let f : CVarArgs<(p0: string) => s32>`,
+        // reads back as one (getCVarArgsType).
         if (variableDeclarationInfo.isExport || variableDeclarationInfo.isImport || variableDeclarationInfo.isExternal)
         {
-            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType))
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(actualType); funcType && !funcType.isCVarArg())
             {
                 actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
             }
@@ -8685,30 +8688,33 @@ class MLIRGenImpl
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              SmallVector<mlir::Value, 4> &operands, const GenContext &genContext,
-                                             ArrayRef<mlir::NamedAttribute> callAttrs = {})
+                                             ArrayRef<mlir::NamedAttribute> callAttrs = {}, int hiddenOperandsCount = 0)
     {
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext, callAttrs);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext, callAttrs,
+                                   hiddenOperandsCount);
     }
 
     // `callAttrs` go on the call (CallIndirectOp): CPP_CALL_ATTR_NAME, SRET_ARG_ATTR_NAME
+    // `hiddenOperandsCount`: the leading `operands` the user did not write either (a @cpp method's
+    // result slot, and its `this` when that is passed after the slot)
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                             const GenContext &genContext, ArrayRef<mlir::NamedAttribute> callAttrs = {})
+                                             const GenContext &genContext, ArrayRef<mlir::NamedAttribute> callAttrs = {},
+                                             int hiddenOperandsCount = 0)
     {
         // `thisValue` is the one operand a call gets that the user did not write: the object of
         // a method or constructor call (a bound function), the capture of a closure (also a
         // bound function) or the receiver of an extension function. Callees reached without
         // it take only what the user wrote.
-        auto hiddenOperandsCount = 0;
         if (thisValue)
         {
             operands.insert(operands.begin(), thisValue);
-            hiddenOperandsCount = 1;
+            hiddenOperandsCount++;
         }
 
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
-                                             hiddenOperandsCount, genContext)))
+                                             hiddenOperandsCount, isCVarArgFunctionType(calledFuncType), genContext)))
         {
             return mlir::failure();
         }
@@ -8827,17 +8833,27 @@ class MLIRGenImpl
         return funcOp && funcOp.getBody().empty();
     }
 
-    // A call with fewer arguments than the callee needs is TypeScript's TS2554. Only a parameter
-    // whose type admits `undefined` itself may be left out - an optional (`b?: T`) or a
-    // default-valued (`b = 5`) one, both typed !ts.optional, and an `undefined` or `void` one.
-    // A rest parameter is never required. Any other missing parameter is an error; padding it
-    // with undef would hand the callee garbage.
+    // A C variadic function, declared `@varargs declare function f(n: s32)` (tsbindgen writes
+    // them so): its arguments after the declared ones go to C's `...`. Its type says so, whether
+    // it is called by name or through a value of it (a function or a hybrid function).
+    bool isCVarArgFunctionType(mlir::Type type)
+    {
+        return mth.getCVarArgFromFuncRef(type);
+    }
+
+    // A call with fewer arguments than the callee needs, or more than it takes, is TypeScript's
+    // TS2554. Only a parameter whose type admits `undefined` itself may be left out - an optional
+    // (`b?: T`) or a default-valued (`b = 5`) one, both typed !ts.optional, and an `undefined` or
+    // `void` one. A rest parameter is never required and takes any number of arguments. Any other
+    // missing parameter is an error; padding it with undef would hand the callee garbage. An
+    // extra argument would be passed in a slot the callee does not have.
     //
     // `operandsCount` and the indices of `argFuncTypes` include the `hiddenOperandsCount`
-    // leading operands the compiler inserted (`this`, a closure's capture); the message counts
-    // only what the user wrote. Too many arguments is not checked here.
+    // leading operands the compiler inserted (`this`, a closure's capture, a @cpp method's
+    // result slot); the message counts only what the user wrote. A C variadic callee
+    // (`isCVarArg`, isCVarArgFunctionType) takes any number of arguments after its declared ones.
     mlir::LogicalResult checkCallArity(mlir::Location location, int operandsCount, mlir::ArrayRef<mlir::Type> argFuncTypes,
-                                       bool isVarArg, int hiddenOperandsCount)
+                                       bool isVarArg, int hiddenOperandsCount, bool isCVarArg)
     {
         auto isOmittable = [](mlir::Type type) {
             return isa<mlir_ts::OptionalType, mlir_ts::UndefinedType, mlir_ts::VoidType>(type);
@@ -8846,17 +8862,17 @@ class MLIRGenImpl
         // the parameters before the rest parameter, if any
         int paramsEnd = argFuncTypes.size() - (isVarArg ? 1 : 0);
 
-        auto missingRequired = false;
+        auto wrongCount = !isVarArg && !isCVarArg && operandsCount > paramsEnd;
         for (auto i = operandsCount; i < paramsEnd; i++)
         {
             if (!isOmittable(argFuncTypes[i]))
             {
-                missingRequired = true;
+                wrongCount = true;
                 break;
             }
         }
 
-        if (!missingRequired)
+        if (!wrongCount)
         {
             return mlir::success();
         }
@@ -8892,25 +8908,64 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    // C's default argument promotions, which a caller applies to what it passes to `...`: a float
+    // narrower than a double is passed as a double, an integer narrower than an int (and a
+    // boolean) as an int. printf reads `%f` as a double; an f32 passed as is printed 0.000000.
+    mlir::LogicalResult promoteCVarArgOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
+                                               int fixedOperandsCount, const GenContext &genContext)
+    {
+        for (auto i = fixedOperandsCount; i < (int)operands.size(); i++)
+        {
+            auto type = mth.stripLiteralType(operands[i].getType());
+            mlir::Type promotedType;
+            if (auto floatType = dyn_cast<mlir::FloatType>(type); floatType && floatType.getWidth() < 64)
+            {
+                promotedType = getNumberType();
+            }
+            else if (auto intType = dyn_cast<mlir::IntegerType>(type); intType && intType.getWidth() < 32)
+            {
+                promotedType = builder.getIntegerType(32, intType.getSignedness());
+            }
+            else if (isa<mlir_ts::BooleanType>(type))
+            {
+                promotedType = builder.getIntegerType(32, mlir::IntegerType::Signed);
+            }
+
+            if (promotedType)
+            {
+                auto result = cast(location, promotedType, operands[i], genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                operands[i] = V(result);
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenPrepareCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg,
-                                            int hiddenOperandsCount, const GenContext &genContext)
+                                            int hiddenOperandsCount, bool isCVarArg, const GenContext &genContext)
     {
         int opArgsCount = operands.size();
         int funcArgsCount = argFuncTypes.size();
+
+        if (mlir::failed(checkCallArity(location, opArgsCount, argFuncTypes, isVarArg, hiddenOperandsCount, isCVarArg)))
+        {
+            return mlir::failure();
+        }
 
         if (mlir::failed(mlirGenAdjustOperandTypes(location, operands, argFuncTypes, isVarArg, genContext)))
         {
             return mlir::failure();
         }
 
+        if (isCVarArg && mlir::failed(promoteCVarArgOperands(location, operands, funcArgsCount, genContext)))
+        {
+            return mlir::failure();
+        }
+
         if (funcArgsCount > opArgsCount)
         {
-            if (mlir::failed(checkCallArity(location, opArgsCount, argFuncTypes, isVarArg, hiddenOperandsCount)))
-            {
-                return mlir::failure();
-            }
-
             auto lastArgIndex = argFuncTypes.size() - 1;
 
             // -1 to exclude count params
@@ -13155,6 +13210,8 @@ class MLIRGenImpl
                                           bool isVarArg);
 
     mlir_ts::ExtensionFunctionType getExtensionFunctionType(mlir_ts::FunctionType funcType);
+
+    mlir::Type getCVarArgsType(mlir::Type type);
 
     mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext);
 

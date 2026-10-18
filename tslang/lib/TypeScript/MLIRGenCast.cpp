@@ -1686,7 +1686,8 @@ namespace mlirgen
             {
                 auto funcValue = builder.create<mlir_ts::CastOp>(
                     location,
-                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg()),
+                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(),
+                                               hybridFuncType.isVarArg(), hybridFuncType.isCVarArg()),
                     value);
                 return V(builder.create<mlir_ts::CastOp>(location, type, funcValue));
             }
@@ -1746,6 +1747,16 @@ namespace mlirgen
                 // need to instantiate generic method
                 auto result = instantiateSpecializedFunction(location, value, type, genContext);
                 EXIT_IF_FAILED(result);
+            }
+
+            // A C variadic function is called with C's variadic convention and a TypeScript
+            // function is not, so neither stands in for the other: through a value of the wrong
+            // kind the extra arguments would land in the wrong registers.
+            if (isCVarArgFunctionType(valueType) != isCVarArgFunctionType(type))
+            {
+                emitError(location, "can't assign '")
+                    << to_print(valueType) << "' to '" << to_print(type) << "': only one of them is a C variadic function";
+                return mlir::failure();
             }
 
             // fall through to finish cast operation

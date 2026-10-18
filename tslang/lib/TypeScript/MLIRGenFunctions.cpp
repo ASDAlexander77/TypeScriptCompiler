@@ -578,6 +578,17 @@ namespace mlirgen
         auto dllExport = processFunctionAttributes(location, fullName, functionLikeDeclarationBaseAST, attrs, funcProtoGenContext,
             suppressExportForGenericInstantiation);
 
+        // A C variadic function (`@varargs`) says so in its type, so a call through a value of
+        // it - `let p = printf`, a `typeof printf` parameter - is a variadic call too. The type
+        // comes here from several places (discovered, cached, declared), so it is set here.
+        if (funcType && !funcType.isCVarArg() && llvm::any_of(attrs, [](mlir::NamedAttribute &attr) {
+                return attr.getName() == "func.varargs";
+            }))
+        {
+            funcType = mlir_ts::FunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults(),
+                                                  funcType.isVarArg(), /*isCVarArg=*/true);
+        }
+
         if (funcType)
         {
             auto it = getCaptureVarsMap().find(funcProto->getName());

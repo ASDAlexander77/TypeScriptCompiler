@@ -306,6 +306,7 @@ tslang_add_test(NAME test-compile-00-funcs-nesting COMMAND test-runner "${PROJEC
 tslang_add_test(NAME test-compile-00-funcs-nesting-generic COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_generic.ts")
 tslang_add_test(NAME test-compile-00-funcs-nesting-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 tslang_add_test(NAME test-compile-00-funcs-hybrid-null-this COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
+tslang_add_test(NAME test-compile-00-funcs-c-varargs-storage COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_c_varargs_storage.ts")
 tslang_add_test(NAME test-compile-00-typeof-static-fold COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
 tslang_add_test(NAME test-compile-00-typeof-function-narrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-compile-00-typeof-static-fold-conditions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
@@ -859,6 +860,7 @@ tslang_add_test(NAME test-jit-00-funcs-nesting COMMAND test-runner -jit "${PROJE
 tslang_add_test(NAME test-jit-00-funcs-nesting-generic COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_generic.ts")
 tslang_add_test(NAME test-jit-00-funcs-nesting-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_nesting_capture.ts")
 tslang_add_test(NAME test-jit-00-funcs-hybrid-null-this COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_hybrid_null_this.ts")
+tslang_add_test(NAME test-jit-00-funcs-c-varargs-storage COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_c_varargs_storage.ts")
 tslang_add_test(NAME test-jit-00-typeof-static-fold COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold.ts")
 tslang_add_test(NAME test-jit-00-typeof-function-narrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_function_narrowing.ts")
 tslang_add_test(NAME test-jit-00-typeof-static-fold-conditions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00typeof_static_fold_conditions.ts")
@@ -1385,6 +1387,7 @@ tslang_add_test(NAME test-compile-export-import-declare-linkname COMMAND test-ru
 tslang_add_test(NAME test-compile-export-import-owned-returns COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_owned_returns.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_owned_returns.ts")
 tslang_add_test(NAME test-compile-export-import-const-locals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-compile-export-import-const-functions COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-compile-export-import-c-varargs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-compile-export-import-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 # `import './export_os_suffix'` takes the target's file, export_os_suffix.win32.ts or
 # export_os_suffix.linux.ts: the host's is compiled and linked beside it, and the import's
@@ -1493,6 +1496,7 @@ tslang_add_test(NAME test-compile-shared-export-import-owned-returns COMMAND tes
 tslang_add_test(NAME test-compile-shared-export-import-gc-single-collector COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 tslang_add_test(NAME test-compile-shared-export-import-const-locals COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-compile-shared-export-import-const-functions COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-compile-shared-export-import-c-varargs COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-compile-shared-export-import-generators COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 tslang_add_test(NAME test-compile-shared-export-import-class-extends COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-compile-shared-export-import-throw-class COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
@@ -1604,6 +1608,7 @@ tslang_add_test(NAME test-jit-shared-export-import-owned-returns COMMAND test-ru
 tslang_add_test(NAME test-jit-shared-export-import-gc-single-collector COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_gc_single_collector.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_gc_single_collector.ts")
 tslang_add_test(NAME test-jit-shared-export-import-const-locals COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_locals.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_locals.ts")
 tslang_add_test(NAME test-jit-shared-export-import-const-functions COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_const_functions.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_const_functions.ts")
+tslang_add_test(NAME test-jit-shared-export-import-c-varargs COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_c_varargs.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_c_varargs.ts")
 tslang_add_test(NAME test-jit-shared-export-import-generators COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_generators.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_generators.ts")
 tslang_add_test(NAME test-jit-shared-export-import-class-extends COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_extends.ts")
 tslang_add_test(NAME test-jit-shared-export-import-throw-class COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_throw_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_throw_class.ts")
@@ -1925,6 +1930,7 @@ set(TSLANG_CORPUS
     00for_of.ts
     00for.ts
     00funcs_bindings.ts
+    00funcs_c_varargs_storage.ts
     00funcs_capture.ts
     00funcs_expression_generic.ts
     00funcs_expression_iterator.ts
@@ -2713,7 +2719,9 @@ set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
 
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
-# not padded with undef. Each file in call-arity/ makes one bad call; the test passes when
+# not padded with undef; so is one with more arguments than the callee has parameters
+# (too_many_*), which went silently into a slot the callee does not have (a rest parameter
+# takes any number). Each file in call-arity/ makes one bad call; the test passes when
 # the compiler prints the expected message. The counts are what the user wrote, so `this`
 # (a method, a constructor) and a closure's capture are not counted. Plain add_test: these
 # compile nothing, so they need no x86 twin.
@@ -2727,7 +2735,15 @@ set(call_arity_cases
     "declared|Expected 2 arguments, but got 1\\."
     "varargs|Expected at least 1 arguments, but got 0\\."
     "optional_call|Expected 2 arguments, but got 1\\."
-    "optional_call_value|Expected 2 arguments, but got 1\\.")
+    "optional_call_value|Expected 2 arguments, but got 1\\."
+    "too_many_plain|Expected 2 arguments, but got 3\\."
+    "too_many_optional|Expected 2\\-3 arguments, but got 4\\."
+    "too_many_method|Expected 2 arguments, but got 3\\."
+    "too_many_constructor|Expected 2 arguments, but got 3\\."
+    "too_many_closure|Expected 2 arguments, but got 3\\."
+    "too_many_optional_call|Expected 2 arguments, but got 3\\."
+    "too_many_value|Expected 1 arguments, but got 2\\."
+    "too_many_param|Expected 1 arguments, but got 2\\.")
 foreach(call_arity_case ${call_arity_cases})
     string(FIND "${call_arity_case}" "|" call_arity_sep)
     string(SUBSTRING "${call_arity_case}" 0 ${call_arity_sep} call_arity_name)
@@ -3733,6 +3749,29 @@ endforeach()
 # The calls the check must still accept: an omitted optional, default-valued or void
 # parameter, and varargs with and without extra arguments.
 tslang_add_test(NAME test-compile-call-arity-positive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/call-arity/positive.ts")
+
+# A C variadic function (`@varargs`) called through a value of it - a `let`, a `typeof printf`
+# parameter - is a variadic call, as a call by name is. Lowered as a fixed-arity call, a double
+# printed 0.000000 on Win64; since the arity check it was "Expected 1 arguments, but got 2.".
+# The arguments to `...` get C's default promotions (an f32 printed 0.000000 even by name).
+add_test(NAME test-jit-c-varargs-value-call
+         COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib
+                 --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                 "${PROJECT_SOURCE_DIR}/test/tester/c-varargs/value_call.ts")
+set_tests_properties(test-jit-c-varargs-value-call
+                     PROPERTIES PASS_REGULAR_EXPRESSION "direct 1\\.500000.*let 1\\.500000.*no extra arguments.*param 1\\.500000.*mixed 7 2\\.500000 9 0\\.250000.*param 1\\.500000.*mixed 7 2\\.500000 9 0\\.250000.*promoted 1\\.500000 -3 1.*promoted 1\\.500000 -3 1"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|error:|0\\.000000")
+
+# A C variadic function type and a plain one do not stand in for each other, either way.
+foreach(c_varargs_name to_plain from_plain)
+    add_test(NAME test-compile-c-varargs-${c_varargs_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/c-varargs/${c_varargs_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/c-varargs-${c_varargs_name}.obj")
+    set_tests_properties(test-compile-c-varargs-${c_varargs_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "only one of them is a C variadic function"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 
 # A declared function with a second signature: one external symbol has one signature, and the
 # error says so (it was "redefinition of symbol").

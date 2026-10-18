@@ -17,7 +17,14 @@ function withUndefined(a: number, u: undefined) {
     return a;
 }
 
+function fixed(a: number, b: number) {
+    return a + b;
+}
+
 function main() {
+    // a tuple spread fills exactly the parameters it has elements for
+    const pair: [number, number] = [1, 2];
+    assert(fixed(...pair) == 3);
     assert(opt(1, 2) == 3);
     assert(def(1) == 6);
     assert(va(1) == 1);
