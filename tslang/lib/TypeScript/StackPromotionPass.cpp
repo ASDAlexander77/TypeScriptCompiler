@@ -39,6 +39,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     CompileOptions compileOptions;
     mlir_ts::StackPromotionLimits limits;
     stack_escape::StackEscapeFacts *facts = nullptr;
+    // what the libraries this program is linked against published (CompileOptions::importedBorrowFacts)
+    stack_escape::BorrowFactsMap importedFacts;
     // shared: a pass is copied when the pass manager clones it
     llvm::DenseMap<mlir::Operation *, std::shared_ptr<mlir::CFGLoopInfo>> loopInfos;
     llvm::DenseMap<mlir::Operation *, bool> tryRegions;
@@ -49,7 +51,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StackPromotionPass)
 
     StackPromotionPass(CompileOptions &compileOptions, mlir_ts::StackPromotionLimits limits)
-        : compileOptions(compileOptions), limits(limits)
+        : compileOptions(compileOptions), limits(limits),
+          importedFacts(stack_escape::parseBorrowFacts(compileOptions.importedBorrowFacts))
     {
     }
 
@@ -60,7 +63,7 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         loopInfos.clear();
         tryRegions.clear();
         coroutines.clear();
-        stack_escape::StackEscapeFacts moduleFacts(module);
+        stack_escape::StackEscapeFacts moduleFacts(module, /*trustLocalVTables=*/true, &importedFacts);
         facts = &moduleFacts;
         moduleUsesShared = module
                                .walk([](mlir::Operation *op) {

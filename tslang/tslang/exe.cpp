@@ -57,6 +57,8 @@ extern cl::opt<bool> verbose;
 std::string getDefaultOutputFileName(enum Action);
 std::string mergeWithDefaultLibPath(std::string, std::string);
 std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
+std::string getDefaultLibBinary(bool, const CompileOptions &, const llvm::Triple &);
+std::string resolveLinkLibrary(llvm::StringRef);
 
 using llvm::StringRef;
 
@@ -134,7 +136,7 @@ bool checkFileExistsAtPath(std::string path, std::string fileName)
 // Windows x86 takes its libraries from an `x86` subdirectory of each configured lib path, so the
 // flat path has none of them by design; buildExe checks the subdirectory instead (see
 // resolveWindowsLibPath). Every other target keeps the flat layout.
-static llvm::Triple getLinkTargetTriple()
+llvm::Triple getLinkTargetTriple()
 {
     return llvm::Triple(TargetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : llvm::Triple::normalize(TargetTriple));
 }
@@ -146,7 +148,7 @@ static bool isWindowsX86Target()
 }
 
 // A library's file name as the target names it, not the host: gc.lib on Windows, libgc.a elsewhere.
-static std::string getTargetStaticLibName(llvm::StringRef name)
+std::string getTargetStaticLibName(llvm::StringRef name)
 {
     return getLinkTargetTriple().getOS() == llvm::Triple::Win32 ? (name + ".lib").str() : ("lib" + name + ".a").str();
 }
@@ -779,7 +781,10 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     llvm::SmallVector<std::string> libOpts;
     for (auto lib : libs)
     {
-        auto libPathOpt = getLibOpt(lib);
+        // a library whose borrow facts were read is linked by that file's path, so the file read
+        // is the file linked (see borrowfacts.cpp)
+        auto resolved = resolveLinkLibrary(lib);
+        auto libPathOpt = resolved.empty() ? getLibOpt(lib) : resolved;
         if (!libPathOpt.empty())
         {
             libOpts.push_back(libPathOpt);
@@ -808,9 +813,8 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // self-contained .so. Its shared default library leaves GC_* to the process, and an app's
         // process (the Java VM) has no collector to give it.
         auto sharedDefaultLib = shared && !android;
-        auto defaultLibSubDir = getDefaultLibSubDir(sharedDefaultLib, compileOptions.generateDebugInfo,
-                                                    memoryModelName(compileOptions.memoryModel), TheTriple);
-        auto defaultLibDir = mergeWithDefaultLibPath(getDefaultLibPath(), defaultLibSubDir);
+        auto defaultLibDir =
+            llvm::sys::path::parent_path(getDefaultLibBinary(sharedDefaultLib, compileOptions, TheTriple)).str();
 
         // Checked here rather than left to the linker. mergeWithDefaultLibPath only joins the
         // path, so a model that has not been built reaches lld as a `-L` to nowhere and comes

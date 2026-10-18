@@ -53,6 +53,8 @@ std::string getLLVMLibPath();
 std::string getTslangLibPath();
 std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
+std::string mergeWithDefaultLibPath(std::string, std::string);
+std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
 
 // The subfolder of --default-lib-path holding the default library's binaries for a target, a build
@@ -71,6 +73,19 @@ std::string getDefaultLibSubDir(bool shared, bool debugBuild, const char *memory
     }
 
     return subDir + "/" + (debugBuild ? DEFAULT_LIB_BUILD_DIR_DEBUG : DEFAULT_LIB_BUILD_DIR_RELEASE) + "/" + memoryModel;
+}
+
+// The default library file a link or the JIT uses: the static library (`TypeScriptDefaultLib.lib`,
+// `libTypeScriptDefaultLib.a`) or the shared one (`.dll`, `.so`) for the target, build mode and model.
+std::string getDefaultLibBinary(bool shared, const CompileOptions &compileOptions, const llvm::Triple &triple)
+{
+    auto win = triple.getOS() == llvm::Triple::Win32;
+    std::string fileName = shared ? (win ? DEFAULT_LIB_NAME ".dll" : "lib" DEFAULT_LIB_NAME ".so")
+                                  : (win ? DEFAULT_LIB_NAME ".lib" : "lib" DEFAULT_LIB_NAME ".a");
+    return mergeWithDefaultLibPath(getDefaultLibPath(),
+                                   getDefaultLibSubDir(shared, compileOptions.generateDebugInfo,
+                                                       memoryModelName(compileOptions.memoryModel), triple) +
+                                       "/" + fileName);
 }
 
 bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string subPath, std::string fileName)

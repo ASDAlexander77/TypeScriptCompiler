@@ -34,6 +34,42 @@ namespace mlir_ts = mlir::typescript;
 // parameters its body only borrows.
 using BorrowFactsMap = llvm::StringMap<llvm::SmallVector<unsigned>>;
 
+// `<symbol> <index>...` per line, as BorrowFactsExportPass writes it. A line that does not parse
+// says nothing: every parameter of a function no line names may escape.
+inline BorrowFactsMap parseBorrowFacts(llvm::StringRef text)
+{
+    BorrowFactsMap facts;
+    llvm::SmallVector<llvm::StringRef> lines;
+    text.split(lines, '\n', -1, /*KeepEmpty=*/false);
+    for (auto line : lines)
+    {
+        llvm::SmallVector<llvm::StringRef> words;
+        line.trim().split(words, ' ', -1, /*KeepEmpty=*/false);
+        if (words.size() < 2)
+        {
+            continue;
+        }
+
+        llvm::SmallVector<unsigned> indexes;
+        for (auto word : llvm::drop_begin(words))
+        {
+            unsigned index;
+            if (word.getAsInteger(10, index))
+            {
+                indexes.clear();
+                break;
+            }
+
+            indexes.push_back(index);
+        }
+
+        auto &listed = facts[words[0]];
+        listed.append(indexes.begin(), indexes.end());
+    }
+
+    return facts;
+}
+
 class StackEscapeFacts
 {
   public:
@@ -134,6 +170,12 @@ class StackEscapeFacts
         for (auto candidate : candidates)
         {
             auto funcOp = module.lookupSymbol<mlir_ts::FuncOp>(candidate);
+            // declared here, defined in a library linked statically that published its facts
+            if (funcOp && funcOp.getBody().empty() && importedBorrows(candidate.getValue(), argIndex))
+            {
+                continue;
+            }
+
             if (!funcOp || funcOp.getBody().empty() || argIndex >= funcOp.getBody().getNumArguments())
             {
                 return "unknown-callee";
@@ -149,6 +191,17 @@ class StackEscapeFacts
     }
 
   private:
+    bool importedBorrows(llvm::StringRef symbol, unsigned argIndex) const
+    {
+        if (!imported)
+        {
+            return false;
+        }
+
+        auto it = imported->find(symbol);
+        return it != imported->end() && llvm::is_contained(it->second, argIndex);
+    }
+
     mlir::ModuleOp module;
     bool trustLocalVTables;
     const BorrowFactsMap *imported;

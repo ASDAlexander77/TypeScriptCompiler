@@ -67,6 +67,10 @@ struct CompileOptions
     // shared libraries imported, whose declarations the module was generated against.
     std::vector<std::string> sourceImports;
     std::vector<std::string> sharedLibraryImports;
+    // The borrow facts (__tsborrow_ texts, concatenated) of the libraries this program is linked
+    // statically against or, under the JIT, loads: see
+    // docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md. Empty: none.
+    std::string importedBorrowFacts;
     // an import led back to a file still being generated: the modules in the cycle cannot be
     // compiled one by one (the JIT cache then compiles the program as one module)
     bool importCycle = false;

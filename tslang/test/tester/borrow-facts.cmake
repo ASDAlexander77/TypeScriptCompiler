@@ -1,10 +1,10 @@
 # Borrow facts across modules (docs/superpowers/specs/2026-10-18-borrow-facts-across-modules-design.md):
 # a library's __tsborrow_ facts read back from its object file and from a static library holding it,
-# and nothing from an import library.
+# and nothing from an import library; then a program linked against that static library.
 
 cmake_minimum_required(VERSION 3.17.3)
 
-foreach(var TSLANG SOURCE_DIR WORK_DIR AR MM LLVM_LIB TSLANG_LIB)
+foreach(var TSLANG SOURCE_DIR WORK_DIR AR MM GC_LIB LLVM_LIB TSLANG_LIB)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "${var} is required")
     endif()
@@ -90,4 +90,71 @@ endif()
 run("${dir}" "facts of a missing file" ok out "${TSLANG}" --print-borrow-facts=missing.lib)
 if(NOT out STREQUAL "")
     message(FATAL_ERROR "facts of a missing file: expected none\n${out}")
+endif()
+
+# A program linked statically against the library reads its facts: an array passed where the library
+# listed the parameter goes on the stack, every other stays on the heap. -mm=own refuses the keeping
+# functions, so it has a program of its own.
+if(MM STREQUAL "own")
+    set(use_source facts_use_own)
+    set(decisions
+        "facts_use_own[.]ts:13:15: remark: stack-promotion: stack"
+        "facts_use_own[.]ts:18:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use_own[.]ts:23:15: remark: stack-promotion: stack")
+else()
+    set(use_source facts_use)
+    set(decisions
+        "facts_use[.]ts:20:15: remark: stack-promotion: stack"
+        "facts_use[.]ts:25:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use[.]ts:30:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use[.]ts:35:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use[.]ts:42:15: remark: stack-promotion: stack"
+        "facts_use[.]ts:43:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use[.]ts:48:15: remark: stack-promotion: heap: unknown-callee"
+        "facts_use[.]ts:53:15: remark: stack-promotion: stack")
+endif()
+
+set(link_libs "--gc-lib-path=${GC_LIB}" "--llvm-lib-path=${LLVM_LIB}" "--tslang-lib-path=${TSLANG_LIB}")
+
+run("${dir}" "--emit=exe ${use_source} --lib=facts_lib" ok decided
+    "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+    "${SOURCE_DIR}/${use_source}.ts" -o use.exe)
+foreach(decision ${decisions})
+    if(NOT decided MATCHES "${decision}")
+        message(FATAL_ERROR "--lib=facts_lib: expected '${decision}'\n${decided}")
+    endif()
+endforeach()
+
+# the same program, nothing promoted: the same output
+run("${dir}" "--emit=exe ${use_source} --no-stack-promotion" ok out
+    "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --no-stack-promotion ${link_libs} --lib=facts_lib
+    "${SOURCE_DIR}/${use_source}.ts" -o use_heap.exe)
+run("${dir}" "run use" ok promoted_output "${dir}/use.exe")
+run("${dir}" "run use_heap" ok heap_output "${dir}/use_heap.exe")
+if(NOT promoted_output STREQUAL heap_output)
+    message(FATAL_ERROR "promoted program printed\n${promoted_output}\nunpromoted\n${heap_output}")
+endif()
+
+# --emit=obj does not link, so it reads nothing
+run("${dir}" "--emit=obj ${use_source}" ok decided
+    "${TSLANG}" --emit=obj --no-default-lib -mm=${MM} --stack-promotion-report --lib=facts_lib
+    "${SOURCE_DIR}/${use_source}.ts" -o use_obj.obj)
+if(decided MATCHES "remark: stack-promotion: stack")
+    message(FATAL_ERROR "--emit=obj read facts\n${decided}")
+endif()
+
+# a library built before facts existed: links, no warning, nothing promoted through it
+file(MAKE_DIRECTORY "${dir}/old")
+run("${dir}/old" "--emit=obj ${lib_source} --no-borrow-facts-export" ok out
+    "${TSLANG}" --emit=obj --no-default-lib -mm=${MM} --no-borrow-facts-export "${SOURCE_DIR}/${lib_source}.ts" -o ${obj})
+if(WIN32)
+    run("${dir}/old" "archive" ok out "${AR}" /NOLOGO /OUT:${archive} ${obj})
+else()
+    run("${dir}/old" "archive" ok out "${AR}" rcs ${archive} ${obj})
+endif()
+run("${dir}/old" "--emit=exe ${use_source} against the old library" ok decided
+    "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+    "${SOURCE_DIR}/${use_source}.ts" -o use.exe)
+if(decided MATCHES "remark: stack-promotion: stack|warning")
+    message(FATAL_ERROR "against the old library\n${decided}")
 endif()
