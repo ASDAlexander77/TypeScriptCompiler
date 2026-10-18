@@ -23,9 +23,15 @@
 - All paths in this plan are relative to `tslang/` unless absolute.
 - Sources are CRLF; edit with the Edit tool, never `sed -i`.
 
+## Calls this plan makes that differ from the spec's wording
+
+- Functions with a try/catch/finally region promote nothing in version 1 (spec §6 has the scope-exit action run on unwind paths too).
+- A separate `StackEscapeFacts` analysis instead of running `OwnershipSignaturePass` under every model (spec §5.1 left the choice to the builder; own's facts assume a closed world and retain ops, which gc IR does not have).
+- Every conversion to `any`, an interface, a union or `unknown` is an escape (spec §5.2 only counts it when the converted value escapes).
+
 ## Review Focus
 
-1. **An object stored into a local that outlives a loop iteration** (`let keep; for (...) { const p = new P(); if (c) keep = p; }`) - must go to the heap, because the one entry-block slot is reused next iteration. Test: Task 6 `loop_carried.ts`.
+1. **An object stored into a local that outlives a loop iteration** (`let keep; for (...) { const p = new P(); if (c) keep = p; }`) - must go to the heap, because the one entry-block slot is reused next iteration. Test: Task 4 `loop_carried.ts`.
 2. **A method that stores `this`** (`register() { registry.push(this); }`) called on a local - `this` is a parameter; the call is an escape. Test: Task 4 `method_keeps_this.ts`.
 3. **A virtual call where one override keeps its argument** - the base method borrows, the derived one stores. Must be heap. Test: Task 4 `virtual_one_keeps.ts`.
 4. **rc/own: an object whose field is overwritten several times, then the function returns** - every old field value released once, the last one released at exit, nothing released twice. Test: Task 5 `field_overwrite.ts` under rc and own with `--verify-ownership`.
@@ -53,7 +59,7 @@
 
 ## Test conventions used below
 
-- **Run test** = `tslang_add_test(NAME test-jit-<mm>-stack-<name> COMMAND test-runner -jit -mm=<mm> <file>)` and the `test-compile-` twin without `-jit`, for each `mm` in `gc rc own none`, in one `foreach`. A program asserts with `assert(...)` and prints; exit code 0 is a pass.
+- **Run test** = `tslang_add_test(NAME test-jit-<mm>-stack-<name> COMMAND test-runner -jit -mm=<mm> <file>)` and the `test-compile-` twin without `-jit`, for each `mm` in `gc rc own none`, in one `foreach`. A program asserts with `assert(...)` and prints; exit code 0 is a pass. test-runner always passes `--no-default-lib` (`test-runner.cpp:91,96`), so `-mm=own` needs no own DefaultLib build; test programs must not import the default library.
 - **Decision test** = `add_test(... COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=<mm> --stack-promotion-report <file>)` with `PASS_REGULAR_EXPRESSION` on the remark and `FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed"`.
 - Remark format (pinned here, used by every decision test): `<file>:<line>:<col>: remark: stack-promotion: stack` or `... remark: stack-promotion: heap: <reason>`, where `<reason>` is one of `returned`, `stored`, `captured`, `argument`, `unknown-callee`, `converted`, `thrown`, `yielded`, `loop-carried`, `too-big`, `frame-budget`, `recursive`, `coroutine`, `try-region`, `dynamic-size`, `growable`, `unclassified`.
 - Build: `cmake --build __build/tslang/windows-msbuild-2026-release --config Release --target tslang test-runner`; run: `ctest --test-dir __build/tslang/windows-msbuild-2026-release -C Release -R <regex> --output-on-failure` (from `I:\TypeScriptCompiler`).
@@ -89,15 +95,18 @@
   - `cl::opt<bool> noStackPromotion("no-stack-promotion")`, `cl::opt<unsigned> stackPromotionMaxObject("stack-promotion-max-object", init 256)`, `cl::opt<unsigned> stackPromotionMaxFrame("stack-promotion-max-frame", init 4096)`, `cl::opt<bool> stackPromotionReport("stack-promotion-report")`, all in `TypeScriptCompilerCategory`.
   - test-runner accepts `-no-stack-promotion` and appends `--no-stack-promotion` to `tslang_opt` (same mechanism as `-mm=`).
 
-- [ ] **Step 1: Write the failing test**: `add_test(test-stack-promotion-flag-accepted ... tslang --emit=mlir-affine --no-default-lib -mm=none --no-stack-promotion --stack-promotion-report class_call_same_as_new.ts)` with `PASS_REGULAR_EXPRESSION "ts\\.Func"`; and a run test `test-jit-gc-stack-off-class-call` using `test-runner -jit -mm=gc -no-stack-promotion`.
+- [ ] **Step 1: Write the failing tests**:
+  - `test-stack-promotion-report-reaches-stderr`: `tslang --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report class_call_same_as_new.ts`, `PASS_REGULAR_EXPRESSION "remark: stack-promotion: pass-ran"`. This proves both that remarks print and that the pass runs before `--emit=mlir-affine` stops the pipeline; every later decision test depends on it. If the pass is scheduled after that emit point, move the decision tests to whichever `--emit=` level does run it and update the convention above.
+  - `test-stack-promotion-off`: same command with `--no-stack-promotion` added, `FAIL_REGULAR_EXPRESSION "pass-ran"`, `PASS_REGULAR_EXPRESSION "ts\\.Func"`.
+  - a run test `test-jit-gc-stack-off-class-call` using `test-runner -jit -mm=gc -no-stack-promotion`.
 - [ ] **Step 2: Run, expect FAIL** (unknown option).
-- [ ] **Step 3: Implement**: flags; the pass with an empty `runOnOperation`; schedule it in `transform.cpp` right after the `MemoryModelOwn` inference block and before `#ifdef ENABLE_OPT_PASSES`, unless `noStackPromotion`; add the four flags to the JIT cache key line in `jitcache.cpp` (next to `verify-ownership=`).
+- [ ] **Step 3: Implement**: flags; the pass, whose `runOnOperation` for now only emits `remark: stack-promotion: pass-ran` on each `ts.Func` when `limits.report` (removed in Task 3); schedule it in `transform.cpp` right after the `MemoryModelOwn` inference block and before `#ifdef ENABLE_OPT_PASSES`, unless `noStackPromotion`; add the four flags to the JIT cache key line in `jitcache.cpp` (next to `verify-ownership=`).
 - [ ] **Step 4: Run, expect PASS.**
 - [ ] **Step 5: Commit** `Stack promotion: flags and an empty pass`.
 
 ### Task 3: Stack lowering of `ts.New`, and promoting leaf objects with no uses but field access
 
-Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `ValueRefType`) whose storage owns no heap memory (`OwnershipRoutineLogic::ownsHeapMemory(storageType) == false`), whose only uses are as the base of field/property reads and writes, and retain/release ops. Everything else: heap, reason `unclassified`. This makes the mechanism work end to end before the analysis grows.
+Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `ValueRefType`) whose storage owns no heap memory (`OwnershipRoutineLogic::ownsHeapMemory(storageType) == false`), whose only uses are as the base of field/property reads and writes, and retain/release ops. A derived reference (the result of a property/field ref op on the object) is itself checked with the same whitelist: consumed only as the address of a load or store, never a call operand, never the stored value - otherwise `p.inner.method()` or a ref passed as `this` slips through as "field access". Everything else: heap, reason `unclassified`. This makes the mechanism work end to end before the analysis grows.
 
 **Files:**
 - Modify: `include/TypeScript/LowerToLLVM/LLVMCodeHelperBase.h`, `lib/TypeScript/LowerToLLVM.cpp` (`NewOpLowering`), `lib/TypeScript/StackPromotionPass.cpp`
@@ -125,7 +134,7 @@ Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `
 - Consumes: `own_facts::directCallee(Operation*)`, `own_facts::calleeValue(Operation*)` from `lib/TypeScript/OwnershipFacts.h`; the virtual-candidate resolution `OwnershipSignaturePass` uses (move it into `OwnershipFacts.h` if it is private to that pass).
 - Produces:
   - `class StackEscapeFacts { public: explicit StackEscapeFacts(mlir::ModuleOp); bool paramMayEscape(mlir::Operation *callOp, unsigned operandIndex) const; bool isRecursive(mlir::FunctionOpInterface) const; };`
-  - A parameter (including `this`) "may escape" if its value, or a value derived from it, reaches any escape in spec §5.2 inside the callee body, or is passed to a parameter that may escape. Fixpoint over the module call graph, starting from "no escape" for defined functions and "escape" for every unknown callee. Not the closed-world own facts: this is a property of the callee body, valid for any caller.
+  - A parameter (including `this`) "may escape" if its value, or a value derived from it, reaches any escape in spec §5.2 inside the callee body, or is passed to a parameter that may escape. Fixpoint over the module call graph, starting from "no escape" for defined functions and "escape" for every unknown callee, iterating until no function's facts change (mutual recursion included). Not the closed-world own facts: this is a property of the callee body, valid for any caller.
   - Conversions to `any`, interface, union or `unknown` are escapes in version 1 (stricter than spec §5.2 allows; our call - simpler and safe).
 
 - [ ] **Step 1: Write the failing tests** (decision + run, all four models):
@@ -138,7 +147,8 @@ Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `
   - `to_interface.ts`, `to_any.ts`: assigned to an interface / `any` local → `heap: converted`.
   - `pass_to_print.ts`: `print(p)` where `P` has `toString` → `heap: unknown-callee` (print is a runtime call; this pins today's behaviour so a future declaration attribute shows up as a test change).
 - [ ] **Step 2: Run, expect FAIL** (all `unclassified`).
-- [ ] **Step 3: Implement** `StackEscapeFacts` and extend `isStackCandidate` to accept call operands whose `paramMayEscape` is false, comparisons, and `instanceof`/type-tag reads; follow the value through local `ts.Variable` slots (store into a non-captured local slot, loads from it) with the same rules applied to every load.
+  - `loop_carried.ts`: `let keep: P; for (...) { const p = new P(i); if (i == 3) keep = p; }` then reads `keep.x` after the loop and asserts 3 → `heap: loop-carried`. It lands here, not in Task 6, because following values through local slots (this task) is what would otherwise promote it and reuse its slot.
+- [ ] **Step 3: Implement** `StackEscapeFacts` and extend `isStackCandidate` to accept call operands whose `paramMayEscape` is false, comparisons, and `instanceof`/type-tag reads; follow the value through local `ts.Variable` slots (store into a non-captured local slot, loads from it) with the same rules applied to every load. With slot-following comes the loop-carried rule: an object whose value may be live at the allocation op's next execution (stored into a slot defined outside the innermost loop containing the allocation, or loaded after the loop's back edge) → `heap: loop-carried`.
 - [ ] **Step 4: Run, expect PASS.**
 - [ ] **Step 5: Commit** `Stack promotion: call and method escape facts`.
 
@@ -153,7 +163,8 @@ Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `
   - `def TypeScript_ReleaseContentsOp : TypeScript_Op<"ReleaseContents"> { let arguments = (ins TypeScript_AnyRefLike:$instance, TypeAttr:$storageType); }`
   - `void OwnershipRoutineLogic::emitReleaseContents(mlir::Type storageType, mlir::Value payloadPtr)` = `releaseFields(storageType, payloadPtr)` then zero the payload's owned fields (so a second call, or the next iteration's call, releases nothing). Lowers to nothing under gc and none.
 - Rules (the pass, rc and own only):
-  - insert `ts.ReleaseContents` immediately **before** each promoted allocation op (frees the previous iteration's contents; the zero-filled entry state makes the first one a no-op) and before every function return;
+  - insert `ts.ReleaseContents` immediately **before** each promoted allocation op (frees the previous iteration's contents) and before every function return;
+  - **zero the promoted block's payload in the entry block as well** (in addition to the allocation-site zero-fill from Task 3). Without it, an allocation inside an `if` that was not taken leaves stack garbage in the slot, and the `ReleaseContents` at the return releases garbage pointers. Test: `conditional_alloc.ts` below. Confirm `GCPass` does not strip these memsets (it only strips memsets that zero a GC allocation, `GCPass.cpp:94-131`).
   - erase `ts.Retain`/`ts.Release`/`ts.RetainSlot`/`ts.ReleaseSlot` whose operand is the promoted object itself (they are no-ops on an immortal header; erasing them is the performance point);
   - a function containing a try/catch/finally region promotes nothing: reason `try-region` (version 1; unwind paths would need their own `ReleaseContents`).
   - Under own, the `--verify-ownership` verifier must accept the result; if it rejects, teach it that `ReleaseContents` gives back what the object owns.
@@ -163,26 +174,27 @@ Scope: class instances and boxed object literals (`ts.New` of a `ClassType` or `
   - `fields_object.ts`: field holds a heap object → `stack`; the inner object stays heap (`heap: stored`).
   - `field_overwrite.ts`: field assigned three times from fresh strings, then return → `stack`; each old value is read through a second local alias before the overwrite and printed after, so a double release shows up as a wrong value or crash.
   - `try_region.ts`: a local inside a function with `try` → `heap: try-region`.
+  - `conditional_alloc.ts`: `function f(c: boolean) { if (c) { const p = new P("s" + 1); print(p.s); } return 1; }` called with `false` then `true`, 1000 times each → `stack`; no crash under rc and own.
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement** the op, its lowering, `emitReleaseContents`, the insertion rules, and drop the `ownsHeapMemory == false` restriction from Task 3.
 - [ ] **Step 4: Run, expect PASS**; full suite under `-mm=rc` and `-mm=own`, compare with `-no-stack-promotion` (Task 8 step 2 recipe).
 - [ ] **Step 5: Commit** `Stack promotion: objects that own memory, under rc and own`.
 
-### Task 6: Limits, loops, recursion, coroutines
+### Task 6: Limits, recursion, coroutines, throw
 
 **Files:**
 - Modify: `lib/TypeScript/StackPromotionPass.cpp`
-- Create tests: `loop_carried.ts`, `too_big.ts`, `frame_budget.ts`, `recursive.ts`, `async_local.ts`, `generator_local.ts`, `thrown.ts`
+- Create tests: `too_big.ts`, `frame_budget.ts`, `recursive.ts`, `async_local.ts`, `generator_local.ts`, `thrown.ts`
 
 **Interfaces:**
 - Consumes: `StackEscapeFacts::isRecursive`, `StackPromotionLimits`.
-- Rules: an object whose value may be live at the allocation op's next execution (stored into a slot defined outside the innermost loop containing the allocation, or loaded after the loop's back edge) → `heap: loop-carried`; storage size > `maxObjectBytes` → `too-big`; sites past `maxFrameBytes` in the function, sites inside loops kept first, then source order → `frame-budget`; `isRecursive` → `recursive`; any function marked async or generator, and any function outlined from one (`func::FuncOp` continuations) → `coroutine`; operand of `ts.Throw` → `thrown`.
+- Rules: storage size > `maxObjectBytes` → `too-big`; sites past `maxFrameBytes` in the function, sites inside loops kept first, then source order → `frame-budget`; `isRecursive` → `recursive`; any function marked async or generator, and any function outlined from one (`func::FuncOp` continuations) → `coroutine`; operand of `ts.Throw` → `thrown`.
 
 - [ ] **Step 1: Write the failing tests**: one per rule above, each a decision test for the expected reason plus a run test; `too_big.ts` uses a class of 40 `number` fields (320 bytes) and also checks `--stack-promotion-max-object=512` gives `stack`; `frame_budget.ts` has 20 locals of 32-field classes; `recursive.ts` is a recursive tree sum building a temporary per call, run with depth 100000 under all four models (must not overflow the stack).
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement** the rules.
 - [ ] **Step 4: Run, expect PASS.**
-- [ ] **Step 5: Commit** `Stack promotion: limits, loops, recursion, coroutines`.
+- [ ] **Step 5: Commit** `Stack promotion: limits, recursion, coroutines, throw`.
 
 ### Task 7: Arrays and capture boxes
 
