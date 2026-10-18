@@ -2161,7 +2161,18 @@ namespace mlirgen
             }
         }
 
-        ss << "\nthrow \"Can't cast from any type\";\n";                    
+        // Every falsy value - 0, NaN, "", false, null, undefined, 0n - is a primitive answered above.
+        // What is left - a class instance, an object, an array, a function - is truthy, as in
+        // JavaScript: `if (a)` of an `any` holding one threw instead.
+        if (mlir::isa<mlir_ts::BooleanType>(type) || mlir::isa<mlir_ts::TypePredicateType>(type))
+        {
+            ss << "\nreturn true;\n";
+        }
+        else
+        {
+            ss << "\nthrow \"Can't cast from any type\";\n";
+        }
+
         ss << S("}\n");
 
         auto src = ss.str();
