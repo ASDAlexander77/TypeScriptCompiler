@@ -30,8 +30,11 @@ will build on.
   is acceptable; changing the library or the analysis so more of its calls benefit is not part of
   version 1.
 - **Platforms: Windows, Linux and the JIT.** Linux ahead-of-time builds read the facts from the
-  static archive (`.a`) or shared object they link, so `Dump` needs ELF and `ar` support beside
-  its PE support.
+  static archive (`.a`) they link, so `Dump` needs ELF and `ar` support beside its PE support.
+- **Facts are read only for static links and the JIT, never for DLL links.** A program linked
+  against the default library's DLL (or `.so`) loads whatever copy sits beside it at run time,
+  which may not be the copy read at compile time. Such programs get no facts: every call into the
+  library stays an escape, as today. Under the JIT the library read is the library loaded.
 
 ## 3. Goals, non-goals, anti-goals
 
@@ -107,7 +110,8 @@ parameter 0 of a method). The exact text format is the builder's call.
 ### 5.2 Reading the facts (program side)
 
 When a program is compiled with the default library, the compiler opens the binary it will link:
-the DLL under the JIT, and the static library or DLL it links ahead of time. It reads every
+the DLL under the JIT, and the static library it links ahead of time. An ahead-of-time link
+against the DLL reads nothing (§2). It reads every
 `__tsborrow_` symbol and records the facts on the module, as `addImportedOwnNoDrops` does for own,
 for `StackEscapeFacts` to read.
 
@@ -141,7 +145,11 @@ choice of file - lib or dll, debug or release, Android - is made today in `exe.c
 after MLIRGen. The builder moves that choice to a function MLIRGen can call, so both read the same
 answer.
 
-### 5.4 Reading from `-shared` imports too (my call)
+### 5.4 Reading from `-shared` imports too (my call; open, see below)
+
+**Open:** a `-shared` import is a DLL link, which §2 now excludes for the default library. Either
+the same rule applies here (and the tests need another way to get a library whose facts they
+control), or `-shared` imports are an exception.
 
 The reading code runs on the default library and on every shared library the program imports. The
 code path already exists for `__tsown_`. And the tests need a library whose facts they control: the
