@@ -128,6 +128,16 @@ foreach(decision ${decisions})
     endif()
 endforeach()
 
+# a declaration bound to another symbol (@linkname) takes no fact by its own name
+if(NOT MM STREQUAL "own")
+    run("${dir}" "--emit=exe facts_linkname --lib=facts_lib" ok decided
+        "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --stack-promotion-report ${link_libs} --lib=facts_lib
+        "${SOURCE_DIR}/facts_linkname.ts" -o linkname.exe)
+    if(NOT decided MATCHES "facts_linkname[.]ts:12:15: remark: stack-promotion: heap: unknown-callee")
+        message(FATAL_ERROR "@linkname declaration: expected heap\n${decided}")
+    endif()
+endif()
+
 # the same program, nothing promoted: the same output
 run("${dir}" "--emit=exe ${use_source} --no-stack-promotion" ok out
     "${TSLANG}" --emit=exe --no-default-lib -mm=${MM} --no-stack-promotion ${link_libs} --lib=facts_lib

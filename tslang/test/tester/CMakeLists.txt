@@ -4243,7 +4243,7 @@ endforeach()
 # is a virtual call: a library never trusts its vtables, so Holder.peek lists nothing.
 set(stack_facts_listed "@__tsborrow_facts_lib_[0-9]+ = (dllexport )?constant [[][0-9]+ x i8[]] c\"[^\"]*Geo[.]len 0.0A[^\"]*mixed 0.0A[^\"]*sumOf 0.0A")
 # viaCallback lists its callback (1), never the array it hands to it (0).
-set(stack_facts_unlisted "c\"[^\"]*(keep [0-9]|same [0-9]|viaCallback 0|useOther [0-9]|Holder[.]peek [0-9]|mixed 0 [0-9])|Stack dump|Assertion failed")
+set(stack_facts_unlisted "__tsborrow_[^\"]*c\"[^\"]*(keep [0-9]|same [0-9]|viaCallback 0|useOther [0-9]|Holder[.]peek [0-9]|mixed 0 [0-9]|lenOf [0-9]|renamedLen)|Stack dump|Assertion failed")
 foreach(stack_mm gc rc none)
     add_test(NAME test-stack-facts-lib-${stack_mm}
              COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=${stack_mm} -o -

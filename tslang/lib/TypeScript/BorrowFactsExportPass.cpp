@@ -42,7 +42,9 @@ class BorrowFactsExportPass : public mlir::PassWrapper<BorrowFactsExportPass, ml
 
         llvm::SmallVector<std::pair<llvm::StringRef, std::string>> lines;
         module.walk([&](mlir_ts::FuncOp funcOp) {
-            if (funcOp.isDeclaration() || funcOp.isPrivate())
+            // renamed by @dllname / @linkname: it defines another symbol than its name, which an
+            // importer could not tell apart
+            if (funcOp.isDeclaration() || funcOp.isPrivate() || funcOp->hasAttr(DLL_NAME))
             {
                 return;
             }

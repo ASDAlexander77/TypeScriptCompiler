@@ -2,6 +2,7 @@
 #define MLIR_TYPESCRIPT_STACKESCAPEFACTS_H
 
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/Defines.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Interfaces/CallInterfaces.h"
@@ -170,8 +171,10 @@ class StackEscapeFacts
         for (auto candidate : candidates)
         {
             auto funcOp = module.lookupSymbol<mlir_ts::FuncOp>(candidate);
-            // declared here, defined in a library linked statically that published its facts
-            if (funcOp && funcOp.getBody().empty() && importedBorrows(candidate.getValue(), argIndex))
+            // declared here, defined in a library linked statically that published its facts - by
+            // the name it binds: one renamed by @dllname / @linkname binds another symbol
+            if (funcOp && funcOp.getBody().empty() && !funcOp->hasAttr(DLL_NAME) &&
+                importedBorrows(candidate.getValue(), argIndex))
             {
                 continue;
             }

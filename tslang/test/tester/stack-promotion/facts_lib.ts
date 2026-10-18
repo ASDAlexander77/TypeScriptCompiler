@@ -63,3 +63,9 @@ export function makeHolder(): Holder {
 export function keptLength(): number {
     return kept.length;
 }
+
+// defines `renamedLen`, not `lenOf`: no fact may name either
+@linkname("renamedLen")
+export function lenOf(a: number[]): number {
+    return a.length;
+}
