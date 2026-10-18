@@ -4,12 +4,15 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
+
+#include <optional>
 
 // Whether an object's pointer may outlive the function holding it - the question stack promotion
 // asks of every allocation, and of every parameter of every function an object is passed to (spec
@@ -142,9 +145,13 @@ class StackEscapeFacts
     mlir::ModuleOp module;
     llvm::DenseMap<mlir::Operation *, bool> recursive;
 
+    // What a function may call. A call through a value the module cannot resolve may reach any
+    // function whose address is taken somewhere in it - a closure, a function stored in a variable -
+    // which is how a recursion through `const g = f; g()` or a closure is still seen.
     llvm::SmallVector<mlir::FlatSymbolRefAttr> calleesOfFunction(mlir_ts::FuncOp funcOp)
     {
         llvm::SmallVector<mlir::FlatSymbolRefAttr> callees;
+        auto throughValue = false;
         funcOp.walk([&](mlir::Operation *op) {
             if (auto callOp = dyn_cast<mlir_ts::SymbolCallInternalOp>(op))
             {
@@ -152,12 +159,44 @@ class StackEscapeFacts
             }
             else if (auto callOp = dyn_cast<mlir_ts::CallInternalOp>(op))
             {
-                calleesOf(callOp->getOperand(0), callees);
+                throughValue |= !calleesOf(callOp->getOperand(0), callees);
+            }
+            else if (isa<mlir::CallOpInterface>(op))
+            {
+                throughValue = true;
             }
         });
 
+        if (throughValue)
+        {
+            llvm::append_range(callees, addressTaken());
+        }
+
         return callees;
     }
+
+    // The functions whose address a function of the module takes: closures, function values.
+    llvm::ArrayRef<mlir::FlatSymbolRefAttr> addressTaken()
+    {
+        if (!addressTakenFunctions)
+        {
+            addressTakenFunctions.emplace();
+            llvm::SmallPtrSet<mlir::Operation *, 16> seen;
+            module.walk([&](mlir_ts::FuncOp funcOp) {
+                funcOp.walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
+                    auto target = module.lookupSymbol<mlir_ts::FuncOp>(symbolRefOp.getIdentifierAttr());
+                    if (target && seen.insert(target).second)
+                    {
+                        addressTakenFunctions->push_back(symbolRefOp.getIdentifierAttr());
+                    }
+                });
+            });
+        }
+
+        return *addressTakenFunctions;
+    }
+
+    std::optional<llvm::SmallVector<mlir::FlatSymbolRefAttr>> addressTakenFunctions;
     llvm::DenseMap<std::pair<mlir::Operation *, unsigned>, bool> paramEscapes;
 
     struct VTable
@@ -215,6 +254,13 @@ class StackEscapeFacts
             auto slot = entry.second.slots.find(index);
             if (slot != entry.second.slots.end() && methodName(slot->second.getValue()) == method)
             {
+                // a class visible outside the module - a subclass of the receiver's, exported - may
+                // be extended there, and the override there is not one this module can see
+                if (!entry.second.local)
+                {
+                    return false;
+                }
+
                 candidates.push_back(slot->second);
             }
         }

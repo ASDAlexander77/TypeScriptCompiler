@@ -4148,7 +4148,8 @@ set(stack_promotion_run_tests class_call_same_as_new literal_boxed_local leaf_lo
     to_interface to_any pass_to_print loop_carried
     fields_string fields_object field_overwrite return_field try_region conditional_alloc shared_handle
     too_big frame_budget recursive async_local generator_local thrown
-    array_local_fixed array_local_push array_returned closure_local closure_escapes)
+    array_local_fixed array_local_push array_returned closure_local closure_escapes
+    virtual_exported_subclass recursive_closure)
 # Programs -mm=own rejects on its own (a keeper it cannot move into, a move on some paths only):
 # they say nothing about promotion under own.
 set(stack_promotion_not_own method_keeps_this virtual_one_keeps ctor_keeps_this loop_carried)
@@ -4212,7 +4213,9 @@ set(stack_promotion_decision_tests
     "thrown|thrown\.ts:10:15: remark: stack-promotion: heap: thrown"
     "array_local_fixed|array_local_fixed\.ts:3:15: remark: stack-promotion: stack"
     "array_local_push|array_local_push\.ts:3:25: remark: stack-promotion: heap: growable"
-    "array_returned|array_returned\.ts:3:15: remark: stack-promotion: heap: returned")
+    "array_returned|array_returned\.ts:3:15: remark: stack-promotion: heap: returned"
+    "virtual_exported_subclass|virtual_exported_subclass\.ts:23:18: remark: stack-promotion: heap: unknown-callee"
+    "recursive_closure|recursive_closure\.ts:17:15: remark: stack-promotion: heap: recursive")
 foreach(stack_mm gc rc own none)
     foreach(stack_case ${stack_promotion_decision_tests})
         string(FIND "${stack_case}" "|" stack_sep)
