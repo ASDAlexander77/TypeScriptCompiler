@@ -25,10 +25,13 @@
 #define INTEGER_LITERAL_INFERRED_ATTR_NAME "__int_literal_inferred"
 
 // Marks an operation whose result already carries a reference the receiver is expected to take
-// over, rather than one it must retain for itself. `new C()` is the case that matters: it lowers
-// to a call of the generated `C..new`, and every function retains its result before returning
-// (§9.24), so the value arrives owned. A receiver that retained it again would be one owner
-// above the truth, which is exactly the leak §9.25 removes.
+// over, rather than one it must retain for itself. `new C()` is the case that matters. Of a class
+// from another module it lowers to a call of that class's generated `C..new`, and every function
+// retains its result before returning (§9.24), so the value arrives owned. Of a class defined in
+// the module it is the `ts.New` itself that carries this mark, and that is what makes the block
+// start with one reference under rc (NewOpLowering) - so a pass that put this mark on any other
+// `ts.New` would change what its block is born with. A receiver that retained the value again
+// would be one owner above the truth, which is exactly the leak §9.25 removes.
 //
 // Only set where the producer is known to retain - never inferred from a call being a call. A
 // runtime or builtin helper, or a function imported from a module built before that convention,

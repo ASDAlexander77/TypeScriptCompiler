@@ -2367,7 +2367,9 @@ namespace mlirgen
             resultType = getValueRefType(type);
         }
 
-        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method 
+        // true: allocate as `new C()` does (NewClassInstanceAsMethodCallOp - in place for a class
+        // defined here, else a call of its `C..new`), then call the constructor; false: only the
+        // bare allocation, which is the body of `C..new` itself
         auto methodCallWay = !suppressConstructorCall;
 
         mlir::Value newOp;
