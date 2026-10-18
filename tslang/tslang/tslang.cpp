@@ -51,6 +51,12 @@
 
 namespace cl = llvm::cl;
 
+// From TypeScript/ObjDumper.h, whose llvm/BinaryFormat/COFF.h collides with <windows.h> macros
+namespace Dump
+{
+    std::vector<std::pair<std::string, std::string>> readCStringSymbols(llvm::StringRef, llvm::StringRef);
+}
+
 CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
 std::string getDefaultExt(enum Action);
@@ -143,6 +149,8 @@ cl::opt<unsigned> stackPromotionMaxFrame("stack-promotion-max-frame", cl::desc("
 cl::opt<bool> stackPromotionReport("stack-promotion-report", cl::desc("Report, for every allocation, whether it went on the stack and if not why"), cl::cat(TypeScriptCompilerCategory));
 // Test-only: build a module as one built before borrow facts existed, which publishes none.
 cl::opt<bool> noBorrowFactsExport("no-borrow-facts-export", cl::desc("Do not write the module's borrow facts (__tsborrow_) for importers"), cl::Hidden, cl::cat(TypeScriptCompilerCategory));
+// Debugging and tests: what a program linked against the file would read.
+cl::opt<std::string> printBorrowFacts("print-borrow-facts", cl::desc("Print the borrow facts (__tsborrow_ symbols) of an object file or static library, then exit"), cl::value_desc("file"), cl::Hidden, cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> ownSkipInference("own-skip-inference", cl::Hidden, cl::desc("Under -mm=own, skip ownership inference so the lowering backstop can be tested"), cl::cat(TypeScriptCompilerDebugCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
@@ -441,6 +449,16 @@ int main(int argc, char **argv)
     if (emitAction == Action::RunJIT && !enableOpt.getNumOccurrences() && optLevel != 0 && !generateDebugInfo)
     {
         enableOpt.setValue(true);
+    }
+
+    if (!printBorrowFacts.empty())
+    {
+        for (auto &[symbol, text] : Dump::readCStringSymbols(printBorrowFacts, SHARED_LIB_BORROW_FACTS))
+        {
+            llvm::outs() << symbol << '\n' << text;
+        }
+
+        return 0;
     }
 
     if (printDefaultLibDir != DefaultLibKindNotAsked)

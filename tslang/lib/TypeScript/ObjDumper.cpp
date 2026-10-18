@@ -100,8 +100,108 @@ static std::optional<ArrayRef<uint8_t>> imageBytesAt(const COFFObjectFile &coffO
     return std::nullopt;
 }
 
+// readCStringSymbols for one object: each defined symbol starting with `prefix`, its text read from
+// its section's contents at its offset, up to the first NUL or the section's end.
+static void readCStringSymbolsOf(const ObjectFile &objFile, StringRef prefix,
+                               std::vector<std::pair<std::string, std::string>> &result)
+{
+    for (auto &symbol : objFile.symbols())
+    {
+        auto name = symbol.getName();
+        if (!name)
+        {
+            consumeError(name.takeError());
+            continue;
+        }
+
+        if (!name->starts_with(prefix))
+        {
+            continue;
+        }
+
+        auto section = symbol.getSection();
+        if (!section)
+        {
+            consumeError(section.takeError());
+            continue;
+        }
+
+        if (*section == objFile.section_end())
+        {
+            // undefined, or absolute
+            continue;
+        }
+
+        auto contents = (*section)->getContents();
+        if (!contents)
+        {
+            consumeError(contents.takeError());
+            continue;
+        }
+
+        // in a relocatable object, a symbol's value is its offset in its section
+        auto offset = symbol.getValue();
+        if (!offset)
+        {
+            consumeError(offset.takeError());
+            continue;
+        }
+
+        if (*offset >= contents->size())
+        {
+            continue;
+        }
+
+        auto text = contents->drop_front(*offset);
+        result.push_back({name->str(), text.substr(0, text.find(char(0))).str()});
+    }
+}
+
 namespace Dump
 {
+
+std::vector<std::pair<std::string, std::string>> readCStringSymbols(StringRef path, StringRef prefix)
+{
+    std::vector<std::pair<std::string, std::string>> result;
+    auto expectedOwningBinary = createBinary(path);
+    if (!expectedOwningBinary)
+    {
+        consumeError(expectedOwningBinary.takeError());
+        return result;
+    }
+
+    auto *binary = expectedOwningBinary.get().getBinary();
+    if (auto *objFile = dyn_cast<ObjectFile>(binary))
+    {
+        readCStringSymbolsOf(*objFile, prefix, result);
+        return result;
+    }
+
+    auto *archive = dyn_cast<Archive>(binary);
+    if (!archive)
+    {
+        return result;
+    }
+
+    Error err = Error::success();
+    for (auto &child : archive->children(err))
+    {
+        auto childBinary = child.getAsBinary();
+        if (!childBinary)
+        {
+            consumeError(childBinary.takeError());
+            continue;
+        }
+
+        if (auto *objFile = dyn_cast<ObjectFile>(childBinary->get()))
+        {
+            readCStringSymbolsOf(*objFile, prefix, result);
+        }
+    }
+
+    consumeError(std::move(err));
+    return result;
+}
 
 void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols, llvm::BumpPtrAllocator &stringAllocator)
 {

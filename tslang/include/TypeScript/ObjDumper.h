@@ -94,6 +94,12 @@ namespace Dump
     // architecture, which this process cannot load. std::nullopt when the file is not a PE image,
     // does not export `symbol`, or the pointer or string lies outside the file's data.
     std::optional<std::string> readExportedCString(llvm::StringRef path, llvm::StringRef symbol);
+
+    // Every defined symbol starting with `prefix` in an object file (COFF or ELF) or in the object
+    // members of a static library, with the NUL-terminated char array it names: (symbol, text).
+    // Members that are not objects (import members, bitcode) and an unreadable file give nothing.
+    std::vector<std::pair<std::string, std::string>> readCStringSymbols(llvm::StringRef path,
+                                                                        llvm::StringRef prefix);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);

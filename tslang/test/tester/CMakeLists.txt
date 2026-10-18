@@ -4273,6 +4273,19 @@ add_test(NAME test-stack-facts-lib-suppressed
 set_tests_properties(test-stack-facts-lib-suppressed
                      PROPERTIES PASS_REGULAR_EXPRESSION "define [a-z ]*double @sumOf"
                                 FAIL_REGULAR_EXPRESSION "__tsborrow_|Stack dump|Assertion failed")
+# ...and read back from the object, a static library holding it, and not from an import library
+foreach(stack_mm gc rc own none)
+    add_test(NAME test-borrow-facts-${stack_mm}
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/stack-promotion"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/borrow-facts"
+                     "-DAR=${CMAKE_AR}"
+                     "-DMM=${stack_mm}"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/borrow-facts.cmake")
+endforeach()
 # The same site is a stack site where nothing counts, and a heap site where a Shared count would see it.
 foreach(stack_case "gc|stack" "none|stack" "rc|heap: shared-handle" "own|heap: shared-handle")
     string(FIND "${stack_case}" "|" stack_sep)
