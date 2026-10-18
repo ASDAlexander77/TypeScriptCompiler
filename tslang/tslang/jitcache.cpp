@@ -59,6 +59,9 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<bool> verifyOwnership;
 extern cl::opt<bool> ownSkipInference;
+extern cl::opt<bool> noStackPromotion;
+extern cl::opt<unsigned> stackPromotionMaxObject;
+extern cl::opt<unsigned> stackPromotionMaxFrame;
 extern cl::opt<std::string> jitCacheDir;
 
 std::unique_ptr<mlir::MLIRContext> createMLIRContext();
@@ -365,6 +368,9 @@ class JitUnitBuilder
            << " fast-math=" << compileOptions.enableFastMath << " gctors-as-method=" << compileOptions.appendGCtorsToMethod
            << " embed-declarations=" << compileOptions.embedExportDeclarations
            << " verify-ownership=" << verifyOwnership.getValue() << " own-skip-inference=" << ownSkipInference.getValue()
+           << " no-stack-promotion=" << noStackPromotion.getValue()
+           << " stack-promotion-max-object=" << stackPromotionMaxObject.getValue()
+           << " stack-promotion-max-frame=" << stackPromotionMaxFrame.getValue()
            << "\n";
         os << "export=" << llvm::join(compileOptions.exportFilters, ",") << "\n";
         os << "default-lib=" << compileOptions.defaultDeclarationTSFile << "\n";

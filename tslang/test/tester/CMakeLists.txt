@@ -4141,3 +4141,19 @@ foreach(stack_mm gc rc own none)
         tslang_add_test(NAME test-compile-${stack_mm}-stack-${stack_test} COMMAND test-runner -mm=${stack_mm} "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/${stack_test}.ts")
     endforeach()
 endforeach()
+
+# The report reaches stderr, and the pass runs before --emit=mlir-affine stops the pipeline: every
+# decision test below depends on both.
+add_test(NAME test-stack-promotion-report-reaches-stderr
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+set_tests_properties(test-stack-promotion-report-reaches-stderr
+                     PROPERTIES PASS_REGULAR_EXPRESSION "remark: stack-promotion: pass-ran"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-stack-promotion-off
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=none --stack-promotion-report --no-stack-promotion
+                 "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")
+set_tests_properties(test-stack-promotion-off
+                     PROPERTIES PASS_REGULAR_EXPRESSION "ts\\.Func"
+                                FAIL_REGULAR_EXPRESSION "pass-ran|Stack dump|Assertion failed")
+tslang_add_test(NAME test-jit-gc-stack-off-class-call COMMAND test-runner -jit -mm=gc -no-stack-promotion "${PROJECT_SOURCE_DIR}/test/tester/stack-promotion/class_call_same_as_new.ts")

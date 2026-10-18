@@ -79,6 +79,10 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> verifyOwnership;
 extern cl::opt<bool> ownSkipInference;
+extern cl::opt<bool> noStackPromotion;
+extern cl::opt<unsigned> stackPromotionMaxObject;
+extern cl::opt<unsigned> stackPromotionMaxFrame;
+extern cl::opt<bool> stackPromotionReport;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
@@ -148,6 +152,17 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
             // an `await`'s continuation and a `for await` body, outlined by the async lowering
             pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
+        }
+
+        // Under every model, after own's inference: what it decides about a stack object's retains
+        // is already settled, and the optimiser has not yet inlined anything
+        if (!noStackPromotion)
+        {
+            mlir::typescript::StackPromotionLimits limits;
+            limits.maxObjectBytes = stackPromotionMaxObject;
+            limits.maxFrameBytes = stackPromotionMaxFrame;
+            limits.report = stackPromotionReport;
+            pm.addPass(mlir::typescript::createStackPromotionPass(compileOptions, limits));
         }
 
 #ifdef ENABLE_OPT_PASSES
