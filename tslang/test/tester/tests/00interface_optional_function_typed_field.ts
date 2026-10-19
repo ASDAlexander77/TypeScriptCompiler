@@ -5,6 +5,9 @@
 // reads as an optional bound function, an absent one as undefined - for an
 // object literal and for a class whose method fills the field
 // (INTERFACE_METHOD_CELL_TAG, Defines.h) alike.
+//
+// A class's own optional function-typed field (`fn?: () => int`) filling the
+// interface's is a compile error for now: interface-errors/optional_class_function_field.ts.
 
 interface MaybeFn {
     fn?: () => int;

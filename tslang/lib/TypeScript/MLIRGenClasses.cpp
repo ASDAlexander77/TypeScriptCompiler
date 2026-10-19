@@ -2393,8 +2393,10 @@ genContext);
                 // {function, `this` or null} - or, unannotated (`fn = () => 7`), a plain one: neither can be handed out
                 // as a function taking the object as its `this`. A thunk calling `this.fn(...)` fills the
                 // slot as a method does; it reads the field at each call, so a field assigned later is seen.
+                // Not an optional field (`fn?: () => int`): the cell is shared, so the slot would read as present
+                // on every instance, set or not; that stays "field type not matching" below.
                 if (found && isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
-                    && mth.isAnyFunctionType(foundField.type))
+                    && !isa<mlir_ts::OptionalType>(foundField.type) && mth.isAnyFunctionType(foundField.type))
                 {
                     auto fieldName = dyn_cast<mlir::StringAttr>(id);
                     auto match = mth.TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType);
