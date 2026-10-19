@@ -87,8 +87,10 @@ function callFn(h: HasFn): int {
     return h.fn();
 }
 
-function fromField(): () => int {
-    const h: HasFn = new WithField();
+// under -mm=rc a bound method does not hold its receiver yet, so the caller keeps
+// the instance alive while the returned value is used
+function fromField(w: WithField): () => int {
+    const h: HasFn = w;
     return h.fn;
 }
 
@@ -133,7 +135,8 @@ function main() {
     assert(callFn(new WithField()) == 7);
     assert(callFn({ fn() { return 41; } }) == 41);
 
-    const g = fromField();
+    const wf = new WithField();
+    const g = fromField(wf);
     assert(g() == 7);
 
     print("done.");

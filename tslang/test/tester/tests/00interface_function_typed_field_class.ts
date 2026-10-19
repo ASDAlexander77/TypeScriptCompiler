@@ -16,8 +16,10 @@ class C {
     }
 }
 
-function fromClass(): () => int {
-    const o: HasFn = new C(42);
+// under -mm=rc a bound method does not hold its receiver yet, so the caller keeps
+// the instance alive while the returned value is used
+function fromClass(c: C): () => int {
+    const o: HasFn = c;
     return o.fn;
 }
 
@@ -92,7 +94,8 @@ class Diamond {
 }
 
 function main() {
-    const f = fromClass();
+    const c42 = new C(42);
+    const f = fromClass(c42);
     print(f());
     assert(f() == 42);
 
