@@ -2328,6 +2328,10 @@ class MLIRGenImpl
                 {
                     builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial);
                 }
+
+                // A declaration in a loop runs again on the next turn, into the same field: what
+                // the last turn stored there is given back first. The field starts out null.
+                builder.create<mlir_ts::ReleaseSlotOp>(location, variableDeclarationInfo.storage);
             }
 
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
@@ -3674,6 +3678,41 @@ class MLIRGenImpl
 
         return mlirGen(forOfStat, genContext);
     }
+
+    // A generator resumes at the label after its yield, so whatever an expression computed before
+    // the yield is gone when it continues: it was an SSA value of the turn that returned. A yield
+    // can only stand where nothing is computed before it - `yield x;`, `const v = yield x;` and
+    // `v = yield x;` - and the statement marks it so while it is generated.
+    struct SupportedYieldScope
+    {
+        SupportedYieldScope(MLIRGenImpl &gen) : gen(gen) {}
+
+        ~SupportedYieldScope()
+        {
+            for (auto node : marked)
+            {
+                gen.supportedYields.erase(node);
+            }
+        }
+
+        void mark(Expression expression, bool valueUsed)
+        {
+            while (expression == SyntaxKind::ParenthesizedExpression)
+            {
+                expression = expression.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (expression == SyntaxKind::YieldExpression)
+            {
+                const void *node = expression.operator->();
+                gen.supportedYields[node] = valueUsed;
+                marked.push_back(node);
+            }
+        }
+
+        MLIRGenImpl &gen;
+        SmallVector<const void *> marked;
+    };
 
     ValueOrLogicalResult mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext);
 
@@ -14973,6 +15012,11 @@ class MLIRGenImpl
     // `break` or `continue` has to name one of them. A function body starts with none: a jump
     // can't leave a function.
     SmallVector<std::string> activeLabels;
+
+    // The yields standing where nothing is computed before them, marked by the statement around
+    // them (the AST has no parent links to look up): yield node -> its value is used. See
+    // SupportedYieldScope.
+    llvm::DenseMap<const void *, bool> supportedYields;
 
 private:
     std::string label;

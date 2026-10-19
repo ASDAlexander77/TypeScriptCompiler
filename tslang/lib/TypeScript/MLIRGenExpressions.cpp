@@ -346,12 +346,28 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
-        if (yieldExpressionAST->asteriskToken)
+        auto location = loc(yieldExpressionAST);
+
+        // see SupportedYieldScope
+        auto supportedYield = supportedYields.find(yieldExpressionAST.operator->());
+        if (supportedYield == supportedYields.end())
         {
-            return mlirGenYieldStar(yieldExpressionAST, genContext);
+            emitError(location, "a yield inside an expression is not supported: the expression's other operands "
+                                "do not survive the generator resuming; assign the yield to a variable first");
+            return mlir::failure();
         }
 
-        auto location = loc(yieldExpressionAST);
+        if (yieldExpressionAST->asteriskToken)
+        {
+            // it gives back nothing yet: it can only stand as a statement of its own
+            if (supportedYield->second)
+            {
+                emitError(location, "the value of yield* is not supported");
+                return mlir::failure();
+            }
+
+            return mlirGenYieldStar(yieldExpressionAST, genContext);
+        }
 
         if (genContext.passResult)
         {
@@ -404,9 +420,9 @@ namespace mlirgen
         label << GENERATOR_STATELABELPREFIX << state;
         builder.create<mlir_ts::StateLabelOp>(location, label.str());
 
-        // TODO: yield value to continue, should be loaded from "next(value)" parameter
-        // return yieldValue;
-        return mlir::success();
+        // TODO: the value passed to next(value); next() takes no argument yet, so a yield evaluates to undefined.
+        // It is made after the label: the turn that resumes here is the one that uses it.
+        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(AwaitExpression awaitExpressionAST, const GenContext &genContext)

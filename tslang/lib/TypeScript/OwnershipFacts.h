@@ -7,6 +7,8 @@
 
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -808,6 +810,142 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
 
     return -1;
 }
+
+// The tuple an object, a reference or a tuple value of this type stores its fields in; null for
+// any other type. A method sees its object as `!ts.object<!ts.object_storage<@name>>`, whose
+// fields are the tuple's.
+inline mlir_ts::TupleType storageTupleOf(mlir::MLIRContext *context, mlir::Type type)
+{
+    if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(type))
+    {
+        type = objectType.getStorageType();
+        if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(type))
+        {
+            return mlir_ts::TupleType::get(context, storageType.getFields());
+        }
+    }
+    else if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+    {
+        type = refType.getElementType();
+    }
+    else if (auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(type))
+    {
+        type = valueRefType.getElementType();
+    }
+
+    return mlir::dyn_cast<mlir_ts::TupleType>(type);
+}
+
+// (tuple type, field) -> the one function an object of that type holds in that field: every
+// `ts.Constant` of the type's shape puts it there, nothing stores into the field, and nothing but
+// a constant or a read makes a value of the type. A generator's state object holds its `next` so.
+// Used by OwnershipSignaturePass (own) and OwnedReturnConsumptionPass (rc).
+class FieldFunctions
+{
+    llvm::DenseMap<std::pair<mlir::Type, int64_t>, mlir::StringAttr> fieldFunctions;
+    mlir::MLIRContext *context = nullptr;
+
+  public:
+    void collect(mlir::ModuleOp module)
+    {
+        context = module->getContext();
+        fieldFunctions.clear();
+
+        llvm::DenseSet<std::pair<mlir::Type, int64_t>> unknownFields;
+        llvm::DenseSet<mlir::Type> unknownTuples;
+        module.walk([&](mlir::Operation *op) {
+            if (auto constantOp = mlir::dyn_cast<mlir_ts::ConstantOp>(op))
+            {
+                auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(constantOp.getType());
+                auto values = mlir::dyn_cast<mlir::ArrayAttr>(constantOp.getValue());
+                if (!constTupleType || !values)
+                {
+                    return;
+                }
+
+                mlir::Type tupleType = mlir_ts::TupleType::get(context, constTupleType.getFields());
+                for (auto [index, value] : llvm::enumerate(values))
+                {
+                    auto symbol = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(value);
+                    if (!symbol)
+                    {
+                        continue;
+                    }
+
+                    std::pair<mlir::Type, int64_t> key{tupleType, static_cast<int64_t>(index)};
+                    auto [found, inserted] = fieldFunctions.try_emplace(key, symbol.getAttr());
+                    if (!inserted && found->second != symbol.getAttr())
+                    {
+                        unknownFields.insert(key);
+                    }
+                }
+
+                return;
+            }
+
+            // a field reference that is not only read: the field may be given anything
+            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
+            {
+                auto tupleType = storageTupleOf(context, propertyRefOp->getOperand(0).getType());
+                auto onlyRead = llvm::all_of(propertyRefOp->getUsers(),
+                                             [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); });
+                if (tupleType && !onlyRead)
+                {
+                    unknownFields.insert({tupleType, propertyRefOp.getPosition()});
+                }
+
+                return;
+            }
+
+            // a value of the type made any other way may hold anything in any field
+            if (mlir::isa<mlir_ts::LoadOp>(op))
+            {
+                return;
+            }
+
+            for (auto result : op->getResults())
+            {
+                if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(result.getType()))
+                {
+                    unknownTuples.insert(tupleType);
+                }
+            }
+        });
+
+        for (auto &key : unknownFields)
+        {
+            fieldFunctions.erase(key);
+        }
+
+        llvm::SmallVector<std::pair<mlir::Type, int64_t>> dropped;
+        for (auto &entry : fieldFunctions)
+        {
+            if (unknownTuples.contains(entry.first.first))
+            {
+                dropped.push_back(entry.first);
+            }
+        }
+
+        for (auto &key : dropped)
+        {
+            fieldFunctions.erase(key);
+        }
+    }
+
+    // `ts.Load(ts.PropertyRef(object, p))` of a field that only ever holds one function.
+    mlir::StringAttr of(mlir::Operation *def) const
+    {
+        auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+        auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto tupleType = propertyRefOp ? storageTupleOf(context, propertyRefOp->getOperand(0).getType()) : mlir_ts::TupleType();
+        if (!tupleType)
+        {
+            return {};
+        }
+
+        return fieldFunctions.lookup({tupleType, propertyRefOp.getPosition()});
+    }
+};
 
 } // namespace own_facts
 

@@ -2418,9 +2418,11 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                // what a call hands over is its own (OWN_FRESH_RESULT_ATTR_NAME: an iterator's `next()`,
-                // another own module's `..new`): it points into nothing it was given - unless it is a
-                // generator's state that borrows its arguments (OWN_RESULT_BOUNDED_ATTR_NAME)
+                // A call known to make its result (`__own_fresh_result`: an iterator's `next()`, a field
+                // that only ever holds one function, another own module's `..new`) hands back a block of
+                // the caller's own - the `{value, done}` record of `it.next()` points nowhere into `it`,
+                // and what it does after its next call cannot be a use of the method read out of `it` -
+                // unless it is a generator's state that borrows its arguments (`__own_result_bounded`).
                 if (isCall(user) && user->hasAttr(OWN_FRESH_RESULT_ATTR_NAME) && !user->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME))
                 {
                     continue;

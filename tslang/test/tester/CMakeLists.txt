@@ -389,6 +389,7 @@ tslang_add_test(NAME test-compile-00-string-concat-bounds COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-parse-number-range COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
+tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
@@ -515,6 +516,7 @@ tslang_add_test(NAME test-compile-00-switch-default-fallthrough COMMAND test-run
 tslang_add_test(NAME test-compile-00-generic-class-constructor-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-compile-00-generic-ref-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-compile-00-generator-done-value-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
+tslang_add_test(NAME test-compile-00-generator-yield-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_value.ts")
 tslang_add_test(NAME test-compile-00-any-equality-undefined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -950,6 +952,7 @@ tslang_add_test(NAME test-jit-00-string-concat-bounds COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-parse-number-range COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
+tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
@@ -1073,6 +1076,7 @@ tslang_add_test(NAME test-jit-00-switch-default-fallthrough COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-generic-class-constructor-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-jit-00-generic-ref-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-jit-00-generator-done-value-zero COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
+tslang_add_test(NAME test-jit-00-generator-yield-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_value.ts")
 tslang_add_test(NAME test-jit-00-any-equality-undefined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -1894,6 +1898,7 @@ set(TSLANG_CORPUS
     00parse_number_range.ts
     00narrowed_assign_other_member.ts
     00const_record_owned_fields.ts
+    00generator_temporaries.ts
     00array_length_valid.ts
     00string_view_copy.ts
     00c_string_copy.ts
@@ -2029,6 +2034,7 @@ set(TSLANG_CORPUS
     00generator6.ts
     00generator7.ts
     00generator_done_value_zero.ts
+    00generator_yield_value.ts
     00generic_arguments_name_conflict.ts
     00generic_class_constructor_inference.ts
     00generic_ref_inference.ts
@@ -3418,7 +3424,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call
                  own_call_no_drops own_getter_borrow own_param_kept own_any_box
                  own_string_length_borrow
-                 own_closure_borrow own_closure_escape own_generator own_interface_view
+                 own_closure_borrow own_closure_escape own_generator own_generator_loop_local own_interface_view
                  own_async own_record_return own_generator_borrow own_global_script
                  own_global_init own_constant_data own_record_local
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
@@ -3475,11 +3481,31 @@ add_test(NAME test-own-string-copy-in-store-block
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
 
+# A local declared in a generator's loop gives back what the last turn stored in its field. The
+# program means the same under every model; no run can see the leak, so the IR is read.
+foreach(loop_local_mm rc none gc)
+    tslang_add_test(NAME test-jit-${loop_local_mm}-own_generator_loop_local COMMAND test-runner -jit -mm=${loop_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts")
+    tslang_add_test(NAME test-compile-${loop_local_mm}-own_generator_loop_local COMMAND test-runner -mm=${loop_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts")
+endforeach()
+add_test(NAME test-rc-generator-loop-local-release
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/generator-loop-local-release.cmake")
+
 # A `const` record literal's slot is released under rc (#485); no run can see the leak, so the IR is read.
 add_test(NAME test-rc-const-record-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/const-record-release.cmake")
+
+# A generator body's temporaries are released before the yield that ends the call, where no resume
+# point comes between, and the file runs under own as well.
+add_test(NAME test-rc-generator-temporaries
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/generator-temporaries.cmake")
+tslang_add_test(NAME test-jit-own-00-generator-temporaries COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
+tslang_add_test(NAME test-compile-own-00-generator-temporaries COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
@@ -4037,6 +4063,25 @@ foreach(property_error_name if const while conditional)
     set_tests_properties(test-compile-property-error-${property_error_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'foo' of type [{]x:s32[}]"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# A yield inside an expression is an error, not a crash: what the expression computed before the
+# yield would be an SSA value of the turn that returned, gone when the generator resumes.
+foreach(yield_mm gc rc none)
+    foreach(yield_case binary call_argument yield_star_value)
+        add_test(NAME test-compile-${yield_mm}-yield-in-expression-${yield_case}
+                 COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=${yield_mm}
+                         "${PROJECT_SOURCE_DIR}/test/tester/yield-in-expression/${yield_case}.ts"
+                         -o "${CMAKE_CURRENT_BINARY_DIR}/yield-in-expression-${yield_mm}-${yield_case}.obj")
+        if (yield_case STREQUAL "yield_star_value")
+            set(yield_message "the value of yield[*] is not supported")
+        else()
+            set(yield_message "a yield inside an expression is not supported")
+        endif()
+        set_tests_properties(test-compile-${yield_mm}-yield-in-expression-${yield_case}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "${yield_message}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
 endforeach()
 
 # The shared-component tier under the other two models. A shared library records the model
