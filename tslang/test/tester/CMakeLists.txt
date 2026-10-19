@@ -1494,12 +1494,15 @@ foreach(final_mm gc rc)
     tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 endforeach()
 # A generator method of an exported class is exported like any other method: an importer that
-# calls it directly (a @final class, the default library's String[Symbol.iterator]) links by name
-add_test(NAME test-export-generator-method
-         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib
-                 "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts" -o -)
-set_tests_properties(test-export-generator-method PROPERTIES PASS_REGULAR_EXPRESSION "define dllexport ptr @Counter.upTo"
-                                                             FAIL_REGULAR_EXPRESSION "error|Stack dump")
+# calls it by name (the default library's String[Symbol.iterator] under the JIT) finds it. Checked
+# on Windows, where an exported function is `dllexport` in the IR; ELF has no such mark.
+if (WIN32)
+    add_test(NAME test-export-generator-method
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts" -o -)
+    set_tests_properties(test-export-generator-method PROPERTIES PASS_REGULAR_EXPRESSION "define dllexport ptr @Counter.upTo"
+                                                                 FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endif()
 # ...and linked against its import library (`@static import`), with members from a base its
 # library does not export
 tslang_add_test(NAME test-compile-time-shared-final-base COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_base_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_base.ts")
