@@ -1163,6 +1163,18 @@ namespace mlirgen
                 loadOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
             }            
 
+            // a generator's narrowed local: what the local holds now, cast as the test narrowed it
+            if (auto narrowedType = value.second->getNarrowedType())
+            {
+                auto castValue = castToNarrowedType(location, loadOp, narrowedType, genContext);
+                if (!castValue)
+                {
+                    return mlir::Value();
+                }
+
+                return builder.create<mlir_ts::SafeCastOp>(location, narrowedType, castValue, loadOp);
+            }
+
             return loadOp;
         }
 

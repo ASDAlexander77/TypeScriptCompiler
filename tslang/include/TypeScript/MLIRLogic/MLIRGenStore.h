@@ -163,6 +163,10 @@ struct MethodInfo
     int cppSlot = -1;
     // a slot of a @cpp class's vtable that no method names (ClassInfo::getVirtualTable)
     bool isCppSlotGap = false;
+    // `@keeps`, `@borrows` (OWN_DECLARED_KEEPS_ATTR_NAME): argument indices, `this` 0, for the
+    // declaration an importer re-parses
+    std::vector<int32_t> ownKeeps;
+    std::vector<int32_t> ownBorrows;
 };
 
 struct GenericMethodInfo

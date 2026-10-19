@@ -301,15 +301,17 @@ inline bool isFresh(mlir::Value value)
         return true;
     }
 
+    // what the signature pass knows of a call: another own module's `..new`, a `@borrows` callee's
+    // state, an iterator's `next()` - a declared callee included
+    if (def->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
+    {
+        return true;
+    }
+
     if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::InvokeOp>(def) && directCallee(def))
     {
         auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir_ts::FuncOp>(def, directCallee(def));
         return callee && !callee.isDeclaration();
-    }
-
-    if (def->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
-    {
-        return true;
     }
 
     if (mlir::isa<mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CallInternalOp, mlir_ts::CallHybridInternalOp,

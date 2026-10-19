@@ -3459,7 +3459,7 @@ genContext);
         auto location = loc(funcLikeDeclaration);
         auto dllNameAttr = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
         if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
-            location, funcOp.getName(), funcOp.getFunctionType(), dllNameAttr ? dllNameAttr.getValue() : funcOp.getName(), genContext)))
+            location, funcOp, funcOp.getName(), funcOp.getFunctionType(), dllNameAttr ? dllNameAttr.getValue() : funcOp.getName(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;

@@ -589,6 +589,12 @@ namespace mlirgen
                                                   funcType.isVarArg(), /*isCVarArg=*/true);
         }
 
+        if (mlir::failed(processOwnParamMarkers(location, functionLikeDeclarationBaseAST, funcProto->getParams(), funcType,
+                                                attrs, funcProtoGenContext)))
+        {
+            return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
+        }
+
         if (funcType)
         {
             auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -612,7 +618,7 @@ namespace mlirgen
                     || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
                 {
                     auto dllNameAttr = funcOp->getAttrOfType<mlir::StringAttr>(DLL_NAME);
-                    addFunctionDeclarationToExport(funcProto, currentNamespace, dllNameAttr ? dllNameAttr.getValue() : StringRef());
+                    addFunctionDeclarationToExport(funcProto, currentNamespace, dllNameAttr ? dllNameAttr.getValue() : StringRef(), funcOp);
                 }
             }
         }
@@ -1157,7 +1163,7 @@ namespace mlirgen
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
             auto result = mlirGenFunctionLikeDeclarationDynamicImport(
-                location, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(),
+                location, funcOp, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(),
                 dllFuncName, funcDeclGenContext, false);
             return {result, funcOp, funcProto->getName().str(), false};
         }
@@ -1260,8 +1266,8 @@ namespace mlirgen
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
-    mlir::LogicalResult MLIRGenImpl::mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, 
-        mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName)
+    mlir::LogicalResult MLIRGenImpl::mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp declared,
+        StringRef funcName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName)
     {
         registerVariable(location, funcName, isFullNamespaceName, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
@@ -1273,6 +1279,23 @@ namespace mlirgen
                 return {referenceToFunc.getType(), referenceToFunc, TypeProvided::No};
             },
             genContext);
+
+        // what the declaration says (`@keeps`, `@borrows`) goes with the global its calls go
+        // through, which is all -mm=own sees of the function
+        if (declared && !genContext.dummyRun)
+        {
+            auto globalName = isFullNamespaceName ? funcName.str() : getFullNamespaceName(funcName).str();
+            if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(globalName))
+            {
+                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_PARAM_NAMES_ATTR_NAME})
+                {
+                    if (auto attr = declared->getAttr(name))
+                    {
+                        globalOp->setAttr(name, attr);
+                    }
+                }
+            }
+        }
 
         return mlir::success();
     }    

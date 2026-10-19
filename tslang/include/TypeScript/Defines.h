@@ -123,6 +123,11 @@
 // Its release routine skips them, and a borrowing `.captured` box frees its cells but not what
 // they hold.
 #define OWN_BORROWING_FIELDS_ATTR_NAME "ts.own_borrowing_fields"
+// -mm=own only, set by OwnershipSignaturePass on the module, in the same shape: the fields of a
+// generator's state object - its locals - read only to be yielded (`const groups = [...r]; yield
+// groups`). A yield moves what such a field holds to the caller, so the field never owns it: an
+// overwrite gives nothing back, and the state's release routine skips it.
+#define OWN_YIELDED_FIELDS_ATTR_NAME "ts.own_yielded_fields"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
@@ -246,6 +251,19 @@
 // one re-parsed from a TypeScript library, whose functions may destroy what they are given.
 #define NO_DROPS_DECORATOR "nodrops"
 #define OWN_DECLARED_NO_DROPS_ATTR_NAME "ts.own_declared_no_drops"
+// `@keeps("p")` and `@borrows("this", "p")`: the facts of a function's body that its callers rely
+// on (OWN_PARAMS_ATTR_NAME, OWN_RESULT_BOUNDED_ATTR_NAME), said in its signature, so every caller
+// knows them - one in another module too, which reads them from the declaration it re-parses.
+// `@keeps` names the parameters the function keeps: its callers move them in. `@borrows` names the
+// arguments a generator's state object borrows: the caller owns the result, but it may not outlive
+// them. -mm=own checks a body against what it says; the other memory models ignore both. Each is a
+// FuncOp attribute of argument indices.
+#define KEEPS_DECORATOR "keeps"
+#define BORROWS_DECORATOR "borrows"
+#define OWN_DECLARED_KEEPS_ATTR_NAME "ts.own_declared_keeps"
+#define OWN_DECLARED_BORROWS_ATTR_NAME "ts.own_declared_borrows"
+// the names of the arguments of a function that says either, for -mm=own's errors about it
+#define OWN_DECLARED_PARAM_NAMES_ATTR_NAME "ts.own_declared_param_names"
 
 // The process-heap allocator of a Windows module (TypeScript/ProcessHeap.h), which ProcessHeapPass
 // calls instead of the C runtime's. Defined by the async runtime library a program links,

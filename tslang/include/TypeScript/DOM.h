@@ -31,6 +31,9 @@ class VariableDeclarationDOM
     bool ignoreCapturing;
     bool _using;
     mlir::Value disposeGuard;
+    // a generator's local narrowed by a test: a view of the local's own storage, read and cast
+    // to this type at each read (addSafeCastStatement)
+    mlir::Type narrowedType;
 
   public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
@@ -113,6 +116,15 @@ class VariableDeclarationDOM
     mlir::Value getDisposeGuard() const
     {
         return disposeGuard;
+    }
+
+    mlir::Type getNarrowedType() const
+    {
+        return narrowedType;
+    }
+    void setNarrowedType(mlir::Type value)
+    {
+        narrowedType = value;
     }
     void setDisposeGuard(mlir::Value value)
     {
