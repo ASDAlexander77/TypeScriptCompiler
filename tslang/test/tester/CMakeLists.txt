@@ -1488,6 +1488,15 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 
 # shared libs tests (exports/imports)
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# a @final class across the boundary: direct calls from the importer, compiled and under the JIT
+foreach(final_mm gc rc)
+    tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+endforeach()
+add_test(NAME test-compile-shared-import-final-extends
+         COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+set_tests_properties(test-compile-shared-import-final-extends PROPERTIES PASS_REGULAR_EXPRESSION "class 'X' cannot extend 'Counter': it is @final"
+                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 tslang_add_test(NAME test-compile-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
 # Cross-module `class extends` across a real DLL boundary. Formerly disabled as a
 # known issue; fixed by three co-operating changes (see
