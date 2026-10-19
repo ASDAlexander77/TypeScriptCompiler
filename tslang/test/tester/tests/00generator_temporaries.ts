@@ -18,6 +18,11 @@
 //
 // test-rc-generator-temporaries reads the IR for which is which.
 
+// A function whose returned string the pass cannot see retained. With it in the module, a call
+// through a plain value is not taken to return owned for that reason alone, so `main`'s calls of
+// `next` are taken over only because the field they are read from names the generator's `next`.
+declare function strerror(errnum: s32): string;
+
 class Item {
     constructor(public n: number) {}
 }
@@ -92,6 +97,8 @@ function main() {
     let segments = 0;
     for (const v of twoSegments()) segments += v;
     assert(segments == 6, "twoSegments");
+
+    assert(strerror(2).length > 0, "strerror");
 
     print("done.");
 }

@@ -36,9 +36,10 @@ namespace
 //
 // All three dissolve once every function is present, which is why this is a pass rather than
 // another marking site. It does not predict which callees retain - it looks. A function counts
-// as returning owned only when every `ts.ReturnVal` of a heap-owning value in it is preceded by
-// a `ts.Retain` of that same value. A callee with no body, a generator whose yields return
-// without retaining, and anything else that does not match are simply not marked, and their
+// as returning owned only when every `ts.ReturnVal` (and, in a generator under rc, every
+// `ts.YieldReturnVal`) of a heap-owning value in it is preceded by a `ts.Retain` of that same
+// value. A callee with no body, a generator under any other model, and anything else that does
+// not match are simply not marked, and their
 // callers go on retaining - which leaks rather than frees something live. The whole design puts
 // the uncertain case on the leaking side.
 //
@@ -1143,8 +1144,8 @@ class OwnedReturnConsumptionPass
         return block->end();
     }
 
-    // Does this generator temporary, or a view of it, get stored somewhere? Asked under own only.
-    // There the `{ value, done }` record a `yield` hands back is filled by stores that move the
+    // Does this generator temporary, or a view of it, get stored somewhere? Asked under every model but
+    // rc (only own has releases left by the time it matters). Under own the `{ value, done }` record a `yield` hands back is filled by stores that move the
     // value in, so `yield "a" + i` keeps the concatenation alive only through the reference it
     // was born with, and a release before the yield would free what the caller reads. Any store
     // is treated that way, rather than telling the record apart from a place that does count.

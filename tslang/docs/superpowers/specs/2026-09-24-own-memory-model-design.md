@@ -1307,9 +1307,13 @@ Found, not fixed:
 
 - **A temporary made in front of a `yield`** in the generator's own body is never released, under
   rc as well. `OwnedReturnConsumptionPass` does not release past a resume point, so
-  `yield "s" + i` leaks the number's string (50 MB over 200000 runs).
+  `yield "s" + i` leaks the number's string (50 MB over 200000 runs). *Fixed (#619 and its
+  follow-up):* a temporary is released in front of the first yield, resume point or statement
+  holding one after it.
 - **rc leaks yielded objects.** The call's reference and the record's retain are two, and the
-  caller releases one.
+  caller releases one. *Fixed (follow-up to #619):* under rc a yield retains its record the way a
+  return does, `next` is classified as returning owned, and its caller takes the record over
+  through the state object's field that only ever holds `next` (`own_facts::FieldFunctions`).
 - **Reading a record out of a call or a folded `const`** (`print(f().value.x)`,
   `const r = f(); r.value.x`) is an error. A `let` works.
 - **A method of an object literal held in a `let`**, returning a block, called and kept, is a
