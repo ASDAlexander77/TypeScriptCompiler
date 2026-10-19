@@ -1287,7 +1287,8 @@ namespace mlirgen
             auto globalName = isFullNamespaceName ? funcName.str() : getFullNamespaceName(funcName).str();
             if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(globalName))
             {
-                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_PARAM_NAMES_ATTR_NAME})
+                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
+                                   OWN_DECLARED_PARAM_NAMES_ATTR_NAME})
                 {
                     if (auto attr = declared->getAttr(name))
                     {
@@ -1479,8 +1480,10 @@ namespace mlirgen
     // The names a function body assigns: `x = ...` and every compound assignment, the targets of a destructuring
     // assignment, and the variable of `for (x of ...)` / `for (x in ...)`. Nested functions are walked as well, and
     // a destructuring target counts every name in it: naming one too many costs a retain and a release, missing
-    // one leaves a parameter pointing at freed memory.
-    static void collectAssignedNames(ts::Node body, llvm::StringSet<> &names)
+    // one leaves a parameter pointing at freed memory. `lengthNames`, when given, collects the names whose
+    // `.length` is assigned (`this` for `this.length = n`): resizing a string makes a new one (spec 22.3), so for a
+    // string that is an assignment too.
+    static void collectAssignedNames(ts::Node body, llvm::StringSet<> &names, llvm::StringSet<> *lengthNames = nullptr)
     {
         auto addTargets = [&](ts::Node target) {
             while (target == SyntaxKind::ParenthesizedExpression)
@@ -1511,6 +1514,25 @@ namespace mlirgen
                 if (ts::isAssignmentOperator(binaryExpression->operatorToken))
                 {
                     addTargets(binaryExpression->left);
+
+                    auto left = binaryExpression->left;
+                    if (lengthNames && left == SyntaxKind::PropertyAccessExpression)
+                    {
+                        auto propertyAccess = left.as<ts::PropertyAccessExpression>();
+                        auto object = propertyAccess->expression;
+                        if (propertyAccess->name == SyntaxKind::Identifier &&
+                            MLIRHelper::getName(propertyAccess->name.as<ts::Identifier>()) == LENGTH_FIELD_NAME)
+                        {
+                            if (object == SyntaxKind::Identifier)
+                            {
+                                lengthNames->insert(MLIRHelper::getName(object.as<ts::Identifier>()));
+                            }
+                            else if (object == SyntaxKind::ThisKeyword)
+                            {
+                                lengthNames->insert(THIS_NAME);
+                            }
+                        }
+                    }
                 }
             }
             else if (node == SyntaxKind::ForOfStatement)
@@ -1540,33 +1562,41 @@ namespace mlirgen
     // copied into a local of the same name, which owns what it holds as any local does: a reference taken on the
     // caller's value here, handed over by each assignment, given back at the function's exit.
     //
-    // -mm=own refuses the assignment itself (OwnershipInferencePass), and a collector needs none of this.
+    // -mm=own: a string parameter the body assigns - `s = s + t`, or `this.length = n`, which resizes into a new
+    // string - starts a local of its own the same way, which own makes from a copy of the caller's string (spec
+    // 22.3) and which then owns each string assigned to it. Left as the parameter's slot, what was assigned to it
+    // had no owner: it leaked, and `return s` gave back a copy of it - read up to its first NUL, so the default
+    // library's `"".clone().resize(n)` returned a string of one byte that its caller wrote n into. Any other
+    // parameter own refuses to assign (OwnershipInferencePass), and a collector needs none of this.
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionOwnAssignedParams(mlir::Location location,
                                                                       FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                                       FunctionPrototypeDOM::TypePtr funcProto,
                                                                       const GenContext &genContext)
     {
-        if (!compileOptions.isRefCounted())
+        auto own = compileOptions.memoryModel == MemoryModelOwn;
+        if (!compileOptions.isRefCounted() && !own)
         {
             return mlir::success();
         }
 
         llvm::StringSet<> assignedNames;
+        llvm::StringSet<> lengthNames;
         auto scanned = false;
         for (const auto &param : funcProto->getParams())
         {
-            if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()))
+            if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()) ||
+                (own && !mlir::isa<mlir_ts::StringType>(param->getType())))
             {
                 continue;
             }
 
             if (!scanned)
             {
-                collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames);
+                collectAssignedNames(functionLikeDeclarationBaseAST->body, assignedNames, own ? &lengthNames : nullptr);
                 scanned = true;
             }
 
-            if (!assignedNames.contains(param->getName()))
+            if (!assignedNames.contains(param->getName()) && !lengthNames.contains(param->getName()))
             {
                 continue;
             }

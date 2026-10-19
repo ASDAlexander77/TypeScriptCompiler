@@ -452,7 +452,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     llvm::DenseMap<mlir::Operation *, Facts> factsLocal;
     llvm::DenseMap<mlir::Operation *, Facts> factsEffective;
 
-    // ---- Facts a signature says (`@keeps`, `@borrows`) ----
+    // ---- Facts a signature says (`@keeps`, `@borrows`, `@lends`) ----
     //
     // A function that says them has them whoever calls it: a caller in another module reads them
     // from the declaration it re-parses. Its body is checked against them instead (checkDeclared).
@@ -469,7 +469,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     static bool declaresFacts(mlir::Operation *funcOp)
     {
-        return funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME);
+        return funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) ||
+               funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME);
+    }
+
+    // The facts `@keeps` and `@lends` say (Facts): what callers move in, and what the result is a
+    // borrow of.
+    static bool declaresCallerFacts(mlir::Operation *funcOp)
+    {
+        return funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME);
+    }
+
+    static int declaredLends(mlir::Operation *funcOp)
+    {
+        auto lends = declared(funcOp, OWN_DECLARED_LENDS_ATTR_NAME);
+        return lends.empty() ? -1 : lends.front();
     }
 
     // What every function a call names declares under `name`, when they all declare the same;
@@ -987,22 +1001,57 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
-            if (funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+            if (funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME) && funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME))
+            {
+                funcOp.emitError("'") << funcOp.getSymName()
+                                      << "' cannot say both '@" LENDS_DECORATOR "' and '@" BORROWS_DECORATOR
+                                         "': its caller owns a result that borrows, and nothing of one it is lent";
+                signalPassFailure();
+                continue;
+            }
+
+            if (declaresCallerFacts(funcOp))
             {
                 auto local = factsLocal.lookup(funcOp);
-                auto says = declared(funcOp, OWN_DECLARED_KEEPS_ATTR_NAME);
-                if (local.borrows >= 0)
+                auto keeps = declared(funcOp, OWN_DECLARED_KEEPS_ATTR_NAME);
+                auto lends = declaredLends(funcOp);
+                if (local.borrows != lends)
                 {
-                    funcOp.emitError("'") << funcOp.getSymName()
-                                          << "' returns a borrow of an argument, which '@" KEEPS_DECORATOR
-                                             "' cannot say; -mm=own cannot export that yet";
+                    if (lends < 0)
+                    {
+                        funcOp.emitError("'") << funcOp.getSymName() << "' returns a borrow of "
+                                              << describeParams(funcOp, local.borrows)
+                                              << ", which it has to say with '@" LENDS_DECORATOR "'";
+                    }
+                    else if (local.borrows < 0)
+                    {
+                        funcOp.emitError("'@" LENDS_DECORATOR "' of '")
+                            << funcOp.getSymName() << "' names " << describeParams(funcOp, lends)
+                            << ", but its body does not return a borrow of it";
+                    }
+                    else
+                    {
+                        funcOp.emitError("'@" LENDS_DECORATOR "' of '")
+                            << funcOp.getSymName() << "' names " << describeParams(funcOp, lends)
+                            << ", but its body returns a borrow of " << describeParams(funcOp, local.borrows);
+                    }
+
                     signalPassFailure();
                 }
-                else if (llvm::ArrayRef<int32_t>(local.owned) != says)
+                else if (llvm::ArrayRef<int32_t>(local.owned) != keeps)
                 {
-                    funcOp.emitError("'@" KEEPS_DECORATOR "' of '")
-                        << funcOp.getSymName() << "' names " << describeParams(funcOp, says) << ", but its body keeps "
-                        << describeParams(funcOp, local.owned);
+                    if (funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+                    {
+                        funcOp.emitError("'@" KEEPS_DECORATOR "' of '")
+                            << funcOp.getSymName() << "' names " << describeParams(funcOp, keeps) << ", but its body keeps "
+                            << describeParams(funcOp, local.owned);
+                    }
+                    else
+                    {
+                        funcOp.emitError("'") << funcOp.getSymName() << "' keeps " << describeParams(funcOp, local.owned)
+                                              << ", which it has to say with '@" KEEPS_DECORATOR "'";
+                    }
+
                     signalPassFailure();
                 }
             }
@@ -1054,13 +1103,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     continue;
                 }
 
-                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME})
+                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME})
                 {
                     if (funcOp->hasAttr(name) != declaring->hasAttr(name) || declared(funcOp, name) != declared(declaring, name))
                     {
                         funcOp.emitError("'") << funcOp.getSymName() << "' overrides '" << declaring.getSymName()
-                                              << "', and has to say the same '@" KEEPS_DECORATOR "' and '@" BORROWS_DECORATOR
-                                                 "'";
+                                              << "', and has to say the same '@" KEEPS_DECORATOR "', '@" BORROWS_DECORATOR
+                                                 "' and '@" LENDS_DECORATOR "'";
                         signalPassFailure();
                         break;
                     }
@@ -1433,7 +1482,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         {
             if (!entry.second.isPrivate())
             {
-                open.try_emplace(entry.second, "it can be called from another module");
+                open.try_emplace(entry.second, "it can be called from another module; '@" LENDS_DECORATOR "' or '@" KEEPS_DECORATOR
+                                               "' would say it in its signature");
             }
         }
 
@@ -1712,6 +1762,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     // a call this pass cannot resolve still has what its callees' signatures say
                     auto keeps = declaredByCallees(call.callees, OWN_DECLARED_KEEPS_ATTR_NAME);
                     facts.owned.assign(keeps.begin(), keeps.end());
+                    if (auto lends = declaredByCallees(call.callees, OWN_DECLARED_LENDS_ATTR_NAME); !lends.empty())
+                    {
+                        facts.borrows = lends.front();
+                    }
                 }
 
                 if (!facts.empty())
@@ -1747,10 +1801,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // what a signature says stands, open or not; checkDeclared holds the body to it
         for (auto &entry : functions)
         {
-            if (entry.second->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+            if (declaresCallerFacts(entry.second))
             {
                 auto keeps = declared(entry.second, OWN_DECLARED_KEEPS_ATTR_NAME);
-                factsEffective[entry.second] = Facts{-1, llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
+                factsEffective[entry.second] =
+                    Facts{declaredLends(entry.second), llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
             }
         }
 
@@ -1774,7 +1829,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 for (auto member : members)
                 {
                     if (auto funcOp = functions.lookup(member.getValue());
-                        funcOp && !funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) && factsEffective.erase(funcOp))
+                        funcOp && !declaresCallerFacts(funcOp) && factsEffective.erase(funcOp))
                     {
                         changed = true;
                     }

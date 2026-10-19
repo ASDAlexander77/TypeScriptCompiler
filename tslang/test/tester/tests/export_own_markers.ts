@@ -1,4 +1,4 @@
-// The library side of @keeps and @borrows across a module boundary: the importer reads them from
+// The library side of @keeps, @borrows and @lends across a module boundary: the importer reads them from
 // the declarations (__decls) and calls these knowing them. See import_own_markers.ts.
 export class Tag {
     constructor(public name: string) {}
@@ -12,6 +12,16 @@ export class Holder {
     constructor(tag: Tag) {
         this.tag = tag;
     }
+
+    @lends("this")
+    peek(): Tag {
+        return this.tag;
+    }
+}
+
+@lends("h")
+export function tagOf(h: Holder): Tag {
+    return h.tag;
 }
 
 @final

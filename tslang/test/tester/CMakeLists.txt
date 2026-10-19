@@ -1527,6 +1527,10 @@ add_test(NAME test-compile-shared-import-own-markers-outlives
          COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_outlives.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
 set_tests_properties(test-compile-shared-import-own-markers-outlives PROPERTIES PASS_REGULAR_EXPRESSION "borrows its generator's arguments and cannot be stored, returned or captured"
                                                                               FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-shared-import-own-markers-lent-outlives
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_lent_outlives.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+set_tests_properties(test-compile-shared-import-own-markers-lent-outlives PROPERTIES PASS_REGULAR_EXPRESSION "borrows a call's result but is used here after it may be released or overwritten"
+                                                                                   FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # the markers mean nothing to the other models
 foreach(markers_mm gc rc)
     tslang_add_test(NAME test-jit-${markers_mm}-own-generator-locals COMMAND test-runner -jit -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_locals.ts")
@@ -3433,7 +3437,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_string_copy_branch own_array_param_push
                  own_declared_no_drops own_return_paths own_string_concat_element
                  own_final_fresh_result own_final_field_lend own_null_narrowing_di
-                 own_param_markers own_generator_locals)
+                 own_param_markers own_generator_locals own_string_param_assigned own_lends)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3664,7 +3668,13 @@ set(own_error_cases
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
     "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
-    "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps' and '@borrows'"
+    "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps', '@borrows' and '@lends'"
+    "own_err_lends_missing|'firstOf' could return a borrow or keep a parameter, but it can be called from another module. '@lends' or '@keeps' would say it in its signature"
+    "own_err_lends_mismatch|'@lends' of 'pick' names 'a', but its body returns a borrow of 'b'"
+    "own_err_lends_not_borrow|'@lends' of 'made' names 'l', but its body does not return a borrow of it"
+    "own_err_lends_and_borrows|'firstOf' cannot say both '@lends' and '@borrows'"
+    "own_err_lends_two_params|'@lends' names one parameter, the one the result is a borrow of"
+    "own_err_lends_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
     "own_err_string_pushed_twice|is used here after its value was moved"

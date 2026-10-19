@@ -2051,7 +2051,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
             // read by -mm=own only
             if (name == OWN_DECLARED_NO_DROPS_ATTR_NAME || name == OWN_DECLARED_KEEPS_ATTR_NAME ||
-                name == OWN_DECLARED_BORROWS_ATTR_NAME || name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME) {
+                name == OWN_DECLARED_BORROWS_ATTR_NAME || name == OWN_DECLARED_LENDS_ATTR_NAME ||
+                name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME) {
                 continue;
             }
 

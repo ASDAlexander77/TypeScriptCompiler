@@ -256,13 +256,16 @@
 // knows them - one in another module too, which reads them from the declaration it re-parses.
 // `@keeps` names the parameters the function keeps: its callers move them in. `@borrows` names the
 // arguments a generator's state object borrows: the caller owns the result, but it may not outlive
-// them. -mm=own checks a body against what it says; the other memory models ignore both. Each is a
-// FuncOp attribute of argument indices.
+// them. `@lends` names the one argument the result is a borrow of (OWN_RESULT_BORROWS_ATTR_NAME):
+// the caller owns nothing, and the result may not outlive it. -mm=own checks a body against what
+// it says; the other memory models ignore all three. Each is a FuncOp attribute of argument indices.
 #define KEEPS_DECORATOR "keeps"
 #define BORROWS_DECORATOR "borrows"
+#define LENDS_DECORATOR "lends"
 #define OWN_DECLARED_KEEPS_ATTR_NAME "ts.own_declared_keeps"
 #define OWN_DECLARED_BORROWS_ATTR_NAME "ts.own_declared_borrows"
-// the names of the arguments of a function that says either, for -mm=own's errors about it
+#define OWN_DECLARED_LENDS_ATTR_NAME "ts.own_declared_lends"
+// the names of the arguments of a function that says any, for -mm=own's errors about it
 #define OWN_DECLARED_PARAM_NAMES_ATTR_NAME "ts.own_declared_param_names"
 
 // The process-heap allocator of a Windows module (TypeScript/ProcessHeap.h), which ProcessHeapPass

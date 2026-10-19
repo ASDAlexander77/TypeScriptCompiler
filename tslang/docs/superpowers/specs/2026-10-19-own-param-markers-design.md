@@ -25,6 +25,10 @@ Both go on a function, method or constructor, and name its parameters. `"this"` 
 - `@borrows("this", "expr")`: the caller owns the result, but the result may not outlive these
   arguments. The result is either the state of a generator over them, or what a call with such a
   bounded result returns (`return this.value.matchAll(expr)`, a "forwarder").
+- `@lends("l")` (added 2026-10-20): the result is a borrow of the one argument `l`
+  (`__own_result_borrows`). The caller owns nothing of it, and it may not outlive `l`. It names
+  exactly one parameter, and it cannot be combined with `@borrows` (a result is either the
+  caller's or lent). It can be combined with `@keeps`.
 
 Under gc, rc and none they mean nothing. MLIRGen still records them, and the LLVM lowering drops
 the attributes.
@@ -36,8 +40,9 @@ the attributes.
   (`ts.own_declared_param_names`) for the errors. A name that is not a parameter is an error. The
   generator wrapper copies the method's decorators, so a marked generator's maker carries them.
 - **OwnershipSignaturePass:**
-  - A marked function's `@keeps` facts stand even when it is open (`meetFacts`). A family does not
-    erase them.
+  - A marked function's `@keeps` and `@lends` facts stand even when it is open (`meetFacts`). A
+    family does not erase them. A call this pass cannot resolve gets them from its callees'
+    signatures (`computeFacts`).
   - A call gets what its callees' signatures say, whether or not it is resolved
     (`declaredByCallees`, over `Callees::named`). The named callees are the direct callee, every
     member of a virtual slot's family, or a dynamic import's address global.
@@ -49,7 +54,11 @@ the attributes.
   - `findBoundedForwarders` gives a marked non-generator what its returned bounded calls borrow,
     mapped back to its own parameters (directly, or a field read of one).
   - `checkDeclared` holds each body to its signature, exactly. It also checks that the overrides in
-    a marked method's family say the same.
+    a marked method's family say the same. A function that says `@keeps` or `@lends` must say both
+    facts its body has: a body that returns a borrow needs `@lends`, one that keeps an argument
+    needs `@keeps`.
+  - The error for an open function that returns a borrow or keeps a parameter says that `@lends`
+    or `@keeps` would put it in its signature.
 - **OwnershipInferencePass:** a marked function may return a bounded result (`boundedUses`).
 - **Across modules:**
   - `__decls` prints the markers with the printed parameter names (`p1`, and `this` for a
@@ -116,9 +125,13 @@ With these, `lib.ts` compiles under gc, rc, none and own, release and `--di`. De
   made from the shape freed the borrowed argument a second time (exit 127). `import_final_class`
   and `import_own_markers` now run under own too. `own_iterator_next.ts` covers the
   interface-shaped call in one module, which already worked.
-- **An own DefaultLib returns corrupted regex strings.** This is on main, and it is not this
-  branch's. `let buffer = "".clone().resize(len)` (`MatchResults.get`) borrows a temporary that is
-  freed after the statement, and own does not reject it. It needs its own fix.
+- **An own DefaultLib returned corrupted regex strings.** Fixed 2026-10-20. It was not a borrowed
+  temporary. `resize` assigns its `this` parameter (`this.length = n`), and under own a string
+  parameter's slot did not own what was assigned to it: that string leaked, and `return this`
+  returned a copy of it, read up to its first NUL - one byte, which the caller filled with `len`
+  characters. Under own a string parameter the body assigns (including `p.length = n`) now starts
+  a local of its own, made from a copy, as rc already did for every assigned parameter
+  (`mlirGenFunctionOwnAssignedParams`). Covered by `own_string_param_assigned.ts`.
 - **A generator local's previous value leaks** under rc and own (on main too): a `const` declared in
   a loop inside a generator is stored into its state field again each iteration, and nothing gives
   back what the last iteration stored. Releasing it there fixes rc, but under own it makes `next`
@@ -127,9 +140,10 @@ With these, `lib.ts` compiles under gc, rc, none and own, release and `--di`. De
 - **A generator local's type from a function declared later** is `none` in the state object, and
   the lowering fails ("failed to legalize operation 'ts.Cast'") under every model. `matchAll`
   annotates `const more: boolean`.
-- **`@borrows` for an ordinary function whose result points into an argument**
-  (`__own_result_borrows`, where the caller owns nothing) is not expressible yet. Such a function
-  is still rejected when it is open.
+- **An ordinary function whose result points into an argument** (`__own_result_borrows`, where
+  the caller owns nothing) says so with `@lends`, added 2026-10-20. Covered by `own_lends.ts`, the
+  `own_err_lends_*` cases, and `import_own_markers` / `import_own_markers_lent_outlives` across
+  modules.
 - **A ternary that picks an array literal or `null`** (`return i < 3 ? ["a"] : null`) fails MLIR
   verification ("operand #0 does not dominate this use") under rc and own. This is unrelated.
 - **Android** still builds gc, rc and none only.
