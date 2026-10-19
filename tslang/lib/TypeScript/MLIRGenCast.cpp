@@ -21,7 +21,10 @@ namespace mlirgen
     // member order (methods-first, per InterfaceInfo::getTupleTypeFields)
     // silently reads/writes the wrong slots at runtime. Only the TYPES are taken
     // from the interface; interface-only members are appended after the source
-    // fields.
+    // fields. A function the interface can't call with the object as its `this`
+    // (a closure, see MLIRTypeHelper::isObjectFieldFunctionWithoutThis) keeps its
+    // own type: cast to the interface's it would lose its captures. Its slot calls a
+    // thunk reading the field instead (mlirGenObjectVirtualTableDefinitionForInterface).
     static mlir::LogicalResult getInterfaceCloneFields(mlir::ArrayRef<mlir_ts::FieldInfo> srcFields,
                                                        InterfaceInfo::TypePtr interfaceInfo, mlir::MLIRContext *context,
                                                        SmallVector<mlir_ts::FieldInfo> &fields)
@@ -37,7 +40,10 @@ namespace mlirgen
             auto interfaceField =
                 std::find_if(interfaceFields.begin(), interfaceFields.end(),
                              [&](auto &item) { return item.id == origField.id; });
-            fields.push_back(interfaceField != interfaceFields.end() ? *interfaceField : origField);
+            auto keepsOwnType = interfaceField != interfaceFields.end()
+                && isa<mlir_ts::FunctionType>(interfaceField->type)
+                && MLIRTypeHelper::isObjectFieldFunctionWithoutThis(origField.type);
+            fields.push_back(interfaceField != interfaceFields.end() && !keepsOwnType ? *interfaceField : origField);
         }
 
         for (auto &interfaceField : interfaceFields)

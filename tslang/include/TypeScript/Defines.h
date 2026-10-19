@@ -170,6 +170,8 @@
 // (`fn?: () => int`, called through a thunk) has its flag at `this` + the offset, so a read of the
 // interface's optional field (`fn?: () => int`) is absent while the instance's flag is clear; -1
 // is always present (a method, or a field that is not optional).
+// An object field holding a function the interface can't call with the object as its `this` (a
+// closure) is filled the same way, with a thunk calling the field; its cell is always present.
 #define INTERFACE_METHOD_CELL_TAG 1
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it

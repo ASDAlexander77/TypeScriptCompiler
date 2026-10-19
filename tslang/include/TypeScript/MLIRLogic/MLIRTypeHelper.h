@@ -1141,6 +1141,26 @@ class MLIRTypeHelper
         return isa<mlir_ts::BoundFunctionType>(inFuncType) || isa<mlir_ts::ExtensionFunctionType>(inFuncType);
     }
 
+    // An object's field holding a function an interface slot can't call with the object as its `this`:
+    // a bound function (a capturing closure, its `this` is the captures), a hybrid one (a type-literal
+    // annotated field) or a plain function without a `this` parameter (`{ add: plusOne }`). Only an
+    // object-literal method (`fn() {...}`, `fn: () => ...` written in the literal) takes the object.
+    static bool isObjectFieldFunctionWithoutThis(mlir::Type fieldType)
+    {
+        if (isa<mlir_ts::BoundFunctionType>(fieldType) || isa<mlir_ts::HybridFunctionType>(fieldType))
+        {
+            return true;
+        }
+
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldType))
+        {
+            return funcType.getNumInputs() == 0
+                || !isa<mlir_ts::OpaqueType>(funcType.getInput(0)) && !isa<mlir_ts::ObjectType>(funcType.getInput(0));
+        }
+
+        return false;
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
@@ -1424,6 +1444,19 @@ class MLIRTypeHelper
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
+
+                    // a function the slot can't hand out as one taking the object as its `this` is called
+                    // through a thunk reading the field (isObjectFieldFunctionWithoutThis): the slot has the
+                    // interface's type
+                    if (isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
+                        && isObjectFieldFunctionWithoutThis(foundField.type))
+                    {
+                        if (TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match)
+                        {
+                            return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
+                        }
+                    }
+
                     auto test = isa<mlir_ts::FunctionType>(foundField.type) && isa<mlir_ts::FunctionType>(fieldType)
                                     ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
                                     : stripLiteralType(fieldType) == stripLiteralType(foundField.type);

@@ -613,6 +613,7 @@ tslang_add_test(NAME test-compile-00-interface-optional-cast-order COMMAND test-
 tslang_add_test(NAME test-compile-00-interface-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
+tslang_add_test(NAME test-compile-00-interface-function-typed-field-object-closure COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_object_closure.ts")
 tslang_add_test(NAME test-compile-00-class-function-typed-field-inferred COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_function_typed_field_inferred.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-function-typed-field-class-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field_class_field.ts")
@@ -1171,6 +1172,7 @@ tslang_add_test(NAME test-jit-00-interface-optional-cast-order COMMAND test-runn
 tslang_add_test(NAME test-jit-00-interface-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
+tslang_add_test(NAME test-jit-00-interface-function-typed-field-object-closure COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_object_closure.ts")
 tslang_add_test(NAME test-jit-00-class-function-typed-field-inferred COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_function_typed_field_inferred.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-function-typed-field-class-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field_class_field.ts")
@@ -2037,6 +2039,7 @@ set(TSLANG_CORPUS
     00interface_function_typed_field.ts
     00interface_function_typed_field_class.ts
     00interface_function_typed_field_class_field.ts
+    00interface_function_typed_field_object_closure.ts
     00class_function_typed_field_inferred.ts
     00interface_generic.ts
     00interface_global_method.ts

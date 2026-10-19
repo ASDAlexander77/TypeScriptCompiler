@@ -254,8 +254,10 @@ namespace mlirgen
                         return mlir::failure();
                     }
 
+                    // a field the interface calls through a thunk has the thunk in its slot already
                     auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
-                    if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty())
+                    if (lookupObjectLiteralMethodSymbol(fieldInfo.type, fieldId).empty()
+                        && !mth.isObjectFieldFunctionWithoutThis(fieldInfo.type))
                     {
                         methodsNeedingPatch.push_back({methodPtr, vtableOffset});
                     }
@@ -500,8 +502,97 @@ namespace mlirgen
 
         virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
 
-        // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
+
+        // a field holding a function the interface can't call with the object as its `this` - a closure, whose
+        // `this` is its captures (MLIRTypeHelper::isObjectFieldFunctionWithoutThis) - is called through a thunk
+        // reading the field, `<vtable>.<field>.thunk(this, ...) { return this.<field>(...) }`. A method's slot holds
+        // the thunk; a function-typed field's slot the address of a cell holding it, tagged with
+        // INTERFACE_METHOD_CELL_TAG, as for a class (mlirGenClassVirtualTableDefinitionForInterface)
+        auto methodCellName = [&](mlir::Attribute id) {
+            return concat(fullClassInterfaceVTableFieldName, mlir::cast<mlir::StringAttr>(id).getValue(), "method");
+        };
+
+        llvm::SmallVector<std::pair<mlir::Attribute, StringRef>> thunksForFields;
+        for (auto &methodOrField : virtualTable)
+        {
+            if (!methodOrField.isField || methodOrField.isMissing)
+            {
+                continue;
+            }
+
+            auto id = methodOrField.fieldInfo.id;
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(methodOrField.fieldInfo.type);
+            auto fieldName = dyn_cast<mlir::StringAttr>(id);
+            auto storageIndex = tupleStorageType.getIndex(id);
+            if (!funcType || !fieldName || storageIndex < 0)
+            {
+                continue;
+            }
+
+            auto storageFieldType = tupleStorageType.getFieldInfo(storageIndex).type;
+            if (storageFieldType == funcType || !mth.isObjectFieldFunctionWithoutThis(storageFieldType))
+            {
+                continue;
+            }
+
+            // a field reached twice through a diamond `extends` has two slots and one thunk
+            if (llvm::any_of(thunksForFields, [&](auto &thunkForField) { return thunkForField.first == id; }))
+            {
+                continue;
+            }
+
+            auto thunkName = concat(fullClassInterfaceVTableFieldName, fieldName.getValue(), "thunk");
+            if (mlir::failed(generateSynthMethodToCallField(location, objectType, fieldName.getValue(), thunkName,
+                                                             funcType, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            thunksForFields.push_back({id, thunkName});
+
+            if (newInterfacePtr->findMethod(fieldName.getValue()))
+            {
+                continue;
+            }
+
+            auto cellType = registerVariable(
+                location, methodCellName(id), true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    auto thunkValue = builder.create<mlir_ts::SymbolRefOp>(
+                        location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
+
+                    // the cell is {method, flag offset}, as a class's: the field holds a function, so the flag
+                    // offset is -1, always present
+                    auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                    auto flagOffsetValue =
+                        builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+                    mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
+                        {MLIRHelper::TupleFieldName("method", builder.getContext()), funcType, false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("flagOffset", builder.getContext()), ptrIntType, false,
+                         mlir_ts::AccessLevel::Public}};
+                    auto cellTupleType = getTupleType(cellFields);
+                    mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, thunkValue, cellValue,
+                                                                          MLIRHelper::getStructIndex(builder, 0));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, flagOffsetValue,
+                                                                          cellValue, MLIRHelper::getStructIndex(builder, 1));
+                    return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
+                },
+                genContext);
+            if (!cellType)
+            {
+                return mlir::failure();
+            }
+        }
+
+        auto thunkFor = [&](mlir::Attribute id) -> StringRef {
+            auto found = llvm::find_if(thunksForFields, [&](auto &thunkForField) { return thunkForField.first == id; });
+            return found != thunksForFields.end() ? found->second : StringRef();
+        };
+
+        // register global
         registerVariable(
             location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
@@ -540,16 +631,45 @@ namespace mlirgen
                         // PropertySignature-with-function-type's slot corrupts that
                         // computation (crashes on the resulting garbage address).
                         std::string methodFuncName;
+                        auto thunkName = methodOrField.isMissing ? StringRef() : thunkFor(methodOrField.fieldInfo.id);
+                        auto isMethod = false;
                         if (!methodOrField.isMissing)
                         {
                             auto fieldNameAttr = dyn_cast<mlir::StringAttr>(methodOrField.fieldInfo.id);
-                            if (fieldNameAttr && newInterfacePtr->findMethod(fieldNameAttr.getValue()))
+                            isMethod = fieldNameAttr && newInterfacePtr->findMethod(fieldNameAttr.getValue());
+                            if (isMethod)
                             {
-                                methodFuncName = lookupObjectLiteralMethodSymbol(methodOrField.fieldInfo.type, methodOrField.fieldInfo.id);
+                                methodFuncName = !thunkName.empty()
+                                    ? thunkName.str()
+                                    : lookupObjectLiteralMethodSymbol(methodOrField.fieldInfo.type, methodOrField.fieldInfo.id);
                             }
                         }
 
-                        if (!methodFuncName.empty())
+                        if (!thunkName.empty() && !isMethod)
+                        {
+                            // the slot is the address of the thunk's cell plus INTERFACE_METHOD_CELL_TAG, so an access
+                            // reads the cell instead of `this` + offset (InterfaceSymbolRefOpLowering)
+                            auto cellRef = resolveFullNameIdentifier(location, methodCellName(methodOrField.fieldInfo.id), true, genContext);
+                            if (!cellRef)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
+                            }
+
+                            auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                            auto cellAddress = builder.create<mlir_ts::CastOp>(location, ptrIntType, cellRef);
+                            auto tagValue = builder.create<mlir_ts::ConstantOp>(
+                                location, ptrIntType, builder.getIntegerAttr(ptrIntType, INTERFACE_METHOD_CELL_TAG));
+                            auto taggedValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                                location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), cellAddress,
+                                tagValue);
+                            auto slotValue = builder.create<mlir_ts::CastOp>(
+                                location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), taggedValue);
+
+                            vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                                location, virtTuple, slotValue, vtableValue,
+                                MLIRHelper::getStructIndex(builder, fieldIndex));
+                        }
+                        else if (!methodFuncName.empty())
                         {
                             auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                                 location, mlir::cast<mlir_ts::FunctionType>(methodOrField.fieldInfo.type),

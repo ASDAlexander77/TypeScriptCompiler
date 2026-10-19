@@ -10670,6 +10670,19 @@ class MLIRGenImpl
 
         type = mth.wideStorageType(type);
 
+        // the receiver's slot takes the object as the function's `this` (an interface's function-typed member),
+        // the value does not - a closure, whose `this` is its captures (MLIRTypeHelper::isObjectFieldFunctionWithoutThis):
+        // cast, it would lose them. It keeps its own type, and the object's cast to the interface calls it through a
+        // thunk (mlirGenObjectVirtualTableDefinitionForInterface)
+        if (auto receiverFuncType = dyn_cast_or_null<mlir_ts::FunctionType>(receiverElementType))
+        {
+            if (!mth.isObjectFieldFunctionWithoutThis(receiverFuncType) && mth.isObjectFieldFunctionWithoutThis(type)
+                && mth.TestFunctionTypesMatchWithObjectMethods(location, type, receiverFuncType).result == MatchResultType::Match)
+            {
+                receiverElementType = mlir::Type();
+            }
+        }
+
         if (receiverElementType)
         {
             if (type != receiverElementType)
@@ -12162,9 +12175,10 @@ class MLIRGenImpl
     }
 
     // `<thunkName>(this, p0..pn) { return this.<fieldName>(p0..pn); }`, typed as the interface's
-    // function-typed field (`this` opaque): the method an interface slot calls for a class whose
-    // field of that name holds the function (see mlirGenClassVirtualTableDefinitionForInterface)
-    mlir::LogicalResult generateSynthMethodToCallField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+    // function-typed field (`this` opaque): the method an interface slot calls for a class or an
+    // object (`thisType`) whose field of that name holds the function (see
+    // mlirGenClassVirtualTableDefinitionForInterface, mlirGenObjectVirtualTableDefinitionForInterface)
+    mlir::LogicalResult generateSynthMethodToCallField(mlir::Location location, mlir::Type thisType,
                                                        StringRef fieldName, StringRef thunkName,
                                                        mlir_ts::FunctionType funcType, const GenContext &genContext)
     {
@@ -12175,8 +12189,8 @@ class MLIRGenImpl
 
         GenContext funcGenContext(genContext);
         funcGenContext.clearScopeVars();
-        funcGenContext.thisType = newClassPtr->classType;
-        funcGenContext.thisClassType = newClassPtr->classType;
+        funcGenContext.thisType = thisType;
+        funcGenContext.thisClassType = dyn_cast<mlir_ts::ClassType>(thisType);
         funcGenContext.disableSpreadParams = true;
 
         return mlirGenFunctionBody(
@@ -12185,8 +12199,8 @@ class MLIRGenImpl
                 // the interface passes the object as an opaque `this`
                 auto funcOp = genContext.funcOp;
                 auto opaqueThis = funcOp.getBody().front().getArgument(0);
-                auto thisValue = builder.create<mlir_ts::CastOp>(location, newClassPtr->classType, opaqueThis);
-                auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, newClassPtr->classType, location);
+                auto thisValue = builder.create<mlir_ts::CastOp>(location, thisType, opaqueThis);
+                auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisType, location);
                 DECLARE(thisDecl, thisValue);
 
                 NodeFactory nf(NodeFactoryFlags::None);
