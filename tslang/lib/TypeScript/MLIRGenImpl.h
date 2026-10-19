@@ -3177,6 +3177,19 @@ class MLIRGenImpl
                 addAttr("func.varargs", mlir::BoolAttr::get(builder.getContext(), true));
             }
 
+            // a body's facts come from the body: the decorator is a declaration's alone
+            if (name == NO_DROPS_DECORATOR)
+            {
+                if (functionLikeDeclarationBaseAST->body)
+                {
+                    emitWarning(location, "'@" NO_DROPS_DECORATOR "' is ignored on a function with a body");
+                }
+                else
+                {
+                    addAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(builder.getContext()));
+                }
+            }
+
             if (name == "used") {
                 builder.create<mlir_ts::AppendToUsedOp>(location, fullName);
             }

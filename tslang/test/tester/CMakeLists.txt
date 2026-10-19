@@ -3314,7 +3314,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
                  own_string_copy_field own_string_copy_after_move own_string_copy_nullable
                  own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
-                 own_string_copy_branch own_array_param_push)
+                 own_string_copy_branch own_array_param_push
+                 own_declared_no_drops own_return_paths own_string_concat_element)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3490,6 +3491,7 @@ set(own_error_cases
     "own_err_call_drops_indirectly|borrows .* but is used here after it may be released or overwritten"
     "own_err_call_given_borrow|borrows .* but is used here after it may be released or overwritten"
     "own_err_call_this_borrow|borrows .* but is used here after it may be released or overwritten"
+    "own_err_declared_drops|borrows .* but is used here after it may be released or overwritten"
     "own_err_exported_virtual_call|borrows .* but is used here after it may be released or overwritten"
     "own_err_borrowed_result_stored|borrows the result of 'firstOf' and cannot be stored, returned or captured"
     "own_err_borrowed_result_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"

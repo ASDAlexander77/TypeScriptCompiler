@@ -224,6 +224,14 @@
 #define SHARED_LIB_BORROW_FACTS_ATTR_NAME "ts.borrow_facts"
 // a module attribute, so it has to carry the dialect's prefix
 #define SHARED_LIB_OWN_NO_DROPS_ATTR_NAME "ts.own_imported_no_drops"
+// `@nodrops declare function strncmp(...)`: a function defined outside TypeScript, a C function,
+// that destroys nothing a TypeScript caller can reach. -mm=own calls it the way it calls an
+// imported function in SHARED_LIB_OWN_NO_DROPS_ATTR_NAME, so a borrow of a field can be given to
+// it. A declaration has no body to check, so this is the declaration's word, and only a
+// declaration can give it: never on one that may run TypeScript code (it takes a callback) or
+// one re-parsed from a TypeScript library, whose functions may destroy what they are given.
+#define NO_DROPS_DECORATOR "nodrops"
+#define OWN_DECLARED_NO_DROPS_ATTR_NAME "ts.own_declared_no_drops"
 
 // The process-heap allocator of a Windows module (TypeScript/ProcessHeap.h), which ProcessHeapPass
 // calls instead of the C runtime's. Defined by the async runtime library a program links,

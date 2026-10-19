@@ -2049,6 +2049,11 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 continue;
             }
 
+            // read by -mm=own only
+            if (name == OWN_DECLARED_NO_DROPS_ATTR_NAME) {
+                continue;
+            }
+
             // module-local: a private symbol alone still comes out external
             if (name == "internal_linkage") {
                 newFuncOp->setAttr("llvm.linkage", LLVM::LinkageAttr::get(getContext(), LLVM::linkage::Linkage::Internal));
