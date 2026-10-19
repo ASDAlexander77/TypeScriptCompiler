@@ -50,6 +50,47 @@ function callFn(h: HasFn): int {
     return h.fn();
 }
 
+// declared with `implements`, inherited from a base that declares it, and reached twice
+// through a diamond `extends` (two slots, one cell)
+interface P1 extends HasFn {
+    a: int;
+}
+
+interface P2 extends HasFn {
+    b: int;
+}
+
+interface Both extends P1, P2 {}
+
+class Impl implements HasFn {
+    constructor(public v: int) {}
+    fn(): int {
+        return this.v + 1;
+    }
+}
+
+class ImplBase implements HasFn {
+    constructor(public v: int) {}
+    fn(): int {
+        return this.v * 3;
+    }
+}
+
+class ImplDerived extends ImplBase {
+    constructor(v: int) {
+        super(v);
+    }
+}
+
+class Diamond {
+    a = 1;
+    b = 2;
+    constructor(public v: int) {}
+    fn(): int {
+        return this.v + 100;
+    }
+}
+
 function main() {
     const f = fromClass();
     print(f());
@@ -71,6 +112,14 @@ function main() {
     // one access site: a class's method cell, an object literal's field
     assert(callFn(new C(1)) == 1);
     assert(callFn({ v: 41, fn() { return this.v; } }) == 41);
+
+    const i: HasFn = new Impl(6);
+    assert(i.fn() == 7);
+    const id: HasFn = new ImplDerived(4);
+    assert(id.fn() == 12);
+    const both: Both = new Diamond(5);
+    assert(both.fn() == 105);
+    assert(both.a == 1 && both.b == 2);
 
     print("done.");
 }

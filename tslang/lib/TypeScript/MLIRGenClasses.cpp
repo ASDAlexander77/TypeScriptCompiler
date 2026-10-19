@@ -2379,7 +2379,12 @@ genContext);
                             return {emptyFieldInfo, mlir::failure()};
                         }
 
-                        methodsForFields.push_back({id, *foundMethodPtr});
+                        // a field reached twice through a diamond `extends` has two slots and one cell
+                        if (llvm::none_of(methodsForFields, [&](auto &methodForField) { return methodForField.first == id; }))
+                        {
+                            methodsForFields.push_back({id, *foundMethodPtr});
+                        }
+
                         return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
                     }
                 }
