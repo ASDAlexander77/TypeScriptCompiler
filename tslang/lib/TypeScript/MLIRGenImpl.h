@@ -3150,7 +3150,7 @@ class MLIRGenImpl
         }
     }
 
-    // `@keeps("p")`, `@borrows("this", "p")` (OWN_DECLARED_KEEPS_ATTR_NAME): the parameters they
+    // `@keeps("p")`, `@borrows("this", "p")`, `@lends("p")` (OWN_DECLARED_KEEPS_ATTR_NAME): the parameters they
     // name, as indices of the function's arguments - after the captured values, when its type has
     // an input more than it has parameters.
     mlir::LogicalResult processOwnParamMarkers(mlir::Location location, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
@@ -3159,12 +3159,14 @@ class MLIRGenImpl
     {
         auto result = mlir::success();
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
-            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR)
+            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR)
             {
                 return;
             }
 
-            auto attrName = name == KEEPS_DECORATOR ? OWN_DECLARED_KEEPS_ATTR_NAME : OWN_DECLARED_BORROWS_ATTR_NAME;
+            auto attrName = name == KEEPS_DECORATOR    ? OWN_DECLARED_KEEPS_ATTR_NAME
+                            : name == BORROWS_DECORATOR ? OWN_DECLARED_BORROWS_ATTR_NAME
+                                                        : OWN_DECLARED_LENDS_ATTR_NAME;
             if (llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == attrName; }))
             {
                 emitError(location) << "'@" << name << "' is given twice";
@@ -3175,6 +3177,14 @@ class MLIRGenImpl
             if (args.empty())
             {
                 emitError(location) << "'@" << name << "' names no parameter";
+                result = mlir::failure();
+                return;
+            }
+
+            // a result is a borrow of one argument
+            if (name == LENDS_DECORATOR && args.size() > 1)
+            {
+                emitError(location) << "'@" << name << "' names one parameter, the one the result is a borrow of";
                 result = mlir::failure();
                 return;
             }
@@ -12590,6 +12600,11 @@ class MLIRGenImpl
                 {
                     methodInfo.ownBorrows.assign(borrows.asArrayRef().begin(), borrows.asArrayRef().end());
                 }
+
+                if (auto lends = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_LENDS_ATTR_NAME))
+                {
+                    methodInfo.ownLends = lends.asArrayRef().empty() ? -1 : lends.asArrayRef().front();
+                }
             }
 
             if (propertyName.size() > 0)
@@ -13960,7 +13975,7 @@ class MLIRGenImpl
             return attr ? attr.asArrayRef() : ArrayRef<int32_t>();
         };
         dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName,
-                 marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME));
+                 marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME), marker(OWN_DECLARED_LENDS_ATTR_NAME));
 
         declExports << ss.str().str();
     }

@@ -230,7 +230,8 @@ namespace typescript
 
     // `@keeps("p1")`, `@borrows("this", "p1")`: by the names printParams gives the parameters, `this`
     // the receiver of a method, so the importer reads the same argument indices back
-    void MLIRDeclarationPrinter::printOwnMarkers(ArrayRef<int32_t> keeps, ArrayRef<int32_t> borrows, bool hasThis, unsigned indent)
+    void MLIRDeclarationPrinter::printOwnMarkers(ArrayRef<int32_t> keeps, ArrayRef<int32_t> borrows, ArrayRef<int32_t> lends,
+                                                 bool hasThis, unsigned indent)
     {
         auto printMarker = [&](StringRef name, ArrayRef<int32_t> indices) {
             if (indices.empty())
@@ -261,6 +262,7 @@ namespace typescript
 
         printMarker(KEEPS_DECORATOR, keeps);
         printMarker(BORROWS_DECORATOR, borrows);
+        printMarker(LENDS_DECORATOR, lends);
     }
 
     void MLIRDeclarationPrinter::printFunction(StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
@@ -438,7 +440,7 @@ namespace typescript
     }
 
     void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName,
-                                       ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows)
+                                       ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows, ArrayRef<int32_t> ownLends)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -450,7 +452,7 @@ namespace typescript
             newline();
         }
 
-        printOwnMarkers(ownKeeps, ownBorrows, /*hasThis=*/false, 0);
+        printOwnMarkers(ownKeeps, ownBorrows, ownLends, /*hasThis=*/false, 0);
 
         printFunction(
             name,
@@ -698,7 +700,9 @@ namespace typescript
                 newline();
             }
 
-            printOwnMarkers(method.ownKeeps, method.ownBorrows, /*hasThis=*/!method.isStatic, 4);
+            printOwnMarkers(method.ownKeeps, method.ownBorrows,
+                            method.ownLends >= 0 ? ArrayRef<int32_t>(method.ownLends) : ArrayRef<int32_t>(),
+                            /*hasThis=*/!method.isStatic, 4);
 
             // the slot of a @cpp class's virtual method: without it the importer takes the method
             // for a non-virtual one
