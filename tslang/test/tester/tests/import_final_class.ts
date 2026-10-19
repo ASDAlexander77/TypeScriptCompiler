@@ -1,6 +1,7 @@
-// A @final class from another module: its declaration (__decls) keeps @final, so the calls here are
-// direct, and they link both against the import library and, under the JIT, to the DLL loaded at
-// run time (where the class is a dynamic import and its calls stay vtable calls).
+// A @final class from another module, imported from its DLL (test-runner -shared builds the DLL
+// first, so the import is dynamic): its declaration (__decls) keeps @final, and its calls stay
+// vtable calls, as every call into a class declared here does. The static import is
+// import_final_base_static.ts.
 import './export_final_class'
 
 function main() {

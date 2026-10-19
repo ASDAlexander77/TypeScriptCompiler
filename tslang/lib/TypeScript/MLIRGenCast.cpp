@@ -1949,6 +1949,14 @@ namespace mlirgen
             return false;
         }
 
+        // only an F is an F: a call on a @final class is a direct call to its own method, which
+        // would run on the other class's fields
+        if (classInfo->isFinal)
+        {
+            mismatch = "'" + classInfo->name.str() + "' is @" FINAL_DECORATOR;
+            return true;
+        }
+
         // the data fields, inherited ones included; not the internal ones (.vtbl) nor the storage
         // a derived class embeds for its base
         std::function<void(ClassInfo::TypePtr, llvm::StringMap<mlir::Type> &)> collectFields =

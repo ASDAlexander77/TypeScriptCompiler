@@ -111,6 +111,11 @@ methods and accessors of exported classes are already in the import library, so 
 calls link, compiled or JIT. Under rc, `OwnedReturnConsumptionPass` treats a direct call to a
 `lib.d.ts` declaration as it treats a virtual one.
 
+**Amended after the final review (2026-10-19).**
+
+- **Direct calls only into this module.** A member is called directly only when the class that has it is defined in this module, not declared there (`isDeclaration`, `isImport`, `isDynamicImport`). A `@static import` links by name against the import library, which has no symbol for a member of a base the library does not export, so inheriting such a member broke the link. A user program's calls into the default library's `@final` classes therefore stay vtable calls. That costs nothing the goals need: own facts do not cross a static link anyway. The extends error still applies to declared classes.
+- **No other class can pose as a `@final` one.** An unrelated class that fits a `@final` class member by member is not assignable to it (`type Y is not assignable to type F: 'F' is @final`), because the direct call would run F's body on Y's fields.
+
 ### Own
 
 No change in the ownership passes is planned. A `ThisSymbolRef` call is what `resolveValue`

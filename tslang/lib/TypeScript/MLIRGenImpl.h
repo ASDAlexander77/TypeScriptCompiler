@@ -8047,10 +8047,12 @@ class MLIRGenImpl
             // TODO: check if you can split calls such as "this.method" and "super.method" ...
             auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
             // A @final receiver's method is the one this class has (ClassMembersAccess): the
-            // direct reference below, which the vtable would give anyway. Not for a class that
-            // lives in a DLL loaded at run time, whose method has no symbol to link against, nor a
-            // C++ binding, called through the C++ vtable.
-            auto direct = finalReceiver && !methodInfo.isAbstract && !classInfo->isDynamicImport && !classInfo->isCppVTable;
+            // direct reference below, which the vtable would give anyway. Only for a method of a
+            // class defined in this module: one declared here (an import, lib.d.ts) may have no
+            // symbol to link against - a base its library does not export, a DLL loaded at run
+            // time - and a C++ binding is called through the C++ vtable.
+            auto direct = finalReceiver && !methodInfo.isAbstract && !classInfo->isDeclaration && !classInfo->isImport &&
+                          !classInfo->isDynamicImport && !classInfo->isCppVTable;
             if (!direct && (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType))
             {
                 LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcName << "'\n";);

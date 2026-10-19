@@ -1500,6 +1500,9 @@ add_test(NAME test-export-generator-method
                  "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts" -o -)
 set_tests_properties(test-export-generator-method PROPERTIES PASS_REGULAR_EXPRESSION "define dllexport ptr @Counter.upTo"
                                                              FAIL_REGULAR_EXPRESSION "error|Stack dump")
+# ...and linked against its import library (`@static import`), with members from a base its
+# library does not export
+tslang_add_test(NAME test-compile-time-shared-final-base COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_base_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_base.ts")
 add_test(NAME test-compile-shared-import-final-extends
          COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 set_tests_properties(test-compile-shared-import-final-extends PROPERTIES PASS_REGULAR_EXPRESSION "class 'X' cannot extend 'Counter': it is @final"
@@ -3915,6 +3918,15 @@ add_test(NAME test-compile-class-cast-unrelated-error
                  -o "${CMAKE_CURRENT_BINARY_DIR}/class-cast-unrelated.obj")
 set_tests_properties(test-compile-class-cast-unrelated-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "type A is not assignable to type B: 'v' is number, not string"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# ...and so is any other class cast to a @final one, whose calls are direct
+add_test(NAME test-compile-class-cast-to-final-error
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/class-cast/to_final.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/class-cast-to-final.obj")
+set_tests_properties(test-compile-class-cast-to-final-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "type Y is not assignable to type F: 'F' is @final"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # An object literal with methods or accessors assigned to a class is an error: a class instance

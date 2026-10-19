@@ -669,9 +669,10 @@ namespace mlirgen
             auto getMethodInfo = findMethodInfo(getFunc);
             auto setMethodInfo = findMethodInfo(setFunc);
 
-            // a @final receiver's accessor is the one this class has, called directly, as a method
-            // is (ClassMethodAccess)
-            auto direct = finalReceiver && !classInfo->isDynamicImport && !classInfo->isCppVTable &&
+            // a @final receiver's accessor is the one this class has, called directly when the class
+            // is defined in this module, as a method is (ClassMethodAccess)
+            auto direct = finalReceiver && !classInfo->isDeclaration && !classInfo->isImport &&
+                          !classInfo->isDynamicImport && !classInfo->isCppVTable &&
                           !(getMethodInfo && getMethodInfo->isAbstract) && !(setMethodInfo && setMethodInfo->isAbstract);
             auto isVirtualAccessor = !direct && !isStorageType &&
                 ((getMethodInfo && (getMethodInfo->isAbstract || getMethodInfo->isVirtual)) ||
