@@ -561,7 +561,24 @@ namespace mlirgen
                 [&](mlir::Location location, const GenContext &genContext) {
                     auto thunkValue = builder.create<mlir_ts::SymbolRefOp>(
                         location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), thunkName));
-                    return TypeValueInitType{funcType, thunkValue, TypeProvided::Yes};
+
+                    // the cell is {method, flag offset}, as a class's: the field holds a function, so the flag
+                    // offset is -1, always present
+                    auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                    auto flagOffsetValue =
+                        builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+                    mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
+                        {MLIRHelper::TupleFieldName("method", builder.getContext()), funcType, false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("flagOffset", builder.getContext()), ptrIntType, false,
+                         mlir_ts::AccessLevel::Public}};
+                    auto cellTupleType = getTupleType(cellFields);
+                    mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, thunkValue, cellValue,
+                                                                          MLIRHelper::getStructIndex(builder, 0));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, flagOffsetValue,
+                                                                          cellValue, MLIRHelper::getStructIndex(builder, 1));
+                    return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
                 },
                 genContext);
             if (!cellType)
