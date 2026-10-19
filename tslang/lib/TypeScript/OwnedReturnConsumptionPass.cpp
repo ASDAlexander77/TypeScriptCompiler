@@ -819,19 +819,21 @@ class OwnedReturnConsumptionPass
     //    never ran the op that produced the value. Nothing about that is visible while the
     //    generator is still one block - it only becomes a use before definition once the state
     //    machine is expanded, and it surfaces as a dominance failure in the affine lowering
-    //    rather than as anything this pass could notice.
+    //    rather than as anything this pass could notice. A `yield` in front of the resume point
+    //    is different: the release goes before it, inside the stretch the definition dominates.
     //
     // That bias is the same one the rest of this arc takes: an unreleased reference is invisible,
     // a released one that was still owned is a use-after-free.
     void releaseDiscardedTemporaries(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
-        // Whole generators are left alone, the same way functionReturnsOwned leaves them alone
-        // and for the same reason: what a generator's body looks like here is not what runs.
-        // The state machine cuts its blocks at every resume point afterwards, so a position that
-        // is plainly after a definition now may not be on the path that reaches it later - and
-        // the failure is a dominance error in the affine lowering, not something visible here.
-        // Their temporaries leak, which is the side of the line this arc keeps everything
-        // uncertain on.
+        // What a generator's body looks like here is not what runs: the state machine cuts its
+        // blocks at every resume point afterwards, so a position that is plainly after a
+        // definition now may not be on the path that reaches it later - and the failure is a
+        // dominance error in the affine lowering, not something visible here. A temporary in a
+        // generator is released only inside the stretch of its block that no resume point cuts
+        // (releaseRangeEnd), and only when it does not go out with what the generator yields
+        // (escapesThroughStore). Every other one leaks, which is the side of the line this arc
+        // keeps everything uncertain on.
         llvm::DenseSet<mlir::Operation *> generators;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto isGenerator = false;
@@ -856,7 +858,7 @@ class OwnedReturnConsumptionPass
 
             if (auto funcOp = op->getParentOfType<mlir_ts::FuncOp>())
             {
-                if (generators.contains(funcOp.getOperation()))
+                if (generators.contains(funcOp.getOperation()) && escapesThroughStore(op->getResult(0)))
                 {
                     return;
                 }
@@ -874,6 +876,7 @@ class OwnedReturnConsumptionPass
             }
 
             auto *block = op->getBlock();
+            auto rangeEnd = releaseRangeEnd(op);
 
             // The end of the block is not the only way out of it. A `return` written inside an
             // `if` - which is where returns are usually written - leaves from a nested region and
@@ -900,7 +903,7 @@ class OwnedReturnConsumptionPass
             //
             // jumpLeavesBlock answers it by walking from the jump up to this block and asking
             // whether anything on the way catches it.
-            for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+            for (auto it = std::next(mlir::Block::iterator(op)); it != rangeEnd; ++it)
             {
                 if (it->getNumRegions() == 0)
                 {
@@ -1026,24 +1029,102 @@ class OwnedReturnConsumptionPass
     static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
+        auto rangeEnd = releaseRangeEnd(op);
+
+        // a resume point between the definition and the end of the block with no yield in front
+        // of it to release before - see above
+        if (rangeEnd != block->end() && mlir::isa<mlir_ts::StateLabelOp>(*rangeEnd))
+        {
+            return false;
+        }
+
         for (auto *user : op->getResult(0).getUsers())
         {
             if (user->hasTrait<mlir::OpTrait::IsTerminator>() || !runsWithinBlock(user, block))
             {
                 return false;
             }
+
+            // a use after the yield runs on the resume path, which the release has already left
+            auto *inBlock = block->findAncestorOpInBlock(*user);
+            if (rangeEnd != block->end() && !inBlock->isBeforeInBlock(&*rangeEnd))
+            {
+                return false;
+            }
         }
 
-        // a resume point between the definition and the end of the block - see above
-        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+        // A resume point inside a statement written before the yield - `if (c) { yield 1; }` -
+        // re-enters the block in the middle of that statement and falls through to the release
+        // without having run the definition.
+        for (auto it = std::next(mlir::Block::iterator(op)); it != rangeEnd; ++it)
         {
-            if (mlir::isa<mlir_ts::StateLabelOp>(*it))
+            auto resumes = it->walk([&](mlir::Operation *nested) {
+                if (mlir::isa<mlir_ts::FuncOp>(nested))
+                {
+                    return mlir::WalkResult::skip();
+                }
+
+                return mlir::isa<mlir_ts::StateLabelOp>(nested) ? mlir::WalkResult::interrupt()
+                                                                : mlir::WalkResult::advance();
+            });
+
+            if (resumes.wasInterrupted())
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    // Where the stretch of `op`'s block that a release of it may cover ends: at the first yield
+    // or resume point after it, or at the end of the block. The yield ends the call (the affine
+    // lowering turns it into a store and a jump to the exit block), and the next call re-enters
+    // at the resume point after it, past the definition - so a release has to come before the
+    // yield, and nothing after it is on the path that ran the definition. A plain function has
+    // neither and gets the whole block.
+    static mlir::Block::iterator releaseRangeEnd(mlir::Operation *op)
+    {
+        auto *block = op->getBlock();
+        for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
+        {
+            if (mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(*it))
+            {
+                return it;
+            }
+        }
+
+        return block->end();
+    }
+
+    // Does this generator temporary, or a view of it, get stored somewhere? The `{ value, done }`
+    // record a `yield` hands back is filled by a store that takes no count of its own - the
+    // caller retains on receipt - so `yield "a" + i` keeps the concatenation alive only through
+    // the +1 it was born with, and a release before the yield would free what the caller reads.
+    // Any store is treated that way: it leaks, as before, rather than telling the record apart
+    // from a place that does count.
+    static bool escapesThroughStore(mlir::Value value)
+    {
+        for (auto *user : value.getUsers())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
+            {
+                if (storeOp.getValue() == value)
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) &&
+                user->getNumResults() == 1 && escapesThroughStore(user->getResult(0)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The first op after `op` that ends this block's execution, if there is one.
@@ -1061,12 +1142,13 @@ class OwnedReturnConsumptionPass
     //
     // Releasing before the return is right for a discarded temporary by definition: what is
     // being returned was consumed by the return's own retain (§9.24) and so is not in this set.
+    // A generator's `yield` ends the call the same way (releaseRangeEnd).
     static mlir::Operation *firstExitingOpAfter(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         for (auto it = std::next(mlir::Block::iterator(op)); it != block->end(); ++it)
         {
-            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp>(*it))
+            if (mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp, mlir_ts::ExitOp, mlir_ts::YieldReturnValOp>(*it))
             {
                 return &*it;
             }
