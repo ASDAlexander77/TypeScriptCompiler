@@ -389,6 +389,7 @@ tslang_add_test(NAME test-compile-00-string-concat-bounds COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-parse-number-range COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
+tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
@@ -950,6 +951,7 @@ tslang_add_test(NAME test-jit-00-string-concat-bounds COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-parse-number-range COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
+tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
@@ -1871,6 +1873,7 @@ set(TSLANG_CORPUS
     00parse_number_range.ts
     00narrowed_assign_other_member.ts
     00const_record_owned_fields.ts
+    00generator_temporaries.ts
     00array_length_valid.ts
     00string_view_copy.ts
     00c_string_copy.ts
@@ -3456,6 +3459,15 @@ add_test(NAME test-rc-const-record-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/const-record-release.cmake")
+
+# A generator body's temporaries are released before the yield that ends the call, where no resume
+# point comes between, and the file runs under own as well.
+add_test(NAME test-rc-generator-temporaries
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/generator-temporaries.cmake")
+tslang_add_test(NAME test-jit-own-00-generator-temporaries COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
+tslang_add_test(NAME test-compile-own-00-generator-temporaries COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
