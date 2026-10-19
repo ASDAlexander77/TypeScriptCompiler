@@ -2764,6 +2764,16 @@ set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
                      PROPERTIES PASS_REGULAR_EXPRESSION "rest_parameter_type\\.ts:6:12: error: A rest parameter must be of an array type, not 's32'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
 
+# A function-typed interface field cannot be written: for a class its slot points at a method cell
+# shared by every instance, so a write would change the function for all of them.
+add_test(NAME test-compile-interface-function-field-write
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/interface-errors/function_field_write.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/interface-function-field-write.obj")
+set_tests_properties(test-compile-interface-function-field-write
+                     PROPERTIES PASS_REGULAR_EXPRESSION "function_field_write\\.ts:9:5: error: saving to constant object"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),
 # not padded with undef; so is one with more arguments than the callee has parameters
 # (too_many_*), which went silently into a slot the callee does not have (a rest parameter

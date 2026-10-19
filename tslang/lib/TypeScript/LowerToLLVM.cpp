@@ -6585,9 +6585,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                                                              storedAsOptionalAddrFunc, calcFieldTotalAddrFunc);
                 };
 
-                // a write through the interface (pre-existing: it changes the shared cell) skips the presence
-                // check, which would make an unset field's address null
-                auto presentOrMethodCellAddrFunc = orMethodCell(presentAddrFunc, !writeAttr);
+                // a function-typed field is only read (a write is "saving to constant object"), so the
+                // presence check always applies
+                auto presentOrMethodCellAddrFunc = orMethodCell(presentAddrFunc, true);
                 auto result = clh.conditionalExpressionLowering(
                     loc, fieldLLVMTypeRef, condVal, nullAddrFunc,
                     isFunctionField ? mlir::function_ref<mlir::Value(OpBuilder &, Location)>(presentOrMethodCellAddrFunc)
