@@ -2389,6 +2389,48 @@ genContext);
                     }
                 }
 
+                // a class field holding a function (`fn: () => int = ...`) stores a hybrid function -
+                // {function, `this` or null} - or, unannotated (`fn = () => 7`), a plain one: neither can be handed out
+                // as a function taking the object as its `this`. A thunk calling `this.fn(...)` fills the
+                // slot as a method does; it reads the field at each call, so a field assigned later is seen.
+                if (found && isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
+                    && mth.isAnyFunctionType(foundField.type))
+                {
+                    auto fieldName = dyn_cast<mlir::StringAttr>(id);
+                    auto match = mth.TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType);
+                    if (!fieldName || match.result != MatchResultType::Match)
+                    {
+                        emitError(location) << "field type not matching for " << id << ":" << to_print(fieldType)
+                                            << " for interface '" << newInterfacePtr->fullName << "' in class '"
+                                            << newClassPtr->fullName << "'. Found field: " << id << ":"
+                                            << to_print(foundField.type);
+                        return {emptyFieldInfo, mlir::failure()};
+                    }
+
+                    // a field reached twice through a diamond `extends` has two slots and one cell
+                    if (llvm::none_of(methodsForFields, [&](auto &methodForField) { return methodForField.first == id; }))
+                    {
+                        auto funcType = mlir::cast<mlir_ts::FunctionType>(fieldType);
+                        auto thunkName = concat(interfaceVTableNameForClass(newClassPtr, newInterfacePtr),
+                                                fieldName.getValue(), "thunk");
+                        if (mlir::failed(generateSynthMethodToCallField(location, newClassPtr, fieldName.getValue(),
+                                                                         thunkName, funcType, genContext)))
+                        {
+                            return {emptyFieldInfo, mlir::failure()};
+                        }
+
+                        MethodInfo thunkInfo{};
+                        thunkInfo.name = thunkName.str();
+                        thunkInfo.funcType = funcType;
+                        thunkInfo.funcName = thunkName.str();
+                        thunkInfo.virtualIndex = -1;
+                        thunkInfo.accessLevel = mlir_ts::AccessLevel::Public;
+                        methodsForFields.push_back({id, thunkInfo});
+                    }
+
+                    return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
+                }
+
                 // a class's `v?: T` is stored as optional<T>; the interface's `v?: T` reads it by its flag
                 // (a tagged slot, see isStoredAsOptional below)
                 auto optionalStorage = found && isConditional && isa<mlir_ts::OptionalType>(foundField.type)
