@@ -93,6 +93,16 @@ namespace mlirgen
             return {mlir::failure(), ""};
         }
 
+        // an abstract class is there to be extended, and a C++ binding is called through the C++
+        // vtable: neither can be @final
+        if (newClassPtr->isFinal && (newClassPtr->isAbstract || newClassPtr->isCppVTable))
+        {
+            emitError(loc(classDeclarationAST))
+                << "class '" << newClassPtr->name << "' cannot be both @" FINAL_DECORATOR " and "
+                << (newClassPtr->isAbstract ? "abstract" : "@" CPP_VTABLE);
+            return {mlir::failure(), ""};
+        }
+
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
             // a concrete instantiation of a generic class (e.g. Box<number>) reprocesses the
@@ -390,6 +400,11 @@ namespace mlirgen
                     {
                         newClassPtr->isDeclaration = true;
                     }
+                }
+
+                if (name == FINAL_DECORATOR)
+                {
+                    newClassPtr->isFinal = true;
                 }
             });
 
@@ -1238,6 +1253,15 @@ namespace mlirgen
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Public});
 
                         auto classInfo = getClassInfoByFullName(baseName);
+                        // calls on a @final class are direct (ClassMethodAccess): an override
+                        // would never run
+                        if (classInfo && classInfo->isFinal)
+                        {
+                            emitError(loc(extendingType)) << "class '" << newClassPtr->name << "' cannot extend '"
+                                                          << classInfo->name << "': it is @" FINAL_DECORATOR;
+                            return;
+                        }
+
                         if (std::find(baseClassInfos.begin(), baseClassInfos.end(), classInfo) == baseClassInfos.end())
                         {
                             baseClassInfos.push_back(classInfo);

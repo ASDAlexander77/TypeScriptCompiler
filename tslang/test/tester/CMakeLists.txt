@@ -2772,6 +2772,27 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# `@final` (docs/superpowers/specs/2026-10-19-final-classes-design.md): a class nobody may extend.
+# Each file in final/ breaks one rule; the test passes when the compiler prints the message.
+set(final_error_cases
+    "extends_final|class 'X' cannot extend 'B': it is @final"
+    "extends_declared_final|class 'E' cannot extend 'D': it is @final"
+    "final_abstract|class 'A' cannot be both @final and abstract"
+    "final_cpp|class 'P' cannot be both @final and @cpp")
+foreach(final_error_case ${final_error_cases})
+    string(FIND "${final_error_case}" "|" final_error_sep)
+    string(SUBSTRING "${final_error_case}" 0 ${final_error_sep} final_error_name)
+    math(EXPR final_error_sep "${final_error_sep} + 1")
+    string(SUBSTRING "${final_error_case}" ${final_error_sep} -1 final_error_message)
+    add_test(NAME test-compile-final-${final_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/final/${final_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/final-${final_error_name}.obj")
+    set_tests_properties(test-compile-final-${final_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${final_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # A `continue` or `break` naming a label that no statement around it has is an error (a label
 # outside the function doesn't count); it compiled to a jump with nowhere to go.
 add_test(NAME test-compile-diagnostic-location-continue-label

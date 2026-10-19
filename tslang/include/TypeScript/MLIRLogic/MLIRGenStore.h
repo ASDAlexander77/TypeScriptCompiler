@@ -795,6 +795,9 @@ struct ClassInfo
     // vtable's slots from 0 in declaration order, a base class's first: no `.instanceOf`, `.new`,
     // interface or static-field slots, no RTTI, and no vtable or constructor of its own.
     bool isCppVTable;
+    // `@final`: nothing extends it, so a method of a value of this type is called directly. The
+    // vtable stays: interfaces, `instanceof` and calls through a base type use it.
+    bool isFinal;
     // a @cpp class with methods that have bodies: C++ methods implemented here, so C++ can
     // call them through its objects. It has a vtable (the C++ one's layout: the slots and nothing
     // else, a slot left to a declared C++ method null), may have a constructor and field
@@ -813,7 +816,7 @@ struct ClassInfo
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
-          isPublic(false), isDynamicImport(false), hasRTTI(false), isCppVTable(false),
+          isPublic(false), isDynamicImport(false), hasRTTI(false), isCppVTable(false), isFinal(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
