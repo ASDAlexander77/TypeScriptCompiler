@@ -2390,7 +2390,7 @@ genContext);
                 }
 
                 // a class field holding a function (`fn: () => int = ...`) stores a hybrid function -
-                // {function, `this` or null} - or a bound or plain one, none of which the slot can hand out
+                // {function, `this` or null} - or, unannotated (`fn = () => 7`), a plain one: neither can be handed out
                 // as a function taking the object as its `this`. A thunk calling `this.fn(...)` fills the
                 // slot as a method does; it reads the field at each call, so a field assigned later is seen.
                 if (found && isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type

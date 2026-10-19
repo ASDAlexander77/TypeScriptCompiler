@@ -14,6 +14,11 @@ class WithField {
     fn: () => int = () => 7;
 }
 
+// unannotated: stored as a plain function
+class Unannotated {
+    fn = () => 6;
+}
+
 class Capturing {
     fn: () => int;
     constructor(public x: int, k: int) {
@@ -91,6 +96,9 @@ function main() {
     const h: HasFn = new WithField();
     print(h.fn());
     assert(h.fn() == 7);
+
+    const u: HasFn = new Unannotated();
+    assert(u.fn() == 6);
 
     const c: HasFn = new Capturing(30, 5);
     assert(c.fn() == 35);
