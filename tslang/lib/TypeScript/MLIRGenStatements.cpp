@@ -439,6 +439,25 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext)
     {
+        // `yield x;` and `v = yield x;`
+        SupportedYieldScope supportedYieldScope(*this);
+        auto expression = expressionStatementAST->expression;
+        supportedYieldScope.mark(expression, false);
+        while (expression == SyntaxKind::ParenthesizedExpression)
+        {
+            expression = expression.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (expression == SyntaxKind::BinaryExpression)
+        {
+            auto binaryExpression = expression.as<BinaryExpression>();
+            if (binaryExpression->operatorToken == SyntaxKind::EqualsToken
+                && binaryExpression->left == SyntaxKind::Identifier)
+            {
+                supportedYieldScope.mark(binaryExpression->right, true);
+            }
+        }
+
         auto result = mlirGen(expressionStatementAST->expression, genContext);
         EXIT_IF_FAILED(result)
         return mlir::success();
@@ -446,6 +465,16 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
     {
+        // `const v = yield x;`
+        SupportedYieldScope supportedYieldScope(*this);
+        for (auto declaration : variableStatementAST->declarationList->declarations)
+        {
+            if (declaration->initializer && declaration->name == SyntaxKind::Identifier)
+            {
+                supportedYieldScope.mark(declaration->initializer, true);
+            }
+        }
+
         // we need it for support "export" keyword
         variableStatementAST->declarationList->parent = variableStatementAST;
         return mlirGen(variableStatementAST->declarationList, genContext);

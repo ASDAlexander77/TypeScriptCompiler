@@ -516,6 +516,7 @@ tslang_add_test(NAME test-compile-00-switch-default-fallthrough COMMAND test-run
 tslang_add_test(NAME test-compile-00-generic-class-constructor-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-compile-00-generic-ref-inference COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-compile-00-generator-done-value-zero COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
+tslang_add_test(NAME test-compile-00-generator-yield-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_value.ts")
 tslang_add_test(NAME test-compile-00-any-equality-undefined COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-compile-00-owned-generators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-compile-00-owned-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -1075,6 +1076,7 @@ tslang_add_test(NAME test-jit-00-switch-default-fallthrough COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-generic-class-constructor-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_class_constructor_inference.ts")
 tslang_add_test(NAME test-jit-00-generic-ref-inference COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_ref_inference.ts")
 tslang_add_test(NAME test-jit-00-generator-done-value-zero COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_done_value_zero.ts")
+tslang_add_test(NAME test-jit-00-generator-yield-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_yield_value.ts")
 tslang_add_test(NAME test-jit-00-any-equality-undefined COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_equality_undefined.ts")
 tslang_add_test(NAME test-jit-00-owned-generators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_generators.ts")
 tslang_add_test(NAME test-jit-00-owned-globals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_globals.ts")
@@ -2009,6 +2011,7 @@ set(TSLANG_CORPUS
     00generator6.ts
     00generator7.ts
     00generator_done_value_zero.ts
+    00generator_yield_value.ts
     00generic_arguments_name_conflict.ts
     00generic_class_constructor_inference.ts
     00generic_ref_inference.ts
@@ -4030,6 +4033,25 @@ foreach(property_error_name if const while conditional)
     set_tests_properties(test-compile-property-error-${property_error_name}
                          PROPERTIES PASS_REGULAR_EXPRESSION "Can't resolve property 'foo' of type [{]x:s32[}]"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# A yield inside an expression is an error, not a crash: what the expression computed before the
+# yield would be an SSA value of the turn that returned, gone when the generator resumes.
+foreach(yield_mm gc rc none)
+    foreach(yield_case binary call_argument yield_star_value)
+        add_test(NAME test-compile-${yield_mm}-yield-in-expression-${yield_case}
+                 COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=${yield_mm}
+                         "${PROJECT_SOURCE_DIR}/test/tester/yield-in-expression/${yield_case}.ts"
+                         -o "${CMAKE_CURRENT_BINARY_DIR}/yield-in-expression-${yield_mm}-${yield_case}.obj")
+        if (yield_case STREQUAL "yield_star_value")
+            set(yield_message "the value of yield[*] is not supported")
+        else()
+            set(yield_message "a yield inside an expression is not supported")
+        endif()
+        set_tests_properties(test-compile-${yield_mm}-yield-in-expression-${yield_case}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "${yield_message}"
+                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+    endforeach()
 endforeach()
 
 # The shared-component tier under the other two models. A shared library records the model
