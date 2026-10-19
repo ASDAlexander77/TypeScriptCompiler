@@ -3362,7 +3362,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
                  own_string_copy_branch own_array_param_push
                  own_declared_no_drops own_return_paths own_string_concat_element
-                 own_final_fresh_result own_final_field_lend)
+                 own_final_fresh_result own_final_field_lend own_null_narrowing_di)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3373,6 +3373,13 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                          PROPERTIES PASS_REGULAR_EXPRESSION "define"
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error:|Stack dump")
 endforeach()
+
+# ...and built with debug info, whose records of narrowed variables are ops of their own
+add_test(NAME test-own-di-null-narrowing
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --di --opt_level=0 --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_null_narrowing_di.ts")
+set_tests_properties(test-own-di-null-narrowing PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
+                                                           FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
 # A global declared in top-level code owns what it is given, under every model that counts.
 foreach(global_mm rc none gc)

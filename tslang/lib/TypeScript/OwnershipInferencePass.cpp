@@ -3804,10 +3804,12 @@ class OwnershipInferencePass
             return true;
         }
 
+        // ...and so does a cast to `null` or `undefined`, which holds no block: `--di` records the
+        // `r` that `if (r == null)` narrows as one
         if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
         {
-            return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1) ||
-                   isBoundForCall(castOp);
+            return mlir::isa<mlir_ts::BooleanType, mlir_ts::NullType, mlir_ts::UndefinedType>(castOp.getType()) ||
+                   castOp.getType().isInteger(1) || isBoundForCall(castOp);
         }
 
         if (mlir::isa<mlir_ts::ExtractInterfaceThisOp>(user))
