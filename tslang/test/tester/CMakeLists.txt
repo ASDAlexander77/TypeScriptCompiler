@@ -2792,6 +2792,22 @@ foreach(final_error_case ${final_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${final_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+# A call on a @final class is direct, and the program runs the same under every model.
+foreach(final_mm gc rc none own)
+    tslang_add_test(NAME test-compile-final-dispatch-${final_mm} COMMAND test-runner -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")
+    tslang_add_test(NAME test-jit-final-dispatch-${final_mm} COMMAND test-runner -jit -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")
+endforeach()
+# ...with no vtable call left on a @final receiver, while one through a non-final base keeps it
+add_test(NAME test-final-ir-direct
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/final/final_ir_direct.ts")
+set_tests_properties(test-final-ir-direct PROPERTIES PASS_REGULAR_EXPRESSION "ThisSymbolRef"
+                                                     FAIL_REGULAR_EXPRESSION "VirtualSymbolRef|error|Stack dump")
+add_test(NAME test-final-ir-base
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/final/final_ir_base.ts")
+set_tests_properties(test-final-ir-base PROPERTIES PASS_REGULAR_EXPRESSION "ThisVirtualSymbolRef"
+                                                   FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
 # A `continue` or `break` naming a label that no statement around it has is an error (a label
 # outside the function doesn't count); it compiled to a jump with nowhere to go.

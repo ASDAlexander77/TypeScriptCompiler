@@ -7955,8 +7955,11 @@ class MLIRGenImpl
 #endif
     }
 
+    // `finalReceiver`: the value's own static type is a @final class (ClassMembersAccess), so the
+    // method this class has for it is the only one it can have, and it is called directly.
     mlir::Value ClassMethodAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int methodIndex, bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, int methodIndex, bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+            bool finalReceiver = false) {
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! method index access: " << methodIndex << "\n";);
 
@@ -8043,7 +8046,12 @@ class MLIRGenImpl
 
             // TODO: check if you can split calls such as "this.method" and "super.method" ...
             auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
-            if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
+            // A @final receiver's method is the one this class has (ClassMembersAccess): the
+            // direct reference below, which the vtable would give anyway. Not for a class that
+            // lives in a DLL loaded at run time, whose method has no symbol to link against, nor a
+            // C++ binding, called through the C++ vtable.
+            auto direct = finalReceiver && !methodInfo.isAbstract && !classInfo->isDynamicImport && !classInfo->isCppVTable;
+            if (!direct && (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType))
             {
                 LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcName << "'\n";);
 
@@ -8152,16 +8160,19 @@ class MLIRGenImpl
 
     mlir::Value ClassAccessorAccess(ClassInfo::TypePtr classInfo,
             mlir::Location location, mlir::Value thisValue, int accessorIndex,
-            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+            bool finalReceiver = false);
 
     mlir::Value ClassIndexAccess(ClassInfo::TypePtr classInfo,
             mlir::Location location, mlir::Value thisValue, mlir::Value argument, bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
 
     mlir::Value ClassBaseClassAccess(ClassInfo::TypePtr classInfo, ClassInfo::TypePtr baseClass, int index,
-            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+            bool finalReceiver = false);
 
     mlir::Value ClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+                             bool finalReceiver = false);
 
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
     {

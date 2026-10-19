@@ -6365,6 +6365,34 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
     }
 };
 
+// A method of a known class read as a value, not called (`const fn = f.m` on a @final class's
+// object): the method bound to its object, as ThisVirtualSymbolRefOpLowering binds the vtable's.
+// A call through it was folded into a direct call before this lowering.
+struct ThisSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisSymbolRefOp>
+{
+    using TsLlvmPattern<mlir_ts::ThisSymbolRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisSymbolRefOp thisSymbolRefOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto boundFunc = dyn_cast<mlir_ts::BoundFunctionType>(thisSymbolRefOp.getType());
+        if (!boundFunc)
+        {
+            thisSymbolRefOp->emitError("unsupported this symbol reference type");
+            return failure();
+        }
+
+        Location loc = thisSymbolRefOp.getLoc();
+        auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()),
+                                                           transformed.getThisVal());
+        auto method = rewriter.create<mlir_ts::SymbolRefOp>(
+            loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
+            thisSymbolRefOp.getIdentifierAttr());
+        rewriter.replaceOpWithNewOp<mlir_ts::CreateBoundFunctionOp>(thisSymbolRefOp, boundFunc, thisOpaque, method);
+        return success();
+    }
+};
+
 struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbolRefOp>
 {
     using TsLlvmPattern<mlir_ts::InterfaceSymbolRefOp>::TsLlvmPattern;
@@ -8694,7 +8722,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
-        InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
+        InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, ThisSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
