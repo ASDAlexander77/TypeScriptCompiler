@@ -8247,10 +8247,36 @@ class MLIRGenImpl
         // if it is FuncType, we need to create BoundMethod again
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
         {
-            auto thisVal =
-                builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
-            value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                    thisVal, value);
+            auto bindThis = [&](mlir::Value value) -> mlir::Value {
+                auto thisVal =
+                    builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
+                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
+                                                                        thisVal, value);
+                return value;
+            };
+
+            // an optional field (`fn?: () => int`) loads as optional<fn>: bound when present, undefined when not
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+            {
+                auto optionalValue = value;
+                auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), optionalValue);
+                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+                auto result = mclh.conditionalValue(
+                    hasValue,
+                    [&]() -> ValueOrLogicalResult {
+                        auto funcValue =
+                            builder.create<mlir_ts::ValueOp>(location, optionalType.getElementType(), optionalValue);
+                        auto boundFuncValue = bindThis(funcValue);
+                        return V(builder.create<mlir_ts::OptionalValueOp>(
+                            location, getOptionalType(boundFuncValue.getType()), boundFuncValue));
+                    },
+                    [&](mlir::Type trueValueType) -> ValueOrLogicalResult {
+                        return V(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
+                    });
+                return V(result);
+            }
+
+            value = bindThis(value);
         }
 
         return value;
