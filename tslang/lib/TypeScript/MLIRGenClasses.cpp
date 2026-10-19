@@ -2398,7 +2398,7 @@ genContext);
                 // slot as a method does; it reads the field at each call, so a field assigned later is seen.
                 // An optional field (`fn?: () => int`) fills only an optional one (`fn?: () => int`), and its cell
                 // carries the offset of the field's flag: the cell is shared, the flag is the instance's.
-                auto optionalField = isa<mlir_ts::OptionalType>(foundField.type);
+                auto optionalField = found && isa<mlir_ts::OptionalType>(foundField.type);
                 if (found && isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
                     && (!optionalField || isConditional) && mth.isAnyFunctionType(foundField.type))
                 {
