@@ -773,6 +773,10 @@ struct ClassInfo
     NodeArray<ClassElement> extraMembers;
     NodeArray<ClassElement> extraMembersPost;
 
+    // fields whose initializer has no type yet in a discovery pass (`fn = this.m`: the methods are
+    // declared after the fields), typed again once the members are (mlirGenClassRetypeFields)
+    llvm::SmallVector<PropertyDeclaration> fieldsTypedAfterMembers;
+
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
     bool isDeclaration;

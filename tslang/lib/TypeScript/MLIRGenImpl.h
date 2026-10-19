@@ -11856,7 +11856,12 @@ class MLIRGenImpl
                     : mlir_ts::AccessLevel::Public;
     }
 
-    mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    std::pair<mlir::Type, bool> mlirGenClassDataFieldType(mlir::Location location, PropertyDeclaration propertyDeclaration,
+                                                          const GenContext &genContext);
+
+    mlir::LogicalResult mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext);
+
+    mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext);
