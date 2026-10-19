@@ -36,9 +36,10 @@ namespace
 //
 // All three dissolve once every function is present, which is why this is a pass rather than
 // another marking site. It does not predict which callees retain - it looks. A function counts
-// as returning owned only when every `ts.ReturnVal` of a heap-owning value in it is preceded by
-// a `ts.Retain` of that same value. A callee with no body, a generator whose yields return
-// without retaining, and anything else that does not match are simply not marked, and their
+// as returning owned only when every `ts.ReturnVal` (and, in a generator under rc, every
+// `ts.YieldReturnVal`) of a heap-owning value in it is preceded by a `ts.Retain` of that same
+// value. A callee with no body, a generator under any other model, and anything else that does
+// not match are simply not marked, and their
 // callers go on retaining - which leaks rather than frees something live. The whole design puts
 // the uncertain case on the leaking side.
 //
@@ -64,6 +65,16 @@ class OwnedReturnConsumptionPass
 
         copyEscapingStringViews(module);
 
+        retainYieldedRecords(mth, module);
+
+        own_facts::FieldFunctions fieldFunctionsOfModule;
+        const own_facts::FieldFunctions *fieldFunctions = nullptr;
+        if (compileOptions.isRefCounted())
+        {
+            fieldFunctionsOfModule.collect(module);
+            fieldFunctions = &fieldFunctionsOfModule;
+        }
+
         llvm::DenseSet<mlir::StringRef> returnsOwned;
         // Every method in the module, grouped by the name after the last dot: the candidate set
         // for a virtual call, see virtualCallReturnsOwned.
@@ -73,7 +84,7 @@ class OwnedReturnConsumptionPass
         auto anyUnclassifiedOwningReturn = false;
         module.walk([&](mlir_ts::FuncOp funcOp) {
             auto name = funcOp.getName();
-            auto classified = functionReturnsOwned(mth, funcOp);
+            auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted());
             if (classified)
             {
                 returnsOwned.insert(name);
@@ -145,7 +156,7 @@ class OwnedReturnConsumptionPass
                 return;
             }
 
-            auto callee = calleeNameOf(callOp);
+            auto callee = calleeNameOf(callOp, fieldFunctions);
             auto calleeReturnsOwned = !callee.empty() && returnsOwned.contains(callee);
 
             // A call through a plain value - a callback handed to `reduce`, a function-typed
@@ -244,6 +255,36 @@ class OwnedReturnConsumptionPass
         claimGlobalInitializers(mth, module);
 
         releaseDiscardedTemporaries(mth, module);
+    }
+
+    // A `yield` hands its `{ value, done }` record to the caller the way a `return` does, with a
+    // reference of its own (§9.24) - under rc, where a return statement retains what it returns
+    // and a yield, built by MLIRGen without going through it, did not. The record was filled by
+    // stores that take no count, so what it held lived only on the +1 it was born with: a fresh
+    // `"s" + i` was never given back (the caller retains what it reads and releases that), and a
+    // value read out of the state object was the state's own reference. With the retain the
+    // record owns its fields, a fresh value made for it is a temporary released before the yield
+    // like any other, and `next` returns owned like a plain function, so its caller can take the
+    // record over (functionReturnsOwned, fieldFunctionNameOf).
+    //
+    // Under own the yielded value moves into the record instead, and a retain is an error.
+    void retainYieldedRecords(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        module.walk([&](mlir_ts::YieldReturnValOp yieldOp) {
+            auto record = yieldOp.getOperand();
+            if (!mth.ownsHeapMemory(yieldOp.getLoc(), record.getType()) || retainPrecedes(yieldOp, record))
+            {
+                return;
+            }
+
+            mlir::OpBuilder builder(yieldOp);
+            builder.create<mlir_ts::RetainOp>(yieldOp.getLoc(), record);
+        });
     }
 
     // A global is born holding the reference its initializer carries.
@@ -814,13 +855,14 @@ class OwnedReturnConsumptionPass
     //    (runsWithinBlock);
     //  - a user that is a terminator, since a value handed to a successor as a block argument is
     //    still live after the point this would release it;
-    //  - a `ts.StateLabel` after the definition, which is a generator's resume point: the state
-    //    machine re-enters the block THERE, so the end of the block is reachable on a path that
-    //    never ran the op that produced the value. Nothing about that is visible while the
-    //    generator is still one block - it only becomes a use before definition once the state
-    //    machine is expanded, and it surfaces as a dominance failure in the affine lowering
-    //    rather than as anything this pass could notice. A `yield` in front of the resume point
-    //    is different: the release goes before it, inside the stretch the definition dominates.
+    //  - a user at or after a `ts.StateLabel` that follows the definition, which is a generator's
+    //    resume point: the state machine re-enters the block THERE, so the end of the block is
+    //    reachable on a path that never ran the op that produced the value. Nothing about that is
+    //    visible while the generator is still one block - it only becomes a use before definition
+    //    once the state machine is expanded, and it surfaces as a dominance failure in the affine
+    //    lowering rather than as anything this pass could notice. So in a generator the release
+    //    does not go at the end of the block but in front of the first yield, resume point or
+    //    statement holding one (releaseRangeEnd), inside the stretch the definition dominates.
     //
     // That bias is the same one the rest of this arc takes: an unreleased reference is invisible,
     // a released one that was still owned is a use-after-free.
@@ -858,7 +900,8 @@ class OwnedReturnConsumptionPass
 
             if (auto funcOp = op->getParentOfType<mlir_ts::FuncOp>())
             {
-                if (generators.contains(funcOp.getOperation()) && escapesThroughStore(op->getResult(0)))
+                if (!compileOptions.isRefCounted() && generators.contains(funcOp.getOperation()) &&
+                    escapesThroughStore(op->getResult(0)))
                 {
                     return;
                 }
@@ -931,9 +974,14 @@ class OwnedReturnConsumptionPass
                 });
             }
 
-            if (auto *exiting = firstExitingOpAfter(op))
+            auto *exiting = firstExitingOpAfter(op);
+            if (exiting && (rangeEnd == block->end() || exiting->isBeforeInBlock(&*rangeEnd)))
             {
                 builder.setInsertionPoint(exiting);
+            }
+            else if (rangeEnd != block->end())
+            {
+                builder.setInsertionPoint(&*rangeEnd);
             }
             else if (auto *terminator = block->getTerminator())
             {
@@ -1031,13 +1079,6 @@ class OwnedReturnConsumptionPass
         auto *block = op->getBlock();
         auto rangeEnd = releaseRangeEnd(op);
 
-        // a resume point between the definition and the end of the block with no yield in front
-        // of it to release before - see above
-        if (rangeEnd != block->end() && mlir::isa<mlir_ts::StateLabelOp>(*rangeEnd))
-        {
-            return false;
-        }
-
         for (auto *user : op->getResult(0).getUsers())
         {
             if (user->hasTrait<mlir::OpTrait::IsTerminator>() || !runsWithinBlock(user, block))
@@ -1045,30 +1086,12 @@ class OwnedReturnConsumptionPass
                 return false;
             }
 
-            // a use after the yield runs on the resume path, which the release has already left
+            // A use at or after the end of the range runs on a path the release has already left:
+            // after the yield, or inside the statement that holds one (the resume point there
+            // re-enters past the definition). Such a value leaks. MLIRGen keeps a generator's
+            // locals in its state object, so a temporary used across a yield does not occur.
             auto *inBlock = block->findAncestorOpInBlock(*user);
             if (rangeEnd != block->end() && !inBlock->isBeforeInBlock(&*rangeEnd))
-            {
-                return false;
-            }
-        }
-
-        // A resume point inside a statement written before the yield - `if (c) { yield 1; }` -
-        // re-enters the block in the middle of that statement and falls through to the release
-        // without having run the definition.
-        for (auto it = std::next(mlir::Block::iterator(op)); it != rangeEnd; ++it)
-        {
-            auto resumes = it->walk([&](mlir::Operation *nested) {
-                if (mlir::isa<mlir_ts::FuncOp>(nested))
-                {
-                    return mlir::WalkResult::skip();
-                }
-
-                return mlir::isa<mlir_ts::StateLabelOp>(nested) ? mlir::WalkResult::interrupt()
-                                                                : mlir::WalkResult::advance();
-            });
-
-            if (resumes.wasInterrupted())
             {
                 return false;
             }
@@ -1077,12 +1100,14 @@ class OwnedReturnConsumptionPass
         return true;
     }
 
-    // Where the stretch of `op`'s block that a release of it may cover ends: at the first yield
-    // or resume point after it, or at the end of the block. The yield ends the call (the affine
-    // lowering turns it into a store and a jump to the exit block), and the next call re-enters
-    // at the resume point after it, past the definition - so a release has to come before the
-    // yield, and nothing after it is on the path that ran the definition. A plain function has
-    // neither and gets the whole block.
+    // Where the stretch of `op`'s block that a release of it may cover ends: at the first op after
+    // it that is a yield or a resume point or has one inside it, or at the end of the block. The
+    // yield ends the call (the affine lowering turns it into a store and a jump to the exit
+    // block), and the next call re-enters at the resume point after it, past the definition - so
+    // a release has to come in front of it, and nothing after is on the path that ran the
+    // definition. A statement with a yield inside - `if (c) { yield 1; }` - is the same: resuming
+    // in the middle of it falls through to the rest of the block. A plain function has neither and
+    // gets the whole block.
     static mlir::Block::iterator releaseRangeEnd(mlir::Operation *op)
     {
         auto *block = op->getBlock();
@@ -1092,17 +1117,39 @@ class OwnedReturnConsumptionPass
             {
                 return it;
             }
+
+            if (it->getNumRegions() == 0)
+            {
+                continue;
+            }
+
+            auto resumes = it->walk([&](mlir::Operation *nested) {
+                // a nested function's yields are its own
+                if (mlir::isa<mlir_ts::FuncOp>(nested))
+                {
+                    return mlir::WalkResult::skip();
+                }
+
+                return mlir::isa<mlir_ts::YieldReturnValOp, mlir_ts::StateLabelOp>(nested)
+                           ? mlir::WalkResult::interrupt()
+                           : mlir::WalkResult::advance();
+            });
+
+            if (resumes.wasInterrupted())
+            {
+                return it;
+            }
         }
 
         return block->end();
     }
 
-    // Does this generator temporary, or a view of it, get stored somewhere? The `{ value, done }`
-    // record a `yield` hands back is filled by a store that takes no count of its own - the
-    // caller retains on receipt - so `yield "a" + i` keeps the concatenation alive only through
-    // the +1 it was born with, and a release before the yield would free what the caller reads.
-    // Any store is treated that way: it leaks, as before, rather than telling the record apart
-    // from a place that does count.
+    // Does this generator temporary, or a view of it, get stored somewhere? Asked under every model but
+    // rc (only own has releases left by the time it matters). Under own the `{ value, done }` record a `yield` hands back is filled by stores that move the
+    // value in, so `yield "a" + i` keeps the concatenation alive only through the reference it
+    // was born with, and a release before the yield would free what the caller reads. Any store
+    // is treated that way, rather than telling the record apart from a place that does count.
+    // Under rc the record takes a reference of its own (retainYieldedRecords).
     static bool escapesThroughStore(mlir::Value value)
     {
         for (auto *user : value.getUsers())
@@ -1173,7 +1220,7 @@ class OwnedReturnConsumptionPass
     // canonicalizer (SimplifyIndirectCallWithKnownCallee) already rewrites into direct calls,
     // which is the argument that they name one callee: it is the same judgement, made here
     // before canonicalization has run.
-    static mlir::StringRef calleeNameOf(mlir_ts::CallIndirectOp callOp)
+    static mlir::StringRef calleeNameOf(mlir_ts::CallIndirectOp callOp, const own_facts::FieldFunctions *fieldFunctions)
     {
         if (callOp.getNumOperands() == 0)
         {
@@ -1215,6 +1262,17 @@ class OwnedReturnConsumptionPass
             }
 
             return {};
+        }
+
+        // A generator's `next`, read out of its state object: a field every state object of that
+        // type holds the same function in, and nothing writes (own_facts::FieldFunctions). Asked
+        // under rc only, where a yield hands its record over retained (retainYieldedRecords).
+        if (fieldFunctions)
+        {
+            if (auto symbol = fieldFunctions->of(boundFunc.getDefiningOp()))
+            {
+                return symbol.getValue();
+            }
         }
 
         // `ts.ThisVirtualSymbolRef` is deliberately absent here. It carries an identifier, but
@@ -1518,29 +1576,34 @@ class OwnedReturnConsumptionPass
 
     // body, a return whose retain is not in the same block, a return with no retain at all. A
     // false "no" costs a leak; a false "yes" frees a value the callee never retained.
-    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp)
+    static bool functionReturnsOwned(MLIRTypeHelper &mth, mlir_ts::FuncOp funcOp, bool refCounted)
     {
         if (funcOp.isExternal() || funcOp.getBody().empty())
         {
             return importedFunctionReturnsOwned(mth, funcOp);
         }
 
-        // A generator's returns are not the value its caller receives - the caller gets the
-        // generator object, built by the transformation rather than by these returns. Rather
-        // than reason about what that transformation leaves behind, leave any function with a
-        // yield in it alone; its callers keep retaining, and leak.
+        // A generator's `next` - the function the yields are in - hands its caller a `{ value,
+        // done }` record from every yield and every return. Under rc each of them retains it
+        // (retainYieldedRecords for the yields), so it is classified like any other function. Under
+        // the other models the yields do not, and it is left alone; its callers keep retaining.
         auto isGenerator = false;
         funcOp.walk([&](mlir_ts::YieldReturnValOp) { isGenerator = true; });
-        if (isGenerator)
+        if (isGenerator && !refCounted)
         {
             return false;
         }
 
         auto sawOwningReturn = false;
         auto everyReturnRetains = true;
-        funcOp.walk([&](mlir_ts::ReturnValOp returnOp) {
-            auto value = returnOp.getOperand();
-            if (!mth.ownsHeapMemory(returnOp.getLoc(), value.getType()))
+        funcOp.walk([&](mlir::Operation *op) {
+            if (!mlir::isa<mlir_ts::ReturnValOp, mlir_ts::YieldReturnValOp>(op))
+            {
+                return;
+            }
+
+            auto value = op->getOperand(0);
+            if (!mth.ownsHeapMemory(op->getLoc(), value.getType()))
             {
                 return;
             }
@@ -1553,7 +1616,7 @@ class OwnedReturnConsumptionPass
             // rather than adding a second (§9.25). Reading only the first shape as "returns
             // owned" left every `static times(...) { return new Vector(...) }` unclassified,
             // which is most of what expression-shaped code is built from.
-            if (!retainPrecedes(returnOp, value) && !producesOwnedResult(value))
+            if (!retainPrecedes(op, value) && !producesOwnedResult(value))
             {
                 everyReturnRetains = false;
             }
