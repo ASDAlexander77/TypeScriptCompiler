@@ -8247,10 +8247,36 @@ class MLIRGenImpl
         // if it is FuncType, we need to create BoundMethod again
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
         {
-            auto thisVal =
-                builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
-            value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                    thisVal, value);
+            auto bindThis = [&](mlir::Value value) -> mlir::Value {
+                auto thisVal =
+                    builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
+                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
+                                                                        thisVal, value);
+                return value;
+            };
+
+            // an optional field (`fn?: () => int`) loads as optional<fn>: bound when present, undefined when not
+            if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+            {
+                auto optionalValue = value;
+                auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), optionalValue);
+                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+                auto result = mclh.conditionalValue(
+                    hasValue,
+                    [&]() -> ValueOrLogicalResult {
+                        auto funcValue =
+                            builder.create<mlir_ts::ValueOp>(location, optionalType.getElementType(), optionalValue);
+                        auto boundFuncValue = bindThis(funcValue);
+                        return V(builder.create<mlir_ts::OptionalValueOp>(
+                            location, getOptionalType(boundFuncValue.getType()), boundFuncValue));
+                    },
+                    [&](mlir::Type trueValueType) -> ValueOrLogicalResult {
+                        return V(builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType));
+                    });
+                return V(result);
+            }
+
+            value = bindThis(value);
         }
 
         return value;
@@ -12128,6 +12154,72 @@ class MLIRGenImpl
         }        
 
         return fullClassStaticName.str();
+    }
+
+    // `<thunkName>(this, p0..pn) { return this.<fieldName>(p0..pn); }`, typed as the interface's
+    // function-typed field (`this` opaque): the method an interface slot calls for a class whose
+    // field of that name holds the function (see mlirGenClassVirtualTableDefinitionForInterface)
+    mlir::LogicalResult generateSynthMethodToCallField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                       StringRef fieldName, StringRef thunkName,
+                                                       mlir_ts::FunctionType funcType, const GenContext &genContext)
+    {
+        auto retType = mth.getReturnTypeFromFuncRef(funcType);
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        GenContext funcGenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.thisType = newClassPtr->classType;
+        funcGenContext.thisClassType = newClassPtr->classType;
+        funcGenContext.disableSpreadParams = true;
+
+        return mlirGenFunctionBody(
+            location, fieldName, thunkName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
+                // the interface passes the object as an opaque `this`
+                auto funcOp = genContext.funcOp;
+                auto opaqueThis = funcOp.getBody().front().getArgument(0);
+                auto thisValue = builder.create<mlir_ts::CastOp>(location, newClassPtr->classType, opaqueThis);
+                auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, newClassPtr->classType, location);
+                DECLARE(thisDecl, thisValue);
+
+                NodeFactory nf(NodeFactoryFlags::None);
+
+                NodeArray<Expression> argumentsArray;
+                for (auto index = 1; index < funcType.getNumInputs(); index++)
+                {
+                    std::string paramName("p");
+                    paramName += std::to_string(index - 1);
+                    argumentsArray.push_back(nf.createIdentifier(stows(paramName)));
+                }
+
+                auto fieldAccess = nf.createPropertyAccessExpression(
+                    nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(stows(fieldName.str())));
+                auto callResult = mlirGen(nf.createCallExpression(fieldAccess, undefined, argumentsArray), genContext);
+                EXIT_IF_FAILED(callResult);
+
+                if (!retType || isa<mlir_ts::VoidType>(retType))
+                {
+                    return mlir::success();
+                }
+
+                auto castToRet = cast(location, retType, V(callResult), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(castToRet);
+                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                if (!retVarInfo.second)
+                {
+                    return mlir::failure();
+                }
+
+                // built op by op, so the retain a `return` performs is repeated here (as in
+                // generateSynthMethodToCallNewCtor)
+                auto returnValue = V(castToRet);
+                mlirGenRetainCaptured(location, mlir::ValueRange{returnValue});
+                builder.create<mlir_ts::ReturnValOp>(location, returnValue, retVarInfo.first);
+                return mlir::success();
+            },
+            funcGenContext, 1/*to skip This*/);
     }
 
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,

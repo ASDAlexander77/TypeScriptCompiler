@@ -6475,6 +6475,30 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 return typedPtr;
             };
 
+            // a function-typed field's slot tagged INTERFACE_METHOD_CELL_TAG: a class fills the field with a
+            // method, and the slot is the address of the cell holding it. Tested ahead of
+            // INTERFACE_OPTIONAL_STORAGE_TAG, which a cell's address can carry on a 32-bit target.
+            auto fieldRefType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
+            auto isFunctionField = fieldRefType && isa<mlir_ts::FunctionType>(fieldRefType.getElementType());
+            auto orMethodCell = [&](std::function<mlir::Value(OpBuilder &, Location)> offsetAddrFunc) {
+                return [&, offsetAddrFunc](OpBuilder &builder, Location location) -> mlir::Value {
+                    auto intPtrType = rewriter.getIntegerType(tsLlvmContext->compileOptions.sizeBits());
+                    auto slotValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
+                    auto tag = rewriter.create<LLVM::ConstantOp>(
+                        loc, intPtrType, rewriter.getIntegerAttr(intPtrType, INTERFACE_METHOD_CELL_TAG));
+                    auto tagBit = rewriter.create<LLVM::AndOp>(loc, intPtrType, slotValue, tag);
+                    auto zero = rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, 0));
+                    auto isMethodCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagBit, zero);
+                    auto methodCellAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                        auto cellInt = rewriter.create<LLVM::SubOp>(loc, intPtrType, slotValue, tag);
+                        return rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, cellInt.getResult());
+                    };
+
+                    return clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, isMethodCell, methodCellAddrFunc,
+                                                             offsetAddrFunc);
+                };
+            };
+
             mlir::Value fieldAddr;
             if (isOptional)
             {
@@ -6530,9 +6554,16 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                                                              storedAsOptionalAddrFunc, calcFieldTotalAddrFunc);
                 };
 
-                auto result =
-                    clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, condVal, nullAddrFunc, presentAddrFunc);
+                auto presentOrMethodCellAddrFunc = orMethodCell(presentAddrFunc);
+                auto result = clh.conditionalExpressionLowering(
+                    loc, fieldLLVMTypeRef, condVal, nullAddrFunc,
+                    isFunctionField ? mlir::function_ref<mlir::Value(OpBuilder &, Location)>(presentOrMethodCellAddrFunc)
+                                    : mlir::function_ref<mlir::Value(OpBuilder &, Location)>(presentAddrFunc));
                 fieldAddr = result;
+            }
+            else if (isFunctionField)
+            {
+                fieldAddr = orMethodCell(calcFieldTotalAddrFunc)(rewriter, loc);
             }
             else
             {
