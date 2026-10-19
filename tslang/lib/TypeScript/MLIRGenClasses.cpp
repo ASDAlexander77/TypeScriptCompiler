@@ -179,6 +179,7 @@ namespace mlirgen
         resetScope();   
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessingStorageClass, genContext);
+        newClassPtr->fieldsTypedAfterMembers.clear();
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
@@ -265,6 +266,12 @@ namespace mlirgen
         */
 
         if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, classGenContext)))
+        {
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
+            return {mlir::failure(), ""};
+        }
+
+        if (mlir::failed(mlirGenClassRetypeFields(newClassPtr, classGenContext)))
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
             return {mlir::failure(), ""};
@@ -1419,6 +1426,69 @@ namespace mlirgen
         return mlir::success();
     }    
 
+    std::pair<mlir::Type, bool> MLIRGenImpl::mlirGenClassDataFieldType(mlir::Location location, PropertyDeclaration propertyDeclaration,
+                                                                     const GenContext &genContext)
+    {
+        auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
+        if (init)
+        {
+            type = mth.wideStorageType(type);
+        }
+
+        // a field's type inferred from `fn = () => 0` is `() => number`, which a capturing closure
+        // can be assigned to later: store it as a hybrid function, as an annotated field and a `let`
+        // (adjustLocalVariableType) are, not as a plain one with no room for the closure's context
+        if (!typeProvided)
+        {
+            if (auto funcType = dyn_cast_or_null<mlir_ts::FunctionType>(type); funcType && !funcType.isCVarArg())
+            {
+                type = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+            }
+        }
+
+        // `v?: T` is `v: T | undefined`, as in a type literal: unassigned it reads as undefined, not as T's zero.
+        // An interface's `v?: T` member reads it by its flag (see mlirGenClassVirtualTableDefinitionForInterface).
+        if (propertyDeclaration->questionToken && type && !mth.isNoneType(type))
+        {
+            type = getUnionType(location, type, getUndefinedType());
+        }
+
+        return {type, init};
+    }
+
+    // the fields mlirGenClassDataFieldMember left untyped in a discovery pass get their types now that
+    // the members are declared; code made before against the placeholder is thrown away with the pass
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassRetypeFields(ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        if (newClassPtr->fieldsTypedAfterMembers.empty())
+        {
+            return mlir::success();
+        }
+
+        auto storageType = mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType());
+        SmallVector<mlir_ts::FieldInfo> fieldInfos(storageType.getFields().begin(), storageType.getFields().end());
+        for (auto propertyDeclaration : newClassPtr->fieldsTypedAfterMembers)
+        {
+            auto [type, init] = mlirGenClassDataFieldType(loc(propertyDeclaration), propertyDeclaration, genContext);
+            if (mth.isNoneType(type))
+            {
+                continue;
+            }
+
+            auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+            for (auto &fieldInfo : fieldInfos)
+            {
+                if (fieldInfo.id == fieldId)
+                {
+                    fieldInfo.type = type;
+                }
+            }
+        }
+
+        newClassPtr->fieldsTypedAfterMembers.clear();
+        return storageType.setFields(fieldInfos);
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
@@ -1450,21 +1520,13 @@ namespace mlirgen
             }
         }
 
-        auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
+        auto [type, init] = mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
         if (init)
         {
             newClassPtr->hasInitializers = true;
-            type = mth.wideStorageType(type);
         }
 
         auto hasType = !!propertyDeclaration->type;
-
-        // `v?: T` is `v: T | undefined`, as in a type literal: unassigned it reads as undefined, not as T's zero.
-        // An interface's `v?: T` member reads it by its flag (see mlirGenClassVirtualTableDefinitionForInterface).
-        if (propertyDeclaration->questionToken && type && !mth.isNoneType(type))
-        {
-            type = getUnionType(location, type, getUndefinedType());
-        }
 
         LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << " access level: " << accessLevel);
         if (mth.isNoneType(type))
@@ -1472,6 +1534,15 @@ namespace mlirgen
             if (hasType)
             {
                 return mlir::failure();
+            }
+
+            // `fn = this.m`: a discovery pass lays out the fields before it declares the methods, so
+            // the initializer has no type yet. Hold the place and type the field once they are.
+            if (init && !isAccessor && genContext.allowPartialResolve)
+            {
+                newClassPtr->fieldsTypedAfterMembers.push_back(propertyDeclaration);
+                fieldInfos.push_back({fieldId, getAnyType(), false, accessLevel});
+                return mlir::success();
             }
 
 #ifndef ANY_AS_DEFAULT
