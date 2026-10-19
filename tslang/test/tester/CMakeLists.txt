@@ -1493,6 +1493,13 @@ foreach(final_mm gc rc)
     tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
     tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 endforeach()
+# A generator method of an exported class is exported like any other method: an importer that
+# calls it directly (a @final class, the default library's String[Symbol.iterator]) links by name
+add_test(NAME test-export-generator-method
+         COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts" -o -)
+set_tests_properties(test-export-generator-method PROPERTIES PASS_REGULAR_EXPRESSION "define dllexport ptr @Counter.upTo"
+                                                             FAIL_REGULAR_EXPRESSION "error|Stack dump")
 add_test(NAME test-compile-shared-import-final-extends
          COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 set_tests_properties(test-compile-shared-import-final-extends PROPERTIES PASS_REGULAR_EXPRESSION "class 'X' cannot extend 'Counter': it is @final"

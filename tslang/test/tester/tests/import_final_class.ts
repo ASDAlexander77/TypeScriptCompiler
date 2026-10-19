@@ -10,5 +10,12 @@ function main() {
     }
 
     assert(c.value == 1000);
+
+    let sum = 0;
+    for (const v of c.upTo(4)) {
+        sum += v;
+    }
+
+    assert(sum == 10);
     print("done.");
 }

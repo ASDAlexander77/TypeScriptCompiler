@@ -11,4 +11,11 @@ export class Counter {
     get value(): int {
         return this.n;
     }
+
+    // a generator method is exported as any other is: the importer calls it by name
+    *upTo(k: int) {
+        for (let i = 1; i <= k; i++) {
+            yield i;
+        }
+    }
 }
