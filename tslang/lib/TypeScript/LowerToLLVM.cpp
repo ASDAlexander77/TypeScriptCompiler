@@ -6476,7 +6476,8 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
             };
 
             // a function-typed field's slot tagged INTERFACE_METHOD_CELL_TAG: a class fills the field with a
-            // method, and the slot is the address of the cell holding it. Tested ahead of
+            // method, or a class or object with a thunk calling its field, and the slot is the address of the
+            // cell holding it. Tested ahead of
             // INTERFACE_OPTIONAL_STORAGE_TAG, which a cell's address can carry on a 32-bit target.
             auto fieldRefType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
             auto isFunctionField = fieldRefType && isa<mlir_ts::FunctionType>(fieldRefType.getElementType());

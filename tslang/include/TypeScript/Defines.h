@@ -166,6 +166,8 @@
 // pointer-sized field (or of optional<function>, which starts with one) is pointer-aligned, and so
 // is the cell; -1 (absent) is tested before it. A write through such a field changes the cell,
 // so it changes the method for every instance of the class seen through that interface.
+// A class or object field holding a function the interface can't call with the object as its
+// `this` (a closure) is filled the same way, with a thunk calling the field.
 #define INTERFACE_METHOD_CELL_TAG 1
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it

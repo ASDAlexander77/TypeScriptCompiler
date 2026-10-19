@@ -2415,7 +2415,7 @@ genContext);
                         auto funcType = mlir::cast<mlir_ts::FunctionType>(fieldType);
                         auto thunkName = concat(interfaceVTableNameForClass(newClassPtr, newInterfacePtr),
                                                 fieldName.getValue(), "thunk");
-                        if (mlir::failed(generateSynthMethodToCallField(location, newClassPtr, fieldName.getValue(),
+                        if (mlir::failed(generateSynthMethodToCallField(location, newClassPtr->classType, fieldName.getValue(),
                                                                          thunkName, funcType, genContext)))
                         {
                             return {emptyFieldInfo, mlir::failure()};
