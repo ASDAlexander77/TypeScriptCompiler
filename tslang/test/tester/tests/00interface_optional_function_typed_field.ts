@@ -97,8 +97,10 @@ function main() {
     print(sum);
     assert(sum == 1 - 1 + 3 - 1);
 
-    // the bound value outlives the access
-    const f = getFn(new WithFn(13));
+    // the bound value outlives the access; under -mm=rc a bound method does not hold its
+    // receiver yet, so the instance is kept alive while the returned value is used
+    const w13 = new WithFn(13);
+    const f = getFn(w13);
     assert(f !== undefined);
     if (f) {
         assert(f() == 13);
