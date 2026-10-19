@@ -3150,6 +3150,72 @@ class MLIRGenImpl
         }
     }
 
+    // `@keeps("p")`, `@borrows("this", "p")` (OWN_DECLARED_KEEPS_ATTR_NAME): the parameters they
+    // name, as indices of the function's arguments - after the captured values, when its type has
+    // an input more than it has parameters.
+    mlir::LogicalResult processOwnParamMarkers(mlir::Location location, FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+        ArrayRef<FunctionParamDOM::TypePtr> params, mlir_ts::FunctionType funcType, SmallVector<mlir::NamedAttribute> &attrs,
+        const GenContext &genContext)
+    {
+        auto result = mlir::success();
+        iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR)
+            {
+                return;
+            }
+
+            auto attrName = name == KEEPS_DECORATOR ? OWN_DECLARED_KEEPS_ATTR_NAME : OWN_DECLARED_BORROWS_ATTR_NAME;
+            if (llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == attrName; }))
+            {
+                emitError(location) << "'@" << name << "' is given twice";
+                result = mlir::failure();
+                return;
+            }
+
+            if (args.empty())
+            {
+                emitError(location) << "'@" << name << "' names no parameter";
+                result = mlir::failure();
+                return;
+            }
+
+            auto first = funcType && funcType.getInputs().size() == params.size() + 1 ? 1 : 0;
+            SmallVector<int32_t> indices;
+            for (auto arg : args)
+            {
+                auto found = llvm::find_if(params, [&](auto &param) { return param->getName() == arg; });
+                if (found == params.end())
+                {
+                    emitError(location) << "'@" << name << "' names '" << arg << "', which is not a parameter of this function";
+                    result = mlir::failure();
+                    return;
+                }
+
+                auto index = first + static_cast<int32_t>(found - params.begin());
+                if (!llvm::is_contained(indices, index))
+                {
+                    indices.push_back(index);
+                }
+            }
+
+            llvm::sort(indices);
+            attrs.push_back({builder.getStringAttr(attrName), builder.getDenseI32ArrayAttr(indices)});
+
+            if (llvm::none_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_DECLARED_PARAM_NAMES_ATTR_NAME; }))
+            {
+                SmallVector<StringRef> names(first, CAPTURED_NAME);
+                for (auto &param : params)
+                {
+                    names.push_back(param->getName());
+                }
+
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_PARAM_NAMES_ATTR_NAME), builder.getStrArrayAttr(names)});
+            }
+        });
+
+        return result;
+    }
+
     bool processFunctionAttributes(mlir::Location location, StringRef fullName,
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext,
         bool suppressExport = false)
@@ -3386,7 +3452,7 @@ class MLIRGenImpl
         return mlir::success();
     }    
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, 
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp declared, StringRef funcName, 
         mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName = true);
 
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto,
@@ -4041,6 +4107,32 @@ class MLIRGenImpl
 
         // we need to create dummy op to be able to use both values with cast and without cast
         auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, castedValue.getType(), castedValue, exprValue);
+
+        // A generator's local is a field of its state object, and so would the narrowed copy be: a
+        // second reference to what the local holds, which -mm=own cannot have, and a value that
+        // goes stale when the local is assigned. It is a view of the local instead, read and cast
+        // at each use, which a resume after a yield reads again. (While the state type is still
+        // being found, the copy only has to give the name its type.)
+        if (genContext.allocateVarsInContextThis)
+        {
+            auto loadOp = exprValue.getDefiningOp<mlir_ts::LoadOp>();
+            if (genContext.passResult || !loadOp)
+            {
+                GenContext discoveryContext(genContext);
+                discoveryContext.allocateVarsInContextThis = false;
+                return !!registerVariable(
+                    location, parameterName, false, VariableType::Const,
+                    [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                        return {safeType, wrappedValue, TypeProvided::Yes};
+                    },
+                    discoveryContext, false, true) ? mlir::success() : mlir::failure();
+            }
+
+            auto view = std::make_shared<VariableDeclarationDOM>(parameterName, safeType, location);
+            view->setReadWriteAccess();
+            view->setNarrowedType(safeType);
+            return declare(location, view, loadOp.getReference(), genContext);
+        }
 
         return 
             !!registerVariable(
@@ -8490,9 +8582,14 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(CallExpression callExpression, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenArrayForEach(mlir::Location location, ArrayRef<mlir::Value> operands,
-                                            const GenContext &genContext)
+                                            const GenContext &outerContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+        // a loop with no yield in it: inside a generator its locals stay in the frame, not the state
+        // object, where `.a` - the source array, read through - would be a second reference to it
+        GenContext genContext(outerContext);
+        genContext.allocateVarsInContextThis = false;
+        genContext.allocateVarsOutsideOfOperation = false;
 
         auto arraySrc = operands[0];
         auto funcSrc = operands[1];
@@ -8528,9 +8625,14 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult mlirGenArrayEvery(mlir::Location location, ArrayRef<mlir::Value> operands,
-                                           const GenContext &genContext)
+                                           const GenContext &outerContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+        // a loop with no yield in it: inside a generator its locals stay in the frame, not the state
+        // object, where `.a` - the source array, read through - would be a second reference to it
+        GenContext genContext(outerContext);
+        genContext.allocateVarsInContextThis = false;
+        genContext.allocateVarsOutsideOfOperation = false;
 
         auto varName = ".ev";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
@@ -8581,9 +8683,14 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult mlirGenArraySome(mlir::Location location, ArrayRef<mlir::Value> operands,
-                                          const GenContext &genContext)
+                                          const GenContext &outerContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+        // a loop with no yield in it: inside a generator its locals stay in the frame, not the state
+        // object, where `.a` - the source array, read through - would be a second reference to it
+        GenContext genContext(outerContext);
+        genContext.allocateVarsInContextThis = false;
+        genContext.allocateVarsOutsideOfOperation = false;
 
         auto varName = ".sm";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
@@ -9850,9 +9957,14 @@ class MLIRGenImpl
                                  const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenAppendArrayByEachElement(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
-                                            const GenContext &genContext)
+                                            const GenContext &outerContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+        // a loop with no yield in it: inside a generator its locals stay in the frame, not the state
+        // object, where `.a` - the source array, read through - would be a second reference to it
+        GenContext genContext(outerContext);
+        genContext.allocateVarsInContextThis = false;
+        genContext.allocateVarsOutsideOfOperation = false;
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
@@ -12466,6 +12578,20 @@ class MLIRGenImpl
                 }
             }
 
+            if (funcOp)
+            {
+                auto &methodInfo = methodIndex < 0 ? methodInfos.back() : methodInfos[methodIndex];
+                if (auto keeps = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_KEEPS_ATTR_NAME))
+                {
+                    methodInfo.ownKeeps.assign(keeps.asArrayRef().begin(), keeps.asArrayRef().end());
+                }
+
+                if (auto borrows = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_BORROWS_ATTR_NAME))
+                {
+                    methodInfo.ownBorrows.assign(borrows.asArrayRef().begin(), borrows.asArrayRef().end());
+                }
+            }
+
             if (propertyName.size() > 0)
             {
                 addAccessor(accessLevel);
@@ -13818,7 +13944,8 @@ class MLIRGenImpl
         declExports << ss.str().str();
     }
 
-    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace, StringRef dllName)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace, StringRef dllName,
+                                        mlir_ts::FuncOp funcOp = {})
     {
         // TODO: add distinct declaration
 
@@ -13828,7 +13955,12 @@ class MLIRGenImpl
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);
         MLIRDeclarationPrinter dp(ss, classSpecializationNamer());
-        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName);
+        auto marker = [&](StringRef name) {
+            auto attr = funcOp ? funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(name) : mlir::DenseI32ArrayAttr();
+            return attr ? attr.asArrayRef() : ArrayRef<int32_t>();
+        };
+        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName,
+                 marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME));
 
         declExports << ss.str().str();
     }

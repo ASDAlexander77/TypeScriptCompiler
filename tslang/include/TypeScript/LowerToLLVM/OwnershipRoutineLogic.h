@@ -743,9 +743,16 @@ class OwnershipRoutineLogic
         auto loc = op->getLoc();
         auto llvmRecordType = tch.convertType(recordType);
         auto borrowing = borrowingFieldsOf(recordType);
+        auto yielded = fieldsOf(OWN_YIELDED_FIELDS_ATTR_NAME, recordType);
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
         {
+            // a generator's local that only yields: what it held went to the caller
+            if (llvm::is_contained(yielded, static_cast<int32_t>(index)))
+            {
+                continue;
+            }
+
             // a field of a generator's state object that borrows from the generator's arguments:
             // nothing to give back, but for the `.captured` box itself, whose cells are the state's
             auto borrows = llvm::is_contained(borrowing, static_cast<int32_t>(index));
@@ -957,6 +964,12 @@ class OwnershipRoutineLogic
     // the `.captured` box's first; empty for any other record or model.
     llvm::SmallVector<int32_t> borrowingFieldsOf(mlir::Type recordType)
     {
+        return fieldsOf(OWN_BORROWING_FIELDS_ATTR_NAME, recordType);
+    }
+
+    // Under own, the fields a module attribute of [[type, [field...]], ...] lists for this record.
+    llvm::SmallVector<int32_t> fieldsOf(llvm::StringRef attrName, mlir::Type recordType)
+    {
         llvm::SmallVector<int32_t> fields;
         if (compileOptions.memoryModel != MemoryModelOwn)
         {
@@ -969,7 +982,7 @@ class OwnershipRoutineLogic
         }
 
         auto parentModule = op->getParentOfType<ModuleOp>();
-        auto entries = parentModule ? parentModule->getAttrOfType<ArrayAttr>(OWN_BORROWING_FIELDS_ATTR_NAME) : ArrayAttr();
+        auto entries = parentModule ? parentModule->getAttrOfType<ArrayAttr>(attrName) : ArrayAttr();
         if (!entries)
         {
             return fields;

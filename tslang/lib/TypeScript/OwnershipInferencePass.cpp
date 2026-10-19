@@ -190,10 +190,18 @@ class OwnershipInferencePass
             }
             else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(op))
             {
-                if (placeReadOf(loadOp.getResult()))
+                // a yield's read of a field that only yields (OWN_YIELDED_FIELDS_ATTR_NAME) takes
+                // the value out: fresh, not a borrow of the state
+                if (placeReadOf(loadOp.getResult()) && !loadOp->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
                 {
                     placeReads.push_back(loadOp);
                 }
+            }
+            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op); releaseSlotOp && isYieldedField(releaseSlotOp.getSlot()))
+            {
+                // what the field held was yielded, the caller's now
+                toErase.insert(op);
+                return;
             }
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
@@ -803,6 +811,46 @@ class OwnershipInferencePass
         return fields;
     }
 
+    // Is `ref` a field of a generator's state object that only yields (OWN_YIELDED_FIELDS_ATTR_NAME)?
+    bool isYieldedField(mlir::Value ref)
+    {
+        auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (!propertyRefOp)
+        {
+            return false;
+        }
+
+        auto recordType = propertyRefOp->getOperand(0).getType();
+        if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(recordType))
+        {
+            recordType = objectType.getStorageType();
+        }
+
+        if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(recordType))
+        {
+            recordType = mlir_ts::TupleType::get(&getContext(), storageType.getFields());
+        }
+
+        auto module = getFunction()->getParentOfType<mlir::ModuleOp>();
+        auto entries = module ? module->getAttrOfType<mlir::ArrayAttr>(OWN_YIELDED_FIELDS_ATTR_NAME) : mlir::ArrayAttr();
+        if (!entries)
+        {
+            return false;
+        }
+
+        for (auto entry : entries.getAsRange<mlir::ArrayAttr>())
+        {
+            if (mlir::cast<mlir::TypeAttr>(entry[0]).getValue() == recordType &&
+                llvm::is_contained(mlir::cast<mlir::DenseI32ArrayAttr>(entry[1]).asArrayRef(),
+                                   static_cast<int32_t>(propertyRefOp.getPosition())))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // Is `ref` a field of a generator's state object that borrows (other than the `.captured` box)?
     bool isBorrowingField(mlir::Value ref)
     {
@@ -1122,6 +1170,13 @@ class OwnershipInferencePass
                     return;
                 }
 
+                // returned by a function that says so (`@borrows`): its callers hold the result to
+                // the same bound, and the signature pass checked the arguments are its own
+                if (mlir::isa<mlir_ts::ReturnInternalOp>(user) && getFunction()->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME))
+                {
+                    return;
+                }
+
                 uses.push_back(user);
                 if (isCall(user))
                 {
@@ -1228,6 +1283,15 @@ class OwnershipInferencePass
 
             for (auto &fill : closure->fills)
             {
+                // a parameter this function does not own, in a box that does not borrow: the box
+                // cannot take rc's reference for it, the caller's still holds it; left to the
+                // second-reference error, which says the callers would have to give it up
+                auto param = borrowedParam(fill.second.getValue());
+                if (!closure->borrowsValues && param >= 0 && !llvm::is_contained(ownedParams(getFunction()), param))
+                {
+                    continue;
+                }
+
                 if (auto *retain = retainBefore(fill.second.getValue(), fill.second))
                 {
                     closure->retains.push_back(retain);
@@ -1299,7 +1363,7 @@ class OwnershipInferencePass
             for (auto *user : loadOp.getReference().getUsers())
             {
                 auto earlier = mlir::dyn_cast<mlir_ts::LoadOp>(user);
-                auto *retain = earlier && earlier.getResult().hasOneUse() ? *earlier->getUsers().begin() : nullptr;
+                auto *retain = earlier ? soleUser(earlier.getResult()) : nullptr;
                 if (retain && mlir::isa<mlir_ts::RetainOp>(retain) && !captureRetains.contains(retain) &&
                     twinReadAfter(retain, earlier.getResult()) == value && retain->getBlock() == store->getBlock() &&
                     retain->isBeforeInBlock(store))
@@ -2354,16 +2418,17 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                // A result that borrows what it was given borrows this too, and is walked as it. A
-                // call known to make its result (`__own_fresh_result`: through a field that only
-                // ever holds one function) hands back a block of the caller's own - the `{value,
-                // done}` record of `it.next()` points nowhere into `it`, and what it does after
-                // its next call cannot be a use of the method read out of `it`.
-                if (isCall(user) && user->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
+                // A call known to make its result (`__own_fresh_result`: an iterator's `next()`, a field
+                // that only ever holds one function, another own module's `..new`) hands back a block of
+                // the caller's own - the `{value, done}` record of `it.next()` points nowhere into `it`,
+                // and what it does after its next call cannot be a use of the method read out of `it` -
+                // unless it is a generator's state that borrows its arguments (`__own_result_bounded`).
+                if (isCall(user) && user->hasAttr(OWN_FRESH_RESULT_ATTR_NAME) && !user->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME))
                 {
                     continue;
                 }
 
+                // A result that borrows what it was given borrows this too, and is walked as it.
                 for (auto result : user->getResults())
                 {
                     if (mayPointInto(result) && seen.insert(result).second)
@@ -3649,7 +3714,9 @@ class OwnershipInferencePass
     // `return [...a]`: the builder of isBuiltArrayRead, read once, when it is done, and returned.
     // The return's `ts.Retain` (`retain`) is the reference the caller gets: the fresh array moves
     // into the builder and then out of the function, and nothing else holds it. The builder's
-    // other reads only bind its `push` (`ts.ThisSymbolRef @__array_push`) or are not used.
+    // other reads only bind its `push` (`ts.ThisSymbolRef @__array_push`) or are not used. A store
+    // into a field is the same move, into a container: `h.c = [...a]`, and a generator's local
+    // (`const groups = [...result]`), which is a field of its state object.
     bool isBuiltArrayReturned(mlir::Operation *retain, mlir::Value value)
     {
         auto read = value.getDefiningOp<mlir_ts::LoadOp>();
@@ -3673,7 +3740,9 @@ class OwnershipInferencePass
             auto resultSlot = storeOp && storeOp.getValue() == read.getResult()
                                   ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                                   : mlir_ts::VariableOp();
-            if (!resultSlot || !isResultSlot(resultSlot) || returned)
+            auto intoField = storeOp && storeOp.getValue() == read.getResult() &&
+                             storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            if (!((resultSlot && isResultSlot(resultSlot)) || intoField) || returned)
             {
                 return false;
             }
@@ -4269,10 +4338,32 @@ class OwnershipInferencePass
     // rc reads a place twice for one copy - `.map(f)` boxes its array so - and retains the first
     // read, whose only use is that retain: the read of the same place that follows it in its block,
     // with nothing stored into the place between, is the same value. Null when there is none.
+    // The one op that uses `value`, but `--di`'s ts.DebugVariable, which only names it; or null.
+    static mlir::Operation *soleUser(mlir::Value value)
+    {
+        mlir::Operation *found = nullptr;
+        for (auto *user : value.getUsers())
+        {
+            if (mlir::isa<mlir_ts::DebugVariableOp>(user))
+            {
+                continue;
+            }
+
+            if (found)
+            {
+                return nullptr;
+            }
+
+            found = user;
+        }
+
+        return found;
+    }
+
     static mlir::Value twinReadAfter(mlir::Operation *retain, mlir::Value value)
     {
         auto first = value.getDefiningOp<mlir_ts::LoadOp>();
-        if (!first || !mlir::isa<mlir_ts::RetainOp>(retain) || !value.hasOneUse() || retain->getBlock() != first->getBlock())
+        if (!first || !mlir::isa<mlir_ts::RetainOp>(retain) || soleUser(value) != retain || retain->getBlock() != first->getBlock())
         {
             return {};
         }

@@ -228,6 +228,41 @@ namespace typescript
         os << ")";
     }
 
+    // `@keeps("p1")`, `@borrows("this", "p1")`: by the names printParams gives the parameters, `this`
+    // the receiver of a method, so the importer reads the same argument indices back
+    void MLIRDeclarationPrinter::printOwnMarkers(ArrayRef<int32_t> keeps, ArrayRef<int32_t> borrows, bool hasThis, unsigned indent)
+    {
+        auto printMarker = [&](StringRef name, ArrayRef<int32_t> indices) {
+            if (indices.empty())
+            {
+                return;
+            }
+
+            os.indent(indent);
+            os << "@" << name << "(";
+            for (auto [position, index] : enumerate(indices))
+            {
+                os << (position ? ", " : "") << "\"";
+                if (index == 0 && hasThis)
+                {
+                    os << "this";
+                }
+                else
+                {
+                    os << "p" << index;
+                }
+
+                os << "\"";
+            }
+
+            os << ")";
+            newline();
+        };
+
+        printMarker(KEEPS_DECORATOR, keeps);
+        printMarker(BORROWS_DECORATOR, borrows);
+    }
+
     void MLIRDeclarationPrinter::printFunction(StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
     {
         os << "function " << name;
@@ -402,7 +437,8 @@ namespace typescript
         printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName)
+    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName,
+                                       ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -413,6 +449,8 @@ namespace typescript
             os << "@dllname(\"" << dllName << "\")";
             newline();
         }
+
+        printOwnMarkers(ownKeeps, ownBorrows, /*hasThis=*/false, 0);
 
         printFunction(
             name,
@@ -659,6 +697,8 @@ namespace typescript
                 os << "@" CPP_NON_TRIVIAL;
                 newline();
             }
+
+            printOwnMarkers(method.ownKeeps, method.ownBorrows, /*hasThis=*/!method.isStatic, 4);
 
             // the slot of a @cpp class's virtual method: without it the importer takes the method
             // for a non-virtual one

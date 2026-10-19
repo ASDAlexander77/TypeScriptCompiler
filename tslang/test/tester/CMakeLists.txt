@@ -1505,9 +1505,32 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 # shared libs tests (exports/imports)
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
 # a @final class across the boundary: direct calls from the importer, compiled and under the JIT
-foreach(final_mm gc rc)
+# own: the importer owns what the generator method's next() gives it (isIteratorNext)
+foreach(final_mm gc rc own)
     tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
     tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+endforeach()
+# @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
+# other models ignore them
+foreach(markers_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-own-markers-${markers_mm} COMMAND test-runner -shared -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-own-markers-${markers_mm} COMMAND test-runner -jit -shared -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+endforeach()
+tslang_add_test(NAME test-compile-shared-export-import-own-markers-keeps COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_keeps.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+tslang_add_test(NAME test-jit-shared-export-import-own-markers-keeps COMMAND test-runner -jit -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_keeps.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+# ...and an importer that breaks them is told so: they crossed
+add_test(NAME test-compile-shared-import-own-markers-moved
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_moved.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+set_tests_properties(test-compile-shared-import-own-markers-moved PROPERTIES PASS_REGULAR_EXPRESSION "is used here after its value was moved"
+                                                                           FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+add_test(NAME test-compile-shared-import-own-markers-outlives
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_markers_outlives.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_markers.ts")
+set_tests_properties(test-compile-shared-import-own-markers-outlives PROPERTIES PASS_REGULAR_EXPRESSION "borrows its generator's arguments and cannot be stored, returned or captured"
+                                                                              FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# the markers mean nothing to the other models
+foreach(markers_mm gc rc)
+    tslang_add_test(NAME test-jit-${markers_mm}-own-generator-locals COMMAND test-runner -jit -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_locals.ts")
+    tslang_add_test(NAME test-jit-${markers_mm}-own-param-markers COMMAND test-runner -jit -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_param_markers.ts")
 endforeach()
 # A generator method of an exported class is exported like any other method: an importer that
 # calls it by name (the default library's String[Symbol.iterator] under the JIT) finds it. Checked
@@ -3409,7 +3432,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
                  own_string_copy_branch own_array_param_push
                  own_declared_no_drops own_return_paths own_string_concat_element
-                 own_final_fresh_result own_final_field_lend own_null_narrowing_di)
+                 own_final_fresh_result own_final_field_lend own_null_narrowing_di
+                 own_param_markers own_generator_locals)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3636,6 +3660,12 @@ set(own_error_cases
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
+    "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
+    "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
+    "own_err_borrows_mixed_return|'@borrows' of 'pick' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
+    "own_err_marker_unknown_param|'@keeps' names 'd', which is not a parameter of this function"
+    "own_err_marker_override|'Derived.set' overrides 'Base.set', and has to say the same '@keeps' and '@borrows'"
+    "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
     "own_err_string_pushed_twice|is used here after its value was moved"
     "own_err_shared_borrow_write|but is used here after it may be released or overwritten"

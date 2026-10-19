@@ -190,9 +190,30 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         computeFacts();
         computeDrops();
         findBorrowingStates(module);
+        findBoundedForwarders();
+        findYieldedFields(module);
+        findImportedStates(module);
+        checkDeclared();
 
         for (auto &call : calls)
         {
+            // a generator another module defines, whose signature says what its state borrows
+            if (auto bounded = declaredByCallees(call.callees, OWN_DECLARED_BORROWS_ATTR_NAME);
+                !bounded.empty() && call.op->getNumResults() == 1)
+            {
+                call.op->setAttr(OWN_RESULT_BOUNDED_ATTR_NAME, mlir::DenseI32ArrayAttr::get(&getContext(), bounded));
+                // and the caller owns it (the generator's state), as `@borrows` says: fresh, though
+                // the function may be another module's
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
+            // an iterator's `next()`, whoever implements it, and a generator's state, whoever makes
+            // it: see isIteratorNext
+            if (isIteratorNext(call.op) || makesGeneratorState(call.op))
+            {
+                call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+
             if (!call.callees.known)
             {
                 continue;
@@ -368,6 +389,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // the name the imported function is exported under
         llvm::StringRef importedName;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
+        // the symbols the call names, whether or not it is known: a direct callee, or every
+        // member of a virtual slot's family (for the facts a declaration says, declaredFacts)
+        llvm::SmallVector<mlir::StringAttr, 2> named;
     };
 
     struct Call
@@ -427,6 +451,623 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // and agreed by every family it is in).
     llvm::DenseMap<mlir::Operation *, Facts> factsLocal;
     llvm::DenseMap<mlir::Operation *, Facts> factsEffective;
+
+    // ---- Facts a signature says (`@keeps`, `@borrows`) ----
+    //
+    // A function that says them has them whoever calls it: a caller in another module reads them
+    // from the declaration it re-parses. Its body is checked against them instead (checkDeclared).
+
+    static llvm::ArrayRef<int32_t> declared(mlir::Operation *funcOp, llvm::StringRef name)
+    {
+        if (auto attr = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(name))
+        {
+            return attr.asArrayRef();
+        }
+
+        return {};
+    }
+
+    static bool declaresFacts(mlir::Operation *funcOp)
+    {
+        return funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME);
+    }
+
+    // What every function a call names declares under `name`, when they all declare the same;
+    // nothing when one of them does not.
+    llvm::SmallVector<int32_t> declaredByCallees(const Callees &callees, llvm::StringRef name)
+    {
+        llvm::SmallVector<int32_t> agreed;
+        for (auto [index, symbol] : llvm::enumerate(callees.named))
+        {
+            // a function, or the global holding the address of one a library exports (a dynamic
+            // import), which MLIRGen gave the declaration's markers
+            mlir::Operation *declaring = functions.lookup(symbol.getValue());
+            if (!declaring)
+            {
+                declaring = globals.lookup(symbol.getValue());
+            }
+
+            if (!declaring || !declaring->hasAttr(name))
+            {
+                return {};
+            }
+
+            auto indices = declared(declaring, name);
+            if (index == 0)
+            {
+                agreed.assign(indices.begin(), indices.end());
+            }
+            else if (llvm::ArrayRef<int32_t>(agreed) != indices)
+            {
+                return {};
+            }
+        }
+
+        return agreed;
+    }
+
+    // The parameters, for an error, by the names MLIRGen recorded beside the marker.
+    static std::string describeParams(mlir_ts::FuncOp funcOp, llvm::ArrayRef<int32_t> indices)
+    {
+        if (indices.empty())
+        {
+            return "nothing";
+        }
+
+        auto names = funcOp->getAttrOfType<mlir::ArrayAttr>(OWN_DECLARED_PARAM_NAMES_ATTR_NAME);
+        std::string text;
+        llvm::raw_string_ostream os(text);
+        for (auto [position, index] : llvm::enumerate(indices))
+        {
+            os << (position ? ", " : "") << "'";
+            if (names && static_cast<size_t>(index) < names.size())
+            {
+                os << mlir::cast<mlir::StringAttr>(names[index]).getValue();
+            }
+            else
+            {
+                os << "#" << index;
+            }
+
+            os << "'";
+        }
+
+        return os.str();
+    }
+
+    // Functions this module defines that `@borrows`, and those whose state was found to borrow.
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> borrowsFound;
+
+    // The argument of `funcOp` that `value` is, or a field of: its own value, its slot's, or a
+    // read out of either. -1 for anything else.
+    static int32_t parameterOf(mlir::Value value, mlir_ts::FuncOp funcOp)
+    {
+        auto root = rootOf(value);
+        if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                return parameterOf(propertyRefOp->getOperand(0), funcOp);
+            }
+
+            auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+            int index = -1;
+            if (varOp && isParameterSlot(varOp, index) && varOp->getParentOfType<mlir_ts::FuncOp>() == funcOp)
+            {
+                return index;
+            }
+
+            return -1;
+        }
+
+        auto argument = mlir::dyn_cast<mlir::BlockArgument>(root);
+        if (argument && argument.getOwner()->isEntryBlock() && argument.getOwner()->getParentOp() == funcOp.getOperation())
+        {
+            return static_cast<int32_t>(argument.getArgNumber());
+        }
+
+        return -1;
+    }
+
+    // ---- The iterator protocol ----
+    //
+    // `it.next()` returns a `{value, done}` record, and under own the caller owns what it holds,
+    // whoever implements it: a generator's `next` moves what it yields into the record (a yield of
+    // a borrow is an error in its body), and any other `next` is a function whose callers this pass
+    // cannot all see, which may not return a borrow. So the result is fresh even when the call goes
+    // through the `Iterator` interface, or into another module - the default library's `matchAll`.
+
+    // A call of a function named `next` - read through an interface, out of a field, or by its
+    // symbol - whose one result is a `{value, done}` record.
+    static bool isIteratorNext(mlir::Operation *op)
+    {
+        if (op->getNumResults() != 1)
+        {
+            return false;
+        }
+
+        auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(op->getResult(0).getType());
+        if (!tupleType || tupleType.getFields().size() != 2)
+        {
+            return false;
+        }
+
+        auto fieldName = [&](int index) {
+            auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFields()[index].id);
+            return id ? id.getValue() : llvm::StringRef();
+        };
+        if (fieldName(0) != "value" || fieldName(1) != "done")
+        {
+            return false;
+        }
+
+        auto isNext = [](llvm::StringRef name) { return name == "next" || name.ends_with(".next"); };
+        if (auto callee = directCallee(op))
+        {
+            return isNext(callee.getValue());
+        }
+
+        auto function = calleeValue(op);
+        if (!function)
+        {
+            return false;
+        }
+
+        if (auto getMethodOp = function.getDefiningOp<mlir_ts::GetMethodOp>())
+        {
+            function = getMethodOp.getBoundFunc();
+        }
+
+        if (auto boundOp = function.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            function = boundOp.getFunc();
+        }
+
+        if (auto loadOp = function.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto refOp = loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+            {
+                auto identifier = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+                return identifier && isNext(identifier.getValue());
+            }
+
+            if (auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>())
+            {
+                auto storageType = storageTupleOfType(propertyRefOp->getOperand(0).getType());
+                if (!storageType || propertyRefOp.getPosition() >= storageType.getFields().size())
+                {
+                    return false;
+                }
+
+                auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(storageType.getFields()[propertyRefOp.getPosition()].id);
+                return id && isNext(id.getValue());
+            }
+
+            return false;
+        }
+
+        if (auto refOp = function.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            return isNext(refOp.getIdentifier());
+        }
+
+        if (auto refOp = function.getDefiningOp<mlir_ts::VirtualSymbolRefOp>())
+        {
+            return isNext(refOp.getIdentifier());
+        }
+
+        if (auto refOp = function.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return isNext(refOp.getIdentifier());
+        }
+
+        if (auto refOp = function.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            return isNext(refOp.getIdentifier());
+        }
+
+        return false;
+    }
+
+    // A generator another module made: its state object's type is only its shape here, and what each
+    // field owns - a local, a yielded value now the caller's, what it borrows from its arguments - is
+    // known in that module alone. A release routine made here from the shape would give back what is
+    // not the state's. So this module's gives back none of it: only the `.captured` box's cells, and
+    // their values too unless the maker says it borrows them (`@borrows`). What the generator's own
+    // locals still hold when it is given up early leaks rather than being freed twice.
+    void findImportedStates(mlir::ModuleOp module)
+    {
+        llvm::MapVector<mlir::Type, bool> states;
+        for (auto &call : calls)
+        {
+            if (!makesGeneratorState(call.op) || (call.callees.known && !call.callees.funcs.empty()))
+            {
+                continue;
+            }
+
+            auto tupleType = storageTupleOfType(call.op->getResult(0).getType());
+            auto borrows = !declaredByCallees(call.callees, OWN_DECLARED_BORROWS_ATTR_NAME).empty();
+            states[tupleType] = states.lookup(tupleType) || borrows;
+        }
+
+        if (states.empty())
+        {
+            return;
+        }
+
+        auto *context = &getContext();
+        llvm::SmallVector<mlir::Attribute> entries;
+        if (auto existing = module->getAttrOfType<mlir::ArrayAttr>(OWN_BORROWING_FIELDS_ATTR_NAME))
+        {
+            entries.append(existing.begin(), existing.end());
+        }
+
+        for (auto &[type, borrows] : states)
+        {
+            auto tupleType = mlir::cast<mlir_ts::TupleType>(type);
+            auto captured = fieldIndex(tupleType, CAPTURED_NAME);
+            // the box first, when it borrows; -1 names no field, so a box that owns is released
+            llvm::SmallVector<int32_t> fields{borrows && captured >= 0 ? captured : -1};
+            for (auto [index, field] : llvm::enumerate(tupleType.getFields()))
+            {
+                if (static_cast<int32_t>(index) != captured && ownsHeap(module.getLoc(), field.type))
+                {
+                    fields.push_back(static_cast<int32_t>(index));
+                }
+            }
+
+            entries.push_back(mlir::ArrayAttr::get(context, {mlir::TypeAttr::get(type), mlir::DenseI32ArrayAttr::get(context, fields)}));
+        }
+
+        module->setAttr(OWN_BORROWING_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));
+    }
+
+    // A call whose result is a generator's state object (an object whose fields are `.step` and
+    // `next`): a generator function made it, a `ts.New` block it hands over (spec 18.1), which the
+    // caller owns - in another module too, as the iteration that follows needs.
+    static bool makesGeneratorState(mlir::Operation *op)
+    {
+        if (op->getNumResults() != 1 || !mlir::isa<mlir_ts::ObjectType>(op->getResult(0).getType()))
+        {
+            return false;
+        }
+
+        auto tupleType = storageTupleOfType(op->getResult(0).getType());
+        if (!tupleType)
+        {
+            return false;
+        }
+
+        auto hasStep = false;
+        auto hasNext = false;
+        for (auto field : tupleType.getFields())
+        {
+            if (auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(field.id))
+            {
+                hasStep = hasStep || id.getValue() == ".step";
+                hasNext = hasNext || id.getValue() == "next";
+            }
+        }
+
+        return hasStep && hasNext;
+    }
+
+    // storageTupleOf, without the pass's context: an object's storage, a reference's or a tuple
+    static mlir_ts::TupleType storageTupleOfType(mlir::Type type)
+    {
+        if (auto objectType = mlir::dyn_cast<mlir_ts::ObjectType>(type))
+        {
+            if (auto storageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+            {
+                return mlir_ts::TupleType::get(type.getContext(), storageType.getFields());
+            }
+
+            // an object a declaration names by its shape (another module's generator)
+            return mlir::dyn_cast<mlir_ts::TupleType>(objectType.getStorageType());
+        }
+
+        if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+        {
+            type = refType.getElementType();
+        }
+        else if (auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(type))
+        {
+            type = valueRefType.getElementType();
+        }
+
+        return mlir::dyn_cast<mlir_ts::TupleType>(type);
+    }
+
+    // ---- Fields a generator yields ----
+    //
+    // A generator's locals are fields of its state object, and `yield groups` puts what one holds into
+    // the `{value, done}` record its `next` returns: a borrow of the state, which the caller cannot
+    // keep. When the field is read for nothing but yields, and each value stored into it is yielded
+    // before the generator can stop (later in the same block), the yield moves the value instead:
+    // the read is fresh (OWN_FRESH_RESULT_ATTR_NAME) and the field owns nothing
+    // (OWN_YIELDED_FIELDS_ATTR_NAME).
+
+    // `ts.Store(value, ts.PropertyRef(record, i))`, where `record` is a local a `ts.Constant`
+    // initializes: a field of a record built to be returned, a yield's.
+    static bool isRecordFieldStore(mlir::Operation *user, mlir::Value value)
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+        auto propertyRefOp = storeOp && storeOp.getValue() == value
+                                 ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                 : mlir_ts::PropertyRefOp();
+        auto recordOp = propertyRefOp ? propertyRefOp->getOperand(0).getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        return recordOp && recordOp.getInitializer() && recordOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>();
+    }
+
+    void findYieldedFields(mlir::ModuleOp module)
+    {
+        // (state type, field) -> its reads and its stores
+        struct FieldUses
+        {
+            llvm::SmallVector<mlir_ts::LoadOp> reads;
+            llvm::SmallVector<mlir_ts::StoreOp> stores;
+            bool other = false;
+        };
+
+        llvm::MapVector<std::pair<mlir::Type, int32_t>, FieldUses> fields;
+        module.walk([&](mlir_ts::PropertyRefOp propertyRefOp) {
+            auto tupleType = storageTupleOf(propertyRefOp->getOperand(0).getType());
+            auto position = static_cast<int32_t>(propertyRefOp.getPosition());
+            if (!tupleType || fieldIndex(tupleType, ".step") < 0 || position == fieldIndex(tupleType, CAPTURED_NAME) ||
+                !mlir::isa<mlir_ts::RefType>(propertyRefOp.getType()) ||
+                !ownsHeap(propertyRefOp.getLoc(), mlir::cast<mlir_ts::RefType>(propertyRefOp.getType()).getElementType()))
+            {
+                return;
+            }
+
+            auto &uses = fields[{tupleType, position}];
+            for (auto *user : propertyRefOp->getUsers())
+            {
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    uses.reads.push_back(loadOp);
+                }
+                else if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == propertyRefOp.getResult())
+                {
+                    uses.stores.push_back(storeOp);
+                }
+                else if (!mlir::isa<mlir_ts::ReleaseSlotOp, mlir_ts::RetainSlotOp>(user))
+                {
+                    uses.other = true;
+                }
+            }
+        });
+
+        // a field the signature pass already found borrowing is the caller's, not the generator's
+        llvm::DenseSet<std::pair<mlir::Type, int32_t>> borrowing;
+        if (auto entries = module->getAttrOfType<mlir::ArrayAttr>(OWN_BORROWING_FIELDS_ATTR_NAME))
+        {
+            for (auto entry : entries.getAsRange<mlir::ArrayAttr>())
+            {
+                for (auto index : mlir::cast<mlir::DenseI32ArrayAttr>(entry[1]).asArrayRef())
+                {
+                    borrowing.insert({mlir::cast<mlir::TypeAttr>(entry[0]).getValue(), index});
+                }
+            }
+        }
+
+        llvm::MapVector<mlir::Type, llvm::SmallVector<int32_t>> yielded;
+        for (auto &[key, uses] : fields)
+        {
+            if (uses.other || uses.reads.empty() || uses.stores.empty() || borrowing.contains(key))
+            {
+                continue;
+            }
+
+            // read only to be put into a yield's record
+            auto onlyYielded = llvm::all_of(uses.reads, [](mlir_ts::LoadOp loadOp) {
+                auto users = llvm::make_filter_range(loadOp->getUsers(), [](mlir::Operation *user) {
+                    return !mlir::isa<mlir_ts::RetainOp, mlir_ts::DebugVariableOp>(user);
+                });
+                return llvm::hasSingleElement(users) && isRecordFieldStore(*users.begin(), loadOp.getResult());
+            });
+
+            // each value stored is yielded later in its block: nothing between stops the generator
+            auto eachYielded = llvm::all_of(uses.stores, [&](mlir_ts::StoreOp storeOp) {
+                return llvm::any_of(uses.reads, [&](mlir_ts::LoadOp loadOp) {
+                    return loadOp->getBlock() == storeOp->getBlock() && storeOp->isBeforeInBlock(loadOp);
+                });
+            });
+
+            if (!onlyYielded || !eachYielded)
+            {
+                continue;
+            }
+
+            yielded[key.first].push_back(key.second);
+            for (auto loadOp : uses.reads)
+            {
+                loadOp->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+        }
+
+        if (yielded.empty())
+        {
+            return;
+        }
+
+        auto *context = &getContext();
+        llvm::SmallVector<mlir::Attribute> entries;
+        for (auto &[type, indices] : yielded)
+        {
+            entries.push_back(mlir::ArrayAttr::get(context, {mlir::TypeAttr::get(type), mlir::DenseI32ArrayAttr::get(context, indices)}));
+        }
+
+        module->setAttr(OWN_YIELDED_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(context, entries));
+    }
+
+    // A function that says `@borrows` and makes no state itself, but returns what a call that has
+    // a bounded result gives it (`return this.value.matchAll(expr)`): it borrows the parameters
+    // the call's bounded arguments are, or are read out of.
+    void findBoundedForwarders()
+    {
+        llvm::DenseMap<mlir::Operation *, const Callees *> calleesOf;
+        for (auto &call : calls)
+        {
+            calleesOf[call.op] = &call.callees;
+        }
+
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration() || !funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) || borrowsFound.count(funcOp))
+            {
+                continue;
+            }
+
+            llvm::SmallVector<int32_t> found;
+            auto forwards = true;
+            for (auto value : returnedValues(funcOp))
+            {
+                if (holdsNoBlock(value))
+                {
+                    continue;
+                }
+
+                auto *call = rootOf(value).getDefiningOp();
+                auto known = call ? calleesOf.find(call) : calleesOf.end();
+                if (known == calleesOf.end())
+                {
+                    forwards = false;
+                    break;
+                }
+
+                llvm::SmallVector<int32_t> bounded = declaredByCallees(*known->second, OWN_DECLARED_BORROWS_ATTR_NAME);
+                if (bounded.empty() && known->second->funcs.size() == 1)
+                {
+                    auto made = declared(known->second->funcs.front(), OWN_RESULT_BOUNDED_ATTR_NAME);
+                    bounded.assign(made.begin(), made.end());
+                }
+
+                if (bounded.empty())
+                {
+                    forwards = false;
+                    break;
+                }
+
+                auto args = callArgs(call);
+                for (auto index : bounded)
+                {
+                    auto param = static_cast<size_t>(index) < args.size() ? parameterOf(args[index], funcOp) : -1;
+                    if (param < 0)
+                    {
+                        forwards = false;
+                        break;
+                    }
+
+                    if (!llvm::is_contained(found, param))
+                    {
+                        found.push_back(param);
+                    }
+                }
+            }
+
+            if (forwards && !found.empty())
+            {
+                llvm::sort(found);
+                borrowsFound[funcOp] = found;
+            }
+        }
+    }
+
+    // A body that does other than its signature says, and an override that says other than the
+    // method it overrides: either way a caller that trusts the signature frees twice or leaks.
+    void checkDeclared()
+    {
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration())
+            {
+                continue;
+            }
+
+            if (funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+            {
+                auto local = factsLocal.lookup(funcOp);
+                auto says = declared(funcOp, OWN_DECLARED_KEEPS_ATTR_NAME);
+                if (local.borrows >= 0)
+                {
+                    funcOp.emitError("'") << funcOp.getSymName()
+                                          << "' returns a borrow of an argument, which '@" KEEPS_DECORATOR
+                                             "' cannot say; -mm=own cannot export that yet";
+                    signalPassFailure();
+                }
+                else if (llvm::ArrayRef<int32_t>(local.owned) != says)
+                {
+                    funcOp.emitError("'@" KEEPS_DECORATOR "' of '")
+                        << funcOp.getSymName() << "' names " << describeParams(funcOp, says) << ", but its body keeps "
+                        << describeParams(funcOp, local.owned);
+                    signalPassFailure();
+                }
+            }
+
+            if (funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME))
+            {
+                auto says = declared(funcOp, OWN_DECLARED_BORROWS_ATTR_NAME);
+                auto found = borrowsFound.find(funcOp);
+                if (found == borrowsFound.end())
+                {
+                    funcOp.emitError("'@" BORROWS_DECORATOR "' of '")
+                        << funcOp.getSymName() << "' names " << describeParams(funcOp, says)
+                        << ", but it neither makes a generator whose state borrows its arguments nor returns one";
+                    signalPassFailure();
+                }
+                else if (llvm::ArrayRef<int32_t>(found->second) != says)
+                {
+                    funcOp.emitError("'@" BORROWS_DECORATOR "' of '")
+                        << funcOp.getSymName() << "' names " << describeParams(funcOp, says)
+                        << ", but the state it makes borrows " << describeParams(funcOp, found->second);
+                    signalPassFailure();
+                }
+            }
+        }
+
+        // the members of a family a declaring method is in: each says the same
+        for (auto &[key, members] : families)
+        {
+            mlir_ts::FuncOp declaring;
+            for (auto member : members)
+            {
+                if (auto funcOp = functions.lookup(member.getValue()); funcOp && declaresFacts(funcOp))
+                {
+                    declaring = funcOp;
+                    break;
+                }
+            }
+
+            if (!declaring)
+            {
+                continue;
+            }
+
+            for (auto member : members)
+            {
+                auto funcOp = functions.lookup(member.getValue());
+                if (!funcOp || funcOp == declaring)
+                {
+                    continue;
+                }
+
+                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME})
+                {
+                    if (funcOp->hasAttr(name) != declaring->hasAttr(name) || declared(funcOp, name) != declared(declaring, name))
+                    {
+                        funcOp.emitError("'") << funcOp.getSymName() << "' overrides '" << declaring.getSymName()
+                                              << "', and has to say the same '@" KEEPS_DECORATOR "' and '@" BORROWS_DECORATOR
+                                                 "'";
+                        signalPassFailure();
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     // Functions that destroy nothing their caller can reach.
     llvm::DenseSet<mlir::Operation *> noDrops;
@@ -613,6 +1254,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         Callees callees;
         if (auto callee = directCallee(op))
         {
+            callees.named.push_back(callee.getAttr());
             callees.known = addDefined(callee.getAttr(), callees) || addImported(callee.getAttr(), callees);
         }
         else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(op))
@@ -633,6 +1275,26 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // interface's method - is unknown.
     void resolveValue(mlir::Value callee, Callees &callees)
     {
+        // `ts.Load(ts.AddressOf @g)`: a dynamic import's global, which may say what the function
+        // keeps; a method of a class imported so is bound to its object first
+        auto function = callee;
+        if (auto getMethodOp = function.getDefiningOp<mlir_ts::GetMethodOp>())
+        {
+            function = getMethodOp.getBoundFunc();
+        }
+
+        if (auto boundOp = function.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            function = boundOp.getFunc();
+        }
+
+        auto loadOp = function.getDefiningOp<mlir_ts::LoadOp>();
+        if (auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+            addressOfOp && !writtenGlobals.contains(addressOfOp.getGlobalName()))
+        {
+            callees.named.push_back(addressOfOp.getGlobalNameAttr().getAttr());
+        }
+
         if (addImportedByAddress(callee, callees))
         {
             callees.known = true;
@@ -685,10 +1347,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         if (index < 0)
         {
+            callees.named.push_back(identifier);
             callees.known = addDefined(identifier, callees) || addImported(identifier, callees);
             return;
         }
 
+        callees.named = familyOf(index, identifier);
         resolveFamily(index, identifier, callees);
     }
 
@@ -1042,7 +1706,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             llvm::DenseMap<mlir::Operation *, Facts> next;
             for (auto &call : calls)
             {
-                if (auto facts = callFacts(call.callees); !facts.empty())
+                auto facts = callFacts(call.callees);
+                if (facts.empty())
+                {
+                    // a call this pass cannot resolve still has what its callees' signatures say
+                    auto keeps = declaredByCallees(call.callees, OWN_DECLARED_KEEPS_ATTR_NAME);
+                    facts.owned.assign(keeps.begin(), keeps.end());
+                }
+
+                if (!facts.empty())
                 {
                     next[call.op] = facts;
                 }
@@ -1072,6 +1744,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
+        // what a signature says stands, open or not; checkDeclared holds the body to it
+        for (auto &entry : functions)
+        {
+            if (entry.second->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME))
+            {
+                auto keeps = declared(entry.second, OWN_DECLARED_KEEPS_ATTR_NAME);
+                factsEffective[entry.second] = Facts{-1, llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
+            }
+        }
+
         for (auto changed = true; changed;)
         {
             changed = false;
@@ -1091,7 +1773,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
                 for (auto member : members)
                 {
-                    if (auto funcOp = functions.lookup(member.getValue()); funcOp && factsEffective.erase(funcOp))
+                    if (auto funcOp = functions.lookup(member.getValue());
+                        funcOp && !funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) && factsEffective.erase(funcOp))
                     {
                         changed = true;
                     }
@@ -1235,9 +1918,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Is every caller of `funcOp` a direct call this pass sees? It is private, and each use of its
     // symbol is a call, or a closure over it that is only retained and released - `.map(f)` builds
     // one and calls its body straight through the box.
-    bool calledOnlyDirectly(mlir::ModuleOp module, mlir_ts::FuncOp funcOp)
+    bool calledOnlyDirectly(mlir::ModuleOp module, mlir_ts::FuncOp funcOp, bool publicToo = false)
     {
-        if (!funcOp.isPrivate())
+        if (!funcOp.isPrivate() && !publicToo)
         {
             return false;
         }
@@ -1252,6 +1935,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         {
             auto *user = use.getUser();
             if (mlir::isa<mlir_ts::SymbolCallInternalOp, mlir_ts::CallOp, mlir_ts::InvokeOp>(user))
+            {
+                continue;
+            }
+
+            // a method whose signature gives its callers the bound: called through its class's
+            // vtable or a reference to it, which the facts reach too (declaredByCallees)
+            if (publicToo &&
+                (isClassVTableEntry(user) ||
+                 (mlir::isa<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp,
+                            mlir_ts::SymbolRefOp>(user) &&
+                  onlyCalled(user->getResult(0)))))
             {
                 continue;
             }
@@ -1293,6 +1987,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return true;
     }
 
+    // `ts.Load` of one of `maker`'s parameter slots (isParameterSlot): `index` is its position.
+    static bool readsParameterSlot(mlir::Value value, mlir_ts::FuncOp maker, int32_t &index)
+    {
+        auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+        auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        int position = -1;
+        if (!varOp || !isParameterSlot(varOp, position) || varOp->getParentOfType<mlir_ts::FuncOp>() != maker)
+        {
+            return false;
+        }
+
+        index = static_cast<int32_t>(position);
+        return true;
+    }
+
     // `ts.Load(ts.PropertyRef(argument, i))` of one of `maker`'s parameters: `index` is its position.
     static bool readsParameterField(mlir::Value value, mlir_ts::FuncOp maker, int32_t &index)
     {
@@ -1330,8 +2039,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             ++made[tupleType];
             auto captured = fieldIndex(tupleType, CAPTURED_NAME);
             auto maker = newOp->getParentOfType<mlir_ts::FuncOp>();
-            // an open maker has callers this pass cannot give the bound to
-            if (captured < 0 || !maker || !calledOnlyDirectly(module, maker))
+            // an open maker has callers this pass cannot give the bound to, unless its signature
+            // gives it to them (`@borrows`)
+            if (captured < 0 || !maker ||
+                !calledOnlyDirectly(module, maker, /*publicToo=*/maker->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME)))
             {
                 return;
             }
@@ -1386,6 +2097,23 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                         continue;
                     }
 
+                    // `this`, which the box holds by value (`.this`), not in a cell: read out of
+                    // the parameter's slot
+                    if (readsParameterSlot(value, maker, index))
+                    {
+                        if (MLIRTypeHelper::isSharedHandleType(value.getType()))
+                        {
+                            return;
+                        }
+
+                        if (!llvm::is_contained(state.bounded, index))
+                        {
+                            state.bounded.push_back(index);
+                        }
+
+                        continue;
+                    }
+
                     if (!readsParameterField(value, maker, index))
                     {
                         return; // a box with anything but what the parameters hold owns what it holds
@@ -1406,6 +2134,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         // made in one place only: the maker is the one function a bound can come from
         states.remove_if([&](auto &entry) { return made[entry.first] != 1; });
+        for (auto &[type, state] : states)
+        {
+            auto bounded = state.bounded;
+            llvm::sort(bounded);
+            borrowsFound[state.maker] = bounded;
+        }
         if (states.empty())
         {
             return;

@@ -101,8 +101,12 @@ class OwnedReturnConsumptionPass
                 }
             }
 
+            // a class's method, which takes its object first: what a virtual call can reach. An
+            // object literal's method, or a generator's `next`, shares the member name only.
+            auto inputs = funcOp.getFunctionType().getInputs();
+            auto isClassMethod = !inputs.empty() && mlir::isa<mlir_ts::ClassType, mlir_ts::ClassStorageType>(inputs.front());
             auto dot = name.rfind('.');
-            if (dot != mlir::StringRef::npos && dot + 1 < name.size())
+            if (isClassMethod && dot != mlir::StringRef::npos && dot + 1 < name.size())
             {
                 methodsByMemberName[name.substr(dot + 1)].push_back(name);
             }
