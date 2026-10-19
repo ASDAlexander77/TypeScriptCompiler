@@ -159,6 +159,14 @@
 // stores its `v?: T` as optional<T> - {T, flag}, value first - and its slot carries this bit on top
 // of the offset: an access then reads the flag (false is undefined), and a write sets it.
 #define INTERFACE_OPTIONAL_STORAGE_TAG(sizeBits) (1LL << ((sizeBits) - 2))
+// A function-typed interface field (`fn: () => int`) a class fills with a method (`fn(): int`) has
+// no storage in the object: its slot is instead the address of a global cell holding the method,
+// plus this bit. An access reads the cell (InterfaceSymbolRefOpLowering), then binds `this` as for
+// any function-typed field. The bit is free in every other function-typed slot: an offset of a
+// pointer-sized field (or of optional<function>, which starts with one) is pointer-aligned, and so
+// is the cell; -1 (absent) is tested before it. A write through such a field changes the cell,
+// so it changes the method for every instance of the class seen through that interface.
+#define INTERFACE_METHOD_CELL_TAG 1
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it
 #define INTERFACE_OPTIONAL_WRITE_ATTR "__optional_write"

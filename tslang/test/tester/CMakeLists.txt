@@ -611,6 +611,7 @@ tslang_add_test(NAME test-compile-00-interface-partial COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-interface-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-cast-order COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_cast_order.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
+tslang_add_test(NAME test-compile-00-interface-function-typed-field-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-compile-00-interface-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_captures.ts")
 tslang_add_test(NAME test-compile-00-object-annotated-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method.ts")
 tslang_add_test(NAME test-compile-00-object-annotated-method-params COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method_params.ts")
@@ -1164,6 +1165,7 @@ tslang_add_test(NAME test-jit-00-interface-partial COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-interface-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-cast-order COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_cast_order.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field.ts")
+tslang_add_test(NAME test-jit-00-interface-function-typed-field-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-jit-00-interface-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_captures.ts")
 tslang_add_test(NAME test-jit-00-object-annotated-method COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method.ts")
 tslang_add_test(NAME test-jit-00-object-annotated-method-params COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method_params.ts")
@@ -2025,6 +2027,7 @@ set(TSLANG_CORPUS
     00interface_captures.ts
     00interface_conjunction.ts
     00interface_function_typed_field.ts
+    00interface_function_typed_field_class.ts
     00interface_generic.ts
     00interface_global_method.ts
     00interface_indexer.ts
