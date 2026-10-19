@@ -3395,7 +3395,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_let_borrow own_element_let_borrow own_borrow_merge_after_call
                  own_call_no_drops own_getter_borrow own_param_kept own_any_box
                  own_string_length_borrow
-                 own_closure_borrow own_closure_escape own_generator own_interface_view
+                 own_closure_borrow own_closure_escape own_generator own_generator_loop_local own_interface_view
                  own_async own_record_return own_generator_borrow own_global_script
                  own_global_init own_constant_data own_record_local
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
@@ -3450,6 +3450,17 @@ add_test(NAME test-own-string-copy-in-store-block
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_string_copy_branch.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/own-string-copy-block.cmake")
+
+# A local declared in a generator's loop gives back what the last turn stored in its field. The
+# program means the same under every model; no run can see the leak, so the IR is read.
+foreach(loop_local_mm rc none gc)
+    tslang_add_test(NAME test-jit-${loop_local_mm}-own_generator_loop_local COMMAND test-runner -jit -mm=${loop_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts")
+    tslang_add_test(NAME test-compile-${loop_local_mm}-own_generator_loop_local COMMAND test-runner -mm=${loop_local_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts")
+endforeach()
+add_test(NAME test-rc-generator-loop-local-release
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_loop_local.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/generator-loop-local-release.cmake")
 
 # A `const` record literal's slot is released under rc (#485); no run can see the leak, so the IR is read.
 add_test(NAME test-rc-const-record-release

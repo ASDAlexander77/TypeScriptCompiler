@@ -2328,6 +2328,10 @@ class MLIRGenImpl
                 {
                     builder.create<mlir_ts::RetainOp>(location, variableDeclarationInfo.initial);
                 }
+
+                // A declaration in a loop runs again on the next turn, into the same field: what
+                // the last turn stored there is given back first. The field starts out null.
+                builder.create<mlir_ts::ReleaseSlotOp>(location, variableDeclarationInfo.storage);
             }
 
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);

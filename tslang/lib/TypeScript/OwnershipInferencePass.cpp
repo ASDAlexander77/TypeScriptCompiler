@@ -2354,7 +2354,16 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                // A result that borrows what it was given borrows this too, and is walked as it.
+                // A result that borrows what it was given borrows this too, and is walked as it. A
+                // call known to make its result (`__own_fresh_result`: through a field that only
+                // ever holds one function) hands back a block of the caller's own - the `{value,
+                // done}` record of `it.next()` points nowhere into `it`, and what it does after
+                // its next call cannot be a use of the method read out of `it`.
+                if (isCall(user) && user->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
+                {
+                    continue;
+                }
+
                 for (auto result : user->getResults())
                 {
                     if (mayPointInto(result) && seen.insert(result).second)
