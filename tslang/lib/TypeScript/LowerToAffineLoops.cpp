@@ -2937,7 +2937,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
         mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, 
         mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::DebugVariableOp, mlir_ts::AllocaOp, 
-        mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
+        mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
         mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, 
         mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::ArrayViewOp, 
         mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,

@@ -1488,6 +1488,28 @@ tslang_add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -sh
 
 # shared libs tests (exports/imports)
 tslang_add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+# a @final class across the boundary: direct calls from the importer, compiled and under the JIT
+foreach(final_mm gc rc)
+    tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+endforeach()
+# A generator method of an exported class is exported like any other method: an importer that
+# calls it by name (the default library's String[Symbol.iterator] under the JIT) finds it. Checked
+# on Windows, where an exported function is `dllexport` in the IR; ELF has no such mark.
+if (WIN32)
+    add_test(NAME test-export-generator-method
+             COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib
+                     "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts" -o -)
+    set_tests_properties(test-export-generator-method PROPERTIES PASS_REGULAR_EXPRESSION "define dllexport ptr @Counter.upTo"
+                                                                 FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endif()
+# ...and linked against its import library (`@static import`), with members from a base its
+# library does not export
+tslang_add_test(NAME test-compile-time-shared-final-base COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_base_static.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_base.ts")
+add_test(NAME test-compile-shared-import-final-extends
+         COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_extends.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
+set_tests_properties(test-compile-shared-import-final-extends PROPERTIES PASS_REGULAR_EXPRESSION "class 'X' cannot extend 'Counter': it is @final"
+                                                                         FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 tslang_add_test(NAME test-compile-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
 # Cross-module `class extends` across a real DLL boundary. Formerly disabled as a
 # known issue; fixed by three co-operating changes (see
@@ -2772,6 +2794,43 @@ foreach(call_arity_case ${call_arity_cases})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
+# `@final` (docs/superpowers/specs/2026-10-19-final-classes-design.md): a class nobody may extend.
+# Each file in final/ breaks one rule; the test passes when the compiler prints the message.
+set(final_error_cases
+    "extends_final|class 'X' cannot extend 'B': it is @final"
+    "extends_declared_final|class 'E' cannot extend 'D': it is @final"
+    "final_abstract|class 'A' cannot be both @final and abstract"
+    "final_cpp|class 'P' cannot be both @final and @cpp")
+foreach(final_error_case ${final_error_cases})
+    string(FIND "${final_error_case}" "|" final_error_sep)
+    string(SUBSTRING "${final_error_case}" 0 ${final_error_sep} final_error_name)
+    math(EXPR final_error_sep "${final_error_sep} + 1")
+    string(SUBSTRING "${final_error_case}" ${final_error_sep} -1 final_error_message)
+    add_test(NAME test-compile-final-${final_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/final/${final_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/final-${final_error_name}.obj")
+    set_tests_properties(test-compile-final-${final_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${final_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+# A call on a @final class is direct, and the program runs the same under every model.
+foreach(final_mm gc rc none own)
+    tslang_add_test(NAME test-compile-final-dispatch-${final_mm} COMMAND test-runner -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")
+    tslang_add_test(NAME test-jit-final-dispatch-${final_mm} COMMAND test-runner -jit -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")
+endforeach()
+# ...with no vtable call left on a @final receiver, while one through a non-final base keeps it
+add_test(NAME test-final-ir-direct
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/final/final_ir_direct.ts")
+set_tests_properties(test-final-ir-direct PROPERTIES PASS_REGULAR_EXPRESSION "ThisSymbolRef"
+                                                     FAIL_REGULAR_EXPRESSION "VirtualSymbolRef|error|Stack dump")
+add_test(NAME test-final-ir-base
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir --no-default-lib
+                 "${PROJECT_SOURCE_DIR}/test/tester/final/final_ir_base.ts")
+set_tests_properties(test-final-ir-base PROPERTIES PASS_REGULAR_EXPRESSION "ThisVirtualSymbolRef"
+                                                   FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
 # A `continue` or `break` naming a label that no statement around it has is an error (a label
 # outside the function doesn't count); it compiled to a jump with nowhere to go.
 add_test(NAME test-compile-diagnostic-location-continue-label
@@ -3314,7 +3373,9 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_nullable_view own_declared_constant own_spread_build own_interface_field_call
                  own_string_copy_field own_string_copy_after_move own_string_copy_nullable
                  own_string_copy_exported own_string_copy_written own_string_copy_mixed_return
-                 own_string_copy_branch own_array_param_push)
+                 own_string_copy_branch own_array_param_push
+                 own_declared_no_drops own_return_paths own_string_concat_element
+                 own_final_fresh_result own_final_field_lend own_null_narrowing_di)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3325,6 +3386,13 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                          PROPERTIES PASS_REGULAR_EXPRESSION "define"
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error:|Stack dump")
 endforeach()
+
+# ...and built with debug info, whose records of narrowed variables are ops of their own
+add_test(NAME test-own-di-null-narrowing
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --di --opt_level=0 --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_null_narrowing_di.ts")
+set_tests_properties(test-own-di-null-narrowing PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
+                                                           FAIL_REGULAR_EXPRESSION "error|Stack dump")
 
 # A global declared in top-level code owns what it is given, under every model that counts.
 foreach(global_mm rc none gc)
@@ -3490,6 +3558,7 @@ set(own_error_cases
     "own_err_call_drops_indirectly|borrows .* but is used here after it may be released or overwritten"
     "own_err_call_given_borrow|borrows .* but is used here after it may be released or overwritten"
     "own_err_call_this_borrow|borrows .* but is used here after it may be released or overwritten"
+    "own_err_declared_drops|borrows .* but is used here after it may be released or overwritten"
     "own_err_exported_virtual_call|borrows .* but is used here after it may be released or overwritten"
     "own_err_borrowed_result_stored|borrows the result of 'firstOf' and cannot be stored, returned or captured"
     "own_err_borrowed_result_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
@@ -3852,6 +3921,15 @@ add_test(NAME test-compile-class-cast-unrelated-error
                  -o "${CMAKE_CURRENT_BINARY_DIR}/class-cast-unrelated.obj")
 set_tests_properties(test-compile-class-cast-unrelated-error
                      PROPERTIES PASS_REGULAR_EXPRESSION "type A is not assignable to type B: 'v' is number, not string"
+                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+
+# ...and so is any other class cast to a @final one, whose calls are direct
+add_test(NAME test-compile-class-cast-to-final-error
+         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                 "${PROJECT_SOURCE_DIR}/test/tester/class-cast/to_final.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/class-cast-to-final.obj")
+set_tests_properties(test-compile-class-cast-to-final-error
+                     PROPERTIES PASS_REGULAR_EXPRESSION "type Y is not assignable to type F: 'F' is @final"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # An object literal with methods or accessors assigned to a class is an error: a class instance

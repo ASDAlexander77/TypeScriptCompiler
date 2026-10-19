@@ -437,6 +437,13 @@ namespace typescript
             newline();
         }
 
+        // an importer calls a @final class's methods directly and may not extend it
+        if (classType->isFinal)
+        {
+            os << "@" FINAL_DECORATOR;
+            newline();
+        }
+
         // `abstract` is layout-relevant, not just semantic: mlirGenClassNew skips
         // synthesizing the `.new` method for abstract classes, so dropping the
         // modifier makes the reimporting module insert a `.new` vtable slot the

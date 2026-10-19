@@ -669,11 +669,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     }
 
     // A function declared here and defined in a library that exported its `__own_no_drops`: one
-    // linked with this module, through its import library.
+    // linked with this module, through its import library. Or a C function declared
+    // `@nodrops` (OWN_DECLARED_NO_DROPS_ATTR_NAME).
     bool addImported(mlir::StringAttr symbol, Callees &callees)
     {
         auto funcOp = functions.lookup(symbol.getValue());
-        if (!funcOp || !funcOp.isDeclaration() || !importedNoDrops.contains(symbol.getValue()))
+        if (!funcOp || !funcOp.isDeclaration() ||
+            !(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME)))
         {
             return false;
         }

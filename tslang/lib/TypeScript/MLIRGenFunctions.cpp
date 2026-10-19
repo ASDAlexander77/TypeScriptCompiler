@@ -1009,6 +1009,12 @@ namespace mlirgen
             // to ensure correct full name
             methodOp->parent = functionLikeDeclarationBaseAST->parent;
 
+            // what the class gave the method (mlirGenClassMethodMember): exported, imported, public.
+            // The wrapper is the method's function; without them a public generator method of an
+            // exported class was private, and an importer calling it by name found no symbol.
+            methodOp->internalFlags |= functionLikeDeclarationBaseAST->internalFlags &
+                                       (InternalFlags::DllExport | InternalFlags::DllImport | InternalFlags::IsPublic);
+
             LLVM_DEBUG(printDebug(methodOp););
 
             return methodOp;

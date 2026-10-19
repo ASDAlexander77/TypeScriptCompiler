@@ -344,8 +344,14 @@ class OwnershipInferencePass
                 continue;
             }
 
-            // an array a spread builds, read into the owning local it is made for
+            // an array a spread builds, read into the owning local it is made for, or returned
             if (value && mlir::isa<mlir_ts::RetainSlotOp>(op) && isBuiltArrayRead(op, value))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
+            if (value && mlir::isa<mlir_ts::RetainOp>(op) && isBuiltArrayReturned(op, value))
             {
                 toErase.insert(op);
                 continue;
@@ -1855,15 +1861,12 @@ class OwnershipInferencePass
 
     // Receivers of one owning local that each read a value of its own (#528): `h.c = a; a = new C();
     // g.c = a`. An assignment comes between every two of their reads on every path from one to the
-    // other, so each is decided alone, as the one receiver of the value it reads.
+    // other, so each is decided alone, as the one receiver of the value it reads. So are receivers
+    // no path joins at all, assigned or not: `if (c) return a; return a;` moves `a` once on each
+    // way out.
     bool takeValuesOfTheirOwn(mlir::Value slot, llvm::ArrayRef<SlotReceiver> receivers)
     {
         auto assignments = slotAssignments(slot);
-        if (assignments.empty())
-        {
-            return false;
-        }
-
         llvm::SmallVector<mlir::Operation *> kills(assignments.begin(), assignments.end());
         if (auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>())
         {
@@ -2342,8 +2345,11 @@ class OwnershipInferencePass
                     }
                 }
 
-                // a copy (spec 22.2) reads the borrow into a block of its own, which points into nothing
-                if (mlir::isa<mlir_ts::StringCopyOp>(user))
+                // a copy (spec 22.2) reads the borrow into a block of its own, which points into
+                // nothing, and so does a concatenation: `s + t` is a new string whatever s and t are
+                // (a `+` of two strings lowers to ts.StringConcat, which always allocates)
+                if (mlir::isa<mlir_ts::StringCopyOp, mlir_ts::StringConcatOp>(user) ||
+                    (mlir::isa<mlir_ts::ArithmeticBinaryOp>(user) && mlir::isa<mlir_ts::StringType>(user->getResult(0).getType())))
                 {
                     continue;
                 }
@@ -3631,6 +3637,70 @@ class OwnershipInferencePass
         });
     }
 
+    // `return [...a]`: the builder of isBuiltArrayRead, read once, when it is done, and returned.
+    // The return's `ts.Retain` (`retain`) is the reference the caller gets: the fresh array moves
+    // into the builder and then out of the function, and nothing else holds it. The builder's
+    // other reads only bind its `push` (`ts.ThisSymbolRef @__array_push`) or are not used.
+    bool isBuiltArrayReturned(mlir::Operation *retain, mlir::Value value)
+    {
+        auto read = value.getDefiningOp<mlir_ts::LoadOp>();
+        auto builder = read ? read.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+        if (!builder || isOwningVariable(builder) || builder.getCaptured().value_or(false) || !builder.getInitializer() ||
+            !mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp>(builder.getInitializer().getDefiningOp()))
+        {
+            return false;
+        }
+
+        // the read is retained and returned - stored into the function's result slot - and nothing else
+        auto returned = false;
+        for (auto *user : read->getUsers())
+        {
+            if (user == retain)
+            {
+                continue;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto resultSlot = storeOp && storeOp.getValue() == read.getResult()
+                                  ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                  : mlir_ts::VariableOp();
+            if (!resultSlot || !isResultSlot(resultSlot) || returned)
+            {
+                return false;
+            }
+
+            returned = true;
+        }
+
+        if (!returned)
+        {
+            return false;
+        }
+
+        // only filled, and only before it is read
+        return llvm::all_of(builder->getUses(), [&](mlir::OpOperand &use) {
+            auto *user = use.getOwner();
+            if (user == read)
+            {
+                return true;
+            }
+
+            if (reachableAfter(read, user, builder))
+            {
+                return false;
+            }
+
+            if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+            {
+                return llvm::all_of(loadOp->getUsers(), [](mlir::Operation *loadUser) {
+                    return mlir::isa<mlir_ts::ThisSymbolRefOp>(loadUser) && loadUser->use_empty();
+                });
+            }
+
+            return mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(user) && use.getOperandNumber() == 0;
+        });
+    }
+
     // The one `ts.RetainSlot` of a local; null when there are none or several.
     static mlir::Operation *onlyRetainSlotOf(mlir_ts::VariableOp varOp)
     {
@@ -3709,6 +3779,12 @@ class OwnershipInferencePass
             return true;
         }
 
+        // `assert(c, message)` prints the message when it fails, and keeps it either way
+        if (mlir::isa<mlir_ts::AssertOp>(user))
+        {
+            return true;
+        }
+
         // `s.value`'s place and `Shared.count(s)` read the handle and keep nothing (spec 23.1)
         if (mlir::isa<mlir_ts::SharedValueRefOp, mlir_ts::SharedCountOp>(user))
         {
@@ -3728,10 +3804,12 @@ class OwnershipInferencePass
             return true;
         }
 
+        // ...and so does a cast to `null` or `undefined`, which holds no block: `--di` records the
+        // `r` that `if (r == null)` narrows as one
         if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
         {
-            return mlir::isa<mlir_ts::BooleanType>(castOp.getType()) || castOp.getType().isInteger(1) ||
-                   isBoundForCall(castOp);
+            return mlir::isa<mlir_ts::BooleanType, mlir_ts::NullType, mlir_ts::UndefinedType>(castOp.getType()) ||
+                   castOp.getType().isInteger(1) || isBoundForCall(castOp);
         }
 
         if (mlir::isa<mlir_ts::ExtractInterfaceThisOp>(user))

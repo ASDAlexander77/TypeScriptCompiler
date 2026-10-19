@@ -582,7 +582,8 @@ namespace mlirgen
 
     mlir::Value MLIRGenImpl::ClassAccessorAccess(ClassInfo::TypePtr classInfo,
             mlir::Location location, mlir::Value thisValue, int accessorIndex,
-            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
+            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+            bool finalReceiver)
     {
 
         auto accessorInfo = classInfo->accessors[accessorIndex];
@@ -668,7 +669,12 @@ namespace mlirgen
             auto getMethodInfo = findMethodInfo(getFunc);
             auto setMethodInfo = findMethodInfo(setFunc);
 
-            auto isVirtualAccessor = !isStorageType &&
+            // a @final receiver's accessor is the one this class has, called directly when the class
+            // is defined in this module, as a method is (ClassMethodAccess)
+            auto direct = finalReceiver && !classInfo->isDeclaration && !classInfo->isImport &&
+                          !classInfo->isDynamicImport && !classInfo->isCppVTable &&
+                          !(getMethodInfo && getMethodInfo->isAbstract) && !(setMethodInfo && setMethodInfo->isAbstract);
+            auto isVirtualAccessor = !direct && !isStorageType &&
                 ((getMethodInfo && (getMethodInfo->isAbstract || getMethodInfo->isVirtual)) ||
                  (setMethodInfo && (setMethodInfo->isAbstract || setMethodInfo->isVirtual)));
 
@@ -933,7 +939,8 @@ namespace mlirgen
     }
 
     mlir::Value MLIRGenImpl::ClassBaseClassAccess(ClassInfo::TypePtr classInfo, ClassInfo::TypePtr baseClass, int index,
-            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
+            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+            bool finalReceiver)
     {
 
         // first base is "super."
@@ -944,7 +951,8 @@ namespace mlirgen
             return value;
         }
 
-        auto value = ClassMembersAccess(location, thisValue, baseClass, name, true, argument, accessingFromLevel, genContext);
+        auto value = ClassMembersAccess(location, thisValue, baseClass, name, true, argument, accessingFromLevel, genContext,
+                                        finalReceiver);
         if (value)
         {
             return value;
@@ -983,9 +991,15 @@ namespace mlirgen
     }    
 
     mlir::Value MLIRGenImpl::ClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
+                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
+                             bool finalReceiver)
     {
         assert(classInfo);
+
+        // A value whose own type is @final has no subclass: whichever class up the chain has the
+        // member, that member is the one it runs. Kept through the walk to the base classes, which
+        // reach here as `isSuperClass`.
+        finalReceiver = finalReceiver || (!isSuperClass && classInfo->isFinal);
 
         LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "'\n";);
 
@@ -1009,7 +1023,8 @@ namespace mlirgen
         auto methodIndex = classInfo->getMethodIndex(name);
         if (methodIndex >= 0)
         {
-            return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext);
+            return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext,
+                                     finalReceiver);
         }
 
         // static generic methods
@@ -1023,7 +1038,8 @@ namespace mlirgen
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)
         {
-            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, isSuperClass, accessingFromLevel, genContext);
+            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, isSuperClass, accessingFromLevel, genContext,
+                                       finalReceiver);
         }
 
         for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
@@ -1031,7 +1047,7 @@ namespace mlirgen
             auto effectiveAccessingFromLevel = accessingFromLevel == mlir_ts::AccessLevel::Private 
                 ? mlir_ts::AccessLevel::Protected : accessingFromLevel;
             auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, 
-                thisValue, name, argument, effectiveAccessingFromLevel, genContext);
+                thisValue, name, argument, effectiveAccessingFromLevel, genContext, finalReceiver);
             if (value)
             {
                 return value;
@@ -1981,7 +1997,7 @@ namespace mlirgen
 
         // a base class's method takes the object cast to that class, as the member access does
         auto resolved = ClassMethodAccess(chosen.owner, location, thisValue, chosen.methodIndex, chosen.owner != classInfo,
-                                          chosenMethod.accessLevel, genContext);
+                                          chosenMethod.accessLevel, genContext, classInfo->isFinal);
         if (resolved && funcRefValue.use_empty())
         {
             funcRefValue.getDefiningOp()->erase();

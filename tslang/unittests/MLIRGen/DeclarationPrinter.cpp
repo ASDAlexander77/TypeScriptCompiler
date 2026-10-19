@@ -423,6 +423,26 @@ TEST_F(DeclarationPrinterTest, concrete_class_has_no_abstract_keyword)
     EXPECT_THAT(text, testing::HasSubstr("class Shape"));
 }
 
+// `@final` decides how an importer dispatches (directly, not through the vtable) and whether it
+// may extend the class, so the reimported declaration has to keep it.
+TEST_F(DeclarationPrinterTest, final_class_prints_final_decorator)
+{
+    auto ci = makeClass("Shape");
+    ci->isFinal = true;
+    setClassFields(ci, {});
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::HasSubstr("@final"));
+    EXPECT_THAT(text, testing::HasSubstr("class Shape"));
+}
+
+TEST_F(DeclarationPrinterTest, non_final_class_has_no_final_decorator)
+{
+    auto ci = makeClass("Shape");
+    setClassFields(ci, {});
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::Not(testing::HasSubstr("@final")));
+}
+
 TEST_F(DeclarationPrinterTest, abstract_method_prints_abstract_keyword)
 {
     auto ci = makeClass("Shape");
