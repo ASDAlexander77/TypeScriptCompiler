@@ -614,6 +614,7 @@ tslang_add_test(NAME test-compile-00-interface-function-typed-field COMMAND test
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-compile-00-interface-function-typed-field-class-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
 tslang_add_test(NAME test-compile-00-interface-optional-function-typed-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
+tslang_add_test(NAME test-compile-00-interface-optional-function-typed-field-class-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field_class_field.ts")
 tslang_add_test(NAME test-compile-00-interface-captures COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_captures.ts")
 tslang_add_test(NAME test-compile-00-object-annotated-method COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method.ts")
 tslang_add_test(NAME test-compile-00-object-annotated-method-params COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method_params.ts")
@@ -1170,6 +1171,7 @@ tslang_add_test(NAME test-jit-00-interface-function-typed-field COMMAND test-run
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class.ts")
 tslang_add_test(NAME test-jit-00-interface-function-typed-field-class-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_function_typed_field_class_field.ts")
 tslang_add_test(NAME test-jit-00-interface-optional-function-typed-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field.ts")
+tslang_add_test(NAME test-jit-00-interface-optional-function-typed-field-class-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_optional_function_typed_field_class_field.ts")
 tslang_add_test(NAME test-jit-00-interface-captures COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_captures.ts")
 tslang_add_test(NAME test-jit-00-object-annotated-method COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method.ts")
 tslang_add_test(NAME test-jit-00-object-annotated-method-params COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00object_annotated_method_params.ts")
@@ -2046,6 +2048,7 @@ set(TSLANG_CORPUS
     00interface_optional_cast_order.ts
     00interface_optional_extends.ts
     00interface_optional_function_typed_field.ts
+    00interface_optional_function_typed_field_class_field.ts
     00interface_optional_method_extends.ts
     00interface_optional.ts
     00interface_partial.ts
@@ -2761,15 +2764,14 @@ set_tests_properties(test-compile-diagnostic-location-rest-parameter-type
                      PROPERTIES PASS_REGULAR_EXPRESSION "rest_parameter_type\\.ts:6:12: error: A rest parameter must be of an array type, not 's32'"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed|rest_parameter_type\\.ts:1:|rest_parameter_type\\.ts:4:|verification")
 
-# A class's optional function-typed field cannot fill an interface's optional function-typed
-# field yet: the method cell the slot would point at holds a thunk, present on every instance,
-# so it is an error until the cell carries a per-instance presence check.
-add_test(NAME test-compile-interface-optional-class-function-field
+# A function-typed interface field cannot be written: for a class its slot points at a method cell
+# shared by every instance, so a write would change the function for all of them.
+add_test(NAME test-compile-interface-function-field-write
          COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
-                 "${PROJECT_SOURCE_DIR}/test/tester/interface-errors/optional_class_function_field.ts"
-                 -o "${CMAKE_CURRENT_BINARY_DIR}/interface-optional-class-function-field.obj")
-set_tests_properties(test-compile-interface-optional-class-function-field
-                     PROPERTIES PASS_REGULAR_EXPRESSION "field type not matching for \"fn\" for interface 'MaybeFn' in class 'OptField'"
+                 "${PROJECT_SOURCE_DIR}/test/tester/interface-errors/function_field_write.ts"
+                 -o "${CMAKE_CURRENT_BINARY_DIR}/interface-function-field-write.obj")
+set_tests_properties(test-compile-interface-function-field-write
+                     PROPERTIES PASS_REGULAR_EXPRESSION "function_field_write\\.ts:9:5: error: saving to constant object"
                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 
 # A call with fewer arguments than the callee's required parameters is an error (TS2554),

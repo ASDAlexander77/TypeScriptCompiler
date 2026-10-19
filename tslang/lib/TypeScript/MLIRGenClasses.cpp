@@ -2355,6 +2355,9 @@ genContext);
         // the interface's function-typed fields (`fn: () => int`) the class implements with a method
         // (`fn(): int`): their slots point at a cell holding the method (see INTERFACE_METHOD_CELL_TAG)
         llvm::SmallVector<std::pair<mlir::Attribute, MethodInfo>> methodsForFields;
+        // of those, the ones filled by an optional class field (`fn?: () => int`): their cells carry the
+        // offset of the field's flag, so an access reads the instance's presence
+        llvm::SmallVector<mlir::Attribute> optionalFieldsForCells;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
@@ -2393,10 +2396,11 @@ genContext);
                 // {function, `this` or null} - or, unannotated (`fn = () => 7`), a plain one: neither can be handed out
                 // as a function taking the object as its `this`. A thunk calling `this.fn(...)` fills the
                 // slot as a method does; it reads the field at each call, so a field assigned later is seen.
-                // Not an optional field (`fn?: () => int`): the cell is shared, so the slot would read as present
-                // on every instance, set or not; that stays "field type not matching" below.
+                // An optional field (`fn?: () => int`) fills only an optional one (`fn?: () => int`), and its cell
+                // carries the offset of the field's flag: the cell is shared, the flag is the instance's.
+                auto optionalField = found && isa<mlir_ts::OptionalType>(foundField.type);
                 if (found && isa<mlir_ts::FunctionType>(fieldType) && fieldType != foundField.type
-                    && !isa<mlir_ts::OptionalType>(foundField.type) && mth.isAnyFunctionType(foundField.type))
+                    && (!optionalField || isConditional) && mth.isAnyFunctionType(foundField.type))
                 {
                     auto fieldName = dyn_cast<mlir::StringAttr>(id);
                     auto match = mth.TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType);
@@ -2428,6 +2432,10 @@ genContext);
                         thunkInfo.virtualIndex = -1;
                         thunkInfo.accessLevel = mlir_ts::AccessLevel::Public;
                         methodsForFields.push_back({id, thunkInfo});
+                        if (optionalField)
+                        {
+                            optionalFieldsForCells.push_back(id);
+                        }
                     }
 
                     return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
@@ -2609,7 +2617,55 @@ genContext);
                         return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                     }
 
-                    return TypeValueInitType{methodInfo.funcType, methodValue, TypeProvided::Yes};
+                    // the cell is {method, flag offset}, the method first so the slot is a ref to it. The offset
+                    // is of the flag of an optional class field (`fn?: () => int`), from `this`; -1 is always
+                    // present (a method, or a field that is not optional)
+                    auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+                    mlir::Value flagOffsetValue;
+                    if (llvm::is_contained(optionalFieldsForCells, id))
+                    {
+                        // &(null)->field, stored as optional<T> - {T, flag}, the flag right after T
+                        MLIRCodeLogic mcl(builder, compileOptions);
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
+                        auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, id, genContext);
+                        auto fieldRef = fieldValue ? mcl.GetReferenceFromValue(location, fieldValue) : mlir::Value();
+                        if (!fieldRef)
+                        {
+                            emitError(location) << "can't find reference for field: " << id
+                                                << " in interface: " << newInterfacePtr->fullName
+                                                << " for class: " << newClassPtr->fullName;
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                        }
+
+                        auto optionalType = mlir::cast<mlir_ts::OptionalType>(
+                            mlir::cast<mlir_ts::RefType>(fieldRef.getType()).getElementType());
+                        auto fieldOffset = builder.create<mlir_ts::CastOp>(location, ptrIntType, fieldRef);
+                        auto valueSize = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(),
+                                                                           optionalType.getElementType());
+                        auto valueSizeInt = builder.create<mlir_ts::CastOp>(location, ptrIntType, valueSize);
+                        flagOffsetValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                            location, ptrIntType, builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), fieldOffset,
+                            valueSizeInt);
+                    }
+                    else
+                    {
+                        flagOffsetValue =
+                            builder.create<mlir_ts::ConstantOp>(location, ptrIntType, builder.getIntegerAttr(ptrIntType, -1));
+                    }
+
+                    mlir::SmallVector<mlir_ts::FieldInfo> cellFields{
+                        {MLIRHelper::TupleFieldName("method", builder.getContext()), methodInfo.funcType, false,
+                         mlir_ts::AccessLevel::Public},
+                        {MLIRHelper::TupleFieldName("flagOffset", builder.getContext()), ptrIntType, false,
+                         mlir_ts::AccessLevel::Public}};
+                    auto cellTupleType = getTupleType(cellFields);
+                    mlir::Value cellValue = builder.create<mlir_ts::UndefOp>(location, cellTupleType);
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, methodValue, cellValue,
+                                                                          MLIRHelper::getStructIndex(builder, 0));
+                    cellValue = builder.create<mlir_ts::InsertPropertyOp>(location, cellTupleType, flagOffsetValue,
+                                                                          cellValue, MLIRHelper::getStructIndex(builder, 1));
+                    return TypeValueInitType{cellTupleType, cellValue, TypeProvided::Yes};
                 },
                 genContext);
             if (!cellType)

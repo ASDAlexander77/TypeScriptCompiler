@@ -164,8 +164,12 @@
 // plus this bit. An access reads the cell (InterfaceSymbolRefOpLowering), then binds `this` as for
 // any function-typed field. The bit is free in every other function-typed slot: an offset of a
 // pointer-sized field (or of optional<function>, which starts with one) is pointer-aligned, and so
-// is the cell; -1 (absent) is tested before it. A write through such a field changes the cell,
-// so it changes the method for every instance of the class seen through that interface.
+// is the cell; -1 (absent) is tested before it. A function-typed interface field cannot be
+// written ("saving to constant object"): a read binds `this`, so nothing stores to the cell.
+// The cell is {method, flag offset}, the method first: a class's optional field holding a function
+// (`fn?: () => int`, called through a thunk) has its flag at `this` + the offset, so a read of the
+// interface's optional field (`fn?: () => int`) is absent while the instance's flag is clear; -1
+// is always present (a method, or a field that is not optional).
 #define INTERFACE_METHOD_CELL_TAG 1
 // on an InterfaceSymbolRefOp of a `v?: T` field that is stored to: true sets the flag of a tagged slot's
 // field, false (a store of undefined) clears it

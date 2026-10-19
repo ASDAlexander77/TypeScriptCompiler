@@ -6478,10 +6478,13 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
             // a function-typed field's slot tagged INTERFACE_METHOD_CELL_TAG: a class fills the field with a
             // method, and the slot is the address of the cell holding it. Tested ahead of
             // INTERFACE_OPTIONAL_STORAGE_TAG, which a cell's address can carry on a 32-bit target.
+            // With checkPresence (a read of an optional field), the cell's flag offset decides: -1 is
+            // present, any other is the offset from `this` of the instance's flag, and a clear flag reads
+            // as absent (a null address).
             auto fieldRefType = dyn_cast<mlir_ts::RefType>(interfaceSymbolRefOp.getType());
             auto isFunctionField = fieldRefType && isa<mlir_ts::FunctionType>(fieldRefType.getElementType());
-            auto orMethodCell = [&](std::function<mlir::Value(OpBuilder &, Location)> offsetAddrFunc) {
-                return [&, offsetAddrFunc](OpBuilder &builder, Location location) -> mlir::Value {
+            auto orMethodCell = [&](std::function<mlir::Value(OpBuilder &, Location)> offsetAddrFunc, bool checkPresence) {
+                return [&, offsetAddrFunc, checkPresence](OpBuilder &builder, Location location) -> mlir::Value {
                     auto intPtrType = rewriter.getIntegerType(tsLlvmContext->compileOptions.sizeBits());
                     auto slotValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
                     auto tag = rewriter.create<LLVM::ConstantOp>(
@@ -6491,7 +6494,35 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                     auto isMethodCell = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, tagBit, zero);
                     auto methodCellAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                         auto cellInt = rewriter.create<LLVM::SubOp>(loc, intPtrType, slotValue, tag);
-                        return rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, cellInt.getResult());
+                        mlir::Value cellAddr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, cellInt.getResult());
+                        if (!checkPresence)
+                        {
+                            return cellAddr;
+                        }
+
+                        // the cell is {method, flag offset}
+                        auto cellLLVMType =
+                            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getPtrType(), intPtrType}, false);
+                        auto flagOffsetPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), cellLLVMType, cellAddr,
+                                                                          ArrayRef<LLVM::GEPArg>{0, 1});
+                        auto flagOffset = rewriter.create<LLVM::LoadOp>(loc, intPtrType, flagOffsetPtr);
+                        auto negative1 =
+                            rewriter.create<LLVM::ConstantOp>(loc, intPtrType, rewriter.getIntegerAttr(intPtrType, -1));
+                        auto alwaysPresent =
+                            rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, flagOffset, negative1);
+                        auto cellAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value { return cellAddr; };
+                        auto instanceFlagAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                            auto thisInt = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, thisVal);
+                            auto flagInt = rewriter.create<LLVM::AddOp>(loc, intPtrType, thisInt, flagOffset);
+                            auto flagPtr = rewriter.create<LLVM::IntToPtrOp>(loc, th.getPtrType(), flagInt.getResult());
+                            auto hasValue = rewriter.create<LLVM::LoadOp>(loc, rewriter.getI1Type(), flagPtr);
+                            auto nullAddr = rewriter.create<LLVM::ZeroOp>(loc, fieldLLVMTypeRef);
+                            return rewriter.create<LLVM::SelectOp>(loc, hasValue, cellAddr, nullAddr);
+                        };
+
+                        // the flag is loaded only when there is one
+                        return clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, alwaysPresent, cellAddrFunc,
+                                                                 instanceFlagAddrFunc);
                     };
 
                     return clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, isMethodCell, methodCellAddrFunc,
@@ -6554,7 +6585,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                                                              storedAsOptionalAddrFunc, calcFieldTotalAddrFunc);
                 };
 
-                auto presentOrMethodCellAddrFunc = orMethodCell(presentAddrFunc);
+                // a function-typed field is only read (a write is "saving to constant object"), so the
+                // presence check always applies
+                auto presentOrMethodCellAddrFunc = orMethodCell(presentAddrFunc, true);
                 auto result = clh.conditionalExpressionLowering(
                     loc, fieldLLVMTypeRef, condVal, nullAddrFunc,
                     isFunctionField ? mlir::function_ref<mlir::Value(OpBuilder &, Location)>(presentOrMethodCellAddrFunc)
@@ -6563,7 +6596,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
             }
             else if (isFunctionField)
             {
-                fieldAddr = orMethodCell(calcFieldTotalAddrFunc)(rewriter, loc);
+                fieldAddr = orMethodCell(calcFieldTotalAddrFunc, false)(rewriter, loc);
             }
             else
             {
