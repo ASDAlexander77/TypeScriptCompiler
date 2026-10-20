@@ -301,6 +301,9 @@ int linkJitUnits(const char *argv0, llvm::ArrayRef<JitUnit> units, CompileOption
     // but not for its data: a static field the program reads (a generic's instantiation reading
     // PrimeHelpers.hashCollisionThreshold, say) is referenced by its own name, which only an
     // `__imp_` reference resolves to an import. The in-memory JIT binds it from the export table.
+    // Marking the data dllimport, as --emit=dll does, does not help here: these are the JIT's
+    // objects, compiled for the static large code model, and x86 codegen gives a dllimport global
+    // no `__imp_` reference under that model (X86Subtarget::classifyGlobalReference).
     request.staticDefaultLib = true;
     request.quiet = true;
     request.extraArgs.push_back("-Wl,/INCREMENTAL:NO");
