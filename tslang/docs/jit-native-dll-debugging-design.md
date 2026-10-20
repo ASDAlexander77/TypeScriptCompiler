@@ -149,8 +149,11 @@ quality for TS code, which AOT shares, not something this mode adds.
   With the import library the link fails as soon as the program reads data the default library
   defines. A `Map` reads `PrimeHelpers.hashCollisionThreshold` by its own name, and only an
   `__imp_` reference resolves a DLL's data export. The in-memory JIT binds it from the export
-  table. `--emit=dll` has the same failure today (a separate bug). So in this mode tslang loads
-  neither the default library's DLL nor `TypeScriptRuntime.dll`.
+  table. `--emit=dll` had the same failure, and #630 fixed it by marking that data dllimport.
+  That fix does not carry over here. The DLL links the JIT cache's objects, which are compiled for
+  the JIT's static large code model, and x86 codegen emits no `__imp_` reference under that model
+  even for a dllimport global (`X86Subtarget::classifyGlobalReference`). So in this mode tslang
+  loads neither the default library's DLL nor `TypeScriptRuntime.dll`.
 - **The DLL and its PDB** are `__jit/<file>.<hash>.dll` and `.pdb`, linked under a temporary name,
   `/PDB:` the final name with `/PDBALTPATH:%_PDB%`, then renamed. `.lib` and `.exp` are removed.
   The DLLs of earlier runs of the same program are removed, and so are temporary files more than an
