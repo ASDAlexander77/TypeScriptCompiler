@@ -864,6 +864,9 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // The static library by its path: the file the borrow facts were read from
         // (borrowfacts.cpp) is the file linked, never one of that name the linker finds first,
         // such as a stray copy in the current folder. The DLL's import library is searched for.
+        // Its folder is searched either way: on Linux libTypeScriptDefaultLib.a is a GNU ld
+        // script, INPUT(-lTypeScriptDefaultLibCore -lcurl), whose archive the linker looks up
+        // there.
         if (!sharedDefaultLib && !defaultLibDir.empty())
         {
             defaultLibFile = getDefaultLibBinary(/*shared=*/false, compileOptions, TheTriple);
@@ -872,11 +875,12 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         else
         {
             args.push_back("-l" DEFAULT_LIB_NAME);
-            defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
-            if (!defaultLibPathOpt.empty())
-            {
-                args.push_back(defaultLibPathOpt.c_str());
-            }
+        }
+
+        defaultLibPathOpt = getLibsPathOpt(defaultLibDir);
+        if (!defaultLibPathOpt.empty())
+        {
+            args.push_back(defaultLibPathOpt.c_str());
         }
     }
 
