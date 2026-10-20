@@ -14,6 +14,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Memory.h"
@@ -62,6 +63,7 @@ extern cl::opt<std::string> objectFilename;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
 extern cl::list<std::string> programArgs;
+extern cl::opt<bool> jitNative;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -449,7 +451,6 @@ static void *jitTypeInfoVftable()
 }
 #endif
 
-#define JIT_ENTRY_THUNK_NAME "__tslang_jit_main"
 using JitEntryThunkFn = int (*)(int, char **);
 
 // Calls the program's entry point; false when an exception nothing in the program catches came
@@ -584,13 +585,15 @@ static bool checkInProcessJit(CompileOptions &compileOptions)
 }
 
 // The libraries the program runs against - the default library, the GC runtime - added to
-// --shared-libs, and on Windows the CRT entry points bound to this process's own CRT.
-static int prepareJitProcess(CompileOptions &compileOptions)
+// --shared-libs, and on Windows the CRT entry points bound to this process's own CRT. A
+// `nativeImage` (--jit-native) links both in itself, the static default library and the async
+// runtime, so neither DLL is loaded: they would be a second copy of each in the process.
+static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
 {
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
     // engine. Otherwise we'll pass library directly to the execution engine.
-    if (!compileOptions.noDefaultLib)
+    if (!compileOptions.noDefaultLib && !nativeImage)
     {
         // per-build subfolder (debug/release) must match the JIT compilation mode.
         // Keyed on --di (generate debug info): with debug info use the debug lib.
@@ -648,7 +651,7 @@ static int prepareJitProcess(CompileOptions &compileOptions)
     });
 
     std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
-    if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime)
+    if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime && !nativeImage)
     {
         auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
         if (absPath3.empty())
@@ -922,34 +925,24 @@ static std::unique_ptr<llvm::orc::LLJIT> createJit(llvm::orc::JITTargetMachineBu
     return jit;
 }
 
-// Runs what was added to the JIT: the platform initializers, the objects' own initializers
-// (`initFunctions`, in the order given - an imported module's before its importer's), the
-// program's `__mlir_gctors` if it has one, then the entry point.
-static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod)
-{
-    // run platform initializers (llvm.global_ctors etc.)
-    if (auto err = jit.initialize(jit.getMainJITDylib()))
-    {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
-        return -1;
-    }
+// The address of a symbol of the program, or null once it has said why there is none.
+using ProgramSymbolLookup = llvm::function_ref<void *(llvm::StringRef)>;
 
+// Runs the program: the objects' own initializers (`initFunctions`, in the order given - an
+// imported module's before its importer's), the program's `__mlir_gctors` if it has one, then the
+// entry point. `flushProgram`, if given, flushes a C runtime the program has to itself
+// (--jit-native), before anything after the program writes.
+static int runProgram(ProgramSymbolLookup lookup, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod,
+                      void (*flushProgram)())
+{
     auto invoke = [&](llvm::StringRef name) {
-        auto sym = jit.lookup(name);
-        if (!sym)
+        auto *address = lookup(name);
+        if (!address)
         {
-            // Streaming an Error only logs it - the payload survives, and ~Error then trips
-            // fatalUncheckedError, turning a plain "no such symbol" into an abort with a crash
-            // backtrace wherever LLVM_ENABLE_ABI_BREAKING_CHECKS is on (i.e. debug builds).
-            // consumeError takes the payload; the message itself is unchanged.
-            auto err = sym.takeError();
-            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
-            llvm::consumeError(std::move(err));
             return -1;
         }
 
-        sym->toPtr<void (*)()>()();
+        reinterpret_cast<void (*)()>(address)();
         return 0;
     };
 
@@ -966,12 +959,9 @@ static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> init
         return -1;
     }
 
-    auto entryThunk = jit.lookup(JIT_ENTRY_THUNK_NAME);
+    auto *entryThunk = lookup(JIT_ENTRY_THUNK_NAME);
     if (!entryThunk)
     {
-        auto err = entryThunk.takeError();
-        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
-        llvm::consumeError(std::move(err));
         return -1;
     }
 
@@ -987,7 +977,13 @@ static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> init
     programArgv.push_back(nullptr);
 
     auto exitCode = 0;
-    if (!callEntryThunk(entryThunk->toPtr<JitEntryThunkFn>(), programArgc, programArgv.data(), exitCode))
+    auto finished = callEntryThunk(reinterpret_cast<JitEntryThunkFn>(entryThunk), programArgc, programArgv.data(), exitCode);
+    if (flushProgram)
+    {
+        flushProgram();
+    }
+
+    if (!finished)
     {
         fflush(stdout);
         llvm::WithColor::error(llvm::errs(), "tslang") << "uncaught exception\n";
@@ -1028,6 +1024,85 @@ static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> init
     return exitCode;
 }
 
+// Runs what was added to the JIT: the platform initializers, then the program (runProgram).
+static int runJitProgram(llvm::orc::LLJIT &jit, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod)
+{
+    // run platform initializers (llvm.global_ctors etc.)
+    if (auto err = jit.initialize(jit.getMainJITDylib()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed, error: " << err << "\n";
+        llvm::consumeError(std::move(err));
+        return -1;
+    }
+
+    auto lookup = [&](llvm::StringRef name) -> void * {
+        auto sym = jit.lookup(name);
+        if (!sym)
+        {
+            // Streaming an Error only logs it - the payload survives, and ~Error then trips
+            // fatalUncheckedError, turning a plain "no such symbol" into an abort with a crash
+            // backtrace wherever LLVM_ENABLE_ABI_BREAKING_CHECKS is on (i.e. debug builds).
+            // consumeError takes the payload; the message itself is unchanged.
+            auto err = sym.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return nullptr;
+        }
+
+        return sym->toPtr<void *>();
+    };
+
+    return runProgram(lookup, initFunctions, hasGCtorsMethod, nullptr);
+}
+
+#ifdef _WIN32
+// --jit-native: the DLL linkJitUnits linked, loaded by the system loader - which registers its
+// unwind info and tells a debugger about it, PDB and all - then the program run as runJitProgram
+// runs it. The DLL's own dependencies are found beside it (gc.dll, which the link copies there) or
+// are loaded already (--shared-libs, by loadJitSharedLibraries): a module of that name already
+// loaded is the one the loader binds to.
+static int runNativeProgram(const std::string &dllPath, llvm::ArrayRef<std::string> initFunctions, bool hasGCtorsMethod)
+{
+    // a full path, as LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR asks for: the cache folder is made absolute
+    llvm::SmallVector<llvm::UTF16, 256> widePath;
+    if (!llvm::convertUTF8ToUTF16String(dllPath, widePath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang") << "--jit-native: '" << dllPath << "' is not a path Windows can load\n";
+        return -1;
+    }
+
+    widePath.push_back(0);
+    auto module = LoadLibraryExW(reinterpret_cast<const wchar_t *>(widePath.data()), nullptr,
+                                 LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    if (!module)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "--jit-native: could not load '" << dllPath << "' (Windows error " << GetLastError() << ")\n";
+        return -1;
+    }
+
+    auto lookup = [&](llvm::StringRef name) -> void * {
+        auto *address = reinterpret_cast<void *>(GetProcAddress(module, name.str().c_str()));
+        if (!address)
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "--jit-native: '" << dllPath << "' does not export '" << name << "'\n";
+        }
+
+        return address;
+    };
+
+    auto *init = lookup(JIT_NATIVE_INIT_NAME);
+    auto *flush = lookup(JIT_NATIVE_FLUSH_NAME);
+    if (!init || !flush)
+    {
+        return -1;
+    }
+
+    reinterpret_cast<void (*)()>(init)();
+    return runProgram(lookup, initFunctions, hasGCtorsMethod, reinterpret_cast<void (*)()>(flush));
+}
+#endif
+
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     if (!checkInProcessJit(compileOptions))
@@ -1054,7 +1129,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
 
-    if (auto result = prepareJitProcess(compileOptions))
+    if (auto result = prepareJitProcess(compileOptions, /*nativeImage=*/false))
     {
         return result;
     }
@@ -1197,7 +1272,7 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    if (auto result = prepareJitProcess(compileOptions))
+    if (auto result = prepareJitProcess(compileOptions, /*nativeImage=*/jitNative))
     {
         return result;
     }
@@ -1223,14 +1298,46 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
         return result;
     }
 
+    std::vector<std::string> initFunctions;
+    auto hasGCtorsMethod = false;
+    for (auto &unit : units)
+    {
+        if (!unit.initFunction.empty())
+        {
+            initFunctions.push_back(unit.initFunction);
+        }
+
+        hasGCtorsMethod |= unit.isMain && unit.hasGCtorsMethod;
+    }
+
+#ifdef _WIN32
+    if (jitNative)
+    {
+        auto tmOrError = tmBuilderOrError->createTargetMachine();
+        if (!tmOrError)
+        {
+            auto err = tmOrError.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << "failed to create a TargetMachine for the host, error: " << err << "\n";
+            llvm::consumeError(std::move(err));
+            return -1;
+        }
+
+        std::string dllPath;
+        if (auto result = linkJitUnits(argv[0], units, compileOptions, **tmOrError, dllPath))
+        {
+            return result;
+        }
+
+        return runNativeProgram(dllPath, initFunctions, hasGCtorsMethod);
+    }
+#endif
+
     auto jit = createJit(std::move(*tmBuilderOrError), needsGCEnableThreadsStandIn);
     if (!jit)
     {
         return -1;
     }
 
-    std::vector<std::string> initFunctions;
-    auto hasGCtorsMethod = false;
     for (auto &unit : units)
     {
         if (auto err = jit->addObjectFile(std::move(unit.object)))
@@ -1239,13 +1346,6 @@ int runJitCached(int argc, char **argv, CompileOptions &compileOptions)
             llvm::consumeError(std::move(err));
             return -1;
         }
-
-        if (!unit.initFunction.empty())
-        {
-            initFunctions.push_back(unit.initFunction);
-        }
-
-        hasGCtorsMethod |= unit.isMain && unit.hasGCtorsMethod;
     }
 
     return runJitProgram(*jit, initFunctions, hasGCtorsMethod);

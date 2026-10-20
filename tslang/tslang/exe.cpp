@@ -27,6 +27,8 @@
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/Defines.h"
 
+#include "link.h"
+
 namespace cl = llvm::cl;
 
 extern cl::opt<enum Action> emitAction;
@@ -643,8 +645,32 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
-    //llvm::SmallVector<const char *, 256> args(argv, argv + argc);
-    llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
+
+    if (outputFilename.empty())
+    {
+        outputFilename = getDefaultOutputFileName(emitAction);
+    }
+
+    LinkRequest request;
+    request.objects.push_back(objFileName);
+    for (auto &obj : objs)
+    {
+        request.objects.push_back(obj);
+    }
+
+    if (!additionalObjFileName.empty())
+    {
+        request.objects.push_back(additionalObjFileName);
+    }
+
+    request.output = outputFilename;
+    request.shared = emitAction == BuildDll;
+    return linkBinary(argv[0], request, compileOptions);
+}
+
+int linkBinary(const char *argv0, const LinkRequest &request, CompileOptions &compileOptions)
+{
+    llvm::SmallVector<const char *, 256> args{argv0};
 
     clang::driver::ParsedClangName targetAndMode("tslang", "--driver-mode=tslang");
     std::string driverPath = getExecutablePath(args[0]);
@@ -702,7 +728,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     auto win = os == llvm::Triple::Win32;
     auto wasm = arch == llvm::Triple::wasm32 || arch == llvm::Triple::wasm64;
     auto emscripten = os == llvm::Triple::Emscripten;
-    auto shared = emitAction == BuildDll;
+    auto shared = request.shared;
     // Windows x86 and x64 link libraries whose machine tslang checks; see resolveWindowsLibPath.
     auto winX86OrX64 = win && (arch == llvm::Triple::x86 || arch == llvm::Triple::x86_64);
     // the same debug/release choice as the CRT below
@@ -750,29 +776,12 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }
     }
 
-    args.push_back(objFileName.c_str());
-    llvm::SmallVector<std::string> objOpts;
-    for (auto obj : objs)
-    {
-        objOpts.push_back(obj);
-    }
-
-    for (auto &obj : objOpts)
+    for (auto &obj : request.objects)
     {
         args.push_back(obj.c_str());
     }
 
-    if (!additionalObjFileName.empty())
-    {
-        args.push_back(additionalObjFileName.c_str());
-    }    
-
-    if (outputFilename.empty())
-    {
-        outputFilename = getDefaultOutputFileName(emitAction);
-    }
-
-    std::string resultFile = "-o" + outputFilename;
+    std::string resultFile = "-o" + request.output;
     args.push_back(resultFile.c_str());
     if (shared)
     {
@@ -823,7 +832,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // Android: a shared library links the static default library too, so the app ships one
         // self-contained .so. Its shared default library leaves GC_* to the process, and an app's
         // process (the Java VM) has no collector to give it.
-        auto sharedDefaultLib = shared && !android;
+        auto sharedDefaultLib = shared && !android && !request.staticDefaultLib;
         auto defaultLibDir =
             llvm::sys::path::parent_path(getDefaultLibBinary(sharedDefaultLib, compileOptions, TheTriple)).str();
 
@@ -859,7 +868,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         // DLL predates linking gc.dll it brings a second collector, which frees what the library
         // and its host hold - the case step 4's import check cannot see, since the library does
         // not import it by name. See docs/single-gc-collector-design.md.
-        if (win && shared && compileOptions.needsGCRuntime() && !defaultLibDir.empty())
+        if (win && sharedDefaultLib && compileOptions.needsGCRuntime() && !defaultLibDir.empty())
         {
             llvm::SmallString<256> defaultLibDll(defaultLibDir);
             llvm::sys::path::append(defaultLibDll, DEFAULT_LIB_NAME ".dll");
@@ -1009,7 +1018,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             if (auto error = writeAsInvokerManifestObj(llvm::COFF::IMAGE_FILE_MACHINE_I386, manifestObjFileName))
             {
                 llvm::WithColor::error(llvm::errs(), "tslang")
-                    << "could not write the manifest object for " << outputFilename.getValue() << ": "
+                    << "could not write the manifest object for " << request.output << ": "
                     << llvm::toString(std::move(error)) << "\n";
                 return 1;
             }
@@ -1149,6 +1158,11 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         args.push_back("-g");
     }
 
+    for (auto &extraArg : request.extraArgs)
+    {
+        args.push_back(extraArg.c_str());
+    }
+
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
     llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagID(new clang::DiagnosticIDs());
@@ -1186,10 +1200,35 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     if (verbose.getValue())
         c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
 
+    // A quiet link writes the linker's output to a file, shown only when the link fails: link.exe
+    // says "Creating library ..." on stdout, which would land in the middle of a program's output.
+    llvm::SmallString<256> linkerOutputFile;
+    llvm::FileRemover linkerOutputRemover;
+    if (request.quiet)
+    {
+        if (auto error = llvm::sys::fs::createTemporaryFile("tslang-link", "txt", linkerOutputFile))
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang") << "could not create a file for the linker's output: " << error.message() << "\n";
+            return 1;
+        }
+
+        linkerOutputRemover.setFile(linkerOutputFile);
+        std::optional<llvm::StringRef> redirects[] = {std::nullopt, llvm::StringRef(linkerOutputFile), llvm::StringRef(linkerOutputFile)};
+        c->Redirect(redirects);
+    }
+
     // Run the driver
     int res = 1;
     bool isCrash = false;
     res = theDriver.ExecuteCompilation(*c, failingCommands);
+
+    if (request.quiet && (res != 0 || !failingCommands.empty()))
+    {
+        if (auto linkerOutput = llvm::MemoryBuffer::getFile(linkerOutputFile, /*IsText=*/true))
+        {
+            llvm::errs() << (*linkerOutput)->getBuffer();
+        }
+    }
 
     for (const auto &p : failingCommands)
     {
@@ -1218,7 +1257,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     // A binary linked against gc.dll does not start without it, so put it beside the output.
     if (res == 0 && useSharedGC)
     {
-        auto outputDir = llvm::sys::path::parent_path(outputFilename.getValue());
+        auto outputDir = llvm::sys::path::parent_path(request.output);
         llvm::SmallString<256> destination(outputDir.empty() ? "." : outputDir);
         llvm::sys::path::append(destination, "gc.dll");
 
@@ -1227,7 +1266,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         {
             llvm::WithColor::warning(llvm::errs(), "tslang")
                 << "linked against gc.dll, but no gc.dll was found next to '" << gcSharedLibPath
-                << "' or in its '../bin'; ship gc.dll beside '" << outputFilename.getValue() << "'\n";
+                << "' or in its '../bin'; ship gc.dll beside '" << request.output << "'\n";
         }
         else if (llvm::sys::fs::equivalent(gcDllPath, destination, sameFile) || !sameFile)
         {
@@ -1235,7 +1274,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
             {
                 llvm::WithColor::warning(llvm::errs(), "tslang")
                     << "could not copy '" << gcDllPath << "' to '" << destination << "': " << error.message()
-                    << "; ship gc.dll beside '" << outputFilename.getValue() << "'\n";
+                    << "; ship gc.dll beside '" << request.output << "'\n";
             }
         }
     }

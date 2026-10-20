@@ -285,16 +285,8 @@ class JitUnitBuilder
   public:
     JitUnitBuilder(const char *argv0, const CompileOptions &compileOptions, llvm::orc::JITTargetMachineBuilder &tmBuilder,
                    std::vector<JitUnit> &units)
-        : compileOptions(compileOptions), tmBuilder(tmBuilder), units(units)
+        : compileOptions(compileOptions), tmBuilder(tmBuilder), units(units), compilerId(jitCompilerId(argv0))
     {
-        // a rebuilt compiler compiles differently: its objects are not these
-        auto executable = llvm::sys::fs::getMainExecutable(argv0, reinterpret_cast<void *>(&canonicalPath));
-        llvm::sys::fs::file_status status;
-        if (!executable.empty() && !llvm::sys::fs::status(executable, status))
-        {
-            compilerId = llvm::utohexstr(status.getSize(), true) + "-" +
-                         llvm::utohexstr(status.getLastModificationTime().time_since_epoch().count(), true);
-        }
     }
 
     int add(llvm::StringRef sourcePath, bool isMain)
@@ -327,16 +319,23 @@ class JitUnitBuilder
         auto [objectPath, manifestPath] = cachePaths(path, isMain);
 
         Manifest manifest;
-        if (!loadFromCache(objectPath, manifestPath, manifest, unit))
+        auto onDisk = loadFromCache(objectPath, manifestPath, manifest, unit);
+        if (!onDisk)
         {
             if (auto result = compile(path, isMain, manifest, unit))
             {
                 return result;
             }
 
-            storeInCache(objectPath, manifestPath, manifest, *unit.object);
+            onDisk = storeInCache(objectPath, manifestPath, manifest, *unit.object);
         }
 
+        if (onDisk)
+        {
+            unit.objectPath = objectPath;
+        }
+
+        unit.objectHash = manifest.objectHash;
         unit.initFunction = manifest.initFunction;
         unit.hasGCtorsMethod = manifest.hasGCtorsMethod;
 
@@ -462,14 +461,15 @@ class JitUnitBuilder
         return true;
     }
 
-    void storeInCache(llvm::StringRef objectPath, llvm::StringRef manifestPath, const Manifest &manifest,
+    // true if the object is now in the cache folder
+    bool storeInCache(llvm::StringRef objectPath, llvm::StringRef manifestPath, const Manifest &manifest,
                       const llvm::MemoryBuffer &object)
     {
         // Without a compiler to tell one build from another, the object could outlive the build it
         // belongs to: better compiled again every time.
         if (compilerId.empty())
         {
-            return;
+            return false;
         }
 
         // Nowhere to write it (a read-only folder, say) is not an error: the program still runs,
@@ -478,10 +478,11 @@ class JitUnitBuilder
             !writeFileAtomically(objectPath, object.getBuffer()) || !writeFileAtomically(manifestPath, manifest.str()))
         {
             LLVM_DEBUG(llvm::dbgs() << "JIT cache: could not write " << objectPath << "\n";);
-            return;
+            return false;
         }
 
         LLVM_DEBUG(llvm::dbgs() << "JIT cache: wrote " << objectPath << "\n";);
+        return true;
     }
 
     int compile(llvm::StringRef path, bool isMain, Manifest &manifest, JitUnit &unit)
@@ -640,6 +641,20 @@ class JitUnitBuilder
 };
 
 } // namespace
+
+std::string jitCompilerId(const char *argv0)
+{
+    // a rebuilt compiler compiles differently: its objects are not these
+    auto executable = llvm::sys::fs::getMainExecutable(argv0, reinterpret_cast<void *>(&canonicalPath));
+    llvm::sys::fs::file_status status;
+    if (executable.empty() || llvm::sys::fs::status(executable, status))
+    {
+        return "";
+    }
+
+    return llvm::utohexstr(status.getSize(), true) + "-" +
+           llvm::utohexstr(status.getLastModificationTime().time_since_epoch().count(), true);
+}
 
 int buildJitUnits(const char *argv0, llvm::StringRef mainFile, const CompileOptions &compileOptions,
                   llvm::orc::JITTargetMachineBuilder &tmBuilder, std::vector<JitUnit> &units)
