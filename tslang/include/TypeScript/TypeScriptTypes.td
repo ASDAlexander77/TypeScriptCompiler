@@ -641,6 +641,11 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage", [IsMutable]> {
     ::llvm::ArrayRef<::mlir::typescript::FieldInfo> getFields() const;
     // Mutator
     LogicalResult setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields);
+
+    // A @cpp class (docs/cpp-classes.md): a reference to it is a C++ pointer, with no count in
+    // front of the object, so it owns nothing in any memory model.
+    bool isCpp() const;
+    LogicalResult setCpp(bool cpp);
   }];
 
   let storageClass = "ClassStorageTypeStorage";

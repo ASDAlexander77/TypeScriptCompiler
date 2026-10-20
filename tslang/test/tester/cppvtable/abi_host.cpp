@@ -3,6 +3,7 @@
 // ABI - MSVC's, or the Itanium one of g++ and clang - not a vtable made by hand in tslang.
 
 #include <cstdint>
+#include <new>
 
 #ifdef _WIN32
 #define ABI_EXPORT extern "C" __declspec(dllexport)
@@ -132,6 +133,29 @@ ABI_EXPORT Methods *abi_object()
 {
     static Methods methods;
     return &methods;
+}
+
+// on the C++ heap, right after a word of C++'s own: under rc and own, a count tslang kept for it
+// would be in that word. A retain and its release leave it as it was, so it is checked while
+// tslang holds the copies (abi_guard_intact), and then C++ deletes the object.
+static const uint64_t GUARD = 0x5a5a5a5a5a5a5a5aull;
+
+ABI_EXPORT Methods *abi_heap_object()
+{
+    auto block = static_cast<char *>(::operator new(sizeof(uint64_t) + sizeof(Methods)));
+    *reinterpret_cast<uint64_t *>(block) = GUARD;
+    return new (block + sizeof(uint64_t)) Methods();
+}
+
+ABI_EXPORT int abi_guard_intact(Methods *methods)
+{
+    return reinterpret_cast<uint64_t *>(methods)[-1] == GUARD ? 1 : 0;
+}
+
+ABI_EXPORT void abi_delete_object(Methods *methods)
+{
+    methods->~Methods();
+    ::operator delete(reinterpret_cast<char *>(methods) - sizeof(uint64_t));
 }
 
 // whether p is &storage[index]

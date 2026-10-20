@@ -15,6 +15,9 @@ type R12 = [a: u32, b: u32, c: u32];
 
 declare function abi_object(): Opaque;
 declare function abi_is_storage(p: Opaque | null, index: s32): s32;
+declare function abi_heap_object(): Opaque;
+declare function abi_delete_object(methods: Opaque): void;
+declare function abi_guard_intact(methods: Opaque): s32;
 
 @cpp
 class Methods {
@@ -98,6 +101,21 @@ declare function abi_call_callback(callback: Opaque): s32;
 declare function abi_callback_is_even(callback: Opaque, x: s32): s32;
 declare function abi_callback_pick(callback: Opaque): s32;
 
+// A @cpp reference copied into a field, an array and a local, each given up at the end: under rc
+// and own none of them is counted, since the object has no count in front of it. The word before
+// it is C++'s (abi_host.cpp's guard), and stays as C++ wrote it while the copies are held.
+class Holder {
+    constructor(public methods: Methods) {}
+}
+
+function copies(methods: Methods): s32 {
+    const held = new Holder(methods);
+    const list = [methods, methods];
+    let other: Methods | null = methods;
+    assert(abi_guard_intact(<Opaque>methods) == 1, "nothing written in the word before a C++ object");
+    return held.methods.plain(2, 3) + list[1].plain(1, 1) + (other ? other.plain(0, 0) : 0);
+}
+
 // arguments made from a wider value: the register's upper bits aren't zero
 function callNarrow(methods: Methods, big: s32): s32 {
     return methods.narrow(big > 0, <u8>big, <s8>(big - 0x1237));
@@ -143,6 +161,14 @@ function main() {
     assert(flags.a && !flags.b && flags.c, "a record of three booleans returned");
     const r12 = methods.r12(7);
     assert(r12.a == 7 && r12.b == 14 && r12.c == 21, "a 12-byte record returned");
+
+    // an object on the C++ heap, which C++ deletes: a count written in front of it breaks the delete
+    const heap = <Methods>abi_heap_object();
+    for (let i = 0; i < 3; i++) {
+        assert(copies(heap) == 28, "a C++ object held and let go, uncounted");
+    }
+    assert(abi_guard_intact(<Opaque>heap) == 1, "and nothing once they are let go");
+    abi_delete_object(<Opaque>heap);
 
     print("done.");
 }

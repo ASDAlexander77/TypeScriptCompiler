@@ -3956,6 +3956,18 @@ protected:
             return false;
         }
 
+        // A @cpp class's reference is a C++ pointer: no count sits in front of the object, and
+        // the object is C++'s to free (or, made by `new` here, never freed). Untracked, as a raw
+        // pointer is.
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+        {
+            if (auto storageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType());
+                storageType && storageType.isCpp())
+            {
+                return false;
+            }
+        }
+
         // owns its own block. A Shared<T> handle (own spec 23) does too, and its block's payload
         // is released by the handle's routine, so it is not a record here
         if (isa<mlir_ts::StringType>(type) || isa<mlir_ts::ArrayType>(type) || isa<mlir_ts::ClassType>(type) ||

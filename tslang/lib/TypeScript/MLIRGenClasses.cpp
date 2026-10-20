@@ -160,6 +160,10 @@ namespace mlirgen
         if (mlir::succeeded(mlirGenClassType(newClassPtr, genContext)))
         {
             newClassPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
+            // here, before anything of the type is generated: whether a reference owns anything
+            // (MLIRTypeHelper::ownsHeapMemory) is read off the type, and a retain placed while it
+            // still said yes would never pair with a release
+            mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType()).setCpp(newClassPtr->isCppVTable);
         }
 
         // if this is generic specialized class then do not generate code for it
@@ -763,12 +767,6 @@ namespace mlirgen
             failed = true;
             return emitError(errorLocation);
         };
-
-        if (compileOptions.tracksOwnership())
-        {
-            // retains and releases write a count in the word before an object, inside a C++ object
-            error(location) << "a @" CPP_VTABLE " class needs the gc or none memory model";
-        }
 
         if (compileOptions.targetInfo.memberCallsUseThiscall)
         {

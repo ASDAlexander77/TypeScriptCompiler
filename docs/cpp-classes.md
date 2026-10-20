@@ -76,7 +76,6 @@ errors and not warnings.
 | `implements` | an implemented interface takes a slot |
 | `extends` an ordinary class, or an ordinary class extending a `@cpp` one | the ordinary class's slots (`.instanceOf`, `.rtti`, ...) would shift the numbering |
 | `instanceof`, a cast to or from `any`, a cast to an interface | each asks the object through slot 0, which is a C++ method |
-| `-mm=rc` / `-mm=own` | retains and releases write a count in the word before an object, inside the C++ object |
 | a 32-bit x86 MSVC target | C++ member functions are `__thiscall` there (`this` in ECX) |
 | a virtual method returning a tuple, on a target other than MSVC and Itanium x86-64 / AArch64 | each ABI returns records its own way (see below) |
 | on Itanium, a virtual method returning a trivial tuple with floating-point fields, unmarked | SysV / AAPCS64 return it in SSE registers / as an HFA, which isn't done (see below) |
@@ -86,6 +85,19 @@ errors and not warnings.
 | a method implementing a C++ method (with a body) taking a tuple | not supported yet: its body would have to read it as the ABI passes it |
 
 A generic or static class can't be `@cpp` either.
+
+## Memory models
+
+A `@cpp` class works under every memory model. Its reference is a C++ pointer, and no model
+counts it:
+
+- under `-mm=rc` and `-mm=own`, an ordinary object has its count in the word before it. A C++
+  object has no such word: the word before it belongs to the C++ heap, or to whatever is next to
+  it. So copying a `@cpp` reference into a variable, a field, an array or an argument doesn't
+  retain it, and dropping one doesn't release it. A field, array element or union member of a
+  `@cpp` type is skipped when what holds it is destroyed;
+- the object is C++'s to free, the way the C++ library frees it (`Release()`, `delete`), as under
+  `gc` and `none`.
 
 ## Writing a binding
 
@@ -230,7 +242,9 @@ const log = new MessageLog();          // pass <Opaque>log to C++
   (`boolean`, `u8`, ...) is extended to 32 bits, as C++ callers expect. Declare by-value struct
   parameters the way the ABI passes them (see "Writing a binding").
 - **Lifetime.** C++ keeps a raw pointer that the collector can't see. Hold the object in tslang,
-  for example in a global, for as long as C++ may call it. A `string` argument is C++'s buffer:
+  for example in a global, for as long as C++ may call it. Under `-mm=rc` and `-mm=own` its
+  references aren't counted (see "Memory models"), so tslang never frees it: an object made with
+  `new` lives until the program ends, and so does what its fields hold. A `string` argument is C++'s buffer:
   copy it to keep it past the call. (The other way, a `string` a C++ method returns to
   TypeScript is copied by the call; declare the method to return `Opaque` for the pointer.)
 - **Not yet supported:**
