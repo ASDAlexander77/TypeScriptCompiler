@@ -59,6 +59,7 @@ add_llvm_executable(tslang
     dump.cpp 
     jit.cpp 
     jitcache.cpp 
+    jitnative.cpp
     obj.cpp 
     exe.cpp 
     TextDiagnostic.cpp 

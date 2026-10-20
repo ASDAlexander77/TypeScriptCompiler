@@ -128,6 +128,7 @@ cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITt
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
 cl::opt<bool> jitCache{"jit-cache", cl::desc("--emit=jit: compile the program and each .ts module it imports into an object of its own, kept in a cache folder and loaded from there while its sources do not change (on by default; --jit-cache=false compiles everything into one module every run)"), cl::init(true), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<bool> jitNative{"jit-native", cl::desc("--emit=jit on Windows: link the JIT cache's objects into a DLL with a PDB and load it with the system loader, so that WinDbg and Visual Studio can debug the program with its symbols and source (implies --di unless --opt is given; needs a linker and the JIT cache)"), cl::cat(TypeScriptCompilerCategory)};
 cl::opt<std::string> jitCacheDir{"jit-cache-dir", cl::desc("--emit=jit: the folder the JIT cache keeps its objects in (default: '__jit' beside each source file)"), cl::value_desc("folder"), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> verbose{"verbose", cl::Hidden, cl::desc("Verbose output"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
@@ -444,6 +445,22 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    // --jit-native exists for the debugger, so it brings the debug info the debugger reads, unless
+    // the run asks to be optimized. Off Windows gdb and lldb read the JIT's own debug info already.
+    if (jitNative && emitAction == Action::RunJIT)
+    {
+#ifdef _WIN32
+        if (!generateDebugInfo && !(enableOpt.getNumOccurrences() && enableOpt))
+        {
+            generateDebugInfo.setValue(true);
+        }
+#else
+        llvm::WithColor::warning(llvm::errs(), "tslang")
+            << "--jit-native is for Windows debuggers and is ignored here: gdb and lldb debug the JIT as it is\n";
+        jitNative.setValue(false);
+#endif
+    }
+
     // A JIT run is running the program, not building it, so it optimizes (at --opt_level, 3 unless
     // given) without being asked. Not when asked otherwise: an explicit --opt either way wins, and
     // --opt_level=0 or --di mean an unoptimized run - --opt would strip the debug info.
@@ -498,6 +515,15 @@ int main(int argc, char **argv)
     }
 
     readBorrowFacts(compileOptions);
+
+    // what --jit-native links is the objects the cache keeps
+    if (emitAction == Action::RunJIT && jitNative && !compileOptions.jitCache)
+    {
+        llvm::WithColor::error(llvm::errs(), "tslang")
+            << "--jit-native links the objects of the JIT cache, which is not used with --jit-cache=false, "
+               "--dump-object-file or a program read from stdin\n";
+        return -1;
+    }
 
     // The JIT with its cache compiles each file it needs by itself, and only if it has to.
     if (emitAction == Action::RunJIT && compileOptions.jitCache)

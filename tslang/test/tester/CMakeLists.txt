@@ -3906,6 +3906,34 @@ add_test(NAME test-jit-cache-embedded-types
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jit-cache-embedded-types"
                  "-DEXPECTED=done."
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/jit-cache-empty.cmake")
+# --jit-native: the cache's objects linked into a DLL with a PDB and loaded by the system loader,
+# for WinDbg and Visual Studio - see jit-native.cmake. Windows only. With debug info under either
+# configuration, and the C runtime of the configuration's own libraries. cdb, if it is installed,
+# checks that a breakpoint on a source line is hit.
+if (WIN32)
+    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+        set(jit_native_opt "--opt;--di")
+    else()
+        set(jit_native_opt "--di;--opt_level=0")
+    endif()
+    find_program(TSLANG_TEST_CDB NAMES cdb cdbX64
+                 PATHS "C:/Program Files (x86)/Windows Kits/10/Debuggers/x64" "$ENV{LOCALAPPDATA}/Microsoft/WindowsApps")
+    if (TSLANG_TEST_CDB)
+        set(jit_native_cdb "-DCDB=${TSLANG_TEST_CDB}")
+    else()
+        set(jit_native_cdb "")
+    endif()
+    add_test(NAME test-jit-native-dll
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${jit_cache_dir}"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jit-native"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${jit_native_opt}"
+                     ${jit_native_cdb}
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/jit-native.cmake")
+endif()
 
 # `import { a as b }` and `import * as M` - each used to be "can't resolve name".
 set(import_bindings_dir "${PROJECT_SOURCE_DIR}/test/tester/import-bindings")
