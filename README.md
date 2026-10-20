@@ -873,7 +873,7 @@ scripts\build_tslang_runtime_release_android.bat
 
 Build the default library for Android with `scripts\build_android.bat` in the
 [Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/). It
-builds the release and debug libraries under gc, rc and none into the same `__build\defaultlib` tree as
+builds the release and debug libraries under gc, rc, none and own into the same `__build\defaultlib` tree as
 every other target, so `--default-lib-path=<TypeScriptCompilerDefaultLib>\__build` finds them.
 
 ## License

@@ -4298,14 +4298,21 @@ class MLIRGenImpl
             return addSafeCastStatement(exprVal, optType.getElementType(), inverse, elseSafeCase, genContext);
         }
 
-        // `number | null`, `{ k: number } | null`: a union with a tag and null. What is truthy is not
-        // null, as after `x !== null`; what is not may be null or a falsy value (0, ""), so only the
-        // branch where it is truthy is narrowed - the then branch of `if (x)`, the else of `if (!x)`
+        // `number | null`, `{ k: number } | null`: a union with a tag and null; and `string[] | null`,
+        // which has none, an array holding null in its own pointer. What is truthy is not null, as
+        // after `x !== null`; what is not may be null or a falsy value (0, ""), so only the branch
+        // where it is truthy is narrowed - the then branch of `if (x)`, the else of `if (!x)`.
+        // Without the array case `if (a) a[0]` of a `string[] | null` indexed the union. (A
+        // `Shared<T> | null` is a counted handle, which own reads through the variable itself.)
         if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(exprEval))
         {
+            auto isNull = [](mlir::Type member) { return isa<mlir_ts::NullType>(member); };
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(loc(exprVal), unionType, baseType)
-                && llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::NullType>(member); }))
+            auto arrayOrNull = llvm::all_of(unionType.getTypes(), [&](mlir::Type member) {
+                return isNull(member) || isa<mlir_ts::ArrayType>(member);
+            });
+            if ((mth.isUnionTypeNeedsTag(loc(exprVal), unionType, baseType) || arrayOrNull)
+                && llvm::any_of(unionType.getTypes(), isNull))
             {
                 if (!inverse)
                 {

@@ -144,6 +144,14 @@ With these, `lib.ts` compiles under gc, rc, none and own, release and `--di`. De
   the caller owns nothing) says so with `@lends`, added 2026-10-20. Covered by `own_lends.ts`, the
   `own_err_lends_*` cases, and `import_own_markers` / `import_own_markers_lent_outlives` across
   modules.
-- **A ternary that picks an array literal or `null`** (`return i < 3 ? ["a"] : null`) fails MLIR
-  verification ("operand #0 does not dominate this use") under rc and own. This is unrelated.
-- **Android** still builds gc, rc and none only.
+- **A ternary that picks an array literal or `null`** (`return i < 3 ? ["a"] : null`) failed MLIR
+  verification ("operand #0 does not dominate this use") under every model, gc too. Fixed
+  2026-10-20. The ternary was a `const_array | null`, and the generated function that cast it to
+  `string[] | null` narrowed the literal to a copy that its narrowed name owned, given back
+  outside the branch. A literal array in a branch of `?:` is now an array there, and the branch
+  hands it out with a reference of its own, as `new C()` is, so own accepts array ternaries
+  (`c ? ["a"] : ["b"]` was rejected before). `if (a)` of a `string[] | null` now narrows it too.
+  Covered by `tests/00narrow_array_null.ts` under gc, rc, none and own.
+- **Android** builds own as well, 2026-10-20 (DefaultLib `scripts/build_android.bat`). The
+  Android link test links an own executable and shared library, and an own program ran correctly
+  on the API 29 x86_64 emulator.
