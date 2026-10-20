@@ -60,6 +60,16 @@ LogicalResult ClassStorageType::setFields(::llvm::ArrayRef<::mlir::typescript::F
     return Base::mutate(newFields);
 }
 
+bool ClassStorageType::isCpp() const
+{
+    return getImpl()->cpp;
+}
+
+LogicalResult ClassStorageType::setCpp(bool cpp)
+{
+    return Base::mutate(cpp);
+}
+
 } // namespace typescript
 } // namespace mlir
 #endif

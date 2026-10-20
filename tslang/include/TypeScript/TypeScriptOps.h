@@ -149,8 +149,16 @@ struct ClassStorageTypeStorage : public ::mlir::TypeStorage
         return success();
     }
 
+    LogicalResult mutate(TypeStorageAllocator &, bool newCpp)
+    {
+        cpp = newCpp;
+        return success();
+    }
+
     FlatSymbolRefAttr name;
     ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+    // a @cpp class: its references are C++ pointers, which no memory model counts
+    bool cpp = false;
 };
 } // namespace detail
 

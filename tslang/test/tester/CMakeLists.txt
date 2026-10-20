@@ -444,8 +444,11 @@ tslang_add_test(NAME test-compile-00-optional-loose-null COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-union-nullable-array COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_array.ts")
 tslang_add_test(NAME test-compile-00-union-nullable-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_nullable_value.ts")
 tslang_add_test(NAME test-compile-00-opaque-nullable-compare COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00opaque_nullable_compare.ts")
-# not in TSLANG_CORPUS: a @cpp class is an error under rc (cppvtable/memory_model.ts)
+# in TSLANG_CORPUS too (rc, none), and under own here: a @cpp reference is counted by no model
 tslang_add_test(NAME test-compile-00-cppvtable-class COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-compile-own-00-cppvtable-class COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-compile-own-00-cpp-slot COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
+tslang_add_test(NAME test-compile-own-00-cpp-overloads COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-compile-00-cpp-slot COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-compile-00-cpp-overloads COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-compile-00-union-value-equality COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
@@ -1012,6 +1015,9 @@ tslang_add_test(NAME test-jit-00-opaque-nullable-compare COMMAND test-runner -ji
 tslang_add_test(NAME test-jit-00-cppvtable-class COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
 tslang_add_test(NAME test-jit-00-cpp-slot COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
 tslang_add_test(NAME test-jit-00-cpp-overloads COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
+tslang_add_test(NAME test-jit-own-00-cppvtable-class COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cppvtable_class.ts")
+tslang_add_test(NAME test-jit-own-00-cpp-slot COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_slot.ts")
+tslang_add_test(NAME test-jit-own-00-cpp-overloads COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00cpp_overloads.ts")
 tslang_add_test(NAME test-jit-00-union-value-equality COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_value_equality.ts")
 tslang_add_test(NAME test-jit-00-strict-equals-mismatched-types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00strict_equals_mismatched_types.ts")
 tslang_add_test(NAME test-jit-00-any-number-compare COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00any_number_compare.ts")
@@ -2383,6 +2389,9 @@ set(TSLANG_CORPUS
     00any_number_compare.ts
     00narrow_array_null.ts
     00opaque_nullable_compare.ts
+    00cppvtable_class.ts
+    00cpp_slot.ts
+    00cpp_overloads.ts
     )
 
 # the default model runs these ahead of time only, so the other models do too
@@ -3054,21 +3063,16 @@ foreach(cppvtable_error ${cppvtable_errors})
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
 
-# Retains and releases would write a count in the word before a C++ object: rc is an error, none
-# compiles.
-add_test(NAME test-compile-cppvtable-memory-model-rc
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=rc
-                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
-                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-rc.obj")
-set_tests_properties(test-compile-cppvtable-memory-model-rc
-                     PROPERTIES PASS_REGULAR_EXPRESSION "memory_model\\.ts:3:1: error: a @cpp class needs the gc or none memory model"
-                                FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
-add_test(NAME test-compile-cppvtable-memory-model-none
-         COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
-                 "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
-                 -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-none.obj")
-set_tests_properties(test-compile-cppvtable-memory-model-none
-                     PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+# A @cpp reference is a C++ pointer, with no count in front of the object: every model compiles it,
+# and rc and own count none of its copies (test-jit-cppvtable-abi-* below run it).
+foreach(cppvtable_mm rc own none)
+    add_test(NAME test-compile-cppvtable-memory-model-${cppvtable_mm}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=${cppvtable_mm}
+                     "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/memory_model.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/cppvtable-memory-model-${cppvtable_mm}.obj")
+    set_tests_properties(test-compile-cppvtable-memory-model-${cppvtable_mm}
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+endforeach()
 
 # A method returning a record: tests/00cppvtable_hidden_return.ts's slots, made by hand, return it as
 # MSVC does, through a pointer after `this`, so they run on Windows only; the Itanium ABI's way is
@@ -3164,6 +3168,7 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESS
     else()
         set(cppvtable_abi itanium)
     endif()
+    # under every model: under rc and own nothing writes in front of the C++ object, which C++ deletes
     add_test(NAME test-jit-cppvtable-abi
              COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=none
                      --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
@@ -3172,6 +3177,21 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8 AND (MSVC OR (NOT WIN32 AND CMAKE_SYSTEM_PROCESS
     set_tests_properties(test-jit-cppvtable-abi
                          PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Segmentation|Assertion failed")
+    foreach(cppvtable_mm rc own)
+        add_test(NAME test-jit-cppvtable-abi-${cppvtable_mm}
+                 COMMAND $<TARGET_FILE:tslang> --emit=jit --no-default-lib -mm=${cppvtable_mm}
+                         --shared-libs=$<TARGET_FILE:TypeScriptRuntime>
+                         --shared-libs=$<TARGET_FILE:tslang_cppvtable_abi>
+                         "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_${cppvtable_abi}.ts")
+        set_tests_properties(test-jit-cppvtable-abi-${cppvtable_mm}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "done\\."
+                                        FAIL_REGULAR_EXPRESSION "error:|Stack dump|Segmentation|Assertion failed")
+        add_test(NAME test-${cppvtable_mm}-verify-ownership-cppvtable-abi
+                 COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${cppvtable_mm} --verify-ownership
+                         "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/abi_${cppvtable_abi}.ts" -o -)
+        set_tests_properties(test-${cppvtable_mm}-verify-ownership-cppvtable-abi
+                             PROPERTIES FAIL_REGULAR_EXPRESSION "error:|warning:|Stack dump|Assertion failed")
+    endforeach()
 endif()
 
 # MSVC member functions are __thiscall on 32-bit x86, which a class method call isn't.

@@ -1,5 +1,5 @@
-// Compiled with -mm=rc: retains and releases would write the count in the word before a C++
-// object. The same file compiles with -mm=none.
+// Compiled under rc, own and none: a @cpp reference is a C++ pointer, which no model counts, so
+// nothing is written in the word before the C++ object.
 @cpp
 class Base {
     @slot(0) first(): s32;

@@ -54,8 +54,6 @@ elseif(MODE STREQUAL "cpp")
     set(bindgen_args "")
     # no destructors, RTTI or exceptions in fixture_cpp: nothing of the C++ runtime is linked
     set(clang_language -fno-rtti -fno-exceptions)
-    # a @cpp class needs the gc or none memory model
-    set(tslang_mm -mm=gc)
 else()
     set(bindings "fixture.ts")
     set(program "bindgen_test.ts")
