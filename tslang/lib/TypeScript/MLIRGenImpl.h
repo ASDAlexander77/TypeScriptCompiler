@@ -2443,6 +2443,19 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // Whether a global is the default library's data and the program links the library's DLL, as
+    // a shared library does (exe.cpp; Android links the static one). On Windows a DLL exports
+    // data only through `__imp_<name>`, which a plain external global does not reach, so
+    // `PrimeHelpers.hashCollisionThreshold`, read by a Map instantiated here, failed to link. Its
+    // functions need nothing: the import library gives each of them a thunk. Only an ambient
+    // declaration: lib.generics.ts is the library's source compiled into the program.
+    bool isImportedFromSharedDefaultLib(const struct VariableDeclarationInfo &variableDeclarationInfo)
+    {
+        return variableDeclarationInfo.isExternal && compileOptions.isDLL && !compileOptions.isAndroid &&
+               !compileOptions.noDefaultLib && sourceFile &&
+               defaultLibFiles.contains(convertWideToUTF8(sourceFile->resolvedPath));
+    }
+
     mlir::LogicalResult createGlobalVariable(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
         // generate only for real pass
@@ -2469,7 +2482,7 @@ class MLIRGenImpl
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
             }            
 
-            if (variableDeclarationInfo.isImport)
+            if (variableDeclarationInfo.isImport || isImportedFromSharedDefaultLib(variableDeclarationInfo))
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
             }
@@ -14885,6 +14898,11 @@ class MLIRGenImpl
     // inside it. Unlike emittedFiles it survives discovery, so an import cycle (a imports b
     // imports a) stops instead of recursing until the stack overflows.
     llvm::StringSet<> filesInProgress;
+
+    // The default library's files - lib.d.ts and every file it references - by file key. Its
+    // ambient data is defined in its DLL when the program links that (see
+    // isImportedFromSharedDefaultLib).
+    llvm::StringSet<> defaultLibFiles;
 
     // Type aliases whose declaration is being turned into a type, by full name: one that meets
     // itself on the way is circular (resolveTypeByNameInNamespace).
