@@ -734,19 +734,73 @@ namespace mlirgen
 
         if (resultTrue && resultFalse)
         {
-            auto defaultUnionType = getUnionType(location, resultTrue.getType(), resultFalse.getType());
+            // An array literal is an array here, as TypeScript has `i < 3 ? ["a"] : null` a
+            // `string[] | null`: each branch makes its own. Left a `const_array | null`, the union had
+            // to be cast to `string[] | null` by a generated function, whose narrowing of the literal
+            // to an array was a copy given back outside the branch it was made in ("operand #0 does
+            // not dominate this use").
+            auto widenArrayLiteral = [&](mlir::Type type) {
+                return isa<mlir_ts::ConstArrayType>(type) ? mth.removeConstType(type) : type;
+            };
+            auto trueType = widenArrayLiteral(resultTrue.getType());
+            auto falseType = widenArrayLiteral(resultFalse.getType());
+            auto defaultUnionType = getUnionType(location, trueType, falseType);
             auto merged = false;
-            auto resultType = mth.findBaseType(resultTrue.getType(), resultFalse.getType(), merged, defaultUnionType);
+            auto resultType = mth.findBaseType(trueType, falseType, merged, defaultUnionType);
 
             ifOp.getResult(0).setType(resultType);
 
-            CAST_A(falseRes, location, resultType, resultFalse, genContext)
+            // The array a branch makes of its literal is a new block, and the branch hands it out
+            // with a reference of its own, as `new C()` is (markFreshBlockOwned): the `ts.If` then
+            // carries one reference whichever branch ran (consumeConditionalResults), and -mm=own
+            // sees the merge as fresh rather than as two values neither of which owns it.
+            // (A literal whose element type the receiver gave is built as an array already.)
+            auto arrayOfLiteral = [&](mlir::Value value) -> mlir::Value {
+                auto array = value;
+                if (isa<mlir_ts::ConstArrayType>(value.getType()))
+                {
+                    auto result = cast(location, mth.removeConstType(value.getType()), value, genContext);
+                    if (result.failed_or_no_value())
+                    {
+                        return mlir::Value();
+                    }
+
+                    array = V(result);
+                }
+                else if (!value.getDefiningOp<mlir_ts::CreateArrayOp>())
+                {
+                    return value;
+                }
+
+                auto *definingOp = array.getDefiningOp();
+                if (compileOptions.tracksOwnership() && definingOp && !definingOp->hasAttr(OWNED_RESULT_ATTR_NAME))
+                {
+                    builder.create<mlir_ts::RetainOp>(location, array);
+                    definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+                }
+
+                return array;
+            };
+
+            auto falseArray = arrayOfLiteral(resultFalse);
+            if (!falseArray)
+            {
+                return mlir::failure();
+            }
+
+            CAST_A(falseRes, location, resultType, falseArray, genContext)
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseRes});
 
             // finish type of IfOp and WhenTrue clause
             builder.setInsertionPointToEnd(&ifOp.getThenRegion().back());
 
-            CAST_A(trueRes, location, resultType, resultTrue, genContext);
+            auto trueArray = arrayOfLiteral(resultTrue);
+            if (!trueArray)
+            {
+                return mlir::failure();
+            }
+
+            CAST_A(trueRes, location, resultType, trueArray, genContext);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueRes});
         }
         else

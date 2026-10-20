@@ -99,18 +99,26 @@ elseif(MODE STREQUAL "link")
     else()
         set(default_lib "${REPO_DIR}/../TypeScriptCompilerDefaultLib/__build")
     endif()
-    # the one default-library tree, every target in it; tslang names this one's folder
-    execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=lib -mm=gc -mtriple=${triple}
-        OUTPUT_VARIABLE default_lib_subdir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        COMMAND_ERROR_IS_FATAL ANY)
+    # the one default-library tree, every target in it; tslang names each model's folder. gc, and
+    # own, whose default library is built for Android too: what it links differs from gc's (no
+    # collector, the default library's own releases)
+    set(link_models gc own)
+    foreach(mm ${link_models})
+        execute_process(COMMAND "${TSLANG}" --print-default-lib-dir=lib -mm=${mm} -mtriple=${triple}
+            OUTPUT_VARIABLE default_lib_subdir_${mm}
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
 
     if("$ENV{ANDROID_NDK_HOME}" STREQUAL "")
         message("SKIPPED: ANDROID_NDK_HOME is not set")
         return()
     endif()
-    foreach(file "${gc_lib}/libgc.a" "${runtime_lib}/libTypeScriptAsyncRuntime.a"
-                 "${default_lib}/${default_lib_subdir}/libTypeScriptDefaultLib.a")
+    set(required "${gc_lib}/libgc.a" "${runtime_lib}/libTypeScriptAsyncRuntime.a")
+    foreach(mm ${link_models})
+        list(APPEND required "${default_lib}/${default_lib_subdir_${mm}}/libTypeScriptDefaultLib.a")
+    endforeach()
+    foreach(file ${required})
         if(NOT EXISTS "${file}")
             message("SKIPPED: ${file} is not built")
             return()
@@ -118,19 +126,23 @@ elseif(MODE STREQUAL "link")
     endforeach()
 
     set(libs "--default-lib-path=${default_lib}" "--gc-lib-path=${gc_lib}" "--tslang-lib-path=${runtime_lib}")
-    run("--emit=exe for ${triple}" TRUE
-        "${TSLANG}" --emit=exe --opt -mm=gc -mtriple=${triple} ${libs} app.ts -o app)
-    run("--emit=dll for ${triple}" TRUE
-        "${TSLANG}" --emit=dll --opt -mm=gc -mtriple=${triple} ${libs} app.ts -o libapp.so)
+    set(binaries)
+    foreach(mm ${link_models})
+        run("--emit=exe -mm=${mm} for ${triple}" TRUE
+            "${TSLANG}" --emit=exe --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o app-${mm})
+        run("--emit=dll -mm=${mm} for ${triple}" TRUE
+            "${TSLANG}" --emit=dll --opt -mm=${mm} -mtriple=${triple} ${libs} app.ts -o libapp-${mm}.so)
+        list(APPEND binaries app-${mm} libapp-${mm}.so)
+    endforeach()
 
-    foreach(binary app libapp.so)
+    foreach(binary ${binaries})
         file(READ "${WORK_DIR}/${binary}" magic LIMIT 4 HEX)
         if(NOT magic STREQUAL "7f454c46")
             message(FATAL_ERROR "${binary} is not an ELF file")
         endif()
     endforeach()
 
-    message(STATUS "an executable and a shared library linked for ${triple}")
+    message(STATUS "an executable and a shared library linked for ${triple}, under ${link_models}")
 else()
     message(FATAL_ERROR "MODE must be codegen or link, not '${MODE}'")
 endif()
