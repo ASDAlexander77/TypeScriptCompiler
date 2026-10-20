@@ -156,11 +156,21 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         }
 
         // What this module promises importers about its parameters, whether or not it promotes
-        // anything itself. Nothing imports a JIT-run program.
-        if (!compileOptions.isJit && !noBorrowFactsExport)
+        // anything itself. Nothing imports a JIT-run program, nor the modules the JIT cache
+        // compiles beside it (isJit off, jitCache on): their objects are only loaded into the
+        // JIT, never linked, and the program run there does not read facts from them
+        // (StackPromotionPass). Named after the module's own file, the main buffer, not
+        // inputFilename, so a symbol is never another module's.
+        if (!compileOptions.isJit && !compileOptions.jitCache && !noBorrowFactsExport)
         {
+            llvm::StringRef moduleFile = inputFilename;
+            if (sourceMgr.getNumBuffers() > 0 && inputFilename != "-")
+            {
+                moduleFile = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBufferIdentifier();
+            }
+
             pm.addPass(mlir::typescript::createBorrowFactsExportPass(
-                SHARED_LIB_BORROW_FACTS + typescript::moduleSymbolSuffix(inputFilename)));
+                SHARED_LIB_BORROW_FACTS + typescript::moduleSymbolSuffix(moduleFile)));
         }
 
         // Under every model, after own's inference: what it decides about a stack object's retains
