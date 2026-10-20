@@ -2769,6 +2769,21 @@ if (TSLANG_TEST_X86)
                           LABELS x86)
 endif()
 
+# A shared library reading the default library's data from its DLL - see
+# defaultlib-data-import.cmake. Skipped (not failed) when no default library has been built, like the
+# collector tests above, whose options it shares.
+add_test(NAME test-compile-shared-defaultlib-data
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/shared-defaultlib-data"
+                 "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 "-DOPT=${defaultlib_collector_opt}"
+                 "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/defaultlib-data-import.cmake")
+set_tests_properties(test-compile-shared-defaultlib-data PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+
 # tsbindgen: bindings generated from test/bindgen/fixture.h call the C library compiled from
 # fixture.c, linked (--emit=exe) and under the JIT; `namespace` does it again through
 # --namespace/--strip-prefix, which @linkname binds; `cpp` calls the C++ classes of

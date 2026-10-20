@@ -180,9 +180,10 @@ namespace mlirgen
         // `referencingDir`: a relative path is that file's, as in TypeScript, so it is looked for
         // there first. Then as before - the working directory, the main file's directory, the
         // default lib's - which a reference relative to the main file from a file elsewhere
-        // still relies on.
-        std::function<void(const string &, SourceFile, const ts::data::FileReference *, StringRef)> loadReferencedFile =
-            [&](const string &includeFileName, SourceFile referencing, const ts::data::FileReference *reference, StringRef referencingDir) {
+        // still relies on. `fromDefaultLib`: the file is the default lib or one it references.
+        std::function<void(const string &, SourceFile, const ts::data::FileReference *, StringRef, bool)> loadReferencedFile =
+            [&](const string &includeFileName, SourceFile referencing, const ts::data::FileReference *reference, StringRef referencingDir,
+                bool fromDefaultLib) {
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
 
             std::string actualFilePath;
@@ -223,6 +224,11 @@ namespace mlirgen
                 return;
             }
 
+            if (fromDefaultLib)
+            {
+                defaultLibFiles.insert(includeFilePath);
+            }
+
             auto id = sourceMgr.AddNewSourceBuffer(std::move(*includeBuf), SMLoc());
 
             SmallString<256> fullPath;
@@ -249,21 +255,22 @@ namespace mlirgen
             auto includeFileDir = sys::path::parent_path(actualFilePath).str();
             for (auto &refFile : includeFile->referencedFiles)
             {
-                loadReferencedFile(refFile.fileName, includeFile, &refFile, includeFileDir);
+                loadReferencedFile(refFile.fileName, includeFile, &refFile, includeFileDir, fromDefaultLib);
             }
 
             includeFiles.push_back(includeFile);
         };
 
+        // only the default lib is in filesToProcess
         for (auto &fileToProcess : filesToProcess)
         {
-            loadReferencedFile(fileToProcess, sourceFile, nullptr, StringRef());
+            loadReferencedFile(fileToProcess, sourceFile, nullptr, StringRef(), true);
         }
 
         auto sourceFileDir = sys::path::parent_path(fullPath).str();
         for (auto &refFile : sourceFile->referencedFiles)
         {
-            loadReferencedFile(refFile.fileName, sourceFile, &refFile, sourceFileDir);
+            loadReferencedFile(refFile.fileName, sourceFile, &refFile, sourceFileDir, false);
         }
 
         if (anyMissing)
