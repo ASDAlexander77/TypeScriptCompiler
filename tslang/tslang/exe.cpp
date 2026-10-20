@@ -108,12 +108,24 @@ std::string getDefaultLibPath()
         return defaultlibpath;
     }
 
-    if (auto gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH")) 
+    if (auto gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH"))
     {
         return gcDefaultLibEnvValue.value();
-    }    
+    }
 
-    return "";    
+    // Neither given: the folder of tslang itself, where --install-default-lib puts the library
+    // when it is not told where. Only if it holds one, so a tslang without it still compiles with
+    // no default library rather than failing on a path nobody asked for.
+    llvm::SmallString<256> exeDir(getExecutablePath("tslang"));
+    llvm::sys::path::remove_filename(exeDir);
+    llvm::SmallString<256> exeDefaultLibDir(exeDir);
+    llvm::sys::path::append(exeDefaultLibDir, DEFAULT_LIB_DIR);
+    if (!exeDir.empty() && llvm::sys::fs::is_directory(exeDefaultLibDir))
+    {
+        return exeDir.str().str();
+    }
+
+    return "";
 }
 
 bool checkFileExistsAtPath(std::string path, std::string fileName)
