@@ -652,18 +652,23 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
 
     if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime && !nativeImage)
     {
-        // --tslang-lib-path (TSLANG_LIB_PATH), then ../lib and the current folder, then the folder
-        // of tslang itself - where the release package puts it, and the build its bin folder. A
-        // run started from a project folder finds it only there.
-        llvm::SmallString<256> exeRuntimePath(getExecutablePath("tslang"));
-        llvm::sys::path::remove_filename(exeRuntimePath);
+        // --tslang-lib-path (TSLANG_LIB_PATH), then ../lib and the current folder, then beside
+        // tslang itself: its own folder - where the release package puts it, and the Windows build
+        // its bin folder - and ../lib, where the Linux build does. A run started from a project
+        // folder finds it only there.
+        llvm::SmallString<256> exeDir(getExecutablePath("tslang"));
+        llvm::sys::path::remove_filename(exeDir);
+        llvm::SmallString<256> exeRuntimePath(exeDir);
         llvm::sys::path::append(exeRuntimePath, LIB_NAME "TypeScriptRuntime." LIB_EXT);
+        llvm::SmallString<256> exeLibRuntimePath(exeDir);
+        llvm::sys::path::append(exeLibRuntimePath, "..", "lib", LIB_NAME "TypeScriptRuntime." LIB_EXT);
 
         std::string runtimePath;
         for (auto candidate : {mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT),
                                std::string("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT),
                                std::string(LIB_NAME "TypeScriptRuntime." LIB_EXT),
-                               exeRuntimePath.str().str()})
+                               exeRuntimePath.str().str(),
+                               exeLibRuntimePath.str().str()})
         {
             runtimePath = makeAbsolutePath(candidate);
             if (!runtimePath.empty())
