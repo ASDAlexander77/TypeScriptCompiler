@@ -74,6 +74,7 @@ std::string mergeWithDefaultLibPath(std::string, std::string);
 std::string getDefaultLibSubDir(bool, bool, const char *, const llvm::Triple &);
 std::string getDefaultLibBinary(bool, const CompileOptions &, const llvm::Triple &);
 std::string makeAbsolutePath(std::string);
+std::string getExecutablePath(const char *);
 
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
@@ -649,39 +650,41 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
         return llvm::sys::path::stem(libPath).contains_insensitive("TypeScriptRuntime");
     });
 
-    std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
     if (compileOptions.needsGCRuntime() && !hasTypeScriptRuntime && !nativeImage)
     {
-        auto absPath3 = makeAbsolutePath(mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT));
-        if (absPath3.empty())
+        // --tslang-lib-path (TSLANG_LIB_PATH), then ../lib and the current folder, then the folder
+        // of tslang itself - where the release package puts it, and the build its bin folder. A
+        // run started from a project folder finds it only there.
+        llvm::SmallString<256> exeRuntimePath(getExecutablePath("tslang"));
+        llvm::sys::path::remove_filename(exeRuntimePath);
+        llvm::sys::path::append(exeRuntimePath, LIB_NAME "TypeScriptRuntime." LIB_EXT);
+
+        std::string runtimePath;
+        for (auto candidate : {mergeWithDefaultLibPath(getTslangLibPath(), LIB_NAME "TypeScriptRuntime." LIB_EXT),
+                               std::string("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT),
+                               std::string(LIB_NAME "TypeScriptRuntime." LIB_EXT),
+                               exeRuntimePath.str().str()})
         {
-            auto absPath = makeAbsolutePath(pathTypeScriptLib);
-            if (absPath.empty())
-            {            
-                pathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
-                auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
-                if (absPath2.empty())
-                {
-                    /*
-                    llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                                    "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-mm=none'\n";
-                    return -1;            
-                    */
-                }        
-                else
-                {
-                    clSharedLibs.push_back(absPath2);
-                }
-            }
-            else
+            runtimePath = makeAbsolutePath(candidate);
+            if (!runtimePath.empty())
             {
-                clSharedLibs.push_back(absPath);
+                break;
             }
-        }     
-        else
-        {
-            clSharedLibs.push_back(absPath3);
         }
+
+        // Not left to fail later: the default library and the program call GC_malloc & co., and
+        // with no runtime loaded that surfaces as an unresolved symbol (on Linux a "symbol lookup
+        // error" from the loader in the middle of the run) that never names the missing file.
+        if (runtimePath.empty())
+        {
+            llvm::WithColor::error(llvm::errs(), "tslang")
+                << "-mm=gc needs the GC runtime, " LIB_NAME "TypeScriptRuntime." LIB_EXT ", and it is not "
+                << "next to tslang, in the current folder or in --tslang-lib-path. Pass its folder with "
+                << "--tslang-lib-path, or the file with --shared-libs.\n";
+            return -1;
+        }
+
+        clSharedLibs.push_back(runtimePath);
     }
 
     // After the runtime: on Linux the default library leaves GC_* undefined and takes them from
