@@ -13,6 +13,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -115,6 +116,179 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         });
     }
 
+    // The immortal globals (OWN_IMMORTAL_GLOBAL_ATTR_NAME, spec 25). A global of a class type,
+    // not exported, is immortal when it is written once, by its initializer, and given a fresh
+    // object, nothing, or another immortal global's value. Its initializer is either its own region
+    // (`const c = new C()`) or, for a class static, the one store into it in the class's static
+    // constructor, which a `ts.GlobalConstructor` runs (the region then yields only the default).
+    //
+    // The store - the region's, which the lowering makes - marks the block HEAP_BLOCK_IMMORTAL, so
+    // every block the global ever holds is one no release frees. The value test only keeps a block
+    // someone else owns from being made immortal, whose free would silently become a leak.
+    void findImmortalGlobals(mlir::ModuleOp module)
+    {
+        // the static constructors, which run once before the program
+        llvm::StringSet<> constructors;
+        module.walk([&](mlir_ts::GlobalConstructorOp constructorOp) { constructors.insert(constructorOp.getGlobalName()); });
+
+        // a static's address taken out of a class's vtable (`k.w = x`, `k: typeof K`) and written
+        // through: it may be any class's static the vtable slot holds, so no static is immortal
+        auto vtableWritten = false;
+        module.walk([&](mlir::Operation *op) {
+            if (mlir::isa<mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(op) &&
+                mlir::isa<mlir_ts::RefType>(op->getResult(0).getType()) &&
+                !llvm::all_of(op->getUsers(), [](mlir::Operation *user) { return mlir::isa<mlir_ts::LoadOp>(user); }))
+            {
+                vtableWritten = true;
+            }
+        });
+
+        auto uses = mlir::SymbolTable::getSymbolUses(&module.getBodyRegion());
+        if (!uses)
+        {
+            return; // an op this pass cannot read symbols through: nothing is known never written
+        }
+
+        llvm::StringMap<llvm::SmallVector<mlir::Operation *>> usesOf;
+        for (auto &use : *uses)
+        {
+            usesOf[use.getSymbolRef().getRootReference().getValue()].push_back(use.getUser());
+        }
+
+        // each candidate with the value its initializer gives it, and the store that does, if any
+        llvm::MapVector<mlir_ts::GlobalOp, std::pair<mlir::Value, mlir_ts::StoreOp>> candidates;
+        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            if (!mlir::isa<mlir_ts::ClassType>(globalOp.getType()) || !mth.ownsHeapMemory(globalOp.getLoc(), globalOp.getType()) ||
+                globalOp->hasAttr("export") || globalOp->hasAttr("import") || globalOp->hasAttr(DLL_EXPORT) ||
+                globalOp->hasAttr(DLL_IMPORT) || !globalOp.getInitializerRegion().hasOneBlock())
+            {
+                return;
+            }
+
+            auto resultOp = mlir::dyn_cast<mlir_ts::GlobalResultOp>(globalOp.getInitializerBlock()->getTerminator());
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return;
+            }
+
+            mlir_ts::StoreOp initStore;
+            for (auto *user : usesOf.lookup(globalOp.getSymName()))
+            {
+                // its vtable's entry, which only a `ts.VirtualSymbolRef` reads (vtableWritten)
+                if (mlir::isa<mlir_ts::SymbolRefOp>(user) && user->getParentOfType<mlir_ts::GlobalOp>())
+                {
+                    if (vtableWritten)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                if (mlir::isa<mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(user))
+                {
+                    continue; // only loaded, or vtableWritten
+                }
+
+                auto addressOfOp = mlir::dyn_cast<mlir_ts::AddressOfOp>(user);
+                if (!addressOfOp)
+                {
+                    return;
+                }
+
+                auto released = false;
+                auto stored = false;
+                for (auto *addressUser : addressOfOp->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::LoadOp>(addressUser))
+                    {
+                        continue;
+                    }
+
+                    // the old value, the default, given up before the store
+                    if (mlir::isa<mlir_ts::ReleaseSlotOp>(addressUser))
+                    {
+                        released = true;
+                        continue;
+                    }
+
+                    // the one store, in a static constructor
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(addressUser);
+                    auto funcOp = storeOp ? storeOp->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp();
+                    if (initStore || !storeOp || storeOp.getReference() != addressOfOp.getResult() ||
+                        storeOp.getValue() == addressOfOp.getResult() || !funcOp || !constructors.contains(funcOp.getSymName()))
+                    {
+                        return;
+                    }
+
+                    initStore = storeOp;
+                    stored = true;
+                }
+
+                if (released && !stored)
+                {
+                    return;
+                }
+            }
+
+            // a static's region yields only its default, which the store replaces
+            auto regionValue = resultOp->getOperand(0);
+            if (initStore && !mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(regionValue.getDefiningOp()))
+            {
+                return;
+            }
+
+            candidates[globalOp] = {initStore ? initStore.getValue() : regionValue, initStore};
+        });
+
+        // given a fresh object, nothing, or another immortal global's value: in module order, until
+        // no more are found
+        llvm::StringSet<> immortal;
+        auto readsImmortal = [&](mlir::Value value) {
+            auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+            auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+            return addressOfOp && immortal.contains(addressOfOp.getGlobalName());
+        };
+
+        for (auto found = true; found;)
+        {
+            found = false;
+            for (auto &[globalOp, init] : candidates)
+            {
+                auto value = init.first;
+                if (!immortal.contains(globalOp.getSymName()) && (isFresh(value) || holdsNoBlock(value) || readsImmortal(value)))
+                {
+                    immortal.insert(globalOp.getSymName());
+                    found = true;
+                }
+            }
+        }
+
+        auto unit = mlir::UnitAttr::get(&getContext());
+        for (auto &[globalOp, init] : candidates)
+        {
+            if (!immortal.contains(globalOp.getSymName()))
+            {
+                continue;
+            }
+
+            globalOp->setAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME, unit);
+            if (init.second)
+            {
+                init.second->setAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME, unit);
+            }
+
+            for (auto *user : usesOf.lookup(globalOp.getSymName()))
+            {
+                if (mlir::isa<mlir_ts::AddressOfOp>(user))
+                {
+                    user->setAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME, unit);
+                }
+            }
+        }
+    }
+
     void moveIntoGlobals(mlir::ModuleOp module)
     {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
@@ -129,6 +303,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 }
 
                 auto value = retainOp.getReference();
+
+                // an immortal global's value (spec 25): owned by no one, held by any number
+                if (isImmortalGlobalRead(value))
+                {
+                    retainOp.erase();
+                    continue;
+                }
 
                 // nothing in the region gives the block back, or takes a second reference to it:
                 // the global is its one owner
@@ -174,6 +355,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
+        findImmortalGlobals(module);
         moveIntoGlobals(module);
         collectClassVTables(module);
         fieldFunctions.collect(module);

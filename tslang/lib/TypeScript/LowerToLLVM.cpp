@@ -40,6 +40,9 @@
 #include "TypeScript/LowerToLLVM/LLVMDebugInfoFixer.h"
 #include "TypeScript/LowerToLLVM/ArrayLayout.h"
 
+// OWN_IMMORTAL_GLOBAL_ATTR_NAME
+#include "OwnershipFacts.h"
+
 #include "scanner_enums.h"
 
 #define DISABLE_SWITCH_STATE_PASS 1
@@ -4802,6 +4805,14 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         //     isInvariant = invariantAttr.getValue();
         // }           
 
+        // an immortal global's initializer (own spec 25): the block it is given is marked, so every
+        // release of a read of the global skips it
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && storeOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME))
+        {
+            OwnershipRoutineLogic orl(storeOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitMarkImmortal(transformed.getValue());
+        }
+
         const bool isInvariantGroup = false; // TODO: Determine if this should be set based on some condition
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariantGroup, ordering, syncscope);
 #ifdef DBG_INFO_ADD_VALUE_OP        
@@ -5003,6 +5014,19 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             createAsGlobalConstructor = true;
         }
 
+        // an immortal global (own spec 25) whose region gives it its value gets it from a store,
+        // which marks the block. A class static's region yields only the default: the store in the
+        // static constructor gives it its value, and a constructor here would run after that one.
+        if (globalOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) && globalOp.getInitializerBlock())
+        {
+            auto *terminator = globalOp.getInitializerBlock()->getTerminator();
+            auto *valueOp = terminator && terminator->getNumOperands() == 1 ? terminator->getOperand(0).getDefiningOp() : nullptr;
+            if (!mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(valueOp))
+            {
+                createAsGlobalConstructor = true;
+            }
+        }
+
         auto linkage = globalOp.getLinkage();
         LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)
@@ -5024,7 +5048,20 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             // ("DISubprogram attached to more than one function") since a DISubprogram must
             // identify exactly one function. Same "no debug info for this synthetic function"
             // precedent as setDISubProgramTypesToFormOp's bodiless-declaration handling above.
-            lch.createFunctionFromRegion(mlir::UnknownLoc::get(rewriter.getContext()), name, globalOp.getInitializerRegion(), globalOp.getSymName());
+            auto initFuncOp = lch.createFunctionFromRegion(mlir::UnknownLoc::get(rewriter.getContext()), name,
+                                                           globalOp.getInitializerRegion(), globalOp.getSymName());
+
+            // an immortal global (own spec 25): its one store, here, marks the block it is given
+            if (globalOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME))
+            {
+                initFuncOp.walk([&](mlir_ts::StoreOp storeOp) {
+                    auto addressOfOp = storeOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>();
+                    if (addressOfOp && addressOfOp.getGlobalName() == globalOp.getSymName())
+                    {
+                        storeOp->setAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME, rewriter.getUnitAttr());
+                    }
+                });
+            }
 
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);

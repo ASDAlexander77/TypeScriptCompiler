@@ -2789,3 +2789,56 @@ used `let b = a; … a = new C()` to make `b` a borrow, but that is a move now. 
 after `let b = a`, which keeps `b` a borrow. `own_move_reassign` runs the shapes under own, rc
 and gc: own holds 4.4 MB, as rc's 4.5 MB. On a quarantine heap it runs clean; with the
 assignment's release kept, it is a double free. Corpus: 467 of 628 compile under own, unchanged.
+
+## 25. Immortal globals (G1 of the ray tracer plan), 2026-10-21
+
+A read of a global was a borrow that could not be stored, returned or captured (§21.2): the global
+owns its value, and a call or an assignment may give it another. The ray tracer's `Color.white`,
+`Color.black` and `Color.background = Color.black` are never given another value, and are returned
+and stored everywhere. Such a global is now **immortal**, like a string literal: its block's header
+is `HEAP_BLOCK_IMMORTAL`, so every release skips it, and a read of it owns nothing and may go
+anywhere - returned, stored into a field or another global, given to a call that keeps it, merged
+with a fresh value (`n > 1 ? K.w : new V(n)` is an owned result on both paths; the caller's release
+of `K.w` does nothing).
+
+- **Which globals.** OwnershipSignaturePass (`findImmortalGlobals`) marks a `ts.Global`
+  `__own_immortal` when it is of a class type that owns a heap block, is not exported (no `export`,
+  `import`, `dllexport` or `dllimport`), and is written once, by its initializer. The initializer is
+  either the global's own region (`const c = new V(1)`: every `ts.AddressOf` of it only loaded), or,
+  for a class static, its region yields only the default and the one `ts.Store` through a
+  `ts.AddressOf` of it is in a static constructor a `ts.GlobalConstructor` runs. Every symbol use of
+  the global is checked (`SymbolTable::getSymbolUses`), not only `ts.AddressOf`: a static is also
+  reached through its class's vtable, and `k.w = x` with `k: typeof K` writes it through a
+  `ts.VirtualSymbolRef` that `writtenGlobals` never sees. When any vtable reference is written
+  through, no static is immortal. A module-level `export let`, an exported class's static, a global
+  top-level script code assigns, and a global assigned anywhere else stay mortal.
+- **Which values.** The initializer gives it a fresh object, nothing, or another immortal global's
+  value (found to a fixpoint). A borrowed initializer (`static first = K.list[0]`) stays mortal and
+  keeps today's error (`own_err_immortal_borrowed_init`): marking a block someone else owns immortal
+  would turn its owner's free into a silent leak.
+- **Only the global's own block.** `K.n.c = x` still destroys the old `c`, and a borrow of `K.n.c`
+  stays bounded (`own_err_immortal_field_overwritten`).
+- **Inference.** `own_facts::isImmortalGlobalRead` is a `ts.Load` of a `ts.AddressOf` the pass
+  marked, seen through views. `isImmortalLiteral` includes it, and its retains (a `ts.Retain`, or a
+  `ts.RetainSlot` where the slot still holds it) are erased, as a constant's are. `moveIntoGlobals`
+  erases a global region's retain of one.
+- **Lowering.** The initializing `ts.Store` carries `__own_immortal`; under own its lowering writes
+  `HEAP_BLOCK_IMMORTAL` into the block's header when the value is not null. A region that gives
+  the global its value is always made a `__cctor` (it would otherwise become a constant
+  initializer, with no store), and the store the `__cctor` makes is marked from the global's
+  attribute. A static's region, which yields only the default, is left alone: a `__cctor` of it
+  would run after the static constructor and put the default back. So every block the global ever
+  holds is one no release frees, whatever reads of it are taken to own.
+
+`own_immortal_global` runs the static shapes (from another global, returned, stored into a field,
+merged with a fresh value, in a loop of 100000) and `own_immortal_global_region` the module-level
+ones (`const c = new V(1)`, `let e = c`), under own, rc, gc and none; own emits no counting.
+`own_err_global_returned` and `own_err_param_kept_not_owned` now also give the global another
+value, which keeps them errors: their programs as they were are accepted. The brief's text for
+`own_err_immortal_borrowed_init` (`the initializer of global 'K.first' takes a second reference`)
+is moveIntoGlobals', which only a region initializer reaches; a static's borrowed initializer is
+reported by inference in its static constructor, as before (`borrows 'K.list[]' and cannot be
+stored, returned or captured`). Teeth: with the header store skipped, the AOT and JIT runs of both
+fail with `0xC0000374` (heap corruption: the first release frees `K.w`, and later reads and
+releases use the freed block). With the loop at 30 million (20 million fresh `V`s freed), own
+peaks at 4.3 MB, as rc does.

@@ -51,6 +51,13 @@ namespace mlir_ts = mlir::typescript;
 // result is the caller's to own, but no use of it may come after any of these arguments is given
 // back, and it may not be kept anywhere that outlives them.
 #define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
+// An immortal global (spec 25): a class-typed global of this module, not exported, whose only
+// write is its initializer, which gives it a fresh object or another immortal global's. Like a
+// string literal, its block is marked HEAP_BLOCK_IMMORTAL, so every release skips it, and a read of
+// it owns nothing and may go anywhere. Pinned by OwnershipSignaturePass on the `ts.Global`, on
+// every `ts.AddressOf` of it (isImmortalGlobalRead), and on the `ts.Store` that initializes it,
+// whose lowering writes the header word.
+#define OWN_IMMORTAL_GLOBAL_ATTR_NAME "__own_immortal"
 
 // A call inside a try body is a `ts.Invoke` (`ts.InvokeHybrid` through a hybrid function): a
 // terminator whose normal and unwind edges are its successors. It names its callee as a symbol, or
@@ -225,6 +232,16 @@ inline mlir::Value rootOf(mlir::Value value)
     }
 
     return value;
+}
+
+// A read of an immortal global (OWN_IMMORTAL_GLOBAL_ATTR_NAME), seen through its views: the
+// global's own block, which no release frees. Its fields are not immortal: a read out of one is a
+// place read like any other.
+inline bool isImmortalGlobalRead(mlir::Value value)
+{
+    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+    auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+    return addressOfOp && addressOfOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME);
 }
 
 // Every user of `root` and of the views of it, with the value it uses. A view itself is not a

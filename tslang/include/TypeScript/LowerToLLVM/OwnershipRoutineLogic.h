@@ -410,6 +410,25 @@ class OwnershipRoutineLogic
         });
     }
 
+    // Marks the block `payloadPtr` addresses HEAP_BLOCK_IMMORTAL, when there is one: what an
+    // immortal global is given (own spec 25). Every release then skips it, as it skips a string
+    // literal's.
+    void emitMarkImmortal(mlir::Value payloadPtr)
+    {
+        emitIfNonNull(payloadPtr, [&]() {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(typeConverter);
+            LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+            auto loc = op->getLoc();
+
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+            rewriter.create<LLVM::StoreOp>(
+                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                blockPtr);
+        });
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)

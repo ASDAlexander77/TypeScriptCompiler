@@ -3478,7 +3478,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_string_copy_branch own_array_param_push
                  own_declared_no_drops own_return_paths own_string_concat_element
                  own_final_fresh_result own_final_field_lend own_null_narrowing_di
-                 own_param_markers own_generator_locals own_string_param_assigned own_lends)
+                 own_param_markers own_generator_locals own_string_param_assigned own_lends
+                 own_immortal_global own_immortal_global_region)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3488,6 +3489,14 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
     set_tests_properties(test-own-no-counting-${own_test}
                          PROPERTIES PASS_REGULAR_EXPRESSION "define"
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error:|Stack dump")
+endforeach()
+
+# A global never reassigned is immortal under own (spec 25); the same program under every other model.
+foreach(immortal_mm rc gc none)
+    foreach(immortal_test own_immortal_global own_immortal_global_region)
+        tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
+        tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
+    endforeach()
 endforeach()
 
 # ...and built with debug info, whose records of narrowed variables are ops of their own
@@ -3701,6 +3710,8 @@ set(own_error_cases
     "own_err_local_owns_nothing|owns nothing under -mm=own .* so it cannot be given a new value here"
     "own_err_merged_result|is merged from several branches"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
+    "own_err_immortal_borrowed_init|borrows 'K.list.*' and cannot be stored, returned or captured"
+    "own_err_immortal_field_overwritten|borrows .* but is used here after .* released or overwritten"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"

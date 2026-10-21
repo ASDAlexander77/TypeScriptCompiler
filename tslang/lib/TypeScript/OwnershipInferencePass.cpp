@@ -352,6 +352,14 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // an immortal global's value (spec 25): owned by no one, so returned, stored or kept
+            // as often as it is read, and its releases skip it
+            if (value && isImmortalGlobalRead(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotHoldsInitializerAt(op)))
+            {
+                toErase.insert(op);
+                continue;
+            }
+
             // an array a spread builds, read into the owning local it is made for, or returned
             if (value && mlir::isa<mlir_ts::RetainSlotOp>(op) && isBuiltArrayRead(op, value))
             {
@@ -3836,9 +3844,15 @@ class OwnershipInferencePass
         return retain;
     }
 
-    // A string constant cast to `string` is the global itself, which a release skips.
+    // A string constant cast to `string` is the global itself, which a release skips; so is a read
+    // of an immortal global (spec 25).
     static bool isImmortalLiteral(mlir::Value value)
     {
+        if (isImmortalGlobalRead(value))
+        {
+            return true;
+        }
+
         auto castOp = rootOf(value).getDefiningOp<mlir_ts::CastOp>();
         return castOp && mlir::isa<mlir_ts::StringType>(castOp.getType()) &&
                castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>();
