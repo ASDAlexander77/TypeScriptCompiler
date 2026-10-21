@@ -2885,3 +2885,58 @@ copies the local's handle, reuses freed memory, and reads `roughness` through al
 under own, rc, gc and none, AOT and JIT; `--verify-ownership` is quiet on it under own and rc. Teeth:
 with the global's move replaced by a release of the literal (freed while the handle points at it),
 the AOT run fails its assertion that the global's literal is alive: its block was freed and reused.
+
+## 27. Owning literals moved anywhere (G3 of the ray tracer plan), 2026-10-22
+
+An object literal was moved only into an owning local or the result (§18.1, §20.2): `len({ start:
+p, dir: d })`, `[{ pos: new V(1) }, { pos: new V(2) }]`, `const r: Ray = {...}` and `return { ls:
+[...], c: new V(3) }` through an interface type were `an object literal that holds a value it owns
+is moved only into a local or returned as it is`, 13 of the ray tracer's 44 errors. Such a literal is
+now a value like a fresh object.
+
+- **The box.** A literal given as an object or an interface is built in a local a `ts.Constant`
+  starts, read once, and the read copied into a block of its own: a `ts.New` of a `value_ref`
+  filled by that one store, seen as the object (`ts.Cast`) and the interface (`ts.NewInterface`),
+  which are views of it (§18.2). `recordRetainOf` now takes that copy as the record's owner, beside
+  the result slot and an owning local, when the read goes nowhere else. rc's `ts.Retain` of the
+  read is then where the fresh values stored into the fields move in, as for a record built to be
+  returned: each value's own check erases its release, which the retain dominates, and reports a use
+  of it after the literal (`const p` moved into two literals, `own_err_literal_moved_twice`: `is used
+  here after its value was moved`; one moved in a loop it was made outside of: `is moved inside a
+  loop`).
+- **Where the box goes** is the box's own check, as for any `ts.New`: a call argument is released
+  after a callee that borrows it, and moves into one that keeps it (`__own_params`: `keepRay` pushes
+  it, and the caller's release goes); an array literal element moves into the `ts.CreateArray`; a
+  `const r: Ray = {...}` is the box, released at the end of its scope; a literal returned is the
+  result. A literal in an interface-typed field of another literal (`{ inner: { start: ... } }` with
+  `inner: Ray`) is a fresh box stored into the outer record, which moves in like any fresh value.
+- **`own_facts::isOwningRecord`** names such a record - its read, its box, or a view of the box -
+  when every field that owns a block holds what the constant put there, nothing, or a fresh value: a
+  new object, a call's result that borrows nothing, a literal, a `const` local folded into the value
+  it holds. `holdsConstantsOrMoves` reads its fields through it. A field that holds no block (`null`
+  in a `V | null`) is now accepted too; it moves nothing.
+
+Not here, and still `an object literal that holds a value it owns ...`:
+- **A `let` read into a field** (`own_err_record_literal_let`). Its slot keeps its release at the end
+  of its scope, which nothing cancels: accepting it would free the block twice. A sound narrowing of
+  the plan's "a moved local": a `const` local is folded into its value and moves in.
+- **A borrowed field**: a parameter (`{ start: a }`) or a field read (`{ start: this.pos }`, also
+  `borrows a field and cannot be stored`). The box's release would free the borrowed block. That is
+  G2's borrowing record, whose release skips borrowed fields; the ray tracer's `{ start: pos, dir:
+  rd }` is one.
+- **A literal nested by value** (`const o = { inner: { item: new C() } }` with no interface type),
+  §20.6's catch-all: the inner record is copied into the outer one's field, not boxed.
+
+A literal stored into a field of a nullable interface type (`k.r = {...}` with `r: Ray | null`) is
+`takes a second reference`: in the IR the pass sees, the box is retained once for the interface and
+again for the union, and released nowhere in the function (the program compiles and runs under rc).
+Into an `r: Ray` field it compiles.
+
+`own_literal_moves` runs the shapes (two moved `const`s; a fresh call result beside a moved one; an
+array of literals; a `const r: Ray`; a returned interface record holding an array; 1000 literals
+given to a callee that keeps them) under own, rc, gc and none, AOT and JIT, and on Linux;
+`own_record_literal_given` (was `own_err_record_literal_given`) returns `{ v: new Vec(n) }` as a
+`Holder`. Own emits no counting. Teeth: with the moved-in values' releases kept, both AOT and JIT
+runs of both fail with `0xC0000374` (heap corruption: the box's release frees the field, then the
+value's own release frees it again). A loop of 2 million iterations of every shape (about 10
+blocks each) peaks at 4.8 MB under own, as under rc (gc 6.7 MB): the box's release frees its fields.
