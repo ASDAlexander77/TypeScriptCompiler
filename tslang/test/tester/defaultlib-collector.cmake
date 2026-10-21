@@ -6,7 +6,8 @@
 # a user shared library (docs/single-gc-collector-design.md). This drives tslang with the real
 # default library instead:
 #
-#   MODE=jit     the JIT, the program alone and importing a shared library
+#   MODE=jit     the JIT, the program alone and importing a shared library; on Linux also without
+#                the runtime passed in --shared-libs
 #   MODE=compile an exe alone, and an exe importing a shared library that links the default-library DLL
 #
 # The default library is a separate build (TypeScriptCompilerDefaultLib). With none found the test
@@ -131,6 +132,13 @@ if(MODE STREQUAL "jit")
         "${TSLANG}" --emit=jit ${common} "--shared-libs=${runtime}" "${alone}")
     run_program("JIT importing a shared library, default library" "${WORK_DIR}"
         "${TSLANG}" --emit=jit ${common} "--shared-libs=${runtime}" "${program}")
+    # The runtime found by tslang itself (--tslang-lib-path), as a user runs it. On Linux the
+    # default library takes GC_* from the process, so tslang has to load the runtime first; one
+    # passed with --shared-libs is ahead of it anyway, which is why the runs above never failed.
+    if(NOT WIN32)
+        run_program("JIT, default library, runtime not passed" "${WORK_DIR}/alone"
+            "${TSLANG}" --emit=jit ${common} "${alone}")
+    endif()
 elseif(MODE STREQUAL "compile")
     run("--emit=exe alone, default library" "${WORK_DIR}/alone"
         "${TSLANG}" --emit=exe ${common} "${alone}" -o "alone${exe_suffix}")

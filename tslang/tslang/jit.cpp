@@ -593,13 +593,14 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
     // engine. Otherwise we'll pass library directly to the execution engine.
+    std::string defaultLibFile;
     if (!compileOptions.noDefaultLib && !nativeImage)
     {
         // per-build subfolder (debug/release) must match the JIT compilation mode.
         // Keyed on --di (generate debug info): with debug info use the debug lib.
         // ...and per memory model, for the same reason the linker path is: the default lib
         // allocates the way the model it was built for allocates. See getDefaultLibSubDir.
-        auto defaultLibFile = getDefaultLibBinary(/*shared=*/true, compileOptions,
+        defaultLibFile = getDefaultLibBinary(/*shared=*/true, compileOptions,
                                                   llvm::Triple(llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple()))); // JIT is host-only
 
         // Named here rather than left to the loader, for the reason exe.cpp checks the link
@@ -629,9 +630,7 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
             return -1;
         }
 #endif
-
-        clSharedLibs.push_back(defaultLibFile);
-    }      
+    }
 
     // add default libs in case they are not part of options
 #ifdef WIN32
@@ -683,6 +682,15 @@ static int prepareJitProcess(CompileOptions &compileOptions, bool nativeImage)
         {
             clSharedLibs.push_back(absPath3);
         }
+    }
+
+    // After the runtime: on Linux the default library leaves GC_* undefined and takes them from
+    // the process (a collector of its own would be a second one), so they have to be loaded
+    // before it is, or dlopen fails on GC_malloc. A runtime passed with --shared-libs is
+    // already ahead of it.
+    if (!defaultLibFile.empty())
+    {
+        clSharedLibs.push_back(defaultLibFile);
     }
 
 #ifdef _WIN32
