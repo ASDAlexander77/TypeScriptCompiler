@@ -30,6 +30,23 @@ try { cargo build --release --quiet; if ($LASTEXITCODE -ne 0) { throw "cargo bui
 $bins += @{ n = "rust idiomatic"; p = "$PSScriptRoot\rust\target\release\idiomatic.exe" }
 $bins += @{ n = "rust Rc-boxed"; p = "$PSScriptRoot\rust\target\release\boxed.exe" }
 
+# C++: clang++ -O3 from PATH, and MSVC /O2 through the newest Visual Studio's vcvars64
+$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -property installationPath
+$vcvars = "$vs\VC\Auxiliary\Build\vcvars64.bat"
+foreach ($f in "idiomatic", "shared") {
+    $src = "$PSScriptRoot\cpp\$f.cpp"
+    if (Get-Command clang++ -ErrorAction SilentlyContinue) {
+        $exe = "$out\cpp_${f}_clang.exe"
+        clang++ -std=c++20 -O3 -o $exe $src
+        if ($LASTEXITCODE -eq 0) { $bins += @{ n = "c++ $f (clang)"; p = $exe } }
+    }
+    if (Test-Path $vcvars) {
+        $exe = "$out\cpp_${f}_msvc.exe"
+        cmd /c "`"$vcvars`" >nul && cl /nologo /std:c++20 /O2 /EHsc /MT /Fe:`"$exe`" /Fo:`"$out\\`" `"$src`"" | Out-Null
+        if ($LASTEXITCODE -eq 0) { $bins += @{ n = "c++ $f (msvc)"; p = $exe } }
+    }
+}
+
 foreach ($b in $bins) {
     $text = (& $b.p) -join " "
     $ok = $text -match "38837369|low digits: 369"
