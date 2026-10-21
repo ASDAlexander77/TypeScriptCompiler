@@ -138,6 +138,32 @@ if(MODE STREQUAL "jit")
     if(NOT WIN32)
         run_program("JIT, default library, runtime not passed" "${WORK_DIR}/alone"
             "${TSLANG}" --emit=jit ${common} "${alone}")
+
+        # Laid out as the release package is, the runtime next to tslang, and run from another
+        # folder with no --tslang-lib-path: tslang finds it in its own folder. Without it there,
+        # a clear error rather than the loader's "undefined symbol: GC_malloc" mid-run. A hard
+        # link, so /proc/self/exe names the package folder (a symlink resolves to the build).
+        set(package "${WORK_DIR}/package")
+        file(REMOVE_RECURSE "${package}")
+        file(MAKE_DIRECTORY "${package}")
+        file(CREATE_LINK "${TSLANG}" "${package}/tslang" COPY_ON_ERROR)
+        set(no_lib_path ${common})
+        list(FILTER no_lib_path EXCLUDE REGEX "^--tslang-lib-path=")
+
+        execute_process(COMMAND "${package}/tslang" --emit=jit ${no_lib_path} "${alone}"
+            WORKING_DIRECTORY "${WORK_DIR}/alone"
+            OUTPUT_VARIABLE out
+            ERROR_VARIABLE err
+            RESULT_VARIABLE status)
+        if(status EQUAL 0 OR NOT err MATCHES "needs the GC runtime, libTypeScriptRuntime.so")
+            message(FATAL_ERROR "JIT with no runtime to find: exit ${status}\n${out}\n${err}")
+        endif()
+        message(STATUS "JIT with no runtime to find: refused")
+
+        # the build's runtime is a symlink to its versioned file
+        file(COPY "${runtime}" DESTINATION "${package}" FOLLOW_SYMLINK_CHAIN)
+        run_program("JIT, default library, runtime next to tslang" "${WORK_DIR}/alone"
+            "${package}/tslang" --emit=jit ${no_lib_path} "${alone}")
     endif()
 elseif(MODE STREQUAL "compile")
     run("--emit=exe alone, default library" "${WORK_DIR}/alone"
