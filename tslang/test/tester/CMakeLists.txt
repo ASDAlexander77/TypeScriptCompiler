@@ -3590,6 +3590,19 @@ foreach(shared_verify_mm own rc)
                              PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
     endforeach()
 endforeach()
+# Shared<I> of an object literal (spec 26), global and local: the literal moves into the handle.
+# Counted like every Shared test, so not in own_test (its no-counting check).
+foreach(shared_literal_mm gc none rc own)
+    tslang_add_test(NAME test-jit-${shared_literal_mm}-own_shared_literal COMMAND test-runner -jit -mm=${shared_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+    tslang_add_test(NAME test-compile-${shared_literal_mm}-own_shared_literal COMMAND test-runner -mm=${shared_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+endforeach()
+foreach(shared_literal_verify_mm own rc)
+    add_test(NAME test-${shared_literal_verify_mm}-verify-ownership-own_shared_literal
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_literal_verify_mm} --verify-ownership
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+    set_tests_properties(test-${shared_literal_verify_mm}-verify-ownership-own_shared_literal
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endforeach()
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
@@ -3743,7 +3756,8 @@ set(own_error_cases
     "own_err_shared_place_arg|borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured"
-    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured")
+    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured"
+    "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

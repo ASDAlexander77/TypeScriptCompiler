@@ -57,8 +57,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // reported here, by the global's name, rather than left to the lowering's "left a retain
     // behind".
     // Every use of `value` ends in the global's `ts.GlobalResult`: given to it, or an element of a
-    // fresh array literal that is (`const nested = [[1, 2], [3]]`). Its retains are judged on their
-    // own.
+    // fresh array literal that is (`const nested = [[1, 2], [3]]`), or the payload of a
+    // `new Shared(x)` (`let g = new Shared<S>({...})`). Its retains are judged on their own.
     static bool movesIntoResult(mlir::Value value)
     {
         return llvm::all_of(value.getUses(), [](mlir::OpOperand &use) {
@@ -66,6 +66,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             if (mlir::isa<mlir_ts::RetainOp, mlir_ts::GlobalResultOp>(user))
             {
                 return true;
+            }
+
+            // given to `new Shared(x)`: it moves into the handle's block, which owns it from then on
+            // whatever becomes of the handle - rc counts the handle (spec 23.2, 26)
+            if (auto sharedNewOp = mlir::dyn_cast<mlir_ts::SharedNewOp>(user))
+            {
+                return sharedNewOp.getValue() == use.get();
             }
 
             if ((isView(user) && use.getOperandNumber() == 0) || mlir::isa<mlir_ts::CreateArrayOp>(user))

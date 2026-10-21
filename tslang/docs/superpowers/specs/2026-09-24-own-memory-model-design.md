@@ -2854,3 +2854,34 @@ stored, returned or captured`). Teeth: with the header store skipped, the AOT an
 fail with `0xC0000374` (heap corruption: the first release frees `K.w`, and later reads and
 releases use the freed block). With the loop at 30 million (20 million fresh `V`s freed), own
 peaks at 4.3 MB, as rc does.
+
+## 26. `Shared<I>` of an object literal (G4 of the ray tracer plan), 2026-10-21
+
+The ray tracer's surfaces are module-level `new Shared<Surface>({ ...function fields... })`. The
+literal is a boxed object (`ts.New` of its record) seen as the interface through `ts.NewInterface`,
+which §18.2 makes a view of the box. MLIRGen gives the payload to `ts.SharedNew` with rc's retain
+right before it (`mlirGenRetainCaptured`): a `new C()` arrives carrying its reference and has no
+such retain, but the interface view is retained.
+
+- **In a function** the inference already took that retain as the move into the handle (§23.2):
+  `let l = new Shared<S>({...})` compiled before this section, and needed no change.
+- **In a global's initializer** `moveIntoGlobals` judged the retain and found its value going into
+  `ts.SharedNew` rather than the global's `ts.GlobalResult`: `the initializer of global 'g' takes a
+  second reference`. `movesIntoResult` now takes `new Shared(x)`'s payload operand as a move: the
+  handle's block owns `x` from then on, whatever becomes of the handle, which rc counts. The other
+  conditions stay: the value is fresh (the box, seen through its views), retained once, and given
+  back by nothing in the region. So `let b = new Shared<S>(a.value)`, a second owner of `a`'s
+  payload, keeps the error (`own_err_shared_literal_borrowed`).
+- **Not here: calling a function field through the handle.** `g.value.f(3)` and `l.value.f(3)` are
+  still `'this value' borrows a field but is used here after it may be released or overwritten`. A
+  borrow read through a handle ends at any call that may drop (§23.3), and a call through an
+  interface slot has no facts: the signature pass does not name what it reaches. That is not the
+  literal's: `new Shared<S>(new K())` with a class `K`, and `p.s.f(3)` on a parameter `p` with no
+  handle at all, fail the same way, and a direct method call through a handle (`l.value.m(3)` on a
+  `Shared<C>`) compiles. It is G9 (facts through a module-private interface).
+
+`own_shared_literal` makes a global and a local `Shared<S>` of a literal with function fields,
+copies the local's handle, reuses freed memory, and reads `roughness` through all three handles,
+under own, rc, gc and none, AOT and JIT; `--verify-ownership` is quiet on it under own and rc. Teeth:
+with the global's move replaced by a release of the literal (freed while the handle points at it),
+the AOT run fails its assertion that the global's literal is alive: its block was freed and reused.
