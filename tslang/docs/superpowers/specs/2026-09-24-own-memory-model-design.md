@@ -1626,7 +1626,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it owns, given anywhere but an owning local or the result | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_let` (§27; was `own_err_record_literal_given`) |
+| an object literal holding a value it does not own outright: a `let` read into a field, a borrowed field (a parameter, `this.pos`), or a literal nested by value (since §27; before, any literal given anywhere but an owning local or the result) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_let` (§27; was `own_err_record_literal_given`) |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
@@ -2931,6 +2931,21 @@ A literal stored into a field of a nullable interface type (`k.r = {...}` with `
 `takes a second reference`: in the IR the pass sees, the box is retained once for the interface and
 again for the union, and released nowhere in the function (the program compiles and runs under rc).
 Into an `r: Ray` field it compiles.
+
+**A method that keeps its argument, reached through an interface.** A call through an interface
+(`s.take(x)` with `s: Sink`, a `ts.InterfaceSymbolRef` and an indirect call) is not resolved, so it
+gets none of the method's facts, and the caller released what the method kept: a double free under
+own, older than this section (`s.take(new V(1))`), which a literal argument now reached too. The
+interface's vtable for a class (`KS.Sink..vtbl`) holds the class's `..instanceOf`, so the signature
+pass took it for a class vtable and its entries for calls it resolves. Now `collectInterfaceReached`
+tells it apart by its name (`<class>.<interface>..vtbl`, where the class's own `..instanceOf` is
+`<class>..instanceOf`), and a method it holds that keeps a parameter (or says `@keeps`) loses its
+facts: its body is `'<param>' is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take'
+give it up`, noted `it is reached through an interface, whose calls are not given its facts`
+(`own_err_interface_keeps_literal`, `own_err_interface_keeps_param`). A direct call of such a method
+(`ks.take(x)` in a program that also casts `ks` to `Sink`) is refused too. Only keeping is refused;
+a method's result that borrows is left as it was. G9 (facts through a module-private interface)
+relaxes this for closed interfaces by giving the interface call the meet of these facts.
 
 `own_literal_moves` runs the shapes (two moved `const`s; a fresh call result beside a moved one; an
 array of literals; a `const r: Ray`; a returned interface record holding an array; 1000 literals

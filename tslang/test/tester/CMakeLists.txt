@@ -3741,6 +3741,8 @@ set(own_error_cases
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_literal_moved_twice|is used here after its value was moved"
     "own_err_record_literal_let|an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_interface_keeps_literal|is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take' give it up"
+    "own_err_interface_keeps_param|is a parameter, kept here, but -mm=own cannot make the callers of 'KV.take' give it up"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"

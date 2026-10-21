@@ -381,6 +381,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         findImmortalGlobals(module);
         moveIntoGlobals(module);
         collectClassVTables(module);
+        collectInterfaceReached(module);
         fieldFunctions.collect(module);
 
         module.walk([&](mlir::Operation *op) {
@@ -628,6 +629,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Functions whose callers are not all known - a caller outside the module, or a reference to
     // the symbol that is not a call this pass resolves - and why, for the error in their body.
     llvm::DenseMap<mlir::Operation *, const char *> open;
+
+    // Methods an interface's vtable for a class (`<class>.<interface>..vtbl`) holds. A call through
+    // the interface (`ts.InterfaceSymbolRef`, then an indirect call) is not resolved, so it is given
+    // none of their facts: a caller that hands such a method an argument it keeps still releases it
+    // (a double free). So a method reached this way that keeps a parameter loses its facts, and the
+    // body's error says why (`is a parameter, kept here, but -mm=own cannot make the callers of ...
+    // give it up`). Task 6 of the ray tracer plan (G9, facts through a module-private interface)
+    // relaxes this for closed interfaces by giving the interface call the meet of these facts.
+    llvm::DenseSet<mlir::Operation *> interfaceReached;
+    static constexpr const char *INTERFACE_REACHED_WHY =
+        "it is reached through an interface, whose calls are not given its facts";
 
     // The parameter a function's result borrows and the parameters it keeps (spec 2.4); absent is
     // rc's convention.
@@ -1351,6 +1363,56 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
     }
 
+    // The methods every interface vtable for a class holds (interfaceReached). Such a vtable holds its
+    // class's `..instanceOf` too, so classVTableEntries takes it for a class vtable; what tells it
+    // apart is its name, `<class>.<interface>..vtbl`, where a class's own is `<class>..vtbl`.
+    void collectInterfaceReached(mlir::ModuleOp module)
+    {
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            auto name = globalOp.getSymName();
+            if (!name.ends_with("..vtbl"))
+            {
+                return;
+            }
+
+            auto owner = name.drop_back(llvm::StringRef("..vtbl").size());
+            llvm::SmallVector<mlir::StringAttr> methods;
+            auto ofClass = false;
+            auto ownClass = false;
+            globalOp.getInitializerRegion().walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
+                auto symbol = symbolRefOp.getIdentifierAttr().getAttr();
+                if (symbol.getValue().ends_with("..instanceOf"))
+                {
+                    ofClass = true;
+                    ownClass = ownClass || symbol.getValue().drop_back(llvm::StringRef("..instanceOf").size()) == owner;
+                    return;
+                }
+
+                methods.push_back(symbol);
+            });
+
+            if (!ofClass || ownClass)
+            {
+                return;
+            }
+
+            for (auto method : methods)
+            {
+                if (auto funcOp = functions.lookup(method.getValue()))
+                {
+                    interfaceReached.insert(funcOp);
+                }
+            }
+        });
+    }
+
+    // Does a method reached through an interface keep a parameter (interfaceReached)? Then its
+    // callers through the interface cannot be told, and it has no facts at all.
+    bool keepsThroughInterface(mlir::Operation *funcOp, const llvm::SmallVector<int32_t> &owned)
+    {
+        return !owned.empty() && interfaceReached.contains(funcOp);
+    }
+
     mlir_ts::TupleType storageTupleOf(mlir::Type type)
     {
         return own_facts::storageTupleOf(&getContext(), type);
@@ -1997,18 +2059,24 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         factsEffective.clear();
         for (auto &[funcOp, facts] : factsLocal)
         {
-            if (!facts.empty() && !open.contains(funcOp))
+            if (!facts.empty() && !open.contains(funcOp) && !keepsThroughInterface(funcOp, facts.owned))
             {
                 factsEffective[funcOp] = facts;
             }
         }
 
-        // what a signature says stands, open or not; checkDeclared holds the body to it
+        // what a signature says stands, open or not; checkDeclared holds the body to it. But not a
+        // `@keeps` through an interface: the interface's callers are not told (interfaceReached).
         for (auto &entry : functions)
         {
             if (declaresCallerFacts(entry.second))
             {
                 auto keeps = declared(entry.second, OWN_DECLARED_KEEPS_ATTR_NAME);
+                if (!keeps.empty() && interfaceReached.contains(entry.second))
+                {
+                    continue;
+                }
+
                 factsEffective[entry.second] =
                     Facts{declaredLends(entry.second), llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
             }
@@ -2091,6 +2159,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             if (effective.empty() && !local.empty())
             {
                 auto *why = open.lookup(funcOp);
+                if (!why && keepsThroughInterface(funcOp, local.owned))
+                {
+                    why = INTERFACE_REACHED_WHY;
+                }
+
                 funcOp->setAttr(OWN_FACTS_LOST_ATTR_NAME,
                                 mlir::StringAttr::get(&getContext(), why ? why : "an override in its class family disagrees"));
             }
