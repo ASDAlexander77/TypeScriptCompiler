@@ -2932,20 +2932,27 @@ A literal stored into a field of a nullable interface type (`k.r = {...}` with `
 again for the union, and released nowhere in the function (the program compiles and runs under rc).
 Into an `r: Ray` field it compiles.
 
-**A method that keeps its argument, reached through an interface.** A call through an interface
-(`s.take(x)` with `s: Sink`, a `ts.InterfaceSymbolRef` and an indirect call) is not resolved, so it
-gets none of the method's facts, and the caller released what the method kept: a double free under
-own, older than this section (`s.take(new V(1))`), which a literal argument now reached too. The
-interface's vtable for a class (`KS.Sink..vtbl`) holds the class's `..instanceOf`, so the signature
-pass took it for a class vtable and its entries for calls it resolves. Now `collectInterfaceReached`
-tells it apart by its name (`<class>.<interface>..vtbl`, where the class's own `..instanceOf` is
-`<class>..instanceOf`), and a method it holds that keeps a parameter (or says `@keeps`) loses its
-facts: its body is `'<param>' is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take'
-give it up`, noted `it is reached through an interface, whose calls are not given its facts`
-(`own_err_interface_keeps_literal`, `own_err_interface_keeps_param`). A direct call of such a method
-(`ks.take(x)` in a program that also casts `ks` to `Sink`) is refused too. Only keeping is refused;
-a method's result that borrows is left as it was. G9 (facts through a module-private interface)
-relaxes this for closed interfaces by giving the interface call the meet of these facts.
+**A method that keeps its argument or returns a borrow, reached through an interface.** A call
+through an interface (`s.take(x)` with `s: Sink`, a `ts.InterfaceSymbolRef` and an indirect call)
+is not resolved, so it gets none of the method's facts. The caller released what the method kept,
+and released a result that borrows (an argument, `this.v`, `this.items[0]`) as its own: a double
+free under own either way, older than this section (`s.take(new V(1))`, `g.get(a)`), which a
+literal argument now reached too. The interface's vtable for a class (`KS.Sink..vtbl`) holds the
+class's `..instanceOf`, so the signature pass took it for a class vtable and its entries for calls
+it resolves. Now `collectInterfaceReached` tells it apart by its name (`<class>.<interface>..vtbl`,
+where the class's own `..instanceOf` is `<class>..instanceOf`), and a method it holds that keeps a
+parameter or returns a borrow, by its body or by `@keeps` / `@lends`, loses its facts. Its body is
+then the error the path that finds it gives - `'<param>' is a parameter, kept here, but -mm=own
+cannot make the callers of 'KS.take' give it up`, `... is a parameter, returned here, but -mm=own
+cannot tell the callers of 'G.get' that the result borrows it`, `borrows a field (an element) and
+cannot be stored, returned or captured` - noted `it is reached through an interface, whose calls are
+not given its facts`, which wins over an exported method's `'@lends' or '@keeps' would say it`
+(`own_err_interface_keeps_literal`, `own_err_interface_keeps_param`,
+`own_err_interface_borrow_param`, `own_err_interface_borrow_element`,
+`own_err_interface_borrow_field`). A direct call of such a method (`ks.take(x)`) is refused too
+whenever the class implements the interface: its interface vtable is made for the `implements`
+clause, cast or not. G9 (facts through a module-private interface) relaxes this for closed
+interfaces by giving the interface call the meet of these facts.
 
 `own_literal_moves` runs the shapes (two moved `const`s; a fresh call result beside a moved one; an
 array of literals; a `const r: Ray`; a returned interface record holding an array; 1000 literals

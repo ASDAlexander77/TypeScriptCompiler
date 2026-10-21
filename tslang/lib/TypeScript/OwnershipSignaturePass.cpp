@@ -632,11 +632,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // Methods an interface's vtable for a class (`<class>.<interface>..vtbl`) holds. A call through
     // the interface (`ts.InterfaceSymbolRef`, then an indirect call) is not resolved, so it is given
-    // none of their facts: a caller that hands such a method an argument it keeps still releases it
-    // (a double free). So a method reached this way that keeps a parameter loses its facts, and the
-    // body's error says why (`is a parameter, kept here, but -mm=own cannot make the callers of ...
-    // give it up`). Task 6 of the ray tracer plan (G9, facts through a module-private interface)
-    // relaxes this for closed interfaces by giving the interface call the meet of these facts.
+    // none of their facts: a caller that hands such a method an argument it keeps still releases it,
+    // and a caller of one whose result borrows an argument or `this` releases the borrow as its own
+    // (a double free either way). So a method reached this way that keeps a parameter or returns a
+    // borrow - by its body or by `@keeps` / `@lends` - loses its facts, and the body's error says
+    // why (`is a parameter, kept here, but -mm=own cannot make the callers of ... give it up`, `is a
+    // parameter, returned here, but -mm=own cannot tell the callers of ... that the result borrows
+    // it`). Task 6 of the ray tracer plan (G9, facts through a module-private interface) relaxes
+    // this for closed interfaces by giving the interface call the meet of these facts.
     llvm::DenseSet<mlir::Operation *> interfaceReached;
     static constexpr const char *INTERFACE_REACHED_WHY =
         "it is reached through an interface, whose calls are not given its facts";
@@ -1406,11 +1409,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         });
     }
 
-    // Does a method reached through an interface keep a parameter (interfaceReached)? Then its
-    // callers through the interface cannot be told, and it has no facts at all.
-    bool keepsThroughInterface(mlir::Operation *funcOp, const llvm::SmallVector<int32_t> &owned)
+    // Does a method reached through an interface keep a parameter or return a borrow
+    // (interfaceReached)? Then its callers through the interface cannot be told, and it has no facts
+    // at all.
+    bool factsThroughInterface(mlir::Operation *funcOp, const Facts &facts)
     {
-        return !owned.empty() && interfaceReached.contains(funcOp);
+        return !facts.empty() && interfaceReached.contains(funcOp);
     }
 
     mlir_ts::TupleType storageTupleOf(mlir::Type type)
@@ -2059,26 +2063,27 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         factsEffective.clear();
         for (auto &[funcOp, facts] : factsLocal)
         {
-            if (!facts.empty() && !open.contains(funcOp) && !keepsThroughInterface(funcOp, facts.owned))
+            if (!facts.empty() && !open.contains(funcOp) && !factsThroughInterface(funcOp, facts))
             {
                 factsEffective[funcOp] = facts;
             }
         }
 
         // what a signature says stands, open or not; checkDeclared holds the body to it. But not a
-        // `@keeps` through an interface: the interface's callers are not told (interfaceReached).
+        // `@keeps` or `@lends` through an interface: the interface's callers are not told
+        // (interfaceReached).
         for (auto &entry : functions)
         {
             if (declaresCallerFacts(entry.second))
             {
                 auto keeps = declared(entry.second, OWN_DECLARED_KEEPS_ATTR_NAME);
-                if (!keeps.empty() && interfaceReached.contains(entry.second))
+                Facts said{declaredLends(entry.second), llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
+                if (factsThroughInterface(entry.second, said))
                 {
                     continue;
                 }
 
-                factsEffective[entry.second] =
-                    Facts{declaredLends(entry.second), llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
+                factsEffective[entry.second] = said;
             }
         }
 
@@ -2158,11 +2163,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
             if (effective.empty() && !local.empty())
             {
-                auto *why = open.lookup(funcOp);
-                if (!why && keepsThroughInterface(funcOp, local.owned))
-                {
-                    why = INTERFACE_REACHED_WHY;
-                }
+                // through an interface first: a marker would not help there (interfaceReached)
+                auto *why = factsThroughInterface(funcOp, local) ? INTERFACE_REACHED_WHY : open.lookup(funcOp);
 
                 funcOp->setAttr(OWN_FACTS_LOST_ATTR_NAME,
                                 mlir::StringAttr::get(&getContext(), why ? why : "an override in its class family disagrees"));
