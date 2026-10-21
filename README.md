@@ -756,6 +756,25 @@ freed under it**, which is the same trade Swift makes with ARC.
 See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
 what to do about it.
 
+### Performance
+
+The ray tracer benchmark in [tslang/benchmarks/raytrace](tslang/benchmarks/raytrace/README.md)
+(`raytrace.ts` at 512x512, median of 7 runs, 2026-10-21) against two Rust ports of the same code:
+
+| build | time | peak memory | vs idiomatic Rust |
+| --- | --- | --- | --- |
+| `-mm=gc` | 1276 ms | 6 MB | 23x slower |
+| `-mm=rc` | 624 ms | 4 MB | 11x slower |
+| `-mm=none` | 690 ms | 845 MB | 12x slower |
+| `-mm=own` | does not compile yet | | |
+| Rust, values (`Copy` vectors and colors) | 56 ms | 4 MB | |
+| Rust, every object in an `Rc` | 504 ms | 4 MB | 9x slower |
+
+Almost all of the gap is allocation: every vector and color the program computes is a heap object,
+and Rust that allocates the same way is only 1.24x faster than `-mm=rc`. `-mm=none` is slower than
+`-mm=rc` because it never frees and keeps touching fresh pages. Stack promotion makes no measurable
+difference here yet: the hot allocations are returned from functions or captured by closures.
+
 ### `-mm=own`
 
 `-mm=own` works the way Rust's borrow checker does. Every heap block has exactly one owner: a
