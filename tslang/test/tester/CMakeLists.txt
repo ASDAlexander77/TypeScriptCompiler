@@ -3479,7 +3479,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_declared_no_drops own_return_paths own_string_concat_element
                  own_final_fresh_result own_final_field_lend own_null_narrowing_di
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
-                 own_immortal_global own_immortal_global_region)
+                 own_immortal_global own_immortal_global_region
+                 own_literal_moves own_record_literal_given)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3496,6 +3497,15 @@ foreach(immortal_mm rc gc none)
     foreach(immortal_test own_immortal_global own_immortal_global_region)
         tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
         tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
+    endforeach()
+endforeach()
+
+# An object literal that owns its fields moves anywhere a fresh object does under own (spec 27);
+# the same programs under every other model.
+foreach(owning_record_mm rc gc none)
+    foreach(owning_record_test own_literal_moves own_record_literal_given)
+        tslang_add_test(NAME test-jit-${owning_record_mm}-${owning_record_test} COMMAND test-runner -jit -mm=${owning_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${owning_record_test}.ts")
+        tslang_add_test(NAME test-compile-${owning_record_mm}-${owning_record_test} COMMAND test-runner -mm=${owning_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${owning_record_test}.ts")
     endforeach()
 endforeach()
 
@@ -3729,7 +3739,8 @@ set(own_error_cases
     "own_err_immortal_region_call|borrows the global 'c' and cannot be stored, returned or captured"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
-    "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_literal_moved_twice|is used here after its value was moved"
+    "own_err_record_literal_let|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"

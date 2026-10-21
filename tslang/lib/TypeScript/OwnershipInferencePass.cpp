@@ -3556,65 +3556,38 @@ class OwnershipInferencePass
     {
         auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
         auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-        if (!varOp || !isConstantRecordLocal(varOp))
+        if (!varOp || !isConstantRecordLocal(varOp) || !isOwningRecord(value))
         {
             return false;
         }
 
-        for (auto *user : varOp->getUsers())
-        {
+        // a fresh value moved in, its move decided by its own check against this retain
+        auto movesIn = llvm::any_of(varOp->getUsers(), [&](mlir::Operation *user) {
             auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
             if (!propertyRefOp)
             {
-                continue;
+                return false;
             }
 
             // a method's field is a `!ts.bound_ref`, which holds a function, not a block
-            auto field = propertyRefOp.getResult();
-            auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
-            for (auto *fieldUser : field.getUsers())
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(propertyRefOp.getType());
+            if (refType && !ownsHeap(propertyRefOp.getLoc(), refType.getElementType()))
             {
-                if (mlir::isa<mlir_ts::LoadOp>(fieldUser))
-                {
-                    continue;
-                }
-
-                if (refType && !ownsHeap(field.getLoc(), refType.getElementType()))
-                {
-                    continue;
-                }
-
-                // a fresh value moved in, its move decided by its own check against this retain
-                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
-                if (!storeOp || storeOp.getReference() != field || !isFresh(rootOf(storeOp.getValue())) ||
-                    recordRetainOf(varOp) == nullptr)
-                {
-                    return false;
-                }
+                return false;
             }
-        }
 
-        return true;
-    }
-
-    // A non-owning local a `ts.Constant` initializes, used only through its fields and its reads.
-    static bool isConstantRecordLocal(mlir_ts::VariableOp varOp)
-    {
-        if (isOwningVariable(varOp) || varOp.getCaptured().value_or(false) || !varOp.getInitializer() ||
-            !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
-        {
-            return false;
-        }
-
-        return llvm::all_of(varOp->getUsers(), [](mlir::Operation *user) {
-            return mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp>(user);
+            return llvm::any_of(propertyRefOp->getUsers(),
+                                [](mlir::Operation *fieldUser) { return mlir::isa<mlir_ts::StoreOp>(fieldUser); });
         });
+
+        return !movesIn || recordRetainOf(varOp) != nullptr;
     }
 
     // rc's one `ts.Retain` of a record local's one read, where the read is only returned: stored
-    // into a local that owns nothing and is read only by returns (the result slot). It is the
-    // reference rc gives each fresh value stored into the record, so it is where they move in.
-    // Null for any other record.
+    // into a local that owns nothing and is read only by returns (the result slot), or copied into
+    // the box it is given in as an object or an interface (spec 27). It is the reference rc gives
+    // each fresh value stored into the record, so it is where they move in. Null for any other
+    // record.
     static mlir::Operation *recordRetainOf(mlir_ts::VariableOp varOp)
     {
         if (!isConstantRecordLocal(varOp))
@@ -3642,6 +3615,8 @@ class OwnershipInferencePass
         }
 
         mlir::Operation *retain = nullptr;
+        auto boxed = false;
+        auto other = false;
         for (auto *user : read->getUsers())
         {
             if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -3655,6 +3630,23 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // copied into the block it is given in as an object or an interface (spec 27): the box
+            // owns what the record held, and its own check decides where the box goes
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            auto box = storeOp && storeOp.getValue() == read.getResult() ? recordBoxOf(storeOp.getReference())
+                                                                         : mlir_ts::NewOp();
+            if (box && box.getResult() == storeOp.getReference())
+            {
+                if (boxed)
+                {
+                    return nullptr;
+                }
+
+                boxed = true;
+                continue;
+            }
+
+            other = true;
             if (mlir::isa<mlir_ts::ReturnInternalOp>(user))
             {
                 continue;
@@ -3677,7 +3669,6 @@ class OwnershipInferencePass
             }
 
             // stored into the result slot, or into an owning local (`a = { item: new C() }`)
-            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
             auto slot = storeOp && storeOp.getValue() == read.getResult()
                             ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
                             : mlir_ts::VariableOp();
@@ -3685,6 +3676,12 @@ class OwnershipInferencePass
             {
                 return nullptr;
             }
+        }
+
+        // a boxed record goes nowhere else: the box is its one owner
+        if (boxed && other)
+        {
+            return nullptr;
         }
 
         return retain;

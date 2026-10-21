@@ -635,6 +635,127 @@ inline bool isConstantData(mlir::Value value)
     return false;
 }
 
+// A non-owning local a `ts.Constant` initializes, used only through its fields and its reads: the
+// local MLIRGen builds an object literal in.
+inline bool isConstantRecordLocal(mlir_ts::VariableOp varOp)
+{
+    if (isOwningVariable(varOp) || varOp.getCaptured().value_or(false) || !varOp.getInitializer() ||
+        !varOp.getInitializer().getDefiningOp<mlir_ts::ConstantOp>())
+    {
+        return false;
+    }
+
+    return llvm::all_of(varOp->getUsers(), [](mlir::Operation *user) {
+        return mlir::isa<mlir_ts::LoadOp, mlir_ts::PropertyRefOp>(user);
+    });
+}
+
+// The block an object literal is boxed into when it is given as an object or an interface: a
+// `ts.New` of a `value_ref`, filled by one store of the record's read (spec 27). Its views (the
+// object, the interface) are it. Null for anything else.
+inline mlir_ts::NewOp recordBoxOf(mlir::Value value)
+{
+    auto newOp = rootOf(value).getDefiningOp<mlir_ts::NewOp>();
+    if (!newOp || !mlir::isa<mlir_ts::ValueRefType>(newOp.getType()))
+    {
+        return {};
+    }
+
+    mlir_ts::StoreOp fill;
+    for (auto &use : newOp->getUses())
+    {
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(use.getOwner());
+        if (!storeOp || storeOp.getReference() != use.get())
+        {
+            continue;
+        }
+
+        if (fill)
+        {
+            return {};
+        }
+
+        fill = storeOp;
+    }
+
+    auto read = fill ? fill.getValue().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+    auto varOp = read ? read.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    return varOp && isConstantRecordLocal(varOp) ? newOp : mlir_ts::NewOp();
+}
+
+// The local an object literal is built in, from its read, or from the box it is copied into (or a
+// view of that box). Null for anything else.
+inline mlir_ts::VariableOp recordLocalOf(mlir::Value value)
+{
+    if (auto boxOp = recordBoxOf(value))
+    {
+        for (auto *user : boxOp->getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (storeOp && storeOp.getReference() == boxOp.getResult())
+            {
+                value = storeOp.getValue();
+            }
+        }
+    }
+
+    auto read = value.getDefiningOp<mlir_ts::LoadOp>();
+    auto varOp = read ? read.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    return varOp && isConstantRecordLocal(varOp) ? varOp : mlir_ts::VariableOp();
+}
+
+// An object literal that owns what it holds (spec 27): its read, the box it is copied into, or a view
+// of that box (the interface it is given as), where every field that owns a block holds what the
+// constant put there (null, a number, an immortal literal), nothing at all, or a fresh value stored
+// into it - a new object, a call's result, a literal, a `const` local folded into the value it holds.
+// Each such value moves into the record: its own check, against the record's retain, decides that
+// nothing uses it after (OwnershipInferencePass's recordRetainOf). A read out of a place (`this.pos`)
+// or a parameter is a borrow, and such a record is not this one. Neither is a `let` read into a field:
+// its slot keeps its own release, which nothing here cancels.
+inline bool isOwningRecord(mlir::Value value)
+{
+    auto varOp = recordLocalOf(value);
+    if (!varOp)
+    {
+        return false;
+    }
+
+    MLIRTypeHelper mth(value.getContext(), CompileOptions{});
+    for (auto *user : varOp->getUsers())
+    {
+        auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+        if (!propertyRefOp)
+        {
+            continue;
+        }
+
+        // a method's field is a `!ts.bound_ref`, which holds a function, not a block
+        auto field = propertyRefOp.getResult();
+        auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
+        if (refType && !mth.ownsHeapMemory(field.getLoc(), refType.getElementType()))
+        {
+            continue;
+        }
+
+        for (auto *fieldUser : field.getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp>(fieldUser))
+            {
+                continue;
+            }
+
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+            if (!storeOp || storeOp.getReference() != field ||
+                !(isFresh(rootOf(storeOp.getValue())) || holdsNoBlock(storeOp.getValue())))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 // A captured variable's cell, as a closure body reaches it: read out of a field of its capture box
 // (or of any other block - a RefType loaded from somewhere is a cell). Its variable lives in
 // whatever function declared it, so an assignment through it may destroy a value that function, and

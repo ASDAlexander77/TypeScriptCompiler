@@ -1626,7 +1626,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it owns, given anywhere but an owning local or the result | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_given` |
+| an object literal holding a value it owns, given anywhere but an owning local or the result | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_let` (§27; was `own_err_record_literal_given`) |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
