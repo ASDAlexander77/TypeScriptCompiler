@@ -160,7 +160,8 @@ if(MODE STREQUAL "jit")
         endif()
         message(STATUS "JIT with no runtime to find: refused")
 
-        file(COPY "${runtime}" DESTINATION "${package}")
+        # the build's runtime is a symlink to its versioned file
+        file(COPY "${runtime}" DESTINATION "${package}" FOLLOW_SYMLINK_CHAIN)
         run_program("JIT, default library, runtime next to tslang" "${WORK_DIR}/alone"
             "${package}/tslang" --emit=jit ${no_lib_path} "${alone}")
     endif()
