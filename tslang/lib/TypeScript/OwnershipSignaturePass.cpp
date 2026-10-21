@@ -123,8 +123,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // constructor, which a `ts.GlobalConstructor` runs (the region then yields only the default).
     //
     // The store - the region's, which the lowering makes - marks the block HEAP_BLOCK_IMMORTAL, so
-    // every block the global ever holds is one no release frees. The value test only keeps a block
-    // someone else owns from being made immortal, whose free would silently become a leak.
+    // every block the global ever holds is one no release frees. The value test makes sure the block
+    // is the global's to keep: an object made right there and given back by nobody. A call's result
+    // is not one, whatever its callee: these facts are found before the callees' (computeFacts), and
+    // a global's region is no function the inference checks, so a result that borrows its argument -
+    // a temporary the region frees, an element of another global's array - would be marked, and
+    // stored, as the global's own. Such a global stays mortal, and a read of it keeps today's errors.
     void findImmortalGlobals(mlir::ModuleOp module)
     {
         // the static constructors, which run once before the program
@@ -245,6 +249,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // given a fresh object, nothing, or another immortal global's value: in module order, until
         // no more are found
         llvm::StringSet<> immortal;
+        auto madeHere = [&](mlir::Value value) {
+            auto root = rootOf(value);
+            if (!root.getDefiningOp() || isCall(root.getDefiningOp()) || !isFresh(root))
+            {
+                return false;
+            }
+
+            // and not given back before the global takes it
+            auto released = false;
+            forEachUse(root, [&](mlir::Operation *user, mlir::Value) { released = released || mlir::isa<mlir_ts::ReleaseOp>(user); });
+            return !released;
+        };
         auto readsImmortal = [&](mlir::Value value) {
             auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
             auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
@@ -257,7 +273,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             for (auto &[globalOp, init] : candidates)
             {
                 auto value = init.first;
-                if (!immortal.contains(globalOp.getSymName()) && (isFresh(value) || holdsNoBlock(value) || readsImmortal(value)))
+                if (!immortal.contains(globalOp.getSymName()) && (madeHere(value) || holdsNoBlock(value) || readsImmortal(value)))
                 {
                     immortal.insert(globalOp.getSymName());
                     found = true;

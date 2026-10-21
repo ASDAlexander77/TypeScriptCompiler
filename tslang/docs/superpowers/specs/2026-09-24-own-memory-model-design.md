@@ -2812,10 +2812,16 @@ of `K.w` does nothing).
   `ts.VirtualSymbolRef` that `writtenGlobals` never sees. When any vtable reference is written
   through, no static is immortal. A module-level `export let`, an exported class's static, a global
   top-level script code assigns, and a global assigned anywhere else stay mortal.
-- **Which values.** The initializer gives it a fresh object, nothing, or another immortal global's
-  value (found to a fixpoint). A borrowed initializer (`static first = K.list[0]`) stays mortal and
-  keeps today's error (`own_err_immortal_borrowed_init`): marking a block someone else owns immortal
-  would turn its owner's free into a silent leak.
+- **Which values.** The initializer gives it an object made right there (`ts.New`, an owning
+  literal; none it gives back with a `ts.Release`), nothing, or another immortal global's value
+  (found to a fixpoint). A call's result never qualifies, whatever its callee: the pass decides
+  before it knows which callees return a borrow, and a global's region is no function the
+  inference checks. So `static w = id(new V(1))`, `const c = id(new V(1))` and
+  `const c = firstOf(list)` stay mortal and keep today's errors (`own_err_immortal_region_call`,
+  `own_err_immortal_region_borrow`), as does a borrowed initializer (`static first = K.list[0]`,
+  `own_err_immortal_borrowed_init`). Marking a block someone else owns immortal would turn its
+  owner's free into a silent leak; marking a temporary the region frees would write the header
+  into a freed block, and the global would hold it.
 - **Only the global's own block.** `K.n.c = x` still destroys the old `c`, and a borrow of `K.n.c`
   stays bounded (`own_err_immortal_field_overwritten`).
 - **Inference.** `own_facts::isImmortalGlobalRead` is a `ts.Load` of a `ts.AddressOf` the pass
@@ -2828,7 +2834,13 @@ of `K.w` does nothing).
   initializer, with no store), and the store the `__cctor` makes is marked from the global's
   attribute. A static's region, which yields only the default, is left alone: a `__cctor` of it
   would run after the static constructor and put the default back. So every block the global ever
-  holds is one no release frees, whatever reads of it are taken to own.
+  holds is one no release frees, whatever reads of it are taken to own; the value test makes it a
+  block that was the global's to keep.
+
+Not fixed here, and older than this section: a mortal global whose region stores a call's result
+that borrows a temporary the region frees (`export const c = id(new V(1))`, or `const c = ...`
+read only in place) holds a freed block, and a read of it in place is accepted. The region is no
+function, and the call's facts are not pinned there.
 
 `own_immortal_global` runs the static shapes (from another global, returned, stored into a field,
 merged with a fresh value, in a loop of 100000) and `own_immortal_global_region` the module-level

@@ -20,7 +20,7 @@ function g(n: number) { return n > 1 ? K.w : new V(n); }   // immortal or fresh
 function main() {
     const h = new H();
     print(K.f().x, K.d.x, h.v.x, g(2).x, g(0).x);   // 1 1 1 1 0
-    let s = 0;
+    let s: number = 0;
     for (let i = 0; i < 100000; i++) { s += g(i % 3).x; }   // fresh ones are freed
     print(s);                                              // 66666
     assert(s == 66666);

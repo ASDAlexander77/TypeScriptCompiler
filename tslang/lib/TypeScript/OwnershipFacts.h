@@ -52,7 +52,8 @@ namespace mlir_ts = mlir::typescript;
 // back, and it may not be kept anywhere that outlives them.
 #define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
 // An immortal global (spec 25): a class-typed global of this module, not exported, whose only
-// write is its initializer, which gives it a fresh object or another immortal global's. Like a
+// write is its initializer, which gives it an object made there (not a call's result) or another
+// immortal global's. Like a
 // string literal, its block is marked HEAP_BLOCK_IMMORTAL, so every release skips it, and a read of
 // it owns nothing and may go anywhere. Pinned by OwnershipSignaturePass on the `ts.Global`, on
 // every `ts.AddressOf` of it (isImmortalGlobalRead), and on the `ts.Store` that initializes it,

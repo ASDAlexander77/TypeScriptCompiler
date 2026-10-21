@@ -3712,6 +3712,8 @@ set(own_error_cases
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_immortal_borrowed_init|borrows 'K.list.*' and cannot be stored, returned or captured"
     "own_err_immortal_field_overwritten|borrows .* but is used here after .* released or overwritten"
+    "own_err_immortal_region_borrow|borrows the global 'c' and cannot be stored, returned or captured"
+    "own_err_immortal_region_call|borrows the global 'c' and cannot be stored, returned or captured"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
