@@ -3392,8 +3392,10 @@ a block freed too early is reused before it is read.
   or import marker (another TypeScript module's declarations carry `export`), not variadic, whose
   parameters and result are numbers, booleans, characters, integers or enums of them, destroys
   nothing: it is given no block of this module. `sqrt`, `floor`, `pow` and `fabs` in the ray tracer.
-  The risk, as for `@nodrops`, is a C function calling back into the module through something it was
-  not given (an exported function reached by name). `own_declared_scalar_no_drops` holds a field's
+  The risk, as for `@nodrops`, is a C function calling back into the module: one registered through
+  another declaration (`signal(15, onSig as Opaque)`, then `raise(15)`; a window procedure and
+  `SendMessage`), or an exported function reached by name. The first is closed below (re-review);
+  the second remains. `own_declared_scalar_no_drops` holds a field's
   borrow across `sqrt`, across a function that calls `sqrt` and `floor`, and across a call through a
   closed interface whose member does; `own_err_declared_drops` (`strlen(s: string)`) is unchanged.
 - **A `public` method of a class no other module can name** (controller ruling) is not callable from
@@ -3448,3 +3450,41 @@ Not here, also:
 - A class value reinterpreted through `any` (`new C() as any as C2`, `C2`'s field an `Op2` where
   `C`'s is an `Op`) is not followed; the program stops at run time under every model, before any
   call through the field.
+
+**After re-review** (2026-10-22):
+
+- **An interface made out of another one hands over its members' arguments.** A `HasF2`
+  (`f: (o: Op2, h: H) => number`) seen as a `HasF` (`f: (o: Op, h: H) => number`) - by
+  assignment, through `any`, as a parameter - lets a caller hand an `Op` to a function that calls
+  through `Op2`; so does a `Runner2` (`go(o: Op2, ...)`) seen as a `Runner`. Now a cast that makes an
+  interface value out of another interface or out of `any` opens, with the two interfaces, every
+  interface their members mention - the types of their vtables' slots and of what is read out of
+  their values, function signatures and class fields included - and theirs, recursively. Null seen
+  as an interface makes nothing (it has no vtable), so `return null` from a method typed `Intersection`
+  opens nothing. Negatives `own_err_interface_member_types`, `own_err_interface_member_methods`.
+- **An override of a method of a class another module can name, or defines,** is called from that
+  module through the base's vtable without its facts, whatever the override's own class is: a
+  `public keep` of an unexported `Der extends Base`, with `Base` exported and handed out by
+  `export function mk(): Base`, kept its argument while an importer released it; and an importer's
+  `Der extends Base` of an imported `Base` (abstract or with a body) was called by the library the
+  same way. Now a method of a class whose base chain (the first field of a derived class's storage)
+  holds a nameable class, or one with no own vtable here, is callable from outside, private or not -
+  the private form was accepted before this section too. Negatives
+  `own_err_override_nameable_base` (library side), `own_err_override_imported_base` and
+  `own_err_override_imported_class` (importer side, the latter a private override of a concrete
+  base); the library-and-importer pairs run under rc, gc and none (`test-runner -shared`).
+- **C callbacks.** The C-scalar rule is off in a module that lets a function of its own escape to C:
+  its value (through function casts and bindings) cast to something that is no function (`any`, an
+  opaque pointer, an integer), or given to a declared function. Negative
+  `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
+  caller of `raise(15)` borrows).
+
+Teeth: with the member closure skipped, `own_err_interface_member_types` and `_methods` compile and
+print `5 77777` (gc `5 5`). With the C rule kept on despite an escaping function,
+`own_err_declared_callback` prints `77777 9` (gc `5 9`). With a base chain never making a method
+callable from outside, every override negative compiles, and the pairs under `-mm=own` fail their
+assert (`kept value still there`): the library side AOT, the importer side AOT and under the JIT
+(gc passes all of them).
+
+The ray tracer built as a program stays at 15 errors (the same ones); as an object file, 19.
+Corpus: 528 before and after, the same files.

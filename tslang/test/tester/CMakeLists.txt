@@ -3696,6 +3696,16 @@ if (WIN32)
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-shared-no-drops.cmake")
 endif()
 
+# An override of a method of a class another module can name, or defines, is called from that module
+# through the base's vtable (own spec 31): under own each library or importer below is an error
+# (own_error_cases); the pairs are ordinary TypeScript under every other model.
+foreach(override_mm rc none gc)
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-nameable-base COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_nameable_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_nameable_base.ts")
+    tslang_add_test(NAME test-jit-${override_mm}-shared-override-imported-base COMMAND test-runner -jit -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_base.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-imported-base COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_base.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-imported-class COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+endforeach()
+
 # The ownership verifier runs under own too, on the IR before inference erases its birth takes.
 add_test(NAME test-own-verify-ownership
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own --verify-ownership
@@ -3819,6 +3829,12 @@ set(own_error_cases
     "own_err_interface_fn_any_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_public_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
     "own_err_interface_public_reachable|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
+    "own_err_interface_member_types|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_member_methods|borrows a field but is used here after it may be released or overwritten"
+    "own_err_declared_callback|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_override_nameable_base|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
+    "own_err_override_imported_base|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
+    "own_err_override_imported_class|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
