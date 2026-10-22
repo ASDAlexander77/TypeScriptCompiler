@@ -297,10 +297,10 @@ class OwnedReturnConsumptionPass
     // A call's argument read out of a global (`run(G)`, `run(G.c)`, `G.m()`) is borrowed like any
     // other argument, and the callee may give the global a new value while it still uses the
     // parameter (`function run(h: C) { G = mk(); print(h.x); }`): the global's release freed the
-    // block the parameter read. Under rc the caller holds a count across the call - retained right
-    // before it, released right after it - and, when a try around the call takes what it throws,
-    // released where that try's handler starts (unwindRegionOf). This runs before the affine
-    // lowering, so a call in a try body is still a plain call here (a `ts.Invoke` later).
+    // block the parameter read. Under rc the caller holds a count across the call - retained where
+    // the argument is read, released right after the call - and, when a try around the call takes
+    // what it throws, released where that try's handler starts (unwindRegionOf). This runs before
+    // the affine lowering, so a call in a try body is still a plain call here (a `ts.Invoke` later).
     //
     // A Shared<T> handle (spec 23.1) is counted under rc and own alike, and a program reads its
     // count (`Shared.count`) as the number of handles - which a parameter, a borrow, is not one of.
@@ -495,12 +495,22 @@ class OwnedReturnConsumptionPass
         for (auto [op, argument] : held)
         {
             auto location = op->getLoc();
+
+            // From the read on, not from the call: an argument after it may give the global a new
+            // value first (`f(G, (G = mk(), x))`), and its release freed the block this one read
+            // before a retain at the call could keep it.
             mlir::OpBuilder builder(op);
+            auto *readOp = argument.getDefiningOp();
+            if (readOp && readOp->getBlock() == op->getBlock())
+            {
+                builder.setInsertionPointAfter(readOp);
+            }
+
             builder.create<mlir_ts::RetainOp>(location, argument);
 
             // A call a try around it takes the exceptions of gives the hold back on that path too,
-            // through a slot that holds the value only while the call runs: null before and after
-            // it, so the handler's release does nothing when something else threw.
+            // through a slot that holds the value only while the hold lasts: null before the read
+            // and after the call, so the handler's release does nothing when something else threw.
             auto *unwindRegion = unwindRegionOf(op);
             mlir::Value slot;
             if (unwindRegion)
