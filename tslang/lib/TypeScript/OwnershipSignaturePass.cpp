@@ -5574,7 +5574,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 auto callees = resolve(op);
                 auto facts = callFacts(callees);
                 auto calleeName = callees.funcs.empty() ? llvm::StringRef("the callee") : callees.funcs.front().getSymName();
-                if (facts.borrows >= 0)
+                if (!facts.borrows.empty())
                 {
                     op->emitError("the initializer of global '")
                         << globalOp.getSymName() << "' holds the result of '" << calleeName
