@@ -5172,12 +5172,24 @@ class OwnershipInferencePass
     // path through it is a new value, not this one. Straight-line order within a block, then the
     // CFG from the block's successors; a path back into `from`'s own block reaches every op in it.
     //
-    // Ops nested in a region that is not the function body (an `async.execute` body, a lambda)
-    // are compared by their ancestors in the body. That answers "reachable" whenever the two
-    // share an ancestor, which can only turn a program into an error.
+    // Ops nested in a region that is not the function body are compared by their ancestors in the
+    // body. That answers "reachable" whenever the two share an ancestor, which can only turn a
+    // program into an error. (By this pass async bodies and lambdas are functions of their own;
+    // after the affine lowering no op of a body holds a region, so the case is kept for safety.)
     bool reachableAfter(mlir::Operation *from, mlir::Operation *to, mlir::Operation *kill)
     {
         return reachableAfter(from, to, kill ? llvm::ArrayRef<mlir::Operation *>(kill) : llvm::ArrayRef<mlir::Operation *>());
+    }
+
+    // Whether reachableAfter can order `from` and `to` at all: both inside the function body and not
+    // one op of it (nested in the same statement). A check whose safe answer is "not reachable" must
+    // refuse what it cannot order, where reachableAfter would answer "reachable".
+    bool orderedInBody(mlir::Operation *from, mlir::Operation *to)
+    {
+        auto &body = getFunction().getFunctionBody();
+        from = body.findAncestorOpInRegion(*from);
+        to = body.findAncestorOpInRegion(*to);
+        return from && to && from != to;
     }
 
     // The same, where a path through any of `kills` is a new value. A use that is itself a kill
@@ -5391,15 +5403,13 @@ class OwnershipInferencePass
             return false;
         }
 
-        // the slot given another value between the move's read and its taker - inside the call's own
-        // argument list, `f(n, (n = mk(7), 0))`: the assignment's release frees what the read holds
-        // before the callee takes it, so the assignment is a use of the slot after the move. The
-        // taker may be an assignment of the slot itself (`n = n`): it is the destination, not between.
-        llvm::SmallVector<mlir::Operation *> killsBetween(kills);
-        llvm::erase(killsBetween, taker);
-        if (!reachableAfter(load, taker, killsBetween))
+        // the slot given another value on some path between the move's read and its taker - inside
+        // the call's own argument list, `f(n, (n = mk(7), 0))`, on one arm of it, `f(n, c ? (n =
+        // mk(7), 0) : 0)`: the assignment's release frees what the read holds before the callee takes
+        // it, so the assignment is a use of the slot after the move. The taker may be an assignment
+        // of the slot itself (`n = n`): it is the destination, not between. A read and a taker
+        // reachableAfter cannot order (one statement kept as a region, or outside the body) refuse.
         {
-            mlir::Operation *between = taker;
             llvm::SmallVector<mlir::Operation *, 2> readAgain{load.getOperation()};
             if (varOp)
             {
@@ -5408,15 +5418,21 @@ class OwnershipInferencePass
 
             for (auto *assignment : assignments)
             {
-                if (reachableAfter(load, assignment, varOp) && reachableAfter(assignment, taker, readAgain))
+                if (assignment != taker && reachableAfter(load, assignment, varOp) &&
+                    reachableAfter(assignment, taker, readAgain))
                 {
-                    between = assignment;
-                    break;
+                    reportUseAfterMove(assignment, taker, name);
+                    return false;
                 }
             }
 
-            reportUseAfterMove(between, taker, name);
-            return false;
+            llvm::SmallVector<mlir::Operation *> killsBetween(kills);
+            llvm::erase(killsBetween, taker);
+            if (!orderedInBody(load, taker) || !reachableAfter(load, taker, killsBetween))
+            {
+                reportUseAfterMove(taker, taker, name);
+                return false;
+            }
         }
 
         // the call that keeps it, given the slot's value again through another operand: a read of

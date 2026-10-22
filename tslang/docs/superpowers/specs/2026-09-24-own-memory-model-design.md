@@ -3958,9 +3958,11 @@ kept) or in a field (wrong at BASE too) frees the old `n` at the assignment's re
 it to `f`. Now `checkSlotMove` rejects a move whose own read does not reach the taker without
 crossing an assignment of the slot (`!reachableAfter(load, taker, kills)`; the taker itself may be
 the slot's assignment, `n = n`, which is the destination, not an assignment between), reporting the
-assignment between them as `is used here after its value was moved` (the call is "value moved here"). With the
-move's read held to that, every other read that passes the filter holds the moved value, so the
-filter is exact. `f(n, (n = mk(i), 0), n)` (the old `n` kept, the new one borrowed) stays rejected,
+assignment between them as `is used here after its value was moved` (the call is "value moved here"). That
+test asks whether every path from the read to the call is assigned; it misses an assignment on one
+arm (the fourth re-review, below), and the read filter is not made exact by it: a read made after
+the assignment on the assigning arm holds a new value and still passes (an over-rejection, harmless).
+`f(n, (n = mk(i), 0), n)` (the old `n` kept, the new one borrowed) stays rejected,
 by this check. Negatives `own_err_kept_arg_assigned_in_call` (`f(n, (n = mk(7), 0))`, `p` kept in a
 `let`) and `own_err_kept_and_borrowed_arg_assigned_in_call` (`f(n, n, (n = mk(5), 0))`, `q`
 borrowed), each through a `@noinline` factory with churn and an assert; gc and none print 501500.
@@ -3968,11 +3970,33 @@ Tooth: with the check skipped, both, and the field-keep form, compile and exit `
 output. `const arr = [n]; n = mk(5); f(n, arr)`, distinct objects at two kept positions, `own_reduce`,
 the ray tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
 
+**After the fourth re-review** (2026-10-22). The check above was an all-paths test: with the
+assignment on one arm of a conditional in the argument list - `f(n, i % 2 == 0 ? (n = mk(7), 0) :
+0)`, the same through `&&` or `||`, or with an `await` on the other arm - the other arm is a path
+from the read to the call that crosses no assignment, so the move was accepted, and on the assigning
+arm the old `n` was freed before `f` kept it (exit 139; BASE rejected the `let` forms, and the
+field-keep form was wrong at BASE too). Now the test is existential: the move is rejected when some
+assignment of the slot other than the taker lies on a path from the move's read to the taker
+(`reachableAfter(load, a, varOp) && reachableAfter(a, taker, {load, varOp})`), reported at that
+assignment with the same text; the all-paths test stays as a fallback (reported at the taker), and a
+read and taker `reachableAfter` cannot order (one statement kept as a region, or outside the body;
+unreachable today, since the moved-in-loop check takes those first and no op of a body holds a
+region by this pass) now refuse instead of passing. Shapes that stay accepted, and why the predicate
+leaves them alone: an assignment before the read, with the read between it and the call (`n = mk(i);
+f(n, 0)` in a loop over a slot declared outside it, `f((n = mk(i), n), 0)`, `const arr = [n]; n =
+mk(5); f(n, arr)`); an assignment after the call, conditional or not (the way back to the taker
+crosses the read, or the declaration); `n = n`, `n = (n = mk(5), n)`, `n = acc(n, i)`. Negatives
+`own_err_kept_arg_assigned_on_arm` (`i >= 0 ? (n = mk(7), 0) : 0`) and `own_err_kept_arg_assigned_in_and`
+(`(i % 2 == 0 && (n = mk(7), true)) ? 0 : 0`), each through a `@noinline` factory with churn and an
+assert; gc and none print 501500. Tooth: with the check skipped, both, and the field-keep form with
+the conditional assignment, compile and exit `0xC0000005` with no output. `own_reduce`, the ray
+tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
+
 Not here:
 - A slot assigned inside the argument list of a call it was passed to (`f(n, (n = mk(7), 0))`,
-  with or without a second operand) crashes under rc as well (exit 139): rc releases the slot's old
-  value before the store, ahead of the callee that keeps it. That is rc's codegen, out of scope here;
-  own rejects the shapes.
+  with or without a second operand, unconditionally or on one arm) crashes under rc as well (exit
+  139): rc releases the slot's old value before the store, ahead of the callee that keeps it. That is
+  rc's codegen, out of scope here; own rejects these shapes since the third and fourth re-reviews.
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
   moved leaks it, as it leaks an owning local; so does a `throw` of any value computed from it, even
   a number (`throw acc.x`): the release before a leaving throw is skipped when the thrown value is
