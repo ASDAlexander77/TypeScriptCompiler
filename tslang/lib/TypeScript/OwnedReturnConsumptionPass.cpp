@@ -67,6 +67,8 @@ class OwnedReturnConsumptionPass
 
         retainYieldedRecords(mth, module);
 
+        holdGlobalArguments(mth, module);
+
         own_facts::FieldFunctions fieldFunctionsOfModule;
         const own_facts::FieldFunctions *fieldFunctions = nullptr;
         if (compileOptions.isRefCounted())
@@ -289,6 +291,81 @@ class OwnedReturnConsumptionPass
             mlir::OpBuilder builder(yieldOp);
             builder.create<mlir_ts::RetainOp>(yieldOp.getLoc(), record);
         });
+    }
+
+    // A call's argument read out of a global (`run(G)`, `run(G.c)`, `G.m()`) is borrowed like any
+    // other argument, and the callee may give the global a new value while it still uses the
+    // parameter (`function run(h: C) { G = mk(); print(h.x); }`): the global's release freed the
+    // block the parameter read. Under rc the caller holds a count across the call - retained right
+    // before it, released right after it. A call in a try body (`ts.Invoke`) ends its block, and is
+    // left as it was; so is a Shared<T> handle, whose count a program can read (`Shared.count`).
+    void holdGlobalArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (!compileOptions.isRefCounted())
+        {
+            return;
+        }
+
+        // a read out of a global, or out of a field or an element of one, through casts
+        auto readsGlobal = [](mlir::Value value) {
+            for (auto depth = 0; depth < 16 && value; depth++)
+            {
+                while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                }
+
+                auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+                auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+                if (mlir::isa_and_nonnull<mlir_ts::AddressOfOp>(place))
+                {
+                    return true;
+                }
+
+                value = mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place) ? place->getOperand(0)
+                                                                                                     : mlir::Value();
+            }
+
+            return false;
+        };
+
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> held;
+        module.walk([&](mlir::Operation *op) {
+            if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
+                !op->getParentOfType<mlir::FunctionOpInterface>())
+            {
+                return;
+            }
+
+            llvm::SmallPtrSet<mlir::Value, 4> seen;
+            for (auto argument : own_facts::callArgs(op))
+            {
+                // a method's object: `this` of the method bound to it
+                if (auto getThisOp = argument.getDefiningOp<mlir_ts::GetThisOp>())
+                {
+                    auto *boundOp = getThisOp->getOperand(0).getDefiningOp();
+                    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+                    {
+                        argument = boundOp->getOperand(0);
+                    }
+                }
+
+                if (mth.ownsHeapMemory(op->getLoc(), argument.getType()) &&
+                    !MLIRTypeHelper::isSharedHandleType(argument.getType()) && readsGlobal(argument) &&
+                    seen.insert(argument).second)
+                {
+                    held.push_back({op, argument});
+                }
+            }
+        });
+
+        for (auto [op, argument] : held)
+        {
+            mlir::OpBuilder builder(op);
+            builder.create<mlir_ts::RetainOp>(op->getLoc(), argument);
+            builder.setInsertionPointAfter(op);
+            builder.create<mlir_ts::ReleaseOp>(op->getLoc(), argument);
+        }
     }
 
     // A global is born holding the reference its initializer carries.
