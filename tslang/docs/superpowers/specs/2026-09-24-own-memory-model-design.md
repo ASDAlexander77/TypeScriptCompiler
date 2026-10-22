@@ -2962,3 +2962,78 @@ given to a callee that keeps them) under own, rc, gc and none, AOT and JIT, and 
 runs of both fail with `0xC0000374` (heap corruption: the box's release frees the field, then the
 value's own release frees it again). A loop of 2 million iterations of every shape (about 10
 blocks each) peaks at 4.8 MB under own, as under rc (gc 6.7 MB): the box's release frees its fields.
+
+## 28. A field read through an interface (G6 of the ray tracer plan), 2026-10-22
+
+`let d = r.dir` with `r: R` an interface was `takes a second reference; -mm=own cannot prove a move
+or a borrow here yet`, while the same read of a class field borrows (§2.3, phase 3). The field of an
+interface is a `ts.InterfaceSymbolRef` - the object's field at the offset the interface's vtable
+holds - and `isPlace` named only `ts.PropertyRef`, `ts.ElementRef` and `s.value`. So the read was no
+borrow at all: a `let` from it fell through to the second-reference error, and a `const` from it, or
+a read used in place, was not checked against anything. That was a use after free older than this
+section: `const c = h.c; h.c = new C(9); print(c.x)` with `h: HI` printed a freed block's value. The
+overwrite was invisible too: `hi.c = new C(9)` through an interface view of `h` did not end a borrow
+of the class field `h.c`, and the signature pass gave `function set(hi: HI) { hi.c = new C(9); }`
+`__own_no_drops`, so its callers kept their borrows of `hi.c` across the call.
+
+- **An interface field is a place** (`own_facts::isInterfaceField`: an `InterfaceSymbolRef` whose
+  result is a reference; a method is a bound function, not a place). Its read borrows, as a class
+  field's does: tenure-checked against the ends of what it was read through and against the drops
+  (`checkPlaceRead`), through any chain of field reads and interface views (`i.ray.dir`: the chain
+  `dir`, `ray`, parameter `i`). A call ends it only when the call's facts say it may drop - `V.plus`
+  does not - and any call does for a root the function does not own, as `own_err_param_read_call`
+  pins for a class field. `borrowedParam`, `reachesSharedValue` and the signature pass's
+  `reachesOutside` walk through it, so `function dirOf(r: R) { return r.dir; }` returns a borrow of
+  `r`, bounded by the caller's `r`, and an overwrite through an interface parameter is a drop. A
+  parameter stored through an interface field (`function keep(r: R, v: V) { r.dir = v; }`) is kept
+  (`__own_params`), as one stored into a class field is: the caller moves it in. Before, that was
+  `is a parameter, kept here, but -mm=own cannot make the callers of 'keep' give it up`.
+- **Which field it is** is not known where it is read: the interface's index is not the class's
+  position, and a class may declare the field narrower than the interface. So the chain records it
+  as `Chain::InterfaceField`, and `dropsChain` matches it with any field overwrite of any position
+  and type, and an overwrite through an interface with every field on a chain. Elements and `s.value`
+  keep their own matching.
+
+`own_field_chain_let` runs `let d = r.dir` and `let d = i.ray.dir` (a nested interface literal, as
+§27 accepts it) with `V.plus` between the reads, a class implementing the interface passed as it,
+and `dirOf`'s borrowed result, 100,000 times, then `keep` moving a `const` into a field through an
+interface and reading it 1000 times, under own, rc, gc and none, AOT and JIT, and on Linux;
+own emits no counting. Negatives: `own_err_iface_field_overwritten` (overwritten through the
+parameter), `own_err_iface_field_view_overwritten` (a class field's borrow, overwritten through an
+interface view), `own_err_iface_field_call` (a callee given the interface overwrites it: no
+`__own_no_drops`), `own_err_iface_field_result` (`dirOf`'s result read after the field is
+overwritten), all `borrows ... but is used here after it may be released or overwritten`. Teeth:
+with the borrowing `let`'s releases kept (only its retain erased), the AOT run of
+`own_field_chain_let` fails with `0xC0000374` (heap corruption: the `let`'s release frees `r.dir`),
+and so does the JIT run; with the interface clause of `dropsChain` skipped,
+`own_err_iface_field_view_overwritten` compiles and prints a freed block's value. With the call's
+`__own_result_borrows` dropped for a callee that reads through an interface field (the caller then
+owns `dirOf`'s result and releases `r.dir` while the record holds it), and with the call's
+`__own_params` dropped for such a callee (the caller still releases `nv` after `keep` stored it in
+`k.dir`), the AOT run fails with `0xC0000374` both times. A loop of 2 million iterations (about 6
+blocks each) peaks at 4.3 MB under own, as under rc.
+
+Only fields: `borrowedParam`, `reachesSharedValue` and `reachesOutside` walk through an
+`InterfaceSymbolRef` only when it is a field (`isInterfaceField`). A method read through an
+interface (`function getM(m: M) { return m.get; }`) is what it was before this section.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`): 519 of 693
+compile on Linux before this section and 519 after, the same files; none lost, none gained. On
+Windows 522 after (`00catch_value`, `00cppvtable_hidden_return` and `00throw_in_block_debug_info`
+compile there and not on Linux, before and after). One file that fails either way fails earlier,
+with a more precise error: `00array_assignment5` was `takes a second reference` and is now `borrows
+'Test.lineTokens.tokens' and cannot be stored, returned or captured`.
+
+Not here: the ray tracer's `shade` still fails at `let d = isect.ray.dir`, now as `borrows a field
+but is used here after it may be released or overwritten`, because `isect.thing.normal(pos)` is a
+call through an interface, which has no facts (§27) and so may drop anything the function does not
+own. Checking reads through an interface also reports the reads the ray tracer used in place across
+such calls (`scene.camera.pos` beside the `getPoint` closure, `scene.lights` given to `reduce` with
+a closure, the rest of `shade`): 24 errors before, 33 now, none of them a new kind.
+
+They are G9's (facts through a module-private interface), G5's (`reduce`) and G2's (borrowing
+records).
+
+Seen on the way, and rc's own, older than this section: under rc, `const c = h.c; h.c = new C(9);
+churn(); print(c.x)` with a class `H` prints 999 (gc prints 0): the `const` takes no reference, so
+the overwrite frees what it reads. A `let` is retained.
