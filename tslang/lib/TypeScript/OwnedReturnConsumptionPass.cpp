@@ -298,9 +298,9 @@ class OwnedReturnConsumptionPass
     // other argument, and the callee may give the global a new value while it still uses the
     // parameter (`function run(h: C) { G = mk(); print(h.x); }`): the global's release freed the
     // block the parameter read. Under rc the caller holds a count across the call - retained right
-    // before it, released right after it. This runs before the affine lowering, so a call in a try
-    // body is still a plain call here (it becomes a `ts.Invoke` later, with the release first in its
-    // normal successor); a throw out of the call skips the release, and the count leaks.
+    // before it, released right after it - and, when a try around the call takes what it throws,
+    // released where that try's handler starts (unwindRegionOf). This runs before the affine
+    // lowering, so a call in a try body is still a plain call here (a `ts.Invoke` later).
     //
     // A Shared<T> handle (spec 23.1) is counted under rc and own alike, and a program reads its
     // count (`Shared.count`) as the number of handles - which a parameter, a borrow, is not one of.
@@ -494,11 +494,108 @@ class OwnedReturnConsumptionPass
 
         for (auto [op, argument] : held)
         {
+            auto location = op->getLoc();
             mlir::OpBuilder builder(op);
-            builder.create<mlir_ts::RetainOp>(op->getLoc(), argument);
+            builder.create<mlir_ts::RetainOp>(location, argument);
+
+            // A call a try around it takes the exceptions of gives the hold back on that path too,
+            // through a slot that holds the value only while the call runs: null before and after
+            // it, so the handler's release does nothing when something else threw.
+            auto *unwindRegion = unwindRegionOf(op);
+            mlir::Value slot;
+            if (unwindRegion)
+            {
+                auto type = argument.getType();
+                auto &entryBlock = op->getParentOfType<mlir_ts::FuncOp>().getBody().front();
+                mlir::OpBuilder entryBuilder(&entryBlock, entryBlock.begin());
+                if (auto entryOp = dyn_cast<mlir_ts::EntryOp>(entryBlock.front()))
+                {
+                    entryBuilder.setInsertionPointAfter(entryOp);
+                }
+
+                auto none = entryBuilder.create<mlir_ts::DefaultOp>(location, type);
+                slot = entryBuilder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(type), none,
+                                                                entryBuilder.getBoolAttr(false),
+                                                                entryBuilder.getIndexAttr(0));
+                builder.create<mlir_ts::StoreOp>(location, argument, slot);
+            }
+
             builder.setInsertionPointAfter(op);
-            builder.create<mlir_ts::ReleaseOp>(op->getLoc(), argument);
+            builder.create<mlir_ts::ReleaseOp>(location, argument);
+            if (!slot)
+            {
+                continue;
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, builder.create<mlir_ts::DefaultOp>(location, argument.getType()),
+                                             slot);
+
+            // in a catch clause, after the catch variable is set
+            auto &handlerBlock = unwindRegion->front();
+            mlir::OpBuilder handlerBuilder(&handlerBlock, handlerBlock.begin());
+            for (auto &handlerOp : handlerBlock)
+            {
+                if (isa<mlir_ts::CatchOp>(handlerOp))
+                {
+                    handlerBuilder.setInsertionPointAfter(&handlerOp);
+                    break;
+                }
+            }
+
+            handlerBuilder.create<mlir_ts::ReleaseSlotOp>(location, slot);
+            handlerBuilder.create<mlir_ts::StoreOp>(
+                location, handlerBuilder.create<mlir_ts::DefaultOp>(location, argument.getType()), slot);
         }
+    }
+
+    // Where an exception out of `op` is taken first within its function: the region of the try
+    // around it that runs then, in the order its landing pad takes them (TryOpLowering) - the
+    // cleanup, else the catch clause, else the finally, for a call in its body; the finally for a
+    // call in its catch clause. Null when the exception leaves the function.
+    static mlir::Region *unwindRegionOf(mlir::Operation *op)
+    {
+        auto hasOps = [](mlir::Region &region) {
+            return llvm::any_of(region, [](mlir::Block &block) { return &block.front() != block.getTerminator(); });
+        };
+
+        for (auto *region = op->getParentRegion(); region; region = region->getParentOp()->getParentRegion())
+        {
+            auto *parentOp = region->getParentOp();
+            if (isa<mlir::FunctionOpInterface>(parentOp))
+            {
+                return nullptr;
+            }
+
+            auto tryOp = dyn_cast<mlir_ts::TryOp>(parentOp);
+            if (!tryOp)
+            {
+                continue;
+            }
+
+            if (region == &tryOp.getBody())
+            {
+                if (hasOps(tryOp.getCleanup()))
+                {
+                    return &tryOp.getCleanup();
+                }
+
+                if (tryOp->hasAttr(HAS_CATCH_ATTR_NAME) || hasOps(tryOp.getCatches()))
+                {
+                    return &tryOp.getCatches();
+                }
+
+                if (hasOps(tryOp.getFinally()))
+                {
+                    return &tryOp.getFinally();
+                }
+            }
+            else if (region == &tryOp.getCatches() && hasOps(tryOp.getFinally()))
+            {
+                return &tryOp.getFinally();
+            }
+        }
+
+        return nullptr;
     }
 
     // A global is born holding the reference its initializer carries.

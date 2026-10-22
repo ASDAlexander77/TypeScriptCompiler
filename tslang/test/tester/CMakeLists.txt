@@ -3598,7 +3598,7 @@ foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
                         own_shared_place_two_uses own_shared_global_field own_shared_global_copy
-                        own_shared_global_argument)
+                        own_shared_global_argument own_shared_global_argument_throw)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
@@ -3613,7 +3613,7 @@ foreach(shared_verify_mm own rc)
     foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
                         own_shared_place_two_uses own_shared_global_field own_shared_global_copy
-                        own_shared_global_argument)
+                        own_shared_global_argument own_shared_global_argument_throw)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
                          "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
