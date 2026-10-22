@@ -128,6 +128,13 @@
 // groups`). A yield moves what such a field holds to the caller, so the field never owns it: an
 // overwrite gives nothing back, and the state's release routine skips it.
 #define OWN_YIELDED_FIELDS_ATTR_NAME "ts.own_yielded_fields"
+// -mm=own only, set by OwnershipSignaturePass for the inference and the lowering: on the `ts.New`
+// that boxes an object literal, and on every `ts.NewInterface` made of that box, the fields of a
+// borrowing record (own spec 32) - those holding a value the record does not own (`this`, a
+// parameter, a field read, a local's value). The interface's tag then names a release routine of
+// its own, which frees the box and the fields it owns and leaves these to their owners: the routine
+// travels with the value, so records made at different sites may meet in one local.
+#define OWN_RECORD_BORROWED_FIELDS_ATTR_NAME "__own_record_borrowed_fields"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
@@ -256,8 +263,9 @@
 // knows them - one in another module too, which reads them from the declaration it re-parses.
 // `@keeps` names the parameters the function keeps: its callers move them in. `@borrows` names the
 // arguments a generator's state object borrows: the caller owns the result, but it may not outlive
-// them. `@lends` names the one argument the result is a borrow of (OWN_RESULT_BORROWS_ATTR_NAME):
-// the caller owns nothing, and the result may not outlive it. -mm=own checks a body against what
+// them. `@lends` names the arguments the result is a borrow of (OWN_RESULT_BORROWS_ATTR_NAME): one
+// for a plain borrow, whose caller owns nothing, or several for a borrowing record (own spec 32),
+// whose caller owns the box; the result may not outlive any of them. -mm=own checks a body against what
 // it says; the other memory models ignore all three. Each is a FuncOp attribute of argument indices.
 #define KEEPS_DECORATOR "keeps"
 #define BORROWS_DECORATOR "borrows"

@@ -6687,15 +6687,31 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 
         // generated first: the descriptor's initializer takes their addresses
         OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
+        // -mm=own: a borrowing record's box (own spec 32) has a routine, and so a descriptor, of its
+        // own, which leaves the fields it borrows to their owners
+        llvm::ArrayRef<int32_t> borrowed;
+        if (auto attr = newInterfaceOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
+            attr && tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            borrowed = attr.asArrayRef();
+        }
+
+        auto releaseRoutineName = borrowed.empty() ? orl.getOrCreateReleaseRoutine(thisType)
+                                                   : orl.getOrCreateRecordReleaseRoutine(thisType, borrowed);
         // under own nothing retains: see TypeDescriptorOpLowering
         auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
                                      ? std::string()
                                      : orl.getOrCreateRetainRoutine(thisType);
 
+        std::string variant;
+        for (auto index : borrowed)
+        {
+            variant += "r" + std::to_string(index);
+        }
+
         LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
-                                                releaseRoutineName, retainRoutineName);
+                                                releaseRoutineName, retainRoutineName, variant);
     }
 
     LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, Adaptor transformed,

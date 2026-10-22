@@ -700,9 +700,16 @@ namespace typescript
                 newline();
             }
 
-            printOwnMarkers(method.ownKeeps, method.ownBorrows,
-                            method.ownLends >= 0 ? ArrayRef<int32_t>(method.ownLends) : ArrayRef<int32_t>(),
-                            /*hasThis=*/!method.isStatic, 4);
+            SmallVector<int32_t> lends;
+            for (int32_t index = 0; index < 64; ++index)
+            {
+                if (method.ownLendsMask & (uint64_t(1) << index))
+                {
+                    lends.push_back(index);
+                }
+            }
+
+            printOwnMarkers(method.ownKeeps, method.ownBorrows, lends, /*hasThis=*/!method.isStatic, 4);
 
             // the slot of a @cpp class's virtual method: without it the importer takes the method
             // for a non-virtual one

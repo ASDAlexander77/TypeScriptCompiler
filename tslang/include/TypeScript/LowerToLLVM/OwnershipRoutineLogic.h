@@ -158,6 +158,56 @@ class OwnershipRoutineLogic
         return name;
     }
 
+    // -mm=own: the release routine of one borrowing record's box (own spec 32), an object whose
+    // `borrowed` fields hold values the record does not own. Like the object's own routine, but it
+    // leaves those fields to their owners. Made for the interface tag of each box marked so where it
+    // is made (OWN_RECORD_BORROWED_FIELDS_ATTR_NAME), so the routine travels with the value.
+    std::string getOrCreateRecordReleaseRoutine(mlir::Type type, ArrayRef<int32_t> borrowed)
+    {
+        auto objectType = dyn_cast<mlir_ts::ObjectType>(type);
+        if (!objectType || borrowed.empty() || !ownsHeapMemory(type))
+        {
+            return getOrCreateReleaseRoutine(type);
+        }
+
+        std::stringstream nameStream;
+        nameStream << "tsrelrec_" << (size_t)hash_value(type);
+        for (auto index : borrowed)
+        {
+            nameStream << "_" << index;
+        }
+
+        auto name = nameStream.str();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+        if (parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+        {
+            return name;
+        }
+
+        TypeHelper th(rewriter);
+        auto loc = op->getLoc();
+
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+            loc, name, th.getFunctionType(th.getVoidType(), {th.getPtrType()}), LLVM::Linkage::Internal);
+
+        auto *entryBlock = funcOp.addEntryBlock(rewriter);
+        rewriter.setInsertionPointToStart(entryBlock);
+
+        auto instanceValue = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), entryBlock->getArgument(0));
+        emitIfLastReference(instanceValue, [&]() {
+            releaseFields(objectType.getStorageType(), instanceValue, /*nullReleased=*/false, borrowed);
+            emitFreeBlock(instanceValue);
+        });
+
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+        dropDebugLocations(funcOp);
+        return name;
+    }
+
     // Symbol name of the retain routine for `type`, generating it if needed. Empty when the
     // type owns no heap memory, in which case the descriptor's retain slot stays null.
     //
@@ -753,8 +803,10 @@ class OwnershipRoutineLogic
     }
 
     // Releases each field a record-shaped value owns. `basePtr` addresses the record itself. With
-    // `nullReleased`, each field released is then zeroed.
-    void releaseFields(mlir::Type recordType, mlir::Value basePtr, bool nullReleased = false)
+    // `nullReleased`, each field released is then zeroed. `left` names fields a borrowing record's box
+    // does not own (own spec 32): their values are someone else's.
+    void releaseFields(mlir::Type recordType, mlir::Value basePtr, bool nullReleased = false,
+                       ArrayRef<int32_t> left = {})
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -766,6 +818,11 @@ class OwnershipRoutineLogic
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(recordType)))
         {
+            if (llvm::is_contained(left, static_cast<int32_t>(index)))
+            {
+                continue;
+            }
+
             // a generator's local that only yields: what it held went to the caller
             if (llvm::is_contained(yielded, static_cast<int32_t>(index)))
             {
