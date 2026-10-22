@@ -1,6 +1,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
@@ -48,7 +49,9 @@ using namespace own_facts;
 // after its taker, a taker that control comes back to without the value being made again is a
 // move on every loop iteration (2.6), and each release the move reaches must be dominated by it
 // and is erased. A release the move cannot reach stays - the owner on the paths that did not
-// move. Anything else is an error at its location.
+// move. A local's release that paths which moved it and paths which did not both reach is placed
+// instead on the edges where the latter join the former (spec 30). Anything else is an error at
+// its location.
 //
 // It runs on every function: a `ts.Func`, and the `func.func` the async lowering outlines an
 // `await`'s continuation or a `for await` body into, whose arguments are the values it captures.
@@ -120,6 +123,7 @@ class OwnershipInferencePass
         // calls whose callee keeps an argument: each such argument moves into the call
         llvm::SmallVector<mlir::Operation *> keepingCalls;
         drops.clear();
+        edgeReleases.clear();
         derivedCache.clear();
         closures.clear();
         closureOf.clear();
@@ -436,6 +440,7 @@ class OwnershipInferencePass
 
         // a handle's retains and releases are rc's, and stay (spec 23.2)
         toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
+        placeEdgeReleases();
         for (auto *op : toErase)
         {
             op->erase();
@@ -1898,9 +1903,10 @@ class OwnershipInferencePass
         auto owner = varName(slot.getDefiningOp<mlir_ts::VariableOp>());
         if (receivers.size() == 1 || takeValuesOfTheirOwn(slot, receivers))
         {
+            // a move on some paths only is placed when it is the local's one receiver (spec 30)
             for (auto &receiver : receivers)
             {
-                decideSlotReceiver(slot, receiver, owner, toErase);
+                decideSlotReceiver(slot, receiver, owner, toErase, receivers.size() == 1);
             }
 
             return;
@@ -1910,9 +1916,9 @@ class OwnershipInferencePass
     }
 
     void decideSlotReceiver(mlir::Value slot, const SlotReceiver &receiver, llvm::StringRef owner,
-                            llvm::SetVector<mlir::Operation *> &toErase)
+                            llvm::SetVector<mlir::Operation *> &toErase, bool sole)
     {
-        if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); }))
+        if (quietly([&] { return checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, sole); }))
         {
             // rc's retain goes with the move; a call that keeps the argument is the move itself
             if (!isCall(receiver.retain))
@@ -1929,7 +1935,7 @@ class OwnershipInferencePass
             return;
         }
 
-        checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase); // reports
+        checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, sole); // reports
     }
 
     // Receivers of one owning local that each read a value of its own (#528): `h.c = a; a = new C();
@@ -4467,7 +4473,8 @@ class OwnershipInferencePass
 
     // A move out of an owning local: `let b = a`, `h.c = a`, `return a`. rc read the slot and
     // retained what it read for the receiver; the move erases that retain and every release of
-    // the slot the move reaches, which must be dominated by it. Any other use of the slot the
+    // the slot the move reaches, which must be dominated by it - or, with `placeReleases`, is
+    // placed on the paths that did not move it (spec 30). Any other use of the slot the
     // move reaches - a read, an assignment's own read of it - is a use after the move. Reports and
     // returns false when it is not a move.
     //
@@ -4476,7 +4483,7 @@ class OwnershipInferencePass
     // with the move - what the slot held is the receiver's - and the releases only a path through
     // an assignment reaches stay, to destroy the new value.
     bool checkSlotMove(mlir::Operation *retain, mlir::Value value, mlir_ts::LoadOp load,
-                       llvm::SetVector<mlir::Operation *> &toErase)
+                       llvm::SetVector<mlir::Operation *> &toErase, bool placeReleases = false)
     {
         auto slot = load.getReference();
         auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
@@ -4549,14 +4556,9 @@ class OwnershipInferencePass
                 continue;
             }
 
-            if (!dominance->properlyDominates(acquire, use))
-            {
-                reportMovedOnSomePaths(taker, use, name);
-                return false;
-            }
-
             // a release that one path reaches holding the moved value and another holding a new
             // one an assignment after the move stored: there is no single answer for it
+            auto someMoved = !dominance->properlyDominates(acquire, use);
             for (auto *assignment : assignments)
             {
                 llvm::SmallVector<mlir::Operation *, 2> movedAgain{load.getOperation()};
@@ -4565,11 +4567,21 @@ class OwnershipInferencePass
                     movedAgain.push_back(varOp);
                 }
 
-                if (reachableAfter(acquire, assignment, varOp) && reachableAfter(assignment, use, movedAgain))
+                someMoved = someMoved ||
+                            (reachableAfter(acquire, assignment, varOp) && reachableAfter(assignment, use, movedAgain));
+            }
+
+            if (someMoved)
+            {
+                // ...but the paths that did not move it can release it before they join the
+                // others (spec 30)
+                if (placeReleases && placeOnUnmovedEdges(varOp, acquire, retain, taker, assignments, toErase))
                 {
-                    reportMovedOnSomePaths(taker, use, name);
-                    return false;
+                    return true;
                 }
+
+                reportMovedOnSomePaths(taker, use, name);
+                return false;
             }
 
             moved.push_back(use);
@@ -4577,6 +4589,423 @@ class OwnershipInferencePass
 
         toErase.insert(moved.begin(), moved.end());
         return true;
+    }
+
+    // ---- A move on some paths only (spec 30) ----
+    //
+    // `if (c) { best = v; }`: after the paths join, `v` holds its value on one and a moved one on
+    // the other, and its one release there has no single answer. No run-time record of the move is
+    // kept (spec 2.2); instead, where nothing uses the value after the join, the release is placed
+    // on each edge into the join that did not move it - freeing the value earlier, where it is
+    // already dead - and the releases after the join go. Each path frees the value once: through
+    // its new owner where it moved, through the edge where it did not.
+
+    // What the slot of an owning local holds at a point: nothing yet or any more (declared later,
+    // released), its value, or a value moved out of it. A point some paths reach holding the value
+    // and others having moved it is where the paths join.
+    enum SlotState : unsigned
+    {
+        SlotDead = 1,
+        SlotLive = 2,
+        SlotMoved = 4
+    };
+
+    static bool isJoined(unsigned state)
+    {
+        return (state & SlotLive) && (state & SlotMoved);
+    }
+
+    // A value of this type can point into a block: anything but a number, a boolean, a literal or
+    // an empty value.
+    static bool carriesPointer(mlir::Type type)
+    {
+        return !mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::LiteralType, mlir_ts::UndefinedType,
+                          mlir_ts::NullType, mlir_ts::VoidType, mlir::IntegerType, mlir::IndexType, mlir::FloatType>(type);
+    }
+
+    // A release on an edge into the join that did not move the local's value (spec 30), put in after
+    // the analysis.
+    struct EdgeRelease
+    {
+        mlir::Value slot;
+        mlir::Block *from;
+        unsigned successor;
+        mlir::Location loc;
+    };
+
+    llvm::SmallVector<EdgeRelease> edgeReleases;
+
+    // The blocks of an exception handler: from a landing pad to the end of its catch. A release there
+    // would be a call inside an exception funclet.
+    llvm::SmallPtrSet<mlir::Block *, 8> handlerBlocks()
+    {
+        llvm::SmallPtrSet<mlir::Block *, 8> handler;
+        llvm::SmallVector<mlir::Block *> work;
+        for (auto &block : getFunction().getFunctionBody())
+        {
+            if (!block.empty() && mlir::isa<mlir_ts::LandingPadOp>(block.front()))
+            {
+                work.push_back(&block);
+            }
+        }
+
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (!handler.insert(block).second)
+            {
+                continue;
+            }
+
+            auto ends = llvm::any_of(*block, [](mlir::Operation &op) {
+                return mlir::isa<mlir_ts::EndCatchOp, mlir_ts::EndCleanupOp>(op);
+            });
+            if (!ends)
+            {
+                work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+            }
+        }
+
+        return handler;
+    }
+
+    // The move at `acquire` out of the owning local `varOp` reaches a release that other paths reach
+    // holding the value. Places a release of the slot on every edge into the join that holds the value
+    // and has not moved it, and erases every release a moved value reaches - when nothing uses the
+    // value, through the slot or through anything read out of it, where the paths have joined. False,
+    // with nothing placed or erased, when it cannot.
+    bool placeOnUnmovedEdges(mlir_ts::VariableOp varOp, mlir::Operation *acquire, mlir::Operation *retain,
+                             mlir::Operation *taker, llvm::ArrayRef<mlir::Operation *> assignments,
+                             llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto &body = getFunction().getFunctionBody();
+        if (!varOp || varOp.getCaptured().value_or(false) || varOp->getParentRegion() != &body ||
+            acquire->getParentRegion() != &body ||
+            llvm::any_of(assignments, [&](mlir::Operation *op) { return op->getParentRegion() != &body; }))
+        {
+            return false;
+        }
+
+        auto slot = varOp.getResult();
+        llvm::SmallVector<mlir::Operation *> releases;
+        for (auto *user : slot.getUsers())
+        {
+            if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+            {
+                if (user->getParentRegion() != &body)
+                {
+                    return false;
+                }
+
+                releases.push_back(user);
+            }
+        }
+
+        // the slot's state through the function, forward from its entry
+        auto step = [&](mlir::Operation *op, unsigned state) -> unsigned {
+            if (op == varOp.getOperation() || llvm::is_contained(assignments, op))
+            {
+                return SlotLive;
+            }
+
+            if (op == acquire)
+            {
+                return SlotMoved;
+            }
+
+            if (llvm::is_contained(releases, op))
+            {
+                return SlotDead;
+            }
+
+            return state;
+        };
+
+        llvm::DenseMap<mlir::Block *, unsigned> entry;
+        auto exitOf = [&](mlir::Block *block) {
+            auto state = entry.lookup(block);
+            for (auto &op : *block)
+            {
+                state = step(&op, state);
+            }
+
+            return state;
+        };
+
+        entry[&body.front()] = SlotDead;
+        llvm::SmallVector<mlir::Block *> work{&body.front()};
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            auto state = exitOf(block);
+            for (auto *successor : block->getSuccessors())
+            {
+                auto &into = entry[successor];
+                if ((into | state) != into)
+                {
+                    into |= state;
+                    work.push_back(successor);
+                }
+            }
+        }
+
+        // ...and before each op of the body
+        llvm::DenseMap<mlir::Operation *, unsigned> before;
+        for (auto &block : body)
+        {
+            auto state = entry.lookup(&block);
+            for (auto &op : block)
+            {
+                before[&op] = state;
+                state = step(&op, state);
+            }
+        }
+
+        auto joinedAt = [&](mlir::Operation *user) {
+            auto *top = body.findAncestorOpInRegion(*user);
+            return !top || isJoined(before.lookup(top));
+        };
+
+        // every release a moved value reaches goes; one some path reaches with nothing in the slot
+        // is not this rule's
+        llvm::SmallVector<mlir::Operation *> erased;
+        for (auto *release : releases)
+        {
+            auto state = before.lookup(release);
+            if (state & SlotMoved)
+            {
+                if (state & SlotDead)
+                {
+                    return false;
+                }
+
+                erased.push_back(release);
+            }
+        }
+
+        // Nothing uses the value where the paths have joined - a read there, on the path that did
+        // not move it, needs what the edge released - neither through the slot nor through anything
+        // read out of it: a field, a view, a borrowing local, a closure. The move itself hands the
+        // value to its new owner, whose reads are its own. A value the slot is given - its
+        // initializer, an assignment's - is the slot's only once it is stored: a use before that (a
+        // constructor's, or one around a loop before it is made again) is not a use of it.
+        struct Origin
+        {
+            mlir::Operation *stored;
+            mlir::Operation *made;
+        };
+
+        llvm::SmallVector<Origin> origins{{nullptr, nullptr}};
+        llvm::SmallVector<std::pair<mlir::Value, unsigned>> values;
+        llvm::DenseSet<std::pair<mlir::Value, unsigned>> seen;
+        auto taint = [&](mlir::Value value, unsigned origin) {
+            if (carriesPointer(value.getType()) && seen.insert({value, origin}).second)
+            {
+                values.push_back({value, origin});
+            }
+        };
+
+        auto given = [&](mlir::Value value, mlir::Operation *stored) {
+            origins.push_back({stored, value.getDefiningOp()});
+            taint(value, origins.size() - 1);
+        };
+
+        taint(slot, 0);
+        if (varOp.getInitializer())
+        {
+            given(varOp.getInitializer(), varOp);
+        }
+
+        for (auto *assignment : assignments)
+        {
+            given(mlir::cast<mlir_ts::StoreOp>(assignment).getValue(), assignment);
+        }
+
+        auto heldAt = [&](unsigned origin, mlir::Operation *user) {
+            auto &from = origins[origin];
+            if (!from.stored)
+            {
+                return true;
+            }
+
+            llvm::SmallVector<mlir::Operation *, 1> madeAgain;
+            if (from.made)
+            {
+                madeAgain.push_back(from.made);
+            }
+
+            return reachableAfter(from.stored, user, madeAgain);
+        };
+
+        while (!values.empty())
+        {
+            auto [value, origin] = values.pop_back_val();
+            for (auto &use : value.getUses())
+            {
+                auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::DebugVariableOp>(user) || user == retain)
+                {
+                    continue;
+                }
+
+                // the slot's own releases and assignments are decided above
+                if (value == slot && (mlir::isa<mlir_ts::ReleaseSlotOp>(user) || llvm::is_contained(assignments, user)))
+                {
+                    continue;
+                }
+
+                if (joinedAt(user) && heldAt(origin, user))
+                {
+                    return false;
+                }
+
+                if (user == taker)
+                {
+                    continue;
+                }
+
+                // a store of it into a local makes every read of that local one; one into a place
+                // is not followed, and the release is not placed
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getValue() == value)
+                {
+                    auto into = storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    if (!into || into.getCaptured().value_or(false))
+                    {
+                        return false;
+                    }
+
+                    taint(into.getResult(), origin);
+                    continue;
+                }
+
+                if (auto branch = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+                {
+                    for (auto index : llvm::seq<unsigned>(0, user->getNumSuccessors()))
+                    {
+                        auto operands = branch.getSuccessorOperands(index);
+                        for (auto [position, operand] : llvm::enumerate(operands.getForwardedOperands()))
+                        {
+                            if (operand == value)
+                            {
+                                taint(user->getSuccessor(index)->getArgument(operands.getProducedOperandCount() + position),
+                                      origin);
+                            }
+                        }
+                    }
+                }
+
+                // a call's result is its own block, unless its facts say it borrows this argument
+                auto borrows = true;
+                if (isCall(user))
+                {
+                    auto index = resultBorrows(user);
+                    auto args = callArgs(user);
+                    borrows = index >= 0 && static_cast<size_t>(index) < args.size() && args[index] == value;
+                }
+
+                for (auto result : user->getResults())
+                {
+                    if (borrows)
+                    {
+                        taint(result, origin);
+                    }
+                }
+
+                // inside a region - a closure, an async body - it is the op that holds the region
+                // that hands it on
+                if (user->getParentRegion() != &body)
+                {
+                    for (auto result : body.findAncestorOpInRegion(*user)->getResults())
+                    {
+                        taint(result, origin);
+                    }
+                }
+            }
+        }
+
+        // the edges into the join that hold the value and did not move it
+        auto handler = handlerBlocks();
+        llvm::SmallVector<EdgeRelease> placed;
+        for (auto &block : body)
+        {
+            if (!entry.count(&block))
+            {
+                continue; // unreachable
+            }
+
+            auto state = exitOf(&block);
+            for (auto index : llvm::seq<unsigned>(0, block.getNumSuccessors()))
+            {
+                auto into = entry.lookup(block.getSuccessor(index));
+                if (!isJoined(into))
+                {
+                    continue;
+                }
+
+                // a join some path reaches with nothing in the slot is not this rule's
+                if (into & SlotDead)
+                {
+                    return false;
+                }
+
+                // an edge that moved it, or from where the paths have joined already
+                if (state != SlotLive)
+                {
+                    continue;
+                }
+
+                auto *terminator = block.getTerminator();
+                if (!mlir::isa<mlir::cf::BranchOp, mlir::cf::CondBranchOp>(terminator) || handler.contains(&block) ||
+                    !dominance->dominates(varOp.getOperation(), terminator))
+                {
+                    return false;
+                }
+
+                placed.push_back({slot, &block, static_cast<unsigned>(index), terminator->getLoc()});
+            }
+        }
+
+        if (placed.empty())
+        {
+            return false;
+        }
+
+        toErase.insert(erased.begin(), erased.end());
+        edgeReleases.append(placed.begin(), placed.end());
+        return true;
+    }
+
+    // Puts in the releases placeOnUnmovedEdges decided: at the end of a block that goes only to the
+    // join, else in a block of its own on the edge.
+    void placeEdgeReleases()
+    {
+        for (auto &edge : edgeReleases)
+        {
+            auto *terminator = edge.from->getTerminator();
+            mlir::OpBuilder builder(terminator);
+            if (terminator->getNumSuccessors() == 1)
+            {
+                builder.create<mlir_ts::ReleaseSlotOp>(edge.loc, edge.slot);
+                continue;
+            }
+
+            auto *join = terminator->getSuccessor(edge.successor);
+            auto operands = mlir::cast<mlir::BranchOpInterface>(terminator).getSuccessorOperands(edge.successor);
+            llvm::SmallVector<mlir::Value> forwarded(operands.getForwardedOperands());
+            auto *split = new mlir::Block();
+            split->insertAfter(edge.from);
+            builder.setInsertionPointToEnd(split);
+            builder.create<mlir_ts::ReleaseSlotOp>(edge.loc, edge.slot);
+            builder.create<mlir::cf::BranchOp>(edge.loc, join, forwarded);
+            if (!forwarded.empty())
+            {
+                operands.erase(0, forwarded.size());
+            }
+
+            terminator->setSuccessor(split, edge.successor);
+        }
+
+        edgeReleases.clear();
     }
 
     // The stores of the assignments to an owning local: rc releases what the slot holds right

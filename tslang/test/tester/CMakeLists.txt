@@ -3481,7 +3481,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
                  own_immortal_global own_immortal_global_region
                  own_literal_moves own_record_literal_given
-                 own_field_chain_let own_read_after_move)
+                 own_field_chain_let own_read_after_move own_conditional_move)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3529,6 +3529,13 @@ endforeach()
 foreach(read_after_move_mm rc gc none)
     tslang_add_test(NAME test-jit-${read_after_move_mm}-own_read_after_move COMMAND test-runner -jit -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
     tslang_add_test(NAME test-compile-${read_after_move_mm}-own_read_after_move COMMAND test-runner -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
+endforeach()
+
+# A value moved out of a local on some paths only, released on the others (spec 30); the same
+# program under every other model.
+foreach(conditional_move_mm rc gc none)
+    tslang_add_test(NAME test-jit-${conditional_move_mm}-own_conditional_move COMMAND test-runner -jit -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
+    tslang_add_test(NAME test-compile-${conditional_move_mm}-own_conditional_move COMMAND test-runner -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
 endforeach()
 
 # A global declared in top-level code owns what it is given, under every model that counts.
@@ -3799,7 +3806,12 @@ set(own_error_cases
     "own_err_read_after_move_loop|is used here after its value was moved"
     "own_err_read_after_move_after_loop|is used here after its value was moved"
     "own_err_read_after_move_global|is used here after its value was moved"
-    "own_err_field_let_global_overwritten|borrows a field but is used here after it may be released or overwritten")
+    "own_err_field_let_global_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_conditional_move_read|is used here after its value was moved"
+    "own_err_conditional_move_outer|is moved inside a loop but was made outside it"
+    "own_err_conditional_move_read_after_join|is moved here on some paths only"
+    "own_err_conditional_move_field_borrow|is moved here on some paths only"
+    "own_err_conditional_move_catch|is moved here on some paths only")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
