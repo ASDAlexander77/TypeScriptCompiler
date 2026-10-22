@@ -3644,6 +3644,21 @@ foreach(shared_literal_verify_mm own rc)
                          PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
 endforeach()
 
+# A function-typed field of an interface closed in its module, called through a global and a local
+# Shared<I> of a literal and through a parameter (spec 31). Counted like every Shared test, so not in
+# own_test (its no-counting check).
+foreach(fn_field_mm gc none rc own)
+    tslang_add_test(NAME test-jit-${fn_field_mm}-own_interface_fn_field COMMAND test-runner -jit -mm=${fn_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+    tslang_add_test(NAME test-compile-${fn_field_mm}-own_interface_fn_field COMMAND test-runner -mm=${fn_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+endforeach()
+foreach(fn_field_verify_mm own rc)
+    add_test(NAME test-${fn_field_verify_mm}-verify-ownership-own_interface_fn_field
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${fn_field_verify_mm} --verify-ownership
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+    set_tests_properties(test-${fn_field_verify_mm}-verify-ownership-own_interface_fn_field
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endforeach()
+
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
 # Windows, checked against a library that lists nothing (own-shared-no-drops.cmake).
@@ -3781,6 +3796,9 @@ set(own_error_cases
     "own_err_interface_member_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_from_interface|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
     "own_err_interface_result_outlives|borrows a call's result but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_unknown|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_exported|borrows a field but is used here after it may be released or overwritten"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"

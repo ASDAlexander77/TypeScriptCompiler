@@ -657,8 +657,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     //
     // Open, for an interface I:
     // - another module can see it: its name in an exported declaration (`__decls`), or `!ts.iface<@I>`
-    //   in the type of a function or global another module can reach - a public or declared
-    //   function, an exported or imported global;
+    //   in the type of a function or global another module can reach - an exported or declared
+    //   function, a global that is not private, or is exported or imported;
     // - an I value made other than by `ts.NewInterface` over a vtable this pass reads (the global, a
     //   heap copy of it, or the one an object's class vtable holds for I): a cast from another
     //   interface (`J` to `I`, which opens `J` too: its members are reached through `I`), from
@@ -681,6 +681,253 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // (interface, vtable position) -> the functions every vtable of the interface holds there
     std::map<std::pair<std::string, int64_t>, InterfaceFamily> interfaceFamilies;
+
+    // A field of function type (`f: (x: number) => number`), called through the interface: the slot
+    // holds the offset of a field of each implementing object literal, and the call goes to whatever
+    // function that field holds. When every vtable's slot is such an offset and every function ever
+    // stored into those fields is one this module defines - the literal's own (`{ f: function ... }`,
+    // in its `ts.Constant`), or one stored into the field later, through the object or through the
+    // interface - the call is resolved to them (spec 31). A store of anything else (a parameter, a
+    // call's result, a closure), a field reached other than to be read or stored, or an object of
+    // the literal's type made other than by the literal opens the slot. A class implementing the
+    // field holds a thunk's cell, which this does not follow: open.
+    struct InterfaceFieldFamily
+    {
+        mlir::StringAttr field;
+        // (object literal's storage tuple, field index) of each vtable
+        llvm::SmallVector<std::pair<mlir::Type, int64_t>, 2> targets;
+        llvm::SmallVector<mlir::StringAttr, 2> members;
+        bool closed = true;
+    };
+
+    std::map<std::pair<std::string, int64_t>, InterfaceFieldFamily> interfaceFieldFamilies;
+
+    // `ts.PropertyRef(ts.Cast(null), i)`, seen through casts: the offset of field `i` of an object of
+    // that type, as an object literal's interface vtable holds it. Null for anything else.
+    std::pair<mlir::Type, int64_t> slotField(mlir::Value value)
+    {
+        while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+        {
+            value = castOp.getIn();
+        }
+
+        auto propertyRefOp = value ? value.getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+        auto nullObject = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+        if (!nullObject || !nullObject.getIn().getDefiningOp<mlir_ts::NullOp>() ||
+            !mlir::isa<mlir_ts::ObjectType>(nullObject.getType()))
+        {
+            return {};
+        }
+
+        auto tupleType = storageTupleOf(nullObject.getType());
+        if (!tupleType)
+        {
+            return {};
+        }
+
+        return {tupleType, static_cast<int64_t>(propertyRefOp.getPosition())};
+    }
+
+    // What every object-literal field an interface's field slot may be holds (InterfaceFieldFamily).
+    void collectFieldFunctions(mlir::ModuleOp module)
+    {
+        llvm::DenseMap<std::pair<mlir::Type, int64_t>, llvm::SetVector<mlir::StringAttr>> stored;
+        llvm::DenseSet<std::pair<mlir::Type, int64_t>> unknownFields;
+        llvm::DenseSet<mlir::Type> unknownTypes;
+        // a function of unknown origin stored through an interface this pass cannot follow
+        auto unknownAnywhere = false;
+
+        auto store = [&](std::pair<mlir::Type, int64_t> key, mlir::Value value) {
+            auto symbol = slotFunction(value);
+            auto funcOp = symbol ? functions.lookup(symbol.getValue()) : mlir_ts::FuncOp();
+            if (funcOp && !funcOp.isDeclaration())
+            {
+                stored[key].insert(symbol);
+            }
+            else
+            {
+                unknownFields.insert(key);
+            }
+        };
+
+        auto isFunctionType = [](mlir::Type type) {
+            return mlir::isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType>(type);
+        };
+
+        module.walk([&](mlir::Operation *op) {
+            // the literal's own values
+            if (auto constantOp = mlir::dyn_cast<mlir_ts::ConstantOp>(op))
+            {
+                auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(constantOp.getType());
+                auto values = mlir::dyn_cast<mlir::ArrayAttr>(constantOp.getValue());
+                if (!constTupleType || !values)
+                {
+                    return;
+                }
+
+                mlir::Type tupleType = mlir_ts::TupleType::get(&getContext(), constTupleType.getFields());
+                for (auto [index, value] : llvm::enumerate(values))
+                {
+                    std::pair<mlir::Type, int64_t> key{tupleType, static_cast<int64_t>(index)};
+                    if (auto symbol = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(value))
+                    {
+                        auto funcOp = functions.lookup(symbol.getValue());
+                        if (funcOp && !funcOp.isDeclaration())
+                        {
+                            stored[key].insert(symbol.getAttr());
+                        }
+                        else
+                        {
+                            unknownFields.insert(key);
+                        }
+                    }
+                    else if (!mlir::isa<mlir::UnitAttr>(value) && index < constTupleType.getFields().size() &&
+                             isFunctionType(constTupleType.getFields()[index].type))
+                    {
+                        unknownFields.insert(key);
+                    }
+                }
+
+                return;
+            }
+
+            // a store into the field through the object
+            if (auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(op))
+            {
+                auto tupleType = storageTupleOf(propertyRefOp.getObjectRef().getType());
+                if (!tupleType)
+                {
+                    return;
+                }
+
+                std::pair<mlir::Type, int64_t> key{tupleType, static_cast<int64_t>(propertyRefOp.getPosition())};
+                for (auto &use : propertyRefOp->getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (mlir::isa<mlir_ts::LoadOp, mlir_ts::ReleaseSlotOp, mlir_ts::RetainSlotOp>(user))
+                    {
+                        continue;
+                    }
+
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (storeOp && storeOp.getReference() == propertyRefOp.getResult() && storeOp.getValue() != propertyRefOp.getResult())
+                    {
+                        store(key, storeOp.getValue());
+                        continue;
+                    }
+
+                    // an interface vtable's offset of the field (slotField) reads nothing
+                    if (user->getParentOfType<mlir_ts::GlobalOp>() && mlir::isa<mlir_ts::CastOp, mlir_ts::InsertPropertyOp>(user))
+                    {
+                        continue;
+                    }
+
+                    unknownFields.insert(key);
+                }
+
+                return;
+            }
+
+            // a store into the field through an interface: into each literal its vtables reach
+            if (auto interfaceRefOp = mlir::dyn_cast<mlir_ts::InterfaceSymbolRefOp>(op))
+            {
+                auto refType = mlir::dyn_cast<mlir_ts::RefType>(interfaceRefOp.getType());
+                if (!refType || !isFunctionType(refType.getElementType()))
+                {
+                    return;
+                }
+
+                auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(interfaceRefOp.getInterfaceVal().getType());
+                auto found = interfaceType ? interfaceFieldFamilies.find({interfaceType.getName().getValue().str(),
+                                                                         static_cast<int64_t>(interfaceRefOp.getIndex()) +
+                                                                             INTERFACE_VTABLE_HEADER_SLOTS})
+                                           : interfaceFieldFamilies.end();
+                for (auto &use : interfaceRefOp->getUses())
+                {
+                    auto *user = use.getOwner();
+                    if (mlir::isa<mlir_ts::LoadOp, mlir_ts::ReleaseSlotOp, mlir_ts::RetainSlotOp>(user))
+                    {
+                        continue;
+                    }
+
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (storeOp && storeOp.getReference() == interfaceRefOp.getResult() && found != interfaceFieldFamilies.end() &&
+                        found->second.closed)
+                    {
+                        for (auto target : found->second.targets)
+                        {
+                            store(target, storeOp.getValue());
+                        }
+
+                        continue;
+                    }
+
+                    unknownAnywhere = true;
+                }
+
+                return;
+            }
+
+            // an object of the literal's type made other than by the literal: its fields may hold
+            // anything. A cast keeps the type's own value (the literal's box seen as the object, an
+            // object, a reference to its storage) or makes the null object a vtable's offsets are
+            // taken from; from anything else it reinterprets.
+            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op))
+            {
+                auto tupleType = storageTupleOf(castOp.getType());
+                if (tupleType && !mlir::isa<mlir_ts::NullType>(castOp.getIn().getType()) &&
+                    storageTupleOf(castOp.getIn().getType()) != tupleType)
+                {
+                    unknownTypes.insert(tupleType);
+                }
+
+                return;
+            }
+
+            if (mlir::isa<mlir_ts::LoadOp>(op) || isCall(op) || isView(op) || mlir::isa<mlir_ts::ExtractPropertyOp>(op))
+            {
+                return;
+            }
+
+            for (auto result : op->getResults())
+            {
+                if (mlir::isa<mlir_ts::TupleType, mlir_ts::ObjectType>(result.getType()))
+                {
+                    if (auto tupleType = storageTupleOf(result.getType()))
+                    {
+                        unknownTypes.insert(tupleType);
+                    }
+                }
+            }
+        });
+
+        for (auto &[key, family] : interfaceFieldFamilies)
+        {
+            if (!family.closed)
+            {
+                continue;
+            }
+
+            for (auto target : family.targets)
+            {
+                if (unknownAnywhere || unknownTypes.contains(target.first) || unknownFields.contains(target))
+                {
+                    family.closed = false;
+                    break;
+                }
+
+                for (auto member : stored.lookup(target))
+                {
+                    if (!llvm::is_contained(family.members, member))
+                    {
+                        family.members.push_back(member);
+                    }
+                }
+            }
+
+            family.closed = family.closed && !family.members.empty();
+        }
+    }
 
     // The interfaces mentioned by a type as values: the interface itself, a union or optional, a
     // tuple's fields, an array's elements, what a reference points to. Not a class's or an object's
@@ -987,6 +1234,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         {
             mlir_ts::TupleType type;
             llvm::DenseMap<int64_t, mlir::StringAttr> slots;
+            // a field's slot: the object literal's field it is the offset of
+            llvm::DenseMap<int64_t, std::pair<mlir::Type, int64_t>> fields;
             bool written = false;
         };
 
@@ -1053,6 +1302,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 if (position > 0)
                 {
                     vtable.slots[position] = slotFunction(value);
+                    if (auto field = slotField(value); field.first)
+                    {
+                        vtable.fields[position] = field;
+                    }
                 }
             }
         });
@@ -1225,7 +1478,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::DenseSet<mlir::Type> seen;
         for (auto &entry : functions)
         {
-            if (entry.second.isDeclaration() || !entry.second.isPrivate())
+            // a `public` method of a class no other module can name is not one: only a declaration
+            // re-parsed from `__decls` names a function of another module
+            if (entry.second.isDeclaration() || entry.second->hasAttr("export") || entry.second->hasAttr(DLL_EXPORT))
             {
                 anyInterfaces(entry.second.getFunctionType(), exposed, seen);
             }
@@ -1299,9 +1554,27 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     {
                         family.members.push_back(member);
                     }
+
+                    // the same slot as a field: an object literal's field of function type
+                    auto &fieldFamily = interfaceFieldFamilies[{name.str(), static_cast<int64_t>(position)}];
+                    auto target = vtable.fields.lookup(position);
+                    auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.type);
+                    if (!fieldFamily.field)
+                    {
+                        fieldFamily.field = id;
+                    }
+
+                    fieldFamily.closed = fieldFamily.closed && closed && !vtable.written && id && fieldFamily.field == id &&
+                                         target.first && refType && mlir::isa<mlir_ts::FunctionType>(refType.getElementType());
+                    if (target.first && !llvm::is_contained(fieldFamily.targets, target))
+                    {
+                        fieldFamily.targets.push_back(target);
+                    }
                 }
             }
         }
+
+        collectFieldFunctions(module);
 
         // what an open family holds, and a vtable no interface value is made with, is reached
         // through calls that are not resolved
@@ -2317,6 +2590,20 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             resolveInterfaceSlot(interfaceRefOp, callees);
             return;
         }
+        else if (auto boundOp = mlir::dyn_cast_or_null<mlir_ts::CreateBoundFunctionOp>(def))
+        {
+            // a function-typed field of an interface, called: `ts.CreateBoundFunction(
+            // ts.ExtractInterfaceThis(i), ts.Load(ts.InterfaceSymbolRef(i, f)))`
+            auto loadOp = boundOp.getFunc().getDefiningOp<mlir_ts::LoadOp>();
+            auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>() : mlir_ts::InterfaceSymbolRefOp();
+            auto thisOp = boundOp.getThisVal().getDefiningOp<mlir_ts::ExtractInterfaceThisOp>();
+            if (refOp && isInterfaceField(refOp.getResult()) && thisOp && thisOp.getInterfaceVal() == refOp.getInterfaceVal())
+            {
+                resolveInterfaceField(refOp, callees);
+            }
+
+            return;
+        }
 
         if (!identifier)
         {
@@ -2348,6 +2635,34 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
         auto found = interfaceFamilies.find({interfaceType.getName().getValue().str(), position});
         if (found == interfaceFamilies.end() || !found->second.closed || found->second.field != identifier ||
+            found->second.members.empty())
+        {
+            return;
+        }
+
+        callees.named.assign(found->second.members.begin(), found->second.members.end());
+        callees.viaInterface = true;
+        callees.known = true;
+        for (auto member : found->second.members)
+        {
+            callees.known = addDefined(member, callees) && callees.known;
+        }
+    }
+
+    // A function-typed field of a closed interface (interfaceFieldFamilies), read and called: every
+    // function its implementing literals' fields are ever given.
+    void resolveInterfaceField(mlir_ts::InterfaceSymbolRefOp refOp, Callees &callees)
+    {
+        auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType());
+        auto identifier = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+        if (!interfaceType || !identifier)
+        {
+            return;
+        }
+
+        auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
+        auto found = interfaceFieldFamilies.find({interfaceType.getName().getValue().str(), position});
+        if (found == interfaceFieldFamilies.end() || !found->second.closed || found->second.field != identifier ||
             found->second.members.empty())
         {
             return;
@@ -2810,6 +3125,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             for (auto &[key, family] : interfaceFamilies)
+            {
+                if (family.closed)
+                {
+                    changed = demote(family.members) || changed;
+                }
+            }
+
+            for (auto &[key, family] : interfaceFieldFamilies)
             {
                 if (family.closed)
                 {
