@@ -381,7 +381,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         findImmortalGlobals(module);
         moveIntoGlobals(module);
         collectClassVTables(module);
-        collectInterfaceReached(module);
+        collectInterfaceFamilies(module);
         fieldFunctions.collect(module);
 
         module.walk([&](mlir::Operation *op) {
@@ -592,6 +592,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool imported = false;
         // a function read out of a field that only ever holds it (fieldFunctions)
         bool fieldFunction = false;
+        // the slot of a closed interface (resolveInterfaceSlot)
+        bool viaInterface = false;
         // the name the imported function is exported under
         llvm::StringRef importedName;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
@@ -630,17 +632,705 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // the symbol that is not a call this pass resolves - and why, for the error in their body.
     llvm::DenseMap<mlir::Operation *, const char *> open;
 
-    // Methods an interface's vtable for a class (`<class>.<interface>..vtbl`) holds. A call through
-    // the interface (`ts.InterfaceSymbolRef`, then an indirect call) is not resolved, so it is given
-    // none of their facts: a caller that hands such a method an argument it keeps still releases it,
-    // and a caller of one whose result borrows an argument or `this` releases the borrow as its own
-    // (a double free either way). So a method reached this way that keeps a parameter or returns a
-    // borrow - by its body or by `@keeps` / `@lends` - loses its facts, and the body's error says
-    // why (`is a parameter, kept here, but -mm=own cannot make the callers of ... give it up`, `is a
-    // parameter, returned here, but -mm=own cannot tell the callers of ... that the result borrows
-    // it`). Task 6 of the ray tracer plan (G9, facts through a module-private interface) relaxes
-    // this for closed interfaces by giving the interface call the meet of these facts.
+    // Methods an interface's vtable holds (`<class>.<interface>..vtbl`, or `<interface>.<n>..vtbl`
+    // for an object literal) whose calls through the interface are not resolved: the slot's family
+    // is open (interfaceFamilies), or the vtable is one this pass cannot tie to an interface. Such
+    // a call (`ts.InterfaceSymbolRef`, then an indirect call) is given none of the method's facts: a
+    // caller that hands it an argument it keeps still releases it, and a caller of one whose result
+    // borrows an argument or `this` releases the borrow as its own (a double free either way). So a
+    // method reached this way that keeps a parameter or returns a borrow - by its body or by `@keeps`
+    // / `@lends` - loses its facts, and the body's error says why (`is a parameter, kept here, but
+    // -mm=own cannot make the callers of ... give it up`, `is a parameter, returned here, but -mm=own
+    // cannot tell the callers of ... that the result borrows it`). A method reached only through
+    // closed interfaces keeps its facts: their calls get them (spec 31).
     llvm::DenseSet<mlir::Operation *> interfaceReached;
+
+    // ---- Interfaces closed in this module (G9, spec 31) ----
+    //
+    // A call through an interface reaches whatever function the slot of the interface value's vtable
+    // holds. When every such vtable is one this module defines and every interface value is made
+    // from one of them, the slot holds one of a known set of functions - the slot's family - and the
+    // call is resolved to it like a virtual call of a private class family: it gets the facts its
+    // members agree on (meetFacts demotes a family that disagrees), and `__own_no_drops` when every
+    // member destroys nothing. Anything this cannot see opens the interface, and then the call is
+    // what it was: no facts, and its members reached that way lose theirs (interfaceReached).
+    //
+    // Open, for an interface I:
+    // - another module can see it: its name in an exported declaration (`__decls`), or `!ts.iface<@I>`
+    //   in the type of a function or global another module can reach - a public or declared
+    //   function, an exported or imported global;
+    // - an I value made other than by `ts.NewInterface` over a vtable this pass reads (the global, a
+    //   heap copy of it, or the one an object's class vtable holds for I): a cast from another
+    //   interface (`J` to `I`, which opens `J` too: its members are reached through `I`), from
+    //   `any` or an opaque pointer (which opens every interface put into one), from a tuple or array
+    //   that does not hold I already (castMakesInterface), a `ts.InterfaceRef` used as a value;
+    // - a vtable of I written after its initializer, or read other than to make an interface value;
+    // - a class vtable that holds a vtable of I and is not private (an exported class: another
+    //   module may extend it);
+    // - and, per slot, a member that is not a function this module defines, a slot that holds no
+    //   function (a field's offset, a thunk's cell), or a member that says `@keeps` or `@lends` (its
+    //   facts are its signature's, which a family cannot change). A member that is not private (a
+    //   `public` method) is open (findOpen): it has no facts of its own to give the family.
+    struct InterfaceFamily
+    {
+        // the slot's name, which every vtable of the interface agrees on
+        mlir::StringAttr field;
+        llvm::SmallVector<mlir::StringAttr, 2> members;
+        bool closed = true;
+    };
+
+    // (interface, vtable position) -> the functions every vtable of the interface holds there
+    std::map<std::pair<std::string, int64_t>, InterfaceFamily> interfaceFamilies;
+
+    // The interfaces mentioned by a type as values: the interface itself, a union or optional, a
+    // tuple's fields, an array's elements, what a reference points to. Not a class's or an object's
+    // fields (a reference to a block made elsewhere), nor a function's parameters and result.
+    static void valueInterfaces(mlir::Type type, llvm::StringSet<> &found, int depth = 0)
+    {
+        if (!type || depth > 16)
+        {
+            return;
+        }
+
+        if (auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(type))
+        {
+            found.insert(interfaceType.getName().getValue());
+            return;
+        }
+
+        auto fields = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
+            for (auto &info : infos)
+            {
+                valueInterfaces(info.type, found, depth + 1);
+            }
+        };
+
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields(tupleType.getFields());
+        }
+        else if (auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields(constTupleType.getFields());
+        }
+        else if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+        {
+            for (auto member : unionType.getTypes())
+            {
+                valueInterfaces(member, found, depth + 1);
+            }
+        }
+        else if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            valueInterfaces(optionalType.getElementType(), found, depth + 1);
+        }
+        else if (auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            valueInterfaces(arrayType.getElementType(), found, depth + 1);
+        }
+        else if (auto constArrayType = mlir::dyn_cast<mlir_ts::ConstArrayType>(type))
+        {
+            valueInterfaces(constArrayType.getElementType(), found, depth + 1);
+        }
+        else if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+        {
+            valueInterfaces(refType.getElementType(), found, depth + 1);
+        }
+        else if (auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(type))
+        {
+            valueInterfaces(valueRefType.getElementType(), found, depth + 1);
+        }
+        else if (auto boundRefType = mlir::dyn_cast<mlir_ts::BoundRefType>(type))
+        {
+            valueInterfaces(boundRefType.getElementType(), found, depth + 1);
+        }
+        else if (auto sharedType = mlir::dyn_cast<mlir_ts::SharedType>(type))
+        {
+            valueInterfaces(sharedType.getElementType(), found, depth + 1);
+        }
+    }
+
+    // Every interface a type mentions anywhere, a class's fields and a function's parameters
+    // included: what another module handed a value of this type could reach.
+    static void anyInterfaces(mlir::Type type, llvm::StringSet<> &found, llvm::DenseSet<mlir::Type> &seen)
+    {
+        if (!type || !seen.insert(type).second)
+        {
+            return;
+        }
+
+        if (auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(type))
+        {
+            found.insert(interfaceType.getName().getValue());
+            return;
+        }
+
+        auto fields = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
+            for (auto &info : infos)
+            {
+                anyInterfaces(info.type, found, seen);
+            }
+        };
+
+        // the types whose fields are not parameters of the type
+        if (auto classStorageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(type))
+        {
+            fields(classStorageType.getFields());
+            return;
+        }
+
+        if (auto objectStorageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(type))
+        {
+            fields(objectStorageType.getFields());
+            return;
+        }
+
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields(tupleType.getFields());
+            return;
+        }
+
+        if (auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields(constTupleType.getFields());
+            return;
+        }
+
+        type.walkImmediateSubElements([](mlir::Attribute) {}, [&](mlir::Type sub) { anyInterfaces(sub, found, seen); });
+    }
+
+    static bool isNullish(mlir::Type type)
+    {
+        return mlir::isa<mlir_ts::NullType, mlir_ts::UndefinedType>(type);
+    }
+
+    // May a cast from `in` to `out` make an interface value out of something that was not that
+    // interface's value already? A union or optional narrowed to its interface member (whose other
+    // members are null or undefined) or widened from it, null given a nullable interface type, a
+    // class or object seen as another (the same block, its fields as they are) and a function seen as
+    // another are not; a cast from another interface, `any`, an opaque pointer, or a tuple or an
+    // array whose element is not the same interface is.
+    static bool castMakesInterface(mlir::Type in, mlir::Type out, int depth = 0)
+    {
+        if (in == out || depth > 16)
+        {
+            return false;
+        }
+
+        llvm::StringSet<> made;
+        valueInterfaces(out, made);
+        if (made.empty())
+        {
+            return false;
+        }
+
+        if (mlir::isa<mlir_ts::InterfaceType>(out))
+        {
+            return !holdsAsIs(in, out, /*onlyNullable=*/true);
+        }
+
+        if (mlir::isa<mlir_ts::UnionType, mlir_ts::OptionalType>(out))
+        {
+            if (isNullish(in) || holdsAsIs(out, in))
+            {
+                return false;
+            }
+
+            llvm::SmallVector<mlir::Type> members;
+            if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(in))
+            {
+                members.append(unionType.getTypes().begin(), unionType.getTypes().end());
+            }
+            else if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(in))
+            {
+                members.push_back(optionalType.getElementType());
+            }
+            else
+            {
+                return true;
+            }
+
+            return !llvm::all_of(members, [&](mlir::Type member) { return isNullish(member) || holdsAsIs(out, member); });
+        }
+
+        auto tupleFields = [](mlir::Type type) -> std::optional<llvm::ArrayRef<mlir_ts::FieldInfo>> {
+            if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+            {
+                return tupleType.getFields();
+            }
+
+            if (auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(type))
+            {
+                return constTupleType.getFields();
+            }
+
+            return std::nullopt;
+        };
+
+        if (auto outFields = tupleFields(out))
+        {
+            auto inFields = tupleFields(in);
+            if (!inFields || inFields->size() != outFields->size())
+            {
+                return true;
+            }
+
+            for (auto [inField, outField] : llvm::zip(*inFields, *outFields))
+            {
+                if (castMakesInterface(inField.type, outField.type, depth + 1))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        auto elementOf = [](mlir::Type type) -> mlir::Type {
+            if (auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                return arrayType.getElementType();
+            }
+
+            if (auto constArrayType = mlir::dyn_cast<mlir_ts::ConstArrayType>(type))
+            {
+                return constArrayType.getElementType();
+            }
+
+            return {};
+        };
+
+        if (auto outElement = elementOf(out))
+        {
+            auto inElement = elementOf(in);
+            return !inElement || castMakesInterface(inElement, outElement, depth + 1);
+        }
+
+        // a reference reinterpreted: what is read through it was never checked
+        return true;
+    }
+
+    // The function a vtable slot holds: `ts.SymbolRef`, seen through casts. Null for anything else.
+    static mlir::StringAttr slotFunction(mlir::Value value)
+    {
+        while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+        {
+            value = castOp.getIn();
+        }
+
+        auto symbolRefOp = value ? value.getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+        return symbolRefOp ? symbolRefOp.getIdentifierAttr().getAttr() : mlir::StringAttr();
+    }
+
+    static mlir_ts::AddressOfOp addressOfThroughCasts(mlir::Value value)
+    {
+        while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+        {
+            value = castOp.getIn();
+        }
+
+        return value ? value.getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+    }
+
+    // The words of the module's exported declarations (`__decls*` globals): what another module
+    // can name.
+    static llvm::StringSet<> exportedWords(mlir::ModuleOp module)
+    {
+        llvm::StringSet<> words;
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            if (!globalOp.getSymName().starts_with("__decls"))
+            {
+                return;
+            }
+
+            globalOp.getInitializerRegion().walk([&](mlir_ts::ConstantOp constantOp) {
+                auto text = mlir::dyn_cast<mlir::StringAttr>(constantOp.getValue());
+                if (!text)
+                {
+                    return;
+                }
+
+                llvm::StringRef rest = text.getValue();
+                while (!rest.empty())
+                {
+                    auto isWordChar = [](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; };
+                    rest = rest.drop_while([&](char c) { return !isWordChar(c); });
+                    auto word = rest.take_while(isWordChar);
+                    if (!word.empty())
+                    {
+                        words.insert(word);
+                    }
+
+                    rest = rest.drop_front(word.size());
+                }
+            });
+        });
+
+        return words;
+    }
+
+    void collectInterfaceFamilies(mlir::ModuleOp module)
+    {
+        llvm::StringSet<> open;
+        auto openAll = [&](const llvm::StringSet<> &names) {
+            for (auto &entry : names)
+            {
+                open.insert(entry.getKey());
+            }
+        };
+
+        // the vtables: an interface's (`ts.InsertProperty` of each slot, slot 0 `.instanceOf` of a
+        // class that is not the vtable's owner, or `.instanceOf.none` of an object literal), and the
+        // slots of a class's own vtable that hold the address of one of its interface vtables
+        struct InterfaceVTable
+        {
+            mlir_ts::TupleType type;
+            llvm::DenseMap<int64_t, mlir::StringAttr> slots;
+            bool written = false;
+        };
+
+        llvm::StringMap<InterfaceVTable> vtables;
+        // interface name -> the interface vtables class vtables hold for it, read through an
+        // object's class at run time (`ts.VTableOffsetRef` of the object's vtable)
+        llvm::StringMap<llvm::SetVector<llvm::StringRef>> classHeld;
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            auto name = globalOp.getSymName();
+            if (!name.ends_with("..vtbl"))
+            {
+                return;
+            }
+
+            auto owner = name.drop_back(llvm::StringRef("..vtbl").size());
+            llvm::DenseMap<int64_t, mlir::Value> values;
+            globalOp.getInitializerRegion().walk([&](mlir_ts::InsertPropertyOp insertOp) {
+                if (insertOp.getPosition().size() == 1)
+                {
+                    values[insertOp.getPosition()[0]] = insertOp.getValue();
+                }
+            });
+
+            auto header = slotFunction(values.lookup(0));
+            auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(globalOp.getType());
+            if (!header || !tupleType)
+            {
+                return;
+            }
+
+            if (header.getValue() == (owner + "..instanceOf").str())
+            {
+                auto exposed = !globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr(DLL_EXPORT);
+                for (auto &[position, value] : values)
+                {
+                    auto addressOfOp = addressOfThroughCasts(value);
+                    auto id = position < static_cast<int64_t>(tupleType.size())
+                                  ? mlir::dyn_cast_or_null<mlir::StringAttr>(tupleType.getFieldInfo(position).id)
+                                  : mlir::StringAttr();
+                    if (!addressOfOp || !id)
+                    {
+                        continue;
+                    }
+
+                    classHeld[id.getValue()].insert(addressOfOp.getGlobalName());
+                    if (exposed)
+                    {
+                        open.insert(id.getValue()); // another module may extend the class
+                    }
+                }
+
+                return;
+            }
+
+            if (!header.getValue().ends_with("..instanceOf") && header.getValue() != ".instanceOf.none")
+            {
+                return;
+            }
+
+            auto &vtable = vtables[name];
+            vtable.type = tupleType;
+            for (auto &[position, value] : values)
+            {
+                if (position > 0)
+                {
+                    vtable.slots[position] = slotFunction(value);
+                }
+            }
+        });
+
+        // interface name -> the vtables its values are made with
+        llvm::StringMap<llvm::SetVector<llvm::StringRef>> madeWith;
+        auto vtableOf = [&](mlir::Value value) -> llvm::StringRef {
+            // the global itself
+            if (auto addressOfOp = addressOfThroughCasts(value))
+            {
+                return vtables.count(addressOfOp.getGlobalName()) ? addressOfOp.getGlobalName() : llvm::StringRef();
+            }
+
+            // a copy of it on the heap, its absent members' slots patched
+            while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+            {
+                value = castOp.getIn();
+            }
+
+            if (auto newOp = value.getDefiningOp<mlir_ts::NewOp>())
+            {
+                llvm::StringRef copied;
+                for (auto *user : newOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    auto loadOp = storeOp && storeOp.getReference() == newOp.getResult()
+                                      ? storeOp.getValue().getDefiningOp<mlir_ts::LoadOp>()
+                                      : mlir_ts::LoadOp();
+                    auto addressOfOp = loadOp ? addressOfThroughCasts(loadOp.getReference()) : mlir_ts::AddressOfOp();
+                    if (addressOfOp && vtables.count(addressOfOp.getGlobalName()))
+                    {
+                        if (!copied.empty())
+                        {
+                            return {};
+                        }
+
+                        copied = addressOfOp.getGlobalName();
+                    }
+                }
+
+                return copied;
+            }
+
+            return {};
+        };
+
+        // an object's class vtable read at run time: `ts.VTableOffsetRef(ts.Load(ts.PropertyRef(object, 0)), k)`
+        auto readFromClass = [](mlir::Value value) {
+            auto offsetRefOp = value.getDefiningOp<mlir_ts::VTableOffsetRefOp>();
+            auto loadOp = offsetRefOp ? offsetRefOp.getVtable().getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            auto propertyRefOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+            return propertyRefOp && propertyRefOp.getPosition() == 0 &&
+                   mlir::isa<mlir_ts::ClassType>(propertyRefOp.getObjectRef().getType());
+        };
+
+        // what reads a vtable's address: making an interface value, a class vtable's slot, the copy
+        std::function<bool(mlir::Value)> onlyMakesValues = [&](mlir::Value address) {
+            return llvm::all_of(address.getUses(), [&](mlir::OpOperand &use) {
+                auto *user = use.getOwner();
+                if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(user))
+                {
+                    return newInterfaceOp.getInterfaceVTable() == use.get();
+                }
+
+                if (mlir::isa<mlir_ts::CastOp>(user))
+                {
+                    return onlyMakesValues(user->getResult(0));
+                }
+
+                if (mlir::isa<mlir_ts::InsertPropertyOp>(user))
+                {
+                    return use.getOperandNumber() == 0 && user->getParentOfType<mlir_ts::GlobalOp>() != nullptr;
+                }
+
+                // the copy: read whole, and stored into a block `ts.New` made
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+                {
+                    return llvm::all_of(loadOp->getUsers(), [&](mlir::Operation *loadUser) {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(loadUser);
+                        return storeOp && storeOp.getValue() == loadOp.getResult() &&
+                               storeOp.getReference().getDefiningOp<mlir_ts::NewOp>();
+                    });
+                }
+
+                return false;
+            });
+        };
+
+        // An interface value made out of another one reaches the other's members: both are open. One
+        // made out of `any` or an opaque pointer may be any interface value put into one: every
+        // interface so boxed is open with it, and every interface at all when it is untraceable.
+        auto allOpen = false;
+        llvm::StringSet<> boxed;
+        llvm::StringSet<> unboxedInto;
+        auto isOpaque = [](mlir::Type type) { return mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type); };
+        module.walk([&](mlir::Operation *op) {
+            if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(op))
+            {
+                auto name = mlir::cast<mlir_ts::InterfaceType>(newInterfaceOp.getType()).getName().getValue();
+                auto vtable = newInterfaceOp.getInterfaceVTable();
+                if (auto found = vtableOf(vtable); !found.empty())
+                {
+                    madeWith[name].insert(found);
+                }
+                else if (readFromClass(vtable))
+                {
+                    // any class's vtable for the interface (classHeld, all in its families below)
+                    if (!classHeld.count(name))
+                    {
+                        open.insert(name);
+                    }
+                }
+                else if (auto extractOp = vtable.getDefiningOp<mlir_ts::ExtractInterfaceVTableOp>())
+                {
+                    open.insert(name);
+                    valueInterfaces(extractOp.getInterfaceVal().getType(), open);
+                }
+                else
+                {
+                    allOpen = true;
+                }
+
+                return;
+            }
+
+            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op))
+            {
+                auto in = castOp.getIn().getType();
+                auto out = castOp.getType();
+                if (isOpaque(out))
+                {
+                    valueInterfaces(in, boxed);
+                }
+
+                if (castMakesInterface(in, out))
+                {
+                    valueInterfaces(out, open);
+                    valueInterfaces(in, open);
+                    if (isOpaque(in))
+                    {
+                        valueInterfaces(out, unboxedInto);
+                    }
+                }
+
+                return;
+            }
+
+            if (auto interfaceRefOp = mlir::dyn_cast<mlir_ts::InterfaceRefOp>(op))
+            {
+                if (!interfaceRefOp->use_empty())
+                {
+                    open.insert(interfaceRefOp.getIdentifier());
+                }
+
+                return;
+            }
+
+            if (auto addressOfOp = mlir::dyn_cast<mlir_ts::AddressOfOp>(op))
+            {
+                if (auto found = vtables.find(addressOfOp.getGlobalName()); found != vtables.end() && !onlyMakesValues(addressOfOp.getResult()))
+                {
+                    found->second.written = true;
+                }
+            }
+        });
+
+        // seen from another module: a word of its exported declarations, or in a reachable type
+        auto words = exportedWords(module);
+        llvm::StringSet<> exposed;
+        llvm::DenseSet<mlir::Type> seen;
+        for (auto &entry : functions)
+        {
+            if (entry.second.isDeclaration() || !entry.second.isPrivate())
+            {
+                anyInterfaces(entry.second.getFunctionType(), exposed, seen);
+            }
+        }
+
+        for (auto &entry : globals)
+        {
+            auto globalOp = entry.second;
+            if (!globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr("import") ||
+                globalOp->hasAttr(DLL_EXPORT) || globalOp->hasAttr(DLL_IMPORT))
+            {
+                anyInterfaces(globalOp.getType(), exposed, seen);
+            }
+        }
+
+        openAll(exposed);
+        if (!unboxedInto.empty())
+        {
+            openAll(boxed);
+        }
+
+        auto isOpen = [&](llvm::StringRef name) {
+            // a namespaced interface is declared by its last name
+            auto last = name.rsplit('.').second;
+            return allOpen || open.contains(name) || words.contains(name) || (!last.empty() && words.contains(last));
+        };
+
+        // a class's vtables for its interfaces are its members' families whether or not this module
+        // makes an interface value of the class: a method called directly then keeps its facts
+        for (auto &[name, held] : classHeld)
+        {
+            madeWith[name].insert(held.begin(), held.end());
+        }
+
+        // the families
+        llvm::DenseSet<llvm::StringRef> tied;
+        for (auto &[name, made] : madeWith)
+        {
+            // a class vtable's slot holding a vtable this pass did not read (another module's)
+            auto closed = !isOpen(name) && llvm::all_of(made, [&](llvm::StringRef vtableName) { return vtables.count(vtableName); });
+            for (auto vtableName : made)
+            {
+                if (!vtables.count(vtableName))
+                {
+                    continue;
+                }
+
+                tied.insert(vtableName);
+                auto &vtable = vtables[vtableName];
+                for (auto [position, field] : llvm::enumerate(vtable.type.getFields()))
+                {
+                    if (position == 0)
+                    {
+                        continue;
+                    }
+
+                    auto &family = interfaceFamilies[{name.str(), static_cast<int64_t>(position)}];
+                    auto id = mlir::dyn_cast_or_null<mlir::StringAttr>(field.id);
+                    auto member = vtable.slots.lookup(position);
+                    auto funcOp = member ? functions.lookup(member.getValue()) : mlir_ts::FuncOp();
+                    if (!family.field)
+                    {
+                        family.field = id;
+                    }
+
+                    // a member that is not private (a `public` method) is open (findOpen): it has no
+                    // facts to give, and gives the family none
+                    family.closed = family.closed && closed && !vtable.written && id && family.field == id && funcOp &&
+                                    !funcOp.isDeclaration() && !declaresCallerFacts(funcOp);
+                    if (member && !llvm::is_contained(family.members, member))
+                    {
+                        family.members.push_back(member);
+                    }
+                }
+            }
+        }
+
+        // what an open family holds, and a vtable no interface value is made with, is reached
+        // through calls that are not resolved
+        auto reached = [&](mlir::StringAttr member) {
+            if (auto funcOp = member ? functions.lookup(member.getValue()) : mlir_ts::FuncOp())
+            {
+                interfaceReached.insert(funcOp);
+            }
+        };
+
+        for (auto &[key, family] : interfaceFamilies)
+        {
+            if (!family.closed)
+            {
+                llvm::for_each(family.members, reached);
+            }
+        }
+
+        for (auto &entry : vtables)
+        {
+            if (!tied.contains(entry.getKey()))
+            {
+                for (auto &slot : entry.second.slots)
+                {
+                    reached(slot.second);
+                }
+            }
+        }
+    }
     static constexpr const char *INTERFACE_REACHED_WHY =
         "it is reached through an interface, whose calls are not given its facts";
 
@@ -1366,50 +2056,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
     }
 
-    // The methods every interface vtable for a class holds (interfaceReached). Such a vtable holds its
-    // class's `..instanceOf` too, so classVTableEntries takes it for a class vtable; what tells it
-    // apart is its name, `<class>.<interface>..vtbl`, where a class's own is `<class>..vtbl`.
-    void collectInterfaceReached(mlir::ModuleOp module)
-    {
-        module.walk([&](mlir_ts::GlobalOp globalOp) {
-            auto name = globalOp.getSymName();
-            if (!name.ends_with("..vtbl"))
-            {
-                return;
-            }
-
-            auto owner = name.drop_back(llvm::StringRef("..vtbl").size());
-            llvm::SmallVector<mlir::StringAttr> methods;
-            auto ofClass = false;
-            auto ownClass = false;
-            globalOp.getInitializerRegion().walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
-                auto symbol = symbolRefOp.getIdentifierAttr().getAttr();
-                if (symbol.getValue().ends_with("..instanceOf"))
-                {
-                    ofClass = true;
-                    ownClass = ownClass || symbol.getValue().drop_back(llvm::StringRef("..instanceOf").size()) == owner;
-                    return;
-                }
-
-                methods.push_back(symbol);
-            });
-
-            if (!ofClass || ownClass)
-            {
-                return;
-            }
-
-            for (auto method : methods)
-            {
-                if (auto funcOp = functions.lookup(method.getValue()))
-                {
-                    interfaceReached.insert(funcOp);
-                }
-            }
-        });
-    }
-
-    // Does a method reached through an interface keep a parameter or return a borrow
+    // Does a method reached through an open interface keep a parameter or return a borrow
     // (interfaceReached)? Then its callers through the interface cannot be told, and it has no facts
     // at all.
     bool factsThroughInterface(mlir::Operation *funcOp, const Facts &facts)
@@ -1580,6 +2227,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(op))
         {
             resolveValue(calleeValue(op), callees);
+            // an iterator's `next()` is fresh whoever implements it (isIteratorNext), which its
+            // family's facts must not contradict
+            if (callees.viaInterface && isIteratorNext(op))
+            {
+                callees = Callees();
+            }
         }
 
         if (!callees.known)
@@ -1659,6 +2312,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             callees.fieldFunction = callees.known;
             return;
         }
+        else if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def))
+        {
+            resolveInterfaceSlot(interfaceRefOp, callees);
+            return;
+        }
 
         if (!identifier)
         {
@@ -1674,6 +2332,34 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         callees.named = familyOf(index, identifier);
         resolveFamily(index, identifier, callees);
+    }
+
+    // A method of a closed interface (interfaceFamilies), `ts.InterfaceSymbolRef(value, index)`: the
+    // family of the slot after the vtable's header. Open, the call is unknown, as before.
+    void resolveInterfaceSlot(mlir_ts::InterfaceSymbolRefOp refOp, Callees &callees)
+    {
+        auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType());
+        auto identifier = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+        if (!interfaceType || !identifier)
+        {
+            return;
+        }
+
+        auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
+        auto found = interfaceFamilies.find({interfaceType.getName().getValue().str(), position});
+        if (found == interfaceFamilies.end() || !found->second.closed || found->second.field != identifier ||
+            found->second.members.empty())
+        {
+            return;
+        }
+
+        callees.named.assign(found->second.members.begin(), found->second.members.end());
+        callees.viaInterface = true;
+        callees.known = true;
+        for (auto member : found->second.members)
+        {
+            callees.known = addDefined(member, callees) && callees.known;
+        }
     }
 
     // A class another module can see may be extended there, and its override is a candidate this
@@ -2087,30 +2773,47 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
+        // the members of a family that disagree lose their facts: a call through the family is
+        // given only what all of them say. A closed interface's slot is such a family too.
+        auto demote = [&](llvm::ArrayRef<mlir::StringAttr> members) {
+            llvm::SmallVector<Facts> seen;
+            for (auto member : members)
+            {
+                auto funcOp = functions.lookup(member.getValue());
+                seen.push_back(funcOp ? factsEffective.lookup(funcOp) : Facts());
+            }
+
+            auto changed = false;
+            if (llvm::all_equal(seen))
+            {
+                return changed;
+            }
+
+            for (auto member : members)
+            {
+                if (auto funcOp = functions.lookup(member.getValue());
+                    funcOp && !declaresCallerFacts(funcOp) && factsEffective.erase(funcOp))
+                {
+                    changed = true;
+                }
+            }
+
+            return changed;
+        };
+
         for (auto changed = true; changed;)
         {
             changed = false;
             for (auto &[key, members] : families)
             {
-                llvm::SmallVector<Facts> seen;
-                for (auto member : members)
-                {
-                    auto funcOp = functions.lookup(member.getValue());
-                    seen.push_back(funcOp ? factsEffective.lookup(funcOp) : Facts());
-                }
+                changed = demote(members) || changed;
+            }
 
-                if (llvm::all_equal(seen))
+            for (auto &[key, family] : interfaceFamilies)
+            {
+                if (family.closed)
                 {
-                    continue;
-                }
-
-                for (auto member : members)
-                {
-                    if (auto funcOp = functions.lookup(member.getValue());
-                        funcOp && !declaresCallerFacts(funcOp) && factsEffective.erase(funcOp))
-                    {
-                        changed = true;
-                    }
+                    changed = demote(family.members) || changed;
                 }
             }
         }

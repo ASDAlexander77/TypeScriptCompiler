@@ -833,7 +833,9 @@ inline bool isParameterSlot(mlir_ts::VariableOp varOp, int &index)
     return true;
 }
 
-// The object a method call is made on: `ts.GetThis` of a method bound to it. Null otherwise.
+// The object a method call is made on: `ts.GetThis` of a method bound to it - by its class, or by an
+// interface value whose method it is (`i.m`: the object the interface value is a view of, spec 31).
+// Null otherwise.
 inline mlir::Value boundThis(mlir::Value value)
 {
     auto getThisOp = value.getDefiningOp<mlir_ts::GetThisOp>();
@@ -846,6 +848,11 @@ inline mlir::Value boundThis(mlir::Value value)
     if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(bound))
     {
         return refOp.getThisVal();
+    }
+
+    if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(bound); refOp && !isInterfaceField(refOp.getResult()))
+    {
+        return refOp.getInterfaceVal();
     }
 
     return {};

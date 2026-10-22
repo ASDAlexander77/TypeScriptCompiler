@@ -3481,7 +3481,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
                  own_immortal_global own_immortal_global_region
                  own_literal_moves own_record_literal_given
-                 own_field_chain_let own_read_after_move own_conditional_move)
+                 own_field_chain_let own_read_after_move own_conditional_move
+                 own_interface_facts)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3536,6 +3537,13 @@ endforeach()
 foreach(conditional_move_mm rc gc none)
     tslang_add_test(NAME test-jit-${conditional_move_mm}-own_conditional_move COMMAND test-runner -jit -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
     tslang_add_test(NAME test-compile-${conditional_move_mm}-own_conditional_move COMMAND test-runner -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
+endforeach()
+
+# A call through an interface closed in its module gets its implementations' facts (spec 31); the
+# same program under every other model.
+foreach(interface_facts_mm rc gc none)
+    tslang_add_test(NAME test-jit-${interface_facts_mm}-own_interface_facts COMMAND test-runner -jit -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_facts.ts")
+    tslang_add_test(NAME test-compile-${interface_facts_mm}-own_interface_facts COMMAND test-runner -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_facts.ts")
 endforeach()
 
 # A global declared in top-level code owns what it is given, under every model that counts.
@@ -3768,6 +3776,11 @@ set(own_error_cases
     "own_err_interface_borrow_param|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
     "own_err_interface_borrow_element|borrows an element and cannot be stored, returned or captured"
     "own_err_interface_borrow_field|borrows a field and cannot be stored, returned or captured"
+    "own_err_interface_exported_impl|borrows .* but is used here after it may be released or overwritten"
+    "own_err_interface_family_disagrees|is a parameter, returned here, but -mm=own cannot tell the callers of 'GA.get' that the result borrows it"
+    "own_err_interface_member_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_from_interface|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
+    "own_err_interface_result_outlives|borrows a call's result but is used here after it may be released or overwritten"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"

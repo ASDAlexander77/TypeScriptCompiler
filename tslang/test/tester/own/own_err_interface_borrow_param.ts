@@ -1,11 +1,11 @@
-// -mm=own rejects: a method whose result borrows its argument, reached through an interface. The
-// call through the interface is not given the method's facts, so the caller would release the
-// borrow as its own (a double free). Until facts reach interface calls (G9), the method's body is
-// the error.
+// -mm=own rejects: a method whose result borrows its argument, reached through an exported
+// interface. Another module may call through the interface without the method's facts, and would
+// release the borrow as its own (a double free), so the call is open and the method's body is the
+// error. The same program with the interface not exported compiles (own_interface_facts, spec 31).
 class V {
     constructor(public x: number) {}
 }
-interface Getter { get(v: V): V; }
+export interface Getter { get(v: V): V; }
 class G implements Getter { get(v: V): V { return v; } }
 function main() {
     const g: Getter = new G();
