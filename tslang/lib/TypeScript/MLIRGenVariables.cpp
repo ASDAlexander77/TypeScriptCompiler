@@ -415,6 +415,12 @@ namespace mlirgen
                         return V(mlirGenArrayRestCopy(location, mlir::cast<mlir_ts::ArrayType>(arrayType), arrayValue, index, genContext));
                     }
 
+                    // past the end: the default of the element type, null for a reference (see below)
+                    if (index >= constArrayType.getSize())
+                    {
+                        return V(builder.create<mlir_ts::DefaultOp>(location, constArrayType.getElementType()));
+                    }
+
                     // TODO: unify it with ElementAccess
                     auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                                         builder.getI32IntegerAttr(index));
@@ -429,12 +435,30 @@ namespace mlirgen
                         return V(mlirGenArrayRestCopy(location, arrayType, init, index, genContext));
                     }
 
-                    // TODO: unify it with ElementAccess
-                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                                        builder.getI32IntegerAttr(index));
-                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                        location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
-                    return V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef));
+                    // An element past the end of the array (`const [a, b, c] = pair`) is the default
+                    // of its type - null for a reference, where TS has undefined - not whatever follows
+                    // the array's data: a read of that was undefined behaviour, and under rc a count
+                    // taken of it faulted.
+                    auto lengthValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), init);
+                    auto indexValue = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                                          mth.getIndexAttrValue(index));
+                    auto inBoundsValue = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                        builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), lengthValue, indexValue));
+
+                    auto result = conditionalValue(location, inBoundsValue,
+                        [&]() {
+                            // TODO: unify it with ElementAccess
+                            auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                                builder.getI32IntegerAttr(index));
+                            auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                                location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
+                            return ValueOrLogicalResult(
+                                V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef)));
+                        },
+                        [&](mlir::Type elementType) {
+                            return ValueOrLogicalResult(V(builder.create<mlir_ts::DefaultOp>(location, elementType)));
+                        });
+                    return result.failed_or_no_value() ? mlir::Value() : V(result);
                 })
                 .Default([&](auto type) { 
 
