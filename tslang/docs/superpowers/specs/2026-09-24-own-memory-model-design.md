@@ -3394,8 +3394,10 @@ a block freed too early is reused before it is read.
   nothing: it is given no block of this module. `sqrt`, `floor`, `pow` and `fabs` in the ray tracer.
   The risk, as for `@nodrops`, is a C function calling back into the module: one registered through
   another declaration (`signal(15, onSig as Opaque)`, then `raise(15)`; a window procedure and
-  `SendMessage`), or an exported function reached by name. The first is closed below (re-review);
-  the second remains. `own_declared_scalar_no_drops` holds a field's
+  `SendMessage`), or an exported function reached by name. The first is closed by type below (the
+  rule is off in a module that casts a function-holding value to a type that holds none, or gives a
+  declared function an argument whose type holds a function); the second remains.
+  `own_declared_scalar_no_drops` holds a field's
   borrow across `sqrt`, across a function that calls `sqrt` and `floor`, and across a call through a
   closed interface whose member does; `own_err_declared_drops` (`strlen(s: string)`) is unchanged.
 - **A `public` method of a class no other module can name** (controller ruling) is not callable from
@@ -3473,11 +3475,17 @@ Not here, also:
   `own_err_override_nameable_base` (library side), `own_err_override_imported_base` and
   `own_err_override_imported_class` (importer side, the latter a private override of a concrete
   base); the library-and-importer pairs run under rc, gc and none (`test-runner -shared`).
-- **C callbacks.** The C-scalar rule is off in a module that lets a function of its own escape to C:
-  its value (through function casts and bindings) cast to something that is no function (`any`, an
-  opaque pointer, an integer), or given to a declared function. Negative
+- **C callbacks.** The C-scalar rule is off in a module that contains a `ts.Cast` from a type that
+  holds a function (the type itself, a union's or optional's member, a tuple's field, an array's
+  element, a reference's pointee) to a type that holds none (`any`, `unknown`, an opaque pointer, an
+  integer, anything else; a class or object output counts its fields, a vtable's address is the
+  compiler's own), or a call of a declared (body-less) function with an argument whose type holds a
+  function anywhere, class and object fields included. Decided by types, so no route of the value
+  matters (fix round 3: a first version followed values and missed a global initialized with the
+  function, a wrapper, a returned function, a method reference, a tuple). Negatives
   `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
-  caller of `raise(15)` borrows).
+  caller of `raise(15)` borrows), `_global` (`let cb = onSig`), `_method` (`k.m as Opaque`) and
+  `_tuple` (`reg([onSig, 1])`, compiled only).
 
 Teeth: with the member closure skipped, `own_err_interface_member_types` and `_methods` compile and
 print `5 77777` (gc `5 5`). With the C rule kept on despite an escaping function,
@@ -3488,3 +3496,12 @@ assert (`kept value still there`): the library side AOT, the importer side AOT a
 
 The ray tracer built as a program stays at 15 errors (the same ones); as an object file, 19.
 Corpus: 528 before and after, the same files.
+
+**Fix round 3** (2026-10-22). The member types of an interface whose values are all made from class
+objects (`const r2: Runner2 = rr`, the vtable read through the object's class) were not read: the
+class vtables joined the interface's vtables only after the member closure. They join before it now
+(negatives `own_err_interface_member_class`, `own_err_interface_member_any`). The C-callback test is
+by type (the bullet above). Teeth: with the class vtables left out of the closure, both new member
+negatives compile and print `5 77777` (gc `5 5`); with the type test off, `_global` and `_method`
+print `77777 9` (gc `5 9`). The ray tracer built as a program stays at 15 errors; corpus 528, the
+same files.

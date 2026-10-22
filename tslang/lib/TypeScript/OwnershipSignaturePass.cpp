@@ -1812,6 +1812,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // members: `HasF2 { f: (o: Op2, ...) }` seen as `HasF { f: (o: Op, ...) }` hands an `Op` to a
         // function that calls through `Op2` (review6r1 v5, v11f). So every interface either side's
         // members mention is open too, and theirs, recursively (controller ruling, spec 31).
+        //
+        // A class's vtables for its interfaces are its members' families whether or not this module
+        // makes an interface value of the class (a method called directly then keeps its facts), and
+        // their slots' types are the interface's members' types: an interface whose values are all
+        // made from class objects is read through them (review6r2 d1-d3).
+        for (auto &[name, held] : classHeld)
+        {
+            madeWith[name].insert(held.begin(), held.end());
+        }
+
         for (auto &[name, made] : madeWith)
         {
             for (auto vtableName : made)
@@ -1856,13 +1866,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto last = name.rsplit('.').second;
             return allOpen || open.contains(name) || words.contains(name) || (!last.empty() && words.contains(last));
         };
-
-        // a class's vtables for its interfaces are its members' families whether or not this module
-        // makes an interface value of the class: a method called directly then keeps its facts
-        for (auto &[name, held] : classHeld)
-        {
-            madeWith[name].insert(held.begin(), held.end());
-        }
 
         // A vtable this pass could not read, or one no value of any interface is made with, that is
         // named for an interface (`<class>.<I>..vtbl`, `<I>.<n>..vtbl`): the interface may have an
@@ -3161,71 +3164,107 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return true;
     }
 
-    // Does a function of this module escape where C could call it: its value (through function
-    // casts and bindings) cast to something that is no function (`any`, an opaque pointer, an
-    // integer), or given to a declared function as an argument? Then a C declaration of numbers
-    // may still call back into the module (scalarDeclaration).
+    // Can a function of this module reach C, which may call it back (scalarDeclaration)? Decided by
+    // types, not by following values (controller ruling, spec 31): the module casts something whose
+    // type holds a function to a type that does not (`any`, `unknown`, an opaque pointer, an
+    // integer: `signal(15, onSig as Opaque)`, `reg(h)` doing `h as Opaque`, `k.m as Opaque`), or
+    // passes a declared (body-less) function an argument whose type holds a function anywhere (a
+    // tuple, an array, a class's field: `reg([onSig, 1])`).
     bool functionsEscape = false;
+
+    // Does a value of this type hold a function: the type itself, a union's or an optional's
+    // member, a tuple's field, an array's element, what a reference points to, and with `fields`
+    // a class's or an object's fields.
+    static bool holdsFunction(mlir::Type type, bool fields, llvm::DenseSet<mlir::Type> &seen)
+    {
+        if (!type || !seen.insert(type).second)
+        {
+            return false;
+        }
+
+        if (mlir::isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType,
+                      mlir_ts::ExtensionFunctionType, mlir_ts::ConstructFunctionType>(type))
+        {
+            return true;
+        }
+
+        auto any = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
+            return llvm::any_of(infos, [&](const mlir_ts::FieldInfo &info) { return holdsFunction(info.type, fields, seen); });
+        };
+
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return any(tupleType.getFields());
+        }
+
+        if (auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            return any(constTupleType.getFields());
+        }
+
+        if (auto classStorageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(type))
+        {
+            return fields && any(classStorageType.getFields());
+        }
+
+        if (auto objectStorageType = mlir::dyn_cast<mlir_ts::ObjectStorageType>(type))
+        {
+            return fields && any(objectStorageType.getFields());
+        }
+
+        if (mlir::isa<mlir_ts::ClassType, mlir_ts::ObjectType>(type) && !fields)
+        {
+            return false;
+        }
+
+        auto found = false;
+        type.walkImmediateSubElements([](mlir::Attribute) {}, [&](mlir::Type sub) { found = found || holdsFunction(sub, fields, seen); });
+        return found;
+    }
 
     void findEscapingFunctions(mlir::ModuleOp module)
     {
-        auto isFunction = [](mlir::Type type) {
-            return mlir::isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType,
-                             mlir_ts::ExtensionFunctionType, mlir_ts::ConstructFunctionType>(type);
-        };
-
-        llvm::SmallVector<mlir::Value> work;
-        module.walk([&](mlir_ts::SymbolRefOp symbolRefOp) {
-            auto funcOp = functions.lookup(symbolRefOp.getIdentifier());
-            if (funcOp && !funcOp.isDeclaration() && !symbolRefOp->getParentOfType<mlir_ts::GlobalOp>())
+        module.walk([&](mlir::Operation *op) {
+            if (functionsEscape)
             {
-                work.push_back(symbolRefOp.getResult());
+                return;
+            }
+
+            // a function seen as something that holds none (the compiler's own seeing of an object
+            // as an opaque pointer - a class, an object - holds no function at this level)
+            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op))
+            {
+                // a vtable's address (a class's, an interface's, a thunk's cell) seen as an opaque
+                // pointer or an integer: the compiler's own, inside a vtable or storing an object's
+                // vtable, never a value a program gives C
+                auto vtableOp = op->getParentOfType<mlir_ts::GlobalOp>();
+                auto addressOfOp = addressOfThroughCasts(castOp.getIn());
+                auto isVTable = [](llvm::StringRef name) { return name.ends_with("..vtbl") || name.contains("..vtbl."); };
+                if ((vtableOp && isVTable(vtableOp.getSymName())) || (addressOfOp && isVTable(addressOfOp.getGlobalName())))
+                {
+                    return;
+                }
+
+                llvm::DenseSet<mlir::Type> seenIn;
+                llvm::DenseSet<mlir::Type> seenOut;
+                functionsEscape = holdsFunction(castOp.getIn().getType(), false, seenIn) &&
+                                  !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);                return;
+            }
+
+            // a declared function given anything that holds a function
+            if (isCall(op))
+            {
+                auto callee = directCallee(op);
+                auto funcOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp();
+                if (funcOp && funcOp.isDeclaration())
+                {
+                    functionsEscape = llvm::any_of(callArgs(op), [&](mlir::Value arg) {
+                        llvm::DenseSet<mlir::Type> seen;
+                        return holdsFunction(arg.getType(), true, seen);
+                    });
+                }
             }
         });
-
-        llvm::DenseSet<mlir::Value> seen;
-        while (!work.empty() && !functionsEscape)
-        {
-            auto value = work.pop_back_val();
-            if (!seen.insert(value).second)
-            {
-                continue;
-            }
-
-            for (auto &use : value.getUses())
-            {
-                auto *user = use.getOwner();
-                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
-                {
-                    if (isFunction(castOp.getType()))
-                    {
-                        work.push_back(castOp.getResult());
-                    }
-                    else
-                    {
-                        functionsEscape = true;
-                    }
-
-                    continue;
-                }
-
-                if (mlir::isa<mlir_ts::CreateBoundFunctionOp>(user))
-                {
-                    work.push_back(user->getResult(0));
-                    continue;
-                }
-
-                if (isCall(user) && calleeValue(user) != use.get())
-                {
-                    auto callee = directCallee(user);
-                    auto funcOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp();
-                    if (funcOp && funcOp.isDeclaration())
-                    {
-                        functionsEscape = true;
-                    }
-                }
-            }
-        }
     }
 
     // class name -> its storage, from every class type a function's signature or a global mentions
