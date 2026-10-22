@@ -3956,8 +3956,9 @@ when the slot was assigned inside the call's own argument list, the move's read 
 second operand: `f(n, (n = mk(7), 0))` with `p` kept in a `let` (BASE rejected it, since `p` was not
 kept) or in a field (wrong at BASE too) frees the old `n` at the assignment's release and then hands
 it to `f`. Now `checkSlotMove` rejects a move whose own read does not reach the taker without
-crossing an assignment of the slot (`!reachableAfter(load, taker, kills)`), reporting the assignment
-between them as `is used here after its value was moved` (the call is "value moved here"). With the
+crossing an assignment of the slot (`!reachableAfter(load, taker, kills)`; the taker itself may be
+the slot's assignment, `n = n`, which is the destination, not an assignment between), reporting the
+assignment between them as `is used here after its value was moved` (the call is "value moved here"). With the
 move's read held to that, every other read that passes the filter holds the moved value, so the
 filter is exact. `f(n, (n = mk(i), 0), n)` (the old `n` kept, the new one borrowed) stays rejected,
 by this check. Negatives `own_err_kept_arg_assigned_in_call` (`f(n, (n = mk(7), 0))`, `p` kept in a

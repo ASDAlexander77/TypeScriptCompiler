@@ -5393,8 +5393,11 @@ class OwnershipInferencePass
 
         // the slot given another value between the move's read and its taker - inside the call's own
         // argument list, `f(n, (n = mk(7), 0))`: the assignment's release frees what the read holds
-        // before the callee takes it, so the assignment is a use of the slot after the move
-        if (!reachableAfter(load, taker, kills))
+        // before the callee takes it, so the assignment is a use of the slot after the move. The
+        // taker may be an assignment of the slot itself (`n = n`): it is the destination, not between.
+        llvm::SmallVector<mlir::Operation *> killsBetween(kills);
+        llvm::erase(killsBetween, taker);
+        if (!reachableAfter(load, taker, killsBetween))
         {
             mlir::Operation *between = taker;
             llvm::SmallVector<mlir::Operation *, 2> readAgain{load.getOperation()};
