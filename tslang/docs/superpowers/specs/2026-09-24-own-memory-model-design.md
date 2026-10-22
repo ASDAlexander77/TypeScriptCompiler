@@ -3366,3 +3366,11 @@ Not here:
   position demote each other when they disagree. Too strict, but sound.
 - A class implementing a function-typed field (`f = (x) => ...`) is held through a thunk's cell and
   stays open.
+- **A `public` method** is open (§15: a function that is not private may be called from another
+  module), so its effective facts are empty, and a family it is in can agree only on none: a
+  `public get(v) { return v; }` beside a private one returning the same borrow demotes both (the
+  ray tracer's `Plane.normal` and `Plane.intersect` are `public`). For type exposure this section
+  reads only exported and declared functions; `findOpen` does not, yet.
+- **`export` inside a namespace** exports the declaration from the module (`__decls` lists `namespace
+  NS { interface Th ... }`), so an interface declared `export` in a namespace for use outside it is
+  open; one used only inside its namespace is closed.
