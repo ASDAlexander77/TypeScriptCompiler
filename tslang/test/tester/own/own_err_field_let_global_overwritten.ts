@@ -42,6 +42,8 @@ function run(h: H) {
     print(x.x);
 }
 
+// The rule is the callee's: it is given a fresh value here, since a written global's value lent to
+// a call that may drop is rejected at the call already (#639).
 function main() {
-    run(G);
+    run(mkH());
 }

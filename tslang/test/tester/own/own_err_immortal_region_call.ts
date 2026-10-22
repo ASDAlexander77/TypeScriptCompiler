@@ -1,6 +1,6 @@
 // -mm=own rejects: `c` is never assigned, but its initializer is a call's result, a borrow of a
 // temporary its region frees. Such a global is not immortal: no call's result is taken as the
-// global's own, so returning it is the error a global's read always was.
+// global's own. A global cannot hold a borrow: the initializer is the error (#638).
 class V {
     constructor(public x: number) {}
 }

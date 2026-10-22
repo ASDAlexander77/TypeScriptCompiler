@@ -1,6 +1,6 @@
 // -mm=own rejects: `c` is never assigned, but its initializer is a call's result, a borrow of an
 // element `list` owns. Marking that block immortal would make the array's free of it a silent
-// leak, so `c` stays mortal, and returning it is the error a global's read always was.
+// leak, so `c` stays mortal. A global cannot hold a borrow: the initializer is the error (#638).
 class V {
     constructor(public x: number) {}
 }

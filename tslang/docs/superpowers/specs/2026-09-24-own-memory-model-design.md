@@ -2821,7 +2821,11 @@ of `K.w` does nothing).
   `own_err_immortal_region_borrow`), as does a borrowed initializer (`static first = K.list[0]`,
   `own_err_immortal_borrowed_init`). Marking a block someone else owns immortal would turn its
   owner's free into a silent leak; marking a temporary the region frees would write the header
-  into a freed block, and the global would hold it.
+  into a freed block, and the global would hold it. Since main's #638 (merged into this branch
+  after T8) a global's region calls get their callees' facts (`ownGlobalInitializerCalls`), and a
+  region that holds a call's borrowing result is rejected there first ("the initializer of global
+  'c' holds the result of 'id', which borrows its argument"); the two negatives now pin that
+  message. They stay mortal all the same: `findImmortalGlobals` runs first and still refuses them.
 - **Only the global's own block.** `K.n.c = x` still destroys the old `c`, and a borrow of `K.n.c`
   stays bounded (`own_err_immortal_field_overwritten`).
 - **Inference.** `own_facts::isImmortalGlobalRead` is a `ts.Load` of a `ts.AddressOf` the pass
@@ -2846,7 +2850,9 @@ function, and the call's facts are not pinned there.
 merged with a fresh value, in a loop of 100000) and `own_immortal_global_region` the module-level
 ones (`const c = new V(1)`, `let e = c`), under own, rc, gc and none; own emits no counting.
 `own_err_global_returned` and `own_err_param_kept_not_owned` now also give the global another
-value, which keeps them errors: their programs as they were are accepted. The brief's text for
+value, which keeps them errors: their programs as they were are accepted. (Since the merge of main,
+`own_err_param_kept_not_owned`'s `keep` pushes instead of storing into a field: a keeper that
+drops is rejected at the call by #639 before phase 4's message.) The brief's text for
 `own_err_immortal_borrowed_init` (`the initializer of global 'K.first' takes a second reference`)
 is moveIntoGlobals', which only a region initializer reaches; a static's borrowed initializer is
 reported by inference in its static constructor, as before (`borrows 'K.list[]' and cannot be
@@ -3119,7 +3125,13 @@ global's `ts.ReleaseSlot` dropping nothing, both compile but the callee's case; 
 garbage (`9.88131e-324`) for the parameter and 999 for `this`, the second `9.88131e-324`, instead
 of 5. Still open, every model (rc too): a parameter itself read after the global it came from is
 assigned (`function run(h: C) { G = mk(); print(h.x); }` called as `run(G)`): no place is read,
-so there is no chain to end.
+so there is no chain to end. Under own main's #639 (merged into this branch after T8) closes that
+one at the caller: a value read out of a global something assigns, lent to a call that may drop,
+is an error ("a value read out of the global 'G' is lent to a call that may release or overwrite
+it"). That error comes first for `run(G)`, `GK.run()` and `runCallee(G)` too, so since the merge
+both negatives give their callees fresh values (`run(mkH())`, `new K().run()`) and pin this
+section's callee-side rule alone; the teeth above were measured with the global passed, before
+the merge.
 
 Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
 compile, and AOT runs with same-size allocations before the read print a freed block's value:

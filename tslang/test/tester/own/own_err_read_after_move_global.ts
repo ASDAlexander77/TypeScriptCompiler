@@ -66,8 +66,10 @@ function runCallee(h: H) {
     print(c.x);
 }
 
+// The rule is the callees': each is given a fresh value here, since a written global's value lent
+// to a call that may drop is rejected at the call already (#639).
 function main() {
-    run(G);
-    GK.run();
-    runCallee(G);
+    run(mkH());
+    new K().run();
+    runCallee(mkH());
 }
