@@ -1,6 +1,6 @@
 // A Shared<T> handle read out of a global's field and given to a call that gives the field a new
-// value: the caller holds a count across the call under rc, so the block the parameter reads
-// stays alive. (Own rejects the call: the argument borrows the field.) Counts are checked where
+// value, and a value read through a global handle given to a call that replaces it: the caller
+// holds a count across the call under rc, so the block the parameter reads stays alive. (Own rejects the call: the argument borrows the field.) Counts are checked where
 // there is one (rc); gc and none report -1.
 class Node {
     v = 0;
@@ -36,6 +36,7 @@ function mk(tag: string, v: number) {
 }
 
 const holder = new Holder();
+const G = new Shared(mk("first", 1));
 
 function runField(h: Shared<Node>) {
     holder.s = new Shared(mk("field2", 8));
@@ -44,9 +45,17 @@ function runField(h: Shared<Node>) {
     return h.value.v == 7 && h.value.tag == "field";
 }
 
+// a value read through a global handle, given to a call that replaces it
+function runValue(n: Node) {
+    G.value = mk("second", 2);
+    assert(churn() == 1000);
+    return n.v == 1 && n.tag == "first";
+}
+
 function main() {
     assert(countIs(holder.s, 1), "a call that does not assign the field takes no count");
     assert(runField(holder.s), "a handle given to a call that assigns the field it was read from");
     assert(countIs(holder.s, 1) && holder.s.value.v == 8, "the field's own count after the call");
+    assert(runValue(G.value), "a value read through a global handle given to a call that replaces it");
     print("done.");
 }
