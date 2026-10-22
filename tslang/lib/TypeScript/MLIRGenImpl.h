@@ -1701,6 +1701,24 @@ class MLIRGenImpl
             return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
         }
 
+        // An interface or a bound method made over a value read out of such a local: `v` seen
+        // through `I` in `const i: I = v`, or `this` of `const m = v.get`.
+        static bool viewsLocalSlot(mlir::Value value)
+        {
+            auto *definingOp = value ? value.getDefiningOp() : nullptr;
+            if (auto newInterfaceOp = dyn_cast_or_null<mlir_ts::NewInterfaceOp>(definingOp))
+            {
+                return readsLocalSlot(newInterfaceOp.getThisVal());
+            }
+
+            if (isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::CreateBoundFunctionOp>(definingOp))
+            {
+                return readsLocalSlot(definingOp->getOperand(0));
+            }
+
+            return false;
+        }
+
         // A record read out whole from the temporary slot an object literal is built in (one that
         // owns nothing of its own), with a field that owns a block and that only the literal's
         // receiver counts - a `let` does, with RetainSlot - so a `const` of it needs storage like a
@@ -1827,7 +1845,9 @@ class MLIRGenImpl
             // So does a const of anything that owns a block, read out of a local variable's slot
             // (`let a = new C(); const b = a;`, a parameter too): folded, it would be a read of
             // that slot, holding no reference of its own, and `a = d` would free what `b` still
-            // reads (#454). A const of a const, a call or a field has no slot to lose it from.
+            // reads (#454). A const of a const, a call or a field has no slot to lose it from. So
+            // does an interface or a bound method made over such a read (`const i: I = a`,
+            // `const m = a.get`): it holds the block as `b` would.
             //
             // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
             // hands its fields over unretained - its receiver is the one that retains them, as a
@@ -1845,7 +1865,7 @@ class MLIRGenImpl
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
-                     || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
+                     || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))
                      || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)
