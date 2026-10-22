@@ -2764,12 +2764,26 @@ class OwnershipInferencePass
                         continue;
                     }
 
+                    // a result that borrows it - a plain borrow (`id(r)`), or a borrowing record that
+                    // holds it - points where it points
                     auto args = callArgs(user);
-                    if (isRecordResult(user) && llvm::any_of(resultBorrowsAll(user), [&](int index) {
+                    auto given = [&](llvm::ArrayRef<int> indices) {
+                        return llvm::any_of(indices, [&](int index) {
                             return static_cast<size_t>(index) < args.size() && args[index] == value;
-                        }))
+                        });
+                    };
+
+                    if (user->getNumResults() == 1 && given(resultBorrowsAll(user)))
                     {
-                        push(user->getResult(0), true);
+                        push(user->getResult(0), pending.record || isRecordResult(user));
+                    }
+
+                    // ...and a generator's state that borrows it (OWN_RESULT_BOUNDED_ATTR_NAME)
+                    if (auto bounded = user->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BOUNDED_ATTR_NAME);
+                        bounded && user->getNumResults() == 1 &&
+                        given(llvm::SmallVector<int>(bounded.asArrayRef().begin(), bounded.asArrayRef().end())))
+                    {
+                        push(user->getResult(0), false);
                     }
 
                     continue;
