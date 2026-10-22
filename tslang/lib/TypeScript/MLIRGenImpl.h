@@ -1701,22 +1701,28 @@ class MLIRGenImpl
             return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
         }
 
-        // An interface or a bound method made over a value read out of such a local: `v` seen
-        // through `I` in `const i: I = v`, or `this` of `const m = v.get`.
-        static bool viewsLocalSlot(mlir::Value value)
+        // The value an interface or a bound method is made over: `v` seen through `I` in
+        // `const i: I = v`, or `this` of `const m = v.get`.
+        static mlir::Value viewedValue(mlir::Value value)
         {
             auto *definingOp = value ? value.getDefiningOp() : nullptr;
             if (auto newInterfaceOp = dyn_cast_or_null<mlir_ts::NewInterfaceOp>(definingOp))
             {
-                return readsLocalSlot(newInterfaceOp.getThisVal());
+                return newInterfaceOp.getThisVal();
             }
 
             if (isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::CreateBoundFunctionOp>(definingOp))
             {
-                return readsLocalSlot(definingOp->getOperand(0));
+                return definingOp->getOperand(0);
             }
 
-            return false;
+            return mlir::Value();
+        }
+
+        // An interface or a bound method made over a value read out of such a local.
+        static bool viewsLocalSlot(mlir::Value value)
+        {
+            return readsLocalSlot(viewedValue(value));
         }
 
         // A value read out of a field, through any casts: what `h.c` is in `const c = h.c`.
@@ -1862,8 +1868,10 @@ class MLIRGenImpl
             // it holds the block as `b` would.
             //
             // Under rc, so does a const read out of a field (`const c = h.c`): folded, `h.c = d` freed
-            // what `c` still read. Under own the folded read is a borrow, and a use after the overwrite
-            // is an error there. Not yet an element: a destructuring past the end of an array
+            // what `c` still read. So does an interface or a bound method made over such a read
+            // (`const i: I = h.v`, `const m = h.v.get`), which holds the block as `c` would. Under
+            // own the folded read is a borrow, and a use after the overwrite is an error there. Not
+            // yet an element: a destructuring past the end of an array
             // (`const [a, b, c] = pair`) reads whatever follows its data, and a count taken of that
             // faults, as it does for a `let` today.
             //
@@ -1884,7 +1892,8 @@ class MLIRGenImpl
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
-                     || (compileOptions.isRefCounted() && readsField(initial) && mth.ownsHeapMemory(location, type))
+                     || (compileOptions.isRefCounted() && (readsField(initial) || readsField(viewedValue(initial)))
+                         && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))
                      || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)
