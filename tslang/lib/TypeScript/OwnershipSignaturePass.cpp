@@ -252,6 +252,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         exportNoDrops();
+        ownGlobalInitializerCalls(module);
 
         module.walk([&](mlir_ts::CreateBoundFunctionOp boundOp) {
             if (!boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
@@ -2392,6 +2393,107 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         return !callees.instanceOf && !callees.imported &&
                llvm::any_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return !noDrops.contains(callee); });
+    }
+
+    // ---- Calls in a global's initializer ----
+
+    // A global's region is no function: its calls get no facts pinned, and the inference never sees
+    // it, so its calls were read with the defaults - an owned result, borrowed arguments. A result
+    // that borrows an argument (`const c = child(n)`, `id(new V(1))`) then made the global a second
+    // owner of a block its argument's owner keeps, or kept one the region freed; and a fresh
+    // argument a callee keeps (`new N(new V(4))`, the constructor keeping `c`) was released at the
+    // end of the region, under the object that kept it. A kept argument made in the region and used
+    // by nothing after the call moves into the callee: its release goes. Anything else is an error.
+    void ownGlobalInitializerCalls(mlir::ModuleOp module)
+    {
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            // collected first: a move erases a release the walk has not reached yet
+            llvm::SmallVector<mlir::Operation *> calls;
+            globalOp.walk([&](mlir::Operation *op) {
+                if (isCall(op))
+                {
+                    calls.push_back(op);
+                }
+            });
+
+            for (auto *op : calls)
+            {
+                auto callees = resolve(op);
+                auto facts = callFacts(callees);
+                auto calleeName = callees.funcs.empty() ? llvm::StringRef("the callee") : callees.funcs.front().getSymName();
+                if (facts.borrows >= 0)
+                {
+                    op->emitError("the initializer of global '")
+                        << globalOp.getSymName() << "' holds the result of '" << calleeName
+                        << "', which borrows its argument; a global cannot hold a borrow under -mm=own";
+                    signalPassFailure();
+                    continue;
+                }
+
+                auto args = callArgs(op);
+                llvm::SmallPtrSet<mlir::Value, 4> given;
+                for (auto index : facts.owned)
+                {
+                    if (index < 0 || index >= static_cast<int32_t>(args.size()) ||
+                        !given.insert(rootOf(args[index])).second || !moveIntoCallee(op, args[index]))
+                    {
+                        op->emitError("the initializer of global '")
+                            << globalOp.getSymName() << "' gives '" << calleeName
+                            << "' a value it keeps, but -mm=own cannot move it there";
+                        signalPassFailure();
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // `value` was made in the call's block and nothing but its release, if it has one, comes after
+    // the call: the release goes, and the callee owns the block. Constant data (a string literal)
+    // is nobody's, and is given as it is.
+    static bool moveIntoCallee(mlir::Operation *call, mlir::Value value)
+    {
+        auto root = rootOf(value);
+        if (isConstantData(root))
+        {
+            return true;
+        }
+
+        if (!isFresh(root) || root.getDefiningOp()->getBlock() != call->getBlock())
+        {
+            return false;
+        }
+
+        mlir::Operation *release = nullptr;
+        auto usedAfter = false;
+        forEachUse(root, [&](mlir::Operation *user, mlir::Value) {
+            if (user == call)
+            {
+                return;
+            }
+
+            if (user->getBlock() != call->getBlock())
+            {
+                usedAfter = true;
+            }
+            else if (call->isBeforeInBlock(user))
+            {
+                usedAfter = usedAfter || release || !mlir::isa<mlir_ts::ReleaseOp>(user);
+                release = mlir::isa<mlir_ts::ReleaseOp>(user) ? user : release;
+            }
+        });
+
+        if (usedAfter)
+        {
+            return false;
+        }
+
+        if (release)
+        {
+            release->erase();
+        }
+
+        return true;
     }
 
     // ---- Export ----
