@@ -1701,6 +1701,61 @@ class MLIRGenImpl
             return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
         }
 
+        // The value an interface or a bound method is made over: `v` seen through `I` in
+        // `const i: I = v`, or `this` of `const m = v.get`.
+        static mlir::Value viewedValue(mlir::Value value)
+        {
+            auto *definingOp = value ? value.getDefiningOp() : nullptr;
+            if (auto newInterfaceOp = dyn_cast_or_null<mlir_ts::NewInterfaceOp>(definingOp))
+            {
+                return newInterfaceOp.getThisVal();
+            }
+
+            if (isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::CreateBoundFunctionOp>(definingOp))
+            {
+                return definingOp->getOperand(0);
+            }
+
+            return mlir::Value();
+        }
+
+        // An interface or a bound method made over a value read out of such a local.
+        static bool viewsLocalSlot(mlir::Value value)
+        {
+            return readsLocalSlot(viewedValue(value));
+        }
+
+        // A value read out of a field, through any casts: what `h.c` is in `const c = h.c`.
+        static bool readsField(mlir::Value value)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        }
+
+        // A value read out of an element, through any casts: what `a[0]` is in `const c = a[0]`, and
+        // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if).
+        static bool readsElement(mlir::Value value)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            if (auto ifOp = value ? value.getDefiningOp<mlir_ts::IfOp>() : mlir_ts::IfOp())
+            {
+                auto resultOp = dyn_cast<mlir_ts::ResultOp>(ifOp.getThenRegion().front().getTerminator());
+                return resultOp && readsElement(resultOp.getOperand(mlir::cast<mlir::OpResult>(value).getResultNumber()));
+            }
+
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::ElementRefOp>();
+        }
+
         // A record read out whole from the temporary slot an object literal is built in (one that
         // owns nothing of its own), with a field that owns a block and that only the literal's
         // receiver counts - a `let` does, with RetainSlot - so a `const` of it needs storage like a
@@ -1827,7 +1882,15 @@ class MLIRGenImpl
             // So does a const of anything that owns a block, read out of a local variable's slot
             // (`let a = new C(); const b = a;`, a parameter too): folded, it would be a read of
             // that slot, holding no reference of its own, and `a = d` would free what `b` still
-            // reads (#454). A const of a const, a call or a field has no slot to lose it from.
+            // reads (#454). A const of a const or a call has no slot to lose it from. So does an
+            // interface or a bound method made over such a read (`const i: I = a`, `const m = a.get`):
+            // it holds the block as `b` would.
+            //
+            // Under rc, so does a const read out of a field (`const c = h.c`) or an element (`const c =
+            // a[0]`, `const [c] = a`): folded, `h.c = d` or `a[0] = d` freed what `c` still read. So
+            // does an interface or a bound method made over such a read (`const i: I = h.v`,
+            // `const m = a[0].get`), which holds the block as `c` would. Under own the folded read is a
+            // borrow, and a use after the overwrite is an error there.
             //
             // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
             // hands its fields over unretained - its receiver is the one that retains them, as a
@@ -1845,7 +1908,11 @@ class MLIRGenImpl
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
-                     || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
+                     || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
+                     || (compileOptions.isRefCounted()
+                         && (readsField(initial) || readsElement(initial) || readsField(viewedValue(initial))
+                             || readsElement(viewedValue(initial)))
+                         && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))
                      || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)

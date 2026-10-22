@@ -90,9 +90,15 @@
 
 // Marks a `ts.CreateBoundFunction` whose `this` is a capture box built for it a moment earlier,
 // rather than a receiver that belongs to somebody else. Only such a closure owns its `this`, and
-// only it gets the type tag at CLOSURE_TYPE_INDEX - a bound method must not take ownership of
-// the object it is bound to. Set where the closure is built and the difference is known.
+// gets the box's type tag at CLOSURE_TYPE_INDEX - a bound method does not own the object it is
+// bound to (under rc its receivers count it, see BOUND_OBJECT_TYPE_ATTR_NAME). Set where the
+// closure is built and the difference is known.
 #define OWNS_CAPTURE_ATTR_NAME "__owns_capture"
+
+// On a `ts.CreateBoundFunction` that binds a method to an object: the object's type, which the
+// lowering casts `this` away from. Under rc the bound value counts the object through that type's
+// tag at CLOSURE_TYPE_INDEX, as an interface over it does.
+#define BOUND_OBJECT_TYPE_ATTR_NAME "__bound_object_type"
 
 // Marks the `ts.Variable` that CaptureOpLowering creates for a capture box. It carries
 // `captured = true` only because that is how a variable asks to be allocated in the heap, and

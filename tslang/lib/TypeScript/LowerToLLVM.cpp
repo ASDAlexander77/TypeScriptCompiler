@@ -6389,6 +6389,8 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
                 methodPtr);
             auto boundFuncVal =
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTyped);
+            boundFuncVal->setAttr(BOUND_OBJECT_TYPE_ATTR_NAME,
+                                  mlir::TypeAttr::get(thisVirtualSymbolRefOp.getThisVal().getType()));
             rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{boundFuncVal});
         }
         else
@@ -6427,7 +6429,8 @@ struct ThisSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisSymbolRefOp>
         auto method = rewriter.create<mlir_ts::SymbolRefOp>(
             loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
             thisSymbolRefOp.getIdentifierAttr());
-        rewriter.replaceOpWithNewOp<mlir_ts::CreateBoundFunctionOp>(thisSymbolRefOp, boundFunc, thisOpaque, method);
+        auto boundFuncVal = rewriter.replaceOpWithNewOp<mlir_ts::CreateBoundFunctionOp>(thisSymbolRefOp, boundFunc, thisOpaque, method);
+        boundFuncVal->setAttr(BOUND_OBJECT_TYPE_ATTR_NAME, mlir::TypeAttr::get(thisSymbolRefOp.getThisVal().getType()));
         return success();
     }
 };
@@ -6977,9 +6980,9 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
     // The runtime type tag of the capture box, for CLOSURE_TYPE_INDEX.
     //
-    // Null unless MLIRGen marked this closure as owning its `this` - a bound method's receiver
-    // belongs to whoever holds the object, and giving the closure a tag for it would have `obj.m`
-    // take a reference to `obj` and hand it back when the bound value dies.
+    // Only for a closure MLIRGen marked as owning its `this`. A bound method's receiver belongs to
+    // whoever holds the object: it gets the object's own tag under rc (getBoundObjectTypeTag), so
+    // a receiver of `obj.m` holds a reference to `obj`, and a null tag elsewhere.
     //
     // The box arrives as a `ref` to its tuple, which owns nothing by itself (a reference into
     // storage is not ownership). What has to be released is the block, so the tag names the
@@ -6994,7 +6997,7 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         if (!createBoundFunctionOp->hasAttr(OWNS_CAPTURE_ATTR_NAME))
         {
-            return nullTag();
+            return getBoundObjectTypeTag(createBoundFunctionOp, rewriter);
         }
 
         auto captureRefType = dyn_cast<mlir_ts::RefType>(createBoundFunctionOp.getThisVal().getType());
@@ -7035,6 +7038,43 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         return ch.getOrCreateTypeDescriptorName(captureRefType, name, TypeOfOpHelper::typeKindFromName(name),
                                                 releaseRoutineName, retainRoutineName, borrows ? "b" : "");
+    }
+
+    // Under rc, a method bound to a class object counts that object like an interface over it does
+    // (NewInterfaceOpLowering): the tag is the class's, so a `let m = v.get` - or a field, or an
+    // element - holds a reference to `v`'s object, and `v = d` no longer frees what `m()` runs on.
+    // A bound value is born with no count of its own, as an interface is; only its receivers take
+    // one. Under own a bound method owns nothing (a second reference is an error there), and gc and
+    // none count nothing, so their tag stays null.
+    mlir::Value getBoundObjectTypeTag(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp,
+                                      ConversionPatternRewriter &rewriter) const
+    {
+        TypeHelper th(rewriter);
+        auto loc = createBoundFunctionOp.getLoc();
+        // a method bound to an object has its `this` cast to an opaque pointer, and the object's
+        // type beside it (ThisSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering)
+        auto boundType = createBoundFunctionOp->getAttrOfType<mlir::TypeAttr>(BOUND_OBJECT_TYPE_ATTR_NAME);
+        auto thisType = boundType ? boundType.getValue() : createBoundFunctionOp.getThisVal().getType();
+        if (!tsLlvmContext->compileOptions.isRefCounted() || !isa<mlir_ts::ClassType>(thisType))
+        {
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        TypeOfOpHelper toh(rewriter);
+        auto name = toh.typeOfAsString(thisType);
+        if (name.empty())
+        {
+            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
+        }
+
+        // generated first: the descriptor's initializer takes their addresses
+        OwnershipRoutineLogic orl(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(thisType);
+        auto retainRoutineName = orl.getOrCreateRetainRoutine(thisType);
+
+        LLVMCodeHelper ch(createBoundFunctionOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
+                                                releaseRoutineName, retainRoutineName);
     }
 
     LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,

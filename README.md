@@ -756,6 +756,30 @@ freed under it**, which is the same trade Swift makes with ARC.
 See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
 what to do about it.
 
+### Performance
+
+The ray tracer benchmark in [tslang/benchmarks/raytrace](tslang/benchmarks/raytrace/README.md)
+(`raytrace.ts` at 512x512, median of 7 runs, 2026-10-21) against Rust and C++ ports of the same
+code, each written twice: with plain value vectors and colors, and with every object
+reference-counted on the heap the way tslang allocates them:
+
+| build | time | peak memory | vs C++ values (clang -O3) |
+| --- | --- | --- | --- |
+| `-mm=gc` | 1298 ms | 6 MB | 26x slower |
+| `-mm=rc` | 599 ms | 4 MB | 12x slower |
+| `-mm=none` | 703 ms | 845 MB | 14x slower |
+| `-mm=own` | does not compile yet | | |
+| C++, values (clang / MSVC) | 51 / 69 ms | | |
+| Rust, values (`Copy` vectors and colors) | 55 ms | 4 MB | 1.1x slower |
+| Rust, every object in an `Rc` | 492 ms | 4 MB | 9.7x slower |
+| C++, every object in a `shared_ptr` (clang / MSVC) | 830 / 899 ms | | 16x slower |
+
+Almost all of the gap is allocation: every vector and color the program computes is a heap object.
+Rust that allocates the same way is only 1.2x faster than `-mm=rc`, and C++ with `shared_ptr`
+(atomic counts) is 1.4x slower than it. `-mm=none` is slower than
+`-mm=rc` because it never frees and keeps touching fresh pages. Stack promotion makes no measurable
+difference here yet: the hot allocations are returned from functions or captured by closures.
+
 ### `-mm=own`
 
 `-mm=own` works the way Rust's borrow checker does. Every heap block has exactly one owner: a

@@ -13,6 +13,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
@@ -66,6 +67,8 @@ class OwnedReturnConsumptionPass
         copyEscapingStringViews(module);
 
         retainYieldedRecords(mth, module);
+
+        holdGlobalArguments(mth, module);
 
         own_facts::FieldFunctions fieldFunctionsOfModule;
         const own_facts::FieldFunctions *fieldFunctions = nullptr;
@@ -291,6 +294,310 @@ class OwnedReturnConsumptionPass
         });
     }
 
+    // A call's argument read out of a global (`run(G)`, `run(G.c)`, `G.m()`) is borrowed like any
+    // other argument, and the callee may give the global a new value while it still uses the
+    // parameter (`function run(h: C) { G = mk(); print(h.x); }`): the global's release freed the
+    // block the parameter read. Under rc the caller holds a count across the call - retained right
+    // before it, released right after it - and, when a try around the call takes what it throws,
+    // released where that try's handler starts (unwindRegionOf). This runs before the affine
+    // lowering, so a call in a try body is still a plain call here (a `ts.Invoke` later).
+    //
+    // A Shared<T> handle (spec 23.1) is counted under rc and own alike, and a program reads its
+    // count (`Shared.count`) as the number of handles - which a parameter, a borrow, is not one of.
+    // So a handle is held, under both, only across a call that may give the global it was read
+    // from a new value, the one case where the hold is what keeps the block alive.
+    void holdGlobalArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
+    {
+        if (!compileOptions.tracksOwnership())
+        {
+            return;
+        }
+
+        // the global a read comes out of, or a place (a field, an element, a handle's value) is in,
+        // through casts
+        auto globalOf = [](mlir::Value value, bool isPlace) -> mlir::StringRef {
+            for (auto depth = 0; depth < 16 && value; depth++)
+            {
+                mlir::Operation *place = nullptr;
+                if (isPlace)
+                {
+                    place = value.getDefiningOp();
+                    isPlace = false;
+                }
+                else
+                {
+                    while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                    {
+                        value = castOp.getIn();
+                    }
+
+                    auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+                    place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+                }
+
+                if (auto addressOfOp = mlir::dyn_cast_or_null<mlir_ts::AddressOfOp>(place))
+                {
+                    return addressOfOp.getGlobalName();
+                }
+
+                value = mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(place)
+                            ? place->getOperand(0)
+                            : mlir::Value();
+            }
+
+            return {};
+        };
+
+        auto readsGlobalItself = [](mlir::Value value) {
+            while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>();
+        };
+
+        // The function a call names, if it can be named.
+        auto calleeOf = [](mlir::Operation *op) -> mlir::StringRef {
+            if (auto callee = own_facts::directCallee(op))
+            {
+                return callee.getValue();
+            }
+
+            auto value = own_facts::calleeValue(op);
+            auto symbolRefOp = value ? value.getDefiningOp<mlir_ts::SymbolRefOp>() : mlir_ts::SymbolRefOp();
+            if (symbolRefOp)
+            {
+                return symbolRefOp.getIdentifier();
+            }
+
+            auto thisSymbolRefOp = value ? value.getDefiningOp<mlir_ts::ThisSymbolRefOp>() : mlir_ts::ThisSymbolRefOp();
+            return thisSymbolRefOp ? thisSymbolRefOp.getIdentifier() : mlir::StringRef();
+        };
+
+        // The globals each function may give a new value: by a store to the global or into a place
+        // in it, its own or a callee's. A call through a value that names no function may assign
+        // any of them; a function with no body here assigns none.
+        llvm::StringMap<llvm::StringSet<>> assigns;
+        llvm::StringMap<llvm::SmallVector<mlir::StringRef>> callees;
+        llvm::StringSet<> assignsAny;
+        module.walk([&](mlir_ts::FuncOp funcOp) {
+            auto name = funcOp.getSymName();
+            funcOp.walk([&](mlir::Operation *op) {
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+                {
+                    if (auto global = globalOf(storeOp.getReference(), true); !global.empty())
+                    {
+                        assigns[name].insert(global);
+                    }
+                }
+                else if (own_facts::isCall(op))
+                {
+                    if (auto callee = calleeOf(op); !callee.empty())
+                    {
+                        callees[name].push_back(callee);
+                    }
+                    else
+                    {
+                        assignsAny.insert(name);
+                    }
+                }
+            });
+        });
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &entry : callees)
+            {
+                auto caller = entry.getKey();
+                for (auto callee : entry.getValue())
+                {
+                    if (assignsAny.contains(callee) && assignsAny.insert(caller).second)
+                    {
+                        changed = true;
+                    }
+
+                    if (auto it = assigns.find(callee); it != assigns.end())
+                    {
+                        // copied first: `assigns[caller]` may move the entry being read
+                        llvm::SmallVector<mlir::StringRef> globals;
+                        for (auto &global : it->getValue())
+                        {
+                            globals.push_back(global.getKey());
+                        }
+
+                        for (auto global : globals)
+                        {
+                            changed |= assigns[caller].insert(global).second;
+                        }
+                    }
+                }
+            }
+        }
+
+        auto mayAssign = [&](mlir::Operation *op, mlir::StringRef global) {
+            auto callee = calleeOf(op);
+            if (callee.empty() || assignsAny.contains(callee))
+            {
+                return true;
+            }
+
+            auto it = assigns.find(callee);
+            return it != assigns.end() && it->getValue().contains(global);
+        };
+
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> held;
+        module.walk([&](mlir::Operation *op) {
+            if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
+                !op->getParentOfType<mlir::FunctionOpInterface>())
+            {
+                return;
+            }
+
+            llvm::SmallPtrSet<mlir::Value, 4> seen;
+            for (auto argument : own_facts::callArgs(op))
+            {
+                // a method's object: `this` of the method bound to it
+                if (auto getThisOp = argument.getDefiningOp<mlir_ts::GetThisOp>())
+                {
+                    auto *boundOp = getThisOp->getOperand(0).getDefiningOp();
+                    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+                    {
+                        argument = boundOp->getOperand(0);
+                    }
+                }
+
+                if (!mth.ownsHeapMemory(op->getLoc(), argument.getType()) || !seen.insert(argument).second)
+                {
+                    continue;
+                }
+
+                auto global = globalOf(argument, false);
+                auto isHandle = MLIRTypeHelper::isSharedHandleType(argument.getType());
+                if (global.empty() || (isHandle ? !mayAssign(op, global) : !compileOptions.isRefCounted()))
+                {
+                    continue;
+                }
+
+                // under own, a handle read out of a place in a global is a borrow of that place,
+                // rejected when the call may overwrite it; only the global itself is held
+                if (!compileOptions.isRefCounted() && !readsGlobalItself(argument))
+                {
+                    continue;
+                }
+
+                held.push_back({op, argument});
+            }
+        });
+
+        for (auto [op, argument] : held)
+        {
+            auto location = op->getLoc();
+            mlir::OpBuilder builder(op);
+            builder.create<mlir_ts::RetainOp>(location, argument);
+
+            // A call a try around it takes the exceptions of gives the hold back on that path too,
+            // through a slot that holds the value only while the call runs: null before and after
+            // it, so the handler's release does nothing when something else threw.
+            auto *unwindRegion = unwindRegionOf(op);
+            mlir::Value slot;
+            if (unwindRegion)
+            {
+                auto type = argument.getType();
+                auto &entryBlock = op->getParentOfType<mlir_ts::FuncOp>().getBody().front();
+                mlir::OpBuilder entryBuilder(&entryBlock, entryBlock.begin());
+                if (auto entryOp = dyn_cast<mlir_ts::EntryOp>(entryBlock.front()))
+                {
+                    entryBuilder.setInsertionPointAfter(entryOp);
+                }
+
+                auto none = entryBuilder.create<mlir_ts::DefaultOp>(location, type);
+                slot = entryBuilder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(type), none,
+                                                                entryBuilder.getBoolAttr(false),
+                                                                entryBuilder.getIndexAttr(0));
+                builder.create<mlir_ts::StoreOp>(location, argument, slot);
+            }
+
+            builder.setInsertionPointAfter(op);
+            builder.create<mlir_ts::ReleaseOp>(location, argument);
+            if (!slot)
+            {
+                continue;
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, builder.create<mlir_ts::DefaultOp>(location, argument.getType()),
+                                             slot);
+
+            // in a catch clause, after the catch variable is set
+            auto &handlerBlock = unwindRegion->front();
+            mlir::OpBuilder handlerBuilder(&handlerBlock, handlerBlock.begin());
+            for (auto &handlerOp : handlerBlock)
+            {
+                if (isa<mlir_ts::CatchOp>(handlerOp))
+                {
+                    handlerBuilder.setInsertionPointAfter(&handlerOp);
+                    break;
+                }
+            }
+
+            handlerBuilder.create<mlir_ts::ReleaseSlotOp>(location, slot);
+            handlerBuilder.create<mlir_ts::StoreOp>(
+                location, handlerBuilder.create<mlir_ts::DefaultOp>(location, argument.getType()), slot);
+        }
+    }
+
+    // Where an exception out of `op` is taken first within its function: the region of the try
+    // around it that runs then, in the order its landing pad takes them (TryOpLowering) - the
+    // cleanup, else the catch clause, else the finally, for a call in its body; the finally for a
+    // call in its catch clause. Null when the exception leaves the function.
+    static mlir::Region *unwindRegionOf(mlir::Operation *op)
+    {
+        auto hasOps = [](mlir::Region &region) {
+            return llvm::any_of(region, [](mlir::Block &block) { return &block.front() != block.getTerminator(); });
+        };
+
+        for (auto *region = op->getParentRegion(); region; region = region->getParentOp()->getParentRegion())
+        {
+            auto *parentOp = region->getParentOp();
+            if (isa<mlir::FunctionOpInterface>(parentOp))
+            {
+                return nullptr;
+            }
+
+            auto tryOp = dyn_cast<mlir_ts::TryOp>(parentOp);
+            if (!tryOp)
+            {
+                continue;
+            }
+
+            if (region == &tryOp.getBody())
+            {
+                if (hasOps(tryOp.getCleanup()))
+                {
+                    return &tryOp.getCleanup();
+                }
+
+                if (tryOp->hasAttr(HAS_CATCH_ATTR_NAME) || hasOps(tryOp.getCatches()))
+                {
+                    return &tryOp.getCatches();
+                }
+
+                if (hasOps(tryOp.getFinally()))
+                {
+                    return &tryOp.getFinally();
+                }
+            }
+            else if (region == &tryOp.getCatches() && hasOps(tryOp.getFinally()))
+            {
+                return &tryOp.getFinally();
+            }
+        }
+
+        return nullptr;
+    }
+
     // A global is born holding the reference its initializer carries.
     //
     // The initializer region ends in `ts.GlobalResult`, a terminator, so a value given to it
@@ -303,10 +610,9 @@ class OwnedReturnConsumptionPass
     //
     // The producer is anything that carries an owned reference by now: `new Shared(..)` or a fresh
     // string, marked where MLIRGen builds it, or a call, marked above once its callee is classified
-    // - which is why MLIRGen alone cannot see it. A handle read out of a field or an element
-    // carries none, and gets a retain of its own (handles only: under own a retain left in a
-    // global's region is an error for any other type). A read of another global is left alone
-    // (#446: it reads null today in every model).
+    // - which is why MLIRGen alone cannot see it. A read out of a field, an element or another
+    // global carries none, and gets a retain of its own (under own, a handle only: a retain left in
+    // a global's region is an error for any other type).
     void claimGlobalInitializers(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
@@ -446,13 +752,16 @@ class OwnedReturnConsumptionPass
 
             // A field or element read (`holder.child`, `new P().child`, `mkP().child`,
             // `mkArr()[0]`) carries no reference: the object or array keeps its count, and a
-            // temporary one gives it back at the end of the region. The global takes a count of its
-            // own, retained right where it is read - before the temporary's release. Erased under
-            // gc and none.
+            // temporary one gives it back at the end of the region. Nor does a read of another
+            // global (`let k = a`), which keeps its own. The global takes a count of its own,
+            // retained right where it is read - before the temporary's release - or the first
+            // overwrite of either global frees what the other still reads. Under own only a handle
+            // is counted; any other read like these is an error there (OwnershipSignaturePass).
+            // Erased under gc and none.
             auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
             auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
-            if (place && MLIRTypeHelper::isSharedHandleType(value.getType()) &&
-                mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+            if (place && (MLIRTypeHelper::isSharedHandleType(value.getType()) || compileOptions.isRefCounted()) &&
+                mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::AddressOfOp>(place))
             {
                 mlir::OpBuilder builder(loadOp->getContext());
                 builder.setInsertionPointAfter(loadOp);
