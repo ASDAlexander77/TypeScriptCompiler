@@ -134,11 +134,16 @@ class OwnershipInferencePass
         captureRetains.clear();
         returnedParams.clear();
         returnsBorrowOf = resultBorrows(f);
+        returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
+        records.clear();
+        recordStoreUses.clear();
 
         // first: whether a closure borrows what it captures changes what its box's stores are
         classifyClosures();
         classifyStateBoxes();
         classifyBorrowingFields();
+        // ...and whether an object literal borrows what its fields hold (spec 32)
+        classifyRecords();
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -431,6 +436,8 @@ class OwnershipInferencePass
         decideCells();
         checkBorrowedReads();
         checkBoundedResults();
+        checkBorrowingRecords();
+        checkRecordResults();
         toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
 
         if (dryRun)
@@ -449,8 +456,9 @@ class OwnershipInferencePass
         // the facts were for this pass only
         returnedParams.clear();
         f.walk([](mlir::Operation *op) {
-            for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_NO_DROPS_ATTR_NAME,
-                               OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME, OWN_ASSIGNS_CAPTURES_ATTR_NAME,
+            for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_RESULT_RECORD_ATTR_NAME,
+                               OWN_NO_DROPS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME,
+                               OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME,
                                OWN_CAPTURE_BORROW_ATTR_NAME})
             {
@@ -628,6 +636,10 @@ class OwnershipInferencePass
     // parameters (or views of them) whose rc reference for the caller was already decided.
     int returnsBorrowOf = -1;
     llvm::DenseSet<mlir::Value> returnedParams;
+
+    // The parameters this function's result is a borrowing record of (OWN_RESULT_RECORD_ATTR_NAME,
+    // spec 32); empty for none.
+    llvm::SmallVector<int> returnsRecordOf;
 
     // ---- Closures (spec 2.5, phase 5) ----
     //
@@ -2378,6 +2390,16 @@ class OwnershipInferencePass
                     }
                 }
 
+                // stored into a field a borrowing record borrows (spec 32): whatever uses the record
+                // reads it
+                if (auto found = recordStoreUses.find(user); found != recordStoreUses.end())
+                {
+                    for (auto &recordUse : found->second->walk.uses)
+                    {
+                        uses.push_back({recordUse.op, pending.kills, recordUse.callee});
+                    }
+                }
+
                 if (pending.borrowed && keeping.returns && mlir::isa<mlir_ts::ReturnInternalOp>(user))
                 {
                     continue;
@@ -2485,6 +2507,46 @@ class OwnershipInferencePass
                mlir::isa<mlir_ts::BoundRefType>(methodField.getReference().getType());
     }
 
+    // ---- Borrowing records (spec 32) ----
+    //
+    // An object literal boxed as an interface that holds values it does not own - `this`, a parameter,
+    // a field read, an owning `let`'s value, a captured variable's - beside fresh values, which move
+    // in. The signature pass marked its box (OWN_RECORD_BORROWED_FIELDS_ATTR_NAME): its release frees
+    // the box and the fields it owns, and leaves the others to their owners. So the box has one owner
+    // like any fresh block - the box's own check - and what it borrows bounds every use of it: a read
+    // out of a place is checked with the record's uses as its own (walkBorrowed), a local's value
+    // against the local's ends, a captured variable's against whatever may assign it. Returned, the
+    // record is the caller's to own and to bound (checkRecordResults), which the function's facts
+    // must say. Stored anywhere else that may outlive what it borrows, it is an error.
+    struct RecordWalk
+    {
+        llvm::SmallVector<BorrowUse> uses;
+        // the first use that would keep the record itself: a store into a place, a callee that keeps
+        // it, a capture
+        mlir::Operation *kept = nullptr;
+        llvm::SmallVector<mlir::Operation *> returns;
+    };
+
+    struct BorrowedField
+    {
+        mlir_ts::StoreOp store;
+        RecordFieldSource source;
+    };
+
+    struct BorrowingRecord
+    {
+        mlir_ts::NewOp box;
+        mlir_ts::VariableOp local;
+        llvm::SmallVector<mlir::Value> interfaces;
+        llvm::SmallVector<BorrowedField> borrowed;
+        RecordWalk walk;
+    };
+
+    llvm::SmallVector<std::shared_ptr<BorrowingRecord>> records;
+    // a store of a place read into a borrowing record's field -> the record's uses, which are the
+    // read's uses too (walkBorrowed)
+    llvm::DenseMap<mlir::Operation *, BorrowingRecord *> recordStoreUses;
+
     // Can a value of this type point into a heap block - a reference into one, a block of its own,
     // or a method bound to one? A number or a boolean read out of a borrowed block cannot.
     bool mayPointInto(mlir::Value value)
@@ -2493,6 +2555,480 @@ class OwnershipInferencePass
         return mlir::isa<mlir_ts::RefType, mlir_ts::BoundRefType, mlir_ts::ValueRefType, mlir_ts::BoundFunctionType,
                          mlir_ts::HybridFunctionType, mlir_ts::ExtensionFunctionType, mlir_ts::OpaqueType>(type) ||
                ownsHeap(value);
+    }
+
+    // The borrowing record built in `varOp` (classifyRecords), or null.
+    BorrowingRecord *borrowingRecordOf(mlir_ts::VariableOp varOp)
+    {
+        for (auto &record : records)
+        {
+            if (record->local == varOp)
+            {
+                return record.get();
+            }
+        }
+
+        return nullptr;
+    }
+
+    // The boxes the signature pass marked as borrowing records, where every field still holds what it
+    // was marked for: a borrowed field a value this pass bounds (recordFieldSource), any other one a
+    // fresh value or nothing. A store into a borrowed field takes nothing, and whatever uses the record
+    // reads what it stored (walkBorrowed, through recordStoreUses). A box that is not what it was
+    // marked for is left to the record's retain, which is then an error.
+    void classifyRecords()
+    {
+        getFunction().walk([&](mlir_ts::NewOp newOp) {
+            auto fields = recordBorrowedFields(newOp);
+            auto varOp = fields.empty() ? mlir_ts::VariableOp() : recordLocalOf(newOp.getResult());
+            if (!varOp)
+            {
+                return;
+            }
+
+            auto record = std::make_shared<BorrowingRecord>();
+            record->box = newOp;
+            record->local = varOp;
+            for (auto *user : varOp->getUsers())
+            {
+                auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                if (!propertyRefOp)
+                {
+                    continue;
+                }
+
+                auto borrows = llvm::is_contained(fields, static_cast<int32_t>(propertyRefOp.getPosition()));
+                for (auto *fieldUser : propertyRefOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                    if (!storeOp || storeOp.getReference() != propertyRefOp.getResult())
+                    {
+                        continue;
+                    }
+
+                    auto source = recordFieldSource(storeOp.getValue());
+                    if (source == RecordFieldSource::NoBlock)
+                    {
+                        continue;
+                    }
+
+                    if (source == RecordFieldSource::Unknown || borrows != (source != RecordFieldSource::Fresh))
+                    {
+                        return;
+                    }
+
+                    if (borrows)
+                    {
+                        record->borrowed.push_back({storeOp, source});
+                    }
+                }
+            }
+
+            for (auto *user : newOp->getUsers())
+            {
+                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
+                {
+                    for (auto *castUser : castOp->getUsers())
+                    {
+                        if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(castUser))
+                        {
+                            record->interfaces.push_back(newInterfaceOp.getResult());
+                        }
+                    }
+                }
+            }
+
+            // a path back to a use through the record's making is another record
+            llvm::SmallVector<mlir::Operation *, 2> kills{newOp.getOperation(), varOp.getOperation()};
+            walkRecord(record->interfaces, kills, record->walk);
+            for (auto &field : record->borrowed)
+            {
+                setAttrTracked(field.store, OWN_CAPTURE_BORROW_ATTR_NAME);
+                recordStoreUses[field.store.getOperation()] = record.get();
+            }
+
+            records.push_back(std::move(record));
+        });
+    }
+
+    // Every use of a borrowing record (spec 32), and of what is read out of it - each may read what
+    // the record borrows - through its views, merges, and the locals that hold it, made again at
+    // `kills`. Its own retains and releases are the box's, which its own check decides. The record
+    // itself is `kept` when it is stored anywhere but a local, given to a callee that keeps it, or
+    // captured; returned, it is in `returns`. A call given it hands back its own block, unless that
+    // is a borrowing record that holds it, whose uses are then this one's as well.
+    void walkRecord(llvm::ArrayRef<mlir::Value> starts, llvm::ArrayRef<mlir::Operation *> kills, RecordWalk &walk)
+    {
+        struct Pending
+        {
+            mlir::Value value;
+            bool record;
+        };
+
+        llvm::SmallVector<Pending> work;
+        llvm::SmallPtrSet<mlir::Value, 16> seen;
+        auto push = [&](mlir::Value value, bool record) {
+            if ((record || mayPointInto(value)) && seen.insert(value).second)
+            {
+                work.push_back({value, record});
+            }
+        };
+
+        auto followSlot = [&](mlir_ts::VariableOp varOp, bool record) {
+            for (auto *slotUser : varOp->getUsers())
+            {
+                // its releases and its other values are the slot's own
+                if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser))
+                {
+                    push(loadOp.getResult(), record);
+                }
+            }
+        };
+
+        auto keep = [&](mlir::Operation *user) { walk.kept = walk.kept ? walk.kept : user; };
+
+        for (auto start : starts)
+        {
+            push(start, true);
+        }
+
+        while (!work.empty())
+        {
+            auto pending = work.pop_back_val();
+            auto value = pending.value;
+            for (auto &use : value.getUses())
+            {
+                auto *user = use.getOwner();
+                if (mlir::isa<mlir_ts::DebugVariableOp>(user) ||
+                    (pending.record && mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user)))
+                {
+                    continue;
+                }
+
+                // the same value: a view, a cast, a merge
+                if ((isView(user) && use.getOperandNumber() == 0) || mlir::isa<mlir_ts::CastOp>(user))
+                {
+                    push(user->getResult(0), pending.record);
+                    continue;
+                }
+
+                if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+                {
+                    if (auto argument = branchOp.getSuccessorBlockArgument(use.getOperandNumber()))
+                    {
+                        push(*argument, pending.record);
+                    }
+
+                    continue;
+                }
+
+                // a local that holds it: its reads
+                auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                if (varOp || (storeOp && storeOp.getValue() == value))
+                {
+                    auto slotOp = varOp ? varOp : storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+                    if (slotOp && !slotOp.getCaptured().value_or(false))
+                    {
+                        followSlot(slotOp, pending.record);
+                        continue;
+                    }
+
+                    // a place, a global, a captured variable: what is read out of the record is checked
+                    // where it is read (checkPlaceRead)
+                    walk.uses.push_back({user, {kills.begin(), kills.end()}});
+                    if (pending.record)
+                    {
+                        keep(user);
+                    }
+
+                    continue;
+                }
+
+                walk.uses.push_back({user, {kills.begin(), kills.end()}, isCall(user) && isCalleeOperand(use)});
+                if (mlir::isa<mlir_ts::ReturnInternalOp, mlir_ts::ReturnValOp>(user))
+                {
+                    if (pending.record)
+                    {
+                        walk.returns.push_back(user);
+                    }
+
+                    continue;
+                }
+
+                if (isCall(user))
+                {
+                    if (pending.record && isKeptArgument(user, value))
+                    {
+                        keep(user);
+                        continue;
+                    }
+
+                    auto args = callArgs(user);
+                    if (isRecordResult(user) && llvm::any_of(resultBorrowsAll(user), [&](int index) {
+                            return static_cast<size_t>(index) < args.size() && args[index] == value;
+                        }))
+                    {
+                        push(user->getResult(0), true);
+                    }
+
+                    continue;
+                }
+
+                if (pending.record && !isBorrow(user, value))
+                {
+                    keep(user);
+                    continue;
+                }
+
+                // a field written through the record: its old value may be one the record borrows,
+                // which the overwrite would release, and the field may be one its release leaves
+                if (pending.record && mlir::isa<mlir_ts::InterfaceSymbolRefOp, mlir_ts::PropertyRefOp>(user))
+                {
+                    for (auto *fieldUser : user->getResult(0).getUsers())
+                    {
+                        auto fieldStore = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                        if (mlir::isa<mlir_ts::ReleaseSlotOp>(fieldUser) ||
+                            (fieldStore && fieldStore.getReference() == user->getResult(0)))
+                        {
+                            keep(fieldUser);
+                        }
+                    }
+                }
+
+                // what it produces - a field's reference, a value read out of it, a bound method - may
+                // still point into what the record borrows
+                for (auto result : user->getResults())
+                {
+                    push(result, false);
+                }
+            }
+        }
+    }
+
+    // The name the record goes by: the local that holds it, or a folded `const`'s.
+    llvm::StringRef recordName(mlir::Value value)
+    {
+        llvm::StringRef name = ownerName(value);
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user); varOp && varOp.getInitializer() == used)
+            {
+                name = varName(varOp);
+            }
+        });
+
+        return name;
+    }
+
+    // What a borrowed field holds, for an error: `'ray'`, `'this.pos'`, `'livec'`, ...
+    std::string describeRecordSource(BorrowedField field)
+    {
+        auto value = field.store.getValue();
+        auto quoted = [](llvm::StringRef name) { return "'" + name.str() + "'"; };
+        switch (field.source)
+        {
+        case RecordFieldSource::Param:
+            return quoted(paramName(borrowedParam(value)));
+        case RecordFieldSource::Place:
+            if (auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
+            {
+                return describePlace(loadOp.getReference());
+            }
+
+            return describeCall(rootOf(value).getDefiningOp());
+        case RecordFieldSource::Slot:
+            return quoted(varName(slotLoadOf(value).getReference().getDefiningOp<mlir_ts::VariableOp>()));
+        case RecordFieldSource::Cell:
+            return "a captured variable";
+        default:
+            return "a value it does not own";
+        }
+    }
+
+    // A record this function makes (spec 32): kept, it is an error; returned, each field it borrows
+    // must be a parameter's that this function's facts lend (`__own_result_record`), so that its
+    // callers bound it; and no use of it may come after what a field borrows may be released or
+    // overwritten - an owning local's ends, and whatever may assign a captured variable. A parameter
+    // and `this` are the caller's for the whole call; a read out of a place has the record's uses as
+    // its own (checkPlaceRead).
+    void checkBorrowingRecords()
+    {
+        for (auto &record : records)
+        {
+            auto name = recordName(record->interfaces.empty() ? record->box.getResult() : record->interfaces.front());
+            if (record->walk.kept)
+            {
+                reportPlaceBorrowEscapes(record->walk.kept, name,
+                                         record->borrowed.empty() ? "a value it does not own"
+                                                                  : describeRecordSource(record->borrowed.front()));
+                continue;
+            }
+
+            auto ok = true;
+            for (auto *returned : record->walk.returns)
+            {
+                for (auto &field : record->borrowed)
+                {
+                    if (!ok || field.source == RecordFieldSource::Immortal)
+                    {
+                        continue;
+                    }
+
+                    auto param = field.source == RecordFieldSource::Param || field.source == RecordFieldSource::Place
+                                     ? borrowedParam(field.store.getValue())
+                                     : -1;
+                    if (param < 0 || !llvm::is_contained(returnsRecordOf, param))
+                    {
+                        reportPlaceBorrowEscapes(returned, name, describeRecordSource(field));
+                        ok = false;
+                    }
+                }
+            }
+
+            for (auto &field : record->borrowed)
+            {
+                if (!ok)
+                {
+                    break;
+                }
+
+                auto value = field.store.getValue();
+                Chain chain;
+                if (field.source == RecordFieldSource::Slot)
+                {
+                    chain.roots.push_back({slotLoadOf(value).getReference(), Chain::Slot});
+                }
+                else if (auto load = field.source == RecordFieldSource::Param ? keptParamLoadOf(value) : mlir_ts::LoadOp())
+                {
+                    // a parameter this function keeps is its own to move away, as a local's value is
+                    chain.roots.push_back({load.getReference(), Chain::Slot});
+                }
+                else if (field.source == RecordFieldSource::Cell)
+                {
+                    chain.roots.push_back({rootOf(value), Chain::NotOwned});
+                }
+                else
+                {
+                    continue;
+                }
+
+                auto ends = rootEnds(chain);
+                if (field.source == RecordFieldSource::Cell)
+                {
+                    for (auto *drop : drops)
+                    {
+                        if (dropsChain(drop, chain, nullptr, value))
+                        {
+                            ends.push_back(drop);
+                        }
+                    }
+                }
+
+                for (auto *end : ends)
+                {
+                    for (auto &use : record->walk.uses)
+                    {
+                        if (ok && (use.op != end || !use.callee) && reachableAfter(end, use.op, use.kills))
+                        {
+                            if (field.source == RecordFieldSource::Slot)
+                            {
+                                reportBorrowOutlives(use.op, end, name, varName(chain.roots.front().first.getDefiningOp<mlir_ts::VariableOp>()));
+                            }
+                            else
+                            {
+                                reportPlaceBorrowOutlives(use.op, end, name, describeRecordSource(field));
+                            }
+
+                            ok = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // A call whose result is a borrowing record (OWN_RESULT_RECORD_ATTR_NAME, spec 32): the box is
+    // this function's to own - it is fresh, and its own check decides its moves and releases - but
+    // it may hold a borrow of each argument the facts name, as a call's result that borrows them
+    // does (checkPlaceRead): somewhere under each. So no use of it, through the locals it moves
+    // into, may come after one of those arguments may be released or overwritten, and it may not be
+    // kept. Returned, the arguments must be parameters this function's own facts lend. Its releases
+    // are not uses: they free only what the record owns.
+    void checkRecordResults()
+    {
+        getFunction().walk([&](mlir::Operation *call) {
+            if (!isCall(call) || !isRecordResult(call) || call->getNumResults() != 1)
+            {
+                return;
+            }
+
+            auto result = call->getResult(0);
+            auto place = describeCall(call);
+            auto name = recordName(result);
+            RecordWalk walk;
+            llvm::SmallVector<mlir::Operation *, 1> kills{call};
+            walkRecord({result}, kills, walk);
+            if (walk.kept)
+            {
+                reportPlaceBorrowEscapes(walk.kept, name, place);
+                return;
+            }
+
+            auto args = callArgs(call);
+            for (auto *returned : walk.returns)
+            {
+                for (auto index : resultBorrowsAll(call))
+                {
+                    if (static_cast<size_t>(index) >= args.size() || argumentHoldsNoBlock(args[index]) ||
+                        isImmortalLiteral(args[index]))
+                    {
+                        continue;
+                    }
+
+                    auto param = borrowedParam(args[index]);
+                    if (param < 0 || !llvm::is_contained(returnsRecordOf, param))
+                    {
+                        reportPlaceBorrowEscapes(returned, name, place);
+                        return;
+                    }
+                }
+            }
+
+            auto chain = chainOf(call);
+            // rc's retain of a fresh argument right before the call is no end: the box's own check
+            // decides it, and the use that takes it is an end of its own
+            llvm::SmallVector<mlir::Operation *> ends;
+            for (auto *end : rootEnds(chain))
+            {
+                auto ownedRetain = mlir::isa<mlir_ts::RetainOp>(end) && llvm::any_of(chain.roots, [&](auto &root) {
+                                       return root.second == Chain::Owned && rootOf(end->getOperand(0)) == root.first;
+                                   });
+                if (!ownedRetain)
+                {
+                    ends.push_back(end);
+                }
+            }
+
+            for (auto *drop : drops)
+            {
+                if (drop != call && dropsChain(drop, chain, call))
+                {
+                    ends.push_back(drop);
+                }
+            }
+
+            for (auto *end : ends)
+            {
+                for (auto &use : walk.uses)
+                {
+                    if ((use.op != end || !use.callee) && reachableAfter(end, use.op, use.kills))
+                    {
+                        reportPlaceBorrowOutlives(use.op, end, name, place);
+                        return;
+                    }
+                }
+            }
+        });
     }
 
     // ---- Reads out of containers (spec 2.3, phase 3) ----
@@ -2780,12 +3316,19 @@ class OwnershipInferencePass
         return retainOp && retainOp.getReference() == storeOp.getValue() ? retainOp.getOperation() : nullptr;
     }
 
-    // The call a value is the result of, when that result borrows an argument.
+    // The call a value is the result of, when that result is a plain borrow of an argument. A borrowing
+    // record (spec 32) is not one: the caller owns the box (checkRecordResults).
     static mlir::Operation *borrowingCall(mlir::Value value)
     {
         auto *def = value.getDefiningOp();
-        auto index = def && isCall(def) ? resultBorrows(def) : -1;
-        return index >= 0 && static_cast<size_t>(index) < callArgs(def).size() ? def : nullptr;
+        if (!def || !isCall(def) || resultBorrows(def) < 0)
+        {
+            return nullptr;
+        }
+
+        auto args = callArgs(def);
+        auto indices = resultBorrowsAll(def);
+        return llvm::all_of(indices, [&](int index) { return static_cast<size_t>(index) < args.size(); }) ? def : nullptr;
     }
 
     // The places from a read up to its roots, and the roots: the values the function reached the
@@ -2836,8 +3379,18 @@ class OwnershipInferencePass
         }
         else
         {
+            // a call's result that borrows its arguments - a plain borrow, or a borrowing record's box
+            // (spec 32), which may hold a borrow of each - is somewhere under each of them
             chain.anyPlace = true;
-            first.push_back(rootOf(callArgs(read)[resultBorrows(read)]));
+            auto args = callArgs(read);
+            for (auto index : resultBorrowsAll(read))
+            {
+                if (static_cast<size_t>(index) < args.size() && !argumentHoldsNoBlock(args[index]) &&
+                    !isImmortalLiteral(args[index]))
+                {
+                    first.push_back(rootOf(args[index]));
+                }
+            }
         }
 
         llvm::SmallPtrSet<mlir::Value, 8> seen;
@@ -2934,7 +3487,15 @@ class OwnershipInferencePass
                 if (auto *call = borrowingCall(base))
                 {
                     chain.anyPlace = true;
-                    bases.push_back(rootOf(callArgs(call)[resultBorrows(call)]));
+                    auto args = callArgs(call);
+                    for (auto index : resultBorrowsAll(call))
+                    {
+                        if (static_cast<size_t>(index) < args.size())
+                        {
+                            bases.push_back(rootOf(args[index]));
+                        }
+                    }
+
                     continue;
                 }
 
@@ -3108,6 +3669,15 @@ class OwnershipInferencePass
                 auto *user = use.getOwner();
                 if (isCall(user))
                 {
+                    // ...but a borrowing record given this value holds it (spec 32)
+                    auto args = callArgs(user);
+                    if (isRecordResult(user) && llvm::any_of(resultBorrowsAll(user), [&](int index) {
+                            return static_cast<size_t>(index) < args.size() && args[index] == value;
+                        }))
+                    {
+                        work.push_back(user->getResult(0));
+                    }
+
                     continue;
                 }
 
@@ -3390,6 +3960,16 @@ class OwnershipInferencePass
             {
                 callee = refOp.getIdentifierAttr().getAttr();
             }
+            else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(calleeOp))
+            {
+                // a method reached through an interface (spec 31): `<interface>.<method>`
+                auto method = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
+                auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType());
+                if (method && interfaceType)
+                {
+                    return (interfaceType.getName().getValue() + "." + method.getValue()).str();
+                }
+            }
         }
 
         return callee ? callee.getValue().str() : std::string();
@@ -3614,7 +4194,9 @@ class OwnershipInferencePass
     {
         auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
         auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
-        if (!varOp || !isConstantRecordLocal(varOp) || !isOwningRecord(value))
+        // a borrowing record (spec 32) takes nothing for what it borrows, and its fresh values move in
+        // as an owning record's do
+        if (!varOp || !isConstantRecordLocal(varOp) || !(isOwningRecord(value) || borrowingRecordOf(varOp)))
         {
             return false;
         }
@@ -5020,13 +5602,15 @@ class OwnershipInferencePass
                     }
                 }
 
-                // a call's result is its own block, unless its facts say it borrows this argument
+                // a call's result is its own block, unless its facts say it borrows this argument - a
+                // plain borrow, or a borrowing record that holds it (spec 32)
                 auto borrows = true;
                 if (isCall(user))
                 {
-                    auto index = resultBorrows(user);
                     auto args = callArgs(user);
-                    borrows = index >= 0 && static_cast<size_t>(index) < args.size() && args[index] == value;
+                    borrows = llvm::any_of(resultBorrowsAll(user), [&](int index) {
+                        return static_cast<size_t>(index) < args.size() && args[index] == value;
+                    });
                 }
 
                 // a read of the slot is what its uses came from

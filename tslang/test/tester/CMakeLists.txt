@@ -3482,7 +3482,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_immortal_global own_immortal_global_region
                  own_literal_moves own_record_literal_given
                  own_field_chain_let own_read_after_move own_conditional_move
-                 own_interface_facts own_declared_scalar_no_drops)
+                 own_interface_facts own_declared_scalar_no_drops
+                 own_borrowing_record own_borrowing_record_arg)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3545,6 +3546,15 @@ foreach(interface_facts_mm rc gc none)
     foreach(interface_facts_test own_interface_facts own_declared_scalar_no_drops own_interface_exe_exports)
         tslang_add_test(NAME test-jit-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -jit -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
         tslang_add_test(NAME test-compile-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
+    endforeach()
+endforeach()
+
+# An object literal that borrows some of what it holds - a borrowing record, returned or a temporary -
+# under own (spec 32); the same programs under every other model.
+foreach(borrowing_record_mm rc gc none)
+    foreach(borrowing_record_test own_borrowing_record own_borrowing_record_arg)
+        tslang_add_test(NAME test-jit-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -jit -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
+        tslang_add_test(NAME test-compile-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
     endforeach()
 endforeach()
 
@@ -3810,7 +3820,6 @@ set(own_error_cases
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_literal_moved_twice|is used here after its value was moved"
-    "own_err_record_literal_let|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_interface_keeps_literal|is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take' give it up"
     "own_err_interface_keeps_param|is a parameter, kept here, but -mm=own cannot make the callers of 'KV.take' give it up"
     "own_err_interface_borrow_param|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
@@ -3820,7 +3829,7 @@ set(own_error_cases
     "own_err_interface_family_disagrees|is a parameter, returned here, but -mm=own cannot tell the callers of 'GA.get' that the result borrows it"
     "own_err_interface_member_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_from_interface|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
-    "own_err_interface_result_outlives|borrows a call's result but is used here after it may be released or overwritten"
+    "own_err_interface_result_outlives|borrows the result of 'First.first' but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_unknown|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_exported|borrows a field but is used here after it may be released or overwritten"
@@ -3859,7 +3868,7 @@ set(own_error_cases
     "own_err_lends_mismatch|'@lends' of 'pick' names 'a', but its body returns a borrow of 'b'"
     "own_err_lends_not_borrow|'@lends' of 'made' names 'l', but its body does not return a borrow of it"
     "own_err_lends_and_borrows|'firstOf' cannot say both '@lends' and '@borrows'"
-    "own_err_lends_two_params|'@lends' names one parameter, the one the result is a borrow of"
+    "own_err_lends_two_params|'@lends' of 'pick' names 'a', 'b', but its body returns a borrow of 'a'"
     "own_err_lends_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
@@ -3895,7 +3904,15 @@ set(own_error_cases
     "own_err_conditional_move_catch|is moved here on some paths only"
     "own_err_conditional_move_bound_method|is moved here on some paths only"
     "own_err_conditional_move_view|is moved here on some paths only"
-    "own_err_conditional_move_old_view|is moved here on some paths only")
+    "own_err_conditional_move_old_view|is moved here on some paths only"
+    "own_err_borrowing_record_stored|borrows the result of .* and cannot be stored, returned or captured"
+    "own_err_borrowing_record_outlives|borrows the result of .* but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_kept_arg|borrows a field and cannot be stored, returned or captured"
+    "own_err_borrowing_record_let_outlives|borrows '.*' but is used here after '.*' is released or overwritten"
+    "own_err_borrowing_record_returned_local|borrows '.*' and cannot be stored, returned or captured"
+    "own_err_borrowing_record_field_written|borrows a field and cannot be stored, returned or captured"
+    "own_err_borrowing_record_cell|borrows a captured variable but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_kept_param|borrows '.*' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
