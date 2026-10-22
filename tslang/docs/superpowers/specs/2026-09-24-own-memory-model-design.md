@@ -3050,7 +3050,8 @@ would be (§2.3), and is accepted while that place still holds it (USER decision
   the callee borrows (`!isKeptArgument`). What the read produces - a field's reference, a bound
   method - is walked as a borrow's uses are (`walkBorrowed`, starting not borrowed); a call result
   that borrows its argument is the value again and may not be kept. A method reached through it
-  whose callee keeps its `this` is not a read. Anything else after the move - a store, an owning
+  whose callee keeps its `this` is not a read. A store through a field read (`h.c = c; c.x = 7`)
+  is a use of the borrow, not a keep: the block stays the place's. Anything else after the move - a store, an owning
   `let`, a keeping call, a return, rc's retain for a receiver - is still a second owner and keeps
   the error.
 - **Where it moved** (`destinationChain`): an owning local (a declaration, or an assignment), or a
@@ -3096,9 +3097,10 @@ print what rc prints, on Windows and Linux). They now give `a` to a second `let`
 borrows it, as before.
 
 Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
-compile, and their AOT runs with same-size allocations before the read print a freed block's
-value: `c.x` prints 0 (overwritten, `clear`) and 999 (through the view) instead of 5, and
-`a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`. The positive cannot show it: by design
+compile. AOT runs of four of them with same-size allocations before the read print a freed
+block's value: `c.x` prints 0 (overwritten on one path, `clear`) and 999 (through the view)
+instead of 5, and `a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`. The loop's run
+happened to print the right sum; the other two were not run. The positive cannot show it: by design
 nothing in it overwrites a destination before a read. With the rule off, the positive fails to
 compile with `is used here after its value was moved`, at every read after a move. A loop of 2
 million iterations peaks at 4.5 MB under own, as under rc.
