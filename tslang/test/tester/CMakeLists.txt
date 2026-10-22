@@ -3503,6 +3503,13 @@ foreach(global_mm rc none gc)
     tslang_add_test(NAME test-compile-${global_mm}-own-global-script COMMAND test-runner -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
 endforeach()
 
+# A global made by a call that keeps an argument made for it owns that argument through what it was
+# given; the same program under every model.
+foreach(kept_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${kept_mm}-own-global-kept-argument COMMAND test-runner -jit -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
+    tslang_add_test(NAME test-compile-${kept_mm}-own-global-kept-argument COMMAND test-runner -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
+endforeach()
+
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
 # rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
 foreach(reassign_mm rc gc)
@@ -3700,6 +3707,9 @@ set(own_error_cases
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"
     "own_err_local_owns_nothing|owns nothing under -mm=own .* so it cannot be given a new value here"
     "own_err_merged_result|is merged from several branches"
+    "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
+    "own_err_global_borrowed_temporary|the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
