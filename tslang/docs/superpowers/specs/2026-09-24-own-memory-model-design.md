@@ -3374,3 +3374,77 @@ Not here:
 - **`export` inside a namespace** exports the declaration from the module (`__decls` lists `namespace
   NS { interface Th ... }`), so an interface declared `export` in a namespace for use outside it is
   open; one used only inside its namespace is closed.
+
+**After review** (2026-10-22). The two "not here" items above on `public` methods and namespace
+exports are now handled as follows, and `own_interface_facts`' churn now keeps 2000 blocks alive, so
+a block freed too early is reused before it is read.
+
+- **A function value reinterpreted** carried an interface value into a closed family unseen (found
+  in review, a new acceptance that crashed under own): `f2 as any as (o: Op, a: V) => number` with
+  `f2` taking an `Op2` let an `Op` value reach `Op2`'s calls, and so did `(() => Op)` cast through
+  `any` to `(() => Op2)`. Now a cast that makes a function out of `any` or `unknown`, or sees one
+  function as a function of another signature, opens every interface either signature mentions (a
+  class's fields included). A function boxed into `any` puts its signature's interfaces among the
+  boxed ones, which any unboxing opens. A bound function's `this` and an opaque `this` are not part
+  of the comparison: a closure seen as a plain function of the same parameters is the same.
+  Negatives `own_err_interface_fn_any_param`, `_result`, `_drops`.
+- **C declarations of numbers** (controller ruling): a body-less `declare function` with no `export`
+  or import marker (another TypeScript module's declarations carry `export`), not variadic, whose
+  parameters and result are numbers, booleans, characters, integers or enums of them, destroys
+  nothing: it is given no block of this module. `sqrt`, `floor`, `pow` and `fabs` in the ray tracer.
+  The risk, as for `@nodrops`, is a C function calling back into the module through something it was
+  not given (an exported function reached by name). `own_declared_scalar_no_drops` holds a field's
+  borrow across `sqrt`, across a function that calls `sqrt` and `floor`, and across a call through a
+  closed interface whose member does; `own_err_declared_drops` (`strlen(s: string)`) is unchanged.
+- **A `public` method of a class no other module can name** (controller ruling) is not callable from
+  another module: the class is not exported (its vtable is private), not a word of `__decls`, and not
+  in the type of an exported or declared function or of an exported or imported global (a derived
+  class's storage holds its base, so a nameable class makes its bases nameable). `findOpen` and class
+  families use the same test (`callableFromOutside`). `own_err_interface_public_exported` (an exported
+  class) and `own_err_interface_public_reachable` (a class an exported function returns) keep the
+  error; `own_interface_facts` calls `public` methods that return a borrow through a closed interface.
+  `own_err_generator_method_this` exports its class to keep what it tests.
+- **An executable's exports** (USER decision): a module built into a program - `--emit=exe`, or the
+  module the JIT enters (`isExecutable || isJit`; a module the JIT cache compiles beside it has
+  `isJit` off) - is imported by no other module, so its `__decls`, exported functions and globals, and
+  exported classes open no interface and make no class nameable. What it imports still does: a
+  declared function, an imported global, a global with no initializer (an import of a `.ts` module).
+  An object file (test-runner's AOT build is `--emit=obj --entry-point`), a DLL and a `-shared`
+  library stay as they were; the pass takes the kind as an option, a library when not told.
+  `own_interface_exe_exports` (an exported interface and an exported global of it) runs under the
+  JIT and as `tslang --emit=exe`, and is the error on `G.get` as `--emit=obj` and `--emit=dll`
+  (`own-exe-exports.cmake`).
+- **An iterator `next()` through a closed interface** (ruling) gets the family's facts like any other
+  call; it is no longer assumed fresh.
+
+Teeth: with function reinterpretations not opening anything, `own_err_interface_fn_any_param` and
+`_result` compile and their AOT runs fail with `0xC0000374` (with and without `--opt`), and `_drops`
+prints 77777 instead of 5 (gc 5). With every declaration without `export` taken as destroying
+nothing, `own_err_declared_drops` compiles, and so does a program that lends a field and passes the
+field's object to a declared `free(p: V)`; its AOT run fails with `0xC0000374`. With a `public`
+method's class never nameable, `own_err_interface_public_reachable` compiles; with every module taken
+for an executable, `own-exe-exports.cmake` fails (the object file and the DLL compile), and so do
+`own_err_interface_exported_impl` and `own_err_interface_keeps_param`. The last two rules protect
+callers in another module, which no single-module run can show.
+
+Corpus (`--emit=obj`, not an executable): 528 of 693 before this section and after, the same files.
+
+The ray tracer built as a program, `tslang --emit=exe --opt --opt_level=3 --no-default-lib -mm=own
+rtbench_own.ts`: 31 errors before this section, 15 after. Cleared: `Camera`'s constructor (three,
+`Vector.norm` reaching `sqrt`), `Sphere.normal`, `this` in `Sphere.intersect`, both errors at
+`scene.things[i].intersect(ray)`, `isect.thing.normal(pos)` and the `Vector.minus(d, ...)` after it
+in `shade`, `thing.surface.value.reflect(pos)`, `.diffuse(pos)`, `.specular(pos)` and the
+`roughness` read, the three `camera.forward/right/up` reads in `getPoint`, and one of the two at
+`traceRay({ start: scene.camera.pos, ... })`. New in their place: `scene.things[i].intersect(ray)`
+is `moved inside a loop but was made outside it` - the call now has the family's facts, and
+`Sphere.intersect` and `Plane.intersect` keep `this` and `ray` in the record they return; that is
+G2's borrowing record. As an object file (`--emit=obj`) it has 19: the `Surface` calls stay open.
+
+Not here, also:
+- A member that says `@keeps` or `@lends` opens its family (above): a sound narrowing of the plan,
+  which carried declared facts through closed interfaces too (controller ruling: accepted). Such an
+  implementer through an interface stays the error it was.
+- An abstract class's interface vtable is always open: too strict, but sound.
+- A class value reinterpreted through `any` (`new C() as any as C2`, `C2`'s field an `Op2` where
+  `C`'s is an `Op`) is not followed; the program stops at run time under every model, before any
+  call through the field.

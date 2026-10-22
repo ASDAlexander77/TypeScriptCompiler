@@ -3818,6 +3818,7 @@ set(own_error_cases
     "own_err_interface_fn_any_result|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.take' that the result borrows it"
     "own_err_interface_fn_any_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_public_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
+    "own_err_interface_public_reachable|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
