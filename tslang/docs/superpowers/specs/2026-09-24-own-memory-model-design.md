@@ -2826,6 +2826,10 @@ of `K.w` does nothing).
   region that holds a call's borrowing result is rejected there first ("the initializer of global
   'c' holds the result of 'id', which borrows its argument"); the two negatives now pin that
   message. They stay mortal all the same: `findImmortalGlobals` runs first and still refuses them.
+  Main's two other global checks step aside for an immortal global's read: a global may be given
+  one (#636, `let e = c`), and one may be lent to a call that may drop (#639; a static's one store
+  in its static constructor is in `writtenGlobals`, so `lend(b, K.w)` was rejected after the merge
+  - `own_immortal_global` now runs it).
 - **Only the global's own block.** `K.n.c = x` still destroys the old `c`, and a borrow of `K.n.c`
   stays bounded (`own_err_immortal_field_overwritten`).
 - **Inference.** `own_facts::isImmortalGlobalRead` is a `ts.Load` of a `ts.AddressOf` the pass

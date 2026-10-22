@@ -5530,7 +5530,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     }
                 }
 
-                if (isHandle(argument) || !ownsHeap(call.op->getLoc(), argument.getType()))
+                // an immortal global (spec 25) is written once, by its initializer (a static's is a
+                // store in its static constructor, which writtenGlobals counts), and no release
+                // frees its block
+                if (isHandle(argument) || isImmortalGlobalRead(argument) || !ownsHeap(call.op->getLoc(), argument.getType()))
                 {
                     continue;
                 }

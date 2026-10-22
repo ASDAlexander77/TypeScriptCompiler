@@ -17,9 +17,15 @@ class H { v: V; constructor() { this.v = K.w; } }   // stored into a field
 
 function g(n: number) { return n > 1 ? K.w : new V(n); }   // immortal or fresh
 
+class Box { v: V = new V(0); }
+function lend(b: Box, v: V) { b.v = new V(v.x + 1); return v.x; }   // may drop: frees b's old v
+
 function main() {
     const h = new H();
     print(K.f().x, K.d.x, h.v.x, g(2).x, g(0).x);   // 1 1 1 1 0
+    const b = new Box();
+    print(lend(b, K.w), b.v.x);                      // lent to a call that drops: 1 2
+    assert(K.w.x == 1 && b.v.x == 2);
     let s: number = 0;
     for (let i = 0; i < 100000; i++) { s += g(i % 3).x; }   // fresh ones are freed
     print(s);                                              // 66666
