@@ -5099,15 +5099,19 @@ class OwnershipInferencePass
         auto args = callArgs(taker);
         auto kept = ownedParams(taker);
         auto movedRoot = rootOf(moved);
+        // one kept position is the move itself; the value at a second one (`f(n, n)` with both
+        // kept) is a second owner, a use after the first move like any other operand
+        auto skipped = false;
         for (auto &operand : taker->getOpOperands())
         {
             // the moved argument itself, where the callee keeps it
             auto number = operand.getOperandNumber();
-            if (!args.empty() && number >= args.getBeginOperandIndex() &&
+            if (!skipped && !args.empty() && number >= args.getBeginOperandIndex() &&
                 number < args.getBeginOperandIndex() + args.size() &&
                 llvm::is_contained(kept, static_cast<int32_t>(number - args.getBeginOperandIndex())) &&
                 rootOf(operand.get()) == movedRoot)
             {
+                skipped = true;
                 continue;
             }
 
@@ -5387,11 +5391,13 @@ class OwnershipInferencePass
             return false;
         }
 
-        // the call that keeps it, given the slot's value again through another operand
+        // the call that keeps it, given the slot's value again through another operand: a read of
+        // the slot that reaches the call holding the same value (not one made before an assignment
+        // gave the slot its current value, `const arr = [n]; n = mk(5); f(n, arr)`)
         llvm::SmallVector<mlir::Value> slotReads;
         for (auto *user : slot.getUsers())
         {
-            if (auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+            if (auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user); readOp && reachableAfter(readOp, taker, kills))
             {
                 slotReads.push_back(readOp.getResult());
             }

@@ -3934,6 +3934,20 @@ skipped, the first two print 779000 instead of 501500 and fail their assertion, 
 (0xC0000005). `own_reduce`, the ray tracer (1 error, the same) and the corpus (528, the same files)
 are unchanged.
 
+**After the second re-review** (2026-10-22). One value at two kept positions of one call (`f(n, n)`
+with both `p` and `q` kept: two `let`s given other values, a field and a `let`, two fields, two
+pushes) is two owners of one block, each of which frees it; `callGivenAgain` passed over every kept
+operand rooted at the moved value. Now it passes over one - the move itself - and a second is a use
+after it (`is used here after its value was moved`). The `let` forms printed wrong or crashed only
+since this section's `let` rule (BASE rejected them); two fields and two pushes were wrong at BASE
+too. Negatives `own_err_kept_twice` (two `let`s), `_field` (a field and a `let`), `_push` (two
+pushes), each through a `@noinline` factory with churn and an assert. Tooth: with every kept position
+passed over again, they exit `0xC0000374`, `0xC0000005` and `0xC0000374`. Distinct objects (`f(n,
+m)`, `f(h, n, m)`) stay accepted. Also, for an owning slot the other reads counted are only those
+that reach the call holding the same value (not crossing an assignment of the slot):
+`const arr = [n]; n = mk(5); f(n, arr)`, which reads the old value into `arr`, is accepted again, as
+before the first re-review.
+
 Not here:
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
   moved leaks it, as it leaks an owning local; so does a `throw` of any value computed from it, even
