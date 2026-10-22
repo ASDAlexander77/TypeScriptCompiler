@@ -3797,7 +3797,9 @@ set(own_error_cases
     "own_err_read_after_move_view|is used here after its value was moved"
     "own_err_read_after_move_call|is used here after its value was moved"
     "own_err_read_after_move_loop|is used here after its value was moved"
-    "own_err_read_after_move_after_loop|is used here after its value was moved")
+    "own_err_read_after_move_after_loop|is used here after its value was moved"
+    "own_err_read_after_move_global|is used here after its value was moved"
+    "own_err_field_let_global_overwritten|borrows a field but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

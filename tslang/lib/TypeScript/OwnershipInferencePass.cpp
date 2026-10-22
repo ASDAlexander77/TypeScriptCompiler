@@ -205,9 +205,10 @@ class OwnershipInferencePass
             }
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
             {
-                // an overwrite of a field or an element, or an assignment to a captured variable
+                // an overwrite of a field or an element, or an assignment to a captured variable or
+                // a global (spec 29: the global may hold what `this` or a parameter is)
                 auto slot = releaseSlotOp.getSlot();
-                if (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot))
+                if (isPlace(slot) || isCellVariable(slot) || isLoadedCell(slot) || slot.getDefiningOp<mlir_ts::AddressOfOp>())
                 {
                     drops.push_back(op);
                 }
@@ -3150,6 +3151,15 @@ class OwnershipInferencePass
                 return !chain.owned();
             }
 
+            // An assignment to a global destroys its old value and all that value owns. A root this
+            // function does not own - `this`, a parameter, a global's or a field's value - may be
+            // that very block, or under it (spec 29). A root this function made cannot. An immortal
+            // global's one store is its initializer, whose old value is the empty one (spec 25).
+            if (auto addressOfOp = slot.getDefiningOp<mlir_ts::AddressOfOp>())
+            {
+                return !addressOfOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) && !chain.owned();
+            }
+
             // `x.value = ...` through any handle, of any type, may replace the payload another
             // handle reads (spec 23.3): a handle converts to one of a base class's type
             if (slot.getDefiningOp<mlir_ts::SharedValueRefOp>())
@@ -4495,18 +4505,18 @@ class OwnershipInferencePass
 
         // Every read of the slot is a use of `a`, and so is every use of what a read returned: a
         // `const b = a` is folded into its load, so `b.x` after the move reads the moved value
-        // through a load that came before it.
+        // through a load that came before it. A read through the new owner, while it holds the
+        // value, is not such a use (spec 29).
+        auto throughOwner = [&](mlir::Operation *user, mlir::Value used) {
+            return readsThroughOwner(taker, used, user, kills);
+        };
+
         for (auto *use : slot.getUsers())
         {
             if (mlir::isa<mlir_ts::ReleaseSlotOp>(use))
             {
                 continue;
             }
-
-            // a read through the new owner, while it holds the value (spec 29)
-            auto throughOwner = [&](mlir::Operation *user, mlir::Value used) {
-                return readsThroughOwner(taker, used, user, kills);
-            };
 
             if (use != load.getOperation() && reachableAfter(taker, use, kills))
             {

@@ -3051,9 +3051,9 @@ would be (§2.3), and is accepted while that place still holds it (USER decision
   method - is walked as a borrow's uses are (`walkBorrowed`, starting not borrowed); a call result
   that borrows its argument is the value again and may not be kept. A method reached through it
   whose callee keeps its `this` is not a read. A store through a field read (`h.c = c; c.x = 7`)
-  is a use of the borrow, not a keep: the block stays the place's. Anything else after the move - a store, an owning
-  `let`, a keeping call, a return, rc's retain for a receiver - is still a second owner and keeps
-  the error.
+  is a use of the borrow, not a keep: the block stays the place's. Anything else after the move -
+  a store of the value, an owning `let`, a keeping call, a return, rc's retain for a receiver - is
+  still a second owner and keeps the error.
 - **Where it moved** (`destinationChain`): an owning local (a declaration, or an assignment), or a
   field or element of a local or a parameter (`this`), described as the `Chain` `checkPlaceRead`
   reads (`chainOf` from the store's place). A move into a call that keeps the argument, a `push`, a
@@ -3062,10 +3062,11 @@ would be (§2.3), and is accepted while that place still holds it (USER decision
   that may destroy what the place holds (`dropsChain`, with the moved value standing in for the
   read's result): an overwrite of the place, matched by position and type, through an interface
   view too (§28); a call whose facts may drop (no `__own_no_drops`) given something that reaches the
-  place's root, or any such call for a root the function does not own; a call given a closure. The
-  read fails when some end or drop E has a path move -> E (not through the value's definition, the
-  local's declaration or its assignments) and a path E -> the read or anything it produced (not
-  through those either, nor through the move again). Together the two are exactly one path from
+  place's root, or any such call for a root the function does not own; a call given a closure; and
+  an assignment to a global, for a root the function does not own (below). The read fails when
+  some end or drop E has a path move -> E (not through the value's definition, the local's
+  declaration or its assignments) and a path E -> the read or anything it produced (not through
+  those either, nor through the move again). Together the two are exactly one path from
   the move through E to the read on which the value is neither made again nor moved again; a path
   that moves the same value again without making it again is the `moved inside a loop` error
   already. A read of the old name again after E is no new value - the move leaves the slot as it
@@ -3076,15 +3077,18 @@ would be (§2.3), and is accepted while that place still holds it (USER decision
   `checkSlotMove` (an owning local) of every use of a slot read the move reaches, and of each late
   use `readUsedAfter` finds.
 
-`own_read_after_move` runs the straight-line moves into a field (`n.v = a`, `h.c = c`), a move
-into an owning local in a loop that makes the value each iteration, 100,000 iterations of a move
-into a field and into a local each read after it, and a declaration that takes a value over (`let
-q = p; print(p.x); p = new V(8)`: `q` keeps the first value, §24), then allocates same-size
-blocks, then reads the moved values again and asserts them, under own, rc, gc and none, AOT and
-JIT, and on Linux (every `own` test passes there, 932); own emits no counting. Negatives, all `is
-used here after its value was moved`: `own_err_field_alias` (`n.v = [2]` after `n.v = a`), `own_err_union_moved` (`h.c = null`), `own_err_read_after_move_overwritten`
-(overwritten on one path), `own_err_read_after_move_view` (overwritten through an interface view
-`hv.c = null`), `own_err_read_after_move_call` (`clear(h)`, which may drop),
+`own_read_after_move` runs the straight-line moves into a field (`n.v = a`, `h.c = c`), into an
+element (`arr[0] = ce`) and into a field of `this` (`this.f = c` in a method), each read after
+same-size allocations; a move into an owning local in a loop that makes the value each iteration;
+100,000 iterations of a move into a field and into a local each read after it; and a declaration
+that takes a value over (`let q = p; print(p.x); p = mkv(8)`: `q` keeps the first value, §24).
+Then it allocates same-size blocks, reads the moved values again and asserts them, under own, rc,
+gc and none, AOT and JIT, and on Linux; own emits no counting. Its values come from factories
+(`mkc(n)`), so stack promotion leaves them heap blocks. Negatives, all `is used here after its
+value was moved`: `own_err_field_alias` (`n.v = [2]` after `n.v = a`), `own_err_union_moved`
+(`h.c = null`), `own_err_read_after_move_overwritten` (overwritten on one path),
+`own_err_read_after_move_view` (overwritten through an interface view `hv.c = null`),
+`own_err_read_after_move_call` (`clear(h)`, which may drop),
 `own_err_read_after_move_loop` (the read at the top of a loop reached around the back edge after
 the iteration's `best = new V(i)` freed the moved value), `own_err_read_after_move_after_loop`
 (a read after a loop that overwrote the destination). `own_err_param_kept_used`, `own_err_push_let`,
@@ -3096,12 +3100,33 @@ takes the value over, and `a = new C(2)` frees nothing `b` holds: the programs a
 print what rc prints, on Windows and Linux). They now give `a` to a second `let`, so that each
 borrows it, as before.
 
+**An assignment to a global is a drop** for a chain with a root this function does not own (found
+in review). `G = mkH()` is `ts.ReleaseSlot(ts.AddressOf @G)` before its store, and the drops took
+only a `ts.ReleaseSlot` of a place or a cell. So `function run(h: H) { const c = mk(); h.c = c; G =
+mkH(); churn(); print(c.x); }`, called as `run(G)`, compiled and printed 999 (a freed block that
+the allocations reused; rc prints 5), and so did the same through `this` in a method of the
+global's class. A parameter, `this`, or a value read out of a field or a global may be the global's
+old value, or under it, and the assignment frees it. The plain place read had it too, older than
+this section: `h.c = mk(); const x = h.c; G = mkH(); print(x.x)`. Now such a `ts.ReleaseSlot` is a
+drop, and `dropsChain` takes it for every chain that is not owned (`!chain.owned()`); a local or a
+value this function made cannot be the global's. An immortal global's (§25) one store is its
+initializer, whose old value is empty, so its `ts.ReleaseSlot` drops nothing. A callee that assigns
+a global was already no `__own_no_drops` (`dropsInBody`), so a call of it ends such chains.
+Negatives: `own_err_read_after_move_global` (the parameter, `this`, and the assignment in a callee:
+`is used here after its value was moved`) and `own_err_field_let_global_overwritten` (the place
+read: `borrows a field but is used here after it may be released or overwritten`). Teeth: with the
+global's `ts.ReleaseSlot` dropping nothing, both compile but the callee's case; the first prints
+garbage (`9.88131e-324`) for the parameter and 999 for `this`, the second `9.88131e-324`, instead
+of 5. Still open, every model (rc too): a parameter itself read after the global it came from is
+assigned (`function run(h: C) { G = mk(); print(h.x); }` called as `run(G)`): no place is read,
+so there is no chain to end.
+
 Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
-compile. AOT runs of four of them with same-size allocations before the read print a freed
-block's value: `c.x` prints 0 (overwritten on one path, `clear`) and 999 (through the view)
-instead of 5, and `a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`. The loop's run
-happened to print the right sum; the other two were not run. The positive cannot show it: by design
-nothing in it overwrites a destination before a read. With the rule off, the positive fails to
+compile, and AOT runs with same-size allocations before the read print a freed block's value:
+`c.x` prints 0 (overwritten on one path, `clear`, set to null) and 999 (through the view) instead
+of 5; `a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`; the loop's sum is 1999 instead of
+3; the read after the loop prints 999 instead of 1. The positive cannot show it: by design nothing
+in it overwrites a destination before a read. With the rule off, the positive fails to
 compile with `is used here after its value was moved`, at every read after a move. A loop of 2
 million iterations peaks at 4.5 MB under own, as under rc.
 
