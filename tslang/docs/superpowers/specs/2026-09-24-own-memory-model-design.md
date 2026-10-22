@@ -3184,6 +3184,16 @@ the new owner where it moved, on the edge where it did not.
   its own, and rc's retain for it is erased. A value the slot is given (its initializer, an
   assignment's) is the slot's only once stored, so a use of it before that - the constructor's, or
   one around a loop before the value is made again - is no use of the slot's value.
+- **...and past the joined points** (found in review): what was read out of the value before an
+  edge released it - a bound method `v.get`, an interface view `const i: I = v` - may not be used
+  anywhere reachable from the start of a block the edge released it into, before the read it came
+  from (or the op that made the value) runs again: not after a new value is stored into the local
+  (`if (c) { b = v; } v = mkv(2); m()`), where the state is no longer joined, and not after the
+  scope ends. A read of the slot itself after a new value is stored reads the new one, and stays
+  accepted. The error then carries a note at the use: `used here, after the paths join, so it
+  cannot be released before they do`.
+- A `string` read out of the value counts as a pointer into it, though own copies strings in some
+  places: too strict, but sound.
 - **One receiver**: the rule applies when the move is the local's one receiver (`decideSlot`).
   With two, `if (c) { a = v; } else { b = v; }`, each move's other paths include the other's, and
   the error stays.
@@ -3204,15 +3214,19 @@ iterations of a move into a local on even iterations, read through the new owner
 (§29) and freed by the local on odd ones; an assignment in a loop over a value that may have moved;
 a value moved into a field on every path and given a new value on some, which that path frees
 before the paths join (the old `own_err_reassign_some_paths`); a move into a call that keeps its
-argument on one arm of `?:` (the ray tracer's `shade`); and a move in a `try` whose call throws on
+argument on one arm of `?:` (the ray tracer's `shade`), and on the right of `&&`, whose skipping
+edge carries the `&&`'s value, so the release goes in a block of its own that passes the value on;
+and a move in a `try` whose call throws on
 half of 20,000 calls, with a `finally`. It prints the same under own, rc, gc and none, AOT and JIT,
 and on Linux; own emits no counting. Negatives: `own_err_conditional_move_read` (`b = undefined`
 after the join, then `v.x`: `is used here after its value was moved`),
 `own_err_conditional_move_outer` (`moved inside a loop but was made outside it`),
 `own_err_conditional_move_read_after_join` (`v.x` after the join),
-`own_err_conditional_move_field_borrow` (a field of `v` read after the join) and
-`own_err_conditional_move_catch` (the move inside a `catch`), the last three `is moved here on some
-paths only`.
+`own_err_conditional_move_field_borrow` (a field of `v` read after the join),
+`own_err_conditional_move_catch` (the move inside a `catch`), `own_err_conditional_move_bound_method`
+(`const m = v.get` called after the join), `own_err_conditional_move_view` (`const i: I = v` read
+after the join) and `own_err_conditional_move_old_view` (both, used after `v` is given a new value
+past the join), the last six `is moved here on some paths only`.
 
 The brief's positive read `t` after the join (`if (k % 2 == 0) { b = t; } s += t.x;`). That is the
 shape the rule leaves out, so the read moved into the branch (`b = t; s += t.x;`) and before the
@@ -3230,9 +3244,17 @@ move into a keeping call and the `try` with a throwing call, each alone; the str
 `if (v.x > 0) { best = v; } print(best.x)` prints 0 instead of 1. With the safety condition off,
 `own_err_conditional_move_read_after_join` compiles, and a copy with same-size allocations before
 the read prints 0 for `v.x` on the path that did not move it, instead of 1; no other check covers
-it, since §29 accepts the read on the path that moved. A field of `v` read after the join, a
-`const` alias of `v` and a call result that borrows `v` are each rejected by an older check as
-well (the move ends a place borrow of `v`; two receivers; `borrows the result of`).
+it, since §29 accepts the read on the path that moved. With what is read out of `v` not followed
+(only the slot's reads), `own_err_conditional_move_bound_method` and `_view` compile - no older
+check sees them - and their AOT runs crash (0xC0000005), where rc prints `1 1`. With the walk
+checking only joined points (as first written), both forms of `own_err_conditional_move_old_view`
+compile and read the freed old value: the bound method printed `3 4` on one run and crashed
+(0xC0000005) on the other, instead of `3 3`; the view printed `3 1002` and `3 1004`. A field of
+`v` read after the join, a `const` alias of `v` and a call result that borrows `v` are each also
+rejected by an older check (the move ends a place borrow of `v`; two receivers; `borrows the
+result of`). Still open, every model (rc prints garbage too): a bound method or a view of a
+local used after the local is given a new value, with no move at all (`const m = v.get; v =
+mkv(2); m()`).
 
 Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 527 of
 693 before this section, 528 after; none lost. Gained: `00nullish_values`; it prints under own what
