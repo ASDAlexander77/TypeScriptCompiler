@@ -3,7 +3,8 @@
 // one. A function that returns a parameter on some paths and a fresh value on others keeps that
 // parameter: the path that returns it moves it out, every other path releases it exactly once -
 // an early return, a `break` out of a loop, a return from inside a loop or a `try` with a
-// `finally`, a `throw`. A callback that only borrows the accumulator releases it.
+// `finally`, a `throw`. A callback that only borrows the accumulator releases it, and so does a
+// direct call of one (`add`), which moves its argument in.
 class V {
     constructor(public x: number) {}
     static plus(a: V, b: V) {
@@ -25,6 +26,11 @@ function churn() {
 // returns acc on one path
 function pick(acc: V, v: V) {
     return v.x > 2 ? acc : V.plus(acc, v);
+}
+
+// only borrows acc, but is passed beside `pick`: given acc to keep, it releases it
+function add(acc: V, v: V) {
+    return V.plus(acc, v);
 }
 
 function early(a: V, n: number) {
@@ -89,6 +95,10 @@ function main() {
     churn();
     print(z.x, K.zero.x); // 0 0
 
+    const s = a.reduce(add, new V(10));
+    churn();
+    print(s.x); // 16
+
     let total: number = 0;
     let caught = 0;
     for (let i = 0; i < 20000; i++) {
@@ -96,6 +106,7 @@ function main() {
         const e = early(new V(i % 10), n);
         const f = fromLoop(new V(1), n);
         const g = guarded(new V(2), n);
+        const d = add(new V(n), new V(1));
         let t: number = 0;
         try {
             const h = thrower(new V(3), n - 1);
@@ -105,10 +116,10 @@ function main() {
         }
 
         churn();
-        total += e.x + f.x + g.x + t;
+        total += e.x + f.x + g.x + t + d.x;
     }
 
     print(total, caught, finallies);
-    assert(r.x == 6 && q.x == 3 && z.x == 0 && K.zero.x == 0);
+    assert(r.x == 6 && q.x == 3 && z.x == 0 && K.zero.x == 0 && s.x == 16);
     print("done.");
 }

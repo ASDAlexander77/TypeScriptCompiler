@@ -3837,8 +3837,10 @@ each callback is given the accumulator to keep, and its result is the next one, 
   are, and their bodies fail with the note `a function passed in its place disagrees`
   (`own_err_callback_disagrees`: `pick` beside `(acc, v) => acc`). A member a callback family demoted
   is never promoted again, so the meet settles. Class and interface families still agree or demote
-  (addendum): promotion is only for callbacks. A promoted member called directly moves its argument
-  in too (`own_err_callback_promoted_used`).
+  (addendum): promotion is only for callbacks; a closed interface whose implementations both return
+  their accumulator on some paths agrees and keeps it, one beside a plain borrow demotes both. A
+  promoted member called directly moves its argument in too (`own_reduce`'s `add`;
+  `own_err_callback_promoted_used` reads the argument after).
 - **The immortal start value.** `a.reduce(pick, K.zero)` moves the immortal `K.zero` (§25) in: its
   retains are erased, and the releases `pick` and `main` make of it are skipped by its header.
   `own_reduce` reduces `[new V(5), new V(7)]` with `pick` from `K.zero`, so `pick` returns `K.zero`
@@ -3848,9 +3850,11 @@ each callback is given the accumulator to keep, and its result is the next one, 
   changed there.
 
 `own_reduce` runs the brief's program (`r.x, q.x` is `6 3`), a reduce that returns the immortal
-start value, and 20,000 iterations of an early return, a return from inside a loop, a return from a
-`try` with a `finally` and a `throw` that the caller catches, each read after churn, under own, rc,
-gc and none, AOT and JIT, and on Linux; own emits no counting. Negatives: `own_err_mixed_return`
+start value, a named callback `add` that only borrows its accumulator beside `pick` (promoted), and
+20,000 iterations of an early return, a return from inside a loop, a return from a `try` with a
+`finally`, a `throw` that the caller catches, and a direct call of `add`, each read after churn,
+under own, rc, gc and none, AOT and JIT, and on Linux; own emits no counting, and
+`--verify-ownership` is quiet on it under own and rc. Negatives: `own_err_mixed_return`
 (rewritten), `own_err_mixed_return_join_use` (a field read out of the kept parameter before the join
 and used after it: `is moved here on some paths only`), `own_err_callback_escapes` (`pick` also
 called through a `let`: `cannot make the callers of 'pick' give it up`), `own_err_callback_disagrees`,
@@ -3882,6 +3886,11 @@ against `Color.toDrawingColor(color)` (280:25), which builds and calls its `lega
 may drop. It was there before §32. It does not reproduce in three smaller programs (a closure over
 `camera` called in a loop beside a call that may drop, inside a record argument, in a method), and
 a method in place of the closure fails the same way, so it is not the closure's call.
+
+On a scratch copy whose only other change is `legalize` made a module-level function (so
+`toDrawingColor` destroys nothing; not one of the plan's source edits), the program compiles under
+own as an executable and runs: checksum 38837369 as under rc, exit 0, peak 4.9 MB as rc's 4.9 MB on
+Windows, and 4.3 MB (rc 4.4 MB) on Linux, where glibc reports no bad free.
 
 Not here:
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
