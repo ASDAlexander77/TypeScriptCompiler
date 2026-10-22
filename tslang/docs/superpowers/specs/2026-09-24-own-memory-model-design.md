@@ -3912,7 +3912,27 @@ is given another value). Negatives `own_err_kept_param_let_overwritten` and
 argument made at the call site can be stack-promoted, and its release then frees nothing): `borrows
 a field but is used here after it may be released or overwritten`. Tooth: with the bound skipped, both
 compile, print 779000 instead of 501500 (gc), and fail their assertion. `own_reduce`, the ray tracer
-(1 error, the same) and the corpus (528, the same files) are unchanged.
+(1 error, the same) and the corpus (528, the same files) are unchanged. It narrows one shape that
+was correct: a borrow read out of `p` and used in a `finally` after `return p` (the return ends it at
+the move, though the caller then holds the value) is now rejected; no suite test or corpus file has
+it.
+
+**After re-review** (2026-10-22). A call that keeps one argument and is given the same value again
+through another operand let the callee free what it still borrowed: `f(p, q) { const inner = q.v;
+let r = p; r = new N(...); inner.x }` called as `f(n, n)` printed 631370 (gc 501500), a variant
+crashed, and the same with `n` an owning `let` printed 639140 - BASE rejected them, since `p` was not
+kept, and the `let` rule above made them reachable. The same through a field keep (`f(h, n, n)` with
+`h.n = p; h.n = new N(...)`, then `q.v`) was wrong before this section too. The caller's
+use-after-move checks skipped the taker itself as a use: `movesOf` for a fresh or folded value,
+`checkSlotMove`'s reads for an owning slot. Now (`callGivenAgain`) a call that keeps an argument is a
+use after the move when another of its operands - the value again, a view of it, something read out
+of it (`f(h, n, n.v)`), another read of the same slot, its receiver - may point into the moved block:
+`is used here after its value was moved`. `___array_reduce`'s `f(r, v)` passes the accumulator once.
+Negatives `own_err_kept_and_borrowed_arg` (a folded `const`), `_slot` (an owning `let`) and `_field`
+(the field keep), each through a `@noinline` factory with churn and an assert. Tooth: with the check
+skipped, the first two print 779000 instead of 501500 and fail their assertion, and the third crashes
+(0xC0000005). `own_reduce`, the ray tracer (1 error, the same) and the corpus (528, the same files)
+are unchanged.
 
 Not here:
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is

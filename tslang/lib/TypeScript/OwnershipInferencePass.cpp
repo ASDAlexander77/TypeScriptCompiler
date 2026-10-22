@@ -5027,6 +5027,13 @@ class OwnershipInferencePass
                 made.push_back(definition);
             }
 
+            // the call that keeps it, given it again through another operand
+            if (auto *again = callGivenAgain(taker, value, {value}))
+            {
+                reportUseAfterMove(again, taker, name);
+                return false;
+            }
+
             for (auto *use : llvm::concat<mlir::Operation *const>(takers, reads))
             {
                 if (use != taker && reachableAfter(taker, use, definition))
@@ -5074,6 +5081,46 @@ class OwnershipInferencePass
 
         toErase.insert(moved.begin(), moved.end());
         return true;
+    }
+
+    // A call that keeps an argument and is given the same value again through another operand - the
+    // value itself, a view of it, something read out of it, another read of its slot (`f(n, n)`,
+    // `f(h, n, n.v)` with only the first `n` kept): the callee takes the value while it borrows it
+    // through the other operand, and may free it under that borrow, so the other operand is a use
+    // after the move (spec 33, review). `sources` are what the moved value is: the value, or every
+    // read of the owning slot it came from. The call itself, or null.
+    mlir::Operation *callGivenAgain(mlir::Operation *taker, mlir::Value moved, llvm::ArrayRef<mlir::Value> sources)
+    {
+        if (!isCall(taker) || ownedParams(taker).empty())
+        {
+            return nullptr;
+        }
+
+        auto args = callArgs(taker);
+        auto kept = ownedParams(taker);
+        auto movedRoot = rootOf(moved);
+        for (auto &operand : taker->getOpOperands())
+        {
+            // the moved argument itself, where the callee keeps it
+            auto number = operand.getOperandNumber();
+            if (!args.empty() && number >= args.getBeginOperandIndex() &&
+                number < args.getBeginOperandIndex() + args.size() &&
+                llvm::is_contained(kept, static_cast<int32_t>(number - args.getBeginOperandIndex())) &&
+                rootOf(operand.get()) == movedRoot)
+            {
+                continue;
+            }
+
+            for (auto source : sources)
+            {
+                if (derivedFrom(source).contains(operand.get()))
+                {
+                    return taker;
+                }
+            }
+        }
+
+        return nullptr;
     }
 
     // Does control come back round to `taker` without making the value again? Only then is it a
@@ -5337,6 +5384,22 @@ class OwnershipInferencePass
         if (reachableAfter(taker, load, kills))
         {
             reportMovedInLoop(taker, name);
+            return false;
+        }
+
+        // the call that keeps it, given the slot's value again through another operand
+        llvm::SmallVector<mlir::Value> slotReads;
+        for (auto *user : slot.getUsers())
+        {
+            if (auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+            {
+                slotReads.push_back(readOp.getResult());
+            }
+        }
+
+        if (auto *again = callGivenAgain(taker, value, slotReads))
+        {
+            reportUseAfterMove(again, taker, name);
             return false;
         }
 
