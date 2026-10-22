@@ -3148,3 +3148,99 @@ clean under own on Linux.
 The ray tracer (`rtbench_own.ts`) has 33 errors, as at §28, but none of them is `is used here
 after its value was moved` any more. Two are `is moved here on some paths only` (G10), which the
 use-after-move errors used to hide. The rest are G9's, G5's and G2's (§28).
+
+## 30. A move on some paths only (G10 of the ray tracer plan), 2026-10-22
+
+`let v = ...; if (v.x > m) { best = v; }` was `is moved here on some paths only; -mm=own cannot
+release it on the others yet`: where the paths join, `v`'s one `ts.ReleaseSlot` is on a path that
+moved the value and on one that did not, and no run-time record of the move is kept (§2.2). Now the
+release is placed statically (static drop elaboration, controller ruling; a run-time drop flag was
+ruled out): on each edge into the join that holds the value and did not move it, and nowhere on
+the paths that moved it. The releases after the join go. Each path frees the value once - through
+the new owner where it moved, on the edge where it did not.
+
+- **The state of the slot** (`placeOnUnmovedEdges`): a forward walk of the function's CFG gives,
+  before each op of the body, what the local's slot may hold - nothing (before its `ts.Variable`,
+  after a release), its value (after the `ts.Variable` or an assignment), or a moved value (after
+  the move's acquire). A point that some paths reach holding the value and others having moved it
+  is *joined*. Every `ts.ReleaseSlot` that may hold a moved value goes; one that some path also
+  reaches with nothing in the slot keeps the error. An assignment's own release before its store
+  is one of them: an assignment over a value that may have moved frees the old value only where it
+  did not move (`if (k % 3 == 0) { kept = r; } r = new V(k);` in a loop).
+- **Where the release goes**: on every edge from a block that ends holding the value, and only the
+  value, into a joined block - at the end of the block when it has no other successor (a `then` or
+  `else` branch, a loop's latch), else in a new block on the edge. A joined block that some path
+  reaches with nothing in the slot, an edge whose branch is not `cf.br`/`cf.cond_br` (an
+  `Invoke`), and an edge out of an exception handler (from a landing pad to its
+  `EndCatch`/`EndCleanup`) keep the error.
+- **The safety condition**: the release moves earlier, from the end of the local's scope to where
+  the paths join, so nothing may use the value at a joined point: no read of the slot, and nothing
+  read out of it - followed forward through every op's results (a field's reference, a view, a
+  bound method, a block argument), through a store into a local (every read of that local), and
+  out of a region (a closure, an async body) through the op that holds it. A store of such a value
+  into a place or into a captured local is not followed and keeps the error. A call's result is
+  followed only when its facts say it borrows that argument (`__own_result_borrows`); anything
+  else a call returns is its own block. The move hands the value to its new owner, whose reads are
+  its own, and rc's retain for it is erased. A value the slot is given (its initializer, an
+  assignment's) is the slot's only once stored, so a use of it before that - the constructor's, or
+  one around a loop before the value is made again - is no use of the slot's value.
+- **One receiver**: the rule applies when the move is the local's one receiver (`decideSlot`).
+  With two, `if (c) { a = v; } else { b = v; }`, each move's other paths include the other's, and
+  the error stays.
+- **Reads after the join**: a read of `v` after the paths join (`if (c) { b = v; } print(v.x);`)
+  goes through `b` on the path that moved it (§29), but on the other `v` must free the value after
+  the read, where only a run-time record could tell the paths apart: the error stays. So does a
+  `let` declared outside a loop, moved on some iterations and read in the next without a new value
+  (`moved inside a loop`).
+- **Unwind paths** are paths of the CFG (`ts.Invoke`'s unwind edge to a landing pad), and get the
+  same treatment: a release on the normal edge into a joined `try` body comes before the call that
+  may throw, and a cleanup's `__unwind_only` release of a joined slot goes with the others.
+- The releases are recorded during the analysis (which runs twice, dry and real, and tries a move
+  quietly before a borrow) and put in only after it, before the erasures (`placeEdgeReleases`).
+
+`own_conditional_move` runs: the brief's loop that keeps the largest value (`best = v` on some
+iterations, `v` declared in the loop); a straight-line move taken and one not taken; 100,000
+iterations of a move into a local on even iterations, read through the new owner inside the branch
+(§29) and freed by the local on odd ones; an assignment in a loop over a value that may have moved;
+a value moved into a field on every path and given a new value on some, which that path frees
+before the paths join (the old `own_err_reassign_some_paths`); a move into a call that keeps its
+argument on one arm of `?:` (the ray tracer's `shade`); and a move in a `try` whose call throws on
+half of 20,000 calls, with a `finally`. It prints the same under own, rc, gc and none, AOT and JIT,
+and on Linux; own emits no counting. Negatives: `own_err_conditional_move_read` (`b = undefined`
+after the join, then `v.x`: `is used here after its value was moved`),
+`own_err_conditional_move_outer` (`moved inside a loop but was made outside it`),
+`own_err_conditional_move_read_after_join` (`v.x` after the join),
+`own_err_conditional_move_field_borrow` (a field of `v` read after the join) and
+`own_err_conditional_move_catch` (the move inside a `catch`), the last three `is moved here on some
+paths only`.
+
+The brief's positive read `t` after the join (`if (k % 2 == 0) { b = t; } s += t.x;`). That is the
+shape the rule leaves out, so the read moved into the branch (`b = t; s += t.x;`) and before the
+`if`, and `s` is 199999 instead of 149999.
+
+`own_err_reassign_some_paths` (a value moved, then given a new value on some paths) and
+`own_err_borrow_derived_ref` (phase 2: `let b = a`, then `a = new C(2)` in a loop) became correct
+programs: the path that gave `a` a new value frees it before the paths join, and the move into `b`
+needs no borrow. They print what rc prints. The first now reads `a` after the join, and the second
+gives `a` to a second `let`, so that each borrows it; both fail as before.
+
+Teeth: with the release placed on the edges that moved the value as well, `own_conditional_move`
+(AOT, `test-compile-own-`) exits 0xC0000374 (heap corruption), and so do the brief's loop, the `?:`
+move into a keeping call and the `try` with a throwing call, each alone; the straight-line
+`if (v.x > 0) { best = v; } print(best.x)` prints 0 instead of 1. With the safety condition off,
+`own_err_conditional_move_read_after_join` compiles, and a copy with same-size allocations before
+the read prints 0 for `v.x` on the path that did not move it, instead of 1; no other check covers
+it, since §29 accepts the read on the path that moved. A field of `v` read after the join, a
+`const` alias of `v` and a call result that borrows `v` are each rejected by an older check as
+well (the move ends a place borrow of `v`; two receivers; `borrows the result of`).
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 527 of
+693 before this section, 528 after; none lost. Gained: `00nullish_values`; it prints under own what
+it prints under rc (Windows AOT) and runs clean under own on Linux.
+
+The ray tracer (`rtbench_own.ts`) has 31 errors, from 33: both `is moved here on some paths only`
+are gone - `intersections` (`closestInter = inter` on some iterations) and `shade` (`pos` and
+`reflectDir` moved into `getReflectionColor`, whose facts keep them, on one arm of `?:`). The rest
+are G9's, G5's and G2's (§28): 21 `borrows a field`, 5 object-literal moves, 2 `borrows an
+element`, 1 mixed return, 1 kept parameter (the `reduce`), 1 `borrows a field and cannot be
+stored`.
