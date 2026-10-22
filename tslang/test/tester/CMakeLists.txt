@@ -388,6 +388,7 @@ tslang_add_test(NAME test-compile-00-string-empty-falsy COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-string-concat-bounds COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_bounds.ts")
 tslang_add_test(NAME test-compile-00-parse-number-range COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-compile-00-global-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_held.ts")
+tslang_add_test(NAME test-compile-00-shared-global-field-argument COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00shared_global_field_argument.ts")
 tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-bound-method-count COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_count.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
@@ -960,6 +961,7 @@ tslang_add_test(NAME test-jit-00-string-empty-falsy COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-string-concat-bounds COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_bounds.ts")
 tslang_add_test(NAME test-jit-00-parse-number-range COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
 tslang_add_test(NAME test-jit-00-global-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_held.ts")
+tslang_add_test(NAME test-jit-00-shared-global-field-argument COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00shared_global_field_argument.ts")
 tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-bound-method-count COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_count.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
@@ -1922,6 +1924,7 @@ set(TSLANG_CORPUS
     00string_concat_bounds.ts
     00parse_number_range.ts
     00global_argument_held.ts
+    00shared_global_field_argument.ts
     00narrowed_assign_other_member.ts
     00bound_method_count.ts
     00const_record_owned_fields.ts
@@ -3585,7 +3588,8 @@ set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy)
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy
+                        own_shared_global_argument)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
@@ -3599,7 +3603,8 @@ endforeach()
 foreach(shared_verify_mm own rc)
     foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy)
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy
+                        own_shared_global_argument)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
                          "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
