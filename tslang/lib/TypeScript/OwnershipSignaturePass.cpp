@@ -175,6 +175,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         moveIntoGlobals(module);
+        rejectBorrowedGlobalInitializers(module);
         collectClassVTables(module);
         fieldFunctions.collect(module);
 
@@ -2294,6 +2295,46 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         auto cellLoad = loadOp.getReference().getDefiningOp<mlir_ts::LoadOp>();
         return cellLoad && isBoxField(cellLoad.getReference());
+    }
+
+    // ---- Globals given a borrow ----
+
+    // A global initialized with a read of another global, a field or an element (`let k = a`,
+    // `let k = h.c`) would be a second owner of a block another owner keeps: the first overwrite
+    // of either frees what the other still reads, and both give it back at exit. rc counts the
+    // global's own reference (OwnedReturnConsumptionPass, claimGlobalInitializers); own cannot
+    // move the value out of its owner, and a global cannot hold a borrow. A handle is counted
+    // under own too.
+    void rejectBorrowedGlobalInitializers(mlir::ModuleOp module)
+    {
+        module.walk([&](mlir_ts::GlobalOp globalOp) {
+            auto *block = globalOp.getInitializerBlock();
+            auto resultOp = block && !block->empty() ? mlir::dyn_cast<mlir_ts::GlobalResultOp>(block->getTerminator())
+                                                     : mlir_ts::GlobalResultOp();
+            if (!resultOp || resultOp->getNumOperands() != 1)
+            {
+                return;
+            }
+
+            auto value = resultOp->getOperand(0);
+            while (value.getDefiningOp() && isView(value.getDefiningOp()))
+            {
+                value = value.getDefiningOp()->getOperand(0);
+            }
+
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+            if (!place || !mlir::isa<mlir_ts::AddressOfOp, mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place) ||
+                isHandle(value) || isConstantData(value) || !ownsHeap(value.getLoc(), value.getType()))
+            {
+                return;
+            }
+
+            resultOp.emitError("the initializer of global '")
+                << globalOp.getSymName()
+                << "' reads a value another owner keeps; -mm=own cannot make a global a second owner";
+            signalPassFailure();
+        });
     }
 
     // ---- Drops ----
