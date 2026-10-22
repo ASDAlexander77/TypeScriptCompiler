@@ -3485,9 +3485,10 @@ Not here, also:
   then `const c = gh.c; raise(15); ... c.x` with `onSig` overwriting `gh.c`). Foreign code can only
   learn of a function of this module through the module's foreign surface, or through a function
   turned into data; so the C-scalar rule holds only in a module whose **entire foreign surface is
-  scalar** and that **turns no function into data** (controller ruling, fix round 5; a closed-world
-  test, in place of the three earlier rounds' list of the routes a function value takes out, which
-  each review extended). A type is scalar when it is a number, a boolean, a character, an integer or
+  scalar** and that **turns no function into data by the means the pass sees**: a `ts.Cast`, an
+  `inline_asm`, a `call_intrinsic` (controller ruling, fix round 5; a closed-world test, in place
+  of the three earlier rounds' list of the routes a function value takes out, which each review
+  extended). A type is scalar when it is a number, a boolean, a character, an integer or
   float kind, or an enum or a literal of one. Not scalar: an opaque pointer, a reference, a string,
   a class, an interface, an object, a tuple, an array, a union with such a member, a function type,
   `any`, `unknown`, a rest parameter. The foreign surface, every item of which must be scalar:
@@ -3503,15 +3504,20 @@ Not here, also:
   - every function found in a library at run time (`SearchForAddressOfSymbol`): the function type
     its address is cast to.
 
-  The casts that turn a function into data, or make an address of foreign memory:
+  What turns a function into data, or makes an address of foreign memory:
   - a `ts.Cast` from a type that holds a function to a type that holds none (`any`, `unknown`, an
-    opaque pointer, an integer, anything else but a boolean, which cannot carry one; a class or
-    object input counts its fields when the output is `any`, `unknown` or opaque, and not when it
-    is anything else - a boolean, a base; a vtable's address is the compiler's own and does not
-    count);
+    opaque pointer, an integer, a reference, anything else but a boolean, which cannot carry one);
+    a class or object input counts its fields for every output but a class (its base) or an
+    interface (a view of it, read through its vtable only) - `<Reference<u64>>k` with `K { f:
+    (s: s32) => void }`, then a load of the field, is counted (final patch; before it only
+    `any`, `unknown` and opaque outputs counted the fields, review6r5 g1-g4, f7); a vtable's
+    address is the compiler's own and does not count;
   - a `ts.Cast` to an opaque pointer or a reference from a type that is not itself an address of
     memory this module made (`<Opaque>0x1234`, then `Deref(<Reference<fn>>p) = onSig`): a number,
-    `any`, a union.
+    `any`, a union;
+  - an `inline_asm<T>(...)` or `call_intrinsic<T>(...)` (`ts.InlineAsm`, `ts.CallIntrinsicOp`)
+    given an operand whose type holds a function, fields counted (final patch; review6r5 h1, h2:
+    `inline_asm<u64>("mov $1, $0", "=r,r", onSig)`, an identity intrinsic on `onSig`).
 
   A type holds a function when it is one, or a union's or optional's member, a tuple's field, an
   array's element or a reference's pointee does, recursively; a class or object does when a field
@@ -3520,9 +3526,11 @@ Not here, also:
   whose interface has methods, a class field with a function field, an array of them) - the header
   `.instanceOf`, the compiler's own, does not count - and an interface no vtable of this module
   makes values with (one a declared function returns) holds one. The test runs after the class
-  storages and the interface families are known. No call is examined: a function value given to a
-  call can only reach foreign code through a declared symbol, which the surface test already
-  judged by its type. Not here: a function reached by name - an exported function of a library
+  storages and the interface families are known. No ordinary call is examined: a function value
+  given to one can only reach foreign code through a declared symbol, which the surface test
+  already judged by its type; the two builtins that are calls of no declared symbol, `inline_asm`
+  and `call_intrinsic`, are examined by their operands (above). Not here: a function reached by
+  name - an exported function of a library
   module, which another module may hand to C - stays accepted, as it was with `@nodrops` (an
   executable's exports are visible to no module, above). Negatives
   `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
@@ -3533,8 +3541,10 @@ Not here, also:
   whose field is a `CB` with a method, given to a declared function through a function value,
   compiled only), `_stored_global` (`declare var hook: (s: s32) => void; hook = onSig`, compiled
   only), `_stored_reference` (`Deref(getSlot()) = onSig` through a declared
-  `getSlot(): Reference<(s: s32) => void>`, compiled only) and `_cpp_class` (`addListener(new
-  MyL())`, `MyL` a `@cpp` class whose `on` has a body, compiled only). Cost: a module with any
+  `getSlot(): Reference<(s: s32) => void>`, compiled only), `_cpp_class` (`addListener(new
+  MyL())`, `MyL` a `@cpp` class whose `on` has a body, compiled only), `_field_reference`
+  (`<Reference<u64>>k`, the field loaded as an integer into `signal(s32, u64)`) and `_intrinsic`
+  (`call_intrinsic<Opaque>("llvm.launder.invariant.group.p0", onSig)`, then `<u64>`). Cost: a module with any
   non-scalar declaration - a C function taking a string, a struct or a pointer, a `declare class`,
   a `@cpp` class with methods, an imported function - loses the rule for its scalar declarations
   too (explicit `@nodrops` still works); a data-only interface handed to a declared function
@@ -3603,3 +3613,21 @@ whitelist, as its cost: review6r3 n0 (an unused `declare function signal(sig: s3
 Opaque)`), review6r4 b1, b1b, b5 and b9 (a class or a data-only interface given to a declared
 function). The ray tracer built as a program stays at 15 errors (the same ones). Corpus 528, the
 same files.
+
+**Final patch** (2026-10-22, user decision: keep the implicit C-scalar rule with these two fixes,
+then stop). Re-review 5 found two ways a function became data that the cast test did not see: a
+class or array with a function field cast to an integer or a reference (`<Reference<u64>>k`,
+`<Reference<Reference<Reference<u64>>>>ks`, `<u64>ks`; the field then loaded as an integer into
+the all-scalar `signal(s32, u64)`; own printed `77777 9`, gc `5 9`) - the fields of a class or
+object input were counted only into `any`, `unknown` and opaque outputs, a narrowing left from
+round 3 - and `inline_asm<T>(...)` / `call_intrinsic<T>(...)`, calls of no declared symbol that
+take any operand (`inline_asm<u64>("mov $1, $0", "=r,r", onSig)`; an identity intrinsic on
+`onSig`). Now a cast counts the input's fields for every output but a class or an interface, and
+an `inline_asm` or `call_intrinsic` with an operand whose type holds a function (fields counted)
+turns the rule off. Negatives `own_err_declared_callback_field_reference` (review6r5 g2) and
+`_intrinsic` (h2), both runnable. Teeth, one switch per fix: with the fields counted only into
+`any`/`unknown`/opaque again, `_field_reference` compiles and prints `77777 9` under own (gc `5
+9`) while `_intrinsic` stays rejected; with the `inline_asm`/`call_intrinsic` clause off,
+`_intrinsic` prints `77777 9` while `_field_reference` stays rejected. g1-g5, f7, f9, f10, h1, h2
+rejected; d1-d9 and the scalar-only control keep the rule. The ray tracer built as a program stays
+at 15 errors (the same ones); as an object file, 19. Corpus 528, the same files.

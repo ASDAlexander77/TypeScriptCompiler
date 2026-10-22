@@ -3842,6 +3842,8 @@ set(own_error_cases
     "own_err_declared_callback_stored_global|borrows 'gh.c' but is used here after it may be released or overwritten"
     "own_err_declared_callback_stored_reference|borrows 'gh.c' but is used here after it may be released or overwritten"
     "own_err_declared_callback_cpp_class|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_field_reference|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_intrinsic|borrows 'gh.c' but is used here after it may be released or overwritten"
     "own_err_interface_member_class|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_member_any|borrows a field but is used here after it may be released or overwritten"
     "own_err_override_nameable_base|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"

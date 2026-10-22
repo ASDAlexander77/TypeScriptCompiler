@@ -3195,9 +3195,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // - no cast makes an opaque pointer or a reference out of a number (`<Opaque>0x1234`, then a
     //   store through it reaches foreign memory);
     // - no cast makes a value of a type that holds no function (`any`, `unknown`, an opaque
-    //   pointer, an integer; a boolean cannot carry one and does not count) out of one that holds
-    //   one (`onSig as Opaque`, `k.m as u64`; a class or object cast to `any`, `unknown` or opaque
-    //   takes its fields along).
+    //   pointer, an integer, a reference; a boolean cannot carry one and does not count) out of one
+    //   that holds one (`onSig as Opaque`, `k.m as u64`, `<Reference<u64>>k`; a class or object
+    //   takes its fields along unless seen as a class or an interface);
+    // - no `inline_asm` or `call_intrinsic` is given a value whose type holds a function.
     bool functionsEscape = false;
 
     // The types a holdsFunction walk has been through, with or without their fields.
@@ -3373,6 +3374,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 return;
             }
 
+            // `inline_asm<T>(...)` and `call_intrinsic<T>(...)`: a function given to either is data
+            // of no type (review6r5 h1, h2: `inline_asm<u64>("mov $1, $0", "=r,r", onSig)`)
+            if (mlir::isa<mlir_ts::InlineAsmOp, mlir_ts::CallIntrinsicOp>(op))
+            {
+                functionsEscape = llvm::any_of(op->getOperands(), [&](mlir::Value operand) {
+                    SeenTypes seen;
+                    return holdsFunction(operand.getType(), /*fields=*/true, seen);
+                });
+                return;
+            }
+
             auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op);
             if (!castOp)
             {
@@ -3398,17 +3410,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             // a function seen as something that holds none; a boolean cannot carry one. A class or
-            // object seen as `any`, `unknown` or an opaque pointer takes its fields along; seen as
-            // anything else (its base) it does not
+            // object takes its fields along, seen as anything (`any`, an opaque pointer, an integer,
+            // a reference: `<Reference<u64>>k`, then a load of the field, review6r5 g2) but a class
+            // (its base) or an interface (a view of it, read through its vtable only)
             if (mlir::isa<mlir_ts::BooleanType>(castOp.getType()))
             {
                 return;
             }
 
-            auto toOpaque = mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(castOp.getType());
+            auto fields = !mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType>(castOp.getType());
             SeenTypes seenIn;
             SeenTypes seenOut;
-            functionsEscape = holdsFunction(castOp.getIn().getType(), /*fields=*/toOpaque, seenIn) &&
+            functionsEscape = holdsFunction(castOp.getIn().getType(), fields, seenIn) &&
                               !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);
         });
     }
