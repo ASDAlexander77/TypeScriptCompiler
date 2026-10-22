@@ -51,6 +51,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(OwnershipSignaturePass)
 
+    // `executable`: the module is built into a program (`--emit=exe`, or the JIT's entry module),
+    // whose exports no other module sees (USER decision, spec 31). Unknown is a library.
+    explicit OwnershipSignaturePass(bool executable = false) : executable(executable)
+    {
+    }
+
+    bool executable = false;
+
     // A global is a root (rc 5ai): what its initializer makes moves into it, and nothing gives it
     // back. rc retains a fresh value for its `ts.GlobalResult`, and that retain is the move: it
     // goes. The per-function inference never sees a global's region, so any other retain there is
@@ -414,8 +422,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             // an iterator's `next()`, whoever implements it, and a generator's state, whoever makes
-            // it: see isIteratorNext
-            if (isIteratorNext(call.op) || makesGeneratorState(call.op))
+            // it: see isIteratorNext. Not a `next()` through a closed interface: its members keep
+            // their facts (spec 31), and the call gets theirs like any other
+            if ((isIteratorNext(call.op) && !call.callees.viaInterface) || makesGeneratorState(call.op))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -681,6 +690,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // (interface, vtable position) -> the functions every vtable of the interface holds there
     std::map<std::pair<std::string, int64_t>, InterfaceFamily> interfaceFamilies;
+
+    // The words of the module's exported declarations (none in an executable), the classes a class
+    // vtable is the own vtable of, and the classes another module can name: exported, or in the
+    // type of an exported or declared function or of an exported or imported global (findOpen).
+    llvm::StringSet<> exportWords;
+    llvm::StringSet<> ownClasses;
+    llvm::StringSet<> nameableClasses;
 
     // A field of function type (`f: (x: number) => number`), called through the interface: the slot
     // holds the offset of a field of each implementing object literal, and the call goes to whatever
@@ -998,8 +1014,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     }
 
     // Every interface a type mentions anywhere, a class's fields and a function's parameters
-    // included: what another module handed a value of this type could reach.
-    static void anyInterfaces(mlir::Type type, llvm::StringSet<> &found, llvm::DenseSet<mlir::Type> &seen)
+    // included: what another module handed a value of this type could reach. With `classes`, the
+    // classes it mentions too (a base class is its derived class's first field).
+    static void anyInterfaces(mlir::Type type, llvm::StringSet<> &found, llvm::DenseSet<mlir::Type> &seen,
+                              llvm::StringSet<> *classes = nullptr)
     {
         if (!type || !seen.insert(type).second)
         {
@@ -1015,13 +1033,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         auto fields = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
             for (auto &info : infos)
             {
-                anyInterfaces(info.type, found, seen);
+                anyInterfaces(info.type, found, seen, classes);
             }
         };
 
         // the types whose fields are not parameters of the type
         if (auto classStorageType = mlir::dyn_cast<mlir_ts::ClassStorageType>(type))
         {
+            if (classes)
+            {
+                classes->insert(classStorageType.getName().getValue());
+            }
+
             fields(classStorageType.getFields());
             return;
         }
@@ -1044,7 +1067,188 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return;
         }
 
-        type.walkImmediateSubElements([](mlir::Attribute) {}, [&](mlir::Type sub) { anyInterfaces(sub, found, seen); });
+        type.walkImmediateSubElements([](mlir::Attribute) {}, [&](mlir::Type sub) { anyInterfaces(sub, found, seen, classes); });
+    }
+
+    // The function values a value of this type holds: the type itself, a union's or an optional's
+    // member, a tuple's field, an array's element. Not what a reference points to (a vtable's
+    // address seen as an opaque pointer is the compiler's own, not a value).
+    static void functionValues(mlir::Type type, llvm::SmallVectorImpl<mlir::Type> &found, int depth = 0)
+    {
+        if (!type || depth > 16)
+        {
+            return;
+        }
+
+        if (mlir::isa<mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType,
+                      mlir_ts::ExtensionFunctionType, mlir_ts::ConstructFunctionType>(type))
+        {
+            found.push_back(type);
+            return;
+        }
+
+        auto fields = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
+            for (auto &info : infos)
+            {
+                functionValues(info.type, found, depth + 1);
+            }
+        };
+
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        {
+            fields(tupleType.getFields());
+        }
+        else if (auto constTupleType = mlir::dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            fields(constTupleType.getFields());
+        }
+        else if (auto unionType = mlir::dyn_cast<mlir_ts::UnionType>(type))
+        {
+            for (auto member : unionType.getTypes())
+            {
+                functionValues(member, found, depth + 1);
+            }
+        }
+        else if (auto optionalType = mlir::dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            functionValues(optionalType.getElementType(), found, depth + 1);
+        }
+        else if (auto arrayType = mlir::dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            functionValues(arrayType.getElementType(), found, depth + 1);
+        }
+        else if (auto constArrayType = mlir::dyn_cast<mlir_ts::ConstArrayType>(type))
+        {
+            functionValues(constArrayType.getElementType(), found, depth + 1);
+        }
+        else if (auto sharedType = mlir::dyn_cast<mlir_ts::SharedType>(type))
+        {
+            functionValues(sharedType.getElementType(), found, depth + 1);
+        }
+    }
+
+    // A function type's parameters and results, whatever kind of function it is.
+    static std::pair<llvm::SmallVector<mlir::Type>, llvm::SmallVector<mlir::Type>> signatureOf(mlir::Type type)
+    {
+        llvm::SmallVector<mlir::Type> inputs;
+        llvm::SmallVector<mlir::Type> results;
+        if (auto functionType = mlir::dyn_cast<mlir_ts::FunctionType>(type))
+        {
+            inputs.append(functionType.getInputs().begin(), functionType.getInputs().end());
+            results.append(functionType.getResults().begin(), functionType.getResults().end());
+        }
+        else if (auto boundType = mlir::dyn_cast<mlir_ts::BoundFunctionType>(type))
+        {
+            inputs.append(boundType.getInputs().begin(), boundType.getInputs().end());
+            results.append(boundType.getResults().begin(), boundType.getResults().end());
+        }
+        else if (auto hybridType = mlir::dyn_cast<mlir_ts::HybridFunctionType>(type))
+        {
+            inputs.append(hybridType.getInputs().begin(), hybridType.getInputs().end());
+            results.append(hybridType.getResults().begin(), hybridType.getResults().end());
+        }
+        else
+        {
+            // a kind this does not read: never the same signature as another
+            inputs.push_back(type);
+        }
+
+        return {inputs, results};
+    }
+
+    // Does a cast reinterpret a function value - from `any` or `unknown`, or as a function of another
+    // signature? Then an interface value its parameters or
+    // results hold crosses unseen (a `(o: Op2) => ...` called as `(o: Op) => ...`): `interfaces`
+    // gets every interface either side's signatures mention, and `boxed` the input's when it is put
+    // into `any`.
+    static bool castReinterpretsFunction(mlir::Type in, mlir::Type out, llvm::StringSet<> &interfaces, bool &boxing)
+    {
+        // `!ts.opaque` is the compiler's own (a vtable slot read as the `.instanceOf` it holds), not
+        // a value a program can put a function into
+        auto isOpaque = [](mlir::Type type) { return mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType>(type); };
+        llvm::SmallVector<mlir::Type> inFunctions;
+        llvm::SmallVector<mlir::Type> outFunctions;
+        functionValues(in, inFunctions);
+        functionValues(out, outFunctions);
+        boxing = false;
+        if ((inFunctions.empty() && outFunctions.empty()) || in == out)
+        {
+            return false;
+        }
+
+        auto mention = [&](llvm::ArrayRef<mlir::Type> types) {
+            for (auto type : types)
+            {
+                llvm::DenseSet<mlir::Type> seen;
+                anyInterfaces(type, interfaces, seen);
+            }
+        };
+
+        if (isOpaque(out))
+        {
+            boxing = true;
+            mention(inFunctions);
+            return false;
+        }
+
+        // the same signatures, but for `this` seen as an opaque pointer on one side, or bound on one
+        // side only (a closure's box, a bound function's object: the caller supplies neither)
+        auto sameSignature = [](mlir::Type a, mlir::Type b) {
+            auto [aInputs, aResults] = signatureOf(a);
+            auto [bInputs, bResults] = signatureOf(b);
+            auto dropBoundThis = [](mlir::Type type, llvm::SmallVector<mlir::Type> &inputs) {
+                if (!inputs.empty() && (mlir::isa<mlir_ts::BoundFunctionType>(type) || mlir::isa<mlir_ts::OpaqueType>(inputs.front())))
+                {
+                    inputs.erase(inputs.begin());
+                }
+            };
+
+            if (aInputs.size() == bInputs.size() + 1)
+            {
+                dropBoundThis(a, aInputs);
+            }
+            else if (bInputs.size() == aInputs.size() + 1)
+            {
+                dropBoundThis(b, bInputs);
+            }
+
+            if (aResults != bResults || aInputs.size() != bInputs.size())
+            {
+                return false;
+            }
+
+            for (auto [index, pair] : llvm::enumerate(llvm::zip(aInputs, bInputs)))
+            {
+                auto [aInput, bInput] = pair;
+                if (aInput != bInput &&
+                    !(index == 0 && (mlir::isa<mlir_ts::OpaqueType>(aInput) || mlir::isa<mlir_ts::OpaqueType>(bInput))))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        // a function out of `any`, or one function seen as another; a function seen as something
+        // that is no function (a vtable slot's reference to it) is the compiler's own
+        auto reinterprets = isOpaque(in) && !outFunctions.empty();
+        if (!inFunctions.empty() && !outFunctions.empty())
+        {
+            reinterprets = reinterprets || inFunctions.size() != outFunctions.size();
+            for (auto [inFunction, outFunction] : llvm::zip(inFunctions, outFunctions))
+            {
+                reinterprets = reinterprets || !sameSignature(inFunction, outFunction);
+            }
+        }
+
+        if (reinterprets)
+        {
+            mention(inFunctions);
+            mention(outFunctions);
+        }
+
+        return reinterprets;
     }
 
     static bool isNullish(mlir::Type type)
@@ -1297,7 +1501,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             if (header.getValue() == (owner + "..instanceOf").str())
             {
-                auto exposed = !globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr(DLL_EXPORT);
+                // an exported class (not in an executable, whose exports no module sees)
+                auto exposed = !executable && (!globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr(DLL_EXPORT));
+                ownClasses.insert(owner);
+                if (exposed)
+                {
+                    nameableClasses.insert(owner);
+                }
+
                 for (auto &[position, value] : values)
                 {
                     auto addressOfOp = addressOfThroughCasts(value);
@@ -1430,7 +1641,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         auto allOpen = false;
         llvm::StringSet<> boxed;
         llvm::StringSet<> unboxedInto;
-        auto isOpaque = [](mlir::Type type) { return mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type); };
+        auto unboxedFunction = false;
+        auto isOpaque =[](mlir::Type type) { return mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type); };
         module.walk([&](mlir::Operation *op) {
             if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(op))
             {
@@ -1480,6 +1692,25 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     }
                 }
 
+                // a function value reinterpreted carries the interface values of its parameters and
+                // results across unseen (review6 x1c, x1r)
+                llvm::StringSet<> signatures;
+                auto boxing = false;
+                if (castReinterpretsFunction(in, out, signatures, boxing))
+                {                    openAll(signatures);
+                    if (isOpaque(in))
+                    {
+                        unboxedFunction = true;
+                    }
+                }
+                else if (boxing)
+                {
+                    for (auto &entry : signatures)
+                    {
+                        boxed.insert(entry.getKey());
+                    }
+                }
+
                 return;
             }
 
@@ -1502,32 +1733,44 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         });
 
-        // seen from another module: a word of its exported declarations, or in a reachable type
-        auto words = exportedWords(module);
+        // seen from another module: a word of its exported declarations, or in a reachable type. An
+        // executable's exports are seen by no other module (USER decision, spec 31): only what it
+        // imports - a declared function, an imported global - comes from outside.
+        if (!executable)
+        {
+            exportWords = exportedWords(module);
+        }
+
+        auto &words = exportWords;
         llvm::StringSet<> exposed;
         llvm::DenseSet<mlir::Type> seen;
         for (auto &entry : functions)
         {
             // a `public` method of a class no other module can name is not one: only a declaration
             // re-parsed from `__decls` names a function of another module
-            if (entry.second.isDeclaration() || entry.second->hasAttr("export") || entry.second->hasAttr(DLL_EXPORT))
+            auto exported = !executable && (entry.second->hasAttr("export") || entry.second->hasAttr(DLL_EXPORT));
+            if (entry.second.isDeclaration() || exported)
             {
-                anyInterfaces(entry.second.getFunctionType(), exposed, seen);
+                anyInterfaces(entry.second.getFunctionType(), exposed, seen, &nameableClasses);
             }
         }
 
         for (auto &entry : globals)
         {
             auto globalOp = entry.second;
-            if (!globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr("import") ||
-                globalOp->hasAttr(DLL_EXPORT) || globalOp->hasAttr(DLL_IMPORT))
+            // another module's global, declared here with no initializer (an import of a .ts module
+            // carries `export`)
+            auto imported = globalOp->hasAttr("import") || globalOp->hasAttr(DLL_IMPORT) ||
+                            globalOp.getInitializerRegion().empty() || globalOp.getInitializerRegion().front().empty();
+            auto exported = !globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr(DLL_EXPORT);
+            if (imported || (exported && !executable))
             {
-                anyInterfaces(globalOp.getType(), exposed, seen);
+                anyInterfaces(globalOp.getType(), exposed, seen, &nameableClasses);
             }
         }
 
         openAll(exposed);
-        if (!unboxedInto.empty())
+        if (!unboxedInto.empty() || unboxedFunction)
         {
             openAll(boxed);
         }
@@ -2491,12 +2734,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // A function declared here and defined in a library that exported its `__own_no_drops`: one
     // linked with this module, through its import library. Or a C function declared
-    // `@nodrops` (OWN_DECLARED_NO_DROPS_ATTR_NAME).
+    // `@nodrops` (OWN_DECLARED_NO_DROPS_ATTR_NAME), or one whose parameters and result hold no
+    // heap block (scalarDeclaration).
     bool addImported(mlir::StringAttr symbol, Callees &callees)
     {
         auto funcOp = functions.lookup(symbol.getValue());
         if (!funcOp || !funcOp.isDeclaration() ||
-            !(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME)))
+            !(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME) ||
+              scalarDeclaration(funcOp)))
         {
             return false;
         }
@@ -2504,6 +2749,40 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         callees.imported = true;
         callees.importedName = symbol.getValue();
         return true;
+    }
+
+    // A body-less `declare function` of C (no `export` or import marker: not another TypeScript
+    // module's, whose declarations carry `export`) whose parameters and result are numbers,
+    // booleans, characters or enums of them: given no block of this module, it can destroy none
+    // (controller ruling, spec 31: `sqrt`, `floor`, `pow`, `fabs`). The risk is a C function that
+    // calls back into the module through something it was not given - an exported function
+    // reached by name - which a `@nodrops` declaration takes on as well.
+    static bool scalarDeclaration(mlir_ts::FuncOp funcOp)
+    {
+        if (!funcOp.isDeclaration() || funcOp->hasAttr("export") || funcOp->hasAttr("import") ||
+            funcOp->hasAttr(DLL_EXPORT) || funcOp->hasAttr(DLL_IMPORT) || funcOp.getFunctionType().isVarArg())
+        {
+            return false;
+        }
+
+        std::function<bool(mlir::Type)> scalar = [&](mlir::Type type) -> bool {
+            if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(type))
+            {
+                return scalar(literalType.getElementType());
+            }
+
+            if (auto enumType = mlir::dyn_cast<mlir_ts::EnumType>(type))
+            {
+                return scalar(enumType.getElementType());
+            }
+
+            return mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::ByteType, mlir_ts::CharType,
+                             mlir::IntegerType, mlir::FloatType, mlir::IndexType>(type);
+        };
+
+        auto functionType = funcOp.getFunctionType();
+        return llvm::all_of(functionType.getInputs(), scalar) &&
+               llvm::all_of(functionType.getResults(), [&](mlir::Type type) { return mlir::isa<mlir_ts::VoidType>(type) || scalar(type); });
     }
 
     // `ts.Load(ts.AddressOf @f)`, where the global `f` holds the address of a function exported
@@ -2560,12 +2839,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(op))
         {
             resolveValue(calleeValue(op), callees);
-            // an iterator's `next()` is fresh whoever implements it (isIteratorNext), which its
-            // family's facts must not contradict
-            if (callees.viaInterface && isIteratorNext(op))
-            {
-                callees = Callees();
-            }
         }
 
         if (!callees.known)
@@ -2737,6 +3010,44 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
     }
 
+    // Can a module other than this one call the function? A private one, no. A `public` method (not
+    // private, not exported itself) of a class no other module can name - not exported, not a word
+    // of the exported declarations, not in the type of an exported or declared function or of an
+    // exported or imported global (nameableClasses) - no either: another module calls a function
+    // of this one through the declaration `__decls` gives it (controller ruling, spec 31).
+    bool callableFromOutside(mlir_ts::FuncOp funcOp)
+    {
+        if (funcOp.isPrivate())
+        {
+            return false;
+        }
+
+        if (funcOp.isDeclaration() || funcOp->hasAttr("export") || funcOp->hasAttr(DLL_EXPORT))
+        {
+            return true;
+        }
+
+        // its class: the longest own class name that prefixes its symbol
+        auto symbol = funcOp.getSymName();
+        llvm::StringRef owner;
+        for (auto &entry : ownClasses)
+        {
+            auto name = entry.getKey();
+            if (name.size() > owner.size() && symbol.size() > name.size() && symbol.starts_with(name) && symbol[name.size()] == '.')
+            {
+                owner = name;
+            }
+        }
+
+        if (owner.empty())
+        {
+            return true;
+        }
+
+        auto last = owner.rsplit('.').second;
+        return nameableClasses.contains(owner) || exportWords.contains(owner) || (!last.empty() && exportWords.contains(last));
+    }
+
     // A class another module can see may be extended there, and its override is a candidate this
     // module never sees: every member has to be private and defined here.
     void resolveFamily(int64_t index, mlir::StringAttr identifier, Callees &callees)
@@ -2747,7 +3058,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             callees.known = addDefined(member, callees) && callees.known;
         }
 
-        callees.known = callees.known && llvm::all_of(callees.funcs, [](mlir_ts::FuncOp funcOp) { return funcOp.isPrivate(); });
+        callees.known = callees.known && llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp funcOp) { return !callableFromOutside(funcOp); });
     }
 
     // `ts.Cast(ts.VTableOffsetRef(vtable, 0))`, where `vtable` is the one an object's first word
@@ -2812,7 +3123,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     {
         for (auto &entry : functions)
         {
-            if (!entry.second.isPrivate())
+            if (callableFromOutside(entry.second))
             {
                 open.try_emplace(entry.second, "it can be called from another module; '@" LENDS_DECORATOR "' or '@" KEEPS_DECORATOR
                                                "' would say it in its signature");
@@ -3958,7 +4269,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
 #undef DEBUG_TYPE
 
-std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipSignaturePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipSignaturePass(bool executable)
 {
-    return std::make_unique<OwnershipSignaturePass>();
+    return std::make_unique<OwnershipSignaturePass>(executable);
 }

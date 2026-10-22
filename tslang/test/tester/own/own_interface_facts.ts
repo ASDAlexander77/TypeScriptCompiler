@@ -4,18 +4,29 @@
 // of the argument's field or of an element of the container the receiver came from lives across
 // it; a method that keeps its argument is given it (the caller moves it in), and a result that
 // borrows an argument or `this` is the caller's to read, not to release. A direct call of such a
-// method keeps its facts too.
+// method keeps its facts too, and so does a `public` method of a class no other module can name.
+// churn() keeps what it allocates alive, so a block freed too early is reused before it is read.
 class V {
     constructor(public x: number) {}
     static plus(a: V, b: V) { return new V(a.x + b.x); }
 }
 
 function churn() {
-    let s: number = 0;
+    const keep: V[] = [];
     for (let i = 0; i < 2000; i++) {
-        const t = new V(77777);
-        s += t.x;
+        keep.push(new V(77777));
     }
+    return keep.length;
+}
+
+// `public` members of classes no other module can name
+interface Pick { pick(v: V): V; }
+class PA implements Pick { public pick(v: V): V { return v; } }
+class PB implements Pick { public pick(v: V): V { return v; } }
+function picked(a: V) {
+    const ps: Pick[] = [new PA(), new PB()];
+    let s: number = 0;
+    for (const p of ps) { const b = p.pick(a); s += b.x; }
     return s;
 }
 
@@ -114,6 +125,7 @@ function main() {
 
     const hh = new HH();
     assert(use(hh) == 4, "a borrowed field");
+    assert(picked(a) == 10, "a borrowed argument through public members");
     assert(hh.hold().x == 4, "a borrowed field, called directly");
 
     churn();

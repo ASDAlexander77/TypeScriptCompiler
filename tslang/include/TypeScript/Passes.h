@@ -37,8 +37,10 @@ std::unique_ptr<mlir::Pass> createOwnershipInferencePass();
 
 /// The callee facts -mm=own infers across the module - a parameter the callee keeps, a result that
 /// borrows an argument, a callee that destroys nothing its caller can reach - pinned on each call it
-/// resolves. Runs just before OwnershipInferencePass, under own only.
-std::unique_ptr<mlir::Pass> createOwnershipSignaturePass();
+/// resolves. Runs just before OwnershipInferencePass, under own only. `executable`: the module is
+/// built into a program (an executable, or the JIT's entry module), whose exports no other module
+/// sees; false when unknown.
+std::unique_ptr<mlir::Pass> createOwnershipSignaturePass(bool executable = false);
 
 /// Lets a call take over the reference its callee returned instead of retaining a second one.
 /// Runs on the whole module, after MLIRGen, because deciding which callees retain their result

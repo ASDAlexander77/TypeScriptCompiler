@@ -3482,7 +3482,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_immortal_global own_immortal_global_region
                  own_literal_moves own_record_literal_given
                  own_field_chain_let own_read_after_move own_conditional_move
-                 own_interface_facts)
+                 own_interface_facts own_declared_scalar_no_drops)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3542,9 +3542,24 @@ endforeach()
 # A call through an interface closed in its module gets its implementations' facts (spec 31); the
 # same program under every other model.
 foreach(interface_facts_mm rc gc none)
-    tslang_add_test(NAME test-jit-${interface_facts_mm}-own_interface_facts COMMAND test-runner -jit -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_facts.ts")
-    tslang_add_test(NAME test-compile-${interface_facts_mm}-own_interface_facts COMMAND test-runner -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_facts.ts")
+    foreach(interface_facts_test own_interface_facts own_declared_scalar_no_drops own_interface_exe_exports)
+        tslang_add_test(NAME test-jit-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -jit -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
+        tslang_add_test(NAME test-compile-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
+    endforeach()
 endforeach()
+
+# An executable's exports leave its interfaces closed (spec 31, USER decision): under own the JIT's
+# entry module and `tslang --emit=exe` compile own_interface_exe_exports; an object file and a DLL
+# do not (own-exe-exports.cmake). test-runner's own AOT build is an object file, so it is not run.
+tslang_add_test(NAME test-jit-own-own_interface_exe_exports COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_exe_exports.ts")
+add_test(NAME test-own-exe-exports
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_exe_exports.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-exe-exports"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-exe-exports.cmake")
 
 # A global declared in top-level code owns what it is given, under every model that counts.
 foreach(global_mm rc none gc)
@@ -3799,6 +3814,10 @@ set(own_error_cases
     "own_err_interface_fn_field_drops|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_unknown|borrows a field but is used here after it may be released or overwritten"
     "own_err_interface_fn_field_exported|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_any_param|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.take' that the result borrows it"
+    "own_err_interface_fn_any_result|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.take' that the result borrows it"
+    "own_err_interface_fn_any_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_public_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
