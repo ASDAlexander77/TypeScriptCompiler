@@ -390,9 +390,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         moveIntoGlobals(module);
         collectClassVTables(module);
         collectClassStorages(module);
-        findEscapingFunctions(module);
         collectInterfaceFamilies(module);
         fieldFunctions.collect(module);
+        // after the families: a call's callees (resolve) decide whether it leaves the module
+        findEscapingFunctions(module);
 
         module.walk([&](mlir::Operation *op) {
             // in any function: a `ts.Func`, or the `func.func` the async lowering outlines a body into
@@ -719,6 +720,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     };
 
     std::map<std::pair<std::string, int64_t>, InterfaceFieldFamily> interfaceFieldFamilies;
+
+    // interface name -> the tuple types of the vtables its values are made with, when every one of
+    // them is read here (holdsFunction: what a value of the interface carries)
+    llvm::StringMap<llvm::SmallVector<mlir_ts::TupleType, 2>> interfaceVTableTypes;
 
     // `ts.PropertyRef(ts.Cast(null), i)`, seen through casts: the offset of field `i` of an object of
     // that type, as an object literal's interface vtable holds it. Null for anything else.
@@ -1902,12 +1907,18 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         for (auto &[name, made] : madeWith)
         {
             // a class vtable's slot holding a vtable this pass did not read (another module's)
-            auto closed = !isOpen(name) && llvm::all_of(made, [&](llvm::StringRef vtableName) { return vtables.count(vtableName); });
+            auto allRead = llvm::all_of(made, [&](llvm::StringRef vtableName) { return vtables.count(vtableName); });
+            auto closed = !isOpen(name) && allRead;
             for (auto vtableName : made)
             {
                 if (!vtables.count(vtableName))
                 {
                     continue;
+                }
+
+                if (allRead)
+                {
+                    interfaceVTableTypes[name].push_back(vtables[vtableName].type);
                 }
 
                 tied.insert(vtableName);
@@ -3165,19 +3176,32 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     }
 
     // Can a function of this module reach C, which may call it back (scalarDeclaration)? Decided by
-    // types, not by following values (controller ruling, spec 31): the module casts something whose
-    // type holds a function to a type that does not (`any`, `unknown`, an opaque pointer, an
-    // integer: `signal(15, onSig as Opaque)`, `reg(h)` doing `h as Opaque`, `k.m as Opaque`), or
-    // passes a declared (body-less) function an argument whose type holds a function anywhere (a
-    // tuple, an array, a class's field: `reg([onSig, 1])`).
+    // types, not by following values (controller ruling, spec 31). The module has:
+    // - a call that is not resolved to functions defined in this module (resolve: an indirect call
+    //   through a function value, a call of a declared function, of a `declare class` or `@cpp`
+    //   method, through an interface whose implementations are not all this module's) with an
+    //   argument whose type holds a function anywhere (a tuple, an array, an interface, a class's or
+    //   an object's field: `signal(15, onSig)`, `reg([onSig, 1])`, `sg(15, onSig)` with `sg` a
+    //   function value, `w.reg(onSig)` on a declared class);
+    // - a cast from a type that holds a function to a type that holds none (`any`, `unknown`, an
+    //   opaque pointer, an integer: `signal(15, onSig as Opaque)`, `k.m as Opaque`), where a class or
+    //   object input counts its fields when the output is `any`, `unknown` or an opaque pointer
+    //   (`reg(new K())` with `K` holding a function field, into `reg(p: any)`).
     bool functionsEscape = false;
 
+    // The types a holdsFunction walk has been through, with or without their fields.
+    using SeenTypes = llvm::DenseSet<std::pair<mlir::Type, int>>;
+
     // Does a value of this type hold a function: the type itself, a union's or an optional's
-    // member, a tuple's field, an array's element, what a reference points to, and with `fields`
-    // a class's or an object's fields.
-    static bool holdsFunction(mlir::Type type, bool fields, llvm::DenseSet<mlir::Type> &seen)
+    // member, a tuple's field, an array's element, what a reference points to, an interface whose
+    // vtable holds one past its header - a method, a function-typed field, or a field whose type
+    // holds one, recursively (an interface with methods, a class with a function field, an array of
+    // them) - or whose vtable this module does not make values with (a foreign one: `declare
+    // function makeW(): W`), and with `fields` a class's or an object's fields. The header slot
+    // (`.instanceOf`, the compiler's own, which destroys nothing) does not count.
+    bool holdsFunction(mlir::Type type, bool fields, SeenTypes &seen)
     {
-        if (!type || !seen.insert(type).second)
+        if (!type || !seen.insert({type, fields}).second)
         {
             return false;
         }
@@ -3186,6 +3210,20 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                       mlir_ts::ExtensionFunctionType, mlir_ts::ConstructFunctionType>(type))
         {
             return true;
+        }
+
+        if (auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(type))
+        {
+            auto found = interfaceVTableTypes.find(interfaceType.getName().getValue());
+            if (found == interfaceVTableTypes.end())
+            {
+                return true;
+            }
+
+            return llvm::any_of(found->second, [&](mlir_ts::TupleType vtableType) {
+                return llvm::any_of(llvm::drop_begin(vtableType.getFields(), 1),
+                                    [&](const mlir_ts::FieldInfo &info) { return holdsFunction(info.type, /*fields=*/true, seen); });
+            });
         }
 
         auto any = [&](llvm::ArrayRef<mlir_ts::FieldInfo> infos) {
@@ -3222,6 +3260,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return found;
     }
 
+    // A call every callee of which is a function defined in this module (resolve): a direct call of
+    // one, a virtual call of a private class family, a call through a closed interface's slot or
+    // function-typed field. Anything else - a function value, a declared function, a `declare
+    // class` or `@cpp` method, an open interface - may be foreign code.
+    bool callsThisModule(mlir::Operation *op)
+    {
+        auto callees = resolve(op);
+        return callees.known && !callees.imported;
+    }
+
     void findEscapingFunctions(mlir::ModuleOp module)
     {
         module.walk([&](mlir::Operation *op) {
@@ -3230,8 +3278,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 return;
             }
 
-            // a function seen as something that holds none (the compiler's own seeing of an object
-            // as an opaque pointer - a class, an object - holds no function at this level)
+            // a function seen as something that holds none
             if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op))
             {
                 // a vtable's address (a class's, an interface's, a thunk's cell) seen as an opaque
@@ -3245,24 +3292,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     return;
                 }
 
-                llvm::DenseSet<mlir::Type> seenIn;
-                llvm::DenseSet<mlir::Type> seenOut;
-                functionsEscape = holdsFunction(castOp.getIn().getType(), false, seenIn) &&
-                                  !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);                return;
+                // a class or object seen as `any`, `unknown` or an opaque pointer takes its fields
+                // along; seen as anything else (a boolean, its base) it does not
+                auto toOpaque = mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(castOp.getType());
+                SeenTypes seenIn;
+                SeenTypes seenOut;
+                functionsEscape = holdsFunction(castOp.getIn().getType(), /*fields=*/toOpaque, seenIn) &&
+                                  !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);
             }
-
-            // a declared function given anything that holds a function
-            if (isCall(op))
+            // a call that may reach foreign code, given anything that holds a function
+            else if (isCall(op) && !callsThisModule(op))
             {
-                auto callee = directCallee(op);
-                auto funcOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp();
-                if (funcOp && funcOp.isDeclaration())
-                {
-                    functionsEscape = llvm::any_of(callArgs(op), [&](mlir::Value arg) {
-                        llvm::DenseSet<mlir::Type> seen;
-                        return holdsFunction(arg.getType(), true, seen);
-                    });
-                }
+                functionsEscape = llvm::any_of(callArgs(op), [&](mlir::Value arg) {
+                    SeenTypes seen;
+                    return holdsFunction(arg.getType(), /*fields=*/true, seen);
+                });
             }
         });
     }

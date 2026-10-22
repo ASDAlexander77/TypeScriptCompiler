@@ -3394,9 +3394,10 @@ a block freed too early is reused before it is read.
   nothing: it is given no block of this module. `sqrt`, `floor`, `pow` and `fabs` in the ray tracer.
   The risk, as for `@nodrops`, is a C function calling back into the module: one registered through
   another declaration (`signal(15, onSig as Opaque)`, then `raise(15)`; a window procedure and
-  `SendMessage`), or an exported function reached by name. The first is closed by type below (the
-  rule is off in a module that casts a function-holding value to a type that holds none, or gives a
-  declared function an argument whose type holds a function); the second remains.
+  `SendMessage`), or an exported function reached by name. The first is answered by type below (the
+  rule is off in a module that casts a function-holding value to a type that holds none, or has a
+  call that is not resolved to functions of this module with an argument whose type holds a
+  function); the second remains.
   `own_declared_scalar_no_drops` holds a field's
   borrow across `sqrt`, across a function that calls `sqrt` and `floor`, and across a call through a
   closed interface whose member does; `own_err_declared_drops` (`strlen(s: string)`) is unchanged.
@@ -3452,6 +3453,10 @@ Not here, also:
 - A class value reinterpreted through `any` (`new C() as any as C2`, `C2`'s field an `Op2` where
   `C`'s is an `Op`) is not followed; the program stops at run time under every model, before any
   call through the field.
+- A function value retyped inside a `ts.CreateTuple` or `ts.CreateArray` (a `HasF2` element put
+  into a `HasF` field) is not seen as a cast, by the member closure or by the C-callback test; no
+  program that compiles today reaches it (every such program is stopped by another ownership
+  error first).
 
 **After re-review** (2026-10-22):
 
@@ -3475,17 +3480,40 @@ Not here, also:
   `own_err_override_nameable_base` (library side), `own_err_override_imported_base` and
   `own_err_override_imported_class` (importer side, the latter a private override of a concrete
   base); the library-and-importer pairs run under rc, gc and none (`test-runner -shared`).
-- **C callbacks.** The C-scalar rule is off in a module that contains a `ts.Cast` from a type that
-  holds a function (the type itself, a union's or optional's member, a tuple's field, an array's
-  element, a reference's pointee) to a type that holds none (`any`, `unknown`, an opaque pointer, an
-  integer, anything else; a class or object output counts its fields, a vtable's address is the
-  compiler's own), or a call of a declared (body-less) function with an argument whose type holds a
-  function anywhere, class and object fields included. Decided by types, so no route of the value
+- **C callbacks.** The C-scalar rule is off in a module that has any of:
+  - a call that is not resolved to functions defined (with a body) in this module - an indirect
+    call through a function value (a local or global holding a declared function, a function
+    parameter, a pointer C returned cast to a function type), a call of a declared function, of a
+    `declare class` method or an `@cpp` `@slot` method, a call through an interface whose
+    implementations are not all this module's (an open interface) - with an argument whose type
+    holds a function;
+  - a `ts.Cast` from a type that holds a function to a type that holds none (`any`, `unknown`, an
+    opaque pointer, an integer, anything else; a class or object output counts its fields; a
+    vtable's address is the compiler's own and does not count);
+  - a `ts.Cast` of a class, object or interface value to `any`, `unknown` or an opaque pointer when
+    its type holds a function (`reg(new K())` into `reg(p: any)`, `K` with a function field).
+
+  A type holds a function when it is one, or a union's or optional's member, a tuple's field, an
+  array's element or a reference's pointee does, recursively; a class or object does when a field
+  does (the cast of a class or object to a type other than `any`, `unknown` or opaque - a boolean,
+  a base - does not look at its fields); an interface does when a slot of a vtable its values are
+  made with, past the header, holds a method or a function-typed field, or a field's type holds one
+  (recursively: an interface field whose interface has methods, a class field with a function
+  field, an array of them) - the header `.instanceOf`, the compiler's own, does not count - and an
+  interface no vtable of this module makes values with (one a declared function returns) holds one.
+  A call is resolved to this module's functions when it names one, is a virtual call of a private
+  class family, or goes through a closed interface's slot or function-typed field (`resolve`); the
+  test runs after the interface families are known. Decided by types, so no route of the value
   matters (fix round 3: a first version followed values and missed a global initialized with the
-  function, a wrapper, a returned function, a method reference, a tuple). Negatives
+  function, a wrapper, a returned function, a method reference, a tuple; fix round 4: a second
+  looked only at direct calls of declarations and missed every indirect call into C). Negatives
   `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
-  caller of `raise(15)` borrows), `_global` (`let cb = onSig`), `_method` (`k.m as Opaque`) and
-  `_tuple` (`reg([onSig, 1])`, compiled only).
+  caller of `raise(15)` borrows), `_global` (`let cb = onSig`), `_method` (`k.m as Opaque`),
+  `_tuple` (`reg([onSig, 1])`, compiled only), `_indirect` (`let sg = signal; sg(15, onSig)`),
+  `_wrapper` (`reg(signal)`, `reg` calling its parameter with `onSig`), `_class_method`
+  (`w.reg(onSig)` on a `declare class`, compiled only) and `_interface_field` (a data-only `Box`
+  whose field is a `CB` with a method, given to a declared function through a function value,
+  compiled only).
 
 Teeth: with the member closure skipped, `own_err_interface_member_types` and `_methods` compile and
 print `5 77777` (gc `5 5`). With the C rule kept on despite an escaping function,
@@ -3505,3 +3533,21 @@ by type (the bullet above). Teeth: with the class vtables left out of the closur
 negatives compile and print `5 77777` (gc `5 5`); with the type test off, `_global` and `_method`
 print `77777 9` (gc `5 9`). The ray tracer built as a program stays at 15 errors; corpus 528, the
 same files.
+
+**Fix round 4** (2026-10-22). The C-callback test looked only at direct calls of declarations, so a
+declared function called through a value (`let sg = signal; sg(15, onSig)`, a global holding it, a
+wrapper's parameter, a C-returned pointer cast to a function), a `declare class` or `@cpp` method
+and a foreign interface's member left the rule on (own printed `77777 9`, gc `5 9`). A call is now
+judged by what it resolves to (the bullet above), interfaces count by what their vtables hold, and
+a class or object cast to `any`/`unknown`/opaque takes its fields along. "An interface holds a
+function" was first taken as every interface (controller ruling, option (a)): that turned the rule
+off in the ray tracer through `reduce`'s helper, `___array_reduce<Light, Color>`, whose
+`f(r, v)` calls its function parameter with a `Light` - `{ pos; color }`, no method, no function
+field - and the ray tracer went to 31 errors, the 16 cleared by the C-scalar rule back. Option (b),
+by the vtable's slots past the header, recursively through field types, keeps it at the same 15 and
+rejects every probe of the review (n7b, n7d, n7e, n7g, n8b, n8c, n9, n1b, n11, n2b, and the earlier
+k1-k10, c3, n6, n10, n13, n16, n17, n18). Negatives `_indirect`, `_wrapper`, `_class_method`,
+`_interface_field`. Teeth: with the call test back to direct calls of declarations, `_indirect` and
+`_wrapper` compile and print `77777 9` (gc `5 9`), and `_class_method` and `_interface_field`
+compile. The ray tracer built as a program stays at 15 errors (the same ones); as an object file,
+19. Corpus 528, the same files.
