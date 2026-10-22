@@ -3827,6 +3827,8 @@ set(own_error_cases
     "own_err_kept_twice|is used here after its value was moved"
     "own_err_kept_twice_field|is used here after its value was moved"
     "own_err_kept_twice_push|is used here after its value was moved"
+    "own_err_kept_arg_assigned_in_call|is used here after its value was moved"
+    "own_err_kept_and_borrowed_arg_assigned_in_call|is used here after its value was moved"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"

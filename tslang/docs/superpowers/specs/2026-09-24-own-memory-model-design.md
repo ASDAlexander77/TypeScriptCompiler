@@ -3944,11 +3944,34 @@ too. Negatives `own_err_kept_twice` (two `let`s), `_field` (a field and a `let`)
 pushes), each through a `@noinline` factory with churn and an assert. Tooth: with every kept position
 passed over again, they exit `0xC0000374`, `0xC0000005` and `0xC0000374`. Distinct objects (`f(n,
 m)`, `f(h, n, m)`) stay accepted. Also, for an owning slot the other reads counted are only those
-that reach the call holding the same value (not crossing an assignment of the slot):
-`const arr = [n]; n = mk(5); f(n, arr)`, which reads the old value into `arr`, is accepted again, as
-before the first re-review.
+that reach the call without crossing an assignment of the slot (or its declaration): `const arr =
+[n]; n = mk(5); f(n, arr)`, which reads the old value into `arr`, is accepted again, as before the
+first re-review. That is not "holds the moved value" by itself; it is, once the move's own read is
+held to the same condition (the third re-review, below).
+
+**After the third re-review** (2026-10-22). The read filter above dropped every read of the old value
+when the slot was assigned inside the call's own argument list, the move's read among them:
+`let n = mk(i); f(n, n, (n = mk(5), 0))` with `p` kept and `q` borrowed was accepted and crashed
+(0xC0000005; the previous round rejected it). Underneath, the assignment alone is wrong, with no
+second operand: `f(n, (n = mk(7), 0))` with `p` kept in a `let` (BASE rejected it, since `p` was not
+kept) or in a field (wrong at BASE too) frees the old `n` at the assignment's release and then hands
+it to `f`. Now `checkSlotMove` rejects a move whose own read does not reach the taker without
+crossing an assignment of the slot (`!reachableAfter(load, taker, kills)`), reporting the assignment
+between them as `is used here after its value was moved` (the call is "value moved here"). With the
+move's read held to that, every other read that passes the filter holds the moved value, so the
+filter is exact. `f(n, (n = mk(i), 0), n)` (the old `n` kept, the new one borrowed) stays rejected,
+by this check. Negatives `own_err_kept_arg_assigned_in_call` (`f(n, (n = mk(7), 0))`, `p` kept in a
+`let`) and `own_err_kept_and_borrowed_arg_assigned_in_call` (`f(n, n, (n = mk(5), 0))`, `q`
+borrowed), each through a `@noinline` factory with churn and an assert; gc and none print 501500.
+Tooth: with the check skipped, both, and the field-keep form, compile and exit `0xC0000005` with no
+output. `const arr = [n]; n = mk(5); f(n, arr)`, distinct objects at two kept positions, `own_reduce`,
+the ray tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
 
 Not here:
+- A slot assigned inside the argument list of a call it was passed to (`f(n, (n = mk(7), 0))`,
+  with or without a second operand) crashes under rc as well (exit 139): rc releases the slot's old
+  value before the store, ahead of the callee that keeps it. That is rc's codegen, out of scope here;
+  own rejects the shapes.
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
   moved leaks it, as it leaks an owning local; so does a `throw` of any value computed from it, even
   a number (`throw acc.x`): the release before a leaving throw is skipped when the thrown value is

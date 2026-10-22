@@ -5391,9 +5391,35 @@ class OwnershipInferencePass
             return false;
         }
 
+        // the slot given another value between the move's read and its taker - inside the call's own
+        // argument list, `f(n, (n = mk(7), 0))`: the assignment's release frees what the read holds
+        // before the callee takes it, so the assignment is a use of the slot after the move
+        if (!reachableAfter(load, taker, kills))
+        {
+            mlir::Operation *between = taker;
+            llvm::SmallVector<mlir::Operation *, 2> readAgain{load.getOperation()};
+            if (varOp)
+            {
+                readAgain.push_back(varOp);
+            }
+
+            for (auto *assignment : assignments)
+            {
+                if (reachableAfter(load, assignment, varOp) && reachableAfter(assignment, taker, readAgain))
+                {
+                    between = assignment;
+                    break;
+                }
+            }
+
+            reportUseAfterMove(between, taker, name);
+            return false;
+        }
+
         // the call that keeps it, given the slot's value again through another operand: a read of
-        // the slot that reaches the call holding the same value (not one made before an assignment
-        // gave the slot its current value, `const arr = [n]; n = mk(5); f(n, arr)`)
+        // the slot that reaches the call without crossing an assignment of it (not one made before
+        // an assignment gave the slot its current value, `const arr = [n]; n = mk(5); f(n, arr)`);
+        // since the move's own read reaches the call so too, such a read holds the moved value
         llvm::SmallVector<mlir::Value> slotReads;
         for (auto *user : slot.getUsers())
         {
