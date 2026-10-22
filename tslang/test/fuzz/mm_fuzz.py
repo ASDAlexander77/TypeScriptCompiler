@@ -194,9 +194,10 @@ def verdict(gc, r):
     return None
 
 
-def check_program(tc, text, work, models=("rc", "own")):
-    """Writes text to work/p.ts and runs it under gc and the given models.
-    Returns (gc_result, {mm: result}, {mm: kind})."""
+def check_program(tc, text, work, models=("rc", "own"), runs=1):
+    """Writes text to work/p.ts and runs it under gc and the given models; a model's binary is
+    run up to `runs` times until it fails, since a stale read does not always land on a block
+    that was reused. Returns (gc_result, {mm: result}, {mm: kind})."""
     os.makedirs(work, exist_ok=True)
     src = os.path.join(work, "p.ts")
     with open(src, "w", newline="\n") as f:
@@ -207,8 +208,13 @@ def check_program(tc, text, work, models=("rc", "own")):
         return gc, results, kinds
     for mm in models:
         r = build_and_run(tc, src, work, mm)
-        results[mm] = r
         k = verdict(gc, r)
+        for _ in range(runs - 1):
+            if k or r.status != "ok":
+                break
+            r.run_code, r.output = run_exe(os.path.join(work, "p_" + mm + ext()))
+            k = verdict(gc, r)
+        results[mm] = r
         if k:
             kinds[mm] = k
     return gc, results, kinds
@@ -827,8 +833,11 @@ class Minimizer:
         if key in self.cache:
             return self.cache[key]
         self.tries += 1
-        gc, results, kinds = check_program(self.tc, text, os.path.join(self.work, "m"), (self.model,))
-        ok = kinds.get(self.model) == self.kind
+        gc, results, kinds = check_program(self.tc, text, os.path.join(self.work, "m"), (self.model,), runs=3)
+        # a stale read prints a wrong value on one run and crashes on the next: both are a bad run
+        bad_run = ("crash", "wrong")
+        k = kinds.get(self.model)
+        ok = k == self.kind or (k in bad_run and self.kind in bad_run)
         self.cache[key] = ok
         return ok
 
@@ -953,12 +962,12 @@ def process_failure(tc, recheck, text, work, model, kind, dest, name, do_minimiz
             repro = small
     info["shape"] = shape_key(repro)
     info["lines"] = len(repro.splitlines())
-    gc, res, kinds = check_program(tc, repro, os.path.join(work, "final"), ("rc", "own"))
+    gc, res, kinds = check_program(tc, repro, os.path.join(work, "final"), ("rc", "own"), runs=3)
     if gc.status == "ok" and gc.run_code == 0:
         # the standalone repro asserts gc's values; it must still pass under gc, and the outputs
         # written beside it are the ones of the asserted program
         asserted = add_asserts(repro, gc.output)
-        g2, r2, k2 = check_program(tc, asserted, os.path.join(work, "final2"), ("rc", "own"))
+        g2, r2, k2 = check_program(tc, asserted, os.path.join(work, "final2"), ("rc", "own"), runs=3)
         if g2.status == "ok" and g2.run_code == 0:
             repro, gc, res, kinds = asserted, g2, r2, k2
         else:
@@ -968,7 +977,7 @@ def process_failure(tc, recheck, text, work, model, kind, dest, name, do_minimiz
     info["final"]["gc"] = gc.summary()
     for label, other in recheck:
         # any failure counts: with asserts a wrong value is an assert failure there
-        g3, r3, k3 = check_program(other, repro, os.path.join(work, "recheck-" + label), (model,))
+        g3, r3, k3 = check_program(other, repro, os.path.join(work, "recheck-" + label), (model,), runs=3)
         info["recheck_" + label] = {"tslang": other.describe(), "gc": g3.summary(),
                                     model: r3[model].summary() if model in r3 else None,
                                     "kind": k3.get(model), "fails": model in k3}
