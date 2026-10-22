@@ -3631,3 +3631,151 @@ turns the rule off. Negatives `own_err_declared_callback_field_reference` (revie
 `_intrinsic` prints `77777 9` while `_field_reference` stays rejected. g1-g5, f7, f9, f10, h1, h2
 rejected; d1-d9 and the scalar-only control keep the rule. The ray tracer built as a program stays
 at 15 errors (the same ones); as an object file, 19. Corpus 528, the same files.
+
+## 32. Borrowing records (G2 of the ray tracer plan), 2026-10-22
+
+`{ thing: this, ray: ray, dist: d }` returned as an `Intersection` was `an object literal that holds
+a value it owns is moved only into a local or returned as it is` (§27): the box's release would free
+`this` and `ray`, which are the caller's. So were the ray tracer's call-argument temporaries `{
+start: pos, dir: rd }`, `{ start: pos, dir: livec }` and `{ start: scene.camera.pos, dir:
+getPoint(...) }`, and `const r: Ray = { start: this.pos, dir: new V(1) }`. Such a literal is now a
+**borrowing record** (USER decision): Rust's `struct Hit<'a> { thing: &'a Th, ray: &'a Ray, dist }`.
+Its box is owned like any fresh block - by the local that holds it, the temporary, or, returned, the
+caller - and its release frees the box and the fields it owns and leaves the borrowed ones to their
+owners. What it borrows bounds every use of it. (The plan calls the result "a borrow" of its sources;
+a caller that owned nothing would leave every box and its fresh fields to nobody, and the plan's
+own interplay - a record moved on some paths only, read through its new owner, released by a
+routine that frees only its fresh fields - is an owner's. The bound is a borrow's: the same chain
+and the same errors as a call's result that borrows its arguments.)
+
+- **Which literals.** The signature pass classifies each object literal box seen only as interfaces
+  (`classifyRecordBoxes`, in every round of the facts fixpoint, since a field's call may turn out to
+  return a borrow): each field that holds a block is *owned* - a fresh value, which moves in as in
+  §27 - or *borrowed* (`recordFieldSource`): `this` or a parameter, seen through views; a read out
+  of a place, or a call's result that borrows an argument; an owning local's value (`let d`); a
+  captured variable's value (a closure body's read of a cell); an immortal global or literal. A
+  field is never both, and never a string (strings are copied, §22). A box with a borrowed field is
+  marked, and so is every interface made of it (`__own_record_borrowed_fields`, the fields' tuple
+  positions); a store into a borrowed field keeps nothing (`keeps`, so `this` and `ray` are not
+  kept parameters of `hit` any more).
+- **The release travels with the value** (the design's builder check). The interface's tag names a
+  descriptor of its own (variant `r<i>...`) whose release routine (`tsrelrec_<type>_<fields>`) frees
+  the box and the fields it owns and skips the marked ones; a non-escaping closure's box
+  (`__own_borrows_captures`) is the precedent. Every release of the record - a temporary's, a
+  local's at the end of its scope, §30's edge release, an overwrite of a local, the caller's - reads
+  the tag, so records made at
+  different sites (`Sphere.intersect`, `Plane.intersect`) may meet in one local. A box that is seen
+  as anything but interfaces is not classified (its static object type's routine would free every
+  field), and stack promotion refuses a marked box (its `ts.ReleaseContents` would give back every
+  field); today's escape analysis refuses every box seen as an interface anyway ("converted").
+- **The facts.** `__own_result_borrows` is a set (`DenseI32ArrayAttr` of argument indices, the
+  receiver 0 for a method; `own_facts::resultBorrowsAll`). Alone it is a plain borrow and names one
+  argument, as before (`resultBorrows` keeps that index; a declared `@lends` of several is a plain
+  borrow of each). With `__own_result_record` the result is a borrowing record: the caller owns the
+  box, and it may hold a borrow of each argument named. A function's result is a record when every
+  heap value it returns is one - a box made there, or a record call's result - through views,
+  merges and the owning locals that hold it (`recordParamsOf`), and every field it borrows is a
+  parameter's, `this`'s, or a read out of one: those parameters are the set. A record on one path
+  and anything else on another (a plain borrow, a fresh object) gives no facts. `closest` returns
+  `bestHit`, which holds `sc.ts[i].hit(ray)`'s records: its result borrows `ray` and `sc`.
+  `@lends` may name several parameters: `@lends("a", "b") pairOf(a, b): Pair { return { a: a, b: b }
+  }` (`own_lends`). A declaration's `@lends`, seen from another module without its body, is a plain
+  borrow: a record's box then leaks at that caller, and nothing is freed twice.
+- **Families** meet by agreement, as before (`meetFacts`): members whose sets or record-ness differ
+  are demoted. The union of the sets would be sound for records (the caller would bound the result by
+  more arguments), but not across a record and a plain borrow, whose callers release different
+  things; agreement is what the ray tracer needs (`Sphere.intersect` and `Plane.intersect` both lend
+  `this` and `ray`).
+- **Where the record is made** (`classifyRecords`, `checkBorrowingRecords`): every use of it and of
+  what is read out of it, through its views, merges and the locals that hold it (`walkRecord`), is a
+  use of each borrowed field's source. A read out of a place has them as its own uses
+  (`walkBorrowed`, through the field's store, now a borrow), so a drop of the place before a use is
+  `borrows a field but is used here after ...`. An owning local's value is bounded by the local's
+  ends (`borrows 'd' but is used here after 'd' is released or overwritten`), a captured variable's
+  by whatever may assign it (an assignment through a cell, a call that may drop), a parameter the
+  function keeps by its moves. `this` and other parameters are the caller's for the whole call.
+  rc's retain of the record read goes (`holdsConstantsOrMoves`); its fresh fields move in against it
+  as an owning record's do. The record stored anywhere but a local (a field, an element, a global, a
+  capture), given to a callee that keeps it, or written through (`r.start = ...`: the overwrite would
+  release a borrowed value, and the release would leave the one written) is `... and cannot be
+  stored, returned or captured`. Returned, every field it borrows must be a parameter's that the
+  function's facts lend; a local's value, or a function whose facts are lost (an exported one
+  without `@lends`), is the same error.
+- **Where a call returns one** (`checkRecordResults`): the result is fresh (`isFresh`, whatever the
+  call goes through), so its moves and releases are the ordinary ones - `let h = ...`, §30's move
+  into `bestHit` on some paths with its release on the other edges, §29's reads through the new
+  owner - and each release is the per-site routine. It may hold a borrow of each named argument,
+  somewhere under it, so the chain `checkPlaceRead` builds for a borrowing call, now over all of
+  them (`chainOf`), bounds every use: `borrows the result of 'A.hit' but is used here after it may
+  be released or overwritten`. Kept, it is `borrows the result of ... and cannot be stored`;
+  returned, its arguments must be parameters this function lends. rc's retain of a fresh argument
+  right before the call is no end there: the box's own check decides it. A call's result that
+  records a value is followed by `derivedFrom` and by §30's taint. A method reached through an
+  interface is named `<interface>.<method>` in these errors (`own_err_interface_result_outlives`
+  reads `the result of 'First.first'`).
+- **Iterators** (§31): no `next()` or field function whose result is a record is marked
+  `__own_fresh_result`; a record's bound applies.
+
+`own_borrowing_record` is the brief's program: `A.hit` and `B.hit` (`null` on some paths) return
+records through the closed interface `Th`, and `closest` keeps the best in a local and returns it,
+1000 times with churn between, under own, rc, gc and none, AOT and JIT, and on Linux; own emits no
+counting. `own_borrowing_record_arg` covers the addendum: call-argument temporaries with two
+parameters, a parameter and a fresh value, a field read and a fresh value, an owning local's value
+and a captured parameter (the ray tracer's `addLight`), a `let` read into a field, `const` and `let`
+locals holding a record, and a method returning one; the borrowed values are read again after the
+records are gone. The brief's program as written does not compile in any model (`k = 1` is an
+`s32`, which does not match the interface's `number`, and `cond ? null : {...}` cannot be cast to
+`Hit`), so the test declares `k: number` and returns `null` from an `if`.
+
+Negatives: `own_err_borrowing_record_stored` (`keep.h = sc.ts[0].hit(ray)`, a global's field),
+`_outlives` (`a = new A()` before `h.thing.k`), `_kept_arg` (a temporary given to a callee that keeps
+it), `_let_outlives`, `_cell`, `_kept_param`, `_place_overwritten`, `_returned_local`, `_open`,
+`_field_written`, `_borrowed_again`. `own_err_record_literal_let` (§27: a `let` read into a field) is
+a correct program now - the record borrows the `let`'s value, and the `let` keeps its release - and
+is gone; its shape is in `own_borrowing_record_arg`. `own_err_lends_two_params` now reads `'@lends'
+of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`.
+
+Teeth (temporary `OWN_TEETH` switches, removed): with the per-site routine dropped (every record's
+interface given its type's descriptor), the AOT runs of `own_borrowing_record` and
+`own_borrowing_record_arg` fail with `0xC0000005` and `0xC0000374`; with only the boxes of records
+that are not returned (the call-argument temporaries) given their type's routine,
+`own_borrowing_record_arg` fails with `0xC0000374` and `own_borrowing_record` passes (its only
+temporary owns both fields). The rules each have a negative that reads a freed block with the rule
+off: the caller's bound skipped, `_outlives` prints 77777
+and `_stored` 6.95159e-310 (gc 1 and 1); a local's, a captured variable's and a kept parameter's
+ends skipped, `_let_outlives`, `_cell` and `_kept_param` print 77779 (gc 3); the return check and
+the local's ends skipped, `_returned_local` prints 77777 (gc 1), and `_open` compiles; the kept
+check skipped, `_kept_arg` prints 77777 (gc 3), and with the place read's hook skipped too,
+`_field_written` exits `0xC0000374` (gc `8 3`); the hook alone skipped, `_place_overwritten`
+prints 77778 (gc 4). `_borrowed_again` is the hole review of this rule found: `const h2 = id(h)`
+was bounded by `h`'s ends, not by what `h` borrows; before the fix it compiled and printed 77777
+(gc 1). With stack promotion's refusal skipped nothing changes: its escape analysis refuses every
+box seen as an interface already ("converted").
+
+Measured: 2 million iterations of the brief's loop and a call-argument temporary (about 7 blocks
+each) peak at 4.2 MB under own, as under rc (gc 6.2 MB), AOT with `--opt`.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer built as a program (`--emit=exe`): 15 errors before this section, 10 after.
+Cleared: the records `Sphere.intersect` and `Plane.intersect` return (148, 163); `moved inside a
+loop` at `scene.things[i].intersect(ray)` (203: `ray` and the receiver are borrowed now, not kept);
+`getReflectionColor`'s `{ start: pos, dir: rd }` (243) and `addLight`'s `{ start: pos, dir: livec }`
+(250); `scene.camera.pos` stored into `render`'s literal (279:43). That literal (279:29) is now
+`borrows a field but is used here after it may be released or overwritten`: the record holds
+`scene.camera.pos` across `traceRay`, which may drop because `getNaturalColor` calls `reduce` with
+a closure. New for the same reason: `traceRay`'s `this.shade(isect, ...)`, where `isect` borrows
+the result of `intersections` (227). The rest are G5's (`reduce`: 237-239 and 266 across
+`getNaturalColor`, the generated `___array_reduce`, `addLight` returning its parameter on one path)
+and the `getPoint` read (279:75), present before this section (G8). With `reduce` replaced by a
+loop, 2 errors remain: `addLight`'s mixed return and the `getPoint` read.
+
+Not here:
+- A record whose box is seen as an object rather than an interface (`const o = { a: this.p }` with
+  no interface type) is not classified: its static type's routine would free the borrowed field.
+  §27's error stands.
+- A field written through a borrowing record is an error even when it is a field the record owns.
+- A record's borrowed field may not hold a string.
+- Plain borrows are still of one argument (`c ? a : b` is no borrow), and do not flow through an
+  owning local assigned in a loop; only records do.
