@@ -1,0 +1,10 @@
+class W { constructor(public x: number) {} }
+class V { w: W; constructor(public x: number) { this.w = new W(x); } }
+class N { items: V[]; constructor(public v: V) { this.items = [new V(v.x)]; } }
+class H { n: N = new N(new V(0)); }
+@noinline
+function mk(i: number) { return new N(new V(i)); }
+function churn() { const hold: V[] = []; for (let i = 0; i < 64; i++) hold.push(new V(777)); }
+@noinline
+function f(p: N, q: V, z: number) { let r = p; r = new N(new V(2)); churn(); return q.x + r.v.x - 2 + z; }
+function main() { let s: number = 0; for (let i = 0; i < 1000; i++) { let n = mk(i); s += f(n, n.v, (n = mk(5), 0)) + 2; } print(s); assert(s == 501500); }
