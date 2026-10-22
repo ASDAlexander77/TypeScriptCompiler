@@ -3481,7 +3481,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
                  own_immortal_global own_immortal_global_region
                  own_literal_moves own_record_literal_given
-                 own_field_chain_let)
+                 own_field_chain_let own_read_after_move)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3522,6 +3522,13 @@ set_tests_properties(test-own-di-null-narrowing PROPERTIES PASS_REGULAR_EXPRESSI
 foreach(field_chain_mm rc gc none)
     tslang_add_test(NAME test-jit-${field_chain_mm}-own_field_chain_let COMMAND test-runner -jit -mm=${field_chain_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_field_chain_let.ts")
     tslang_add_test(NAME test-compile-${field_chain_mm}-own_field_chain_let COMMAND test-runner -mm=${field_chain_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_field_chain_let.ts")
+endforeach()
+
+# A read after a move, through the new owner, under own (spec 29); the same program under every
+# other model.
+foreach(read_after_move_mm rc gc none)
+    tslang_add_test(NAME test-jit-${read_after_move_mm}-own_read_after_move COMMAND test-runner -jit -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
+    tslang_add_test(NAME test-compile-${read_after_move_mm}-own_read_after_move COMMAND test-runner -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
 endforeach()
 
 # A global declared in top-level code owns what it is given, under every model that counts.
@@ -3785,7 +3792,12 @@ set(own_error_cases
     "own_err_iface_field_overwritten|borrows a field but is used here after it may be released or overwritten"
     "own_err_iface_field_view_overwritten|borrows a field but is used here after it may be released or overwritten"
     "own_err_iface_field_call|borrows a field but is used here after it may be released or overwritten"
-    "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten")
+    "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten"
+    "own_err_read_after_move_overwritten|is used here after its value was moved"
+    "own_err_read_after_move_view|is used here after its value was moved"
+    "own_err_read_after_move_call|is used here after its value was moved"
+    "own_err_read_after_move_loop|is used here after its value was moved"
+    "own_err_read_after_move_after_loop|is used here after its value was moved")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

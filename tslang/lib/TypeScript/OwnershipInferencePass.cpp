@@ -2326,7 +2326,7 @@ class OwnershipInferencePass
     mlir::Operation *walkBorrowed(
         mlir::Value start, llvm::ArrayRef<mlir::Operation *> kills, llvm::SmallVectorImpl<BorrowUse> &uses,
         llvm::function_ref<bool(mlir::Operation *, llvm::ArrayRef<mlir::Operation *>)> isBorrower = nullptr,
-        Keeping keeping = Keeping{nullptr, false}, bool countedHandle = false)
+        Keeping keeping = Keeping{nullptr, false}, bool countedHandle = false, bool startBorrowed = true)
     {
         struct Pending
         {
@@ -2336,7 +2336,9 @@ class OwnershipInferencePass
         };
 
         llvm::SmallVector<Pending> values;
-        values.push_back({start, true, {kills.begin(), kills.end()}});
+        // `startBorrowed` false: `start` is what a read produced (a field's reference), whose uses
+        // are uses of the borrow but not the borrowed value itself
+        values.push_back({start, startBorrowed, {kills.begin(), kills.end()}});
         llvm::SmallPtrSet<mlir::Value, 16> seen{start};
         while (!values.empty())
         {
@@ -2811,12 +2813,17 @@ class OwnershipInferencePass
         }
     };
 
-    Chain chainOf(mlir::Operation *read)
+    // With `place`, the chain of that place itself: where a store into it moves a value (spec 29).
+    Chain chainOf(mlir::Operation *read, mlir::Value place = {})
     {
         Chain chain;
         llvm::SmallVector<mlir::Value> refs;
         llvm::SmallVector<mlir::Value> first;
-        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read))
+        if (place)
+        {
+            refs.push_back(place);
+        }
+        else if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(read))
         {
             refs.push_back(loadOp.getReference());
         }
@@ -3119,9 +3126,11 @@ class OwnershipInferencePass
     // anything (`__own_no_drops`, phase 4) - any such call, for a root this function does not
     // own, since the owner may be a global the callee assigns; else one given something derived
     // from the root that the read did not produce.
-    bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read)
+    // `borrowed`, when given, is the value the borrow holds in place of the read's result (a value
+    // moved into the place, spec 29), and `read` may then be null.
+    bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed = {})
     {
-        if (drop == read)
+        if (read && drop == read)
         {
             return false; // a call that returns a borrow has not destroyed it by returning it
         }
@@ -3187,7 +3196,7 @@ class OwnershipInferencePass
                 return true;
             }
 
-            auto &fromRead = derivedFrom(read->getResult(0));
+            auto &fromRead = derivedFrom(borrowed ? borrowed : read->getResult(0));
             auto sources = rootSources(chain);
             return llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
                 return !fromRead.contains(operand) && llvm::any_of(sources, [&](mlir::Value source) {
@@ -4133,6 +4142,7 @@ class OwnershipInferencePass
         llvm::SmallVector<mlir::Operation *> takers;
         llvm::SmallVector<mlir::Operation *> releases;
         llvm::SmallVector<mlir::Operation *> reads;
+        llvm::DenseMap<mlir::Operation *, mlir::Value> readOf;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::RetainOp>(user))
             {
@@ -4146,6 +4156,7 @@ class OwnershipInferencePass
             else if (isBorrow(user, used))
             {
                 reads.push_back(user);
+                readOf.try_emplace(user, used);
             }
             else
             {
@@ -4164,10 +4175,23 @@ class OwnershipInferencePass
                 return false;
             }
 
+            llvm::SmallVector<mlir::Operation *, 1> made;
+            if (definition)
+            {
+                made.push_back(definition);
+            }
+
             for (auto *use : llvm::concat<mlir::Operation *const>(takers, reads))
             {
                 if (use != taker && reachableAfter(taker, use, definition))
                 {
+                    // a read through the new owner, while it holds the value (spec 29)
+                    if (auto found = readOf.find(use);
+                        found != readOf.end() && readsThroughOwner(taker, found->second, use, made))
+                    {
+                        continue;
+                    }
+
                     reportUseAfterMove(use, taker, name);
                     return false;
                 }
@@ -4479,15 +4503,26 @@ class OwnershipInferencePass
                 continue;
             }
 
+            // a read through the new owner, while it holds the value (spec 29)
+            auto throughOwner = [&](mlir::Operation *user, mlir::Value used) {
+                return readsThroughOwner(taker, used, user, kills);
+            };
+
             if (use != load.getOperation() && reachableAfter(taker, use, kills))
             {
-                reportUseAfterMove(use, taker, name);
-                return false;
+                auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(use);
+                if (!readOp || !onlyReadThroughOwner(readOp.getResult(), throughOwner))
+                {
+                    reportUseAfterMove(use, taker, name);
+                    return false;
+                }
+
+                continue;
             }
 
             if (auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(use))
             {
-                if (auto *late = readUsedAfter(readOp, retain, taker, varOp))
+                if (auto *late = readUsedAfter(readOp, retain, taker, varOp, throughOwner))
                 {
                     reportUseAfterMove(late, taker, name);
                     return false;
@@ -4557,8 +4592,10 @@ class OwnershipInferencePass
     // reach, other than the move's own retain and taker. None if there is none. A path back
     // through `read` itself reaches a use of a value read again: the read, met after the move,
     // is the slot's own use to check (around a loop, of a value an assignment stored).
+    // `isRead` accepts a use that reads the value through its new owner (spec 29).
     mlir::Operation *readUsedAfter(mlir_ts::LoadOp read, mlir::Operation *retain, mlir::Operation *taker,
-                                   mlir::Operation *kill)
+                                   mlir::Operation *kill,
+                                   llvm::function_ref<bool(mlir::Operation *, mlir::Value)> isRead = nullptr)
     {
         llvm::SmallVector<mlir::Value> values{read.getResult()};
         while (!values.empty())
@@ -4583,7 +4620,7 @@ class OwnershipInferencePass
                     kills.push_back(kill);
                 }
 
-                if (reachableAfter(taker, user, kills))
+                if (reachableAfter(taker, user, kills) && !(isRead && isRead(user, current)))
                 {
                     return user;
                 }
@@ -4591,6 +4628,192 @@ class OwnershipInferencePass
         }
 
         return nullptr;
+    }
+
+    // ---- Reads after a move, through the new owner (spec 29) ----
+    //
+    // `h.c = c; print(c.x)`, `best = v; s += v.x`: after the move the value is the new owner's, and
+    // a read of it through the old name is a borrow of the place it moved into, as a read of
+    // `h.c` would be. It is bounded the way checkPlaceRead bounds such a read - by the ends of the
+    // place's roots and by the drops that may destroy what the place holds (an overwrite, through an
+    // interface view too; a call whose facts may drop; a call given a closure) - on a path from the
+    // move to the read on which the value is not made again or moved again.
+
+    // Every use of `value`, through its views, is a read `isRead` accepts. A retain - rc's reference
+    // for an owner - is not.
+    static bool onlyReadThroughOwner(mlir::Value value, llvm::function_ref<bool(mlir::Operation *, mlir::Value)> isRead)
+    {
+        auto all = true;
+        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
+            all = all && (mlir::isa<mlir_ts::DebugVariableOp>(user) ||
+                          (!mlir::isa<mlir_ts::RetainOp>(user) && isRead(user, used)));
+        });
+
+        return all;
+    }
+
+    // A use that only reads the value: a field, element or length read through it, a method reached
+    // through it, a comparison or arithmetic, a print, an assert, a test, or an argument the callee
+    // borrows. Anything else - a store, an owning `let`, a keeping call, a return - would be a second
+    // owner.
+    static bool isReadAfterMove(mlir::Operation *user, mlir::Value value)
+    {
+        if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp, mlir_ts::ThisSymbolRefOp,
+                      mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp,
+                      mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp,
+                      mlir_ts::PrintOp, mlir_ts::AssertOp, mlir_ts::HasValueOp, mlir_ts::StringLengthOp>(user))
+        {
+            return isBorrow(user, value);
+        }
+
+        return isCall(user) && !isKeptArgument(user, value);
+    }
+
+    // The place a taker moves its value into, as a chain checkPlaceRead would read it: an owning
+    // local (a declaration, or an assignment), or a field or element - of a local or a parameter
+    // (`this`). False for anything else: a call that keeps it, a push, a return, a global, a
+    // captured variable, a handle's payload.
+    bool destinationChain(mlir::Operation *taker, Chain &chain)
+    {
+        auto ownSlot = [](mlir_ts::VariableOp varOp) {
+            return varOp && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false);
+        };
+
+        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(taker))
+        {
+            if (!ownSlot(varOp))
+            {
+                return false;
+            }
+
+            chain.roots.push_back({varOp.getResult(), Chain::Slot});
+            return true;
+        }
+
+        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(taker);
+        if (!storeOp)
+        {
+            return false;
+        }
+
+        auto ref = storeOp.getReference();
+        if (auto varOp = ref.getDefiningOp<mlir_ts::VariableOp>())
+        {
+            if (!ownSlot(varOp))
+            {
+                return false;
+            }
+
+            chain.roots.push_back({ref, Chain::Slot});
+            return true;
+        }
+
+        if (!isPlace(ref))
+        {
+            return false;
+        }
+
+        chain = chainOf(nullptr, ref);
+        if (!chain.handles.empty() || chain.roots.empty())
+        {
+            return false;
+        }
+
+        // a global's field, or a captured variable's: not a place of this function
+        return llvm::none_of(chain.roots, [](auto &root) {
+            auto loadOp = root.first.template getDefiningOp<mlir_ts::LoadOp>();
+            return loadOp && (loadOp.getReference().template getDefiningOp<mlir_ts::AddressOfOp>() ||
+                              isLoadedCell(loadOp.getReference()));
+        });
+    }
+
+    // Is `use`, a use of `value` after `taker` moved it, a read through the place it moved into
+    // (spec 29)? `made` is where the value is made again (its definition, the local's declaration
+    // and assignments). Sound when no path from the move through an end or a drop of the place to
+    // the read - or to anything the read produced - makes the value again or moves it again: such a
+    // path is the only way the place can stop holding the value before the read.
+    bool readsThroughOwner(mlir::Operation *taker, mlir::Value value, mlir::Operation *use,
+                           llvm::ArrayRef<mlir::Operation *> made)
+    {
+        if (!isReadAfterMove(use, value))
+        {
+            return false;
+        }
+
+        Chain chain;
+        if (!destinationChain(taker, chain))
+        {
+            return false;
+        }
+
+        // A read again of the old name after a drop still finds the moved value - the slot is not
+        // emptied by a move - so neither the read nor the slot's read is where it is made again.
+        llvm::SmallVector<mlir::Operation *> kills(made.begin(), made.end());
+        kills.push_back(taker);
+        llvm::SmallVector<BorrowUse> uses;
+        uses.push_back({use, {kills.begin(), kills.end()}});
+        for (auto result : use->getResults())
+        {
+            if (!mayPointInto(result))
+            {
+                continue;
+            }
+
+            // what the read produced - a field's reference, a bound method - still points into the
+            // block; a call's result that borrows its argument is the value again and may not be kept
+            if (walkBorrowed(result, kills, uses, nullptr, Keeping{nullptr, false}, false, !!borrowingCall(result)))
+            {
+                return false;
+            }
+        }
+
+        // a method reached through it whose callee keeps its `this`: a second owner
+        for (auto &borrowUse : uses)
+        {
+            if (!isCall(borrowUse.op))
+            {
+                continue;
+            }
+
+            auto args = callArgs(borrowUse.op);
+            for (auto index : ownedParams(borrowUse.op))
+            {
+                if (static_cast<size_t>(index) < args.size() &&
+                    mlir::isa_and_nonnull<mlir_ts::GetThisOp, mlir_ts::ExtractInterfaceThisOp>(args[index].getDefiningOp()))
+                {
+                    return false;
+                }
+            }
+        }
+
+        auto outlives = [&](mlir::Operation *end) {
+            if (end == taker || !reachableAfter(taker, end, made))
+            {
+                return false;
+            }
+
+            return llvm::any_of(uses, [&](BorrowUse &borrowUse) {
+                return (borrowUse.op != end || !borrowUse.callee) && reachableAfter(end, borrowUse.op, borrowUse.kills);
+            });
+        };
+
+        for (auto *end : rootEnds(chain))
+        {
+            if (outlives(end))
+            {
+                return false;
+            }
+        }
+
+        for (auto *drop : drops)
+        {
+            if (dropsChain(drop, chain, nullptr, value) && outlives(drop))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Where rc takes the receiver's reference: its `ts.Retain` of the value, when that comes
