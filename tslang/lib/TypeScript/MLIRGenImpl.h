@@ -1888,8 +1888,8 @@ class MLIRGenImpl
             //
             // Under rc, so does a const read out of a field (`const c = h.c`) or an element (`const c =
             // a[0]`, `const [c] = a`): folded, `h.c = d` or `a[0] = d` freed what `c` still read. So
-            // does an interface or a bound method made over a field read (`const i: I = h.v`,
-            // `const m = h.v.get`), which holds the block as `c` would. Under own the folded read is a
+            // does an interface or a bound method made over such a read (`const i: I = h.v`,
+            // `const m = a[0].get`), which holds the block as `c` would. Under own the folded read is a
             // borrow, and a use after the overwrite is an error there.
             //
             // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
@@ -1910,7 +1910,8 @@ class MLIRGenImpl
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
                      || (compileOptions.isRefCounted()
-                         && (readsField(initial) || readsElement(initial) || readsField(viewedValue(initial)))
+                         && (readsField(initial) || readsElement(initial) || readsField(viewedValue(initial))
+                             || readsElement(viewedValue(initial)))
                          && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))

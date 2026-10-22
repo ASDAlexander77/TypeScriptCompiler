@@ -392,6 +392,7 @@ tslang_add_test(NAME test-compile-00-shared-global-field-argument COMMAND test-r
 tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-bound-method-count COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_count.ts")
 tslang_add_test(NAME test-compile-00-const-view-of-field COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_field.ts")
+tslang_add_test(NAME test-compile-00-const-view-of-element COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_element.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
@@ -967,6 +968,7 @@ tslang_add_test(NAME test-jit-00-shared-global-field-argument COMMAND test-runne
 tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-bound-method-count COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_count.ts")
 tslang_add_test(NAME test-jit-00-const-view-of-field COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_field.ts")
+tslang_add_test(NAME test-jit-00-const-view-of-element COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_element.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
@@ -1932,6 +1934,7 @@ set(TSLANG_CORPUS
     00narrowed_assign_other_member.ts
     00bound_method_count.ts
     00const_view_of_field.ts
+    00const_view_of_element.ts
     00const_record_owned_fields.ts
     00generator_temporaries.ts
     00array_length_valid.ts
