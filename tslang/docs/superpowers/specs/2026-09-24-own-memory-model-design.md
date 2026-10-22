@@ -3037,3 +3037,87 @@ records).
 Seen on the way, and rc's own, older than this section: under rc, `const c = h.c; h.c = new C(9);
 churn(); print(c.x)` with a class `H` prints 999 (gc prints 0): the `const` takes no reference, so
 the overwrite frees what it reads. A `let` is retained.
+
+## 29. A read after a move, through the new owner (G7 of the ray tracer plan), 2026-10-22
+
+`h.c = c; print(c.x)`, `n.v = a; print(a.length)` and `best = v; s += v.x` were `is used here after
+its value was moved`: a move (§2.2) allowed no use of the old name after it. Now a use after a move
+that only reads the value is a borrow of the place the value moved into, as a read of `h.c` itself
+would be (§2.3), and is accepted while that place still holds it (USER decision).
+
+- **What a read is** (`isReadAfterMove`): a field, element or length read through the value, a
+  method reached through it, a comparison or arithmetic, `print`, `assert`, a test, or an argument
+  the callee borrows (`!isKeptArgument`). What the read produces - a field's reference, a bound
+  method - is walked as a borrow's uses are (`walkBorrowed`, starting not borrowed); a call result
+  that borrows its argument is the value again and may not be kept. A method reached through it
+  whose callee keeps its `this` is not a read. Anything else after the move - a store, an owning
+  `let`, a keeping call, a return, rc's retain for a receiver - is still a second owner and keeps
+  the error.
+- **Where it moved** (`destinationChain`): an owning local (a declaration, or an assignment), or a
+  field or element of a local or a parameter (`this`), described as the `Chain` `checkPlaceRead`
+  reads (`chainOf` from the store's place). A move into a call that keeps the argument, a `push`, a
+  return, a global's field, a captured variable or a handle's payload is not such a destination.
+- **The kill walk** is `checkPlaceRead`'s: the ends of the chain's roots (`rootEnds`) and the drops
+  that may destroy what the place holds (`dropsChain`, with the moved value standing in for the
+  read's result): an overwrite of the place, matched by position and type, through an interface
+  view too (§28); a call whose facts may drop (no `__own_no_drops`) given something that reaches the
+  place's root, or any such call for a root the function does not own; a call given a closure. The
+  read fails when some end or drop E has a path move -> E (not through the value's definition, the
+  local's declaration or its assignments) and a path E -> the read or anything it produced (not
+  through those either, nor through the move again). Together the two are exactly one path from
+  the move through E to the read on which the value is neither made again nor moved again; a path
+  that moves the same value again without making it again is the `moved inside a loop` error
+  already. A read of the old name again after E is no new value - the move leaves the slot as it
+  was - so, unlike `checkPlaceRead`, the read itself is no kill. In a loop that makes the value in
+  each iteration (`let v = ...; best = v; s += v.x`), the next iteration's `best = v` overwrite is
+  reached from the move only through `let v`, so the read in the same iteration stands.
+- `movesOf` (a fresh SSA value, a folded `const`) asks it of each read after a taker;
+  `checkSlotMove` (an owning local) of every use of a slot read the move reaches, and of each late
+  use `readUsedAfter` finds.
+
+`own_read_after_move` runs the straight-line moves into a field (`n.v = a`, `h.c = c`), a move
+into an owning local in a loop that makes the value each iteration, 100,000 iterations of a move
+into a field and into a local each read after it, and a declaration that takes a value over (`let
+q = p; print(p.x); p = new V(8)`: `q` keeps the first value, §24), then allocates same-size
+blocks, then reads the moved values again and asserts them, under own, rc, gc and none, AOT and
+JIT, and on Linux (every `own` test passes there, 932); own emits no counting. Negatives, all `is
+used here after its value was moved`: `own_err_field_alias` (`n.v = [2]` after `n.v = a`), `own_err_union_moved` (`h.c = null`), `own_err_read_after_move_overwritten`
+(overwritten on one path), `own_err_read_after_move_view` (overwritten through an interface view
+`hv.c = null`), `own_err_read_after_move_call` (`clear(h)`, which may drop),
+`own_err_read_after_move_loop` (the read at the top of a loop reached around the back edge after
+the iteration's `best = new V(i)` freed the moved value), `own_err_read_after_move_after_loop`
+(a read after a loop that overwrote the destination). `own_err_param_kept_used`, `own_err_push_let`,
+`own_err_two_owners` and `own_err_literal_two_records` still fail as before.
+
+`own_err_borrow_bound_method`, `own_err_borrow_catch_local` and `own_err_borrow_finally_local`
+(phase 2) made `let b = a` a borrow by reading `a` after it. That read now goes through `b`, which
+takes the value over, and `a = new C(2)` frees nothing `b` holds: the programs are correct (they
+print what rc prints, on Windows and Linux). They now give `a` to a second `let`, so that each
+borrows it, as before.
+
+Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
+compile, and their AOT runs with same-size allocations before the read print a freed block's
+value: `c.x` prints 0 (overwritten, `clear`) and 999 (through the view) instead of 5, and
+`a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`. The positive cannot show it: by design
+nothing in it overwrites a destination before a read. With the rule off, the positive fails to
+compile with `is used here after its value was moved`, at every read after a move. A loop of 2
+million iterations peaks at 4.5 MB under own, as under rc.
+
+Not here: an assignment that moves on some paths only (`if (v.x > m) { best = v; }`) is `is moved
+here on some paths only; -mm=own cannot release it on the others yet` - the local's one release at
+the join is on a path that moved it and one that did not. The use-after-move error came first and
+hid it. It is G10 (Task 5b, static drop elaboration), not a follow-on of G7; the ray tracer's
+`intersections` has this shape, and the `moved here on some paths only` of design G8 is it too.
+Matching an overwrite by position and type also matches another class's field of the same type at
+the same position (`dropsChain`, as for any place read): `own_read_after_move`'s loop holder keeps
+its field elsewhere for that reason.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 522 of
+693 before this section, 527 after; none lost. Gained: `00class_recursive`,
+`00generator_manual_next2`, `00globals_entry_point`, `00owned_locals`, `00union_value_equality`,
+each accepted by this rule. Each prints under own what it prints under rc (Windows AOT) and runs
+clean under own on Linux.
+
+The ray tracer (`rtbench_own.ts`) has 33 errors, as at §28, but none of them is `is used here
+after its value was moved` any more. Two are `is moved here on some paths only` (G10), which the
+use-after-move errors used to hide. The rest are G9's, G5's and G2's (§28).
