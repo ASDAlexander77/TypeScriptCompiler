@@ -1154,7 +1154,33 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return !inElement || castMakesInterface(inElement, outElement, depth + 1);
         }
 
-        // a reference reinterpreted: what is read through it was never checked
+        // a reference seen as another (`!ts.bound_ref<T>` as `!ts.ref<T>`): what it points to
+        auto pointee = [](mlir::Type type) -> mlir::Type {
+            if (auto refType = mlir::dyn_cast<mlir_ts::RefType>(type))
+            {
+                return refType.getElementType();
+            }
+
+            if (auto valueRefType = mlir::dyn_cast<mlir_ts::ValueRefType>(type))
+            {
+                return valueRefType.getElementType();
+            }
+
+            if (auto boundRefType = mlir::dyn_cast<mlir_ts::BoundRefType>(type))
+            {
+                return boundRefType.getElementType();
+            }
+
+            return {};
+        };
+
+        if (auto outPointee = pointee(out))
+        {
+            auto inPointee = pointee(in);
+            return !inPointee || castMakesInterface(inPointee, outPointee, depth + 1);
+        }
+
+        // anything else reinterpreted: what is read out of it was never checked
         return true;
     }
 
@@ -1240,6 +1266,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         };
 
         llvm::StringMap<InterfaceVTable> vtables;
+        // `..vtbl` globals that are neither (no `.instanceOf` this reads in slot 0)
+        llvm::SmallVector<llvm::StringRef> unread;
         // interface name -> the interface vtables class vtables hold for it, read through an
         // object's class at run time (`ts.VTableOffsetRef` of the object's vtable)
         llvm::StringMap<llvm::SetVector<llvm::StringRef>> classHeld;
@@ -1263,6 +1291,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(globalOp.getType());
             if (!header || !tupleType)
             {
+                unread.push_back(name);
                 return;
             }
 
@@ -1292,6 +1321,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             if (!header.getValue().ends_with("..instanceOf") && header.getValue() != ".instanceOf.none")
             {
+                unread.push_back(name);
                 return;
             }
 
@@ -1513,6 +1543,36 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         for (auto &[name, held] : classHeld)
         {
             madeWith[name].insert(held.begin(), held.end());
+        }
+
+        // A vtable this pass could not read, or one no value of any interface is made with, that is
+        // named for an interface (`<class>.<I>..vtbl`, `<I>.<n>..vtbl`): the interface may have an
+        // implementation outside its families. Belt and braces - every way to make an interface
+        // value is traced above - but a missed member would get its family's facts.
+        llvm::DenseSet<llvm::StringRef> made;
+        for (auto &entry : madeWith)
+        {
+            made.insert(entry.second.begin(), entry.second.end());
+        }
+
+        llvm::SmallVector<llvm::StringRef> loose(unread.begin(), unread.end());
+        for (auto &entry : vtables)
+        {
+            if (!made.contains(entry.getKey()))
+            {
+                loose.push_back(entry.getKey());
+            }
+        }
+
+        for (auto &entry : madeWith)
+        {
+            auto name = entry.getKey().str();
+            if (llvm::any_of(loose, [&](llvm::StringRef vtableName) {
+                    return vtableName.ends_with("." + name + "..vtbl") || vtableName.starts_with(name + ".");
+                }))
+            {
+                open.insert(entry.getKey());
+            }
         }
 
         // the families

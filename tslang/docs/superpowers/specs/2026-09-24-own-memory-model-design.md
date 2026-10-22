@@ -3266,3 +3266,103 @@ are gone - `intersections` (`closestInter = inter` on some iterations) and `shad
 are G9's, G5's and G2's (§28): 21 `borrows a field`, 5 object-literal moves, 2 `borrows an
 element`, 1 mixed return, 1 kept parameter (the `reduce`), 1 `borrows a field and cannot be
 stored`.
+
+## 31. Facts through a closed interface (G9 of the ray tracer plan), 2026-10-22
+
+A call through an interface (`ts.InterfaceSymbolRef`, then an indirect call) was not resolved: it
+had no facts, so it might destroy anything, and since §27 every method held in an interface vtable
+lost its keep and borrow facts, called directly or not. `sc.ts[i].area(r)` ended the borrow of
+`sc.ts` it was made through (`borrows an element but is used here after it may be released or
+overwritten`), and `s.take(x)` / `g.get(a)` / `i.first()` / `h.hold()` were the §27 errors in the
+method's body. Now a call through an interface only this module can see is resolved like a call
+of a private virtual family.
+
+- **Closed.** An interface is open when another module can see it - its name is a word of the
+  module's exported declarations (`__decls`), or `!ts.iface<@I>` is in the type of an exported or
+  declared function or of a global that is not private or is exported or imported (a class's
+  fields included) - or when a value of it may be made other than by `ts.NewInterface` over a
+  vtable the signature pass reads: the global, a heap copy of it, or the one an object's class
+  vtable holds for it. A cast into the interface from another interface opens both (the other's
+  members are reached through it); one from `any` or an opaque pointer opens every interface boxed
+  into one; a `ts.InterfaceRef` used as a value, a vtable read other than to make a value, an
+  exported class whose vtable holds one of its vtables, and a vtable named for it that no value is
+  made with all open it. An untraceable `ts.NewInterface` opens every interface.
+- **Families.** Each slot of a closed interface (its vtable position) has the functions its
+  vtables hold there - a class's method, an object literal's method, never a declaration, never one
+  that says `@keeps` or `@lends`. A call through the slot gets `__own_no_drops` when every member
+  destroys nothing, and the kept parameters and borrowed result its members agree on: `meetFacts`
+  demotes a family that disagrees, as it does a class family, so the borrowing or keeping member's
+  body is the error it was (`own_err_interface_family_disagrees`). That is a sound narrowing of the
+  plan's "a parameter kept by any member is kept by the call": a member that does not keep a moved-in
+  argument has no release for it, which would leak. A `public` method is open (§15) and gives its
+  family no facts; an object literal's method is open too (its symbol is a value in the literal).
+- **Members keep their facts.** §27's stripping (`interfaceReached`) applies only to the members of
+  open families and to vtables no value is made with, so a direct call of a method of a closed
+  interface keeps its facts (`ks.take(x)`, `f.first()`).
+- **A result that borrows `this`** through the interface is bounded by the interface value:
+  `boundThis` sees `ts.GetThis` of an interface-bound method as the object the interface value is a
+  view of (`own_err_interface_result_outlives`: the local holding it is given a new value before the
+  read).
+- **Function-typed fields** (`f: (x: number) => number`, the ray tracer's `Surface`): the slot holds
+  the offset of an object literal's field, and the call goes to whatever function the field holds.
+  When the interface is closed and every function ever stored into those fields is one this module
+  defines - the literal's own (`{ f: function ... }`, in its `ts.Constant`, a closure over locals
+  included: its captures are a field of the object), or one stored later through the object or
+  through the interface - the call gets their facts. A store of anything else, the field reached
+  other than to be read or stored, an object of the literal's type made other than by the literal,
+  a function-typed store through an open interface, or a class implementer (its slot is a thunk's
+  cell) keeps the call open. In the language as it is, a function stored into such a field is
+  always the literal's: `s.f = fn` through the interface is `saving to constant object`, and a
+  function without `this` (a parameter, a named function) is held through a thunk, which is open
+  (`own_err_interface_fn_field_unknown`).
+
+`own_interface_facts` runs the plan's loop over `sc.ts` (prints 9), a field borrowed across a call
+through two class members and an object-literal member, the closed forms of the five §27 negatives
+(a kept literal, a kept `const`, a kept value, through the interface and directly; a borrowed
+argument, element and field, through the interface and directly), each read after churn, under own,
+rc, gc and none, AOT and JIT, and on Linux; own emits no counting. `own_interface_fn_field` calls a
+function field through a global and a local `Shared<S>` of a literal, through a parameter with no
+handle, and through a handle given as a parameter, each after churn, under the four models (counted,
+so not in `own_test`), and `--verify-ownership` is quiet under own and rc. The five §27 negatives
+now export their interface (the open form, same texts). New negatives: `own_err_interface_exported_impl`
+(the plan's program with `export class B`), `own_err_interface_family_disagrees`,
+`own_err_interface_member_drops`, `own_err_interface_from_interface`,
+`own_err_interface_result_outlives`, `own_err_interface_fn_field_drops`,
+`own_err_interface_fn_field_unknown`, `own_err_interface_fn_field_exported`.
+
+Teeth: with the call's `__own_params` dropped for a call through a closed interface, and with its
+`__own_result_borrows` dropped, the AOT and JIT runs of `own_interface_facts` fail with `0xC0000374`
+(heap corruption: the caller releases what `KS.take` kept, and what `G.get` lent). With
+`__own_no_drops` given to a call through a family one of whose members overwrites a field of its
+argument, `own_err_interface_member_drops` (with same-size allocations before the read) compiles and
+prints 77777 instead of 5 (gc prints 5); the same for a function field whose function overwrites
+`this.v` (`own_err_interface_fn_field_drops`): 77777 instead of 5. The store-of-unknown-origin
+condition has no program that reaches it (above), so it has no tooth.
+
+Measured: 2 million iterations of a kept argument, a borrowed result and a function-field call
+through closed interfaces peak at 4.4 MB under own, as under rc (gc 6.4 MB).
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer (`rtbench_own.ts`) has 31 errors, as at §30: none of them is cleared, for two reasons
+outside this rule. `Sphere.normal` and `Sphere.intersect` call `Math.sqrt`, whose `sqrt` is declared
+without `@nodrops`, so they may destroy anything and the `Thing` families get no `__own_no_drops`;
+`checkerboard`'s functions call `Math.floor` the same way. And `Surface` is exported:
+`export let shiny` in `module Surfaces` puts the globals and `interface Surface` into `__decls`, so
+another module may store its own function into a surface. Measured on copies: with the four C
+declarations `@nodrops`, 22 errors before this section and 18 after (cleared: both errors at
+`scene.things[i].intersect(ray)` in `intersections`, `isect.thing.normal(pos)` and the
+`Vector.minus(d, ...)` after it in `shade`); with the `export`s dropped too, 22 and 14 (also
+`thing.surface.value.reflect(pos)`, `diffuse(pos)`, `specular(pos)` and the `roughness` read); with
+only the `export`s dropped, 31 and 30 (`specular(pos)`). Neither is one of the plan's two source
+edits.
+
+Not here:
+- **Kept parameters do not take the union** across members (above): a family whose members
+  disagree is demoted, as a class family is.
+- **Class families group by (position, name)** across every vtable that holds an `.instanceOf`,
+  interface vtables included (unchanged): two closed interfaces with a same-named method at the same
+  position demote each other when they disagree. Too strict, but sound.
+- A class implementing a function-typed field (`f = (x) => ...`) is held through a thunk's cell and
+  stays open.
