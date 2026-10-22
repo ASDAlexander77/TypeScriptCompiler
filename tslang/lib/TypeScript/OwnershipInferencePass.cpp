@@ -144,6 +144,21 @@ class OwnershipInferencePass
         classifyBorrowingFields();
         // ...and whether an object literal borrows what its fields hold (spec 32)
         classifyRecords();
+        // a kept parameter the body may not move on every path is released at its exits (spec 33)
+        releaseKeptParamsAtExits();
+        auto exitReleasesGone = llvm::make_scope_exit([&]() {
+            // the dry run changes nothing: what it put in goes again
+            if (dryRun)
+            {
+                for (auto *release : exitReleases)
+                {
+                    toErase.remove(release);
+                    release->erase();
+                }
+            }
+
+            exitReleases.clear();
+        });
 
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
@@ -456,7 +471,8 @@ class OwnershipInferencePass
         // the facts were for this pass only
         returnedParams.clear();
         f.walk([](mlir::Operation *op) {
-            for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME, OWN_RESULT_RECORD_ATTR_NAME,
+            for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_PARAMS_RELEASED_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME,
+                               OWN_RESULT_RECORD_ATTR_NAME,
                                OWN_NO_DROPS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME,
@@ -1978,6 +1994,114 @@ class OwnershipInferencePass
         return true;
     }
 
+    // ---- A kept parameter released where it is not moved (spec 33) ----
+    //
+    // `return v.x > 2 ? acc : V.plus(acc, v)`: `acc` is kept (OwnershipSignaturePass), so the caller
+    // moved it in; the path that returns it moves it out, and the others must release it. So must a
+    // callback that only borrows the accumulator its family gives it to keep. MLIRGen made no owner
+    // of a parameter, so its releases are put in here, before each way out of the body - a return,
+    // a throw that leaves the function - as MLIRGen puts an owning local's. The move's own check then
+    // erases those it reaches, and places the release on the edges into the join that did not move
+    // it (spec 30), statically: no run-time flag. Unwinding out of the function (a call that throws
+    // outside a `try`, a `finally` passed on the way out) gives nothing back: it leaks, as an owning
+    // local does there.
+
+    // the releases put in for this run
+    llvm::SmallVector<mlir::Operation *> exitReleases;
+
+    // The slot of parameter `index` (isParameterSlot), or null.
+    mlir_ts::VariableOp parameterSlot(int32_t index)
+    {
+        auto &body = getFunction().getFunctionBody();
+        if (body.empty() || static_cast<unsigned>(index) >= body.front().getNumArguments())
+        {
+            return {};
+        }
+
+        for (auto *user : body.front().getArgument(index).getUsers())
+        {
+            auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+            auto position = -1;
+            if (varOp && isParameterSlot(varOp, position) && position == index)
+            {
+                return varOp;
+            }
+        }
+
+        return {};
+    }
+
+    // Is `slot` a parameter this function keeps and releases where it does not move it?
+    bool isReleasedParam(mlir::Value slot)
+    {
+        auto f = getFunction();
+        auto attr = f->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_PARAMS_RELEASED_ATTR_NAME);
+        auto varOp = slot.getDefiningOp<mlir_ts::VariableOp>();
+        auto index = -1;
+        return attr && varOp && isParameterSlot(varOp, index) && llvm::is_contained(attr.asArrayRef(), index) &&
+               llvm::is_contained(ownedParams(f), index);
+    }
+
+    // Does `value` come from a read of `slot`: computed from one, through any op?
+    static bool readsSlot(mlir::Value value, mlir::Value slot, int depth = 0)
+    {
+        auto *def = value.getDefiningOp();
+        if (!def)
+        {
+            return false;
+        }
+
+        // too deep to tell: as if it did
+        if (depth > 16)
+        {
+            return true;
+        }
+
+        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(def); loadOp && loadOp.getReference() == slot)
+        {
+            return true;
+        }
+
+        return llvm::any_of(def->getOperands(), [&](mlir::Value operand) { return readsSlot(operand, slot, depth + 1); });
+    }
+
+    void releaseKeptParamsAtExits()
+    {
+        exitReleases.clear();
+        auto f = getFunction();
+        auto attr = f->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_PARAMS_RELEASED_ATTR_NAME);
+        if (!attr)
+        {
+            return;
+        }
+
+        for (auto index : attr.asArrayRef())
+        {
+            auto varOp = parameterSlot(index);
+            if (!varOp || !llvm::is_contained(ownedParams(f), index))
+            {
+                continue;
+            }
+
+            for (auto &block : f.getFunctionBody())
+            {
+                auto *exit = block.empty() ? nullptr : &block.back();
+                // a thrown value made of the parameter takes it with it: no release there (a leak,
+                // if it does not)
+                auto leaves = mlir::isa_and_nonnull<mlir_ts::ReturnInternalOp>(exit) ||
+                              (mlir::isa_and_nonnull<mlir_ts::ThrowCallOp>(exit) &&
+                               !readsSlot(exit->getOperand(0), varOp.getResult()));
+                if (!leaves)
+                {
+                    continue;
+                }
+
+                mlir::OpBuilder builder(exit);
+                exitReleases.push_back(builder.create<mlir_ts::ReleaseSlotOp>(exit->getLoc(), varOp.getResult()));
+            }
+        }
+    }
+
     // A parameter this function keeps (`__own_params`): its caller moved the argument in, and this
     // function has no release for it, so exactly one taker must move it on, on every way out of
     // the function, and nothing may read it after that.
@@ -1994,8 +2118,22 @@ class OwnershipInferencePass
             return;
         }
 
-        if (!checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase))
+        // one the body releases on the paths that do not move it (spec 33): the move's own check
+        // erases the releases at the exits it reaches, and places one on each edge into where the
+        // paths join that did not move it (spec 30)
+        auto released = isReleasedParam(slot);
+        if (!checkSlotMove(receiver.retain, receiver.value, receiver.load, toErase, released))
         {
+            return;
+        }
+
+        if (released)
+        {
+            if (!isCall(receiver.retain))
+            {
+                toErase.insert(receiver.retain);
+            }
+
             return;
         }
 
@@ -2011,7 +2149,9 @@ class OwnershipInferencePass
             }
         });
 
-        if (everyPath && mlir::isa<mlir_ts::RetainOp>(receiver.retain))
+        // rc's retain goes with the move - a `ts.RetainSlot` too, for an owning local the parameter
+        // moves into (`let r = init`, spec 33); a call that keeps it is the move itself
+        if (everyPath && !isCall(receiver.retain))
         {
             toErase.insert(receiver.retain);
         }

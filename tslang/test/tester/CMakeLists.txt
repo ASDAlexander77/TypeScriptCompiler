@@ -3483,7 +3483,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_literal_moves own_record_literal_given
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
-                 own_borrowing_record own_borrowing_record_arg)
+                 own_borrowing_record own_borrowing_record_arg
+                 own_reduce)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3556,6 +3557,13 @@ foreach(borrowing_record_mm rc gc none)
         tslang_add_test(NAME test-jit-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -jit -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
         tslang_add_test(NAME test-compile-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
     endforeach()
+endforeach()
+
+# `reduce` takes its accumulator, and a parameter returned on some paths only is kept (spec 33);
+# the same program under every other model.
+foreach(reduce_mm rc gc none)
+    tslang_add_test(NAME test-jit-${reduce_mm}-own_reduce COMMAND test-runner -jit -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
+    tslang_add_test(NAME test-compile-${reduce_mm}-own_reduce COMMAND test-runner -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
 endforeach()
 
 # An executable's exports leave its interfaces closed (spec 31, USER decision): under own the JIT's
@@ -3806,7 +3814,11 @@ set(own_error_cases
     "own_err_param_kept_loop|is moved inside a loop"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_delete|'delete' is not supported by -mm=own yet"
-    "own_err_mixed_return|'pick' returns a borrow of its argument on some paths and another value on others"
+    "own_err_mixed_return|is used here after its value was moved"
+    "own_err_mixed_return_join_use|is moved here on some paths only"
+    "own_err_callback_escapes|cannot make the callers of 'pick' give it up"
+    "own_err_callback_disagrees|a function passed in its place disagrees"
+    "own_err_callback_promoted_used|is used here after its value was moved"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"

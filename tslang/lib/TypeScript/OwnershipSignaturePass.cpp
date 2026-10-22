@@ -394,6 +394,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         fieldFunctions.collect(module);
         // after the class storages (`@cpp`) and the families (holdsFunction reads the interface vtables)
         findEscapingFunctions(module);
+        // before the calls are resolved: a call through a callback parameter reaches its family
+        collectCallbackFamilies(module);
 
         module.walk([&](mlir::Operation *op) {
             // in any function: a `ts.Func`, or the `func.func` the async lowering outlines a body into
@@ -460,8 +462,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
 
-            // a generator whose state object borrows from its arguments
-            if (call.callees.funcs.size() == 1 && !call.callees.imported)
+            // a generator whose state object borrows from its arguments (not through a callback
+            // family, whose member's parameters may be shifted)
+            if (call.callees.funcs.size() == 1 && !call.callees.imported && !call.callees.viaCallback)
             {
                 if (auto bounded = call.callees.funcs.front()->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BOUNDED_ATTR_NAME))
                 {
@@ -608,6 +611,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         bool fieldFunction = false;
         // the slot of a closed interface (resolveInterfaceSlot)
         bool viaInterface = false;
+        // a parameter of a closed function that callers pass only functions of this module
+        // (callbackFamilies), with each member's shift: a closure's body takes its capture box
+        // first, so its parameter k is the call's argument k - 1
+        bool viaCallback = false;
+        llvm::SmallVector<int32_t, 2> shifts;
         // the name the imported function is exported under
         llvm::StringRef importedName;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
@@ -2031,6 +2039,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // and agreed by every family it is in).
     llvm::DenseMap<mlir::Operation *, Facts> factsLocal;
     llvm::DenseMap<mlir::Operation *, Facts> factsEffective;
+    // The parameters each body takes into something - a field, an element, a global, a keeping call,
+    // an owning local it assigns (localOwnedParams). A kept parameter that is not one of them is
+    // released on the paths that do not move it (OWN_PARAMS_RELEASED_ATTR_NAME, spec 33).
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> takenParams;
 
     // ---- Facts a signature says (`@keeps`, `@borrows`, `@lends`) ----
     //
@@ -2537,7 +2549,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 }
 
                 llvm::SmallVector<int32_t> bounded = declaredByCallees(*known->second, OWN_DECLARED_BORROWS_ATTR_NAME);
-                if (bounded.empty() && known->second->funcs.size() == 1)
+                if (bounded.empty() && known->second->funcs.size() == 1 && !known->second->viaCallback)
                 {
                     auto made = declared(known->second->funcs.front(), OWN_RESULT_BOUNDED_ATTR_NAME);
                     bounded.assign(made.begin(), made.end());
@@ -3028,6 +3040,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         else if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def))
         {
             resolveInterfaceSlot(interfaceRefOp, callees);
+            return;
+        }
+        else if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
+        {
+            resolveCallback(loadOp, callees);
             return;
         }
         else if (auto boundOp = mlir::dyn_cast_or_null<mlir_ts::CreateBoundFunctionOp>(def))
@@ -3592,6 +3609,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
+            // passed only to a parameter whose family is closed: its calls are resolved (spec 33)
+            if (callbackPassing.contains(user))
+            {
+                continue;
+            }
+
             int64_t index = -1;
             if (auto refOp = mlir::dyn_cast<mlir_ts::ThisVirtualSymbolRefOp>(user))
             {
@@ -3638,6 +3661,471 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 open.try_emplace(memberOp, why);
             }
         }
+    }
+
+    // ---- Callbacks (spec 33) ----
+    //
+    // `___array_reduce<T, R>(arr, f, init)` calls its parameter `f`: an indirect call, which reaches
+    // whatever function its callers pass. When the function is closed - private, and every use of its
+    // symbol a direct call - the parameter is only ever called, and every caller passes there a
+    // function this module defines, by its symbol or as a closure over a capture box made right
+    // there, a call through the parameter reaches exactly those functions: the parameter's family.
+    // Its members are closed too, when their symbols are used only to be called directly or passed
+    // so; then the call gets the facts the members agree on (callFacts), and `__own_no_drops` when
+    // none of them destroys anything. A closure's body takes its capture box first: its parameter k
+    // is the call's argument k - 1 (CallbackMember::shift).
+    //
+    // A kept parameter is agreed on the other way round from a class family's (meetCallbacks): a
+    // member that only borrows a parameter another member keeps is given it to keep too, and releases
+    // it on every path (OWN_PARAMS_RELEASED_ATTR_NAME) - `reduce` with a callback that returns its
+    // accumulator on some paths and one that never does, in one `___array_reduce<V, V>`. Anything
+    // else the members disagree on demotes them all, as a class family's members are.
+
+    struct CallbackMember
+    {
+        mlir::StringAttr symbol;
+        int32_t shift = 0;
+    };
+
+    struct CallbackFamily
+    {
+        llvm::SmallVector<CallbackMember, 2> members;
+        // the ops that name a member's symbol to pass it here
+        llvm::SmallVector<mlir::Operation *, 2> passing;
+        bool closed = true;
+    };
+
+    // (function, parameter index) -> the functions its callers pass there
+    std::map<std::pair<mlir::Operation *, int32_t>, CallbackFamily> callbackFamilies;
+    // the members whose families disagreed (meetFacts), for the error in their bodies
+    llvm::DenseSet<mlir::Operation *> demotedCallbacks;
+    // uses of a member's symbol that only pass it to a closed family: no escape (findOpen)
+    llvm::DenseSet<mlir::Operation *> callbackPassing;
+
+    static bool isFunctionValueType(mlir::Type type)
+    {
+        return mlir::isa<mlir_ts::FunctionType, mlir_ts::HybridFunctionType, mlir_ts::BoundFunctionType>(type);
+    }
+
+    // Is every use of this parameter - through its slot, never assigned or captured - the function
+    // a call goes through?
+    static bool onlyCalledParam(mlir::BlockArgument argument)
+    {
+        for (auto *user : argument.getUsers())
+        {
+            auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+            auto index = -1;
+            if (!varOp || !isParameterSlot(varOp, index))
+            {
+                return false;
+            }
+
+            for (auto *slotUser : varOp->getUsers())
+            {
+                if (mlir::isa<mlir_ts::DebugVariableOp>(slotUser))
+                {
+                    continue;
+                }
+
+                auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(slotUser);
+                if (!loadOp)
+                {
+                    return false;
+                }
+
+                for (auto &use : loadOp->getUses())
+                {
+                    auto *call = use.getOwner();
+                    if (!isCall(call) || calleeValue(call) != use.get() ||
+                        llvm::is_contained(callArgs(call), use.get()))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // The function a caller passes as `value`: its symbol, seen as a function value through casts
+    // between function types, or a closure over a capture box built of it. Null for anything else.
+    static mlir_ts::SymbolRefOp passedFunction(mlir::Value value, int32_t &shift)
+    {
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            if (!isFunctionValueType(castOp.getIn().getType()) || !isFunctionValueType(castOp.getType()))
+            {
+                return {};
+            }
+
+            value = castOp.getIn();
+        }
+
+        if (auto refOp = value.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            shift = 0;
+            return refOp;
+        }
+
+        auto boundOp = value.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
+        if (!boundOp || closureOfBox(boundOp.getThisVal()) != boundOp)
+        {
+            return {};
+        }
+
+        shift = 1;
+        return boundOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>();
+    }
+
+    // Does the function value `value` go only where `passes` allows - as an argument of a call - and
+    // through casts between function types, a closure built of it, and that closure's own retains
+    // and releases?
+    static bool passedOnly(mlir::Value value, llvm::function_ref<bool(mlir::OpOperand &)> passes, int depth = 0)
+    {
+        if (depth > 8)
+        {
+            return false;
+        }
+
+        for (auto &use : value.getUses())
+        {
+            auto *user = use.getOwner();
+            if (mlir::isa<mlir_ts::RetainOp, mlir_ts::ReleaseOp, mlir_ts::DebugVariableOp>(user) || passes(use))
+            {
+                continue;
+            }
+
+            auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+            auto boundOp = mlir::dyn_cast<mlir_ts::CreateBoundFunctionOp>(user);
+            if (castOp && isFunctionValueType(castOp.getType()) && passedOnly(castOp.getResult(), passes, depth + 1))
+            {
+                continue;
+            }
+
+            if (boundOp && boundOp.getFunc() == use.get() && closureOfBox(boundOp.getThisVal()) == boundOp &&
+                passedOnly(boundOp.getResult(), passes, depth + 1))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    void collectCallbackFamilies(mlir::ModuleOp module)
+    {
+        auto uses = mlir::SymbolTable::getSymbolUses(&module.getBodyRegion());
+        if (!uses)
+        {
+            return;
+        }
+
+        llvm::DenseMap<mlir::Operation *, llvm::SmallVector<mlir::Operation *>> usersOf;
+        for (auto &use : *uses)
+        {
+            if (auto funcOp = functions.lookup(use.getSymbolRef().getRootReference().getValue()))
+            {
+                usersOf[funcOp].push_back(use.getUser());
+            }
+        }
+
+        auto callsOnly = [&](mlir_ts::FuncOp funcOp) {
+            auto &users = usersOf[funcOp];
+            return !users.empty() && llvm::all_of(users, [&](mlir::Operation *user) {
+                auto callee = directCallee(user);
+                return callee && callee.getValue() == funcOp.getSymName();
+            });
+        };
+
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration() || callableFromOutside(funcOp) || declaresFacts(funcOp) || !callsOnly(funcOp))
+            {
+                continue;
+            }
+
+            for (auto argument : funcOp.getBody().front().getArguments())
+            {
+                if (!isFunctionValueType(argument.getType()) || !onlyCalledParam(argument))
+                {
+                    continue;
+                }
+
+                auto index = static_cast<int32_t>(argument.getArgNumber());
+                CallbackFamily family;
+                for (auto *user : usersOf[funcOp])
+                {
+                    auto args = callArgs(user);
+                    auto shift = 0;
+                    auto refOp = static_cast<size_t>(index) < args.size() ? passedFunction(args[index], shift)
+                                                                          : mlir_ts::SymbolRefOp();
+                    auto member = refOp ? functions.lookup(refOp.getIdentifier()) : mlir_ts::FuncOp();
+                    if (!member || member.isDeclaration() || callableFromOutside(member) || declaresFacts(member))
+                    {
+                        family.closed = false;
+                        break;
+                    }
+
+                    auto symbol = member.getSymNameAttr();
+                    auto same = llvm::find_if(family.members, [&](const CallbackMember &known) { return known.symbol == symbol; });
+                    if (same != family.members.end() && same->shift != shift)
+                    {
+                        family.closed = false;
+                        break;
+                    }
+
+                    if (same == family.members.end())
+                    {
+                        family.members.push_back({symbol, shift});
+                    }
+
+                    family.passing.push_back(refOp);
+                }
+
+                callbackFamilies[{funcOp, index}] = std::move(family);
+            }
+        }
+
+        // A member's symbol used anywhere else - a call through another value, a field, a vtable, a
+        // global - reaches callers this cannot see; so does one passed to a family that is not closed.
+        // Each family that has such a member is open, until nothing changes.
+        auto passesToClosed = [&](mlir::OpOperand &use) {
+            auto *call = use.getOwner();
+            auto callee = directCallee(call);
+            auto calleeOp = callee ? functions.lookup(callee.getValue()) : mlir_ts::FuncOp();
+            if (!calleeOp)
+            {
+                return false;
+            }
+
+            // the argument this use is, by its operand's position
+            auto args = callArgs(call);
+            if (args.empty() || use.getOperandNumber() < args.getBeginOperandIndex() ||
+                use.getOperandNumber() >= args.getBeginOperandIndex() + args.size())
+            {
+                return false;
+            }
+
+            auto index = static_cast<int32_t>(use.getOperandNumber() - args.getBeginOperandIndex());
+            auto found = callbackFamilies.find({calleeOp, index});
+            return found != callbackFamilies.end() && found->second.closed;
+        };
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &[key, family] : callbackFamilies)
+            {
+                if (!family.closed)
+                {
+                    continue;
+                }
+
+                for (auto &member : family.members)
+                {
+                    auto memberOp = functions.lookup(member.symbol.getValue());
+                    auto escapes = llvm::any_of(usersOf[memberOp], [&](mlir::Operation *user) {
+                        if (auto callee = directCallee(user); callee && callee.getValue() == member.symbol.getValue())
+                        {
+                            return false;
+                        }
+
+                        auto refOp = mlir::dyn_cast<mlir_ts::SymbolRefOp>(user);
+                        return !refOp || !user->getParentOfType<mlir::FunctionOpInterface>() ||
+                               !passedOnly(refOp.getResult(), passesToClosed);
+                    });
+
+                    if (escapes)
+                    {
+                        family.closed = false;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (auto &[key, family] : callbackFamilies)
+        {
+            if (family.closed)
+            {
+                callbackPassing.insert(family.passing.begin(), family.passing.end());
+            }
+        }
+    }
+
+    // A call through a parameter whose family is closed: its members.
+    void resolveCallback(mlir_ts::LoadOp loadOp, Callees &callees)
+    {
+        auto varOp = loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>();
+        auto funcOp = loadOp->getParentOfType<mlir_ts::FuncOp>();
+        auto index = -1;
+        if (!varOp || !funcOp || !isParameterSlot(varOp, index))
+        {
+            return;
+        }
+
+        auto found = callbackFamilies.find({funcOp.getOperation(), index});
+        if (found == callbackFamilies.end() || !found->second.closed || found->second.members.empty())
+        {
+            return;
+        }
+
+        callees.viaCallback = true;
+        callees.known = true;
+        for (auto &member : found->second.members)
+        {
+            callees.named.push_back(member.symbol);
+            callees.known = addDefined(member.symbol, callees) && callees.known;
+            callees.shifts.push_back(member.shift);
+        }
+
+        callees.known = callees.known && callees.shifts.size() == callees.funcs.size();
+    }
+
+    // A member's facts as a call through its family sees them: each parameter k as argument
+    // k - shift. False when a fact is about the capture box itself, which the call does not pass.
+    static bool shiftFacts(const Facts &facts, int32_t shift, Facts &shifted)
+    {
+        shifted = Facts();
+        shifted.record = facts.record;
+        for (auto [from, to] : {std::make_pair(&facts.owned, &shifted.owned), std::make_pair(&facts.borrows, &shifted.borrows)})
+        {
+            for (auto index : *from)
+            {
+                if (index < shift)
+                {
+                    return false;
+                }
+
+                to->push_back(index - shift);
+            }
+        }
+
+        return true;
+    }
+
+    // Can the body of `funcOp` be given parameter `index` to keep and release it where it does not
+    // move it: a plain slot (isParameterSlot), a block, not a handle, not a string?
+    bool canReleaseParam(mlir_ts::FuncOp funcOp, int32_t index)
+    {
+        if (funcOp.getBody().empty() || static_cast<unsigned>(index) >= funcOp.getNumArguments())
+        {
+            return false;
+        }
+
+        auto argument = funcOp.getBody().front().getArgument(index);
+        if (isHandle(argument) || isCopyableString(argument.getType()) || holdsNoBlock(argument))
+        {
+            return false;
+        }
+
+        return llvm::any_of(argument.getUsers(), [&](mlir::Operation *user) {
+            auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user);
+            auto position = -1;
+            return varOp && isParameterSlot(varOp, position) && position == index;
+        });
+    }
+
+    // The members of each closed callback family agree (the section above), by promotion of a kept
+    // parameter or by demotion. True when any member's facts changed.
+    bool meetCallbacks(llvm::DenseSet<mlir::Operation *> &demoted)
+    {
+        auto changed = false;
+        for (auto &[key, family] : callbackFamilies)
+        {
+            if (!family.closed)
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir_ts::FuncOp, 2> members;
+            llvm::SmallVector<Facts, 2> seen;
+            auto shiftable = true;
+            for (auto &member : family.members)
+            {
+                auto funcOp = functions.lookup(member.symbol.getValue());
+                Facts shifted;
+                shiftable = shiftable && funcOp && shiftFacts(factsEffective.lookup(funcOp), member.shift, shifted);
+                members.push_back(funcOp);
+                seen.push_back(shifted);
+            }
+
+            if (shiftable && llvm::all_equal(seen))
+            {
+                continue;
+            }
+
+            // a parameter some member keeps, and each other one only borrows: kept by all
+            llvm::SmallVector<int32_t> kept;
+            for (auto &facts : seen)
+            {
+                kept.append(facts.owned.begin(), facts.owned.end());
+            }
+
+            llvm::sort(kept);
+            kept.erase(std::unique(kept.begin(), kept.end()), kept.end());
+            auto promotable = shiftable && llvm::all_of(seen, [&](const Facts &facts) {
+                return facts.borrows == seen.front().borrows && facts.record == seen.front().record &&
+                       llvm::none_of(kept, [&](int32_t index) { return llvm::is_contained(facts.borrows, index); });
+            });
+
+            for (auto [position, member] : llvm::enumerate(family.members))
+            {
+                auto funcOp = members[position];
+                // a member another caller reaches without the facts is given none (findOpen)
+                for (auto index : kept)
+                {
+                    promotable = promotable && !demoted.contains(funcOp) && !open.contains(funcOp) &&
+                                 !interfaceReached.contains(funcOp) &&
+                                 (llvm::is_contained(seen[position].owned, index) ||
+                                  canReleaseParam(funcOp, index + member.shift));
+                }
+            }
+
+            if (promotable)
+            {
+                for (auto [position, member] : llvm::enumerate(family.members))
+                {
+                    auto funcOp = members[position];
+                    auto facts = factsEffective.lookup(funcOp);
+                    for (auto index : kept)
+                    {
+                        auto param = index + member.shift;
+                        if (!llvm::is_contained(facts.owned, param))
+                        {
+                            facts.owned.insert(llvm::upper_bound(facts.owned, param), param);
+                        }
+                    }
+
+                    if (facts != factsEffective.lookup(funcOp))
+                    {
+                        factsEffective[funcOp] = facts;
+                        changed = true;
+                    }
+                }
+
+                continue;
+            }
+
+            for (auto funcOp : members)
+            {
+                if (funcOp && !declaresCallerFacts(funcOp))
+                {
+                    demoted.insert(funcOp);
+                    if (factsEffective.erase(funcOp))
+                    {
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        return changed;
     }
 
     // ---- Results that borrow an argument ----
@@ -3738,6 +4226,69 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         return {};
+    }
+
+    // The parameter a function returns as it is on some paths, where every other value it returns
+    // that holds a block is one it owns (spec 33): `return v.x > 2 ? acc : V.plus(acc, v)`. Such a
+    // parameter is kept: the callers move the argument in, the path that returns it moves it out,
+    // and every other path releases it. -1 for none - a parameter returned on every path is a
+    // borrowed result; two parameters returned, or a part of one (`acc.next`), or a borrowing
+    // record, have no such answer; a string is copied instead (spec 22).
+    int32_t mixedReturnParam(mlir_ts::FuncOp funcOp)
+    {
+        auto param = -1;
+        auto other = false;
+        auto returned = returnedValues(funcOp);
+        llvm::SmallVector<mlir::Value> work(returned.begin(), returned.end());
+        llvm::DenseSet<mlir::Value> seen;
+        while (!work.empty())
+        {
+            auto value = work.pop_back_val();
+            if (!seen.insert(value).second || holdsNoBlock(value))
+            {
+                continue;
+            }
+
+            if (isHandle(value) || isCopyableString(value.getType()))
+            {
+                return -1;
+            }
+
+            auto root = rootOf(value);
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(root); argument && !argument.getOwner()->isEntryBlock())
+            {
+                llvm::SmallVector<mlir::Value> merged;
+                if (!mergedInto(argument, merged))
+                {
+                    return -1;
+                }
+
+                work.append(merged.begin(), merged.end());
+                continue;
+            }
+
+            int32_t index = -1;
+            if (readsParameterSlot(root, funcOp, index))
+            {
+                if ((param >= 0 && param != index) || isHandle(root) || isCopyableString(root.getType()))
+                {
+                    return -1;
+                }
+
+                param = index;
+                continue;
+            }
+
+            llvm::SmallVector<int32_t> recordParams;
+            if (borrowedParam(root) >= 0 || recordParamsOf(root, recordParams) != RecordFlow::None)
+            {
+                return -1;
+            }
+
+            other = true;
+        }
+
+        return other ? param : -1;
     }
 
     // ---- Borrowing records (spec 32) ----
@@ -4114,6 +4665,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             });
         }
 
+        // `let r = init; ... r = f(r, v)`: a local that owns what it is declared from and is given
+        // another value is no borrow of the parameter - the assignment releases what it holds - so
+        // the parameter moves into it (spec 33: `___array_reduce`'s accumulator). Not a string: the
+        // local copies it (spec 22)
+        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
+        {
+            return varOp.getInitializer() == used && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false) &&
+                   isAssigned(varOp) && !isCopyableString(used.getType());
+        }
+
         return false;
     }
 
@@ -4191,6 +4752,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     facts.borrows = std::move(result.borrows);
                     facts.record = result.record;
                     facts.owned = localOwnedParams(entry.second);
+                    // what the body takes into something on every path; a parameter it returns on
+                    // some paths only is kept too, and released on the others (spec 33)
+                    takenParams[entry.second] = facts.owned;
+                    if (auto mixed = mixedReturnParam(entry.second); mixed >= 0 && !llvm::is_contained(facts.owned, mixed))
+                    {
+                        facts.owned.insert(llvm::upper_bound(facts.owned, mixed), mixed);
+                    }
+
                     factsLocal[entry.second] = std::move(facts);
                 }
             }
@@ -4299,6 +4868,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             return changed;
         };
 
+        // a member a callback family demoted is never promoted again: each step only adds or only
+        // takes away, so this settles
+        demotedCallbacks.clear();
         for (auto changed = true; changed;)
         {
             changed = false;
@@ -4306,6 +4878,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 changed = demote(members) || changed;
             }
+
+            changed = meetCallbacks(demotedCallbacks) || changed;
 
             for (auto &[key, family] : interfaceFamilies)
             {
@@ -4330,6 +4904,24 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         if (!callees.known || callees.instanceOf || callees.funcs.empty())
         {
             return {};
+        }
+
+        // each member's facts as the call's arguments see them (a closure's body takes its box first)
+        if (callees.viaCallback)
+        {
+            std::optional<Facts> agreed;
+            for (auto [funcOp, shift] : llvm::zip(callees.funcs, callees.shifts))
+            {
+                Facts shifted;
+                if (!shiftFacts(factsEffective.lookup(funcOp), shift, shifted) || (agreed && *agreed != shifted))
+                {
+                    return {};
+                }
+
+                agreed = shifted;
+            }
+
+            return agreed.value_or(Facts());
         }
 
         auto facts = factsEffective.lookup(callees.funcs.front());
@@ -4374,10 +4966,30 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto effective = factsEffective.lookup(funcOp);
             setFacts(funcOp, effective);
             funcOp->removeAttr(OWN_FACTS_LOST_ATTR_NAME);
+            funcOp->removeAttr(OWN_PARAMS_RELEASED_ATTR_NAME);
+            // a signature's `@keeps` is checked against the body as it is (checkDeclared)
+            llvm::SmallVector<int32_t> released;
+            for (auto index : effective.owned)
+            {
+                if (!declaresCallerFacts(funcOp) && !llvm::is_contained(takenParams.lookup(funcOp), index))
+                {
+                    released.push_back(index);
+                }
+            }
+
+            if (!released.empty())
+            {
+                funcOp->setAttr(OWN_PARAMS_RELEASED_ATTR_NAME, mlir::DenseI32ArrayAttr::get(&getContext(), released));
+            }
+
             if (effective.empty() && !local.empty())
             {
                 // through an interface first: a marker would not help there (interfaceReached)
                 auto *why = factsThroughInterface(funcOp, local) ? INTERFACE_REACHED_WHY : open.lookup(funcOp);
+                if (!why && demotedCallbacks.contains(funcOp))
+                {
+                    why = "a function passed in its place disagrees";
+                }
 
                 funcOp->setAttr(OWN_FACTS_LOST_ATTR_NAME,
                                 mlir::StringAttr::get(&getContext(), why ? why : "an override in its class family disagrees"));
