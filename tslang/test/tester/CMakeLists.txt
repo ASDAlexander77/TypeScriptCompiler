@@ -3912,7 +3912,9 @@ set(own_error_cases
     "own_err_borrowing_record_returned_local|borrows '.*' and cannot be stored, returned or captured"
     "own_err_borrowing_record_field_written|borrows a field and cannot be stored, returned or captured"
     "own_err_borrowing_record_cell|borrows a captured variable but is used here after it may be released or overwritten"
-    "own_err_borrowing_record_kept_param|borrows '.*' but is used here after it may be released or overwritten")
+    "own_err_borrowing_record_kept_param|borrows '.*' but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_place_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_open|borrows '.*' and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

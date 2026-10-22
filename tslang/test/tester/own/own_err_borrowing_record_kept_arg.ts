@@ -24,11 +24,16 @@ class Cam {
     send(s: Sink) { s.take({ start: this.pos, dir: new V(1) }); }
 }
 
+class Box {
+    c: Cam = new Cam();
+}
+
 function main() {
     const s = new Sink();
-    let c = new Cam();
-    c.send(s);
-    c = new Cam();
+    const b = new Box();
+    b.c.send(s);
+    b.c = new Cam();
+    b.c.pos.x = 9;
     churn();
     print(s.rays[0].start.x);
 }

@@ -19,6 +19,7 @@ interface Th { hit(ray: Ray): Hit; k: number; }
 class A implements Th { k: number = 1; hit(ray: Ray): Hit { return { thing: this, ray: ray, dist: ray.dir.x }; } }
 class Sc { ts: Th[] = [new A()]; }
 class Keep { h: Hit = null; }
+class Holder { r: Ray = { start: new V(1), dir: new V(2) }; }
 
 const keep = new Keep();
 
@@ -28,7 +29,9 @@ function store(ray: Ray, sc: Sc) {
 
 function main() {
     const sc = new Sc();
-    store({ start: new V(1), dir: new V(2) }, sc);
+    const h = new Holder();
+    store(h.r, sc);
+    h.r = { start: new V(5), dir: new V(6) };
     churn();
     print(keep.h.ray.start.x);
 }
