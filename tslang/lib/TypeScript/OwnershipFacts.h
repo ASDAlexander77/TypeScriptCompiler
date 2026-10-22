@@ -29,9 +29,10 @@ namespace mlir_ts = mlir::typescript;
 //
 // The parameters the callee keeps: the caller moves each such argument into the call.
 #define OWN_PARAMS_ATTR_NAME "__own_params"
-// On a function: the parameters it keeps (OWN_PARAMS_ATTR_NAME) that its body does not take into
-// anything on every path - one it returns on some paths only, one a callback family gives it to keep
-// (spec 33). The inference releases each on the paths that do not move it, statically.
+// On a function: the parameters it keeps (OWN_PARAMS_ATTR_NAME) that its body never takes into a
+// field, an element, a global, a keeping call or an assigned owning local - one it returns on some
+// paths only, one a callback family gives it to keep (spec 33). The inference releases each on the
+// paths that do not move it, statically.
 #define OWN_PARAMS_RELEASED_ATTR_NAME "__own_params_released"
 // The arguments the result is a borrow of, as argument indices (the receiver is 0 for a method): the
 // result may not outlive any of them. Alone, the caller owns nothing it gets back, and it names one

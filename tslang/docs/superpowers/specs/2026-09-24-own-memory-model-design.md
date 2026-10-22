@@ -3801,19 +3801,21 @@ each callback is given the accumulator to keep, and its result is the next one, 
   the call is `is used here after its value was moved` (`own_err_mixed_return`, rewritten:
   `print(pick(c, true).n, c.n)`). A function whose facts are lost (an exported one, one used as a
   value) keeps today's error in its body.
-- **Its releases are placed statically** (OwnershipInferencePass, `releaseKeptParamsAtExits`). Such a
-  parameter is named in `__own_params_released`: a kept parameter its body does not take into a
-  field, an element, a global, a keeping call or an owning local on every path. MLIRGen makes no
-  owner of a parameter, so the inference puts a release of its slot before each `ts.ReturnInternal`
-  and each `ts.ThrowCall` that leaves the function (not one whose thrown value is read out of the
-  parameter), as MLIRGen puts an owning local's. The move's own check (`checkSlotMove` with §30's
-  placement) then erases every release the moved value reaches and places one on each edge into the
-  join from a path that did not move it; nothing may use the value where the paths have joined (§30's
-  safety condition, followed through what was read out of it). `pick`'s `V.plus(acc, v)` arm releases
-  `acc` before the arms join; an early return, a `break` out of a loop, a return from inside a loop or
-  from a `try` with a `finally`, a `throw`, each release it once. No run-time flag, no pointer
-  comparison. A parameter kept this way and moved by two receivers (`if (n > 5) return a; if (n < 0)
-  return a;`) is still `used here after its value was moved`.
+- **Its releases are placed statically** (OwnershipInferencePass, `releaseKeptParamsAtExits`). Such
+  a parameter is named in `__own_params_released`: a kept parameter its body never takes into a
+  field, an element, a global, a keeping call or an assigned owning local (one it does take there
+  keeps the old rule, the move must reach every return: `own_err_param_kept_some_paths`). MLIRGen
+  makes no owner of a parameter, so the inference puts a release of its slot before each
+  `ts.ReturnInternal` and each `ts.ThrowCall` that leaves the function (not one whose thrown value
+  is read out of the parameter), as MLIRGen puts an owning local's. The move's own check
+  (`checkSlotMove` with §30's placement) then erases every release the moved value reaches and
+  places one on each edge into the join from a path that did not move it; nothing may use the value
+  where the paths have joined (§30's safety condition, followed through what was read out of it).
+  `pick`'s `V.plus(acc, v)` arm releases `acc` before the arms join; an early return, a `break` out
+  of a loop, a return from inside a loop or from a `try` with a `finally`, a `throw`, each release
+  it once. No run-time flag, no pointer comparison. A parameter kept this way and moved by two
+  receivers (`if (n > 5) return a; if (n < 0) return a;`) is still `used here after its value was
+  moved`.
 - **A parameter read into an owning `let` that is given another value is kept** (`keeps`): `let r =
   init; ... r = f(r, v)` cannot borrow `init`, since the assignment releases what `r` holds, so
   `init` moves into `r` (the move dominates every return, as for any kept parameter, and rc's
