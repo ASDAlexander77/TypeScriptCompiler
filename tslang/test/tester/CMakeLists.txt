@@ -3811,7 +3811,10 @@ set(own_error_cases
     "own_err_conditional_move_outer|is moved inside a loop but was made outside it"
     "own_err_conditional_move_read_after_join|is moved here on some paths only"
     "own_err_conditional_move_field_borrow|is moved here on some paths only"
-    "own_err_conditional_move_catch|is moved here on some paths only")
+    "own_err_conditional_move_catch|is moved here on some paths only"
+    "own_err_conditional_move_bound_method|is moved here on some paths only"
+    "own_err_conditional_move_view|is moved here on some paths only"
+    "own_err_conditional_move_old_view|is moved here on some paths only")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

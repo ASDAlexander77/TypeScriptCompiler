@@ -149,6 +149,19 @@ function main() {
     print(taken); // (0 + 2 + ... + 998) + (2 + 4 + ... + 1000)
     assert(taken == 500000);
 
+    // ...and on the right of `&&`: the edge that skips it carries the `&&`'s value, so the release
+    // goes in a block of its own on that edge, which passes the value on
+    let anded: number = 0;
+    for (let k = 0; k < 1000; k++) {
+        let p = new V(k);
+        if (k % 2 == 0 && keeps(p) >= 0) {
+            anded++;
+        }
+    }
+
+    print(anded); // 500
+    assert(anded == 500);
+
     let moved: number = 0;
     let thrown: number = 0;
     for (let k = 0; k < 20000; k++) {

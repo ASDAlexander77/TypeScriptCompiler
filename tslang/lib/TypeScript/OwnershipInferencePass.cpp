@@ -4580,7 +4580,7 @@ class OwnershipInferencePass
                     return true;
                 }
 
-                reportMovedOnSomePaths(taker, use, name);
+                reportMovedOnSomePaths(taker, use, name, placeReleases ? joinedUse : nullptr);
                 return false;
             }
 
@@ -4635,6 +4635,58 @@ class OwnershipInferencePass
 
     llvm::SmallVector<EdgeRelease> edgeReleases;
 
+    // The use that kept placeOnUnmovedEdges from placing the releases, for the error's note.
+    mlir::Operation *joinedUse = nullptr;
+
+    // Can control reach `to` from the start of `start`, without passing `kills` on the way?
+    bool reachableFrom(mlir::Block *start, mlir::Operation *to, llvm::ArrayRef<mlir::Operation *> kills)
+    {
+        auto &body = getFunction().getFunctionBody();
+        to = body.findAncestorOpInRegion(*to);
+        if (!to)
+        {
+            return true;
+        }
+
+        llvm::SmallVector<mlir::Operation *, 2> killAt;
+        for (auto *kill : kills)
+        {
+            if (auto *top = body.findAncestorOpInRegion(*kill))
+            {
+                killAt.push_back(top);
+            }
+        }
+
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work{start};
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (!seen.insert(block).second)
+            {
+                continue;
+            }
+
+            auto killed = [&](mlir::Operation *before) {
+                return llvm::any_of(killAt, [&](mlir::Operation *kill) {
+                    return kill->getBlock() == block && (!before || kill->isBeforeInBlock(before) || kill == before);
+                });
+            };
+
+            if (to->getBlock() == block && !killed(to))
+            {
+                return true;
+            }
+
+            if (!killed(nullptr))
+            {
+                work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+            }
+        }
+
+        return false;
+    }
+
     // The blocks of an exception handler: from a landing pad to the end of its catch. A release there
     // would be a call inside an exception funclet.
     llvm::SmallPtrSet<mlir::Block *, 8> handlerBlocks()
@@ -4678,6 +4730,7 @@ class OwnershipInferencePass
                              mlir::Operation *taker, llvm::ArrayRef<mlir::Operation *> assignments,
                              llvm::SetVector<mlir::Operation *> &toErase)
     {
+        joinedUse = nullptr;
         auto &body = getFunction().getFunctionBody();
         if (!varOp || varOp.getCaptured().value_or(false) || varOp->getParentRegion() != &body ||
             acquire->getParentRegion() != &body ||
@@ -4783,12 +4836,66 @@ class OwnershipInferencePass
             }
         }
 
+        // the edges into the join that hold the value and did not move it
+        auto handler = handlerBlocks();
+        llvm::SmallVector<EdgeRelease> placed;
+        llvm::SetVector<mlir::Block *> releasedInto;
+        for (auto &block : body)
+        {
+            if (!entry.count(&block))
+            {
+                continue; // unreachable
+            }
+
+            auto state = exitOf(&block);
+            for (auto index : llvm::seq<unsigned>(0, block.getNumSuccessors()))
+            {
+                auto into = entry.lookup(block.getSuccessor(index));
+                if (!isJoined(into))
+                {
+                    continue;
+                }
+
+                // a join some path reaches with nothing in the slot is not this rule's
+                if (into & SlotDead)
+                {
+                    return false;
+                }
+
+                // an edge that moved it, or from where the paths have joined already
+                if (state != SlotLive)
+                {
+                    continue;
+                }
+
+                auto *terminator = block.getTerminator();
+                if (!mlir::isa<mlir::cf::BranchOp, mlir::cf::CondBranchOp>(terminator) || handler.contains(&block) ||
+                    !dominance->dominates(varOp.getOperation(), terminator))
+                {
+                    return false;
+                }
+
+                placed.push_back({slot, &block, static_cast<unsigned>(index), terminator->getLoc()});
+                releasedInto.insert(block.getSuccessor(index));
+            }
+        }
+
+        if (placed.empty())
+        {
+            return false;
+        }
+
         // Nothing uses the value where the paths have joined - a read there, on the path that did
         // not move it, needs what the edge released - neither through the slot nor through anything
         // read out of it: a field, a view, a borrowing local, a closure. The move itself hands the
         // value to its new owner, whose reads are its own. A value the slot is given - its
         // initializer, an assignment's - is the slot's only once it is stored: a use before that (a
         // constructor's, or one around a loop before it is made again) is not a use of it.
+        //
+        // Past the joined points too: what was read out of the value before an edge released it
+        // may not be used after that edge - after a new value is stored into the slot, or after its
+        // scope ends - unless it was read out again (spec 30). A read of the slot after a new value
+        // is stored reads that one.
         struct Origin
         {
             mlir::Operation *stored;
@@ -4820,6 +4927,18 @@ class OwnershipInferencePass
         {
             given(mlir::cast<mlir_ts::StoreOp>(assignment).getValue(), assignment);
         }
+
+        // reached from an edge that released the value, before the read it came from (or the op
+        // that made it) runs again
+        auto usedAfterRelease = [&](mlir::Operation *made, mlir::Operation *user) {
+            llvm::SmallVector<mlir::Operation *, 1> madeAgain;
+            if (made)
+            {
+                madeAgain.push_back(made);
+            }
+
+            return llvm::any_of(releasedInto, [&](mlir::Block *join) { return reachableFrom(join, user, madeAgain); });
+        };
 
         auto heldAt = [&](unsigned origin, mlir::Operation *user) {
             auto &from = origins[origin];
@@ -4856,6 +4975,13 @@ class OwnershipInferencePass
 
                 if (joinedAt(user) && heldAt(origin, user))
                 {
+                    joinedUse = user;
+                    return false;
+                }
+
+                if (value != slot && usedAfterRelease(origins[origin].made, user))
+                {
+                    joinedUse = user;
                     return false;
                 }
 
@@ -4903,11 +5029,19 @@ class OwnershipInferencePass
                     borrows = index >= 0 && static_cast<size_t>(index) < args.size() && args[index] == value;
                 }
 
+                // a read of the slot is what its uses came from
+                auto from = origin;
+                if (value == slot && user->getNumResults() > 0)
+                {
+                    origins.push_back({nullptr, user});
+                    from = origins.size() - 1;
+                }
+
                 for (auto result : user->getResults())
                 {
                     if (borrows)
                     {
-                        taint(result, origin);
+                        taint(result, from);
                     }
                 }
 
@@ -4921,53 +5055,6 @@ class OwnershipInferencePass
                     }
                 }
             }
-        }
-
-        // the edges into the join that hold the value and did not move it
-        auto handler = handlerBlocks();
-        llvm::SmallVector<EdgeRelease> placed;
-        for (auto &block : body)
-        {
-            if (!entry.count(&block))
-            {
-                continue; // unreachable
-            }
-
-            auto state = exitOf(&block);
-            for (auto index : llvm::seq<unsigned>(0, block.getNumSuccessors()))
-            {
-                auto into = entry.lookup(block.getSuccessor(index));
-                if (!isJoined(into))
-                {
-                    continue;
-                }
-
-                // a join some path reaches with nothing in the slot is not this rule's
-                if (into & SlotDead)
-                {
-                    return false;
-                }
-
-                // an edge that moved it, or from where the paths have joined already
-                if (state != SlotLive)
-                {
-                    continue;
-                }
-
-                auto *terminator = block.getTerminator();
-                if (!mlir::isa<mlir::cf::BranchOp, mlir::cf::CondBranchOp>(terminator) || handler.contains(&block) ||
-                    !dominance->dominates(varOp.getOperation(), terminator))
-                {
-                    return false;
-                }
-
-                placed.push_back({slot, &block, static_cast<unsigned>(index), terminator->getLoc()});
-            }
-        }
-
-        if (placed.empty())
-        {
-            return false;
         }
 
         toErase.insert(erased.begin(), erased.end());
@@ -5860,7 +5947,8 @@ class OwnershipInferencePass
         signalPassFailure();
     }
 
-    void reportMovedOnSomePaths(mlir::Operation *move, mlir::Operation *release, llvm::StringRef name)
+    void reportMovedOnSomePaths(mlir::Operation *move, mlir::Operation *release, llvm::StringRef name,
+                                mlir::Operation *usedAt = nullptr)
     {
         if (!reporting())
         {
@@ -5871,6 +5959,12 @@ class OwnershipInferencePass
                                          << "' is moved here on some paths only; -mm=own cannot release it "
                                             "on the others yet";
         diag.attachNote(release->getLoc()) << "released here on every path";
+        if (usedAt)
+        {
+            diag.attachNote(usedAt->getLoc())
+                << "used here, after the paths join, so it cannot be released before they do";
+        }
+
         signalPassFailure();
     }
 };
