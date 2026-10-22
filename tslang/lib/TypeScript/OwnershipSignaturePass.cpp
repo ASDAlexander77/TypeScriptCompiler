@@ -426,8 +426,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             // an iterator's `next()`, whoever implements it, and a generator's state, whoever makes
             // it: see isIteratorNext. Not a `next()` through a closed interface: its members keep
-            // their facts (spec 31), and the call gets theirs like any other
-            if ((isIteratorNext(call.op) && !call.callees.viaInterface) || makesGeneratorState(call.op))
+            // their facts (spec 31), and the call gets theirs like any other. Nor one whose result is
+            // a borrowing record (spec 32): the caller owns the box, but what it borrows bounds it.
+            if (((isIteratorNext(call.op) && !call.callees.viaInterface) || makesGeneratorState(call.op)) &&
+                !isRecordResult(call.op))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -453,7 +455,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             // a generator's `next`, read out of its state object: a function defined here, which
             // returns its result retained like any other (its symbol sits in a constant, so it is
             // open, and its body may not return a borrow)
-            if (call.callees.fieldFunction && call.op->getNumResults() == 1)
+            if (call.callees.fieldFunction && call.op->getNumResults() == 1 && !isRecordResult(call.op))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -2000,21 +2002,23 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     static constexpr const char *INTERFACE_REACHED_WHY =
         "it is reached through an interface, whose calls are not given its facts";
 
-    // The parameter a function's result borrows and the parameters it keeps (spec 2.4); absent is
-    // rc's convention.
+    // The parameters a function's result borrows and the parameters it keeps (spec 2.4); absent is
+    // rc's convention. A plain borrow names one parameter; a borrowing record (`record`, spec 32)
+    // any number, and its caller owns the box.
     struct Facts
     {
-        int borrows = -1;
+        llvm::SmallVector<int32_t> borrows;
         llvm::SmallVector<int32_t> owned;
+        bool record = false;
 
         bool empty() const
         {
-            return borrows < 0 && owned.empty();
+            return borrows.empty() && owned.empty();
         }
 
         bool operator==(const Facts &other) const
         {
-            return borrows == other.borrows && owned == other.owned;
+            return borrows == other.borrows && owned == other.owned && record == other.record;
         }
 
         bool operator!=(const Facts &other) const
@@ -2056,10 +2060,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return funcOp->hasAttr(OWN_DECLARED_KEEPS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME);
     }
 
-    static int declaredLends(mlir::Operation *funcOp)
+    // The parameters `@lends` names: one for a plain borrow, any number for a borrowing record
+    // (spec 32).
+    static llvm::SmallVector<int32_t> declaredLends(mlir::Operation *funcOp)
     {
         auto lends = declared(funcOp, OWN_DECLARED_LENDS_ATTR_NAME);
-        return lends.empty() ? -1 : lends.front();
+        llvm::SmallVector<int32_t> sorted(lends.begin(), lends.end());
+        llvm::sort(sorted);
+        sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+        return sorted;
     }
 
     // What every function a call names declares under `name`, when they all declare the same;
@@ -2593,13 +2602,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 auto lends = declaredLends(funcOp);
                 if (local.borrows != lends)
                 {
-                    if (lends < 0)
+                    if (lends.empty())
                     {
                         funcOp.emitError("'") << funcOp.getSymName() << "' returns a borrow of "
                                               << describeParams(funcOp, local.borrows)
                                               << ", which it has to say with '@" LENDS_DECORATOR "'";
                     }
-                    else if (local.borrows < 0)
+                    else if (local.borrows.empty())
                     {
                         funcOp.emitError("'@" LENDS_DECORATOR "' of '")
                             << funcOp.getSymName() << "' names " << describeParams(funcOp, lends)
@@ -3663,11 +3672,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return values;
     }
 
-    // The parameter every heap value the function returns borrows, or -1 (spec 2.4). A result
-    // that holds no block (`null`, a number) agrees with any.
-    static int localResultBorrows(mlir_ts::FuncOp funcOp)
+    struct ResultBorrows
+    {
+        llvm::SmallVector<int32_t> borrows;
+        bool record = false;
+    };
+
+    // What the function's result borrows (spec 2.4, 32): the one parameter every heap value it returns
+    // is a borrow of, or, when every such value is a borrowing record, the parameters the records
+    // borrow. A result that holds no block (`null`, a number) agrees with any; a record on one path
+    // and anything else on another is nothing a caller can be told.
+    ResultBorrows localResultBorrows(mlir_ts::FuncOp funcOp)
     {
         auto found = -1;
+        auto record = false;
+        llvm::SmallVector<int32_t> params;
         for (auto value : returnedValues(funcOp))
         {
             if (holdsNoBlock(value))
@@ -3678,19 +3697,366 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             // a handle returned is a counted copy, never a borrow (spec 23.2)
             if (isHandle(value))
             {
-                return -1;
+                return {};
+            }
+
+            switch (recordParamsOf(value, params))
+            {
+            case RecordFlow::Bad:
+                return {};
+            case RecordFlow::Record:
+                record = true;
+                continue;
+            case RecordFlow::None:
+                break;
             }
 
             auto index = borrowedParam(value);
             if (index < 0 || (found >= 0 && index != found))
             {
-                return -1;
+                return {};
             }
 
             found = index;
         }
 
-        return found;
+        if (record && found >= 0)
+        {
+            return {};
+        }
+
+        if (record)
+        {
+            llvm::sort(params);
+            params.erase(std::unique(params.begin(), params.end()), params.end());
+            return {params, true};
+        }
+
+        if (found >= 0)
+        {
+            return {{found}, false};
+        }
+
+        return {};
+    }
+
+    // ---- Borrowing records (spec 32) ----
+    //
+    // `{ thing: this, ray: ray, dist: d }` given as an interface: an object literal's box holding values
+    // it does not own beside values it does. Rust's `struct Hit<'a> { thing: &'a Th, .. }`: the box is
+    // its owner's - the caller's, when it is returned - and it may not outlive what it borrows. Each box
+    // is classified where it is made: the fields it borrows (OWN_RECORD_BORROWED_FIELDS_ATTR_NAME, on the
+    // box and on every interface made of it, whose tag then names a release routine that leaves them),
+    // and, when every one of them is a parameter, `this`, or a read out of one, those parameters - what
+    // a function returning it lends (OWN_RESULT_RECORD_ATTR_NAME). The inference bounds every use.
+
+    struct RecordBox
+    {
+        llvm::SmallVector<int32_t> params;
+        // every borrowed field is a parameter's, `this`'s, a read out of one, or immortal
+        bool returnable = true;
+    };
+
+    llvm::DenseMap<mlir::Operation *, RecordBox> recordBoxes;
+
+    void classifyRecordBoxes()
+    {
+        recordBoxes.clear();
+        getOperation().walk([&](mlir_ts::NewOp newOp) {
+            newOp->removeAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
+            for (auto *user : newOp->getUsers())
+            {
+                for (auto *viewUser : user->getUsers())
+                {
+                    if (mlir::isa<mlir_ts::NewInterfaceOp>(viewUser))
+                    {
+                        viewUser->removeAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
+                    }
+                }
+            }
+
+            classifyRecordBox(newOp);
+        });
+    }
+
+    void classifyRecordBox(mlir_ts::NewOp newOp)
+    {
+        auto boxOp = recordBoxOf(newOp.getResult());
+        auto varOp = boxOp == newOp ? recordLocalOf(newOp.getResult()) : mlir_ts::VariableOp();
+        if (!varOp)
+        {
+            return;
+        }
+
+        // the record read once, and only into its box (rc's retain of it beside)
+        mlir_ts::LoadOp read;
+        for (auto *user : varOp->getUsers())
+        {
+            if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
+            {
+                if (read)
+                {
+                    return;
+                }
+
+                read = loadOp;
+            }
+        }
+
+        for (auto *user : read->getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (!mlir::isa<mlir_ts::RetainOp>(user) && !(storeOp && storeOp.getReference() == newOp.getResult()))
+            {
+                return;
+            }
+        }
+
+        // the box seen only as interfaces: every release of it reads their tag
+        llvm::SmallVector<mlir::Operation *> interfaces;
+        for (auto &use : newOp->getUses())
+        {
+            auto *user = use.getOwner();
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == newOp.getResult())
+            {
+                continue;
+            }
+
+            auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+            if (!castOp || !isView(castOp))
+            {
+                return;
+            }
+
+            for (auto *castUser : castOp->getUsers())
+            {
+                auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(castUser);
+                if (!newInterfaceOp || newInterfaceOp.getThisVal() != castOp.getResult())
+                {
+                    return;
+                }
+
+                interfaces.push_back(castUser);
+            }
+        }
+
+        if (interfaces.empty())
+        {
+            return;
+        }
+
+        // each field that holds a block: owned (made here, or nothing) or borrowed, never both
+        RecordBox info;
+        llvm::SmallVector<int32_t> borrowed;
+        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        for (auto *user : varOp->getUsers())
+        {
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                continue;
+            }
+
+            auto field = propertyRefOp.getResult();
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
+            if (!refType || !mth.ownsHeapMemory(field.getLoc(), refType.getElementType()))
+            {
+                continue;
+            }
+
+            auto owns = false;
+            auto borrows = false;
+            for (auto *fieldUser : field.getUsers())
+            {
+                if (mlir::isa<mlir_ts::LoadOp>(fieldUser))
+                {
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || storeOp.getReference() != field)
+                {
+                    return;
+                }
+
+                auto value = storeOp.getValue();
+                switch (recordFieldSource(value))
+                {
+                case RecordFieldSource::NoBlock:
+                    continue;
+                case RecordFieldSource::Fresh:
+                    owns = true;
+                    continue;
+                case RecordFieldSource::Unknown:
+                    return;
+                case RecordFieldSource::Immortal:
+                    borrows = true;
+                    continue;
+                case RecordFieldSource::Param:
+                case RecordFieldSource::Place:
+                    if (auto param = borrowedParam(value); param >= 0)
+                    {
+                        info.params.push_back(param);
+                    }
+                    else
+                    {
+                        info.returnable = false;
+                    }
+
+                    borrows = true;
+                    continue;
+                case RecordFieldSource::Slot:
+                case RecordFieldSource::Cell:
+                    info.returnable = false;
+                    borrows = true;
+                    continue;
+                }
+            }
+
+            // a string is copied, not borrowed (spec 22)
+            if ((owns && borrows) || (borrows && isCopyableString(refType.getElementType())))
+            {
+                return;
+            }
+
+            if (borrows)
+            {
+                borrowed.push_back(propertyRefOp.getPosition());
+            }
+        }
+
+        if (borrowed.empty())
+        {
+            return;
+        }
+
+        llvm::sort(borrowed);
+        borrowed.erase(std::unique(borrowed.begin(), borrowed.end()), borrowed.end());
+        llvm::sort(info.params);
+        info.params.erase(std::unique(info.params.begin(), info.params.end()), info.params.end());
+
+        auto attr = mlir::DenseI32ArrayAttr::get(&getContext(), borrowed);
+        newOp->setAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME, attr);
+        for (auto *newInterfaceOp : interfaces)
+        {
+            newInterfaceOp->setAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME, attr);
+        }
+
+        recordBoxes[newOp.getOperation()] = std::move(info);
+    }
+
+    enum class RecordFlow
+    {
+        None,   // no borrowing record
+        Record, // borrowing records only (or values that hold no block)
+        Bad     // a record that borrows what is not a parameter, or one beside anything else
+    };
+
+    // Whether `value` - through views, merges and the owning locals that hold it - is a borrowing
+    // record, and the parameters it borrows: a box made here, or a call's result that is one, whose
+    // arguments are this function's parameters or reads out of them.
+    RecordFlow recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params)
+    {
+        llvm::SmallVector<mlir::Value> work{value};
+        llvm::SmallPtrSet<mlir::Value, 8> seen;
+        auto record = false;
+        auto other = false;
+        while (!work.empty())
+        {
+            // what holds no block, by its own type (a box's `value_ref` owns nothing by type, but
+            // the object its view shows does)
+            auto next = work.pop_back_val();
+            auto current = rootOf(next);
+            if (!seen.insert(current).second || holdsNoBlock(next))
+            {
+                continue;
+            }
+
+            auto *def = current.getDefiningOp();
+            if (auto found = def ? recordBoxes.find(def) : recordBoxes.end(); found != recordBoxes.end())
+            {
+                if (!found->second.returnable)
+                {
+                    return RecordFlow::Bad;
+                }
+
+                params.append(found->second.params.begin(), found->second.params.end());
+                record = true;
+                continue;
+            }
+
+            if (def && isCall(def) && isRecordResult(def))
+            {
+                auto args = callArgs(def);
+                for (auto index : resultBorrowsAll(def))
+                {
+                    if (static_cast<size_t>(index) >= args.size())
+                    {
+                        return RecordFlow::Bad;
+                    }
+
+                    auto arg = args[index];
+                    if (argumentHoldsNoBlock(arg) || isImmortalGlobalRead(arg))
+                    {
+                        continue;
+                    }
+
+                    auto param = borrowedParam(arg);
+                    if (param < 0)
+                    {
+                        return RecordFlow::Bad;
+                    }
+
+                    params.push_back(param);
+                }
+
+                record = true;
+                continue;
+            }
+
+            if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(current))
+            {
+                llvm::SmallVector<mlir::Value> merged;
+                if (mergedInto(argument, merged))
+                {
+                    work.append(merged.begin(), merged.end());
+                    continue;
+                }
+
+                other = true;
+                continue;
+            }
+
+            // what an owning local holds: its initializer and every value stored into it
+            auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def);
+            auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (varOp && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false))
+            {
+                if (varOp.getInitializer())
+                {
+                    work.push_back(varOp.getInitializer());
+                }
+
+                for (auto *user : varOp->getUsers())
+                {
+                    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == varOp.getResult())
+                    {
+                        work.push_back(storeOp.getValue());
+                    }
+                }
+
+                continue;
+            }
+
+            other = true;
+        }
+
+        if (!record)
+        {
+            return RecordFlow::None;
+        }
+
+        return other ? RecordFlow::Bad : RecordFlow::Record;
     }
 
     // ---- Parameters the callee keeps ----
@@ -3709,6 +4075,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user))
         {
+            // a field a borrowing record borrows (spec 32): the record keeps nothing
+            if (isBorrowedRecordFieldStore(user))
+            {
+                return false;
+            }
+
             auto ref = storeOp.getReference();
             return storeOp.getValue() == used && (isPlace(ref) || ref.getDefiningOp<mlir_ts::AddressOfOp>());
         }
@@ -3806,11 +4178,20 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::DenseMap<mlir::Operation *, Facts> pinned;
         for (auto round = 0; round < 16; ++round)
         {
+            // which object literals borrow depends on what the calls stored into them return, and a
+            // function's facts on which literals borrow (spec 32)
+            classifyRecordBoxes();
+
             for (auto &entry : functions)
             {
                 if (!entry.second.isDeclaration())
                 {
-                    factsLocal[entry.second] = {localResultBorrows(entry.second), localOwnedParams(entry.second)};
+                    auto result = localResultBorrows(entry.second);
+                    Facts facts;
+                    facts.borrows = std::move(result.borrows);
+                    facts.record = result.record;
+                    facts.owned = localOwnedParams(entry.second);
+                    factsLocal[entry.second] = std::move(facts);
                 }
             }
 
@@ -3823,11 +4204,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 if (facts.empty())
                 {
                     // a call this pass cannot resolve still has what its callees' signatures say
+                    // A declaration's `@lends` is a plain borrow to its callers: its body, which would
+                    // say whether the result is a record the caller owns (spec 32), is not here. A
+                    // record's box then leaks, and nothing is freed twice.
                     auto keeps = declaredByCallees(call.callees, OWN_DECLARED_KEEPS_ATTR_NAME);
                     facts.owned.assign(keeps.begin(), keeps.end());
                     if (auto lends = declaredByCallees(call.callees, OWN_DECLARED_LENDS_ATTR_NAME); !lends.empty())
                     {
-                        facts.borrows = lends.front();
+                        llvm::sort(lends);
+                        lends.erase(std::unique(lends.begin(), lends.end()), lends.end());
+                        facts.borrows = lends;
                     }
                 }
 
@@ -3869,7 +4255,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             if (declaresCallerFacts(entry.second))
             {
                 auto keeps = declared(entry.second, OWN_DECLARED_KEEPS_ATTR_NAME);
-                Facts said{declaredLends(entry.second), llvm::SmallVector<int32_t>(keeps.begin(), keeps.end())};
+                Facts said;
+                said.borrows = declaredLends(entry.second);
+                said.owned.assign(keeps.begin(), keeps.end());
+                // a body here that returns a borrowing record of what `@lends` names: callers in this
+                // module own the box (spec 32); checkDeclared holds the body to the parameters
+                auto local = factsLocal.lookup(entry.second);
+                said.record = !said.borrows.empty() && local.record && local.borrows == said.borrows;
                 if (factsThroughInterface(entry.second, said))
                 {
                     continue;
@@ -3951,11 +4343,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     {
         auto *context = op->getContext();
         op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+        op->removeAttr(OWN_RESULT_RECORD_ATTR_NAME);
         op->removeAttr(OWN_PARAMS_ATTR_NAME);
-        if (facts.borrows >= 0)
+        if (!facts.borrows.empty())
         {
-            op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME,
-                        mlir::IntegerAttr::get(mlir::IntegerType::get(context, 32), facts.borrows));
+            op->setAttr(OWN_RESULT_BORROWS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(context, facts.borrows));
+            if (facts.record)
+            {
+                op->setAttr(OWN_RESULT_RECORD_ATTR_NAME, mlir::UnitAttr::get(context));
+            }
         }
 
         if (!facts.owned.empty())

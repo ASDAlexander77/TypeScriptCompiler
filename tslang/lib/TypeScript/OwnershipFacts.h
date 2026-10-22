@@ -29,8 +29,15 @@ namespace mlir_ts = mlir::typescript;
 //
 // The parameters the callee keeps: the caller moves each such argument into the call.
 #define OWN_PARAMS_ATTR_NAME "__own_params"
-// The argument the result is a borrow of: the caller owns nothing it gets back.
+// The arguments the result is a borrow of, as argument indices (the receiver is 0 for a method): the
+// result may not outlive any of them. Alone, the caller owns nothing it gets back, and it names one
+// argument. With OWN_RESULT_RECORD_ATTR_NAME it may name several (spec 32).
 #define OWN_RESULT_BORROWS_ATTR_NAME "__own_result_borrows"
+// Beside OWN_RESULT_BORROWS_ATTR_NAME: the result is a borrowing record (spec 32) - an object literal
+// box the callee made, holding borrows of those arguments. The caller owns the box and releases it;
+// the box's release (its interface's tag, OWN_RECORD_BORROWED_FIELDS_ATTR_NAME) frees only the
+// fields the record owns.
+#define OWN_RESULT_RECORD_ATTR_NAME "__own_result_record"
 // The callee destroys nothing its caller can reach: no overwrite of a place it did not make, no
 // assignment of a global, no call that may.
 #define OWN_NO_DROPS_ATTR_NAME "__own_no_drops"
@@ -139,15 +146,37 @@ inline llvm::ArrayRef<int32_t> ownedParams(mlir::Operation *op)
     return {};
 }
 
-// The argument a call's result borrows, or -1.
-inline int resultBorrows(mlir::Operation *op)
+// Every argument a call's (or a function's) result borrows: one for a plain borrow, any number for a
+// borrowing record (spec 32). Empty for none.
+inline llvm::SmallVector<int> resultBorrowsAll(mlir::Operation *op)
 {
-    if (auto attr = op->getAttrOfType<mlir::IntegerAttr>(OWN_RESULT_BORROWS_ATTR_NAME))
+    llvm::SmallVector<int> indices;
+    if (auto attr = op->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RESULT_BORROWS_ATTR_NAME))
     {
-        return static_cast<int>(attr.getInt());
+        indices.append(attr.asArrayRef().begin(), attr.asArrayRef().end());
     }
 
-    return -1;
+    return indices;
+}
+
+// A result that is a borrowing record (OWN_RESULT_RECORD_ATTR_NAME): a box the caller owns, bounded by
+// the arguments it borrows.
+inline bool isRecordResult(mlir::Operation *op)
+{
+    return op && op->hasAttr(OWN_RESULT_RECORD_ATTR_NAME) && op->hasAttr(OWN_RESULT_BORROWS_ATTR_NAME);
+}
+
+// The argument a call's result is a plain borrow of, or -1: none, or a borrowing record, which the
+// caller owns (isRecordResult). Kept beside resultBorrowsAll for the plain borrow, which names one.
+inline int resultBorrows(mlir::Operation *op)
+{
+    if (isRecordResult(op))
+    {
+        return -1;
+    }
+
+    auto indices = resultBorrowsAll(op);
+    return indices.empty() ? -1 : indices.front();
 }
 
 // Is `narrow` a member of the union or optional `wide` as it is, so that a cast between them keeps
@@ -306,6 +335,13 @@ inline bool isFresh(mlir::Value value)
     if (!def || resultBorrows(def) >= 0)
     {
         return false;
+    }
+
+    // a borrowing record (spec 32): the box is the caller's, whatever the call goes through; what it
+    // borrows bounds it (OwnershipInferencePass's checkRecordResult)
+    if (isRecordResult(def))
+    {
+        return true;
     }
 
     // a view is the block it shows: the object literal's interface cast is marked as arriving with
@@ -535,6 +571,13 @@ inline bool holdsNoBlock(mlir::Value value)
     }
 
     return false;
+}
+
+// An argument that holds no block (holdsNoBlock) - but not an opaque pointer, by which a call through
+// an interface or a bound method is given its receiver (`ts.GetThis`), whose type owns nothing.
+inline bool argumentHoldsNoBlock(mlir::Value arg)
+{
+    return !mlir::isa<mlir_ts::OpaqueType>(arg.getType()) && holdsNoBlock(arg);
 }
 
 // A value -mm=own copies rather than give a second owner (spec 22.1): a string, a string literal,
@@ -966,13 +1009,158 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
         return isParameterSlot(varOp, index) ? index : -1;
     }
 
-    if (def && isCall(def) && resultBorrows(def) >= 0 &&
-        static_cast<size_t>(resultBorrows(def)) < callArgs(def).size())
+    // a plain borrow of its arguments (a declared `@lends` may name several): all of one parameter
+    if (def && isCall(def) && resultBorrows(def) >= 0)
     {
-        return borrowedParam(callArgs(def)[resultBorrows(def)], depth + 1);
+        auto args = callArgs(def);
+        auto found = -1;
+        for (auto index : resultBorrowsAll(def))
+        {
+            auto param = static_cast<size_t>(index) < args.size() ? borrowedParam(args[index], depth + 1) : -1;
+            if (param < 0 || (found >= 0 && param != found))
+            {
+                return -1;
+            }
+
+            found = param;
+        }
+
+        return found;
     }
 
     return -1;
+}
+
+// ---- Borrowing records (spec 32) ----
+//
+// An object literal boxed as an interface whose fields hold values it does not own - `this`, a
+// parameter, a field read, an owning `let`'s value, a captured variable's - beside fresh values it
+// owns. OwnershipSignaturePass classifies each box where it is made and marks it (and every interface
+// made of it) with the fields it borrows (OWN_RECORD_BORROWED_FIELDS_ATTR_NAME): the box's release,
+// through the interface's tag, frees the fields it owns and leaves the others to their owners.
+// OwnershipInferencePass then bounds every use of the record by what each borrowed field is read from.
+
+// Where a field of a record gets a value that holds a block, for the record's release and its bound.
+enum class RecordFieldSource
+{
+    NoBlock,  // a number, null: nothing to own
+    Fresh,    // made here (moves into the record, which owns it)
+    Immortal, // an immortal global or string literal: nobody frees it
+    Param,    // a parameter or `this`, seen through views: the caller's for the whole call
+    Place,    // a read out of a field or an element, or a call's result that borrows an argument
+    Slot,     // the value of an owning local, which keeps it
+    Cell,     // a captured variable's value, read through its cell
+    Unknown
+};
+
+inline RecordFieldSource recordFieldSource(mlir::Value value)
+{
+    if (holdsNoBlock(value))
+    {
+        return RecordFieldSource::NoBlock;
+    }
+
+    if (isImmortalGlobalRead(value))
+    {
+        return RecordFieldSource::Immortal;
+    }
+
+    auto root = rootOf(value);
+    if (auto castOp = root.getDefiningOp<mlir_ts::CastOp>();
+        castOp && mlir::isa<mlir_ts::StringType>(castOp.getType()) && castOp.getIn().getDefiningOp<mlir_ts::ConstantOp>())
+    {
+        return RecordFieldSource::Immortal;
+    }
+
+    if (isFresh(root))
+    {
+        return RecordFieldSource::Fresh;
+    }
+
+    if (auto loadOp = root.getDefiningOp<mlir_ts::LoadOp>())
+    {
+        if (isPlace(loadOp.getReference()))
+        {
+            return RecordFieldSource::Place;
+        }
+
+        if (isLoadedCell(loadOp.getReference()))
+        {
+            return RecordFieldSource::Cell;
+        }
+    }
+
+    if (auto *def = root.getDefiningOp(); def && isCall(def) && resultBorrows(def) >= 0)
+    {
+        return RecordFieldSource::Place;
+    }
+
+    if (borrowedParam(root) >= 0)
+    {
+        return RecordFieldSource::Param;
+    }
+
+    if (slotLoadOf(value))
+    {
+        return RecordFieldSource::Slot;
+    }
+
+    return RecordFieldSource::Unknown;
+}
+
+// The box of the object literal built in `varOp`: its one read, copied into a block `ts.New` made
+// (recordBoxOf). Null for anything else.
+inline mlir_ts::NewOp recordBoxOfLocal(mlir_ts::VariableOp varOp)
+{
+    if (!varOp || !isConstantRecordLocal(varOp))
+    {
+        return {};
+    }
+
+    for (auto *user : varOp->getUsers())
+    {
+        auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+        if (!loadOp)
+        {
+            continue;
+        }
+
+        for (auto *readUser : loadOp->getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(readUser);
+            if (storeOp && storeOp.getValue() == loadOp.getResult())
+            {
+                if (auto boxOp = recordBoxOf(storeOp.getReference()); boxOp && boxOp.getResult() == storeOp.getReference())
+                {
+                    return boxOp;
+                }
+            }
+        }
+    }
+
+    return {};
+}
+
+// The fields a borrowing record's box (or an interface made of it) leaves to their owners; empty for
+// any other value.
+inline llvm::ArrayRef<int32_t> recordBorrowedFields(mlir::Operation *op)
+{
+    if (auto attr = op ? op->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME) : nullptr)
+    {
+        return attr.asArrayRef();
+    }
+
+    return {};
+}
+
+// A store into a field of a borrowing record that the record borrows: it takes nothing.
+inline bool isBorrowedRecordFieldStore(mlir::Operation *op)
+{
+    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+    auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+    auto varOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    auto boxOp = varOp ? recordBoxOfLocal(varOp) : mlir_ts::NewOp();
+    return boxOp && llvm::is_contained(recordBorrowedFields(boxOp), static_cast<int32_t>(propertyRefOp.getPosition()));
 }
 
 // The tuple an object, a reference or a tuple value of this type stores its fields in; null for
