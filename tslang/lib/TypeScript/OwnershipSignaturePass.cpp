@@ -392,7 +392,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         collectClassStorages(module);
         collectInterfaceFamilies(module);
         fieldFunctions.collect(module);
-        // after the families: a call's callees (resolve) decide whether it leaves the module
+        // after the class storages (`@cpp`) and the families (holdsFunction reads the interface vtables)
         findEscapingFunctions(module);
 
         module.walk([&](mlir::Operation *op) {
@@ -2841,40 +2841,46 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return true;
     }
 
-    // A body-less `declare function` of C (no `export` or import marker: not another TypeScript
-    // module's, whose declarations carry `export`) whose parameters and result are numbers,
-    // booleans, characters or enums of them: given no block of this module, it can destroy none
-    // (controller ruling, spec 31: `sqrt`, `floor`, `pow`, `fabs`). The risk is a C function that
-    // calls back into the module: one registered through another declaration (`signal(15, f as
-    // Opaque)` then `raise(15)`, review6r1 c3) - so the rule is off in a module whose functions
-    // escape that way (functionsEscape) - or an exported function reached by name, which a
-    // `@nodrops` declaration takes on as well.
-    static bool scalarDeclaration(mlir_ts::FuncOp funcOp)
+    // A number, a boolean, a character, or an enum or a literal of one: a value that holds no block
+    // and no function of this module, so given to foreign code it hands it neither. Not an opaque
+    // pointer, a reference, a string, a class, an interface, an object, a tuple, an array, a union
+    // with such a member, a function, `any` or `unknown`.
+    static bool scalarType(mlir::Type type)
     {
-        if (!funcOp.isDeclaration() || funcOp->hasAttr("export") || funcOp->hasAttr("import") ||
-            funcOp->hasAttr(DLL_EXPORT) || funcOp->hasAttr(DLL_IMPORT) || funcOp.getFunctionType().isVarArg())
+        if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(type))
         {
-            return false;
+            return scalarType(literalType.getElementType());
         }
 
-        std::function<bool(mlir::Type)> scalar = [&](mlir::Type type) -> bool {
-            if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(type))
-            {
-                return scalar(literalType.getElementType());
-            }
+        if (auto enumType = mlir::dyn_cast<mlir_ts::EnumType>(type))
+        {
+            return scalarType(enumType.getElementType());
+        }
 
-            if (auto enumType = mlir::dyn_cast<mlir_ts::EnumType>(type))
-            {
-                return scalar(enumType.getElementType());
-            }
+        return mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::ByteType, mlir_ts::CharType, mlir::IntegerType,
+                         mlir::FloatType, mlir::IndexType>(type);
+    }
 
-            return mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::ByteType, mlir_ts::CharType,
-                             mlir::IntegerType, mlir::FloatType, mlir::IndexType>(type);
-        };
+    // Every parameter and result scalar (a void result too), and no rest parameter.
+    static bool scalarSignature(mlir_ts::FunctionType functionType)
+    {
+        return !functionType.isVarArg() && llvm::all_of(functionType.getInputs(), scalarType) &&
+               llvm::all_of(functionType.getResults(),
+                            [](mlir::Type type) { return mlir::isa<mlir_ts::VoidType>(type) || scalarType(type); });
+    }
 
-        auto functionType = funcOp.getFunctionType();
-        return llvm::all_of(functionType.getInputs(), scalar) &&
-               llvm::all_of(functionType.getResults(), [&](mlir::Type type) { return mlir::isa<mlir_ts::VoidType>(type) || scalar(type); });
+    // A body-less `declare function` of C (no `export` or import marker: not another TypeScript
+    // module's, whose declarations carry `export`) whose parameters and result are scalar
+    // (scalarType): given no block of this module, it can destroy none (controller ruling, spec 31:
+    // `sqrt`, `floor`, `pow`, `fabs`). The risk is a C function that calls back into the module
+    // (`signal(15, f as Opaque)` then `raise(15)`, review6r1 c3), which it can only do with a
+    // function it was given - so the rule is off in a module whose foreign surface could hand it
+    // one (functionsEscape) - or an exported function reached by name, which a `@nodrops`
+    // declaration takes on as well.
+    static bool scalarDeclaration(mlir_ts::FuncOp funcOp)
+    {
+        return funcOp.isDeclaration() && !funcOp->hasAttr("export") && !funcOp->hasAttr("import") &&
+               !funcOp->hasAttr(DLL_EXPORT) && !funcOp->hasAttr(DLL_IMPORT) && scalarSignature(funcOp.getFunctionType());
     }
 
     // `ts.Load(ts.AddressOf @f)`, where the global `f` holds the address of a function exported
@@ -3175,18 +3181,23 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return true;
     }
 
-    // Can a function of this module reach C, which may call it back (scalarDeclaration)? Decided by
-    // types, not by following values (controller ruling, spec 31). The module has:
-    // - a call that is not resolved to functions defined in this module (resolve: an indirect call
-    //   through a function value, a call of a declared function, of a `declare class` or `@cpp`
-    //   method, through an interface whose implementations are not all this module's) with an
-    //   argument whose type holds a function anywhere (a tuple, an array, an interface, a class's or
-    //   an object's field: `signal(15, onSig)`, `reg([onSig, 1])`, `sg(15, onSig)` with `sg` a
-    //   function value, `w.reg(onSig)` on a declared class);
-    // - a cast from a type that holds a function to a type that holds none (`any`, `unknown`, an
-    //   opaque pointer, an integer: `signal(15, onSig as Opaque)`, `k.m as Opaque`), where a class or
-    //   object input counts its fields when the output is `any`, `unknown` or an opaque pointer
-    //   (`reg(new K())` with `K` holding a function field, into `reg(p: any)`).
+    // Can foreign code learn of a function of this module, to call it back during a call of a
+    // scalar declaration (scalarDeclaration)? It can only through the module's foreign surface, or
+    // through a function turned into data (controller ruling, spec 31, fix round 5: a closed-world
+    // test, in place of listing the routes a function value takes out). So the rule is on only when:
+    // - every foreign symbol is scalar (scalarType): every body-less function (C's, another
+    //   module's - `import`, a DLL's - a `declare class`'s, a `@cpp` class's slot; a rest parameter
+    //   is not scalar), every global declared with no initializer or imported (a `declare var`, a
+    //   `declare class`'s vtable and type name), every `@cpp` class's fields and its bases', with
+    //   no method of its own (C++ calls one through the C++ vtable), every function found in a
+    //   library at run time (`SearchForAddressOfSymbol`, seen through its cast); an opaque pointer
+    //   or a reference anywhere in such a type is a value of foreign memory, not scalar;
+    // - no cast makes an opaque pointer or a reference out of a number (`<Opaque>0x1234`, then a
+    //   store through it reaches foreign memory);
+    // - no cast makes a value of a type that holds no function (`any`, `unknown`, an opaque
+    //   pointer, an integer; a boolean cannot carry one and does not count) out of one that holds
+    //   one (`onSig as Opaque`, `k.m as u64`; a class or object cast to `any`, `unknown` or opaque
+    //   takes its fields along).
     bool functionsEscape = false;
 
     // The types a holdsFunction walk has been through, with or without their fields.
@@ -3260,54 +3271,145 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return found;
     }
 
-    // A call every callee of which is a function defined in this module (resolve): a direct call of
-    // one, a virtual call of a private class family, a call through a closed interface's slot or
-    // function-typed field. Anything else - a function value, a declared function, a `declare
-    // class` or `@cpp` method, an open interface - may be foreign code.
-    bool callsThisModule(mlir::Operation *op)
+    // The `@cpp` class storage a method's `this` is of, if any: the storage of its first
+    // parameter's class, when the method's symbol is `Class.name`.
+    mlir_ts::ClassStorageType cppClassOfMethod(mlir_ts::FuncOp funcOp)
     {
-        auto callees = resolve(op);
-        return callees.known && !callees.imported;
+        auto inputs = funcOp.getFunctionType().getInputs();
+        auto classType = inputs.empty() ? mlir_ts::ClassType() : mlir::dyn_cast<mlir_ts::ClassType>(inputs.front());
+        auto storage = classType ? mlir::dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()) : mlir_ts::ClassStorageType();
+        if (!storage || !storage.isCpp())
+        {
+            return {};
+        }
+
+        auto name = storage.getName().getValue();
+        auto symbol = funcOp.getSymName();
+        return symbol.size() > name.size() && symbol.starts_with(name) && symbol[name.size()] == '.' ? storage : mlir_ts::ClassStorageType();
+    }
+
+    // Does a value of this type carry an address of memory this module made - so a cast of it to
+    // an opaque pointer or a reference points into this module, not into foreign memory?
+    static bool addressType(mlir::Type type)
+    {
+        return mlir::isa<mlir_ts::OpaqueType, mlir_ts::RefType, mlir_ts::ValueRefType, mlir_ts::BoundRefType, mlir_ts::ClassType,
+                         mlir_ts::ClassStorageType, mlir_ts::ObjectType, mlir_ts::ObjectStorageType, mlir_ts::InterfaceType,
+                         mlir_ts::ArrayType, mlir_ts::ConstArrayType, mlir_ts::StringType, mlir_ts::TupleType,
+                         mlir_ts::ConstTupleType, mlir_ts::FunctionType, mlir_ts::BoundFunctionType, mlir_ts::HybridFunctionType,
+                         mlir_ts::ExtensionFunctionType, mlir_ts::ConstructFunctionType, mlir_ts::NullType,
+                         mlir_ts::UndefinedType>(type);
     }
 
     void findEscapingFunctions(mlir::ModuleOp module)
     {
+        // every body-less function: C's, another module's, a `declare class`'s (its methods, its
+        // `..instanceOf`, its `..new`), a `@cpp` class's slot
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration() && !scalarSignature(funcOp.getFunctionType()))
+            {
+                functionsEscape = true;
+                return;
+            }
+
+            // a method of a `@cpp` class: C++ calls it through the class's C++ vtable
+            if (cppClassOfMethod(funcOp))
+            {
+                functionsEscape = true;
+                return;
+            }
+        }
+
+        // every global declared with no initializer or imported: a `declare var`, a `declare
+        // class`'s vtable (functions) and type name (a string)
+        for (auto &entry : globals)
+        {
+            auto globalOp = entry.second;
+            auto foreign = globalOp->hasAttr("import") || globalOp->hasAttr(DLL_IMPORT) || globalOp.getInitializerRegion().empty() ||
+                           globalOp.getInitializerRegion().front().empty();
+            if (foreign && !scalarType(globalOp.getType()))
+            {
+                functionsEscape = true;
+                return;
+            }
+        }
+
+        // every `@cpp` class's fields; a base (the first field, a storage) is a `@cpp` class of its
+        // own, judged on its own
+        for (auto &entry : classStorages)
+        {
+            auto storage = entry.second;
+            if (!storage.isCpp())
+            {
+                continue;
+            }
+
+            for (auto [index, field] : llvm::enumerate(storage.getFields()))
+            {
+                auto base = index == 0 ? mlir::dyn_cast<mlir_ts::ClassStorageType>(field.type) : mlir_ts::ClassStorageType();
+                if (base ? !base.isCpp() : !scalarType(field.type))
+                {
+                    functionsEscape = true;
+                    return;
+                }
+            }
+        }
+
         module.walk([&](mlir::Operation *op) {
             if (functionsEscape)
             {
                 return;
             }
 
-            // a function seen as something that holds none
-            if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op))
+            // a function found in a library at run time: scalar through every cast of its address
+            if (mlir::isa<mlir_ts::SearchForAddressOfSymbolOp>(op))
             {
-                // a vtable's address (a class's, an interface's, a thunk's cell) seen as an opaque
-                // pointer or an integer: the compiler's own, inside a vtable or storing an object's
-                // vtable, never a value a program gives C
-                auto vtableOp = op->getParentOfType<mlir_ts::GlobalOp>();
-                auto addressOfOp = addressOfThroughCasts(castOp.getIn());
-                auto isVTable = [](llvm::StringRef name) { return name.ends_with("..vtbl") || name.contains("..vtbl."); };
-                if ((vtableOp && isVTable(vtableOp.getSymName())) || (addressOfOp && isVTable(addressOfOp.getGlobalName())))
-                {
-                    return;
-                }
-
-                // a class or object seen as `any`, `unknown` or an opaque pointer takes its fields
-                // along; seen as anything else (a boolean, its base) it does not
-                auto toOpaque = mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(castOp.getType());
-                SeenTypes seenIn;
-                SeenTypes seenOut;
-                functionsEscape = holdsFunction(castOp.getIn().getType(), /*fields=*/toOpaque, seenIn) &&
-                                  !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);
-            }
-            // a call that may reach foreign code, given anything that holds a function
-            else if (isCall(op) && !callsThisModule(op))
-            {
-                functionsEscape = llvm::any_of(callArgs(op), [&](mlir::Value arg) {
-                    SeenTypes seen;
-                    return holdsFunction(arg.getType(), /*fields=*/true, seen);
+                functionsEscape = !llvm::all_of(op->getResult(0).getUsers(), [](mlir::Operation *user) {
+                    auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                    auto functionType = castOp ? mlir::dyn_cast<mlir_ts::FunctionType>(castOp.getType()) : mlir_ts::FunctionType();
+                    return functionType && scalarSignature(functionType);
                 });
+                return;
             }
+
+            auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(op);
+            if (!castOp)
+            {
+                return;
+            }
+
+            // a vtable's address (a class's, an interface's, a thunk's cell) seen as an opaque
+            // pointer or an integer: the compiler's own, inside a vtable or storing an object's
+            // vtable, never a value a program gives C
+            auto vtableOp = op->getParentOfType<mlir_ts::GlobalOp>();
+            auto addressOfOp = addressOfThroughCasts(castOp.getIn());
+            auto isVTable = [](llvm::StringRef name) { return name.ends_with("..vtbl") || name.contains("..vtbl."); };
+            if ((vtableOp && isVTable(vtableOp.getSymName())) || (addressOfOp && isVTable(addressOfOp.getGlobalName())))
+            {
+                return;
+            }
+
+            // an opaque pointer or a reference made out of a number: an address of foreign memory
+            if (mlir::isa<mlir_ts::OpaqueType, mlir_ts::RefType>(castOp.getType()) && !addressType(castOp.getIn().getType()))
+            {
+                functionsEscape = true;
+                return;
+            }
+
+            // a function seen as something that holds none; a boolean cannot carry one. A class or
+            // object seen as `any`, `unknown` or an opaque pointer takes its fields along; seen as
+            // anything else (its base) it does not
+            if (mlir::isa<mlir_ts::BooleanType>(castOp.getType()))
+            {
+                return;
+            }
+
+            auto toOpaque = mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(castOp.getType());
+            SeenTypes seenIn;
+            SeenTypes seenOut;
+            functionsEscape = holdsFunction(castOp.getIn().getType(), /*fields=*/toOpaque, seenIn) &&
+                              !holdsFunction(castOp.getType(), /*fields=*/true, seenOut);
         });
     }
 

@@ -3480,40 +3480,66 @@ Not here, also:
   `own_err_override_nameable_base` (library side), `own_err_override_imported_base` and
   `own_err_override_imported_class` (importer side, the latter a private override of a concrete
   base); the library-and-importer pairs run under rc, gc and none (`test-runner -shared`).
-- **C callbacks.** The C-scalar rule is off in a module that has any of:
-  - a call that is not resolved to functions defined (with a body) in this module - an indirect
-    call through a function value (a local or global holding a declared function, a function
-    parameter, a pointer C returned cast to a function type), a call of a declared function, of a
-    `declare class` method or an `@cpp` `@slot` method, a call through an interface whose
-    implementations are not all this module's (an open interface) - with an argument whose type
-    holds a function;
+- **C callbacks.** A C function the module declares may call a function of the module back during
+  the call, and that function may destroy what a caller borrows (`signal(15, onSig as Opaque)`,
+  then `const c = gh.c; raise(15); ... c.x` with `onSig` overwriting `gh.c`). Foreign code can only
+  learn of a function of this module through the module's foreign surface, or through a function
+  turned into data; so the C-scalar rule holds only in a module whose **entire foreign surface is
+  scalar** and that **turns no function into data** (controller ruling, fix round 5; a closed-world
+  test, in place of the three earlier rounds' list of the routes a function value takes out, which
+  each review extended). A type is scalar when it is a number, a boolean, a character, an integer or
+  float kind, or an enum or a literal of one. Not scalar: an opaque pointer, a reference, a string,
+  a class, an interface, an object, a tuple, an array, a union with such a member, a function type,
+  `any`, `unknown`, a rest parameter. The foreign surface, every item of which must be scalar:
+  - every body-less function - each parameter and the result (void is fine): a C declaration,
+    another module's function (declared here with `import`, or a DLL's), a `declare class`'s
+    method, a `@cpp` class's `@slot` declaration, and the compiler's own members of a `declare
+    class` (`..instanceOf`, `..new`), which take the class;
+  - every global declared with no initializer or imported: a `declare var`, a `declare class`'s
+    vtable and type-name string (so a `declare class` always turns the rule off: a sound narrowing
+    of the ruling's "any member");
+  - every `@cpp` class's fields and its bases' (a base is a `@cpp` class of its own), with no method
+    of its own with a body: C++ calls one through the C++ vtable;
+  - every function found in a library at run time (`SearchForAddressOfSymbol`): the function type
+    its address is cast to.
+
+  The casts that turn a function into data, or make an address of foreign memory:
   - a `ts.Cast` from a type that holds a function to a type that holds none (`any`, `unknown`, an
-    opaque pointer, an integer, anything else; a class or object output counts its fields; a
-    vtable's address is the compiler's own and does not count);
-  - a `ts.Cast` of a class, object or interface value to `any`, `unknown` or an opaque pointer when
-    its type holds a function (`reg(new K())` into `reg(p: any)`, `K` with a function field).
+    opaque pointer, an integer, anything else but a boolean, which cannot carry one; a class or
+    object input counts its fields when the output is `any`, `unknown` or opaque, and not when it
+    is anything else - a boolean, a base; a vtable's address is the compiler's own and does not
+    count);
+  - a `ts.Cast` to an opaque pointer or a reference from a type that is not itself an address of
+    memory this module made (`<Opaque>0x1234`, then `Deref(<Reference<fn>>p) = onSig`): a number,
+    `any`, a union.
 
   A type holds a function when it is one, or a union's or optional's member, a tuple's field, an
   array's element or a reference's pointee does, recursively; a class or object does when a field
-  does (the cast of a class or object to a type other than `any`, `unknown` or opaque - a boolean,
-  a base - does not look at its fields); an interface does when a slot of a vtable its values are
-  made with, past the header, holds a method or a function-typed field, or a field's type holds one
-  (recursively: an interface field whose interface has methods, a class field with a function
-  field, an array of them) - the header `.instanceOf`, the compiler's own, does not count - and an
-  interface no vtable of this module makes values with (one a declared function returns) holds one.
-  A call is resolved to this module's functions when it names one, is a virtual call of a private
-  class family, or goes through a closed interface's slot or function-typed field (`resolve`); the
-  test runs after the interface families are known. Decided by types, so no route of the value
-  matters (fix round 3: a first version followed values and missed a global initialized with the
-  function, a wrapper, a returned function, a method reference, a tuple; fix round 4: a second
-  looked only at direct calls of declarations and missed every indirect call into C). Negatives
+  does; an interface does when a slot of a vtable its values are made with, past the header, holds
+  a method or a function-typed field, or a field's type holds one (recursively: an interface field
+  whose interface has methods, a class field with a function field, an array of them) - the header
+  `.instanceOf`, the compiler's own, does not count - and an interface no vtable of this module
+  makes values with (one a declared function returns) holds one. The test runs after the class
+  storages and the interface families are known. No call is examined: a function value given to a
+  call can only reach foreign code through a declared symbol, which the surface test already
+  judged by its type. Not here: a function reached by name - an exported function of a library
+  module, which another module may hand to C - stays accepted, as it was with `@nodrops` (an
+  executable's exports are visible to no module, above). Negatives
   `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
   caller of `raise(15)` borrows), `_global` (`let cb = onSig`), `_method` (`k.m as Opaque`),
   `_tuple` (`reg([onSig, 1])`, compiled only), `_indirect` (`let sg = signal; sg(15, onSig)`),
   `_wrapper` (`reg(signal)`, `reg` calling its parameter with `onSig`), `_class_method`
-  (`w.reg(onSig)` on a `declare class`, compiled only) and `_interface_field` (a data-only `Box`
+  (`w.reg(onSig)` on a `declare class`, compiled only), `_interface_field` (a data-only `Box`
   whose field is a `CB` with a method, given to a declared function through a function value,
-  compiled only).
+  compiled only), `_stored_global` (`declare var hook: (s: s32) => void; hook = onSig`, compiled
+  only), `_stored_reference` (`Deref(getSlot()) = onSig` through a declared
+  `getSlot(): Reference<(s: s32) => void>`, compiled only) and `_cpp_class` (`addListener(new
+  MyL())`, `MyL` a `@cpp` class whose `on` has a body, compiled only). Cost: a module with any
+  non-scalar declaration - a C function taking a string, a struct or a pointer, a `declare class`,
+  a `@cpp` class with methods, an imported function - loses the rule for its scalar declarations
+  too (explicit `@nodrops` still works); a data-only interface handed to a declared function
+  (review6r4 b9) is such a declaration. The ray tracer declares four scalar functions and nothing
+  else.
 
 Teeth: with the member closure skipped, `own_err_interface_member_types` and `_methods` compile and
 print `5 77777` (gc `5 5`). With the C rule kept on despite an escaping function,
@@ -3551,3 +3577,29 @@ k1-k10, c3, n6, n10, n13, n16, n17, n18). Negatives `_indirect`, `_wrapper`, `_c
 `_wrapper` compile and print `77777 9` (gc `5 9`), and `_class_method` and `_interface_field`
 compile. The ray tracer built as a program stays at 15 errors (the same ones); as an object file,
 19. Corpus 528, the same files.
+
+**Fix round 5** (2026-10-22). Round 4's test still listed the routes a function takes out of the
+module - a cast, a call into foreign code - and the re-review found two it did not list: a
+function stored into memory C reads (`declare var hook: fn; hook = onSig`; `Deref(getSlot()) =
+onSig` through a declared `Reference<fn>`; an `Opaque` a C function returned seen as a class with
+a function field, then a store; a `declare class` with a function field) and a `@cpp` object handed
+to C++, whose C++ vtable slots are this module's methods (`addListener(new MyL())`, also as
+`Opaque`, also through a C++ method). The test is inverted (the bullet above): instead of naming
+what takes a function out, the rule holds only where nothing can - every declared, imported,
+`@cpp` or run-time-found symbol is scalar, and no cast turns a function into data or makes an
+address out of a number. The enumeration it replaces is gone: no call is resolved for it, no
+argument's type is walked. Also from the re-review: a cast to a boolean (`if (s)` on an interface
+with methods, `if (cb)` on an optional callback, `cb?.(1)`) no longer turns the rule off; the
+earlier text's "no route of the value matters" was false, and the `.instanceOf` slot and a field
+holding only defined functions are no longer part of any call test. Negatives `_stored_global`,
+`_stored_reference`, `_cpp_class`. Teeth: with the surface test skipped, `own_err_declared_callback`
+(`signal(15, onSig as Opaque)`) compiles and prints `77777 9` (gc `5 9`), and the three new
+negatives, review6r4 s8 and the `@cpp`-through-an-integer probe (`addListener(<u64>(new MyL() as
+Opaque))`, rejected only by the `@cpp` clause) compile. Every probe of rounds 1-4 is still
+rejected (review6r1 c3, review6r2 k1-k10, review6r3 n1b n2b n6 n7b n7d n7e n7g n8b n8c n9 n10 n11
+n13 n16 n17 n18, review6r4 a1-a8, b2-b8, e1-e3, s1 s3 s5 s6 s8 s9, c1 c2 c3); d1, d3, d4, d5, d6, d6c
+keep the rule; so does a program declaring only scalar functions. Newly rejected by the
+whitelist, as its cost: review6r3 n0 (an unused `declare function signal(sig: s32, handler:
+Opaque)`), review6r4 b1, b1b, b5 and b9 (a class or a data-only interface given to a declared
+function). The ray tracer built as a program stays at 15 errors (the same ones). Corpus 528, the
+same files.
