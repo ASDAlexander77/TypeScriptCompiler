@@ -5431,8 +5431,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
             auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+            // an immortal global's value (spec 25) is owned by no one: any number of globals hold it
             if (!place || !mlir::isa<mlir_ts::AddressOfOp, mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place) ||
-                isHandle(value) || isConstantData(value) || !ownsHeap(value.getLoc(), value.getType()))
+                isHandle(value) || isConstantData(value) || isImmortalGlobalRead(value) ||
+                !ownsHeap(value.getLoc(), value.getType()))
             {
                 return;
             }
