@@ -3779,3 +3779,114 @@ Not here:
 - A record's borrowed field may not hold a string.
 - Plain borrows are still of one argument (`c ? a : b` is no borrow), and do not flow through an
   owning local assigned in a loop; only records do.
+
+## 33. `reduce` takes its accumulator (G5 of the ray tracer plan), 2026-10-22
+
+`a.reduce((acc: V, v: V) => V.plus(acc, v), new V(0))` was `'init' is a parameter, kept here, but
+-mm=own cannot make the callers of '___array_reduce<...>' give it up` (the generated helper's `let r =
+init`, then `r = f(r, v)`), and `borrows an element but is used here after it may be released`: the
+call through `f` went to an unknown function, which may drop anything. A callback that returns its
+accumulator on some paths (the ray tracer's `addLight`, `return col` when in shadow) was `returns a
+borrow of its argument on some paths and another value on others`. Now the initial value moves in,
+each callback is given the accumulator to keep, and its result is the next one, like Rust's
+`fold(init, |acc, x| ...)`, whose closure takes `acc` by value.
+
+- **A parameter returned on some paths only is kept** (`mixedReturnParam`, OwnershipSignaturePass).
+  When every value a function returns that holds a block is either one parameter itself (its slot's
+  read, through views and merges) or one the function owns, and both occur, that parameter is kept
+  (`__own_params`): the callers move the argument in, the path that returns it moves it out, and
+  every other path releases it. Not when the parameter is returned on every path (a borrowed result,
+  as before), two parameters are returned, a part of one is (`acc.next`), a borrowing record is, or
+  the value is a string (copied, spec 22) or a handle. A caller that still uses the argument after
+  the call is `is used here after its value was moved` (`own_err_mixed_return`, rewritten:
+  `print(pick(c, true).n, c.n)`). A function whose facts are lost (an exported one, one used as a
+  value) keeps today's error in its body.
+- **Its releases are placed statically** (OwnershipInferencePass, `releaseKeptParamsAtExits`). Such a
+  parameter is named in `__own_params_released`: a kept parameter its body does not take into a
+  field, an element, a global, a keeping call or an owning local on every path. MLIRGen makes no
+  owner of a parameter, so the inference puts a release of its slot before each `ts.ReturnInternal`
+  and each `ts.ThrowCall` that leaves the function (not one whose thrown value is read out of the
+  parameter), as MLIRGen puts an owning local's. The move's own check (`checkSlotMove` with §30's
+  placement) then erases every release the moved value reaches and places one on each edge into the
+  join from a path that did not move it; nothing may use the value where the paths have joined (§30's
+  safety condition, followed through what was read out of it). `pick`'s `V.plus(acc, v)` arm releases
+  `acc` before the arms join; an early return, a `break` out of a loop, a return from inside a loop or
+  from a `try` with a `finally`, a `throw`, each release it once. No run-time flag, no pointer
+  comparison. A parameter kept this way and moved by two receivers (`if (n > 5) return a; if (n < 0)
+  return a;`) is still `used here after its value was moved`.
+- **A parameter read into an owning `let` that is given another value is kept** (`keeps`): `let r =
+  init; ... r = f(r, v)` cannot borrow `init`, since the assignment releases what `r` holds, so
+  `init` moves into `r` (the move dominates every return, as for any kept parameter, and rc's
+  `ts.RetainSlot` goes with it). Not a string: the local copies it. `___array_reduce`'s source is
+  unchanged; this rule makes its accumulator a moved local.
+- **Callbacks** (`collectCallbackFamilies`). A function-typed parameter of a closed function (private,
+  every use of its symbol a direct call) that is only ever called, and to which every caller passes a
+  function this module defines - its symbol, through casts between function types, or a closure over
+  a capture box built of it - reaches exactly those functions: the parameter's family. Its members
+  are closed when every other use of their symbols is a direct call (`callbackPassing` in `findOpen`),
+  and a call through the parameter is resolved to them (`resolveCallback`): it gets the facts they
+  agree on, and `__own_no_drops` when none of them drops. A closure's body takes its capture box
+  first, so its parameter k is the call's argument k - 1 (`shiftFacts`); a fact about the box itself
+  agrees with nothing. `__own_params = [0]` on `___array_reduce`'s `f(r, v)` moves `r` in; the
+  assignment's release of the old `r` goes with the move (#528), and `r` owns the result.
+- **Agreement by promotion** (`meetCallbacks`). `own_reduce` passes `(acc, v) => V.plus(acc, v)`,
+  which only borrows `acc`, and `pick`, which keeps it, to the one `___array_reduce<V, V>`. A kept
+  parameter of some member that every other member only borrows - a plain slot, not a string or a
+  handle, not lent by the result - is given to all of them to keep; the others release it on every
+  path (`__own_params_released`). Any other disagreement demotes every member, as a class family's
+  are, and their bodies fail with the note `a function passed in its place disagrees`
+  (`own_err_callback_disagrees`: `pick` beside `(acc, v) => acc`). A member a callback family demoted
+  is never promoted again, so the meet settles. Class and interface families still agree or demote
+  (addendum): promotion is only for callbacks. A promoted member called directly moves its argument
+  in too (`own_err_callback_promoted_used`).
+- **The immortal start value.** `a.reduce(pick, K.zero)` moves the immortal `K.zero` (§25) in: its
+  retains are erased, and the releases `pick` and `main` make of it are skipped by its header.
+  `own_reduce` reduces `[new V(5), new V(7)]` with `pick` from `K.zero`, so `pick` returns `K.zero`
+  itself and `main` releases it at its end; after churn `K.zero.x` reads 0, and is asserted. No path
+  writes it: `V.plus` makes a new object.
+- `___array_reduce` has no foreign surface, and the C-scalar rule (§31) does not read it: nothing
+  changed there.
+
+`own_reduce` runs the brief's program (`r.x, q.x` is `6 3`), a reduce that returns the immortal
+start value, and 20,000 iterations of an early return, a return from inside a loop, a return from a
+`try` with a `finally` and a `throw` that the caller catches, each read after churn, under own, rc,
+gc and none, AOT and JIT, and on Linux; own emits no counting. Negatives: `own_err_mixed_return`
+(rewritten), `own_err_mixed_return_join_use` (a field read out of the kept parameter before the join
+and used after it: `is moved here on some paths only`), `own_err_callback_escapes` (`pick` also
+called through a `let`: `cannot make the callers of 'pick' give it up`), `own_err_callback_disagrees`,
+`own_err_callback_promoted_used`. `own_err_borrowed_result_escapes` passed `firstOf` straight to
+`apply`; the call through `g` now reaches only `firstOf` and gets its borrowed result, so the program
+is correct (it prints what gc prints). It now passes `firstOf` through a `let`, and fails as before.
+
+Teeth (temporary `OWN_TEETH` switches, removed): with the exit releases kept on the paths that
+return the parameter (the returning path releases it too), the AOT run of `own_reduce` exits
+`0xC0000374` (heap corruption), and so do the brief's two reduces alone and the early-return, loop
+and `try` returns alone; with the call through the callback given no kept parameter
+(`___array_reduce` releases the accumulator it handed to a callback that keeps it), the AOT run of
+`own_reduce` and of the brief's reduces alone exit `0xC0000374`, and the direct returns alone pass.
+
+Measured: 2 million iterations of both reduces and an early return (about 9 blocks each) peak at
+4.9 MB under own, as under rc (gc 6.5 MB), AOT.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer built as a program (`--emit=exe`): 10 errors before this section, 1 after. Cleared:
+`addLight`'s mixed return (253) and the two in the generated `___array_reduce` (its kept `init`, and
+the element its call through `f` borrows); and, since the call through `f` now has the closure's
+facts and destroys nothing, so does `getNaturalColor`, and the reads held across it or across what
+calls it: `scene.lights` given to `reduce` (266), `shade`'s three (237-239), `traceRay`'s
+`this.shade(isect, ...)` (227) and `scene.camera.pos` in `render`'s literal across `traceRay`
+(279:29). Left: the `scene.camera` argument of `getPoint` in `render` (279:75, G8), now reported
+against `Color.toDrawingColor(color)` (280:25), which builds and calls its `legalize` closure and so
+may drop. It was there before §32. It does not reproduce in three smaller programs (a closure over
+`camera` called in a loop beside a call that may drop, inside a record argument, in a method), and
+a method in place of the closure fails the same way, so it is not the closure's call.
+
+Not here:
+- Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
+  moved leaks it, as it leaks an owning local; so does a `throw` of a value read out of it.
+- A callback passed through a `let`, a field or a global, a member whose symbol is used anywhere
+  else (`a.reduce(V.plus, ...)`: a static method is a vtable entry), a parameter that is passed on
+  rather than called, an exported or `@keeps`/`@lends` function: no family, as before.
+- The default library's `reduce` (design G5: a follow-up).
