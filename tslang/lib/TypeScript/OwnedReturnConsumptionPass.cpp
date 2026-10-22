@@ -380,10 +380,9 @@ class OwnedReturnConsumptionPass
     //
     // The producer is anything that carries an owned reference by now: `new Shared(..)` or a fresh
     // string, marked where MLIRGen builds it, or a call, marked above once its callee is classified
-    // - which is why MLIRGen alone cannot see it. A handle read out of a field or an element
-    // carries none, and gets a retain of its own (handles only: under own a retain left in a
-    // global's region is an error for any other type). A read of another global is left alone
-    // (#446: it reads null today in every model).
+    // - which is why MLIRGen alone cannot see it. A read out of a field, an element or another
+    // global carries none, and gets a retain of its own (under own, a handle only: a retain left in
+    // a global's region is an error for any other type).
     void claimGlobalInitializers(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
@@ -523,13 +522,16 @@ class OwnedReturnConsumptionPass
 
             // A field or element read (`holder.child`, `new P().child`, `mkP().child`,
             // `mkArr()[0]`) carries no reference: the object or array keeps its count, and a
-            // temporary one gives it back at the end of the region. The global takes a count of its
-            // own, retained right where it is read - before the temporary's release. Erased under
-            // gc and none.
+            // temporary one gives it back at the end of the region. Nor does a read of another
+            // global (`let k = a`), which keeps its own. The global takes a count of its own,
+            // retained right where it is read - before the temporary's release - or the first
+            // overwrite of either global frees what the other still reads. Under own only a handle
+            // is counted; any other read like these is an error there (OwnershipSignaturePass).
+            // Erased under gc and none.
             auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
             auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
-            if (place && MLIRTypeHelper::isSharedHandleType(value.getType()) &&
-                mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp>(place))
+            if (place && (MLIRTypeHelper::isSharedHandleType(value.getType()) || compileOptions.isRefCounted()) &&
+                mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::AddressOfOp>(place))
             {
                 mlir::OpBuilder builder(loadOp->getContext());
                 builder.setInsertionPointAfter(loadOp);

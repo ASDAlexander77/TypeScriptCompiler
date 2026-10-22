@@ -1701,6 +1701,18 @@ class MLIRGenImpl
             return varOp && varOp->hasAttr(OWNED_LOCAL_ATTR_NAME);
         }
 
+        // A value read out of a field, through any casts: what `h.c` is in `const c = h.c`.
+        static bool readsField(mlir::Value value)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+        }
+
         // A record read out whole from the temporary slot an object literal is built in (one that
         // owns nothing of its own), with a field that owns a block and that only the literal's
         // receiver counts - a `let` does, with RetainSlot - so a `const` of it needs storage like a
@@ -1827,7 +1839,13 @@ class MLIRGenImpl
             // So does a const of anything that owns a block, read out of a local variable's slot
             // (`let a = new C(); const b = a;`, a parameter too): folded, it would be a read of
             // that slot, holding no reference of its own, and `a = d` would free what `b` still
-            // reads (#454). A const of a const, a call or a field has no slot to lose it from.
+            // reads (#454). A const of a const or a call has no slot to lose it from.
+            //
+            // Under rc, so does a const read out of a field (`const c = h.c`): folded, `h.c = d` freed
+            // what `c` still read. Under own the folded read is a borrow, and a use after the overwrite
+            // is an error there. Not yet an element: a destructuring past the end of an array
+            // (`const [a, b, c] = pair`) reads whatever follows its data, and a count taken of that
+            // faults, as it does for a `let` today.
             //
             // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
             // hands its fields over unretained - its receiver is the one that retains them, as a
@@ -1846,6 +1864,7 @@ class MLIRGenImpl
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || (readsLocalSlot(initial) && mth.ownsHeapMemory(location, type))
+                     || (compileOptions.isRefCounted() && readsField(initial) && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))
                      || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)

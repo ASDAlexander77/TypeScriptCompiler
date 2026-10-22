@@ -393,7 +393,9 @@ tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runn
 tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
+tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
+tslang_add_test(NAME test-compile-00-const-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -961,7 +963,9 @@ tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
+tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
+tslang_add_test(NAME test-jit-00-const-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -1919,7 +1923,9 @@ set(TSLANG_CORPUS
     00generator_temporaries.ts
     00array_length_valid.ts
     00string_view_copy.ts
+    00global_copy_counted.ts
     00c_string_copy.ts
+    00const_field_read.ts
     00array_data_string_alias.ts
     00array7.ts
     00array8_tuple_spread.ts
@@ -3506,6 +3512,13 @@ foreach(global_mm rc none gc)
     tslang_add_test(NAME test-compile-${global_mm}-own-global-script COMMAND test-runner -mm=${global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_script.ts")
 endforeach()
 
+# A global made by a call that keeps an argument made for it owns that argument through what it was
+# given; the same program under every model.
+foreach(kept_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${kept_mm}-own-global-kept-argument COMMAND test-runner -jit -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
+    tslang_add_test(NAME test-compile-${kept_mm}-own-global-kept-argument COMMAND test-runner -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
+endforeach()
+
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
 # rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
 foreach(reassign_mm rc gc)
@@ -3562,7 +3575,7 @@ set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field)
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
     endforeach()
@@ -3576,7 +3589,7 @@ endforeach()
 foreach(shared_verify_mm own rc)
     foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field)
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership
                          "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
@@ -3703,10 +3716,15 @@ set(own_error_cases
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"
     "own_err_local_owns_nothing|owns nothing under -mm=own .* so it cannot be given a new value here"
     "own_err_merged_result|is merged from several branches"
+    "own_err_global_borrowed_result|the initializer of global 'c' holds the result of 'child', which borrows its argument"
+    "own_err_global_borrowed_temporary|the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
     "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
+    "own_err_global_from_global|the initializer of global 'k' reads a value another owner keeps"
+    "own_err_global_from_field|the initializer of global 'k' reads a value another owner keeps"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
     "own_err_string_kept_param_known|is used here after its value was moved"
