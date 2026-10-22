@@ -4044,6 +4044,11 @@ class OwnershipInferencePass
             }
         }
 
+        if (keptParamOutlives(chain, outlives))
+        {
+            return false;
+        }
+
         for (auto *drop : drops)
         {
             if (countedStoreReleases.contains(drop))
@@ -4059,6 +4064,95 @@ class OwnershipInferencePass
 
         toErase.insert(bookkeeping.begin(), bookkeeping.end());
         return true;
+    }
+
+    // A borrow read out of a parameter this function keeps, taken before the parameter moves into a
+    // new owner (spec 33, review fix): from the move on it is bounded by that owner, as a read through
+    // the owner would be (spec 29) - by the owner's ends and the drops of its place after the move.
+    // `const inner = p.v; let r = p; r = new N(...); inner.x` reads what the assignment freed. A move
+    // into anything that is not such a place (a call that keeps it, a return, a push) ends the borrow
+    // there. So do the releases of the parameter's slot (spec 33's exit releases). True when some use
+    // of the borrow comes after one of these (`outlives` reported it).
+    bool keptParamOutlives(const Chain &chain, llvm::function_ref<bool(mlir::Operation *)> outlives)
+    {
+        for (auto &root : chain.roots)
+        {
+            auto load = keptParamLoadOf(root.first);
+            if (!load)
+            {
+                continue;
+            }
+
+            // the moves of the parameter: what takes a read of its slot
+            llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> takers;
+            for (auto *user : load.getReference().getUsers())
+            {
+                if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
+                {
+                    if (outlives(user))
+                    {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                auto readOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+                if (!readOp)
+                {
+                    continue;
+                }
+
+                forEachUse(readOp.getResult(), [&](mlir::Operation *use, mlir::Value used) {
+                    auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(use);
+                    if (mlir::isa<mlir_ts::RetainOp>(use))
+                    {
+                        auto *taker = takerOf(use, used);
+                        takers.push_back({taker ? taker : use, used});
+                    }
+                    else if ((varOp && isOwningVariable(varOp)) || (isCall(use) && isKeptArgument(use, used)))
+                    {
+                        takers.push_back({use, used});
+                    }
+                });
+            }
+
+            for (auto [taker, moved] : takers)
+            {
+                Chain owner;
+                if (!destinationChain(taker, owner))
+                {
+                    if (outlives(taker))
+                    {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                auto afterMove = [&](mlir::Operation *end) {
+                    return end != taker && reachableAfter(taker, end, llvm::ArrayRef<mlir::Operation *>{}) && outlives(end);
+                };
+
+                for (auto *end : rootEnds(owner))
+                {
+                    if (afterMove(end))
+                    {
+                        return true;
+                    }
+                }
+
+                for (auto *drop : drops)
+                {
+                    if (dropsChain(drop, owner, nullptr, moved) && afterMove(drop))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     // A parameter, or a view of one (`<C>u`, the payload `ts.Unbox` reads out of an `any`), that

@@ -3894,9 +3894,35 @@ On a scratch copy whose only other change is `legalize` made a module-level func
 own as an executable and runs: checksum 38837369 as under rc, exit 0, peak 4.9 MB as rc's 4.9 MB on
 Windows, and 4.3 MB (rc 4.4 MB) on Linux, where glibc reports no bad free.
 
+**After review** (2026-10-22). The `let` rule above accepted a read of freed memory (found in review):
+`const inner = p.v; let r = p; r = new N(new V(2)); ... inner.x` moved `p` into `r`, and the
+assignment freed `p` and `p.v` while `inner` still read them (own printed 779000, gc 501500; BASE
+rejected the program, since `p` was not kept). The same shape with a field as the new owner, `const
+inner = p.v; h.n = p; h.n = new N(...); inner.x`, was wrong before this section too (BASE and HEAD
+both printed 779000): a borrow read out of a kept parameter had no ends at all - the parameter is the
+caller's for the whole call, unless the function keeps it. Now a borrow read out of a parameter the
+function keeps, before the parameter moves, is bounded by the new owner from the move on, as a read
+through that owner would be (§29's destination chain, `keptParamOutlives` in `checkPlaceRead`): the
+owner's ends and the drops of its place after the move end it. A move into anything that is not such
+a place (a call that keeps it, a return, a push) ends it at the move, and so do the parameter slot's
+releases (the exit releases above). A borrow read before the move and used while the new owner
+still holds it is accepted (`h.n = p; churn(); inner.x`, and `let r = p; inner.x + r.v.x` before `r`
+is given another value). Negatives `own_err_kept_param_let_overwritten` and
+`own_err_kept_param_field_overwritten` (each built through a `@noinline` factory, with churn: an
+argument made at the call site can be stack-promoted, and its release then frees nothing): `borrows
+a field but is used here after it may be released or overwritten`. Tooth: with the bound skipped, both
+compile, print 779000 instead of 501500 (gc), and fail their assertion. `own_reduce`, the ray tracer
+(1 error, the same) and the corpus (528, the same files) are unchanged.
+
 Not here:
 - Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
-  moved leaks it, as it leaks an owning local; so does a `throw` of a value read out of it.
+  moved leaks it, as it leaks an owning local; so does a `throw` of any value computed from it, even
+  a number (`throw acc.x`): the release before a leaving throw is skipped when the thrown value is
+  computed from the parameter at all, where only one that can hold its block needs it.
+- After `r = f(r, v)` moves `r` into the call, `r`'s slot still holds the moved pointer until the
+  call's result is stored into it. If `f` throws, the slot dangles. That is benign only because
+  owning locals are not released on unwind; a change that releases them there must not release a
+  slot whose value a call took.
 - A callback passed through a `let`, a field or a global, a member whose symbol is used anywhere
   else (`a.reduce(V.plus, ...)`: a static method is a vtable entry), a parameter that is passed on
   rather than called, an exported or `@keeps`/`@lends` function: no family, as before.
