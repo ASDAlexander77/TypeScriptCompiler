@@ -387,6 +387,7 @@ tslang_add_test(NAME test-compile-00-param-assigned-owned COMMAND test-runner "$
 tslang_add_test(NAME test-compile-00-string-empty-falsy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_empty_falsy.ts")
 tslang_add_test(NAME test-compile-00-string-concat-bounds COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_bounds.ts")
 tslang_add_test(NAME test-compile-00-parse-number-range COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
+tslang_add_test(NAME test-compile-00-global-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_held.ts")
 tslang_add_test(NAME test-compile-00-narrowed-assign-other-member COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
@@ -954,6 +955,7 @@ tslang_add_test(NAME test-jit-00-param-assigned-owned COMMAND test-runner -jit "
 tslang_add_test(NAME test-jit-00-string-empty-falsy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_empty_falsy.ts")
 tslang_add_test(NAME test-jit-00-string-concat-bounds COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_concat_bounds.ts")
 tslang_add_test(NAME test-jit-00-parse-number-range COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00parse_number_range.ts")
+tslang_add_test(NAME test-jit-00-global-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_held.ts")
 tslang_add_test(NAME test-jit-00-narrowed-assign-other-member COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00narrowed_assign_other_member.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
@@ -1911,6 +1913,7 @@ set(TSLANG_CORPUS
     00string_empty_falsy.ts
     00string_concat_bounds.ts
     00parse_number_range.ts
+    00global_argument_held.ts
     00narrowed_assign_other_member.ts
     00const_record_owned_fields.ts
     00generator_temporaries.ts
@@ -3701,6 +3704,8 @@ set(own_error_cases
     "own_err_local_owns_nothing|owns nothing under -mm=own .* so it cannot be given a new value here"
     "own_err_merged_result|is merged from several branches"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
+    "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
     "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"

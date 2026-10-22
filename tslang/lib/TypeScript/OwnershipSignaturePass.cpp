@@ -189,6 +189,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         findOpen(module);
         computeFacts();
         computeDrops();
+        rejectGlobalArgumentsDropped();
         findBorrowingStates(module);
         findBoundedForwarders();
         findYieldedFields(module);
@@ -2351,6 +2352,53 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         return !callees.instanceOf && !callees.imported &&
                llvm::any_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return !noDrops.contains(callee); });
+    }
+
+    // An argument read out of a global (`run(G)`, `G.m()`) is lent to the callee, and the callee may
+    // free it under its own parameter: `function run(h: C) { G = mk(); print(h.x); }`. The caller's
+    // borrow ends at the call that takes it, so nothing in the caller sees that, and in the callee
+    // the parameter is not known to be the global's. A call that may drop is an error for such an
+    // argument, when something assigns that global. (A field of a global given that way is a
+    // borrow of a place, which the inference already bounds by the call.)
+    void rejectGlobalArgumentsDropped()
+    {
+        for (auto &call : calls)
+        {
+            if (!callMayDrop(call.callees))
+            {
+                continue;
+            }
+
+            for (auto argument : callArgs(call.op))
+            {
+                // a method's object: `this` of the method bound to it
+                if (auto getThisOp = argument.getDefiningOp<mlir_ts::GetThisOp>())
+                {
+                    auto *boundOp = getThisOp->getOperand(0).getDefiningOp();
+                    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+                    {
+                        argument = boundOp->getOperand(0);
+                    }
+                }
+
+                if (isHandle(argument) || !ownsHeap(call.op->getLoc(), argument.getType()))
+                {
+                    continue;
+                }
+
+                auto loadOp = rootOf(argument).getDefiningOp<mlir_ts::LoadOp>();
+                auto global = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+                if (!global || !writtenGlobals.contains(global.getGlobalName()))
+                {
+                    continue;
+                }
+
+                call.op->emitError("a value read out of the global '")
+                    << global.getGlobalName()
+                    << "' is lent to a call that may release or overwrite it; -mm=own cannot prove it outlives the call";
+                signalPassFailure();
+            }
+        }
     }
 
     // ---- Export ----
