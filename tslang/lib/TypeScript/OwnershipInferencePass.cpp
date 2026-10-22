@@ -2792,9 +2792,11 @@ class OwnershipInferencePass
         };
 
         // a field's position and reference type; an element is position -1, a handle's payload
-        // (`s.value`) is SharedValue
+        // (`s.value`) is SharedValue, a field reached through an interface is InterfaceField: its
+        // position in the object is not known here (spec 28)
         llvm::SmallVector<std::pair<int64_t, mlir::Type>> places;
         static constexpr int64_t SharedValue = -2;
+        static constexpr int64_t InterfaceField = -3;
         llvm::SmallVector<std::pair<mlir::Value, Kind>> roots;
         // The roots that are handles - what a `s.value` was read through - each also NotOwned
         // among `roots` (spec 23.3). Known from the op, not the root's type: a view may hide it.
@@ -2848,6 +2850,11 @@ class OwnershipInferencePass
                     chain.places.push_back({Chain::SharedValue, sharedValueRefOp.getType()});
                     base = sharedValueRefOp.getShared();
                     handleBases.insert(rootOf(base));
+                }
+                else if (auto interfaceRefOp = ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+                {
+                    chain.places.push_back({Chain::InterfaceField, interfaceRefOp.getType()});
+                    base = interfaceRefOp.getInterfaceVal();
                 }
                 else
                 {
@@ -3141,13 +3148,28 @@ class OwnershipInferencePass
                 return llvm::any_of(chain.places, [&](auto &place) { return place.first == Chain::SharedValue; });
             }
 
+            auto isField = [](int64_t position) { return position >= 0 || position == Chain::InterfaceField; };
             int64_t position = -1;
             if (auto propertyRefOp = slot.getDefiningOp<mlir_ts::PropertyRefOp>())
             {
                 position = propertyRefOp.getPosition();
             }
+            else if (isInterfaceField(slot))
+            {
+                position = Chain::InterfaceField;
+            }
 
+            // A field reached through an interface may be any field of the object under it, of any
+            // type (a class may declare the field narrower than the interface): an overwrite through
+            // an interface drops every field on the chain, and any field's overwrite drops a field
+            // read through an interface (spec 28).
             return llvm::any_of(chain.places, [&](auto &place) {
+                if (isField(position) && isField(place.first) &&
+                    (position == Chain::InterfaceField || place.first == Chain::InterfaceField))
+                {
+                    return true;
+                }
+
                 return place.first == position && place.second == slot.getType();
             });
         }
@@ -3385,6 +3407,17 @@ class OwnershipInferencePass
         {
             base = sharedValueRefOp.getShared();
             step = ".value";
+        }
+        else if (auto interfaceRefOp = ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+        {
+            auto field = mlir::dyn_cast<mlir::StringAttr>(interfaceRefOp.getIdentifier());
+            if (!field)
+            {
+                return {};
+            }
+
+            base = interfaceRefOp.getInterfaceVal();
+            step = "." + field.getValue().str();
         }
         else
         {

@@ -2778,6 +2778,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
+            if (auto interfaceRefOp = value.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>(); interfaceRefOp && isInterfaceField(value))
+            {
+                work.push_back(interfaceRefOp.getInterfaceVal());
+                continue;
+            }
+
             if (auto argument = mlir::dyn_cast<mlir::BlockArgument>(value))
             {
                 llvm::SmallVector<mlir::Value> merged;

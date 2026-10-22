@@ -350,11 +350,20 @@ inline bool isCall(mlir::Operation *op)
                      mlir_ts::InvokeHybridOp>(op);
 }
 
-// A field, an element, or `s.value` - the payload of a handle (spec 23.1).
+// A field of an object seen through an interface (`i.f`): the object's own field, reached by the
+// offset the interface's vtable holds. A method of the interface is a bound function, not a place.
+inline bool isInterfaceField(mlir::Value ref)
+{
+    return ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>() && mlir::isa<mlir_ts::RefType>(ref.getType());
+}
+
+// A field, an element, or `s.value` - the payload of a handle (spec 23.1) - and a field reached
+// through an interface (spec 28).
 inline bool isPlace(mlir::Value ref)
 {
     return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(
-        ref.getDefiningOp());
+               ref.getDefiningOp()) ||
+           isInterfaceField(ref);
 }
 
 // A handle (spec 23.2): counted in every model that tracks ownership, and left alone by own.
@@ -446,6 +455,10 @@ inline bool reachesSharedValue(mlir::Value ref)
         else if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
         {
             work.push_back(elementRefOp.getArray());
+        }
+        else if (auto interfaceRefOp = value.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>(); interfaceRefOp && isInterfaceField(value))
+        {
+            work.push_back(interfaceRefOp.getInterfaceVal());
         }
         else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
         {
@@ -920,6 +933,11 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
     if (auto elementRefOp = mlir::dyn_cast_or_null<mlir_ts::ElementRefOp>(def))
     {
         return borrowedParam(elementRefOp.getArray(), depth + 1);
+    }
+
+    if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def); interfaceRefOp && isInterfaceField(value))
+    {
+        return borrowedParam(interfaceRefOp.getInterfaceVal(), depth + 1);
     }
 
     if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
