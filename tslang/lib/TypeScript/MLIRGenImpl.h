@@ -8408,6 +8408,11 @@ class MLIRGenImpl
                     location, getBoundFunctionType(effectiveFuncType), effectiveThisValue, vtableAccess,
                     builder.getI32IntegerAttr(methodInfo.virtualIndex),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+                if (finalReceiver && !methodInfo.isAbstract)
+                {
+                    thisVirtualSymbOp->setAttr(FINAL_RECEIVER_ATTR_NAME, builder.getUnitAttr());
+                }
+
                 return thisVirtualSymbOp;
             }
 

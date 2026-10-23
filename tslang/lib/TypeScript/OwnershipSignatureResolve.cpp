@@ -262,7 +262,11 @@ namespace own_signature
         if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(def))
         {
             identifier = refOp.getIdentifierAttr().getAttr();
-            index = refOp.getIndex();
+            // a @final receiver's slot holds the method named: no family, one function
+            if (!refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
+            {
+                index = refOp.getIndex();
+            }
         }
         else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::VirtualSymbolRefOp>(def))
         {

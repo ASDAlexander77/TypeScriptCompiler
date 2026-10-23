@@ -1619,6 +1619,11 @@ add_test(NAME test-compile-shared-import-own-record-outlives
          COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_record_outlives.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_record.ts")
 set_tests_properties(test-compile-shared-import-own-record-outlives PROPERTIES PASS_REGULAR_EXPRESSION "borrows a call's result but is used here after it may be released or overwritten"
                                                                        FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# ...and after a call of a method of a class that is not @final: an override may destroy what it borrows
+add_test(NAME test-compile-shared-import-own-record-open-method
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_own_record_open_method.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_own_record.ts")
+set_tests_properties(test-compile-shared-import-own-record-open-method PROPERTIES PASS_REGULAR_EXPRESSION "borrows a call's result but is used here after it may be released or overwritten"
+                                                                           FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # ...and the importer releases each box, which no run can see (own-shared-record.cmake)
 if (WIN32)
     add_test(NAME test-own-shared-record-released
