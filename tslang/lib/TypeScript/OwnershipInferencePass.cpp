@@ -2607,6 +2607,18 @@ class OwnershipInferencePass
                     continue;
                 }
 
+                // So does a direct call of a function this module defines (isFresh): its result points
+                // into nothing it was given but what its facts name - a borrow of an argument
+                // (`__own_result_borrows`, never fresh), a borrowing record, a generator's state that
+                // borrows its arguments - and a body whose callers cannot all know such a fact is an
+                // error. `getPoint(x, scene.camera)` makes a new vector: a call after it that may
+                // destroy `scene.camera` does not end that vector (spec 34).
+                if (isCall(user) && user->getNumResults() == 1 && !user->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME) &&
+                    !isRecordResult(user) && isFresh(user->getResult(0)))
+                {
+                    continue;
+                }
+
                 // A result that borrows what it was given borrows this too, and is walked as it.
                 for (auto result : user->getResults())
                 {

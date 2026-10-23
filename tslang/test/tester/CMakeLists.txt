@@ -3511,7 +3511,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
-                 own_reduce)
+                 own_reduce own_fresh_call_result)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3592,6 +3592,32 @@ foreach(reduce_mm rc gc none)
     tslang_add_test(NAME test-jit-${reduce_mm}-own_reduce COMMAND test-runner -jit -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
     tslang_add_test(NAME test-compile-${reduce_mm}-own_reduce COMMAND test-runner -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
 endforeach()
+
+# A direct call's result is the caller's own, not a use of a borrow given to it (spec 34); the same
+# program under every other model.
+foreach(fresh_call_mm rc gc none)
+    tslang_add_test(NAME test-jit-${fresh_call_mm}-own_fresh_call_result COMMAND test-runner -jit -mm=${fresh_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_call_result.ts")
+    tslang_add_test(NAME test-compile-${fresh_call_mm}-own_fresh_call_result COMMAND test-runner -mm=${fresh_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_call_result.ts")
+endforeach()
+
+# The ray tracer, own's copy of the benchmark at 64x64 (spec 34), under every model. Its surfaces are
+# Shared handles, which count, so it is not in own_test (its no-counting check). It exports its
+# `Surfaces` globals, which an object file opens to other modules (spec 31), so under own the JIT's
+# entry module and `tslang --emit=exe` build it (own-exe-run.cmake), not test-runner's object file.
+foreach(raytrace_mm gc none rc)
+    tslang_add_test(NAME test-jit-${raytrace_mm}-own_raytrace COMMAND test-runner -jit -mm=${raytrace_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+    tslang_add_test(NAME test-compile-${raytrace_mm}-own_raytrace COMMAND test-runner -mm=${raytrace_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+endforeach()
+tslang_add_test(NAME test-jit-own-own_raytrace COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+add_test(NAME test-compile-own-own_raytrace
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts"
+                 "-DEXPECT=checksum: 606318"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-raytrace"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-exe-run.cmake")
 
 # An executable's exports leave its interfaces closed (spec 31, USER decision): under own the JIT's
 # entry module and `tslang --emit=exe` compile own_interface_exe_exports; an object file and a DLL
@@ -3872,6 +3898,8 @@ set(own_error_cases
     "own_err_kept_and_borrowed_arg_assigned_in_call|is used here after its value was moved"
     "own_err_kept_arg_assigned_on_arm|is used here after its value was moved"
     "own_err_kept_arg_assigned_in_and|is used here after its value was moved"
+    "own_err_call_result_bounded|borrows a field but is used here after it may be released or overwritten"
+    "own_err_call_result_record|borrows a field but is used here after it may be released or overwritten"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"
