@@ -412,6 +412,7 @@ tslang_add_test(NAME test-compile-00-argument-place-overwritten COMMAND test-run
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
+tslang_add_test(NAME test-compile-00-argument-slot-assigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_slot_assigned.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -998,6 +999,7 @@ tslang_add_test(NAME test-jit-00-argument-place-overwritten COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
+tslang_add_test(NAME test-jit-00-argument-slot-assigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_slot_assigned.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -1974,6 +1976,7 @@ set(TSLANG_CORPUS
     00temporary_read_in_finally.ts
     00unowned_local_store.ts
     00array_argument_held.ts
+    00argument_slot_assigned.ts
     00array_data_string_alias.ts
     00array7.ts
     00array8_tuple_spread.ts
@@ -3763,7 +3766,7 @@ set(shared_models gc none rc own)
 foreach(shared_mm ${shared_models})
     foreach(shared_test own_shared_basic own_shared_user_named own_shared_graph own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy own_shared_argument_assigned
                         own_shared_global_argument own_shared_global_argument_throw)
         tslang_add_test(NAME test-jit-${shared_mm}-${shared_test} COMMAND test-runner -jit -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
         tslang_add_test(NAME test-compile-${shared_mm}-${shared_test} COMMAND test-runner -mm=${shared_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${shared_test}.ts")
@@ -3778,7 +3781,7 @@ endforeach()
 foreach(shared_verify_mm own rc)
     foreach(shared_test own_shared_basic own_shared_graph own_shared_count own_shared_containers own_shared_cycle own_shared_union
                         own_shared_global own_shared_unlink own_shared_global_init
-                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy
+                        own_shared_place_two_uses own_shared_global_field own_shared_global_copy own_shared_argument_assigned
                         own_shared_global_argument own_shared_global_argument_throw)
         add_test(NAME test-${shared_verify_mm}-verify-ownership-${shared_test}
                  COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_verify_mm} --verify-ownership

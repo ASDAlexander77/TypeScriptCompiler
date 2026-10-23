@@ -309,6 +309,12 @@ class OwnedReturnConsumptionPass
     // count (`Shared.count`) as the number of handles - which a parameter, a borrow, is not one of.
     // So a handle is held, under both, only across a call that may give the global it was read
     // from a new value, the one case where the hold is what keeps the block alive.
+    //
+    // A read of a local is held too, under rc, where the local is given a new value after the read
+    // and before the call: by a later argument (`f(n, (n = mk(), 0))`, in a conditional one too),
+    // or, for a captured local, by a closure called there. The assignment released the block the
+    // argument read. Under own only a handle is held so, being counted there too; own rejects the
+    // others (OwnershipInferencePass).
     void holdGlobalArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         if (!compileOptions.tracksOwnership())
@@ -617,8 +623,18 @@ class OwnedReturnConsumptionPass
                 }
 
                 auto global = globalOf(argument, false);
+                if (global.empty())
+                {
+                    if (localAssignedBefore(op, argument))
+                    {
+                        held.push_back({op, argument});
+                    }
+
+                    continue;
+                }
+
                 auto isHandle = MLIRTypeHelper::isSharedHandleType(argument.getType());
-                if (global.empty() || (isHandle ? !mayAssign(op, global) : !compileOptions.isRefCounted()))
+                if (isHandle ? !mayAssign(op, global) : !compileOptions.isRefCounted())
                 {
                     continue;
                 }
@@ -640,10 +656,13 @@ class OwnedReturnConsumptionPass
 
             // From the read on, not from the call: an argument after it may give the global a new
             // value first (`f(G, (G = mk(), x))`), and its release freed the block this one read
-            // before a retain at the call could keep it.
+            // before a retain at the call could keep it. A conditional argument between them puts
+            // the call in a block of its own, run once for each read unless a loop leads back.
             mlir::OpBuilder builder(op);
             auto *readOp = argument.getDefiningOp();
-            if (readOp && readOp->getBlock() == op->getBlock())
+            if (readOp && (readOp->getBlock() == op->getBlock() ||
+                           (readOp->getParentRegion() == op->getParentRegion() &&
+                            !blockReaches(op->getBlock(), readOp->getBlock()))))
             {
                 builder.setInsertionPointAfter(readOp);
             }
@@ -698,6 +717,91 @@ class OwnedReturnConsumptionPass
             handlerBuilder.create<mlir_ts::StoreOp>(
                 location, handlerBuilder.create<mlir_ts::DefaultOp>(location, argument.getType()), slot);
         }
+    }
+
+    // Whether a read of a local, `argument`, is followed by a new value given to that local (or its
+    // release) before `call` takes it (holdGlobalArguments). Under rc, and for a handle under own.
+    bool localAssignedBefore(mlir::Operation *call, mlir::Value argument)
+    {
+        if (!compileOptions.isRefCounted() && !MLIRTypeHelper::isSharedHandleType(argument.getType()))
+        {
+            return false;
+        }
+
+        auto *read = argument.getDefiningOp();
+        if (!read)
+        {
+            return false;
+        }
+
+        if (auto local = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(own_facts::slotOf(argument)))
+        {
+            auto captured = local.getCaptured().value_or(false);
+            return own_facts::findBetween(read, call, [&](mlir::Operation *op) {
+                       return (captured && own_facts::isCall(op)) ||
+                              own_facts::sameSlot(own_facts::slotWritten(op), local);
+                   }) != nullptr;
+        }
+
+        // a field or an element of an object no local's slot holds (`const h = new H()`, folded):
+        // a store into the same field, or any element, of that object (`f(h.v, (h.v = mk(), 0))`)
+        auto value = argument;
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            value = castOp.getIn();
+        }
+
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || !own_facts::isPlace(loadOp.getReference()))
+        {
+            return false;
+        }
+
+        auto baseOf = [](mlir::Operation *place) {
+            auto base = place->getOperand(0);
+            while (auto castOp = base.getDefiningOp<mlir_ts::CastOp>())
+            {
+                base = castOp.getIn();
+            }
+
+            return base;
+        };
+
+        auto *place = loadOp.getReference().getDefiningOp();
+        auto base = baseOf(place);
+        auto propertyRef = mlir::dyn_cast<mlir_ts::PropertyRefOp>(place);
+        return own_facts::findBetween(read, call, [&](mlir::Operation *op) {
+                   auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+                   auto *written = storeOp ? storeOp.getReference().getDefiningOp() : nullptr;
+                   if (!written || written->getName() != place->getName() || baseOf(written) != base)
+                   {
+                       return false;
+                   }
+
+                   auto writtenField = mlir::dyn_cast<mlir_ts::PropertyRefOp>(written);
+                   return !propertyRef || writtenField.getPosition() == propertyRef.getPosition();
+               }) != nullptr;
+    }
+
+    static bool blockReaches(mlir::Block *from, mlir::Block *to)
+    {
+        llvm::SmallPtrSet<mlir::Block *, 16> seen;
+        llvm::SmallVector<mlir::Block *> work{from};
+        while (!work.empty())
+        {
+            auto *block = work.pop_back_val();
+            if (block == to)
+            {
+                return true;
+            }
+
+            if (seen.insert(block).second)
+            {
+                work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+            }
+        }
+
+        return false;
     }
 
     static mlir::Value stripCasts(mlir::Value value)
