@@ -310,7 +310,8 @@ class OwnedReturnConsumptionPass
     // A read of a local is held too, under rc, where the local is given a new value after the read
     // and before the call: by a later argument (`f(n, (n = mk(), 0))`, in a conditional one too),
     // or, for a captured local, by a closure called there. The assignment released the block the
-    // argument read. (own rejects these, OwnershipInferencePass.)
+    // argument read. Under own only a handle is held so, being counted there too; own rejects the
+    // others (OwnershipInferencePass).
     void holdGlobalArguments(MLIRTypeHelper &mth, mlir::ModuleOp module)
     {
         if (!compileOptions.tracksOwnership())
@@ -704,10 +705,10 @@ class OwnedReturnConsumptionPass
     }
 
     // Whether a read of a local, `argument`, is followed by a new value given to that local (or its
-    // release) before `call` takes it (holdGlobalArguments). Under rc only.
+    // release) before `call` takes it (holdGlobalArguments). Under rc, and for a handle under own.
     bool localAssignedBefore(mlir::Operation *call, mlir::Value argument)
     {
-        if (!compileOptions.isRefCounted())
+        if (!compileOptions.isRefCounted() && !MLIRTypeHelper::isSharedHandleType(argument.getType()))
         {
             return false;
         }
