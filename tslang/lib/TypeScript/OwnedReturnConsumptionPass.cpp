@@ -1406,20 +1406,21 @@ class OwnedReturnConsumptionPass
 
     // A jump out of a `try` body or catch clause runs the `finally` first, and the finally may read
     // the temporary: `const v = mv(); try { if (c) continue; } finally { s += v.get(); }` gave `v`
-    // back at the `continue`, before the finally read it. When a finally between the jump and the
-    // temporary's block reads it, the release goes at the end of the outermost such finally
-    // instead - the last one the jump runs - inside a `ts.If` tagged with the jump, as MLIRGen does
-    // for the scopes the jump leaves (mlirGenScopeExitAfterFinally), so that TryOpLowering keeps it
-    // in the copy of the finally that jump runs and in no other. False when no finally reads it.
+    // back at the `continue`, before the finally read it. Or the finally may leave by a jump of its
+    // own, which releases the temporary in front of it too: `try { continue; } finally { break; }`
+    // gave it back twice. When a jump passes through a finally between it and the temporary's block,
+    // the release goes at the end of the outermost such finally instead - the last one the jump
+    // runs - inside a `ts.If` tagged with the jump, as MLIRGen does for the scopes the jump leaves
+    // (mlirGenScopeExitAfterFinally), so that TryOpLowering keeps it in the copy of the finally that
+    // jump runs and in no other. A finally that leaves on its own never reaches it. False when the
+    // jump passes through no finally.
     //
     // Every jump with one key runs one copy, so the release goes in once for each (`placed`).
     static bool releaseAfterFinally(mlir::OpBuilder &builder, mlir::Operation *op, mlir::Operation *jump,
                                     mlir::Block *block,
                                     std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> &placed)
     {
-        auto value = op->getResult(0);
         mlir_ts::TryOp lastTry;
-        auto readInFinally = false;
         for (auto *child = jump; child->getBlock() != block; child = child->getParentOp())
         {
             auto tryOp = mlir::dyn_cast<mlir_ts::TryOp>(child->getParentOp());
@@ -1436,15 +1437,14 @@ class OwnedReturnConsumptionPass
             }
 
             lastTry = tryOp;
-            readInFinally |= llvm::any_of(value.getUsers(), [&](mlir::Operation *user) {
-                return finally.isAncestor(user->getParentRegion());
-            });
         }
 
-        if (!lastTry || !readInFinally)
+        if (!lastTry)
         {
             return false;
         }
+
+        auto value = op->getResult(0);
 
         auto isReturn = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(jump);
         std::string key;

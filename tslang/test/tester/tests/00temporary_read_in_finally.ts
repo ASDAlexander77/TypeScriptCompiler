@@ -1,6 +1,7 @@
 // A `const` holding a call's result (a folded const, released where its block ends) stays alive
 // when a `break`, `continue` or `return` leaves its block through a `try` whose `finally` reads
-// it. Under rc the release went in front of the jump, and the finally then ran on a freed block.
+// it, or leaves by a jump of its own. Under rc the release went in front of the jump, and the
+// finally then ran on a freed block, or released it a second time in front of its own jump.
 // Each read follows allocations of the same size, so a freed block is reused.
 class V {
     tag = "";
@@ -118,6 +119,31 @@ function viaReturn(x: number) {
     return -1;
 }
 
+function jumpInFinally() {
+    let s: number = 0;
+    for (let i = 0; i < 4; i++) {
+        const v = mv(i);
+        try {
+            try {
+                if (i % 2 == 0) {
+                    continue;
+                }
+            } finally {
+                churn();
+                if (i == 2) {
+                    break;
+                }
+            }
+        } finally {
+        }
+
+        s += v.x;
+    }
+
+    churn();
+    return s;
+}
+
 function callInFinally(v: V) {
     churn();
     return v.get();
@@ -146,5 +172,6 @@ function main() {
     assert(viaLabelledContinue() == 1212, "a labelled continue through two finallys");
     assert(viaReturn(3) == 3, "return through a finally");
     assert(viaCallInFinally() == 18, "a call in the finally");
+    assert(jumpInFinally() == 1, "a continue through a finally that breaks");
     print("done.");
 }
