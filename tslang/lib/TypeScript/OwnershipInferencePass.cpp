@@ -119,31 +119,7 @@ class OwnershipInferencePass
         // it is this call's: nothing after it (the copies, the next run) may read it
         auto dominanceGone = llvm::make_scope_exit([&]() { dominance = nullptr; });
 
-        // every value some ownership operation names, in the order the walk meets them
-        llvm::SetVector<mlir::Value> candidates;
-        llvm::SmallVector<mlir::Operation *> retains;
-        // reads out of fields and elements, and results that borrow an argument, and what may
-        // destroy what they read (spec 2.3, 2.4)
-        llvm::SmallVector<mlir::Operation *> placeReads;
-        // reads of what a mortal global holds (isGlobalRead)
-        llvm::SmallVector<mlir_ts::LoadOp> globalReads;
-        // calls whose callee keeps an argument: each such argument moves into the call
-        llvm::SmallVector<mlir::Operation *> keepingCalls;
-        drops.clear();
-        edgeReleases.clear();
-        derivedCache.clear();
-        closures.clear();
-        closureOf.clear();
-        stateBoxes.clear();
-        fieldBorrowRetains.clear();
-        fieldBorrowReleases.clear();
-        captureStores.clear();
-        captureRetains.clear();
-        returnedParams.clear();
-        returnsBorrowOf = resultBorrows(f);
-        returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
-        records.clear();
-        recordStoreUses.clear();
+        resetFunctionState();
 
         // first: whether a closure borrows what it captures changes what its box's stores are
         classifyClosures();
@@ -167,6 +143,102 @@ class OwnershipInferencePass
             exitReleases.clear();
         });
 
+        FunctionOps ops;
+        collectOwnershipOps(ops, toErase);
+        auto proven = checkOwnershipOps(ops, toErase);
+
+        Receivers slotReceivers;
+        Receivers paramReceivers;
+        decideRetains(ops, proven, slotReceivers, paramReceivers, toErase);
+        giveKeptArguments(ops, slotReceivers, paramReceivers);
+
+        for (auto &entry : slotReceivers)
+        {
+            decideSlot(entry.first, entry.second, toErase);
+        }
+
+        for (auto &entry : paramReceivers)
+        {
+            decideParam(entry.first, entry.second, toErase);
+        }
+
+        decideClosures(toErase);
+        decideCells();
+        checkBorrowedReads();
+        checkBoundedResults();
+        checkBorrowingRecords();
+        checkRecordResults();
+        toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
+
+        if (dryRun)
+        {
+            return failures == 0;
+        }
+
+        // a handle's retains and releases are rc's, and stay (spec 23.2)
+        toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
+        placeEdgeReleases();
+        for (auto *op : toErase)
+        {
+            op->erase();
+        }
+
+        stripFacts();
+        return true;
+    }
+
+    // Each analysis starts from nothing this function has not set up again.
+    void resetFunctionState()
+    {
+        auto f = getFunction();
+        drops.clear();
+        edgeReleases.clear();
+        derivedCache.clear();
+        closures.clear();
+        closureOf.clear();
+        stateBoxes.clear();
+        fieldBorrowRetains.clear();
+        fieldBorrowReleases.clear();
+        captureStores.clear();
+        captureRetains.clear();
+        returnedParams.clear();
+        returnsBorrowOf = resultBorrows(f);
+        returnsRecordOf = isRecordResult(f) ? resultBorrowsAll(f) : llvm::SmallVector<int>();
+        records.clear();
+        recordStoreUses.clear();
+    }
+
+    // What the ownership operations of one function name, in the order the walk meets them
+    // (collectOwnershipOps).
+    struct FunctionOps
+    {
+        // every value some ownership operation names, in the order the walk meets them
+        llvm::SetVector<mlir::Value> candidates;
+        llvm::SmallVector<mlir::Operation *> retains;
+        // reads out of fields and elements, and results that borrow an argument, and what may
+        // destroy what they read (spec 2.3, 2.4)
+        llvm::SmallVector<mlir::Operation *> placeReads;
+        // reads of what a mortal global holds (isGlobalRead)
+        llvm::SmallVector<mlir_ts::LoadOp> globalReads;
+        // calls whose callee keeps an argument: each such argument moves into the call
+        llvm::SmallVector<mlir::Operation *> keepingCalls;
+    };
+
+    struct SlotReceiver
+    {
+        mlir::Operation *retain;
+        mlir::Value value;
+        mlir_ts::LoadOp load;
+    };
+
+    // the receivers of each owning local, or of each parameter this function keeps
+    using Receivers = llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>>;
+
+    // Every op of the function that names an ownership: the values to check, the retains to
+    // decide, the reads out of places and globals, the calls that keep an argument, and the drops.
+    void collectOwnershipOps(FunctionOps &ops, llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto f = getFunction();
         // A view of a block is that block: the candidate is always the root.
         f.walk([&](mlir::Operation *op) {
             // A handle put into a union with a member that owns a block of its own: counting the
@@ -184,22 +256,22 @@ class OwnershipInferencePass
 
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op))
             {
-                retains.push_back(op);
-                candidates.insert(rootOf(retainOp.getReference()));
+                ops.retains.push_back(op);
+                ops.candidates.insert(rootOf(retainOp.getReference()));
             }
             else if (auto retainSlotOp = mlir::dyn_cast<mlir_ts::RetainSlotOp>(op))
             {
-                retains.push_back(op);
+                ops.retains.push_back(op);
             }
             else if (auto releaseOp = mlir::dyn_cast<mlir_ts::ReleaseOp>(op))
             {
-                candidates.insert(rootOf(releaseOp.getReference()));
+                ops.candidates.insert(rootOf(releaseOp.getReference()));
             }
             else if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(op))
             {
                 if (varOp.getInitializer() && isOwningVariable(varOp) && !isHandle(varOp.getInitializer()))
                 {
-                    candidates.insert(rootOf(varOp.getInitializer()));
+                    ops.candidates.insert(rootOf(varOp.getInitializer()));
                 }
             }
             else if (mlir::isa<mlir_ts::RetainCellOp>(op))
@@ -225,11 +297,11 @@ class OwnershipInferencePass
                 // the value out: fresh, not a borrow of the state
                 if (placeReadOf(loadOp.getResult()) && !loadOp->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
                 {
-                    placeReads.push_back(loadOp);
+                    ops.placeReads.push_back(loadOp);
                 }
                 else if (isGlobalRead(loadOp))
                 {
-                    globalReads.push_back(loadOp);
+                    ops.globalReads.push_back(loadOp);
                 }
             }
             else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op); releaseSlotOp && isYieldedField(releaseSlotOp.getSlot()))
@@ -263,12 +335,12 @@ class OwnershipInferencePass
                 drops.push_back(op);
                 if (op->getNumResults() == 1 && placeReadOf(op->getResult(0)) == op)
                 {
-                    placeReads.push_back(op);
+                    ops.placeReads.push_back(op);
                 }
 
                 if (!ownedParams(op).empty())
                 {
-                    keepingCalls.push_back(op);
+                    ops.keepingCalls.push_back(op);
                 }
             }
 
@@ -276,16 +348,21 @@ class OwnershipInferencePass
             {
                 if (!isView(op) && isFresh(result) && ownsHeap(result) && !isHandle(result))
                 {
-                    candidates.insert(result);
+                    ops.candidates.insert(result);
                 }
             }
         });
+    }
 
+    // The owner check of each value, then of each read out of a place and of a mortal global. The
+    // fresh values proven, whose retains go.
+    llvm::DenseSet<mlir::Value> checkOwnershipOps(const FunctionOps &ops, llvm::SetVector<mlir::Operation *> &toErase)
+    {
         // Every value gets the owner check, fresh or not: rc can hand a value it did not make to
         // two consuming declarations without a single retain (the result of an indirect call
         // taken by `let b = a; let c = a;`). Only a fresh value's retains can be erased.
         llvm::DenseSet<mlir::Value> proven;
-        for (auto value : candidates)
+        for (auto value : ops.candidates)
         {
             if (checkValueMoves(value, toErase) && isFresh(value))
             {
@@ -293,26 +370,32 @@ class OwnershipInferencePass
             }
         }
 
-        for (auto read : placeReads)
+        for (auto read : ops.placeReads)
         {
             checkPlaceRead(read, toErase);
         }
 
-        for (auto read : globalReads)
+        for (auto read : ops.globalReads)
         {
             checkGlobalRead(read);
         }
 
         checkArgumentsAssigned();
 
+        return proven;
+    }
+
+    // Each retain: erased, given to the receivers of an owning local or of a kept parameter, or
+    // reported.
+    void decideRetains(const FunctionOps &ops, const llvm::DenseSet<mlir::Value> &proven, Receivers &slotReceivers,
+                       Receivers &paramReceivers, llvm::SetVector<mlir::Operation *> &toErase)
+    {
         // What is proven loses its retains; any other retain is a second reference nobody
         // proved safe - of a loaded value, a parameter, an unknown producer, or of a fresh value
         // whose own check was reported above.
         // Receivers of each owning local are decided together: one may move it, but where there
         // are several, each borrows it, since a borrow pins its owner.
-        llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> slotReceivers;
-        llvm::MapVector<mlir::Value, llvm::SmallVector<SlotReceiver>> paramReceivers;
-        for (auto *op : retains)
+        for (auto *op : ops.retains)
         {
             if (touchesHandle(op))
             {
@@ -421,12 +504,17 @@ class OwnershipInferencePass
                 reportSecondReference(op);
             }
         }
+    }
 
+    // The arguments a callee keeps, given to the receivers of the local or kept parameter they come
+    // from.
+    void giveKeptArguments(const FunctionOps &ops, Receivers &slotReceivers, Receivers &paramReceivers)
+    {
         // An argument a callee keeps moves into the call (spec 2.4): out of an owning local or a
         // parameter this function keeps, like any other taker; a fresh value is decided with the
         // other takers of it, a read out of a container by its own check. Anything else is not
         // this function's to give.
-        for (auto *call : keepingCalls)
+        for (auto *call : ops.keepingCalls)
         {
             auto args = callArgs(call);
             for (auto index : ownedParams(call))
@@ -454,41 +542,13 @@ class OwnershipInferencePass
                 }
             }
         }
+    }
 
-        for (auto &entry : slotReceivers)
-        {
-            decideSlot(entry.first, entry.second, toErase);
-        }
-
-        for (auto &entry : paramReceivers)
-        {
-            decideParam(entry.first, entry.second, toErase);
-        }
-
-        decideClosures(toErase);
-        decideCells();
-        checkBorrowedReads();
-        checkBoundedResults();
-        checkBorrowingRecords();
-        checkRecordResults();
-        toErase.insert(fieldBorrowReleases.begin(), fieldBorrowReleases.end());
-
-        if (dryRun)
-        {
-            return failures == 0;
-        }
-
-        // a handle's retains and releases are rc's, and stay (spec 23.2)
-        toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
-        placeEdgeReleases();
-        for (auto *op : toErase)
-        {
-            op->erase();
-        }
-
-        // the facts were for this pass only
+    // The facts were for this pass only.
+    void stripFacts()
+    {
         returnedParams.clear();
-        f.walk([](mlir::Operation *op) {
+        getFunction().walk([](mlir::Operation *op) {
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_PARAMS_RELEASED_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME,
                                OWN_RESULT_RECORD_ATTR_NAME,
                                OWN_NO_DROPS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME,
@@ -499,8 +559,6 @@ class OwnershipInferencePass
                 op->removeAttr(name);
             }
         });
-
-        return true;
     }
 
   private:
@@ -2033,13 +2091,6 @@ class OwnershipInferencePass
 
         return false;
     }
-
-    struct SlotReceiver
-    {
-        mlir::Operation *retain;
-        mlir::Value value;
-        mlir_ts::LoadOp load;
-    };
 
     template <typename F> bool quietly(F check)
     {
