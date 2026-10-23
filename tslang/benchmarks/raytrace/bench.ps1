@@ -1,6 +1,6 @@
-# Builds rtbench.ts under every memory model (with and without stack promotion) and the two Rust
-# ports, checks that they all print the same checksum, then times each one: a warm-up run and
-# $Runs timed runs, reporting min/median/max wall time.
+# Builds rtbench.ts under every memory model (with and without stack promotion; -mm=own builds its
+# copy rtbench_own.ts) and the Rust and C++ ports, checks that they all print the same checksum,
+# then times each one: a warm-up run and $Runs timed runs, reporting min/median/max wall time.
 #
 #   pwsh tslang/benchmarks/raytrace/bench.ps1 [-Tslang <path to tslang.exe>] [-Runs 7]
 param(
@@ -19,7 +19,8 @@ foreach ($mm in "gc", "rc", "none", "own") {
         $exe = Join-Path $out ("rtb_$mm" + $(if ($sp) { "_nsp" } else { "" }) + ".exe")
         $flags = @("--emit=exe", "--opt", "--opt_level=3", "--no-default-lib", "--mm=$mm")
         if ($sp) { $flags += "--no-stack-promotion" }
-        & $Tslang @flags "$PSScriptRoot\rtbench.ts" -o $exe 2>&1 | Out-Null
+        $src = if ($mm -eq "own") { "$PSScriptRoot\rtbench_own.ts" } else { "$PSScriptRoot\rtbench.ts" }
+        & $Tslang @flags $src -o $exe 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { "{0,-22} does not compile (exit {1})" -f $name, $LASTEXITCODE; continue }
         $bins += @{ n = $name; p = $exe }
     }
