@@ -1737,6 +1737,18 @@ class MLIRGenImpl
             return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
         }
 
+        // A value read out of a global variable, through any casts: what `G` is in `const n = G`.
+        static bool readsGlobal(mlir::Value value)
+        {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
+            auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
+            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>();
+        }
+
         // A value read out of an element, through any casts: what `a[0]` is in `const c = a[0]`, and
         // what `b` is in `const [b] = a`, read there only when `a` is long enough (the `then` of an if).
         static bool readsElement(mlir::Value value)
@@ -1886,11 +1898,12 @@ class MLIRGenImpl
             // interface or a bound method made over such a read (`const i: I = a`, `const m = a.get`):
             // it holds the block as `b` would.
             //
-            // Under rc, so does a const read out of a field (`const c = h.c`) or an element (`const c =
-            // a[0]`, `const [c] = a`): folded, `h.c = d` or `a[0] = d` freed what `c` still read. So
-            // does an interface or a bound method made over such a read (`const i: I = h.v`,
-            // `const m = a[0].get`), which holds the block as `c` would. Under own the folded read is a
-            // borrow, and a use after the overwrite is an error there.
+            // Under rc, so does a const read out of a field (`const c = h.c`), an element (`const c =
+            // a[0]`, `const [c] = a`) or a global (`const c = G`): folded, `h.c = d`, `a[0] = d` or
+            // `G = d` - here or in a call - freed what `c` still read. So does an interface or a bound
+            // method made over such a read (`const i: I = h.v`, `const m = a[0].get`), which holds the
+            // block as `c` would. Under own the folded read is a borrow, and a use after the overwrite
+            // is an error there.
             //
             // And a const record whose fields own blocks (`const o = { s: p.child }`): the literal
             // hands its fields over unretained - its receiver is the one that retains them, as a
@@ -1910,8 +1923,9 @@ class MLIRGenImpl
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
                      || (compileOptions.isRefCounted()
-                         && (readsField(initial) || readsElement(initial) || readsField(viewedValue(initial))
-                             || readsElement(viewedValue(initial)))
+                         && (readsField(initial) || readsElement(initial) || readsGlobal(initial)
+                             || readsField(viewedValue(initial)) || readsElement(viewedValue(initial))
+                             || readsGlobal(viewedValue(initial)))
                          && mth.ownsHeapMemory(location, type))
                      || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
                          && mth.ownsHeapMemory(location, type))
