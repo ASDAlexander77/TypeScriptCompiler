@@ -40,6 +40,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipInferenceKeptParams.cpp
     OwnershipInferenceMoves.cpp
     OwnershipInferencePlaceReads.cpp
+    OwnershipInferenceReadsAfterMove.cpp
     OwnershipInferenceRecords.cpp
     OwnershipSignaturePass.cpp
     OwnershipSignatureCallbacks.cpp

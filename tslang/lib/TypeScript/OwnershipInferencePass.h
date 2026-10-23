@@ -1276,91 +1276,19 @@ class OwnershipInferencePass
 
     // Every use of `value`, through its views, is a read `isRead` accepts. A retain - rc's reference
     // for an owner - is not.
-    static bool onlyReadThroughOwner(mlir::Value value, llvm::function_ref<bool(mlir::Operation *, mlir::Value)> isRead)
-    {
-        auto all = true;
-        forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
-            all = all && (mlir::isa<mlir_ts::DebugVariableOp>(user) ||
-                          (!mlir::isa<mlir_ts::RetainOp>(user) && isRead(user, used)));
-        });
-
-        return all;
-    }
+    static bool onlyReadThroughOwner(mlir::Value value, llvm::function_ref<bool(mlir::Operation *, mlir::Value)> isRead);
 
     // A use that only reads the value: a field, element or length read through it, a method reached
     // through it, a comparison or arithmetic, a print, an assert, a test, or an argument the callee
     // borrows. Anything else - a store, an owning `let`, a keeping call, a return - would be a second
     // owner.
-    static bool isReadAfterMove(mlir::Operation *user, mlir::Value value)
-    {
-        if (mlir::isa<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp, mlir_ts::ThisSymbolRefOp,
-                      mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp,
-                      mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::LogicalBinaryOp,
-                      mlir_ts::PrintOp, mlir_ts::AssertOp, mlir_ts::HasValueOp, mlir_ts::StringLengthOp>(user))
-        {
-            return isBorrow(user, value);
-        }
-
-        return isCall(user) && !isKeptArgument(user, value);
-    }
+    static bool isReadAfterMove(mlir::Operation *user, mlir::Value value);
 
     // The place a taker moves its value into, as a chain checkPlaceRead would read it: an owning
     // local (a declaration, or an assignment), or a field or element - of a local or a parameter
     // (`this`). False for anything else: a call that keeps it, a push, a return, a global, a
     // captured variable, a handle's payload.
-    bool destinationChain(mlir::Operation *taker, Chain &chain)
-    {
-        auto ownSlot = [](mlir_ts::VariableOp varOp) {
-            return varOp && isOwningVariable(varOp) && !varOp.getCaptured().value_or(false);
-        };
-
-        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(taker))
-        {
-            if (!ownSlot(varOp))
-            {
-                return false;
-            }
-
-            chain.roots.push_back({varOp.getResult(), Chain::Slot});
-            return true;
-        }
-
-        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(taker);
-        if (!storeOp)
-        {
-            return false;
-        }
-
-        auto ref = storeOp.getReference();
-        if (auto varOp = ref.getDefiningOp<mlir_ts::VariableOp>())
-        {
-            if (!ownSlot(varOp))
-            {
-                return false;
-            }
-
-            chain.roots.push_back({ref, Chain::Slot});
-            return true;
-        }
-
-        if (!isPlace(ref))
-        {
-            return false;
-        }
-
-        chain = chainOf(nullptr, ref);
-        if (!chain.handles.empty() || chain.roots.empty())
-        {
-            return false;
-        }
-
-        // a global's field, or a captured variable's: not a place of this function
-        return llvm::none_of(chain.roots, [](auto &root) {
-            auto loadOp = root.first.template getDefiningOp<mlir_ts::LoadOp>();
-            return loadOp && (loadOp.getReference().template getDefiningOp<mlir_ts::AddressOfOp>() ||
-                              isLoadedCell(loadOp.getReference()));
-        });
-    }
+    bool destinationChain(mlir::Operation *taker, Chain &chain);
 
     // Is `use`, a use of `value` after `taker` moved it, a read through the place it moved into
     // (spec 29)? `made` is where the value is made again (its definition, the local's declaration
@@ -1368,145 +1296,20 @@ class OwnershipInferencePass
     // the read - or to anything the read produced - makes the value again or moves it again: such a
     // path is the only way the place can stop holding the value before the read.
     bool readsThroughOwner(mlir::Operation *taker, mlir::Value value, mlir::Operation *use,
-                           llvm::ArrayRef<mlir::Operation *> made)
-    {
-        if (!isReadAfterMove(use, value))
-        {
-            return false;
-        }
-
-        Chain chain;
-        if (!destinationChain(taker, chain))
-        {
-            return false;
-        }
-
-        // A read again of the old name after a drop still finds the moved value - the slot is not
-        // emptied by a move - so neither the read nor the slot's read is where it is made again.
-        llvm::SmallVector<mlir::Operation *> kills(made.begin(), made.end());
-        kills.push_back(taker);
-        llvm::SmallVector<BorrowUse> uses;
-        uses.push_back({use, {kills.begin(), kills.end()}});
-        for (auto result : use->getResults())
-        {
-            if (!mayPointInto(result))
-            {
-                continue;
-            }
-
-            // what the read produced - a field's reference, a bound method - still points into the
-            // block; a call's result that borrows its argument is the value again and may not be kept
-            if (walkBorrowed(result, kills, uses, nullptr, Keeping{nullptr, false}, false, !!borrowingCall(result)))
-            {
-                return false;
-            }
-        }
-
-        // a method reached through it whose callee keeps its `this`: a second owner
-        for (auto &borrowUse : uses)
-        {
-            if (!isCall(borrowUse.op))
-            {
-                continue;
-            }
-
-            auto args = callArgs(borrowUse.op);
-            for (auto index : ownedParams(borrowUse.op))
-            {
-                if (static_cast<size_t>(index) < args.size() &&
-                    mlir::isa_and_nonnull<mlir_ts::GetThisOp, mlir_ts::ExtractInterfaceThisOp>(args[index].getDefiningOp()))
-                {
-                    return false;
-                }
-            }
-        }
-
-        auto outlives = [&](mlir::Operation *end) {
-            if (end == taker || !reachableAfter(taker, end, made))
-            {
-                return false;
-            }
-
-            return llvm::any_of(uses, [&](BorrowUse &borrowUse) {
-                return (borrowUse.op != end || !borrowUse.callee) && reachableAfter(end, borrowUse.op, borrowUse.kills);
-            });
-        };
-
-        for (auto *end : rootEnds(chain))
-        {
-            if (outlives(end))
-            {
-                return false;
-            }
-        }
-
-        for (auto *drop : drops)
-        {
-            if (dropsChain(drop, chain, nullptr, value) && outlives(drop))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+                           llvm::ArrayRef<mlir::Operation *> made);
 
     // Where rc takes the receiver's reference: its `ts.Retain` of the value, when that comes
     // first in the taker's block, else the taker itself (a declaration, whose `ts.RetainSlot`
     // follows it). A release between the two - a `return`'s scope exit runs after its retain
     // and before the store into the return slot - is after the move.
-    static mlir::Operation *acquirePoint(mlir::Operation *taker, mlir::Value value)
-    {
-        // a store into a record, which rc retains as a whole after it is filled
-        if (auto *retain = recordRetainOfStore(taker))
-        {
-            return retain;
-        }
-
-        mlir::Operation *first = taker;
-        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
-            if (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
-                user->isBeforeInBlock(first))
-            {
-                first = user;
-            }
-        });
-
-        return first;
-    }
+    static mlir::Operation *acquirePoint(mlir::Operation *taker, mlir::Value value);
 
     // Did rc give this taker a reference of its own - a `ts.Retain` of the value in front of it,
     // or the `ts.RetainSlot` of an owning local declared from it? Only then is there a release on
     // the taker's side to give the value back once it has moved. `ts.NewInterface` is a taker to
     // this pass but a view to rc, which retains nothing for it and relies on the instance's own
     // release; moving the instance into it would leave nothing to release it at all.
-    static bool takerAcquires(mlir::Operation *taker, mlir::Value value)
-    {
-        // a callee that keeps its argument retained it in its own body under rc
-        if (isCall(taker))
-        {
-            return true;
-        }
-
-        if (recordRetainOfStore(taker))
-        {
-            return true;
-        }
-
-        if (auto varOp = mlir::dyn_cast<mlir_ts::VariableOp>(taker))
-        {
-            return llvm::any_of(varOp.getResult().getUsers(),
-                                [](mlir::Operation *user) { return mlir::isa<mlir_ts::RetainSlotOp>(user); });
-        }
-
-        auto acquires = false;
-        forEachUse(value, [&](mlir::Operation *user, mlir::Value) {
-            acquires = acquires || (mlir::isa<mlir_ts::RetainOp>(user) && user->getBlock() == taker->getBlock() &&
-                                    user->isBeforeInBlock(taker));
-        });
-
-        return acquires;
-    }
+    static bool takerAcquires(mlir::Operation *taker, mlir::Value value);
 
     // The declaration's name survives only as debug metadata (`--di`). At this level MLIRGen's
     // form of it is a NameLoc first inside the location fused with the scope - what LowerToLLVM's
