@@ -17,6 +17,9 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
+#include <set>
+#include <tuple>
+
 #define DEBUG_TYPE "pass"
 
 namespace mlir_ts = mlir::typescript;
@@ -1493,6 +1496,7 @@ class OwnedReturnConsumptionPass
         });
 
         mlir::OpBuilder builder(&getContext());
+        std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> placedAfterFinally;
         for (auto *op : discarded)
         {
             if (!allUsesReleasableInOwnBlock(op) || storedIntoUnownedLocalOutside(op))
@@ -1546,7 +1550,7 @@ class OwnedReturnConsumptionPass
                     auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
                                        (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
                                         jumpLeavesBlock(nested, block));
-                    if (leavesBlock)
+                    if (leavesBlock && !releaseAfterFinally(builder, op, nested, block, placedAfterFinally))
                     {
                         builder.setInsertionPoint(nested);
                         builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
@@ -1576,6 +1580,85 @@ class OwnedReturnConsumptionPass
 
             builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
         }
+    }
+
+    // A jump out of a `try` body or catch clause runs the `finally` first, and the finally may read
+    // the temporary: `const v = mv(); try { if (c) continue; } finally { s += v.get(); }` gave `v`
+    // back at the `continue`, before the finally read it. Or the finally may leave by a jump of its
+    // own, which releases the temporary in front of it too: `try { continue; } finally { break; }`
+    // gave it back twice. When a jump passes through a finally between it and the temporary's block,
+    // the release goes at the end of the outermost such finally instead - the last one the jump
+    // runs - inside a `ts.If` tagged with the jump, as MLIRGen does for the scopes the jump leaves
+    // (mlirGenScopeExitAfterFinally), so that TryOpLowering keeps it in the copy of the finally that
+    // jump runs and in no other. A finally that leaves on its own never reaches it. False when the
+    // jump passes through no finally.
+    //
+    // Every jump with one key runs one copy, so the release goes in once for each (`placed`).
+    static bool releaseAfterFinally(mlir::OpBuilder &builder, mlir::Operation *op, mlir::Operation *jump,
+                                    mlir::Block *block,
+                                    std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> &placed)
+    {
+        mlir_ts::TryOp lastTry;
+        for (auto *child = jump; child->getBlock() != block; child = child->getParentOp())
+        {
+            auto tryOp = mlir::dyn_cast<mlir_ts::TryOp>(child->getParentOp());
+            if (!tryOp || child->getParentRegion() == &tryOp.getFinally() ||
+                child->getParentRegion() == &tryOp.getCleanup())
+            {
+                continue;
+            }
+
+            auto &finally = tryOp.getFinally();
+            if (finally.empty() || &finally.front().front() == finally.front().getTerminator())
+            {
+                continue;
+            }
+
+            lastTry = tryOp;
+        }
+
+        if (!lastTry)
+        {
+            return false;
+        }
+
+        auto value = op->getResult(0);
+
+        auto isReturn = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(jump);
+        std::string key;
+        if (!isReturn)
+        {
+            auto isBreak = mlir::isa<mlir_ts::BreakOp>(jump);
+            auto label = isBreak ? mlir::cast<mlir_ts::BreakOp>(jump).getLabelAttr()
+                                 : mlir::cast<mlir_ts::ContinueOp>(jump).getLabelAttr();
+            key = std::string(isBreak ? JUMP_ONLY_BREAK_KEY : JUMP_ONLY_CONTINUE_KEY) +
+                  (label ? label.getValue().str() : std::string());
+        }
+
+        if (!placed.insert({op, lastTry.getOperation(), isReturn ? std::string(RETURN_ONLY_ATTR_NAME) : key}).second)
+        {
+            return true;
+        }
+
+        auto location = op->getLoc();
+        auto &finallyEnd = lastTry.getFinally().back();
+        builder.setInsertionPoint(finallyEnd.getTerminator());
+        auto alwaysTrue = builder.create<mlir_ts::ConstantOp>(location, mlir_ts::BooleanType::get(builder.getContext()),
+                                                              builder.getBoolAttr(true));
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, alwaysTrue, /*withElseRegion=*/false);
+        if (isReturn)
+        {
+            ifOp->setAttr(RETURN_ONLY_ATTR_NAME, builder.getUnitAttr());
+        }
+        else
+        {
+            ifOp->setAttr(JUMP_ONLY_ATTR_NAME, builder.getStringAttr(key));
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        builder.create<mlir_ts::ReleaseOp>(location, value);
+        return true;
     }
 
     // Does `op` catch this jump - is it the loop, switch or labelled statement the jump names?
