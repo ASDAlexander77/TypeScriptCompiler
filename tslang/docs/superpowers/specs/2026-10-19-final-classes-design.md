@@ -123,7 +123,7 @@ already resolves (`addDefined`, or `addImported` for an own library over a DLL i
 canonicalizes to the `SymbolCallInternal` that `isFresh` accepts. `noDrops` does not depend on a
 function being open, so the public `RegExp.exec` called directly gets its body's facts.
 
-**Amended 2026-10-24.** A call on an object of a `@final` class another module defines stays a vtable call (see "Direct calls only into this module"). MLIRGen marks its `ts.ThisVirtualSymbolRef` `__final_receiver`, and `resolveValue` resolves it as a call to the method it names, not to the method's family. So `addImported` applies, and an own library's `__own_no_drops` covers the call.
+**Amended 2026-10-24.** A call on an object of a `@final` class another module defines stays a vtable call (see "Direct calls only into this module"). MLIRGen marks its `ts.ThisVirtualSymbolRef` `__final_receiver`, and `resolveValue` resolves it as a call to the method it names, not to the method's family. An accessor's `ts.VirtualSymbolRef` is marked and resolved the same way. So `addImported` applies, and an own library's `__own_no_drops` covers the call.
 
 The builder checks this first, on the three lib.ts shapes (`re.exec(s)` returning
 `MatchResults | null`, `this.toString()` returned as `string | number`, and

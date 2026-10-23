@@ -708,10 +708,17 @@ namespace mlirgen
 
                     assert(genContext.allowPartialResolve || methodInfo->virtualIndex >= 0);
 
-                    return builder.create<mlir_ts::VirtualSymbolRefOp>(
+                    auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
                         location, funcEntry.funcType, vtableAccess,
                         builder.getI32IntegerAttr(methodInfo->virtualIndex),
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcEntry.name));
+                    // a @final receiver of another module's class, as ClassMethodAccess marks it
+                    if (finalReceiver && !methodInfo->isAbstract)
+                    {
+                        virtualSymbOp->setAttr(FINAL_RECEIVER_ATTR_NAME, builder.getUnitAttr());
+                    }
+
+                    return virtualSymbOp;
                 };
 
                 auto getterValue = resolveVirtualAccessorFunc(getFunc, getMethodInfo);

@@ -270,8 +270,12 @@ namespace own_signature
         }
         else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::VirtualSymbolRefOp>(def))
         {
+            // an accessor's, read the same way
             identifier = refOp.getIdentifierAttr().getAttr();
-            index = refOp.getIndex();
+            if (!refOp->hasAttr(FINAL_RECEIVER_ATTR_NAME))
+            {
+                index = refOp.getIndex();
+            }
         }
         else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(def))
         {

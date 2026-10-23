@@ -1,8 +1,9 @@
 // A borrowing record from another module (export_own_record.ts): the importer owns each box
 // `pairOf` and `pairWith` return, and releases it at the end of each iteration, leaving the borrowed
-// nodes to their owners. Each record is read after a call to `Maker.weigh`, which the library lists
-// as destroying nothing: `Maker` is @final, so the call through its vtable is to that method and no
-// other. Under gc and rc the markers mean nothing.
+// nodes to their owners. Each record is read after a call to `Maker.weigh`, and the second after
+// `Maker.weight` is set and read too, which the library lists as destroying nothing: `Maker` is
+// @final, so a call through its vtable is to that method or accessor and no other. Under gc and rc
+// the markers mean nothing.
 import './export_own_record'
 
 function main() {
@@ -19,10 +20,12 @@ function main() {
     for (let i = 0; i < 1000; i++) {
         const q = m.pairWith(a);
         sum += m.weigh(b);
+        m.weight = i;
+        sum += m.weight;
         sum += q.a.v + q.b.v;
     }
 
-    assert(sum == 22000, "records across the boundary");
-    assert(a.v == 1 && b.v == 2 && m.base.v == 5, "the borrowed nodes outlive the records");
+    assert(sum == 27000, "records across the boundary");
+    assert(a.v == 1 && b.v == 2 && m.base.v == 5 && m.w == 999, "the borrowed nodes outlive the records");
     print("done.");
 }
