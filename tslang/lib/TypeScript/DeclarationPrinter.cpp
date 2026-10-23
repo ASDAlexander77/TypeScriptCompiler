@@ -229,9 +229,10 @@ namespace typescript
     }
 
     // `@keeps("p1")`, `@borrows("this", "p1")`: by the names printParams gives the parameters, `this`
-    // the receiver of a method, so the importer reads the same argument indices back
+    // the receiver of a method, so the importer reads the same argument indices back. `@record` after
+    // `@lends`: the importer's only way to know the result is a record it owns (own spec 32).
     void MLIRDeclarationPrinter::printOwnMarkers(ArrayRef<int32_t> keeps, ArrayRef<int32_t> borrows, ArrayRef<int32_t> lends,
-                                                 bool hasThis, unsigned indent)
+                                                 bool record, bool hasThis, unsigned indent)
     {
         auto printMarker = [&](StringRef name, ArrayRef<int32_t> indices) {
             if (indices.empty())
@@ -263,6 +264,12 @@ namespace typescript
         printMarker(KEEPS_DECORATOR, keeps);
         printMarker(BORROWS_DECORATOR, borrows);
         printMarker(LENDS_DECORATOR, lends);
+        if (record && !lends.empty())
+        {
+            os.indent(indent);
+            os << "@" RECORD_DECORATOR;
+            newline();
+        }
     }
 
     void MLIRDeclarationPrinter::printFunction(StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
@@ -440,7 +447,8 @@ namespace typescript
     }
 
     void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName,
-                                       ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows, ArrayRef<int32_t> ownLends)
+                                       ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows, ArrayRef<int32_t> ownLends,
+                                       bool ownRecord)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -452,7 +460,7 @@ namespace typescript
             newline();
         }
 
-        printOwnMarkers(ownKeeps, ownBorrows, ownLends, /*hasThis=*/false, 0);
+        printOwnMarkers(ownKeeps, ownBorrows, ownLends, ownRecord, /*hasThis=*/false, 0);
 
         printFunction(
             name,
@@ -710,7 +718,7 @@ namespace typescript
                 }
             }
 
-            printOwnMarkers(method.ownKeeps, method.ownBorrows, lends, /*hasThis=*/!method.isStatic, 4);
+            printOwnMarkers(method.ownKeeps, method.ownBorrows, lends, method.ownRecord, /*hasThis=*/!method.isStatic, 4);
 
             // the slot of a @cpp class's virtual method: without it the importer takes the method
             // for a non-virtual one

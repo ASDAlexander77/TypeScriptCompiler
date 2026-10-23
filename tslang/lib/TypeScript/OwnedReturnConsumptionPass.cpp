@@ -153,9 +153,23 @@ class OwnedReturnConsumptionPass
             });
         });
 
+        // -mm=own: a function another module defines, whose declaration says `@record`, returns a box
+        // its caller owns (own spec 32) - the one result of an import this pass can count as owned
+        auto own = compileOptions.memoryModel == MemoryModelOwn;
+        auto anyDeclaredRecord = false;
+        if (own)
+        {
+            module.walk([&](mlir::Operation *op) {
+                if (mlir::isa<mlir_ts::FuncOp, mlir_ts::GlobalOp>(op) && op->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME))
+                {
+                    anyDeclaredRecord = true;
+                }
+            });
+        }
+
         // `new C()` is marked where it is built, so there can be discarded temporaries to give
         // back even when no function here is classified as returning owned.
-        if (returnsOwned.empty())
+        if (returnsOwned.empty() && !anyDeclaredRecord)
         {
             claimGlobalInitializers(mth, module);
             releaseDiscardedTemporaries(mth, module);
@@ -176,7 +190,8 @@ class OwnedReturnConsumptionPass
             }
 
             auto callee = calleeNameOf(callOp, fieldFunctions);
-            auto calleeReturnsOwned = !callee.empty() && returnsOwned.contains(callee);
+            auto calleeReturnsOwned = (!callee.empty() && returnsOwned.contains(callee)) ||
+                                      (anyDeclaredRecord && calleeDeclaresRecord(module, callOp));
 
             // A call through a plain value - a callback handed to `reduce`, a function-typed
             // field - names nothing at all, and neither vtables nor member names help. What does
@@ -2137,6 +2152,46 @@ class OwnedReturnConsumptionPass
     // canonicalizer (SimplifyIndirectCallWithKnownCallee) already rewrites into direct calls,
     // which is the argument that they name one callee: it is the same judgement, made here
     // before canonicalization has run.
+    // Does the callee say `@record` (OWN_DECLARED_RECORD_ATTR_NAME)? By name, through the global a
+    // dynamically imported function is read from, or as a method - virtual or not: an override says
+    // the same markers as what it overrides (OwnershipSignaturePass::checkDeclared).
+    static bool calleeDeclaresRecord(mlir::ModuleOp module, mlir_ts::CallIndirectOp callOp)
+    {
+        if (callOp.getNumOperands() == 0)
+        {
+            return false;
+        }
+
+        auto callee = callOp.getOperand(0);
+        mlir::StringRef name;
+        if (auto symbolRefOp = callee.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            name = symbolRefOp.getIdentifier();
+        }
+        else if (auto loadOp = callee.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            if (auto addressOfOp = loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>())
+            {
+                name = addressOfOp.getGlobalName();
+            }
+        }
+        else if (auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>())
+        {
+            auto *boundOp = getMethodOp.getBoundFunc().getDefiningOp();
+            if (auto thisSymbolRefOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(boundOp))
+            {
+                name = thisSymbolRefOp.getIdentifier();
+            }
+            else if (auto thisVirtualSymbolRefOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+            {
+                name = thisVirtualSymbolRefOp.getIdentifier();
+            }
+        }
+
+        auto *symbol = name.empty() ? nullptr : mlir::SymbolTable::lookupSymbolIn(module, name);
+        return symbol && symbol->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+    }
+
     static mlir::StringRef calleeNameOf(mlir_ts::CallIndirectOp callOp, const own_facts::FieldFunctions *fieldFunctions)
     {
         if (callOp.getNumOperands() == 0)

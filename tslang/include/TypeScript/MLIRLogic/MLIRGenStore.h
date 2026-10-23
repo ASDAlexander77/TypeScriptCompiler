@@ -170,6 +170,8 @@ struct MethodInfo
     std::vector<int32_t> ownKeeps;
     std::vector<int32_t> ownBorrows;
     uint64_t ownLendsMask = 0;
+    // `@record` (OWN_DECLARED_RECORD_ATTR_NAME): what `@lends` names, the result is a record of
+    bool ownRecord = false;
 };
 
 struct GenericMethodInfo

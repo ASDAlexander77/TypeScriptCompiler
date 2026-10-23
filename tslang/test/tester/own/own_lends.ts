@@ -44,6 +44,7 @@ export interface Pair {
 }
 
 @lends("a", "b")
+@record
 export function pairOf(a: Node, b: Node): Pair {
     return { a: a, b: b };
 }

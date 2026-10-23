@@ -3296,6 +3296,28 @@ class MLIRGenImpl
     {
         auto result = mlir::success();
         iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            // `@record` names nothing: it says what `@lends` lends into (OWN_DECLARED_RECORD_ATTR_NAME)
+            if (name == RECORD_DECORATOR)
+            {
+                if (llvm::any_of(attrs, [](mlir::NamedAttribute &attr) { return attr.getName() == OWN_DECLARED_RECORD_ATTR_NAME; }))
+                {
+                    emitError(location) << "'@" RECORD_DECORATOR "' is given twice";
+                    result = mlir::failure();
+                    return;
+                }
+
+                if (!args.empty())
+                {
+                    emitError(location) << "'@" RECORD_DECORATOR "' names no parameter: '@" LENDS_DECORATOR
+                                           "' names those the record borrows";
+                    result = mlir::failure();
+                    return;
+                }
+
+                attrs.push_back({builder.getStringAttr(OWN_DECLARED_RECORD_ATTR_NAME), builder.getUnitAttr()});
+                return;
+            }
+
             if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR)
             {
                 return;
@@ -12868,6 +12890,8 @@ class MLIRGenImpl
                         }
                     }
                 }
+
+                methodInfo.ownRecord = funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
             }
 
             if (propertyName.size() > 0)
@@ -14243,7 +14267,8 @@ class MLIRGenImpl
             return attr ? attr.asArrayRef() : ArrayRef<int32_t>();
         };
         dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName,
-                 marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME), marker(OWN_DECLARED_LENDS_ATTR_NAME));
+                 marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME), marker(OWN_DECLARED_LENDS_ATTR_NAME),
+                 funcOp && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME));
 
         declExports << ss.str().str();
     }

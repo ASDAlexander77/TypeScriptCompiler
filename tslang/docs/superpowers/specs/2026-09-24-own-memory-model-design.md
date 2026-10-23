@@ -3887,9 +3887,26 @@ and the same errors as a call's result that borrows its arguments.)
   parameter's, `this`'s, or a read out of one: those parameters are the set. A record on one path
   and anything else on another (a plain borrow, a fresh object) gives no facts. `closest` returns
   `bestHit`, which holds `sc.ts[i].hit(ray)`'s records: its result borrows `ray` and `sc`.
-  `@lends` may name several parameters: `@lends("a", "b") pairOf(a, b): Pair { return { a: a, b: b }
-  }` (`own_lends`). A declaration's `@lends`, seen from another module without its body, is a plain
-  borrow: a record's box then leaks at that caller, and nothing is freed twice.
+  `@lends` may name several parameters: `@lends("a", "b") @record pairOf(a, b): Pair { return { a: a,
+  b: b } }` (`own_lends`).
+- **`@record` (USER decision 2026-10-23).** A declaration seen from another module has no body to
+  say whether the result is a record, so `@record` beside `@lends` says it
+  (`OWN_DECLARED_RECORD_ATTR_NAME`, a unit attribute). The declaration printer emits it after
+  `@lends`; the importer's declaration gets it, and its calls get `__own_result_record`
+  (`meetFacts`, and `calleesDeclare` for a call no function resolves). Under own the importer's
+  OwnedReturnConsumptionPass counts such a call's result owned (`calleeDeclaresRecord`: by name,
+  through a dynamic import's global, or as a method), so the box is released where the caller
+  lets it go. Before, the importer took the result for a plain borrow and the box leaked; nothing
+  was freed twice. Guessing record-ness from the result type, or from `@lends` naming several
+  parameters, is not safe: a plain borrow of an interface argument looks the same, and a caller
+  told it owns a record would free that argument. The defining module checks the marker against
+  its body (`checkDeclared`): `@record` without `@lends` is an error, `@record` on a body that
+  returns a borrow as it is is an error, and a function another module can call (exported, in a
+  module that is not an executable) whose body returns a record has to say `@record`. A function
+  no other module calls need not: its callers go by its body. An override says the same
+  `@record` as what it overrides. Tests: `export_own_record` / `import_own_record` (-shared, every
+  model), `import_own_record_outlives`, `own-shared-record.cmake` (the importer releases each box),
+  `own_err_record_without_lends`, `own_err_record_not_record`, `own_err_record_exported_unsaid`.
 - **Families** meet by agreement, as before (`meetFacts`): members whose sets or record-ness differ
   are demoted. The union of the sets would be sound for records (the caller would bound the result by
   more arguments), but not across a record and a plain borrow, whose callers release different

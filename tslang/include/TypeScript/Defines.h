@@ -299,6 +299,12 @@
 #define OWN_DECLARED_KEEPS_ATTR_NAME "ts.own_declared_keeps"
 #define OWN_DECLARED_BORROWS_ATTR_NAME "ts.own_declared_borrows"
 #define OWN_DECLARED_LENDS_ATTR_NAME "ts.own_declared_lends"
+// `@record`, beside `@lends`: the result is a borrowing record (own spec 32) - a box the caller owns,
+// holding a borrow of each argument `@lends` names - not a borrow of one of them. An importer, which
+// sees the declaration without its body, learns it only from this; a function another module can call
+// that returns such a record has to say it. A unit attribute on the FuncOp.
+#define RECORD_DECORATOR "record"
+#define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
 // the names of the arguments of a function that says any, for -mm=own's errors about it
 #define OWN_DECLARED_PARAM_NAMES_ATTR_NAME "ts.own_declared_param_names"
 
