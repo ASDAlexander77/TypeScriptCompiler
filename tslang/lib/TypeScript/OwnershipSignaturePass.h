@@ -446,6 +446,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // nothing when one of them does not.
     llvm::SmallVector<int32_t> declaredByCallees(const Callees &callees, llvm::StringRef name);
 
+    // Does every function a call names declare the unit marker `name` (`@record`)?
+    bool calleesDeclare(const Callees &callees, llvm::StringRef name);
+
     // The parameters, for an error, by the names MLIRGen recorded beside the marker.
     static std::string describeParams(mlir_ts::FuncOp funcOp, llvm::ArrayRef<int32_t> indices);
 

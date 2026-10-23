@@ -272,6 +272,19 @@ namespace own_signature
         return sorted;
     }
 
+    bool OwnershipSignaturePass::calleesDeclare(const Callees &callees, llvm::StringRef name)
+    {
+        return !callees.named.empty() && llvm::all_of(callees.named, [&](mlir::StringAttr symbol) {
+            mlir::Operation *declaring = functions.lookup(symbol.getValue());
+            if (!declaring)
+            {
+                declaring = globals.lookup(symbol.getValue());
+            }
+
+            return declaring && declaring->hasAttr(name);
+        });
+    }
+
     llvm::SmallVector<int32_t> OwnershipSignaturePass::declaredByCallees(const Callees &callees, llvm::StringRef name)
     {
         llvm::SmallVector<int32_t> agreed;
@@ -380,6 +393,15 @@ namespace own_signature
                 continue;
             }
 
+            if (funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME) && !funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME))
+            {
+                funcOp.emitError("'@" RECORD_DECORATOR "' of '")
+                    << funcOp.getSymName()
+                    << "' says its result is a borrowing record, but no '@" LENDS_DECORATOR "' names what it borrows";
+                signalPassFailure();
+                continue;
+            }
+
             if (declaresCallerFacts(funcOp))
             {
                 auto local = factsLocal.lookup(funcOp);
@@ -423,6 +445,28 @@ namespace own_signature
                     }
 
                     signalPassFailure();
+                }
+                else if (!lends.empty() && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME) != local.record)
+                {
+                    // An importer knows the result is a record only from `@record` (spec 32): told a plain
+                    // borrow, it never frees the box; told a record, it frees an argument it does not own.
+                    // Callers in this module go by the body, so a function no other module calls need
+                    // not say it.
+                    if (funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME))
+                    {
+                        funcOp.emitError("'@" RECORD_DECORATOR "' of '")
+                            << funcOp.getSymName() << "' says its result is a record that borrows "
+                            << describeParams(funcOp, lends) << ", but its body returns a borrow of it as it is";
+                        signalPassFailure();
+                    }
+                    else if (!executable && (funcOp->hasAttr("export") || funcOp->hasAttr(DLL_EXPORT)))
+                    {
+                        funcOp.emitError("'")
+                            << funcOp.getSymName() << "' returns a record that borrows " << describeParams(funcOp, lends)
+                            << ", which another module can learn only from '@" RECORD_DECORATOR "' beside its '@" LENDS_DECORATOR
+                               "'";
+                        signalPassFailure();
+                    }
                 }
             }
 
@@ -473,13 +517,14 @@ namespace own_signature
                     continue;
                 }
 
-                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME})
+                for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
+                                   OWN_DECLARED_RECORD_ATTR_NAME})
                 {
                     if (funcOp->hasAttr(name) != declaring->hasAttr(name) || declared(funcOp, name) != declared(declaring, name))
                     {
                         funcOp.emitError("'") << funcOp.getSymName() << "' overrides '" << declaring.getSymName()
                                               << "', and has to say the same '@" KEEPS_DECORATOR "', '@" BORROWS_DECORATOR
-                                                 "' and '@" LENDS_DECORATOR "'";
+                                                 "', '@" LENDS_DECORATOR "' and '@" RECORD_DECORATOR "'";
                         signalPassFailure();
                         break;
                     }
@@ -782,10 +827,9 @@ namespace own_signature
                 auto facts = callFacts(call.callees);
                 if (facts.empty())
                 {
-                    // a call this pass cannot resolve still has what its callees' signatures say
-                    // A declaration's `@lends` is a plain borrow to its callers: its body, which would
-                    // say whether the result is a record the caller owns (spec 32), is not here. A
-                    // record's box then leaks, and nothing is freed twice.
+                    // a call this pass cannot resolve still has what its callees' signatures say.
+                    // A declaration's `@lends` is a plain borrow to its callers, and a record the
+                    // caller owns (spec 32) with `@record`: its body is not here to say which.
                     auto keeps = declaredByCallees(call.callees, OWN_DECLARED_KEEPS_ATTR_NAME);
                     facts.owned.assign(keeps.begin(), keeps.end());
                     if (auto lends = declaredByCallees(call.callees, OWN_DECLARED_LENDS_ATTR_NAME); !lends.empty())
@@ -793,6 +837,7 @@ namespace own_signature
                         llvm::sort(lends);
                         lends.erase(std::unique(lends.begin(), lends.end()), lends.end());
                         facts.borrows = lends;
+                        facts.record = calleesDeclare(call.callees, OWN_DECLARED_RECORD_ATTR_NAME);
                     }
                 }
 
@@ -838,9 +883,12 @@ namespace own_signature
                 said.borrows = declaredLends(entry.second);
                 said.owned.assign(keeps.begin(), keeps.end());
                 // a body here that returns a borrowing record of what `@lends` names: callers in this
-                // module own the box (spec 32); checkDeclared holds the body to the parameters
+                // module own the box (spec 32); checkDeclared holds the body to the parameters. A
+                // declaration has no body: its `@record` says so.
                 auto local = factsLocal.lookup(entry.second);
-                said.record = !said.borrows.empty() && local.record && local.borrows == said.borrows;
+                said.record = !said.borrows.empty() &&
+                              (entry.second.isDeclaration() ? entry.second->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME)
+                                                            : local.record && local.borrows == said.borrows);
                 if (factsThroughInterface(entry.second, said))
                 {
                     continue;

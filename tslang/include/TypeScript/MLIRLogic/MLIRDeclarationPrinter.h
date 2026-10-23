@@ -24,7 +24,8 @@ namespace typescript
         void printEnum(StringRef, NamespaceInfo::TypePtr, mlir::DictionaryAttr);
         void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool, StringRef = StringRef());
         void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType, StringRef = StringRef(),
-                   ArrayRef<int32_t> ownKeeps = {}, ArrayRef<int32_t> ownBorrows = {}, ArrayRef<int32_t> ownLends = {});
+                   ArrayRef<int32_t> ownKeeps = {}, ArrayRef<int32_t> ownBorrows = {}, ArrayRef<int32_t> ownLends = {},
+                   bool ownRecord = false);
         void print(ClassInfo::TypePtr);
         void print(InterfaceInfo::TypePtr);
         void printGenericClass(NamespaceInfo::TypePtr, StringRef);
@@ -40,7 +41,7 @@ namespace typescript
         bool filterName(StringRef);
         bool filterField(mlir::Attribute);
         void printParams(ArrayRef<mlir::Type>, mlir::Type);
-        void printOwnMarkers(ArrayRef<int32_t>, ArrayRef<int32_t>, ArrayRef<int32_t>, bool, unsigned);
+        void printOwnMarkers(ArrayRef<int32_t>, ArrayRef<int32_t>, ArrayRef<int32_t>, bool, bool, unsigned);
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
         void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
         void printAccessor(bool, StringRef, StringRef, mlir_ts::AccessLevel, ArrayRef<mlir::Type>, mlir::Type, mlir::Type, StringRef);
