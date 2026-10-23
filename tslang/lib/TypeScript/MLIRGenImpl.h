@@ -12723,8 +12723,22 @@ class MLIRGenImpl
                         // 64 bits: an index past it would be a borrow an importer never learns of
                         if (index >= 64)
                         {
-                            emitError(location) << "'@lends' of '" << funcOp.getSymName() << "' names its argument " << index
-                                                << ", but a method's '@lends' can name only its arguments 0 to 63";
+                            // the parameter by the name `@lends` gave it (processOwnParamMarkers)
+                            auto names = funcOp->getAttrOfType<mlir::ArrayAttr>(OWN_DECLARED_PARAM_NAMES_ATTR_NAME);
+                            auto name = names && index < static_cast<int32_t>(names.size())
+                                            ? mlir::dyn_cast<mlir::StringAttr>(names[index])
+                                            : mlir::StringAttr();
+                            auto diag = emitError(location) << "'@lends' of '" << funcOp.getSymName() << "' names ";
+                            if (name)
+                            {
+                                diag << "'" << name.getValue() << "'";
+                            }
+                            else
+                            {
+                                diag << "its argument " << index;
+                            }
+
+                            diag << ", but a method's '@lends' can name only its first 64 arguments, the receiver among them";
                             return false;
                         }
 

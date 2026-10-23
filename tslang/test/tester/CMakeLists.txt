@@ -4075,7 +4075,7 @@ set(own_error_cases
     "own_err_lends_not_borrow|'@lends' of 'made' names 'l', but its body does not return a borrow of it"
     "own_err_lends_and_borrows|'firstOf' cannot say both '@lends' and '@borrows'"
     "own_err_lends_two_params|'@lends' of 'pick' names 'a', 'b', but its body returns a borrow of 'a'"
-    "own_err_lends_index_64|'@lends' of 'K[.]pick' names its argument 64, but a method's '@lends' can name only its arguments 0 to 63"
+    "own_err_lends_index_64|'@lends' of 'K[.]pick' names 'p63', but a method's '@lends' can name only its first 64 arguments, the receiver among them"
     "own_err_lends_outlives|:20:11: error: '[^']*' borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|:19:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"

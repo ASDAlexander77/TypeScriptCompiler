@@ -3945,8 +3945,9 @@ is gone; its shape is in `own_borrowing_record_arg`. `own_err_lends_two_params` 
 of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`. A method's `@lends` reaches its
 class's declaration as a 64-bit mask, so since the final review (M4, 2026-10-23) an index past 63 is
 an error rather than a borrow an importer silently never learns of: `own_err_lends_index_64` (a
-method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names its argument
-64, but a method's '@lends' can name only its arguments 0 to 63". The compiler before it accepted
+method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names 'p63', but a
+method's '@lends' can name only its first 64 arguments, the receiver among them" (the parameter by
+its name since the follow-up; it read "names its argument 64" before). The compiler before it accepted
 the program; the 63rd parameter (argument 63) is still accepted, under own, rc and gc.
 
 Teeth (temporary `OWN_TEETH` switches, removed): with the per-site routine dropped (every record's
