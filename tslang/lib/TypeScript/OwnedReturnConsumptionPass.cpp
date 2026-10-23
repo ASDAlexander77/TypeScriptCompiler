@@ -448,6 +448,81 @@ class OwnedReturnConsumptionPass
             return it != assigns.end() && it->getValue().contains(global);
         };
 
+        // What a hold keeps of an argument: the value read before the call. Under rc a view of it is
+        // made at the call, after every argument is evaluated - after a later one may have given
+        // the global a new value - so the value read is the one behind it: the object a cast or an
+        // interface is made over (`f(G, (G = mk(), x))` with an interface parameter), or the values
+        // an object literal was given (`f({ v: G.v }, ..)`), which the literal holds with no count
+        // until it is boxed for the view, at the call too.
+        auto readsOf = [&](mlir::Operation *call, mlir::Value argument, llvm::SmallVectorImpl<mlir::Value> &reads) {
+            if (!compileOptions.isRefCounted())
+            {
+                reads.push_back(argument);
+                return;
+            }
+
+            auto value = argument;
+            for (;;)
+            {
+                if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                {
+                    value = castOp.getIn();
+                }
+                else if (auto newInterfaceOp = value.getDefiningOp<mlir_ts::NewInterfaceOp>())
+                {
+                    value = newInterfaceOp.getThisVal();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            // an object literal boxed for an interface: stored into a new value_ref
+            auto newOp = value.getDefiningOp<mlir_ts::NewOp>();
+            if (newOp && mlir::isa<mlir_ts::ValueRefType>(newOp.getInstance().getType()))
+            {
+                for (auto *user : newOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    if (storeOp && storeOp.getReference() == newOp.getInstance())
+                    {
+                        value = storeOp.getValue();
+                        break;
+                    }
+                }
+            }
+
+            // an object literal: a read of the slot it was built in, in the call's block
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto varOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+            if (varOp && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && varOp->getBlock() == call->getBlock() &&
+                mlir::isa<mlir_ts::TupleType>(value.getType()))
+            {
+                for (auto *user : varOp->getUsers())
+                {
+                    auto fieldRef = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+                    if (!fieldRef)
+                    {
+                        continue;
+                    }
+
+                    for (auto *fieldUser : fieldRef->getUsers())
+                    {
+                        auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                        if (storeOp && storeOp.getReference() == fieldRef.getResult())
+                        {
+                            reads.push_back(storeOp.getValue());
+                        }
+                    }
+                }
+
+                return;
+            }
+
+            reads.push_back(value);
+        };
+
         llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> held;
         module.walk([&](mlir::Operation *op) {
             if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
@@ -457,6 +532,7 @@ class OwnedReturnConsumptionPass
             }
 
             llvm::SmallPtrSet<mlir::Value, 4> seen;
+            llvm::SmallVector<mlir::Value> reads;
             for (auto argument : own_facts::callArgs(op))
             {
                 // a method's object: `this` of the method bound to it
@@ -469,6 +545,11 @@ class OwnedReturnConsumptionPass
                     }
                 }
 
+                readsOf(op, argument, reads);
+            }
+
+            for (auto argument : reads)
+            {
                 if (!mth.ownsHeapMemory(op->getLoc(), argument.getType()) || !seen.insert(argument).second)
                 {
                     continue;
