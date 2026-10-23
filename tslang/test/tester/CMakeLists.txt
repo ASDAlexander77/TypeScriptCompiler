@@ -3682,6 +3682,13 @@ foreach(kept_mm own rc none gc)
     tslang_add_test(NAME test-compile-${kept_mm}-own-global-kept-argument COMMAND test-runner -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
 endforeach()
 
+# A read of a global used after calls that give only other globals new values; the same program under
+# every model.
+foreach(read_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${read_mm}-own-global-read-callee-other COMMAND test-runner -jit -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+    tslang_add_test(NAME test-compile-${read_mm}-own-global-read-callee-other COMMAND test-runner -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+endforeach()
+
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
 # rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
 foreach(reassign_mm rc gc)
@@ -3967,6 +3974,8 @@ set(own_error_cases
     "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_argument_transitive|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_read_callee_assigns|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_read_callee_assigns_transitive|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_global_method_transitive|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_this_field_move|a value read out of the global 'GK' is lent to a call that may release or overwrite it"
     "own_err_global_argument_field_let|a value read out of the global 'G' is lent to a call that may release or overwrite it"

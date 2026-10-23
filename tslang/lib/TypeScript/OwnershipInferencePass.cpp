@@ -4195,8 +4195,9 @@ class OwnershipInferencePass
     // Such a read is a borrow of the value the global owns - `const c = K.w` names the read itself,
     // with no retain - and an assignment of the global releases it. So no use of the read, nor of
     // what it produces (walkBorrowed), may run after one in this function. A path back to a use
-    // through the read itself is a new read. A call that assigns the global is #639's at its
-    // arguments. (C1 of the fix-up review: `const c = K.w; K.w = new V(i + 1); print(c.x)` in a loop
+    // through the read itself is a new read. A call that may assign the global, itself or through
+    // its callees, is such an assignment too (follow-up 11: `const c = G; reset(); print(c.x)`); the
+    // read given to that call as an argument is #639's. (C1 of the fix-up review: `const c = K.w; K.w = new V(i + 1); print(c.x)` in a loop
     // read the block the assignment freed.)
     //
     // Where the walk meets a keep, the read is either followed into what holds it or rejected -
@@ -4366,6 +4367,19 @@ class OwnershipInferencePass
             if (other && other.getGlobalName() == global)
             {
                 ends.push_back(op);
+            }
+
+            // a call that may give the global a new value (OwnershipSignaturePass, pinAssignedGlobals):
+            // `const c = G; reset(); print(c.x)`
+            if (isCall(op))
+            {
+                auto assigned = op->getAttrOfType<mlir::ArrayAttr>(OWN_ASSIGNS_GLOBALS_ATTR_NAME);
+                if (op->hasAttr(OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME) ||
+                    (assigned && llvm::any_of(assigned.getAsRange<mlir::StringAttr>(),
+                                              [&](mlir::StringAttr name) { return name.getValue() == global; })))
+                {
+                    ends.push_back(op);
+                }
             }
         });
 

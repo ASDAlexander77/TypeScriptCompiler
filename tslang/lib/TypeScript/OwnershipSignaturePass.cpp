@@ -453,6 +453,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         findOpen(module);
         computeFacts();
         computeDrops();
+        pinAssignedGlobals();
         rejectGlobalArgumentsDropped();
         findBorrowingStates(module);
         findBoundedForwarders();
@@ -5521,6 +5522,116 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         return !callees.instanceOf && !callees.imported &&
                llvm::any_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return !noDrops.contains(callee); });
+    }
+
+    // ---- Globals a call may assign ----
+
+    // The globals each call may give a new value, pinned on the call for the inference
+    // (OWN_ASSIGNS_GLOBALS_ATTR_NAME, OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME): a store to a global, or its
+    // release, in a callee's body, or in a call it makes. A call that may drop and whose callees are
+    // not known may assign any; one that drops nothing assigns none. A read of a global ends where
+    // the global is given a new value (checkGlobalRead), and a call that does so ends it as surely as
+    // a store in the same function: `const c = G; reset(); print(c.x)`.
+    void pinAssignedGlobals()
+    {
+        llvm::DenseMap<mlir::Operation *, llvm::SmallVector<Call *>> callsIn;
+        for (auto &call : calls)
+        {
+            callsIn[call.op->getParentOfType<mlir_ts::FuncOp>()].push_back(&call);
+        }
+
+        llvm::DenseMap<mlir::Operation *, llvm::SetVector<mlir::StringRef>> assigns;
+        llvm::DenseSet<mlir::Operation *> assignsAny;
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            funcOp.walk([&](mlir::Operation *op) {
+                mlir::Value slot;
+                if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+                {
+                    slot = storeOp.getReference();
+                }
+                else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+                {
+                    slot = releaseSlotOp.getSlot();
+                }
+
+                if (auto addressOfOp = slot ? slot.getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp())
+                {
+                    assigns[funcOp].insert(addressOfOp.getGlobalName());
+                }
+            });
+        }
+
+        // what a call may assign, from what its callees do so far
+        auto assignedBy = [&](Call &call, llvm::SetVector<mlir::StringRef> &globals) {
+            if (!callMayDrop(call.callees))
+            {
+                return false;
+            }
+
+            if (!call.callees.known)
+            {
+                return true;
+            }
+
+            auto any = false;
+            for (auto callee : call.callees.funcs)
+            {
+                any |= assignsAny.contains(callee);
+                if (auto found = assigns.find(callee); found != assigns.end())
+                {
+                    globals.insert(found->second.begin(), found->second.end());
+                }
+            }
+
+            return any;
+        };
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &entry : functions)
+            {
+                auto funcOp = entry.second;
+                for (auto *call : callsIn[funcOp])
+                {
+                    llvm::SetVector<mlir::StringRef> globals;
+                    if (assignedBy(*call, globals))
+                    {
+                        changed |= assignsAny.insert(funcOp).second;
+                    }
+
+                    for (auto global : globals)
+                    {
+                        changed |= assigns[funcOp].insert(global);
+                    }
+                }
+            }
+        }
+
+        for (auto &call : calls)
+        {
+            llvm::SetVector<mlir::StringRef> globals;
+            if (assignedBy(call, globals))
+            {
+                call.op->setAttr(OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+                continue;
+            }
+
+            if (globals.empty())
+            {
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Attribute> names;
+            for (auto global : globals)
+            {
+                names.push_back(mlir::StringAttr::get(&getContext(), global));
+            }
+
+            call.op->setAttr(OWN_ASSIGNS_GLOBALS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), names));
+        }
     }
 
     // An argument read out of a global (`run(G)`, `G.m()`) is lent to the callee, and the callee may
