@@ -6490,14 +6490,44 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 thisValEffective = rewriter.create<LLVM::SelectOp>(loc, isMissing, nullThisVal, thisVal);
             }
 
-            auto thisOpaque =
-                rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisValEffective);
-            auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
-                loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
-                methodOrFieldPtr);
-            auto boundFuncVal =
-                rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
-            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
+            if (!tsLlvmContext->compileOptions.isRefCounted())
+            {
+                auto thisOpaque = rewriter.create<mlir_ts::CastOp>(
+                    loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisValEffective);
+                auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
+                    loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
+                    methodOrFieldPtr);
+                auto boundFuncVal =
+                    rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
+                rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
+                return success();
+            }
+
+            // Under rc a method bound to an object counts it through the object's type tag
+            // (getBoundObjectTypeTag), and a receiver of the bound value - `c = ix.get` - holds the
+            // object. Bound through an interface, the object's type is not known here, so the bound
+            // value had no tag, counted nothing, and `c()` ran on a freed object once the interface
+            // went. The interface carries the tag of what it points at (NewInterfaceOpLowering), and
+            // the bound value takes that one: null for a missing optional method, whose `this` is.
+            mlir::Value tag = rewriter.create<LLVM::ExtractValueOp>(
+                loc, th.getPtrType(), transformed.getInterfaceVal(), MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
+            if (isOptional)
+            {
+                auto isNullThis = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, thisValEffective,
+                                                                rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+                tag = rewriter.create<LLVM::SelectOp>(loc, isNullThis, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), tag);
+            }
+
+            // built here as CreateBoundFunctionOpLowering builds it, rather than over a
+            // ts.CreateBoundFunction still waiting for its own conversion
+            auto structVal = rewriter.create<LLVM::UndefOp>(loc, tch.convertType(boundFunc));
+            auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, methodOrFieldPtr,
+                                                                   MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+            auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, thisValEffective,
+                                                                   MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
+            auto structVal4 = rewriter.create<LLVM::InsertValueOp>(loc, structVal3, tag,
+                                                                   MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{structVal4});
         }
         else
         {
