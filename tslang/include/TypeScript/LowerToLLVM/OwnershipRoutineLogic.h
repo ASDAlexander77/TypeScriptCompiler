@@ -945,9 +945,39 @@ class OwnershipRoutineLogic
         });
     }
 
+    // An interface is { vtable, this }, and the tag of what `this` points at is the vtable's first
+    // slot (INTERFACE_VTABLE_TYPE_SLOT). Zeroed storage has no vtable, and a null interface's vtable
+    // a null tag: both release nothing.
     void releaseViaInterfaceTag(mlir::Type type, mlir::Value slotPtr, bool retaining)
     {
-        releaseViaTagBesideThis(type, slotPtr, INTERFACE_TYPE_INDEX, retaining);
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto loc = op->getLoc();
+        auto ptrTy = th.getPtrType();
+        auto llvmType = tch.convertType(type);
+
+        auto vtableSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                       ArrayRef<LLVM::GEPArg>{0, DATA_VALUE_INDEX});
+        auto vtableValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, vtableSlot);
+        auto thisSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, llvmType, slotPtr,
+                                                     ArrayRef<LLVM::GEPArg>{0, THIS_VALUE_INDEX});
+
+        emitIfNonNull(vtableValue, [&]() {
+            auto tagSlot = rewriter.create<LLVM::GEPOp>(loc, ptrTy, ptrTy, vtableValue,
+                                                        ArrayRef<LLVM::GEPArg>{INTERFACE_VTABLE_TYPE_SLOT});
+            auto tagValue = rewriter.create<LLVM::LoadOp>(loc, ptrTy, tagSlot);
+            emitIfNonNull(tagValue, [&]() {
+                if (retaining)
+                {
+                    retainViaDescriptor(tagValue, thisSlot);
+                }
+                else
+                {
+                    releaseViaDescriptor(tagValue, thisSlot);
+                }
+            });
+        });
     }
 
     // Body of the capture-box routines: they take the storage holding the box pointer, like

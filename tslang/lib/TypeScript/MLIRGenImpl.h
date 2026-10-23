@@ -3724,6 +3724,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source, mlir::Type target);
     MethodInfo mlirGenNoInstanceOfFunction(mlir::Location location);
+    VirtualMethodOrFieldInfo interfaceVTableTypeSlot();
+    bool isInterfaceVTableTypeSlot(const VirtualMethodOrFieldInfo &methodOrField);
+    mlir::Value mlirGenInterfaceVTableTypeTag(mlir::Location location, mlir::Type implementerType);
     mlir::LogicalResult mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
                                                   mlir_ts::FunctionType funcType, const GenContext &genContext);
     ValueOrLogicalResult mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
@@ -5940,7 +5943,8 @@ class MLIRGenImpl
         // an instance's first word is its class's vtable
         auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
                                                                     thisPtrValue, 0 /*VTABLE index*/);
-        return mlirGenInstanceOfThroughVTable(location, vtablePtr, thisPtrValue, classRefVal, genContext);
+        return mlirGenInstanceOfThroughVTable(location, vtablePtr, CLASS_VTABLE_INSTANCEOF_SLOT, thisPtrValue,
+                                              classRefVal, genContext);
     }
 
     // `i instanceof C` for an interface value: its own vtable answers, since what it holds may be
@@ -5960,7 +5964,8 @@ class MLIRGenImpl
             [&]() {
                 auto vtable = builder.create<mlir_ts::ExtractInterfaceVTableOp>(location, getOpaqueType(), interfaceValue);
                 auto thisPtr = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
-                return mlirGenInstanceOfThroughVTable(location, vtable, thisPtr, classRefVal, genContext);
+                return mlirGenInstanceOfThroughVTable(location, vtable, INTERFACE_VTABLE_INSTANCEOF_SLOT, thisPtr,
+                                                      classRefVal, genContext);
             },
             [&](mlir::Type) {
                 return ValueOrLogicalResult(
@@ -6051,10 +6056,12 @@ class MLIRGenImpl
             notInstance);
     }
 
-    // Asks `thisPtrValue` whether it is a `classRefVal` through slot 0 of `vtablePtr`: the class's
-    // `.instanceOf` for a class vtable, and the implementer's for an interface vtable.
-    ValueOrLogicalResult mlirGenInstanceOfThroughVTable(mlir::Location location, mlir::Value vtablePtr, mlir::Value thisPtrValue,
-                                                        mlir::Value classRefVal, const GenContext &genContext)
+    // Asks `thisPtrValue` whether it is a `classRefVal` through slot `instanceOfSlot` of `vtablePtr`:
+    // the class's `.instanceOf` for a class vtable (CLASS_VTABLE_INSTANCEOF_SLOT), and the implementer's
+    // for an interface vtable (INTERFACE_VTABLE_INSTANCEOF_SLOT).
+    ValueOrLogicalResult mlirGenInstanceOfThroughVTable(mlir::Location location, mlir::Value vtablePtr, int32_t instanceOfSlot,
+                                                        mlir::Value thisPtrValue, mlir::Value classRefVal,
+                                                        const GenContext &genContext)
     {
         auto classType = dyn_cast<mlir_ts::ClassType>(classRefVal.getType());
         if (!classType)
@@ -6063,9 +6070,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // `.instanceOf` is slot 0 of a class vtable and of an interface vtable alike
-        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
-            location, getOpaqueType(), vtablePtr, INTERFACE_VTABLE_INSTANCEOF_SLOT);
+        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtablePtr, instanceOfSlot);
 
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
 
@@ -12552,9 +12557,11 @@ class MLIRGenImpl
             {
                 fields.push_back(
                 {
-                    vtableRecord.fieldInfo.id, 
-                    mlir_ts::RefType::get(vtableRecord.fieldInfo.type), 
-                    false, 
+                    vtableRecord.fieldInfo.id,
+                    // the type tag is a pointer of its own, not a field's offset (interfaceVTableTypeSlot)
+                    isInterfaceVTableTypeSlot(vtableRecord) ? vtableRecord.fieldInfo.type
+                                                            : mlir_ts::RefType::get(vtableRecord.fieldInfo.type),
+                    false,
                     mlir_ts::AccessLevel::Public
                 });
             }

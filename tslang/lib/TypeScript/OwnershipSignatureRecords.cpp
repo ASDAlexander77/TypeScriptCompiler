@@ -194,6 +194,79 @@ namespace own_signature
         recordBoxes[newOp.getOperation()] = std::move(info);
     }
 
+    // A borrowing record's box is released by a routine of its own, which leaves the fields it
+    // borrows to their owners (spec 32) - through the type tag of the vtable it is seen through as an
+    // interface (INTERFACE_VTABLE_TYPE_SLOT). That vtable is the object literal's, which every record
+    // of its shape shares, so a box that borrows is seen through a copy of it whose tag names the
+    // borrowing routine (TypeDescriptorOpLowering), one copy per set of fields borrowed.
+    void OwnershipSignaturePass::giveBorrowingRecordsTheirVTables(mlir::ModuleOp module)
+    {
+        mlir::OpBuilder builder(&getContext());
+        module.walk([&](mlir_ts::NewInterfaceOp newInterfaceOp) {
+            auto attr = newInterfaceOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
+            if (!attr)
+            {
+                return;
+            }
+
+            // where the vtable's address is taken: straight (through casts), or for the copy an object
+            // literal's absent members are patched in, the load it is copied from
+            mlir::OpOperand *sourceUse = &newInterfaceOp.getInterfaceVTableMutable();
+            while (auto castOp = sourceUse->get().getDefiningOp<mlir_ts::CastOp>())
+            {
+                sourceUse = &castOp.getInMutable();
+            }
+
+            if (auto newOp = sourceUse->get().getDefiningOp<mlir_ts::NewOp>())
+            {
+                sourceUse = nullptr;
+                for (auto *user : newOp->getUsers())
+                {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                    auto loadOp = storeOp && storeOp.getReference() == newOp.getResult()
+                                      ? storeOp.getValue().getDefiningOp<mlir_ts::LoadOp>()
+                                      : mlir_ts::LoadOp();
+                    if (loadOp)
+                    {
+                        sourceUse = &loadOp.getReferenceMutable();
+                    }
+                }
+            }
+
+            auto addressOfOp = sourceUse ? sourceUse->get().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+            auto globalOp = addressOfOp ? module.lookupSymbol<mlir_ts::GlobalOp>(addressOfOp.getGlobalName()) : mlir_ts::GlobalOp();
+            if (!globalOp || !globalOp.getSymName().ends_with("..vtbl"))
+            {
+                newInterfaceOp.emitError("-mm=own: the vtable of a record that borrows its fields can't be given the box's own type tag");
+                signalPassFailure();
+                return;
+            }
+
+            std::string variantName = globalOp.getSymName().drop_back(llvm::StringRef("..vtbl").size()).str();
+            for (auto index : attr.asArrayRef())
+            {
+                variantName += ".r" + std::to_string(index);
+            }
+
+            variantName += "..vtbl";
+
+            auto variantOp = module.lookupSymbol<mlir_ts::GlobalOp>(variantName);
+            if (!variantOp)
+            {
+                builder.setInsertionPointAfter(globalOp);
+                variantOp = mlir::cast<mlir_ts::GlobalOp>(builder.clone(*globalOp));
+                variantOp.setSymName(variantName);
+                variantOp.getInitializerRegion().walk([&](mlir_ts::TypeDescriptorOp descriptorOp) {
+                    descriptorOp->setAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME, attr);
+                });
+            }
+
+            builder.setInsertionPoint(addressOfOp);
+            auto variantAddressOfOp = builder.create<mlir_ts::AddressOfOp>(addressOfOp.getLoc(), variantOp);
+            sourceUse->set(variantAddressOfOp);
+        });
+    }
+
     OwnershipSignaturePass::RecordFlow OwnershipSignaturePass::recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params)
     {
         llvm::SmallVector<mlir::Value> work{value};

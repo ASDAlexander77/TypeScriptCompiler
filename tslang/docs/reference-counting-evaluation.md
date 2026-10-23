@@ -2517,7 +2517,8 @@ remaining leak sat (§9.30).
 
 The layout does not have to be recoverable from the type, because **an interface has exactly the
 problem an `any` box has, and the same answer was already in the tree**. An interface value grows
-a third word holding the runtime type tag of whatever `this` points at (`INTERFACE_TYPE_INDEX`),
+a third word holding the runtime type tag of whatever `this` points at (since moved into the
+vtable - see the end of this section),
 and its release and retain routines read that tag's descriptor and call the concrete type's own
 routines - `releaseViaDescriptor`/`retainViaDescriptor` unchanged from what §9.6 built for `any`
 and for tagged unions. Two properties make the tag safe to rely on:
@@ -2533,6 +2534,14 @@ and for tagged unions. Two properties make the tag safe to rely on:
 
 The interface value going from 16 to 24 bytes is why `-mm=none`'s numbers in this section are
 about 8% above §9.30's.
+
+Later the tag moved out of the value and into the vtable, whose first slot it now is
+(`INTERFACE_VTABLE_TYPE_SLOT`, ahead of the implementer's `.instanceOf`): an interface vtable is
+made for one concrete type - a class's, a subclass's own, an object literal's - so it can carry
+that type's tag, and the interface value is `{ vtable, this }` again, 16 bytes. Release and retain
+read the tag through the vtable; an interface's null vtable has a null tag. Under `-mm=own`, a
+record box that borrows its fields (own spec 32) has a release routine of its own, so it is seen
+through a copy of its object literal's vtable whose tag names that routine.
 
 **Two dormant omissions became live over-releases the moment an interface became an owner, and
 both were freeing memory that was still in use.** Neither is a consequence of this slice; both

@@ -468,6 +468,39 @@ namespace mlirgen
         return methodInfo;
     }
 
+    // The header slot of an interface vtable holding the runtime type tag (INTERFACE_VTABLE_TYPE_SLOT),
+    // as the vtable's tuple names it: an opaque pointer, not a field's offset.
+    VirtualMethodOrFieldInfo MLIRGenImpl::interfaceVTableTypeSlot()
+    {
+        return VirtualMethodOrFieldInfo(mlir_ts::FieldInfo{
+            MLIRHelper::TupleFieldName(INTERFACE_VTABLE_TYPE_NAME, builder.getContext()), getOpaqueType(), false,
+            mlir_ts::AccessLevel::Public});
+    }
+
+    bool MLIRGenImpl::isInterfaceVTableTypeSlot(const VirtualMethodOrFieldInfo &methodOrField)
+    {
+        auto name = methodOrField.isField ? dyn_cast_or_null<mlir::StringAttr>(methodOrField.fieldInfo.id) : mlir::StringAttr();
+        return name && name.getValue() == INTERFACE_VTABLE_TYPE_NAME;
+    }
+
+    // What the type tag slot of an interface vtable made for `implementerType` holds: the type's
+    // descriptor, through which an interface value over it is released and retained. Null when the
+    // type owns no heap memory - nothing to release - or has no `typeof` name to key a descriptor on,
+    // and in an interface's null vtable (no `implementerType`).
+    mlir::Value MLIRGenImpl::mlirGenInterfaceVTableTypeTag(mlir::Location location, mlir::Type implementerType)
+    {
+        if (implementerType && mth.ownsHeapMemory(location, implementerType))
+        {
+            TypeOfOpHelper toh(builder);
+            if (auto tag = toh.typeDescriptorValue(location, implementerType))
+            {
+                return builder.create<mlir_ts::CastOp>(location, getOpaqueType(), tag);
+            }
+        }
+
+        return builder.create<mlir_ts::CastOp>(location, getOpaqueType(), builder.create<mlir_ts::NullOp>(location, getNullType()));
+    }
+
     // `<stubName>(this, ...) { throw new Error("method is abstract"); }`, typed as the interface's
     // method (`this` opaque): what a null interface's vtable holds for each method
     // (mlirGenNullInterfaceVTable). Without the default library there is no `Error`, and the message
@@ -585,7 +618,8 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        // slot 0: null is an instance of nothing (INTERFACE_VTABLE_HEADER_SLOTS)
+        // the header (INTERFACE_VTABLE_HEADER_SLOTS): null has no type to release through, and is an
+        // instance of nothing
         auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
         if (!noInstanceOf.funcType)
         {
@@ -593,6 +627,7 @@ namespace mlirgen
         }
 
         virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
+        virtualTable.insert(virtualTable.begin(), interfaceVTableTypeSlot());
 
         auto registeredType = registerVariable(
             location, vtableName, true, VariableType::Var,
@@ -604,7 +639,11 @@ namespace mlirgen
                 for (auto [fieldIndex, methodOrField] : llvm::enumerate(virtualTable))
                 {
                     mlir::Value slotValue;
-                    if (methodOrField.isMissing)
+                    if (isInterfaceVTableTypeSlot(methodOrField))
+                    {
+                        slotValue = mlirGenInterfaceVTableTypeTag(location, mlir::Type());
+                    }
+                    else if (methodOrField.isMissing)
                     {
                         // the -1 sentinel of an absent member, as in mlirGenClassVirtualTableDefinitionForInterface
                         auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType,
@@ -709,7 +748,8 @@ namespace mlirgen
             return result;
         }
 
-        // slot 0: an object literal is an instance of no class (INTERFACE_VTABLE_HEADER_SLOTS)
+        // the header (INTERFACE_VTABLE_HEADER_SLOTS): the object's type tag, and an object literal is an
+        // instance of no class
         auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
         if (!noInstanceOf.funcType)
         {
@@ -717,6 +757,7 @@ namespace mlirgen
         }
 
         virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
+        virtualTable.insert(virtualTable.begin(), interfaceVTableTypeSlot());
 
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
 
@@ -820,7 +861,13 @@ namespace mlirgen
                 auto fieldIndex = 0;
                 for (auto methodOrField : virtualTable)
                 {
-                    if (methodOrField.isField)
+                    if (isInterfaceVTableTypeSlot(methodOrField))
+                    {
+                        auto typeTag = mlirGenInterfaceVTableTypeTag(location, objectType);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, typeTag, vtableValue, MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
+                    else if (methodOrField.isField)
                     {
                         // an object-literal method is resolved via the FIELD path too
                         // (methodsAsFields=true, getInterfaceVirtualTableForObject) since it's
@@ -979,7 +1026,7 @@ namespace mlirgen
                     }
                     else if (!methodOrField.methodInfo.funcName.empty())
                     {
-                        // the `.instanceOf` slot this function puts first. Every other entry is
+                        // the `.instanceOf` header slot this function puts in. Every other entry is
                         // a field: getInterfaceVirtualTableForObject hardcodes methodsAsFields.
                         auto methodValueRef = builder.create<mlir_ts::SymbolRefOp>(
                             location, methodOrField.methodInfo.funcType,

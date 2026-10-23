@@ -345,20 +345,22 @@ namespace own_signature
     {
         auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
         auto slot = castOp ? castOp.getIn().getDefiningOp<mlir_ts::VTableOffsetRefOp>() : mlir_ts::VTableOffsetRefOp();
-        if (!slot || slot.getIndex() != INTERFACE_VTABLE_INSTANCEOF_SLOT)
+        if (!slot)
         {
             return false;
         }
 
-        // a class vtable, read out of an object's first word, or an interface's own vtable,
-        // whose slot 0 is its implementer's `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS)
+        // a class vtable, read out of an object's first word, whose slot 0 is the class's
+        // `.instanceOf` (CLASS_VTABLE_INSTANCEOF_SLOT), or an interface's own vtable, whose header
+        // holds its implementer's (INTERFACE_VTABLE_INSTANCEOF_SLOT)
         auto *vtable = slot.getVtable().getDefiningOp();
         if (auto classVTable = mlir::dyn_cast_or_null<mlir_ts::VTableOffsetRefOp>(vtable))
         {
-            return classVTable.getIndex() == 0;
+            return classVTable.getIndex() == 0 && slot.getIndex() == CLASS_VTABLE_INSTANCEOF_SLOT;
         }
 
-        return mlir::isa_and_nonnull<mlir_ts::ExtractInterfaceVTableOp>(vtable);
+        return mlir::isa_and_nonnull<mlir_ts::ExtractInterfaceVTableOp>(vtable) &&
+               slot.getIndex() == INTERFACE_VTABLE_INSTANCEOF_SLOT;
     }
 
 } // namespace own_signature

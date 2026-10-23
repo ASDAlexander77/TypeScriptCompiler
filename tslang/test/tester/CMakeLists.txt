@@ -416,6 +416,7 @@ tslang_add_test(NAME test-compile-00-const-bound-method-declared-type COMMAND te
 tslang_add_test(NAME test-compile-00-nullable-class-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_class_to_interface.ts")
 tslang_add_test(NAME test-compile-00-class-to-interface-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_to_interface_null.ts")
 tslang_add_test(NAME test-compile-00-null-interface-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00null_interface_to_interface.ts")
+tslang_add_test(NAME test-compile-00-interface-type-tag-in-vtable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_type_tag_in_vtable.ts")
 tslang_add_test(NAME test-compile-00-argument-place-aliased COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
@@ -1011,6 +1012,7 @@ tslang_add_test(NAME test-jit-00-const-bound-method-declared-type COMMAND test-r
 tslang_add_test(NAME test-jit-00-nullable-class-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_class_to_interface.ts")
 tslang_add_test(NAME test-jit-00-class-to-interface-null COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_to_interface_null.ts")
 tslang_add_test(NAME test-jit-00-null-interface-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00null_interface_to_interface.ts")
+tslang_add_test(NAME test-jit-00-interface-type-tag-in-vtable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_type_tag_in_vtable.ts")
 tslang_add_test(NAME test-jit-00-argument-place-aliased COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
@@ -1996,6 +1998,7 @@ set(TSLANG_CORPUS
     00nullable_class_to_interface.ts
     00class_to_interface_null.ts
     00null_interface_to_interface.ts
+    00interface_type_tag_in_vtable.ts
     00argument_place_aliased.ts
     00temporary_read_in_finally.ts
     00unowned_local_store.ts
