@@ -1,6 +1,7 @@
 // -mm=own rejects: `keep` stores its parameter `c` into a field, and `main` lends it the global `g`,
-// which `reset` gives another value elsewhere: `g` is not immortal (spec 25), and a call that may
-// drop cannot be lent a value read out of it.
+// which `reset` gives another value elsewhere: `g` is not immortal (spec 25), and what `keep` stores
+// outlives the next assignment of `g` (checkGlobalRead). `keep` assigns no global, so the call itself
+// may be lent the value.
 class C {
     constructor(public x: number) {}
 }

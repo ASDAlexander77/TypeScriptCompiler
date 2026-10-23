@@ -3620,6 +3620,13 @@ foreach(immortal_mm rc gc none)
     endforeach()
 endforeach()
 
+# A value read out of an assigned global, lent to a call that assigns only other globals, outlives the
+# call; own refuses a call that may assign that global or one it cannot name.
+foreach(other_global_mm own rc gc none)
+    tslang_add_test(NAME test-jit-${other_global_mm}-own_global_argument_other_global COMMAND test-runner -jit -mm=${other_global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_argument_other_global.ts")
+    tslang_add_test(NAME test-compile-${other_global_mm}-own_global_argument_other_global COMMAND test-runner -mm=${other_global_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_argument_other_global.ts")
+endforeach()
+
 # A global whose one store runs in a loop is mortal (spec 25): its stores are not marked, so each
 # releases the value before it, which an immortal header would leak. The `if` arm's store runs once.
 add_test(NAME test-own-global-loop-store-mortal
@@ -4093,7 +4100,8 @@ set(own_error_cases
     "own_err_global_method_transitive|:19:11: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_this_field_move|a value read out of the global 'GK' is lent to a call that may release or overwrite it"
     "own_err_global_argument_field_let|:21:5: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
-    "own_err_global_kept_field|a value read out of the global 'g' is lent to a call that may release or overwrite it"
+    "own_err_global_kept_field|:25:5: error: the value read from 'g' is kept where its end at an assignment of 'g' cannot be checked"
+    "own_err_global_argument_indirect|:20:11: error: a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_global_from_global|:8:5: error: the initializer of global 'k' reads a value another owner keeps"
     "own_err_global_from_field|:12:7: error: the initializer of global 'k' reads a value another owner keeps"
