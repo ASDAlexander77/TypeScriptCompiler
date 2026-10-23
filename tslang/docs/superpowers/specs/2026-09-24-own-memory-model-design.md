@@ -1626,7 +1626,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it does not own outright: a literal nested by value, or one holding a borrowed or `let` field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone |
+| an object literal holding a value it does not own outright: a literal nested by value, or one holding a borrowed or `let` field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_nested` (nested by value), `own_err_record_literal_let_field` (a `let`'s value, not an interface); the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
@@ -2978,7 +2978,9 @@ either:
 - or rejected: "the value read from 'G' is kept where its end at an assignment of 'G' cannot be
   checked; -mm=own cannot prove it outlives the global's value" - a field of an object, an array,
   a global, a callee that keeps it, a capture, a return. A string read is copied where it is kept
-  (§22), so its keeps are not this check's.
+  (§22), so its keeps are not this check's. This is a backstop: almost every keep fails an earlier
+  rule first. One shape is known to reach it alone, `k.w = M.w` with `k: typeof M` (a static kept
+  through a vtable slot), pinned by `own_err_global_kept_typeof`.
 
 Tests: `own_err_global_let_holder_static` (a static block's loop), `own_err_global_let_destructure`
 (`let { v } = { v: K.w }` in a top-level loop) and `own_err_global_let_holder` (a module global),
@@ -3943,8 +3945,9 @@ is gone; its shape is in `own_borrowing_record_arg`. `own_err_lends_two_params` 
 of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`. A method's `@lends` reaches its
 class's declaration as a 64-bit mask, so since the final review (M4, 2026-10-23) an index past 63 is
 an error rather than a borrow an importer silently never learns of: `own_err_lends_index_64` (a
-method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names its argument
-64, but a method's '@lends' can name only its arguments 0 to 63". The compiler before it accepted
+method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names 'p63', but a
+method's '@lends' can name only its first 64 arguments, the receiver among them" (the parameter by
+its name since the follow-up; it read "names its argument 64" before). The compiler before it accepted
 the program; the 63rd parameter (argument 63) is still accepted, under own, rc and gc.
 
 Teeth (temporary `OWN_TEETH` switches, removed): with the per-site routine dropped (every record's

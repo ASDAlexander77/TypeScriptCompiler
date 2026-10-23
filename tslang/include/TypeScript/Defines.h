@@ -179,6 +179,11 @@
 // on the C++ runtime's type_info vtable a `throw`'s exception tables name (`??_7type_info@@6B@`,
 // `_ZTVN10__cxxabiv1...`): a foreign global, but no program value is ever read out of it or stored into it
 #define EH_TYPE_INFO_ATTR_NAME "__eh_type_info"
+// on a ts.Cast from one interface to another whose members are not where the source has them (an
+// interface that does not extend the source): for each slot of the target's vtable, the slot of the
+// source's that holds it, or -1 for an optional member the source lacks. The cast then gives the
+// value a vtable built from its own one, kept once per content (CastOpLowering).
+#define INTERFACE_VTABLE_MAP_ATTR_NAME "__vtable_map"
 // An interface `v?: T` field's slot is the field's offset from `this`, or -1 when absent. A class
 // stores its `v?: T` as optional<T> - {T, flag}, value first - and its slot carries this bit on top
 // of the offset: an access then reads the flag (false is undefined), and a write sets it.
