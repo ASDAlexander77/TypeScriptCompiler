@@ -1703,7 +1703,8 @@ class MLIRGenImpl
 
         // The value an interface or a bound method is made over: `v` seen through `I` in
         // `const i: I = v`, or `this` of `const m = v.get`, through any casts: a declared type
-        // (`const m: () => number = v.get`) casts the bound method to a hybrid function.
+        // (`const m: () => number = v.get`) casts the bound method to a hybrid function. An
+        // interface over a `C | null` (`const i: I | null = v`) is made over the class read out of it.
         static mlir::Value viewedValue(mlir::Value value)
         {
             while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
@@ -1714,7 +1715,13 @@ class MLIRGenImpl
             auto *definingOp = value ? value.getDefiningOp() : nullptr;
             if (auto newInterfaceOp = dyn_cast_or_null<mlir_ts::NewInterfaceOp>(definingOp))
             {
-                return newInterfaceOp.getThisVal();
+                auto thisVal = newInterfaceOp.getThisVal();
+                if (auto getValueFromUnionOp = thisVal.getDefiningOp<mlir_ts::GetValueFromUnionOp>())
+                {
+                    return getValueFromUnionOp.getIn();
+                }
+
+                return thisVal;
             }
 
             if (isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::CreateBoundFunctionOp>(definingOp))
@@ -13330,6 +13337,9 @@ class MLIRGenImpl
 
     // class or tuple or object to interface
     std::optional<ValueOrLogicalResult> castToInterfaceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
+
+    // the vtable a class object is seen through as an interface
+    ValueOrLogicalResult mlirGenClassInterfaceVTable(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
 
     // casts between tuple-like types (tuple, const tuple, class storage, interface fields)
     std::optional<ValueOrLogicalResult> castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);

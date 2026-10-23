@@ -1011,7 +1011,8 @@ class OwnedReturnConsumptionPass
     // straight is never released as a discarded temporary (§9.30): `let g = mk()` keeps the call's
     // +1. A value given to it through a view of the global's type is: `ts.Cast` to `C | null` or
     // `Shared<T> | null`, `ts.OptionalValue` to `C | undefined`, `ts.CreateUnionInstance`,
-    // `ts.NewInterface` over a class object for an interface-typed global (`let g: I = mk()`) - the view
+    // `ts.NewInterface` over a class object for an interface-typed global (`let g: I = mk()`), and
+    // over the class read out of a `C | null` (`let g: I | null = maybe()`) - the view
     // is the one use the producer has, and it is releasable, so the producer's reference was given
     // back at the end of the region and the global was born at count 0, pointing at freed memory
     // (#459; own spec 23.1 for handles).
@@ -1059,6 +1060,10 @@ class OwnedReturnConsumptionPass
                 else if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(definingOp))
                 {
                     value = newInterfaceOp.getThisVal();
+                }
+                else if (auto getValueFromUnionOp = mlir::dyn_cast<mlir_ts::GetValueFromUnionOp>(definingOp))
+                {
+                    value = getValueFromUnionOp.getIn();
                 }
                 else
                 {

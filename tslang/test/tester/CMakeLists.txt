@@ -412,6 +412,7 @@ tslang_add_test(NAME test-compile-00-element-store-after-value COMMAND test-runn
 tslang_add_test(NAME test-compile-00-const-interface-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-compile-00-argument-place-overwritten COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
 tslang_add_test(NAME test-compile-00-const-bound-method-declared-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_bound_method_declared_type.ts")
+tslang_add_test(NAME test-compile-00-nullable-class-to-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_class_to_interface.ts")
 tslang_add_test(NAME test-compile-00-argument-place-aliased COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
@@ -1003,6 +1004,7 @@ tslang_add_test(NAME test-jit-00-element-store-after-value COMMAND test-runner -
 tslang_add_test(NAME test-jit-00-const-interface-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-jit-00-argument-place-overwritten COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
 tslang_add_test(NAME test-jit-00-const-bound-method-declared-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_bound_method_declared_type.ts")
+tslang_add_test(NAME test-jit-00-nullable-class-to-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00nullable_class_to_interface.ts")
 tslang_add_test(NAME test-jit-00-argument-place-aliased COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
@@ -1984,6 +1986,7 @@ set(TSLANG_CORPUS
     00const_interface_field_read.ts
     00argument_place_overwritten.ts
     00const_bound_method_declared_type.ts
+    00nullable_class_to_interface.ts
     00argument_place_aliased.ts
     00temporary_read_in_finally.ts
     00unowned_local_store.ts
@@ -3722,6 +3725,13 @@ endforeach()
 foreach(iface_mm own rc none gc)
     tslang_add_test(NAME test-jit-${iface_mm}-own-global-interface-fresh COMMAND test-runner -jit -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
     tslang_add_test(NAME test-compile-${iface_mm}-own-global-interface-fresh COMMAND test-runner -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
+endforeach()
+
+# An interface-or-null global given a class object or null holds an interface over the object, or
+# null; the same program under every model (own takes only a global's initializer for now).
+foreach(iface_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${iface_mm}-own-nullable-class-interface COMMAND test-runner -jit -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_nullable_class_interface.ts")
+    tslang_add_test(NAME test-compile-${iface_mm}-own-nullable-class-interface COMMAND test-runner -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_nullable_class_interface.ts")
 endforeach()
 
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
