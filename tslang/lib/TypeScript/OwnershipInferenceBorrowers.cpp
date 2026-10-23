@@ -267,6 +267,13 @@ namespace own_inference
             return true;
         }
 
+        // one of the values a select chooses between, not its condition
+        if (auto selectOp = mlir::dyn_cast<mlir::arith::SelectOp>(user); selectOp && use.get() != selectOp.getCondition())
+        {
+            values.push_back(selectOp.getResult());
+            return true;
+        }
+
         if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
         {
             if (auto argument = branchOp.getSuccessorBlockArgument(use.getOperandNumber()))
