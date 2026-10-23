@@ -1725,7 +1725,8 @@ class MLIRGenImpl
             return readsLocalSlot(viewedValue(value));
         }
 
-        // A value read out of a field, through any casts: what `h.c` is in `const c = h.c`.
+        // A value read out of a field, through any casts: what `h.c` is in `const c = h.c`, seen
+        // through an interface too (`const c = ix.c`), and what a handle holds (`const v = s.value`).
         static bool readsField(mlir::Value value)
         {
             while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
@@ -1734,7 +1735,8 @@ class MLIRGenImpl
             }
 
             auto loadOp = value ? value.getDefiningOp<mlir_ts::LoadOp>() : mlir_ts::LoadOp();
-            return loadOp && loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            return loadOp && mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::InterfaceSymbolRefOp,
+                                                   mlir_ts::SharedValueRefOp>(loadOp.getReference().getDefiningOp());
         }
 
         // A value read out of a global variable, through any casts: what `G` is in `const n = G`.
@@ -1898,7 +1900,8 @@ class MLIRGenImpl
             // interface or a bound method made over such a read (`const i: I = a`, `const m = a.get`):
             // it holds the block as `b` would.
             //
-            // Under rc, so does a const read out of a field (`const c = h.c`), an element (`const c =
+            // Under rc, so does a const read out of a field (`const c = h.c`, also through an interface,
+            // `const c = ix.c`, and a handle's value, `const c = s.value`), an element (`const c =
             // a[0]`, `const [c] = a`) or a global (`const c = G`): folded, `h.c = d`, `a[0] = d` or
             // `G = d` - here or in a call - freed what `c` still read. So does an interface or a bound
             // method made over such a read (`const i: I = h.v`, `const m = a[0].get`), which holds the
