@@ -3699,6 +3699,7 @@ endforeach()
 foreach(read_mm own rc none gc)
     tslang_add_test(NAME test-jit-${read_mm}-own-global-read-callee-other COMMAND test-runner -jit -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
     tslang_add_test(NAME test-compile-${read_mm}-own-global-read-callee-other COMMAND test-runner -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+endforeach()
 # An interface-typed global given a fresh class object owns it; the same program under every model.
 foreach(iface_mm own rc none gc)
     tslang_add_test(NAME test-jit-${iface_mm}-own-global-interface-fresh COMMAND test-runner -jit -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
