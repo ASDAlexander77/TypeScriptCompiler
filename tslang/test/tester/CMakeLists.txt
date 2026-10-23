@@ -3603,7 +3603,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
-                 own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements)
+                 own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
+                 own_tuple_record_values)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3705,6 +3706,14 @@ foreach(destructure_mm rc gc none)
 endforeach()
 tslang_add_test(NAME test-jit-own-00-owned-locals COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 tslang_add_test(NAME test-compile-own-00-owned-locals COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+
+# A tuple of owned values built or returned as a value, and a record a call returned read through a
+# `const` or destructured: own builds the tuple in a slot as an object literal, and a field read out of
+# the record is a read of it. The same program under every other model.
+foreach(tuple_record_mm rc gc none)
+    tslang_add_test(NAME test-jit-${tuple_record_mm}-own_tuple_record_values COMMAND test-runner -jit -mm=${tuple_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_tuple_record_values.ts")
+    tslang_add_test(NAME test-compile-${tuple_record_mm}-own_tuple_record_values COMMAND test-runner -mm=${tuple_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_tuple_record_values.ts")
+endforeach()
 
 # A call through an interface closed in its module gets its implementations' facts (spec 31); the
 # same program under every other model.
@@ -4228,7 +4237,11 @@ set(own_error_cases
     "own_err_borrowing_record_open|:17:31: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
     "own_err_borrowing_record_borrowed_again|:29:11: error: '[^']*' borrows the result of 'A[.]hit' but is used here after it may be released or overwritten"
     "own_err_destructure_element_reassigned|:10:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
-    "own_err_destructure_element_returned|:9:5: error: '[^']*' borrows an element and cannot be stored, returned or captured")
+    "own_err_destructure_element_returned|:9:5: error: '[^']*' borrows an element and cannot be stored, returned or captured"
+    "own_err_record_field_returned|:12:5: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_destructured_field_returned|:16:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_record_field_after_move|:24:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_const_field|:20:11: error: '[^']*' borrows the result of 'hit' but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

@@ -67,6 +67,9 @@
 
 #include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
 
+// own_facts::isConstantData: -mm=own builds a tuple of values that own blocks in a slot
+#include "OwnershipFacts.h"
+
 #include <algorithm>
 #include <iterator>
 #include <type_traits>
@@ -10722,8 +10725,66 @@ class MLIRGenImpl
             arrayValues.push_back(value);
         }
 
+        // -mm=own: a tuple of values that own blocks (`[mk(1), mk(2)]` as `[N, N]`) is built as an object
+        // literal is, in a slot each value is stored into, which own reads as the literal taking them
+        // (spec 26). Made at once by `ts.CreateTuple`, each value had a second reference own could not
+        // place: the tuple's, and the temporary's own release.
+        // A tuple of data nothing owns (literals, `[[1, "x"], 2]`), or of reads (`[items[1]]`), stays one value.
+        auto isRead = [](mlir::Value value) {
+            while (auto *def = value.getDefiningOp())
+            {
+                if (!mlir::isa<mlir_ts::CastOp>(def) && !own_facts::isView(def))
+                {
+                    break;
+                }
+
+                value = def->getOperand(0);
+            }
+
+            return !!value.getDefiningOp<mlir_ts::LoadOp>();
+        };
+        if (compileOptions.memoryModel == MemoryModelOwn &&
+            llvm::any_of(arrayValues, [&](mlir::Value value) { return !own_facts::isConstantData(value) && !isRead(value); }))
+        {
+            return createTupleInSlot(location, fieldInfos, arrayValues, genContext);
+        }
+
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
-    }    
+    }
+
+    // A tuple built in a slot, as mlirGenCreateTuple builds an object literal: a constant seed holds each
+    // constant value, and every other is stored into its field.
+    ValueOrLogicalResult createTupleInSlot(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
+                                           ArrayRef<mlir::Value> values, const GenContext &genContext)
+    {
+        SmallVector<mlir::Attribute> seed;
+        for (auto value : values)
+        {
+            auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+            seed.push_back(constOp ? constOp.getValueAttr() : mlir::Attribute(builder.getUnitAttr()));
+        }
+
+        auto tupleType = getTupleType(fieldInfos);
+        auto seedValue = builder.create<mlir_ts::ConstantOp>(location, getConstTupleType(fieldInfos),
+                                                             mlir::ArrayAttr::get(builder.getContext(), seed));
+        auto tupleVar = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), seedValue,
+                                                            builder.getBoolAttr(false), builder.getIndexAttr(0));
+        for (auto [index, value] : llvm::enumerate(values))
+        {
+            if (value.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                continue;
+            }
+
+            auto fieldRef = builder.create<mlir_ts::PropertyRefOp>(
+                location, mlir_ts::RefType::get(fieldInfos[index].type), tupleVar, builder.getI32IntegerAttr(index));
+            auto field = builder.create<mlir_ts::LoadOp>(location, fieldInfos[index].type, fieldRef);
+            auto saved = mlirGenSaveLogicOneItem(location, field, value, genContext);
+            EXIT_IF_FAILED(saved)
+        }
+
+        return V(builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar));
+    }
 
     ValueOrLogicalResult createFixedSizeArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
     {
