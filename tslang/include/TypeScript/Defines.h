@@ -173,6 +173,12 @@
 // INTERFACE_VTABLE_HEADER_SLOTS.
 #define INTERFACE_VTABLE_INSTANCEOF_SLOT 0
 #define INTERFACE_VTABLE_HEADER_SLOTS 1
+// on the global of an interface's null vtable (mlirGenNullInterfaceVTable): a null interface is seen
+// through it, and nothing implements the interface by it
+#define NULL_INTERFACE_VTABLE_ATTR_NAME "__null_interface_vtable"
+// on the C++ runtime's type_info vtable a `throw`'s exception tables name (`??_7type_info@@6B@`,
+// `_ZTVN10__cxxabiv1...`): a foreign global, but no program value is ever read out of it or stored into it
+#define EH_TYPE_INFO_ATTR_NAME "__eh_type_info"
 // on a ts.Cast from one interface to another whose members are not where the source has them (an
 // interface that does not extend the source): for each slot of the target's vtable, the slot of the
 // source's that holds it, or -1 for an optional member the source lacks. The cast then gives the

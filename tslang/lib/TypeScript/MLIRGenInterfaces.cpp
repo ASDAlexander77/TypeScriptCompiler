@@ -468,6 +468,222 @@ namespace mlirgen
         return methodInfo;
     }
 
+    // `<stubName>(this, ...) { throw new Error("method is abstract"); }`, typed as the interface's
+    // method (`this` opaque): what a null interface's vtable holds for each method
+    // (mlirGenNullInterfaceVTable). Without the default library there is no `Error`, and the message
+    // itself is thrown.
+    mlir::LogicalResult MLIRGenImpl::mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
+                                                               mlir_ts::FunctionType funcType, const GenContext &genContext)
+    {
+        if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
+        {
+            // one a discovery run left without its body (GenContext::clean) is made again
+            if (!existing.isDeclaration())
+            {
+                return mlir::success();
+            }
+
+            existing->erase();
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        // a function of its own, made wherever the first null interface is: the throw's walk outwards
+        // (mlirGenReleaseOwnedOnUnwind) must not reach the scopes of the function that asked for it
+        GenContext funcGenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.disableSpreadParams = true;
+        funcGenContext.parentBlockContext = nullptr;
+        funcGenContext.finallyGuardScope = nullptr;
+        funcGenContext.finallyEscapingJumps = nullptr;
+        funcGenContext.isLoop = false;
+        funcGenContext.isLoopBodyScope = false;
+        funcGenContext.isSwitchScope = false;
+        funcGenContext.loopLabel.clear();
+        funcGenContext.loopBodyLabel.clear();
+        funcGenContext.labelledScopeLabel.clear();
+
+        auto result = mlirGenFunctionBody(
+            location, name, stubName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
+                NodeFactory nf(NodeFactoryFlags::None);
+                Expression thrown = nf.createStringLiteral(S("method is abstract"));
+                if (getClassInfoByFullName("Error"))
+                {
+                    NodeArray<Expression> argumentsArray;
+                    argumentsArray.push_back(thrown);
+                    thrown = nf.createNewExpression(nf.createIdentifier(S("Error")), undefined, argumentsArray);
+                }
+
+                return mlirGen(nf.createThrowStatement(thrown), genContext);
+            },
+            funcGenContext, 1/*to skip This*/);
+
+        // it returns nothing at all: what the ownership passes conclude about the functions that do
+        // (OwnedReturnConsumptionPass) does not wait on it
+        if (auto stubOp = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
+        {
+            stubOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return result;
+    }
+
+    // The vtable a null interface is seen through: `I | null` holding null, a null class object seen
+    // through `I` (castToInterfaceSpecialCases). Its `this` is null, and `this` is what an interface
+    // is tested for null by. Each method is a stub that throws, as a call of an abstract method would;
+    // a field's slot is offset 0, so a read of one reads through the null `this`, as a null class
+    // object's field does; an optional member is absent (-1), as one a class does not implement.
+    // One per interface and module.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
+                                                                 const GenContext &genContext)
+    {
+        auto vtableName = nullInterfaceVTableName(newInterfacePtr);
+        if (auto existValue = resolveFullNameIdentifier(location, vtableName, true, genContext))
+        {
+            return existValue;
+        }
+
+        MethodInfo emptyMethod;
+        mlir_ts::FieldInfo emptyFieldInfo;
+        // the slots' MethodInfo are handed out by reference (getVirtualTable)
+        std::deque<MethodInfo> stubs;
+        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        auto result = newInterfacePtr->getVirtualTable(
+            virtualTable,
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
+                if (isConditional)
+                {
+                    return {emptyFieldInfo, mlir::success()};
+                }
+
+                return {mlir_ts::FieldInfo{id, fieldType, false, mlir_ts::AccessLevel::Public}, mlir::success()};
+            },
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int) -> std::pair<MethodInfo &, mlir::LogicalResult> {
+                if (isConditional)
+                {
+                    return {emptyMethod, mlir::success()};
+                }
+
+                auto stubName = concat(newInterfacePtr->fullName, "null", name);
+                if (mlir::failed(mlirGenThrowingMethodStub(location, name, stubName, funcType, genContext)))
+                {
+                    return {emptyMethod, mlir::failure()};
+                }
+
+                auto &stub = stubs.emplace_back();
+                stub.name = name;
+                stub.funcName = stubName.str();
+                stub.funcType = funcType;
+                stub.virtualIndex = -1;
+                stub.accessLevel = mlir_ts::AccessLevel::Public;
+                return {stub, mlir::success()};
+            });
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        // slot 0: null is an instance of nothing (INTERFACE_VTABLE_HEADER_SLOTS)
+        auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
+        if (!noInstanceOf.funcType)
+        {
+            return mlir::failure();
+        }
+
+        virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
+
+        auto registeredType = registerVariable(
+            location, vtableName, true, VariableType::Var,
+            [&](mlir::Location location, const GenContext &genContext) {
+                auto virtTuple = getVirtualTableType(virtualTable);
+                auto ptrIntType = builder.getIntegerType(compileOptions.sizeBits());
+
+                mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
+                for (auto [fieldIndex, methodOrField] : llvm::enumerate(virtualTable))
+                {
+                    mlir::Value slotValue;
+                    if (methodOrField.isMissing)
+                    {
+                        // the -1 sentinel of an absent member, as in mlirGenClassVirtualTableDefinitionForInterface
+                        auto negative1 = builder.create<mlir_ts::ConstantOp>(location, ptrIntType,
+                                                                             builder.getIntegerAttr(ptrIntType, -1));
+                        auto slotType = methodOrField.isField ? methodOrField.fieldInfo.type : methodOrField.methodInfo.funcType;
+                        auto castedPtr = cast(location, mlir_ts::RefType::get(slotType), negative1, genContext);
+                        if (castedPtr.failed_or_no_value())
+                        {
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
+                        }
+
+                        slotValue = V(castedPtr);
+                    }
+                    else if (methodOrField.isField)
+                    {
+                        // offset 0: the field is read at the null `this`
+                        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                        slotValue = builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), nullValue);
+                    }
+                    else
+                    {
+                        slotValue = builder.create<mlir_ts::SymbolRefOp>(
+                            location, methodOrField.methodInfo.funcType,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), methodOrField.methodInfo.funcName));
+                    }
+
+                    vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                        location, virtTuple, slotValue, vtableValue, MLIRHelper::getStructIndex(builder, fieldIndex));
+                }
+
+                return TypeValueInitType{virtTuple, vtableValue, TypeProvided::Yes};
+            },
+            genContext);
+        if (!registeredType)
+        {
+            return mlir::failure();
+        }
+
+        if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(vtableName))
+        {
+            globalOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return resolveFullNameIdentifier(location, vtableName, true, genContext);
+    }
+
+    // null (`value`, or a new one) cast to `type` - the interface, or its vtable for a null class
+    // object (castToInterfaceSpecialCases) - naming the interface's null vtable, which the lowering
+    // puts in (CastLogicHelper::nullInterfaceVTable). The ownership passes see a cast of null, which
+    // holds nothing, as they always have.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenNullInterfaceVTableCast(mlir::Location location, mlir::Type type,
+                                                                     InterfaceInfo::TypePtr newInterfacePtr,
+                                                                     const GenContext &genContext, mlir::Value value)
+    {
+        if (!value)
+        {
+            value = builder.create<mlir_ts::NullOp>(location, getNullType());
+        }
+
+        // a discovery run's IR is thrown away, and with it whatever it made: the run that keeps its IR
+        // makes the vtable
+        if (genContext.dummyRun || genContext.allowPartialResolve)
+        {
+            return V(builder.create<mlir_ts::CastOp>(location, type, value));
+        }
+
+        auto nullVTable = mlirGenNullInterfaceVTable(location, newInterfacePtr, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
+        if (auto addressOfOp = V(nullVTable).getDefiningOp<mlir_ts::AddressOfOp>(); addressOfOp && addressOfOp->use_empty())
+        {
+            addressOfOp->erase();
+        }
+
+        auto castOp = builder.create<mlir_ts::CastOp>(location, type, value);
+        castOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), nullInterfaceVTableName(newInterfacePtr)));
+        return V(castOp);
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location,
                                                                         mlir_ts::ObjectType objectType,
                                                                         InterfaceInfo::TypePtr newInterfacePtr,

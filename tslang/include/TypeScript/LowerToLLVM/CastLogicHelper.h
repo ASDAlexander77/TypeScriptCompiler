@@ -59,6 +59,32 @@ class CastLogicHelper
         external = true;
     }
 
+    // The address of the vtable a null interface is seen through: the one MLIRGen named on the cast
+    // (mlirGenNullInterfaceVTableCast), whose methods throw; none when it named none, as for a cast
+    // the lowering makes itself.
+    mlir::Value nullInterfaceVTableAddress()
+    {
+        auto vtableRef = op ? op->getAttrOfType<mlir::FlatSymbolRefAttr>(NULL_INTERFACE_VTABLE_ATTR_NAME) : mlir::FlatSymbolRefAttr();
+        if (!vtableRef)
+        {
+            return mlir::Value();
+        }
+
+        return rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), vtableRef.getValue());
+    }
+
+    // the same, as an operand of an interface made here, or `noVTable`
+    mlir::Value nullInterfaceVTable(mlir::Value noVTable)
+    {
+        auto vtableAddress = nullInterfaceVTableAddress();
+        if (!vtableAddress)
+        {
+            return noVTable;
+        }
+
+        return rewriter.create<mlir_ts::DialectCastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), vtableAddress);
+    }
+
     mlir::Value cast(mlir::Value in, mlir::Type inType, mlir::Type resType)
     {
         auto inLLVMType = tch.convertType(inType);
@@ -332,7 +358,16 @@ class CastLogicHelper
             if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {
                 // create null interface
-                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, in);
+                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, nullInterfaceVTable(in));
+            }
+
+            // the vtable a null class object is seen through as an interface (castToInterfaceSpecialCases)
+            if (isa<mlir_ts::OpaqueType>(resType))
+            {
+                if (auto vtableAddress = nullInterfaceVTableAddress())
+                {
+                    return vtableAddress;
+                }
             }
 
             if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
@@ -424,10 +459,11 @@ class CastLogicHelper
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
+            // set when its `this` is: a null interface may be seen through a vtable (UnaryBinLogicalOrHelper)
             if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue =
-                    rewriter.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                    rewriter.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
                 auto llvmBoolType = tch.convertType(boolType);
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
@@ -556,7 +592,7 @@ class CastLogicHelper
             {
                 // create null interface
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
-                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
+                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullInterfaceVTable(nullVal));
             }
 
             if (auto classType = dyn_cast<mlir_ts::ClassType>(resType))

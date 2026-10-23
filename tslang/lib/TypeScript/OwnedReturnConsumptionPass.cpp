@@ -89,6 +89,13 @@ class OwnedReturnConsumptionPass
         // See callThroughValueReturnsOwned.
         auto anyUnclassifiedOwningReturn = false;
         module.walk([&](mlir_ts::FuncOp funcOp) {
+            // a method of an interface's null vtable throws, and returns nothing to anyone
+            // (mlirGenNullInterfaceVTable)
+            if (funcOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
+            {
+                return;
+            }
+
             auto name = funcOp.getName();
             auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted());
             if (classified)
@@ -122,9 +129,11 @@ class OwnedReturnConsumptionPass
         // virtualCallReturnsOwned. Only slots initialised from a symbol are recorded; a slot that
         // holds anything else - a field's offset, say - is simply absent, and absent means
         // unclassifiable there rather than ignorable.
+        // An interface's null vtable is not one: its methods throw, and never return anything
+        // (mlirGenNullInterfaceVTable).
         llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> vtableSlots;
         module.walk([&](mlir_ts::GlobalOp globalOp) {
-            if (!globalOp.getSymName().ends_with(VTABLE_NAME))
+            if (!globalOp.getSymName().ends_with(VTABLE_NAME) || globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 return;
             }
@@ -1011,7 +1020,8 @@ class OwnedReturnConsumptionPass
     // straight is never released as a discarded temporary (§9.30): `let g = mk()` keeps the call's
     // +1. A value given to it through a view of the global's type is: `ts.Cast` to `C | null` or
     // `Shared<T> | null`, `ts.OptionalValue` to `C | undefined`, `ts.CreateUnionInstance`,
-    // `ts.NewInterface` over a class object for an interface-typed global (`let g: I = mk()`) - the view
+    // `ts.NewInterface` over a class object for an interface-typed global (`let g: I = mk()`), and
+    // over the class read out of a `C | null` (`let g: I | null = maybe()`) - the view
     // is the one use the producer has, and it is releasable, so the producer's reference was given
     // back at the end of the region and the global was born at count 0, pointing at freed memory
     // (#459; own spec 23.1 for handles).
@@ -1059,6 +1069,10 @@ class OwnedReturnConsumptionPass
                 else if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(definingOp))
                 {
                     value = newInterfaceOp.getThisVal();
+                }
+                else if (auto getValueFromUnionOp = mlir::dyn_cast<mlir_ts::GetValueFromUnionOp>(definingOp))
+                {
+                    value = getValueFromUnionOp.getIn();
                 }
                 else
                 {

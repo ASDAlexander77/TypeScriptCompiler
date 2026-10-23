@@ -186,6 +186,12 @@ namespace own_signature
         for (auto &entry : globals)
         {
             auto globalOp = entry.second;
+            // the C++ runtime's type_info vtable a `throw`'s tables name: nothing is read out of it
+            if (globalOp->hasAttr(EH_TYPE_INFO_ATTR_NAME))
+            {
+                continue;
+            }
+
             auto foreign = globalOp->hasAttr("import") || globalOp->hasAttr(DLL_IMPORT) || globalOp.getInitializerRegion().empty() ||
                            globalOp.getInitializerRegion().front().empty();
             if (foreign && !scalarType(globalOp.getType()))
@@ -391,6 +397,14 @@ namespace own_signature
             }
 
             if (mlir::isa<mlir_ts::SymbolRefOp>(user) && isClassVTableEntry(user))
+            {
+                continue;
+            }
+
+            // a method of an interface's null vtable, which throws (mlirGenNullInterfaceVTable): called
+            // through a null interface only, never with an object
+            if (auto globalOp = user->getParentOfType<mlir_ts::GlobalOp>();
+                mlir::isa<mlir_ts::SymbolRefOp>(user) && globalOp && globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 continue;
             }

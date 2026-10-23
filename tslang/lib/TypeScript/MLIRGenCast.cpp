@@ -1011,46 +1011,57 @@ namespace mlirgen
     {
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
         {
-            if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
+            // null (or undefined) is an interface over a null `this`, seen through the interface's null
+            // vtable, whose methods throw (mlirGenNullInterfaceVTable). It stays the cast the ownership
+            // passes know holds nothing; the cast names the vtable, and the lowering puts it in.
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
             {
-                auto result = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
-                auto vtableAccess = V(result);
-
-                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                assert(classInfo);
-
-                auto implementIndex = classInfo->getImplementIndex(interfaceType.getName().getValue());
-                if (implementIndex >= 0)
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                if (!interfaceInfo)
                 {
-                    auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
-
-                    assert(genContext.allowPartialResolve || interfaceVirtTableIndex >= 0);
-
-                    auto interfaceVTablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(
-                        location, mth.getInterfaceVTableType(interfaceType), vtableAccess, interfaceVirtTableIndex);
-
-                    auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
-                        location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
-                    return V(newInterface);
+                    return std::nullopt;
                 }
 
-                // create interface vtable from current class
+                return mlirGenNullInterfaceVTableCast(location, interfaceType, interfaceInfo, genContext, value);
+            }
+
+            // A class object is a pointer that may be null (`C | null` is stored as `C`), and null
+            // stays null: an interface over a null `this`. The vtable may be read through the object,
+            // so it is chosen by a test for null: a null object is seen through the interface's null
+            // vtable, whose methods throw (mlirGenNullInterfaceVTable). The interface is built over
+            // the object outside the test, so that the ownership passes see it is the object (a view),
+            // not a value merged from branches.
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
+            {
                 auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                 assert(interfaceInfo);
 
-                if (auto createdInterfaceVTableForClass =
-                        mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!!"
-                                            << "@ created interface:" << V(createdInterfaceVTableForClass) << "\n";);
-                    auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
-                        location, mlir::TypeRange{interfaceType}, value, createdInterfaceVTableForClass);
+                auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+                auto isNotNull = builder.create<mlir_ts::LogicalBinaryOp>(
+                    location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsEqualsToken), value, nullValue);
 
-                    return V(newInterface);
-                }
+                auto vtableType = mth.getInterfaceVTableType(interfaceType);
+                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+                auto interfaceVTable = mclh.conditionalValue(isNotNull,
+                    [&]() -> ValueOrLogicalResult {
+                        auto classVTable = mlirGenClassInterfaceVTable(location, value, classType, interfaceType, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(classVTable)
+                        if (V(classVTable).getType() == vtableType)
+                        {
+                            return classVTable;
+                        }
 
-                emitError(location) << "type: " << classType.getName() << " missing interface: " << interfaceType.getName();
-                return mlir::failure();
+                        return V(builder.create<mlir_ts::CastOp>(location, vtableType, V(classVTable)));
+                    },
+                    [&](mlir::Type) -> ValueOrLogicalResult {
+                        // null, as the ownership passes know it, naming the null vtable the lowering puts in
+                        return mlirGenNullInterfaceVTableCast(location, vtableType, interfaceInfo, genContext);
+                    });
+                EXIT_IF_FAILED_OR_NO_VALUE(interfaceVTable)
+
+                auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
+                    location, mlir::TypeRange{interfaceType}, value, V(interfaceVTable));
+                return V(newInterface);
             }
 
             // tuple to interface
@@ -1095,6 +1106,41 @@ namespace mlirgen
         }
 
         return std::nullopt;
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::mlirGenClassInterfaceVTable(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        assert(classInfo);
+
+        auto implementIndex = classInfo->getImplementIndex(interfaceType.getName().getValue());
+        if (implementIndex >= 0)
+        {
+            auto result = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
+            auto vtableAccess = V(result);
+
+            auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
+
+            assert(genContext.allowPartialResolve || interfaceVirtTableIndex >= 0);
+
+            return V(builder.create<mlir_ts::VTableOffsetRefOp>(
+                location, mth.getInterfaceVTableType(interfaceType), vtableAccess, interfaceVirtTableIndex));
+        }
+
+        // create interface vtable from current class
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        assert(interfaceInfo);
+
+        if (auto createdInterfaceVTableForClass =
+                mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!!"
+                                    << "@ created interface:" << V(createdInterfaceVTableForClass) << "\n";);
+            return createdInterfaceVTableForClass;
+        }
+
+        emitError(location) << "type: " << classType.getName() << " missing interface: " << interfaceType.getName();
+        return mlir::failure();
     }
 
     // An interface value keeps the vtable it was made with, laid out for its own interface. Another
@@ -1642,6 +1688,30 @@ namespace mlirgen
         if (mth.isUnionTypeNeedsTag(location, unionType, baseType) || !baseType || baseType == valueType)
         {
             return std::nullopt;
+        }
+
+        // `C | null` given to `I | null`: both are stored as their one member (null is a null pointer
+        // in it), so this is the class-to-interface cast of `C` to `I`. A plain cast read the class
+        // pointer as an interface.
+        if (auto srcUnionType = dyn_cast<mlir_ts::UnionType>(valueType); srcUnionType && isa<mlir_ts::InterfaceType>(baseType))
+        {
+            mlir::Type srcBaseType;
+            if (mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType) || !isa_and_nonnull<mlir_ts::ClassType>(srcBaseType))
+            {
+                return std::nullopt;
+            }
+
+            auto member = builder.create<mlir_ts::GetValueFromUnionOp>(location, srcBaseType, value);
+            CAST_A(casted, location, baseType, member, genContext);
+            return V(builder.create<mlir_ts::CastOp>(location, type, casted));
+        }
+
+        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases)
+        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType) && isa<mlir_ts::InterfaceType>(baseType))
+        {
+            auto casted = cast(location, baseType, value, genContext, /*disableStrictNullCheck=*/true);
+            EXIT_IF_FAILED_OR_NO_VALUE(casted)
+            return V(builder.create<mlir_ts::CastOp>(location, type, V(casted)));
         }
 
         if (isa<mlir_ts::NullType>(valueType) || isa<mlir_ts::UndefinedType>(valueType) || isa<mlir_ts::AnyType>(valueType)

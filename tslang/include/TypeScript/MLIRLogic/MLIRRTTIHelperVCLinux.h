@@ -382,7 +382,8 @@ class MLIRRTTIHelperVCLinux
             return mlir::failure();
         }
 
-        rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, name, LLVM::Linkage::External);
+        auto globalOp = rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, name, LLVM::Linkage::External);
+        globalOp->setAttr(EH_TYPE_INFO_ATTR_NAME, rewriter.getUnitAttr());
         return mlir::success();
     }
 
