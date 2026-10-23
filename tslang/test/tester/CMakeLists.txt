@@ -395,6 +395,7 @@ tslang_add_test(NAME test-compile-00-const-view-of-field COMMAND test-runner "${
 tslang_add_test(NAME test-compile-00-const-view-of-element COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_element.ts")
 tslang_add_test(NAME test-compile-00-const-record-owned-fields COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
+tslang_add_test(NAME test-compile-00-conditional-named-const-release COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-const-interface-of-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -993,6 +994,7 @@ tslang_add_test(NAME test-jit-00-const-view-of-field COMMAND test-runner -jit "$
 tslang_add_test(NAME test-jit-00-const-view-of-element COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_view_of_element.ts")
 tslang_add_test(NAME test-jit-00-const-record-owned-fields COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts")
 tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator_temporaries.ts")
+tslang_add_test(NAME test-jit-00-conditional-named-const-release COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-const-interface-of-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
@@ -1981,6 +1983,7 @@ set(TSLANG_CORPUS
     00const_view_of_element.ts
     00const_record_owned_fields.ts
     00generator_temporaries.ts
+    00conditional_named_const_release.ts
     00array_length_valid.ts
     00const_interface_of_local.ts
     00string_view_copy.ts
@@ -3822,6 +3825,13 @@ add_test(NAME test-rc-const-record-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00const_record_owned_fields.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/const-record-release.cmake")
+
+# A `const` chosen by a conditional expression - `b ? h : h2` - is released at the end of its block
+# under rc; no run can see the leak, so the IR is read.
+add_test(NAME test-rc-conditional-named-const-release
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
 
 # A generator body's temporaries are released before the yield that ends the call, where no resume
 # point comes between, and the file runs under own as well.

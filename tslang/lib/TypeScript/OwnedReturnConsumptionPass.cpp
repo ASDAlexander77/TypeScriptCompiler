@@ -1610,7 +1610,8 @@ class OwnedReturnConsumptionPass
     //    path this cannot see - the body of a statement written in the block is not outside it
     //    (runsWithinBlock);
     //  - a user that is a terminator, since a value handed to a successor as a block argument is
-    //    still live after the point this would release it;
+    //    still live after the point this would release it - save a conditional expression's
+    //    branch, whose `ts.If` result is judged in the value's place (allUsesReleasableInOwnBlock);
     //  - a user at or after a `ts.StateLabel` that follows the definition, which is a generator's
     //    resume point: the state machine re-enters the block THERE, so the end of the block is
     //    reachable on a path that never ran the op that produced the value. Nothing about that is
@@ -1923,6 +1924,13 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
+                // `n = b ? h : h2` stores what the branch hands on
+                if (auto handedOn = handedOnByConditional(user))
+                {
+                    values.push_back(handedOn);
+                    continue;
+                }
+
                 auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
                 auto varOp = storeOp && storeOp.getValue() == value
                                  ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
@@ -1946,30 +1954,61 @@ class OwnedReturnConsumptionPass
     // `const a = new C(); if (x) { let b = a; }` - is exactly that, and leaked before this. Any
     // other region is: a nested function or an `async.execute` body runs later, from somewhere
     // else.
+    //
+    // A conditional expression's branch is the one terminator that is followed: `b ? h : h2`
+    // yields `h` through `ts.Result`, and from there the value is the `ts.If`'s result, so it is
+    // that result's users that decide (handedOnByConditional). A receiver of a result nobody owns
+    // retains, and a branch that makes it owned retained `h` for it (consumeConditionalResults),
+    // so `h`'s own reference is still given back at the end of its block either way.
     static bool allUsesReleasableInOwnBlock(mlir::Operation *op)
     {
         auto *block = op->getBlock();
         auto rangeEnd = releaseRangeEnd(op);
 
-        for (auto *user : op->getResult(0).getUsers())
+        llvm::SmallVector<mlir::Value> values{op->getResult(0)};
+        while (!values.empty())
         {
-            if (user->hasTrait<mlir::OpTrait::IsTerminator>() || !runsWithinBlock(user, block))
+            auto value = values.pop_back_val();
+            for (auto *user : value.getUsers())
             {
-                return false;
-            }
+                auto handedOn = handedOnByConditional(user);
+                if ((user->hasTrait<mlir::OpTrait::IsTerminator>() && !handedOn) || !runsWithinBlock(user, block))
+                {
+                    return false;
+                }
 
-            // A use at or after the end of the range runs on a path the release has already left:
-            // after the yield, or inside the statement that holds one (the resume point there
-            // re-enters past the definition). Such a value leaks. MLIRGen keeps a generator's
-            // locals in its state object, so a temporary used across a yield does not occur.
-            auto *inBlock = block->findAncestorOpInBlock(*user);
-            if (rangeEnd != block->end() && !inBlock->isBeforeInBlock(&*rangeEnd))
-            {
-                return false;
+                // A use at or after the end of the range runs on a path the release has already
+                // left: after the yield, or inside the statement that holds one (the resume point
+                // there re-enters past the definition). Such a value leaks. MLIRGen keeps a
+                // generator's locals in its state object, so a temporary used across a yield does
+                // not occur.
+                auto *inBlock = block->findAncestorOpInBlock(*user);
+                if (rangeEnd != block->end() && !inBlock->isBeforeInBlock(&*rangeEnd))
+                {
+                    return false;
+                }
+
+                if (handedOn)
+                {
+                    values.push_back(handedOn);
+                }
             }
         }
 
         return true;
+    }
+
+    // The value a branch of a conditional expression hands on: the result of the `ts.If` whose
+    // branch this `ts.Result` ends, when that `ts.If` has the one result. None for any other user.
+    static mlir::Value handedOnByConditional(mlir::Operation *user)
+    {
+        if (!mlir::isa<mlir_ts::ResultOp>(user) || user->getNumOperands() != 1)
+        {
+            return mlir::Value();
+        }
+
+        auto ifOp = mlir::dyn_cast_or_null<mlir_ts::IfOp>(user->getParentOp());
+        return ifOp && ifOp.getNumResults() == 1 ? ifOp.getResult(0) : mlir::Value();
     }
 
     // Where the stretch of `op`'s block that a release of it may cover ends: at the first op after
@@ -2038,6 +2077,12 @@ class OwnedReturnConsumptionPass
 
             if (mlir::isa<mlir_ts::CastOp, mlir_ts::OptionalValueOp, mlir_ts::CreateUnionInstanceOp>(user) &&
                 user->getNumResults() == 1 && escapesThroughStore(user->getResult(0)))
+            {
+                return true;
+            }
+
+            // `yield b ? h : h2` stores what the branch hands on
+            if (auto handedOn = handedOnByConditional(user); handedOn && escapesThroughStore(handedOn))
             {
                 return true;
             }
