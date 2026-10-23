@@ -1,6 +1,6 @@
 // -mm=own, phase 2 rejects: a catch clause's locals own nothing, so `x` is one more name for what
-// `b` borrows - and it is read after `a` is overwritten. (`a` is read after `let b = a`, so `b`
-// cannot take its value over and borrows it.)
+// `b` borrows - and it is read after `a` is overwritten. (`a` is given to two `let`s, so neither
+// takes its value over: each borrows it. One `let` would take it over, spec 29.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}
@@ -20,7 +20,8 @@ function main() {
     let a = new C(1);
     a.v.push(1);
     let b = a;
-    print(a.x);
+    let c = a;
+    print(a.x, c.x);
     try {
         throw 1;
     } catch (e) {
