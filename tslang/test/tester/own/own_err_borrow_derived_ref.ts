@@ -1,5 +1,7 @@
 // -mm=own, phase 2 rejects: the loop iterates `b.v`, a field of what `b` borrows, through one
-// reference into it that every iteration reads - after the body has overwritten `a`.
+// reference into it that every iteration reads - after the body has overwritten `a`. (`a` is given
+// to two `let`s, so neither takes its value over: each borrows it. One `let` would take it over,
+// and the assignments in the loop would release only what they stored, spec 30.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}
@@ -21,7 +23,8 @@ function main() {
     a.v.push(2);
     a.v.push(3);
     let b = a;
-    let t: number = 0;
+    let c = a;
+    let t: number = c.x - 1;
     for (const x of b.v) {
         a = new C(2);
         churn();

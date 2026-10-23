@@ -149,7 +149,9 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         // either erases a retain or reports it, and a program it reports stops here.
         if (compileOptions.memoryModel == MemoryModelOwn && !ownSkipInference)
         {
-            pm.addPass(mlir::typescript::createOwnershipSignaturePass());
+            // a program's exports are seen by no other module (own spec 31): an executable, or the
+            // module the JIT enters (a module the JIT cache compiles beside it has isJit off)
+            pm.addPass(mlir::typescript::createOwnershipSignaturePass(compileOptions.isExecutable || compileOptions.isJit));
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
             // an `await`'s continuation and a `for await` body, outlined by the async lowering
             pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());

@@ -3275,14 +3275,7 @@ class MLIRGenImpl
                 return;
             }
 
-            // a result is a borrow of one argument
-            if (name == LENDS_DECORATOR && args.size() > 1)
-            {
-                emitError(location) << "'@" << name << "' names one parameter, the one the result is a borrow of";
-                result = mlir::failure();
-                return;
-            }
-
+            // `@lends` may name several: a borrowing record holds a borrow of each (own spec 32)
             auto first = funcType && funcType.getInputs().size() == params.size() + 1 ? 1 : 0;
             SmallVector<int32_t> indices;
             for (auto arg : args)
@@ -12714,7 +12707,23 @@ class MLIRGenImpl
 
                 if (auto lends = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_LENDS_ATTR_NAME))
                 {
-                    methodInfo.ownLends = lends.asArrayRef().empty() ? -1 : lends.asArrayRef().front();
+                    methodInfo.ownLendsMask = 0;
+                    for (auto index : lends.asArrayRef())
+                    {
+                        // the mask the class's declaration is printed from (DeclarationPrinter) has
+                        // 64 bits: an index past it would be a borrow an importer never learns of
+                        if (index >= 64)
+                        {
+                            emitError(location) << "'@lends' of '" << funcOp.getSymName() << "' names its argument " << index
+                                                << ", but a method's '@lends' can name only its arguments 0 to 63";
+                            return false;
+                        }
+
+                        if (index >= 0)
+                        {
+                            methodInfo.ownLendsMask |= uint64_t(1) << index;
+                        }
+                    }
                 }
             }
 
