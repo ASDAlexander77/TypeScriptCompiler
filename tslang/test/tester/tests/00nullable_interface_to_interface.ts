@@ -1,8 +1,7 @@
 // An interface-or-null given to another interface-or-null whose interface it does not extend is the
 // interface-to-interface cast (#666), which builds the target's vtable out of the value's own one. A
 // plain copy kept the source's vtable, and a field read through the target read a method slot as the
-// field's offset. A null value is null still, and its methods throw. Not under -mm=own, which does not
-// take this program's interface values returned from calls yet.
+// field's offset. A null value is null still, and its methods throw.
 interface Shape {
     id: number;
     area(): number;

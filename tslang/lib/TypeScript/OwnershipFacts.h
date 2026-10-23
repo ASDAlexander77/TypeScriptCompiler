@@ -215,7 +215,9 @@ inline bool holdsAsIs(mlir::Type wide, mlir::Type narrow, bool onlyNullable = fa
 
 // An op whose result is the very block its operand holds: a class widened to a union or an
 // optional or narrowed back, a union made from its payload or read back from it, an object seen
-// through an interface (`{vtable, this}`, released through `this`). rc's retain or release of
+// through an interface (`{vtable, this}`, released through `this`), and an interface seen as
+// another one or inside a union (`this` is the same; a vtable laid out for the other interface is
+// interned, nobody's block). rc's retain or release of
 // either is one of the block, so the pass looks through them. A cast that converts (a number
 // printed into a string) or boxes (into `any`) makes a new block and is not one.
 inline bool isView(mlir::Operation *op)
@@ -233,7 +235,7 @@ inline bool isView(mlir::Operation *op)
     }
 
     auto keeps = [](mlir::Type type) {
-        return mlir::isa<mlir_ts::ClassType, mlir_ts::UnionType, mlir_ts::OptionalType>(type);
+        return mlir::isa<mlir_ts::ClassType, mlir_ts::InterfaceType, mlir_ts::UnionType, mlir_ts::OptionalType>(type);
     };
     // a bound function and a hybrid one are the same `{func, this, tag}`: a closure passed on as
     // a function value is still its box

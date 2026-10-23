@@ -1,8 +1,7 @@
 // @strict-null false
 // A null interface cast to an interface it does not extend, whose members are elsewhere (#666 builds
 // that interface's vtable out of the value's own one) is null still, and its methods throw: the null
-// vtable's slots, stubs that throw, are what the new vtable is made of. Not under -mm=own, which
-// does not take an interface value of one interface as another yet.
+// vtable's slots, stubs that throw, are what the new vtable is made of.
 interface Hit {
     thing: number;
     dist: number;

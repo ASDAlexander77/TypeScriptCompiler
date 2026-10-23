@@ -3774,6 +3774,14 @@ endforeach()
 # a null class object given to an interface (also in TSLANG_CORPUS: rc, none)
 tslang_add_test(NAME test-jit-own-00-class-to-interface-null COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_to_interface_null.ts")
 tslang_add_test(NAME test-compile-own-00-class-to-interface-null COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_to_interface_null.ts")
+# an interface value seen as another interface, or as one inside a union, is the block it shows:
+# own moves and borrows it as it does the object (also in TSLANG_CORPUS: rc, none)
+foreach(iface_cast_test 00interface_cast_unrelated 00interface_union_cast_unrelated 00nullable_interface_to_interface
+                        00null_interface_to_interface)
+    string(REPLACE "_" "-" iface_cast_name "${iface_cast_test}")
+    tslang_add_test(NAME test-jit-own-${iface_cast_name} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/${iface_cast_test}.ts")
+    tslang_add_test(NAME test-compile-own-${iface_cast_name} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/${iface_cast_test}.ts")
+endforeach()
 
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
 # rc and gc (not none: nothing is freed there, and the loops would hold about 800 MB).
