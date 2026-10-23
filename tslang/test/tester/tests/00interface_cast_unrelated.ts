@@ -77,7 +77,7 @@ function main() {
     assert(d2.dist == 3, "a field of a call's result");
     assert(distOf(h) == 3, "a field of an argument");
     assert((<HasDist>h).dist == 3, "a field through <T>");
-    const ds: HasDist[] = [h];
+    const ds: HasDist[] = [mkHit()];
     assert(ds[0].dist == 3, "a field of an element");
 
     // two members in another order
@@ -122,8 +122,9 @@ function main() {
     // casts made again and again share one vtable per content and keep reading right
     let sum: number = 0;
     for (let i = 0; i < 1000; i++) {
-        const each: HasDist = i % 2 == 0 ? h : hc;
-        sum += each.dist;
+        const even: HasDist = h;
+        const odd: HasDist = hc;
+        sum += i % 2 == 0 ? even.dist : odd.dist;
     }
     assert(sum == 500 * 3 + 500 * 30, "casts in a loop");
 
