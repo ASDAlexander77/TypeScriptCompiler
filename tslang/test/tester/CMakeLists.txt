@@ -398,6 +398,7 @@ tslang_add_test(NAME test-compile-00-generator-temporaries COMMAND test-runner "
 tslang_add_test(NAME test-compile-00-conditional-named-const-release COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts")
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-const-interface-of-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
+tslang_add_test(NAME test-compile-00-self-assign COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-compile-00-global-interface-initializer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
@@ -997,6 +998,7 @@ tslang_add_test(NAME test-jit-00-generator-temporaries COMMAND test-runner -jit 
 tslang_add_test(NAME test-jit-00-conditional-named-const-release COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts")
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-const-interface-of-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
+tslang_add_test(NAME test-jit-00-self-assign COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-jit-00-global-interface-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
@@ -1986,6 +1988,7 @@ set(TSLANG_CORPUS
     00conditional_named_const_release.ts
     00array_length_valid.ts
     00const_interface_of_local.ts
+    00self_assign.ts
     00string_view_copy.ts
     00global_copy_counted.ts
     00global_interface_initializer.ts
@@ -3852,6 +3855,10 @@ tslang_add_test(NAME test-compile-own-00-generator-temporaries COMMAND test-runn
 # A const interface made over a local keeps the object when the local is assigned again, under own too.
 tslang_add_test(NAME test-jit-own-00-const-interface-of-local COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-compile-own-00-const-interface-of-local COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
+
+# A local given its own value keeps it under own: `n = n` stores nothing.
+tslang_add_test(NAME test-jit-own-00-self-assign COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
+tslang_add_test(NAME test-compile-own-00-self-assign COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
 
 # Shared<T> (spec 23): counted handles. These are not in the own_test list, whose
 # test-own-no-counting check forbids __tslang_inc_ref: a handle is counted under own by design.
