@@ -851,8 +851,39 @@ class OwnedReturnConsumptionPass
         return loadA && loadB && samePlace(loadA.getReference(), loadB.getReference());
     }
 
+    // Might two references name one place under different names? One field of two objects of one
+    // class (`p.n` and `G.n`, where `p` is `G`), or an element of two arrays of one type: which
+    // object a value is cannot be known here.
+    static bool mayBeSamePlace(mlir::Value a, mlir::Value b)
+    {
+        if (samePlace(a, b))
+        {
+            return true;
+        }
+
+        auto fieldA = a.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto fieldB = b.getDefiningOp<mlir_ts::PropertyRefOp>();
+        if (fieldA && fieldB)
+        {
+            auto type = stripCasts(fieldA->getOperand(0)).getType();
+            return fieldA.getPosition() == fieldB.getPosition() && mlir::isa<mlir_ts::ClassType>(type) &&
+                   type == stripCasts(fieldB->getOperand(0)).getType();
+        }
+
+        auto elementA = a.getDefiningOp<mlir_ts::ElementRefOp>();
+        auto elementB = b.getDefiningOp<mlir_ts::ElementRefOp>();
+        if (elementA && elementB)
+        {
+            auto type = stripCasts(elementA->getOperand(0)).getType();
+            return mlir::isa<mlir_ts::ArrayType>(type) && type == stripCasts(elementB->getOperand(0)).getType();
+        }
+
+        return false;
+    }
+
     // Is the argument read out of a slot or a place that something between the read and the call
-    // overwrites - a later argument (`f(n, (n = mk(), n))`)?
+    // overwrites - a later argument (`f(n, (n = mk(), n))`), under its own name or another
+    // (`f((p.n = mk(), p.n), (G.n = mk(), 0))`, with `p` being `G`)?
     //
     // So is one read out of a field or an element of a value read so: overwriting `n` in
     // `f({ v: n.v }, (n = mk(), 0))` gives back the object whose field the argument read.
@@ -875,8 +906,8 @@ class OwnedReturnConsumptionPass
                     auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(nested);
                     auto place =
                         storeOp ? storeOp.getReference() : releaseSlotOp ? releaseSlotOp.getSlot() : mlir::Value();
-                    return place && samePlace(place, reference) ? mlir::WalkResult::interrupt()
-                                                                : mlir::WalkResult::advance();
+                    return place && mayBeSamePlace(place, reference) ? mlir::WalkResult::interrupt()
+                                                                    : mlir::WalkResult::advance();
                 });
 
                 if (overwrites.wasInterrupted())
