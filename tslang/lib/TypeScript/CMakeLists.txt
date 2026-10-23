@@ -34,6 +34,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipVerifierPass.cpp
     OwnershipInferencePass.cpp
     OwnershipInferenceClosures.cpp
+    OwnershipInferenceKeptParams.cpp
     OwnershipSignaturePass.cpp
     OwnershipSignatureCallbacks.cpp
     OwnershipSignatureClosedWorld.cpp
