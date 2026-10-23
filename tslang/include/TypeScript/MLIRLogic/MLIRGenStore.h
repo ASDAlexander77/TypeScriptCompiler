@@ -164,10 +164,12 @@ struct MethodInfo
     // a slot of a @cpp class's vtable that no method names (ClassInfo::getVirtualTable)
     bool isCppSlotGap = false;
     // `@keeps`, `@borrows`, `@lends` (OWN_DECLARED_KEEPS_ATTR_NAME): argument indices, `this` 0, for
-    // the declaration an importer re-parses; `@lends` names one, or none (-1)
+    // the declaration an importer re-parses; `@lends` names one, or several for a borrowing record
+    // (own spec 32), as a mask of argument indices (a vector would push the vtable's SmallVector
+    // past its inline-size limit)
     std::vector<int32_t> ownKeeps;
     std::vector<int32_t> ownBorrows;
-    int32_t ownLends = -1;
+    uint64_t ownLendsMask = 0;
 };
 
 struct GenericMethodInfo

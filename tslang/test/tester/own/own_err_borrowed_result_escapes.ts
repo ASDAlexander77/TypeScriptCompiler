@@ -1,6 +1,8 @@
 // -mm=own, phase 4 rejects: `firstOf` is passed as a value, so `apply` calls it where -mm=own
 // cannot see which function it is, and would take the result as its own and release it.
-// `firstOf`'s body keeps rc's convention and fails, saying why.
+// `firstOf`'s body keeps rc's convention and fails, saying why. (Passed straight to `apply`, the
+// call through `g` reaches only `firstOf` and gets its facts, spec 33; a `let` holding it is a value
+// -mm=own does not follow.)
 class C {
     constructor(public x: number) {}
 }
@@ -19,5 +21,6 @@ function apply(g: (h: H) => C, h: H) {
 
 function main() {
     const h = new H();
-    print(apply(firstOf, h));
+    let g = firstOf;
+    print(apply(g, h));
 }

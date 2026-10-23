@@ -1,6 +1,9 @@
 # Ray tracer: memory models vs Rust and C++
 
 `rtbench.ts` is `test/tester/tests/raytrace.ts` at 512x512 with a pixel checksum (see its header).
+`rtbench_own.ts` is the same program for `-mm=own`, with two source edits: the surfaces, which every
+thing shares, are `Shared<Surface>` handles, and `Plane.normal` returns a fresh vector instead of
+its own field.
 `rust/` and `cpp/` each hold two ports of the same algorithm:
 
 - `rust/src/bin/idiomatic.rs`, `cpp/idiomatic.cpp`: `Vector`/`Color` are plain values, things are
@@ -19,11 +22,11 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 ```
 
 - tslang: `--emit=exe --opt --opt_level=3 --no-default-lib --mm=<model>` (`--no-default-lib`
-  because the file declares its own `sqrt`/`floor`/`pow`/`fabs`)
+  because the file declares its own `sqrt`/`floor`/`pow`/`fabs`); `-mm=own` builds `rtbench_own.ts`
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
-## Results 2026-10-21
+## Results 2026-10-21 (own rows 2026-10-23)
 
 main 49b5f6bb, Release, Windows 11 x64; Rust 1.99.0, clang 21.1.4, MSVC from Visual Studio 18;
 median of 7 runs after a warm-up. Every build prints the same checksum.
@@ -36,7 +39,8 @@ median of 7 runs after a warm-up. Every build prints the same checksum.
 | tslang rc, `--no-stack-promotion` | 600 ms | | |
 | tslang none | 703 ms | 845 MB | 14x |
 | tslang none, `--no-stack-promotion` | 727 ms | | |
-| tslang own | does not compile | | |
+| tslang own (2026-10-23) | 628 ms | 4.5 MB | 12x |
+| tslang own, `--no-stack-promotion` (2026-10-23) | 627 ms | | |
 | Rust idiomatic | 55 ms | 4 MB | 1.1x |
 | Rust Rc-boxed | 492 ms | 4 MB | 9.7x |
 | C++ idiomatic (clang) | 51 ms | | 1x |
@@ -52,5 +56,11 @@ median of 7 runs after a warm-up. Every build prints the same checksum.
   under rc keeps every hot-path allocation on the heap: `Vector.*`/`Color.*` results are
   "returned", the `Ray`/`Intersection` literals are "converted" (to the interface) or
   "recursive", and the `addLight`/`getPoint` closures are "counted-capture".
-- `-mm=own` reports about 44 errors: the program shares the `Surfaces` globals, keeps owned values
-  in object literals, and aliases `Color.black` from two statics.
+- The own rows were measured on 2026-10-23 (branch own-raytrace, the same machine, two runs of
+  `bench.ps1`, median of 7 each; both gave 627.5 ms), the rest of the table on 2026-10-21. In the
+  same session rc took 638-640 ms and peaked at 4.5 MB as well, so own runs as fast as rc and frees
+  as promptly, with no counts: only the two `Shared<Surface>` handles count. Peak working set is the
+  process's `PeakWorkingSet64`, polled while it runs.
+- `-mm=own` needs `rtbench_own.ts`'s two edits: the surfaces are shared by every thing, and
+  `Plane.normal` returned a borrow of its own field where `Sphere.normal` returns a fresh vector, so
+  a caller through the `Thing` interface could not know whether it owns the result.
