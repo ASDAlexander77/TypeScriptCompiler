@@ -503,7 +503,7 @@ namespace own_inference
 
         // Not a move. Every taker a `let` that can borrow, and the temporary's own release the
         // owner that bounds them (spec 2.2, verdict 2) - else the move's error stands.
-        llvm::SmallVector<mlir::Operation *> takers;
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> notReads;
         llvm::SmallVector<mlir::Operation *> releases;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::RetainOp>(user))
@@ -517,9 +517,20 @@ namespace own_inference
             }
             else if (!isBorrow(user, used))
             {
-                takers.push_back(user);
+                notReads.push_back({user, used});
             }
         });
+
+        // a merge that only borrows it (movesOf) takes nothing
+        llvm::SmallVector<mlir::Operation *> takers;
+        for (auto [user, used] : notReads)
+        {
+            llvm::SmallVector<BorrowUse> uses;
+            if (!borrowsThroughMerge(user, used, value.getDefiningOp(), releases, uses, toErase))
+            {
+                takers.push_back(user);
+            }
+        }
 
         if (!releases.empty() && !takers.empty() &&
             llvm::all_of(takers, [](mlir::Operation *taker) { return !!borrowerOf(taker); }))
@@ -565,12 +576,123 @@ namespace own_inference
         return true;
     }
 
+    llvm::SmallVector<mlir::Value, 2> OwnershipInferencePass::mergedValuesOf(mlir::Operation *user, mlir::Value used)
+    {
+        llvm::SmallVector<mlir::Value, 2> merged;
+        if (auto selectOp = mlir::dyn_cast<mlir::arith::SelectOp>(user))
+        {
+            if (used != selectOp.getCondition())
+            {
+                merged.push_back(selectOp.getResult());
+            }
+
+            return merged;
+        }
+
+        auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user);
+        if (!branchOp)
+        {
+            return merged;
+        }
+
+        for (auto &operand : user->getOpOperands())
+        {
+            if (operand.get() != used)
+            {
+                continue;
+            }
+
+            auto argument = branchOp.getSuccessorBlockArgument(operand.getOperandNumber());
+            if (!argument)
+            {
+                return {}; // the branch's own operand - its condition - is not a merge
+            }
+
+            merged.push_back(*argument);
+        }
+
+        return merged;
+    }
+
+    bool OwnershipInferencePass::borrowsThroughMerge(mlir::Operation *user, mlir::Value used, mlir::Operation *definition,
+                                                     llvm::ArrayRef<mlir::Operation *> releases,
+                                                     llvm::SmallVectorImpl<BorrowUse> &uses,
+                                                     llvm::SetVector<mlir::Operation *> &toErase)
+    {
+        auto merged = mergedValuesOf(user, used);
+        if (merged.empty())
+        {
+            return false;
+        }
+
+        llvm::SmallVector<mlir::Operation *, 1> made;
+        if (definition)
+        {
+            made.push_back(definition);
+        }
+
+        llvm::SmallVector<mlir_ts::VariableOp> borrowers;
+        auto isLet = [&](mlir::Operation *varUser, llvm::ArrayRef<mlir::Operation *>) {
+            auto borrower = mlir::isa<mlir_ts::VariableOp>(varUser) ? borrowerOf(varUser) : mlir_ts::VariableOp();
+            if (borrower)
+            {
+                borrowers.push_back(borrower);
+            }
+
+            return !!borrower;
+        };
+
+        llvm::SmallVector<BorrowUse> found;
+        for (auto value : merged)
+        {
+            // a store, a return, a capture or a retain of the merged value keeps it: the merge is a
+            // move, decided as any other taker
+            if (walkBorrowed(value, made, found, isLet))
+            {
+                return false;
+            }
+        }
+
+        llvm::SmallVector<mlir::Operation *> bookkeeping;
+        for (auto borrower : borrowers)
+        {
+            if (collectBorrowerUses(borrower, borrower.getOperation(), found, bookkeeping))
+            {
+                return false;
+            }
+        }
+
+        for (auto *release : releases)
+        {
+            for (auto &use : found)
+            {
+                if (reachableAfter(release, use.op, use.kills))
+                {
+                    return false;
+                }
+            }
+        }
+
+        uses.append(found.begin(), found.end());
+        for (auto *op : bookkeeping)
+        {
+            toErase.insert(op);
+            if (mlir::isa<mlir_ts::RetainSlotOp>(op))
+            {
+                mergeBorrowRetains.insert(op);
+            }
+        }
+
+        return true;
+    }
+
     bool OwnershipInferencePass::movesOf(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
         llvm::SmallVector<mlir::Operation *> takers;
         llvm::SmallVector<mlir::Operation *> releases;
         llvm::SmallVector<mlir::Operation *> reads;
         llvm::DenseMap<mlir::Operation *, mlir::Value> readOf;
+        llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> merges;
         forEachUse(value, [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::RetainOp>(user))
             {
@@ -586,6 +708,10 @@ namespace own_inference
                 reads.push_back(user);
                 readOf.try_emplace(user, used);
             }
+            else if (!mergedValuesOf(user, used).empty())
+            {
+                merges.push_back({user, used});
+            }
             else
             {
                 takers.push_back(user);
@@ -593,6 +719,26 @@ namespace own_inference
         });
 
         auto *definition = value.getDefiningOp();
+
+        // `c ? h : h2` that is only read borrows `h` and `h2`, and in a loop moves neither. What
+        // reads the merged value reads this one, so each such read can be a use after a move of
+        // it like any other.
+        for (auto [merge, used] : merges)
+        {
+            llvm::SmallVector<BorrowUse> uses;
+            if (!borrowsThroughMerge(merge, used, definition, releases, uses, toErase))
+            {
+                takers.push_back(merge);
+                continue;
+            }
+
+            reads.push_back(merge);
+            for (auto &use : uses)
+            {
+                reads.push_back(use.op);
+            }
+        }
+
         auto name = describe(value);
         llvm::SmallVector<mlir::Operation *> moved;
         for (auto *taker : takers)

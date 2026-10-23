@@ -7,6 +7,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
@@ -465,7 +466,8 @@ class OwnershipInferencePass
     static bool isAssignmentOf(mlir::Operation *op, mlir_ts::VariableOp varOp);
 
     // What `use` hands the very value it uses on to, as that value: a cast or a view of it, the
-    // argument of the block a branch passes it to (a merge: `a ?? b`), or the reads of a local
+    // argument of the block a branch passes it to (a merge: `a ?? b`) or the `arith.select` that
+    // chooses it (the merge folded: `c ? h : h2`), or the reads of a local
     // that owns nothing and is assigned it (`for (x of arr)` into an outer `let x`). Answers
     // whether the use is one of those, even where nothing comes out of it. Where the value lands
     // somewhere that is replaced - a block argument, a local - `renewedAt` gets what replaces it:
@@ -930,6 +932,23 @@ class OwnershipInferencePass
 
     // The move verdict for an SSA value (phase 1). Reports and returns false when it is not one.
     bool movesOf(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase);
+
+    // What a merge of branches makes of `used` (`c ? h : h2`): the result of an `arith.select` it
+    // is a choice of, or each block argument a branch passes it as. Empty for any other use.
+    static llvm::SmallVector<mlir::Value, 2> mergedValuesOf(mlir::Operation *user, mlir::Value used);
+
+    // Is the merge `user` makes of `used` only a borrow of it - everything the merged value leads
+    // to reads it (walkBorrowed), a `let` declared from it included (`let each = c ? h : h2`: its
+    // `ts.RetainSlot` and `ts.ReleaseSlot`s go, as a borrowing `let`'s do), and none of that runs
+    // after one of `releases`, the value's own ends? Each such read joins `uses`. False when
+    // nothing merges it: the merge then takes the value, as any other use that is not a read does.
+    bool borrowsThroughMerge(mlir::Operation *user, mlir::Value used, mlir::Operation *definition,
+                             llvm::ArrayRef<mlir::Operation *> releases, llvm::SmallVectorImpl<BorrowUse> &uses,
+                             llvm::SetVector<mlir::Operation *> &toErase);
+
+    // the `ts.RetainSlot`s of the `let`s that borrow a merge (borrowsThroughMerge): erased, and
+    // decided there
+    llvm::DenseSet<mlir::Operation *> mergeBorrowRetains;
 
     // A call that keeps an argument and is given the same value again through another operand - the
     // value itself, a view of it, something read out of it, another read of its slot (`f(n, n)`,

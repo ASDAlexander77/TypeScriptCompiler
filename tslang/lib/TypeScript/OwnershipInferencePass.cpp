@@ -138,6 +138,7 @@ namespace own_inference
         stateBoxes.clear();
         fieldBorrowRetains.clear();
         fieldBorrowReleases.clear();
+        mergeBorrowRetains.clear();
         captureStores.clear();
         captureRetains.clear();
         returnedParams.clear();
@@ -318,6 +319,11 @@ namespace own_inference
             {
                 toErase.insert(op); // a borrowing field's: it takes nothing
                 continue;
+            }
+
+            if (mergeBorrowRetains.contains(op))
+            {
+                continue; // a `let` that borrows a merge: borrowsThroughMerge erased it
             }
 
             // a retain of what holds no block takes nothing: a union's number payload made into

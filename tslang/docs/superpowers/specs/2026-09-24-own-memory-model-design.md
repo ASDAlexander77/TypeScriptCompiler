@@ -4329,3 +4329,45 @@ Not here:
   shows a use-after-free that only those two tests prevent.
 - The benchmark keeps its two source edits; the unedited `rtbench.ts` does not compile under own (a
   non-goal of the plan).
+
+## 35. A merge of locals made before a loop, bound in it, 2026-10-23
+
+`const each: C = i % 2 == 0 ? h : h2` inside a loop, with `h` and `h2` made before it, was
+`'this value' is moved inside a loop but was made outside it` for every type (found by #671, whose
+`00interface_cast_unrelated` loop case was rewritten around it). The ternary lowers to an
+`arith.select` of the two values (or, when a side has a call, to a `cf` branch passing each as a
+block argument), and neither was a read: the merge took the value, and `takerLoops` saw the taker
+come round without the value made again.
+
+- **A merge whose value is only read is a borrow of each value it chooses** (`borrowsThroughMerge`,
+  OwnershipInferenceMoves). `movesOf` walks what the select's result or the block argument leads to
+  (`walkBorrowed`, which now passes through a select as it does through a branch); when nothing
+  stores, returns, captures or retains it, and none of it runs after one of the value's releases,
+  the merge is a read, and so is each use the walk found: a use of the merged value after a move of
+  `h` is a use after that move. A `let` declared from a merge of values the function made (`const h =
+  new C()`) borrows it as `let b = a` does: its
+  reads are walked, its `ts.RetainSlot` and `ts.ReleaseSlot`s go (`mergeBorrowRetains`, which
+  `decideRetains` then skips). The verdict-2 path (`checkValueMoves`'s borrowing `let`s) leaves such
+  a merge out of the takers too.
+- **Not widened:** a merge whose value is kept is still a taker, decided as before: pushed, stored
+  into a field, returned or captured by a closure that escapes inside the loop it is still `moved
+  inside a loop`, and a merged value assigned to an outer `let` and read after one side's release is
+  still rejected (`takes a second reference`). A `let each` that is assigned again is not a borrower.
+
+`own_ternary_outer_loop` binds `c ? h : h2` in a loop as a `const` and a `let`, of a class and of an
+interface, as a branch (`i % 4 == 0 ? h : (odd(i) ? h2 : h)`), and with one side made in the loop,
+churns, and reads `h` and `h2` after the loop; it prints `done.` under own, rc, gc and none, JIT and
+AOT, with no counting under own. `00interface_cast_unrelated` gets its loop case back. Negatives
+`own_err_ternary_loop_stored` (pushed), `own_err_ternary_loop_returned` (a `let` returned) and
+`own_err_ternary_loop_captured` (captured by an escaping closure). Tooth: built without the change,
+each of the run test's six functions fails (`moved inside a loop`, and for the `let`s `takes a
+second reference`), and so does the interface test's loop.
+
+Not here:
+- `let each = c ? h : h2` where `h` and `h2` are themselves `let`s: the merge is of their reads, which
+  are not values `movesOf` checks, so `each`'s `ts.RetainSlot` is still `merged from several
+  branches` (and `moved inside a loop`). A `const each` of the same reads compiled before this section
+  and still does.
+- Under rc a folded `const` that a ternary yields is never given back (`releaseDiscardedTemporaries`
+  skips a value a `ts.Result` uses), so the class cases leak `h` and `h2` under rc, and under own
+  too. The interface cases do not: their `ts.New` is used by the view, not by the branch.

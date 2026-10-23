@@ -3597,7 +3597,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
-                 own_reduce own_fresh_call_result)
+                 own_reduce own_fresh_call_result own_ternary_outer_loop)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3674,6 +3674,13 @@ endforeach()
 foreach(conditional_move_mm rc gc none)
     tslang_add_test(NAME test-jit-${conditional_move_mm}-own_conditional_move COMMAND test-runner -jit -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
     tslang_add_test(NAME test-compile-${conditional_move_mm}-own_conditional_move COMMAND test-runner -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
+endforeach()
+
+# `c ? h : h2` bound in a loop, of locals made before it, borrows the one it chooses (own); the
+# same program under every other model.
+foreach(ternary_loop_mm rc gc none)
+    tslang_add_test(NAME test-jit-${ternary_loop_mm}-own_ternary_outer_loop COMMAND test-runner -jit -mm=${ternary_loop_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_ternary_outer_loop.ts")
+    tslang_add_test(NAME test-compile-${ternary_loop_mm}-own_ternary_outer_loop COMMAND test-runner -mm=${ternary_loop_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_ternary_outer_loop.ts")
 endforeach()
 
 # A call through an interface closed in its module gets its implementations' facts (spec 31); the
@@ -4165,6 +4172,9 @@ set(own_error_cases
     "own_err_field_let_global_overwritten|:42:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_conditional_move_read|:20:11: error: '[^']*' is used here after its value was moved"
     "own_err_conditional_move_outer|:19:13: error: '[^']*' is moved inside a loop but was made outside it"
+    "own_err_ternary_loop_stored|:12:25: error: '[^']*' is moved inside a loop but was made outside it"
+    "own_err_ternary_loop_returned|:11:23: error: '[^']*' is moved inside a loop but was made outside it"
+    "own_err_ternary_loop_captured|:17:31: error: '[^']*' is moved inside a loop but was made outside it"
     "own_err_conditional_move_read_after_join|:18:9: error: '[^']*' is moved here on some paths only"
     "own_err_conditional_move_field_borrow|:22:9: error: '[^']*' is moved here on some paths only"
     "own_err_conditional_move_catch|:24:13: error: '[^']*' is moved here on some paths only"

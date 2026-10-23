@@ -122,9 +122,8 @@ function main() {
     // casts made again and again share one vtable per content and keep reading right
     let sum: number = 0;
     for (let i = 0; i < 1000; i++) {
-        const even: HasDist = h;
-        const odd: HasDist = hc;
-        sum += i % 2 == 0 ? even.dist : odd.dist;
+        const each: HasDist = i % 2 == 0 ? h : hc;
+        sum += each.dist;
     }
     assert(sum == 500 * 3 + 500 * 30, "casts in a loop");
 
