@@ -2597,24 +2597,8 @@ class OwnershipInferencePass
                     continue;
                 }
 
-                // A call known to make its result (`__own_fresh_result`: an iterator's `next()`, a field
-                // that only ever holds one function, another own module's `..new`) hands back a block of
-                // the caller's own - the `{value, done}` record of `it.next()` points nowhere into `it`,
-                // and what it does after its next call cannot be a use of the method read out of `it` -
-                // unless it is a generator's state that borrows its arguments (`__own_result_bounded`).
-                if (isCall(user) && user->hasAttr(OWN_FRESH_RESULT_ATTR_NAME) && !user->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME))
-                {
-                    continue;
-                }
-
-                // So does a direct call of a function this module defines (isFresh): its result points
-                // into nothing it was given but what its facts name - a borrow of an argument
-                // (`__own_result_borrows`, never fresh), a borrowing record, a generator's state that
-                // borrows its arguments - and a body whose callers cannot all know such a fact is an
-                // error. `getPoint(x, scene.camera)` makes a new vector: a call after it that may
-                // destroy `scene.camera` does not end that vector (spec 34).
-                if (isCall(user) && user->getNumResults() == 1 && !user->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME) &&
-                    !isRecordResult(user) && isFresh(user->getResult(0)))
+                // a call whose result is the caller's own (callResultIsOwn) ends the walk at the call
+                if (callResultIsOwn(user))
                 {
                     continue;
                 }
@@ -2631,6 +2615,30 @@ class OwnershipInferencePass
         }
 
         return nullptr;
+    }
+
+    // Whether a call hands back a block of the caller's own, which points into nothing it was given:
+    // walkBorrowed then ends a borrow's walk at the call (the call itself is still a use for as long
+    // as it runs). Never a generator's state that borrows its arguments (`__own_result_bounded`).
+    // - A call known to make its result (`__own_fresh_result`: an iterator's `next()`, a field that
+    //   only ever holds one function, another own module's `..new`) - the `{value, done}` record of
+    //   `it.next()` points nowhere into `it`, and what it does after its next call cannot be a use of
+    //   the method read out of `it`.
+    // - A direct call of a function this module defines (isFresh): its result points into nothing it
+    //   was given but what its facts name - a borrow of an argument (`__own_result_borrows`, never
+    //   fresh), a borrowing record (isFresh, but bounded by what it borrows), a generator's state
+    //   that borrows its arguments - and a body whose callers cannot all know such a fact is an
+    //   error. `getPoint(x, scene.camera)` makes a new vector: a call after it that may destroy
+    //   `scene.camera` does not end that vector (spec 34).
+    static bool callResultIsOwn(mlir::Operation *call)
+    {
+        if (!isCall(call) || call->hasAttr(OWN_RESULT_BOUNDED_ATTR_NAME))
+        {
+            return false;
+        }
+
+        return call->hasAttr(OWN_FRESH_RESULT_ATTR_NAME) ||
+               (call->getNumResults() == 1 && !isRecordResult(call) && isFresh(call->getResult(0)));
     }
 
     // Is this what an indirect call goes through: its callee value, or, for a method read out of

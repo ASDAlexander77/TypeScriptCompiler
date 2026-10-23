@@ -4098,7 +4098,11 @@ place of the ray tracer's `let legalize`, `toDrawingColor` has `__own_no_drops`.
   borrow of a parameter, of a part of one, or a closure, bound method, array or record over one is
   either a fact its callers see or an error in the body (`borrows a field and cannot be stored,
   returned or captured`, or, when its callers cannot all know the fact, §31's body errors). A string
-  result is a copy (spec 22).
+  is no exception: one read out of a parameter and returned is not copied but is a borrow fact like
+  any other (`function nm(c: Cam) { return c.name; }` gets `__own_result_borrows`, so `nm(sc.cam)`
+  is still walked, and its result read after `drop(sc)` is "borrows the result of 'nm' but is used
+  here after it may be released or overwritten"). Since the fix-up of 2026-10-23 this test and the
+  `__own_fresh_result` one are one helper, `callResultIsOwn`.
 - **Not widened:** a call through a value, through an interface, through a callback family or to a
   declared function is still walked (isFresh is false), and so is a method call: a class method is
   called through `ts.ThisVirtualSymbolRef`, so `sc.cam.copy()` and `this.point(x, sc.cam)` keep the

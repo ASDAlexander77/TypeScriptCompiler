@@ -1,5 +1,5 @@
-# Builds a program under -mm=own with `tslang --emit=exe` and runs it: the output must match EXPECT
-# and end with "done.". For a program that exports from its root, whose exports only an executable
+# Builds a program under -mm=own with `tslang --emit=exe` and runs it: one line of the output must
+# be EXPECT (a regex), and the last "done.". For a program that exports from its root, whose exports only an executable
 # keeps from other modules (own spec 31, USER decision): test-runner builds an object file with
 # --entry-point and links it itself, which another module could import, so it cannot build one.
 
@@ -32,8 +32,9 @@ execute_process(
     OUTPUT_VARIABLE out
     ERROR_VARIABLE err
     RESULT_VARIABLE status)
-if(NOT status EQUAL 0 OR NOT out MATCHES "${EXPECT}" OR NOT out MATCHES "done\\.")
-    message(FATAL_ERROR "the program: exit ${status}, expected '${EXPECT}' and 'done.': ${out}${err}")
+# EXPECT is a whole line of the output, and "done." its last line
+if(NOT status EQUAL 0 OR NOT out MATCHES "(^|\n)${EXPECT}\r?\n" OR NOT out MATCHES "(^|\n)done\\.\r?\n?$")
+    message(FATAL_ERROR "the program: exit ${status}, expected a line '${EXPECT}' and a last line 'done.': ${out}${err}")
 endif()
 
 message(STATUS "${out}")
