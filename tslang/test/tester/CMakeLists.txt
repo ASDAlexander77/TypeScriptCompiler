@@ -406,6 +406,7 @@ tslang_add_test(NAME test-compile-00-const-element-read COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-const-global-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-compile-00-global-argument-reassigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-compile-00-global-argument-view COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-compile-00-element-store-after-value COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00element_store_after_value.ts")
 tslang_add_test(NAME test-compile-00-const-interface-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-compile-00-argument-place-overwritten COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
@@ -991,6 +992,7 @@ tslang_add_test(NAME test-jit-00-const-element-read COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-const-global-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-jit-00-global-argument-reassigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-jit-00-global-argument-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-jit-00-element-store-after-value COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00element_store_after_value.ts")
 tslang_add_test(NAME test-jit-00-const-interface-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-jit-00-argument-place-overwritten COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
@@ -1966,6 +1968,7 @@ set(TSLANG_CORPUS
     00const_global_read.ts
     00global_argument_reassigned.ts
     00global_argument_view.ts
+    00element_store_after_value.ts
     00const_interface_field_read.ts
     00argument_place_overwritten.ts
     00temporary_read_in_finally.ts
