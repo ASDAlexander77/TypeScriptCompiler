@@ -430,6 +430,178 @@ inline bool isPlace(mlir::Value ref)
            isInterfaceField(ref);
 }
 
+// The storage a reference addresses - a local's `ts.Variable` or a global's `ts.AddressOf` - itself
+// or through the places in what it holds (a field, an element, a handle's value): `n`, `n.v`,
+// `G.items[0]`. Null for anything else.
+inline mlir::Operation *slotOfRef(mlir::Value ref)
+{
+    for (auto depth = 0; depth < 16 && ref; depth++)
+    {
+        auto *def = ref.getDefiningOp();
+        if (mlir::isa_and_nonnull<mlir_ts::VariableOp, mlir_ts::AddressOfOp>(def))
+        {
+            return def;
+        }
+
+        if (!isPlace(ref))
+        {
+            return nullptr;
+        }
+
+        // what the place is in: a read of a slot, or the slot itself (a field of a local tuple)
+        auto in = def->getOperand(0);
+        while (auto castOp = in.getDefiningOp<mlir_ts::CastOp>())
+        {
+            in = castOp.getIn();
+        }
+
+        auto loadOp = in.getDefiningOp<mlir_ts::LoadOp>();
+        ref = loadOp ? loadOp.getReference() : in;
+    }
+
+    return nullptr;
+}
+
+// The storage a value is read out of (slotOfRef), through casts.
+inline mlir::Operation *slotOf(mlir::Value value)
+{
+    while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+    {
+        value = castOp.getIn();
+    }
+
+    auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+    return loadOp ? slotOfRef(loadOp.getReference()) : nullptr;
+}
+
+// One storage: a local's slot, or a global - each access of which is a `ts.AddressOf` of its own.
+inline bool sameSlot(mlir::Operation *a, mlir::Operation *b)
+{
+    if (a == b)
+    {
+        return true;
+    }
+
+    auto globalA = mlir::dyn_cast_or_null<mlir_ts::AddressOfOp>(a);
+    auto globalB = mlir::dyn_cast_or_null<mlir_ts::AddressOfOp>(b);
+    return globalA && globalB && globalA.getGlobalName() == globalB.getGlobalName();
+}
+
+// The storage an op gives a new value to or releases: a store, `ts.ReleaseSlot`.
+inline mlir::Operation *slotWritten(mlir::Operation *op)
+{
+    if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op))
+    {
+        return slotOfRef(storeOp.getReference());
+    }
+
+    if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+    {
+        return slotOfRef(releaseSlotOp.getSlot());
+    }
+
+    return nullptr;
+}
+
+// An op for which `found` holds that may run after `read` and before `call`: the ops between them
+// in a block, those of every block on a path from one to the other, and what each of them nests.
+// The arguments of a call are read in order, so one read early may be freed by a later one before
+// the call takes it - `f(n, (n = mk(), 0))` - and a conditional argument puts that in a block of its
+// own. Null when there is none.
+inline mlir::Operation *findBetween(mlir::Operation *read, mlir::Operation *call,
+                                    llvm::function_ref<bool(mlir::Operation *)> found)
+{
+    // the two in the innermost region holding both
+    mlir::Operation *readTop = nullptr;
+    mlir::Operation *callTop = nullptr;
+    for (auto *region = call->getParentRegion(); region && !readTop; region = region->getParentRegion())
+    {
+        readTop = region->findAncestorOpInRegion(*read);
+        callTop = readTop ? region->findAncestorOpInRegion(*call) : nullptr;
+    }
+
+    if (!readTop || !callTop || readTop == callTop)
+    {
+        return nullptr;
+    }
+
+    mlir::Operation *at = nullptr;
+    auto scan = [&](mlir::Operation *op) {
+        op->walk([&](mlir::Operation *inner) {
+            if (!at && inner != call && found(inner))
+            {
+                at = inner;
+            }
+        });
+    };
+
+    // the statement the call is in, when the call is not one itself
+    if (callTop != call)
+    {
+        scan(callTop);
+    }
+
+    auto *fromBlock = readTop->getBlock();
+    auto *toBlock = callTop->getBlock();
+    if (fromBlock == toBlock && readTop->isBeforeInBlock(callTop))
+    {
+        for (auto *op = readTop->getNextNode(); op != callTop; op = op->getNextNode())
+        {
+            scan(op);
+        }
+
+        return at;
+    }
+
+    for (auto *op = readTop->getNextNode(); op; op = op->getNextNode())
+    {
+        scan(op);
+    }
+
+    for (auto *op = &toBlock->front(); op != callTop; op = op->getNextNode())
+    {
+        scan(op);
+    }
+
+    // the blocks on a path: reached from the read's, and reaching the call's
+    llvm::SmallPtrSet<mlir::Block *, 16> after;
+    llvm::SmallVector<mlir::Block *> work(fromBlock->getSuccessors().begin(), fromBlock->getSuccessors().end());
+    while (!work.empty())
+    {
+        auto *block = work.pop_back_val();
+        if (after.insert(block).second)
+        {
+            work.append(block->getSuccessors().begin(), block->getSuccessors().end());
+        }
+    }
+
+    llvm::SmallPtrSet<mlir::Block *, 16> before;
+    work.assign(toBlock->getPredecessors().begin(), toBlock->getPredecessors().end());
+    while (!work.empty())
+    {
+        auto *block = work.pop_back_val();
+        if (before.insert(block).second)
+        {
+            work.append(block->getPredecessors().begin(), block->getPredecessors().end());
+        }
+    }
+
+    for (auto *block : after)
+    {
+        if (!before.contains(block))
+        {
+            continue;
+        }
+
+        for (auto &op : *block)
+        {
+            scan(&op);
+        }
+    }
+
+    return at;
+}
+
 // A handle (spec 23.2): counted in every model that tracks ownership, and left alone by own.
 inline bool isHandle(mlir::Value value)
 {

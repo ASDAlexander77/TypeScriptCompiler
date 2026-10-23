@@ -303,6 +303,8 @@ class OwnershipInferencePass
             checkGlobalRead(read);
         }
 
+        checkArgumentsAssigned();
+
         // What is proven loses its retains; any other retain is a second reference nobody
         // proved safe - of a loaded value, a parameter, an unknown producer, or of a fresh value
         // whose own check was reported above.
@@ -1924,6 +1926,114 @@ class OwnershipInferencePass
                 }
             }
         });
+    }
+
+    // An argument read out of a local is lent to the call, but the arguments are read in order: a
+    // later one may give the local a new value before the call takes the first - `g(n, (n = mk(), 0))`,
+    // in a conditional argument too - or call a closure that assigns it, when it is captured. The
+    // assignment drops the block the argument is, and the callee reads freed memory. rc holds such an
+    // argument across the call instead (OwnedReturnConsumptionPass, holdGlobalArguments). A read of a
+    // global is checkGlobalRead's, and a store into a place in the local the place borrows' (a field
+    // read `g(n.v, (n.v = mk(), 0))`); a store into the local's slot ends `n.v` too.
+    void checkArgumentsAssigned()
+    {
+        getFunction().walk([&](mlir::Operation *call) {
+            if (!isCall(call))
+            {
+                return mlir::WalkResult::advance();
+            }
+
+            for (auto argument : callArgs(call))
+            {
+                // a method's object: `this` of the method bound to it
+                if (auto getThisOp = argument.getDefiningOp<mlir_ts::GetThisOp>())
+                {
+                    auto *boundOp = getThisOp->getOperand(0).getDefiningOp();
+                    if (mlir::isa_and_nonnull<mlir_ts::ThisSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(boundOp))
+                    {
+                        argument = boundOp->getOperand(0);
+                    }
+                }
+
+                auto *read = argument.getDefiningOp();
+                auto local = mlir::dyn_cast_or_null<mlir_ts::VariableOp>(slotOf(argument));
+                if (!read || !local || !ownsHeap(argument) || isHandle(argument))
+                {
+                    continue;
+                }
+
+                auto assignedByClosure = closureAssigns(local);
+                auto *write = findBetween(read, call, [&](mlir::Operation *op) {
+                    if (assignedByClosure && isCall(op))
+                    {
+                        return true;
+                    }
+
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
+                    auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op);
+                    return (storeOp && storeOp.getReference() == local.getResult()) ||
+                           (releaseSlotOp && releaseSlotOp.getSlot() == local.getResult());
+                });
+                if (!write)
+                {
+                    continue;
+                }
+
+                if (reporting())
+                {
+                    auto name = varName(local);
+                    auto callee = calleeName(call);
+                    auto diag = call->emitError("'")
+                                << name << "' is lent to '" << (callee.empty() ? "a function" : callee)
+                                << "', but is given a new value before the call takes it; -mm=own cannot prove "
+                                   "it outlives the call";
+                    diag.attachNote(write->getLoc()) << "'" << name << "' is given a new value here";
+                    signalPassFailure();
+                }
+
+                return mlir::WalkResult::interrupt();
+            }
+
+            return mlir::WalkResult::advance();
+        });
+    }
+
+    // Does a closure built over this captured local assign it (OWN_ASSIGNS_CAPTURES_ATTR_NAME)? Yes too
+    // when its cell goes where this does not follow.
+    bool closureAssigns(mlir_ts::VariableOp local)
+    {
+        if (!local.getCaptured().value_or(false))
+        {
+            return false;
+        }
+
+        for (auto *user : local->getUsers())
+        {
+            auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+            if (mlir::isa<mlir_ts::LoadOp, mlir_ts::ReleaseSlotOp, mlir_ts::RetainCellOp, mlir_ts::ReleaseCellOp,
+                          mlir_ts::DebugVariableOp>(user) ||
+                (storeOp && storeOp.getReference() == local.getResult()))
+            {
+                continue;
+            }
+
+            // the cell put into a closure's capture box
+            auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>()
+                                         : mlir_ts::PropertyRefOp();
+            auto boundOp = propertyRefOp ? closureOfBox(propertyRefOp.getObjectRef()) : mlir_ts::CreateBoundFunctionOp();
+            if (!boundOp)
+            {
+                return true;
+            }
+
+            auto assigned = boundOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_ASSIGNS_CAPTURES_ATTR_NAME);
+            if (assigned && llvm::is_contained(assigned.asArrayRef(), static_cast<int32_t>(propertyRefOp.getPosition())))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     struct SlotReceiver
