@@ -933,6 +933,15 @@ class OwnershipInferencePass
     // The move verdict for an SSA value (phase 1). Reports and returns false when it is not one.
     bool movesOf(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase);
 
+    // A field taken out of a record value (`ts.ExtractProperty`, `const r = rec(); r.a.x`) only to be
+    // read, through any depth of fields: a read of the record, as a field read through a slot is.
+    // Collects what reads it, each a read of the record that can come after a move of it.
+    bool fieldOnlyRead(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &reads);
+
+    // What takes a field taken out of a record value, through any depth of fields: each use that is not a
+    // read. checkValueMoves lets them borrow it when each is a `let` its record's release bounds.
+    void fieldTakersOf(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &takers);
+
     // What a merge of branches makes of `used` (`c ? h : h2`): the result of an `arith.select` it
     // is a choice of, or each block argument a branch passes it as. Empty for any other use.
     static llvm::SmallVector<mlir::Value, 2> mergedValuesOf(mlir::Operation *user, mlir::Value used);
