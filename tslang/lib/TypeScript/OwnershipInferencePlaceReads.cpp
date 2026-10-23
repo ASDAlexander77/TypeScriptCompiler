@@ -11,6 +11,13 @@ namespace own_inference
     mlir::Operation *OwnershipInferencePass::placeReadOf(mlir::Value value)
     {
         auto root = rootOf(value);
+        // a read behind a test whose other side is the default (`let [x] = a`) is that read; the
+        // walk from it (checkPlaceRead) goes on through the branch to what takes the merge
+        if (auto sole = soleBlockMergedInto(root))
+        {
+            root = sole;
+        }
+
         auto *def = root.getDefiningOp();
         // a handle read out of a place that rc gives an owner of its own is a counted copy, not a
         // borrow (spec 23.3); any other is a borrow of the place, as a field read is
