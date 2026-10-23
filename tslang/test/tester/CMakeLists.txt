@@ -399,12 +399,16 @@ tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-const-interface-of-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
+tslang_add_test(NAME test-compile-00-global-interface-initializer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-compile-00-const-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-compile-00-const-element-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
 tslang_add_test(NAME test-compile-00-const-global-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-compile-00-global-argument-reassigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-compile-00-global-argument-view COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-compile-00-const-interface-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
+tslang_add_test(NAME test-compile-00-argument-place-overwritten COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
+tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -980,12 +984,16 @@ tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-const-interface-of-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
+tslang_add_test(NAME test-jit-00-global-interface-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-jit-00-const-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-jit-00-const-element-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
 tslang_add_test(NAME test-jit-00-const-global-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-jit-00-global-argument-reassigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-jit-00-global-argument-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-jit-00-const-interface-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
+tslang_add_test(NAME test-jit-00-argument-place-overwritten COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
+tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -1951,12 +1959,16 @@ set(TSLANG_CORPUS
     00const_interface_of_local.ts
     00string_view_copy.ts
     00global_copy_counted.ts
+    00global_interface_initializer.ts
     00c_string_copy.ts
     00const_field_read.ts
     00const_element_read.ts
     00const_global_read.ts
     00global_argument_reassigned.ts
     00global_argument_view.ts
+    00const_interface_field_read.ts
+    00argument_place_overwritten.ts
+    00temporary_read_in_finally.ts
     00unowned_local_store.ts
     00array_argument_held.ts
     00array_data_string_alias.ts
@@ -3687,6 +3699,10 @@ endforeach()
 foreach(read_mm own rc none gc)
     tslang_add_test(NAME test-jit-${read_mm}-own-global-read-callee-other COMMAND test-runner -jit -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
     tslang_add_test(NAME test-compile-${read_mm}-own-global-read-callee-other COMMAND test-runner -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+# An interface-typed global given a fresh class object owns it; the same program under every model.
+foreach(iface_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${iface_mm}-own-global-interface-fresh COMMAND test-runner -jit -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
+    tslang_add_test(NAME test-compile-${iface_mm}-own-global-interface-fresh COMMAND test-runner -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
 endforeach()
 
 # A `let` given a new value after its value moved owns the new one (#528); the same program under
