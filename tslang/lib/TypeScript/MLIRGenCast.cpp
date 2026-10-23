@@ -1012,7 +1012,8 @@ namespace mlirgen
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
         {
             // null (or undefined) is an interface over a null `this`, seen through the interface's null
-            // vtable, whose methods throw (mlirGenNullInterfaceVTable)
+            // vtable, whose methods throw (mlirGenNullInterfaceVTable). It stays the cast the ownership
+            // passes know holds nothing; the cast names the vtable, and the lowering puts it in.
             if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
             {
                 auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
@@ -1021,11 +1022,7 @@ namespace mlirgen
                     return std::nullopt;
                 }
 
-                auto nullVTable = mlirGenNullInterfaceVTable(location, interfaceInfo, genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
-                auto nullThis = builder.create<mlir_ts::NullOp>(location, getNullType());
-                auto opaqueVTable = builder.create<mlir_ts::CastOp>(location, mth.getInterfaceVTableType(interfaceType), V(nullVTable));
-                return V(builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, nullThis, opaqueVTable));
+                return mlirGenNullInterfaceVTableCast(location, interfaceType, interfaceInfo, genContext, value);
             }
 
             // A class object is a pointer that may be null (`C | null` is stored as `C`), and null
@@ -1057,9 +1054,8 @@ namespace mlirgen
                         return V(builder.create<mlir_ts::CastOp>(location, vtableType, V(classVTable)));
                     },
                     [&](mlir::Type) -> ValueOrLogicalResult {
-                        auto nullVTable = mlirGenNullInterfaceVTable(location, interfaceInfo, genContext);
-                        EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
-                        return V(builder.create<mlir_ts::CastOp>(location, vtableType, V(nullVTable)));
+                        // null, as the ownership passes know it, naming the null vtable the lowering puts in
+                        return mlirGenNullInterfaceVTableCast(location, vtableType, interfaceInfo, genContext);
                     });
                 EXIT_IF_FAILED_OR_NO_VALUE(interfaceVTable)
 

@@ -89,6 +89,13 @@ class OwnedReturnConsumptionPass
         // See callThroughValueReturnsOwned.
         auto anyUnclassifiedOwningReturn = false;
         module.walk([&](mlir_ts::FuncOp funcOp) {
+            // a method of an interface's null vtable throws, and returns nothing to anyone
+            // (mlirGenNullInterfaceVTable)
+            if (funcOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
+            {
+                return;
+            }
+
             auto name = funcOp.getName();
             auto classified = functionReturnsOwned(mth, funcOp, compileOptions.isRefCounted());
             if (classified)
@@ -122,9 +129,11 @@ class OwnedReturnConsumptionPass
         // virtualCallReturnsOwned. Only slots initialised from a symbol are recorded; a slot that
         // holds anything else - a field's offset, say - is simply absent, and absent means
         // unclassifiable there rather than ignorable.
+        // An interface's null vtable is not one: its methods throw, and never return anything
+        // (mlirGenNullInterfaceVTable).
         llvm::StringMap<llvm::DenseMap<int64_t, mlir::StringRef>> vtableSlots;
         module.walk([&](mlir_ts::GlobalOp globalOp) {
-            if (!globalOp.getSymName().ends_with(VTABLE_NAME))
+            if (!globalOp.getSymName().ends_with(VTABLE_NAME) || globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 return;
             }

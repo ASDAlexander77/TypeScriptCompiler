@@ -475,19 +475,36 @@ namespace mlirgen
     mlir::LogicalResult MLIRGenImpl::mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
                                                                mlir_ts::FunctionType funcType, const GenContext &genContext)
     {
-        if (theModule.lookupSymbol(stubName))
+        if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
         {
-            return mlir::success();
+            // one a discovery run left without its body (GenContext::clean) is made again
+            if (!existing.isDeclaration())
+            {
+                return mlir::success();
+            }
+
+            existing->erase();
         }
 
         mlir::OpBuilder::InsertionGuard guard(builder);
         builder.setInsertionPointToStart(theModule.getBody());
 
+        // a function of its own, made wherever the first null interface is: the throw's walk outwards
+        // (mlirGenReleaseOwnedOnUnwind) must not reach the scopes of the function that asked for it
         GenContext funcGenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.disableSpreadParams = true;
+        funcGenContext.parentBlockContext = nullptr;
+        funcGenContext.finallyGuardScope = nullptr;
+        funcGenContext.finallyEscapingJumps = nullptr;
+        funcGenContext.isLoop = false;
+        funcGenContext.isLoopBodyScope = false;
+        funcGenContext.isSwitchScope = false;
+        funcGenContext.loopLabel.clear();
+        funcGenContext.loopBodyLabel.clear();
+        funcGenContext.labelledScopeLabel.clear();
 
-        return mlirGenFunctionBody(
+        auto result = mlirGenFunctionBody(
             location, name, stubName, funcType,
             [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
                 NodeFactory nf(NodeFactoryFlags::None);
@@ -502,6 +519,15 @@ namespace mlirgen
                 return mlirGen(nf.createThrowStatement(thrown), genContext);
             },
             funcGenContext, 1/*to skip This*/);
+
+        // it returns nothing at all: what the ownership passes conclude about the functions that do
+        // (OwnedReturnConsumptionPass) does not wait on it
+        if (auto stubOp = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
+        {
+            stubOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return result;
     }
 
     // The vtable a null interface is seen through: `I | null` holding null, a null class object seen
@@ -513,7 +539,7 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
                                                                  const GenContext &genContext)
     {
-        auto vtableName = concat(newInterfacePtr->fullName, "null", VTABLE_NAME);
+        auto vtableName = nullInterfaceVTableName(newInterfacePtr);
         if (auto existValue = resolveFullNameIdentifier(location, vtableName, true, genContext))
         {
             return existValue;
@@ -617,7 +643,45 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(vtableName))
+        {
+            globalOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME, builder.getUnitAttr());
+        }
+
         return resolveFullNameIdentifier(location, vtableName, true, genContext);
+    }
+
+    // null (`value`, or a new one) cast to `type` - the interface, or its vtable for a null class
+    // object (castToInterfaceSpecialCases) - naming the interface's null vtable, which the lowering
+    // puts in (CastLogicHelper::nullInterfaceVTable). The ownership passes see a cast of null, which
+    // holds nothing, as they always have.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenNullInterfaceVTableCast(mlir::Location location, mlir::Type type,
+                                                                     InterfaceInfo::TypePtr newInterfacePtr,
+                                                                     const GenContext &genContext, mlir::Value value)
+    {
+        if (!value)
+        {
+            value = builder.create<mlir_ts::NullOp>(location, getNullType());
+        }
+
+        // a discovery run's IR is thrown away, and with it whatever it made: the run that keeps its IR
+        // makes the vtable
+        if (genContext.dummyRun || genContext.allowPartialResolve)
+        {
+            return V(builder.create<mlir_ts::CastOp>(location, type, value));
+        }
+
+        auto nullVTable = mlirGenNullInterfaceVTable(location, newInterfacePtr, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
+        if (auto addressOfOp = V(nullVTable).getDefiningOp<mlir_ts::AddressOfOp>(); addressOfOp && addressOfOp->use_empty())
+        {
+            addressOfOp->erase();
+        }
+
+        auto castOp = builder.create<mlir_ts::CastOp>(location, type, value);
+        castOp->setAttr(NULL_INTERFACE_VTABLE_ATTR_NAME,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), nullInterfaceVTableName(newInterfacePtr)));
+        return V(castOp);
     }
 
     mlir::LogicalResult MLIRGenImpl::mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location,

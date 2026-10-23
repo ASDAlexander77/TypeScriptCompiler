@@ -1551,7 +1551,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::StringMap<llvm::SetVector<llvm::StringRef>> classHeld;
         module.walk([&](mlir_ts::GlobalOp globalOp) {
             auto name = globalOp.getSymName();
-            if (!name.ends_with("..vtbl"))
+            // an interface's null vtable implements nothing (mlirGenNullInterfaceVTable): a null
+            // interface is seen through it, and its methods throw
+            if (!name.ends_with("..vtbl") || globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 return;
             }
@@ -1746,7 +1748,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
                 // a class object's vtable is chosen by a test for null (castToInterfaceSpecialCases):
                 // a `ts.If` yields one from each branch or, once lowered, the branches pass one each
-                // to a block argument; a null object's is null
+                // to a block argument. A null object's is a cast of null (the lowering puts in the
+                // interface's null vtable, whose methods throw), made by nothing that implements the
+                // interface.
                 llvm::SmallVector<mlir::Value> vtableChoices;
                 auto addChoice = [&](mlir::Value yielded) {
                     auto stripped = yielded;
@@ -1816,7 +1820,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 }
                 else
                 {
-                    vtableChoices.push_back(vtableValue);
+                    addChoice(vtableValue);
                 }
 
                 for (auto vtable : vtableChoices)
@@ -3470,6 +3474,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         for (auto &entry : globals)
         {
             auto globalOp = entry.second;
+            // the C++ runtime's type_info vtable a `throw`'s tables name: nothing is read out of it
+            if (globalOp->hasAttr(EH_TYPE_INFO_ATTR_NAME))
+            {
+                continue;
+            }
+
             auto foreign = globalOp->hasAttr("import") || globalOp->hasAttr(DLL_IMPORT) || globalOp.getInitializerRegion().empty() ||
                            globalOp.getInitializerRegion().front().empty();
             if (foreign && !scalarType(globalOp.getType()))
@@ -3722,6 +3732,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             if (mlir::isa<mlir_ts::SymbolRefOp>(user) && isClassVTableEntry(user))
+            {
+                continue;
+            }
+
+            // a method of an interface's null vtable, which throws (mlirGenNullInterfaceVTable): called
+            // through a null interface only, never with an object
+            if (auto globalOp = user->getParentOfType<mlir_ts::GlobalOp>();
+                mlir::isa<mlir_ts::SymbolRefOp>(user) && globalOp && globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 continue;
             }

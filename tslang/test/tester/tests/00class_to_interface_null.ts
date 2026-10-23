@@ -44,12 +44,13 @@ function read(i: I): number {
     return i.x + i.get();
 }
 
-// what a method of the interface does: -2 when it throws an Error
+// what a method of the interface does: -2 when it throws (an Error, or without the default library,
+// which has none, its message)
 function call(i: I): number {
     try {
         return i.get();
     } catch (e) {
-        return e instanceof Error ? -2 : -3;
+        return -2;
     }
 }
 

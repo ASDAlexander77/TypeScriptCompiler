@@ -388,7 +388,8 @@ class StackEscapeFacts
         for (auto globalOp : module.getOps<mlir_ts::GlobalOp>())
         {
             auto name = globalOp.getSymName();
-            if (!name.ends_with("..vtbl"))
+            // an interface's null vtable is no class's (mlirGenNullInterfaceVTable)
+            if (!name.ends_with("..vtbl") || globalOp->hasAttr(NULL_INTERFACE_VTABLE_ATTR_NAME))
             {
                 continue;
             }

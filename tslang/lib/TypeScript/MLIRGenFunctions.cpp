@@ -1948,9 +1948,12 @@ namespace mlirgen
             return mlir::failure();
         }
 
-        // add exit code
+        // add exit code: a function returning nothing declares no return variable of its own, and one
+        // made while another function is being generated (a null interface's method stub for a cast
+        // in it) finds that function's instead
         auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
-        if (retVarInfo.first)
+        auto *retVarDef = retVarInfo.first ? retVarInfo.first.getDefiningOp() : nullptr;
+        if (retVarDef && funcOp->isProperAncestor(retVarDef))
         {
             builder.create<mlir_ts::ExitOp>(location, retVarInfo.first);
         }

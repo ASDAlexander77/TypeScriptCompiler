@@ -3728,6 +3728,9 @@ class MLIRGenImpl
                                                   mlir_ts::FunctionType funcType, const GenContext &genContext);
     ValueOrLogicalResult mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
                                                     const GenContext &genContext);
+    ValueOrLogicalResult mlirGenNullInterfaceVTableCast(mlir::Location location, mlir::Type type,
+                                                        InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext,
+                                                        mlir::Value value = mlir::Value());
 
     void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
 
@@ -12325,6 +12328,12 @@ class MLIRGenImpl
     StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
     {
         return concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
+    }
+
+    // the vtable a null interface is seen through (mlirGenNullInterfaceVTable)
+    StringRef nullInterfaceVTableName(InterfaceInfo::TypePtr newInterfacePtr)
+    {
+        return concat(newInterfacePtr->fullName, "null", VTABLE_NAME);
     }
 
     StringRef interfaceVTableNameForObject(mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr)
