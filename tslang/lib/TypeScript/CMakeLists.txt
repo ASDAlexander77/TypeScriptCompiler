@@ -35,6 +35,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipInferencePass.cpp
     OwnershipInferenceBorrowers.cpp
     OwnershipInferenceClosures.cpp
+    OwnershipInferenceDiagnostics.cpp
     OwnershipInferenceEdgeReleases.cpp
     OwnershipInferenceGlobalReads.cpp
     OwnershipInferenceKeptParams.cpp
