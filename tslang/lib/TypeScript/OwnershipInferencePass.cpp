@@ -6148,11 +6148,67 @@ class OwnershipInferencePass
     // and has not moved it, and erases every release a moved value reaches - when nothing uses the
     // value, through the slot or through anything read out of it, where the paths have joined. False,
     // with nothing placed or erased, when it cannot.
+    // The slot of an owning local through the function (spec 30): its state at the entry and the exit
+    // of each block, and before each op of the body.
+    struct SlotStates
+    {
+        llvm::DenseMap<mlir::Block *, unsigned> entry;
+        llvm::DenseMap<mlir::Block *, unsigned> exit;
+        llvm::DenseMap<mlir::Operation *, unsigned> before;
+    };
+
     bool placeOnUnmovedEdges(mlir_ts::VariableOp varOp, mlir::Operation *acquire, mlir::Operation *retain,
                              mlir::Operation *taker, llvm::ArrayRef<mlir::Operation *> assignments,
                              llvm::SetVector<mlir::Operation *> &toErase)
     {
         joinedUse = nullptr;
+        llvm::SmallVector<mlir::Operation *> releases;
+        if (!slotReleasesInBody(varOp, acquire, assignments, releases))
+        {
+            return false;
+        }
+
+        auto states = slotStates(varOp, acquire, assignments, releases);
+
+        // every release a moved value reaches goes; one some path reaches with nothing in the slot
+        // is not this rule's
+        llvm::SmallVector<mlir::Operation *> erased;
+        for (auto *release : releases)
+        {
+            auto state = states.before.lookup(release);
+            if (state & SlotMoved)
+            {
+                if (state & SlotDead)
+                {
+                    return false;
+                }
+
+                erased.push_back(release);
+            }
+        }
+
+        llvm::SmallVector<EdgeRelease> placed;
+        llvm::SetVector<mlir::Block *> releasedInto;
+        if (!unmovedEdges(varOp, states, placed, releasedInto))
+        {
+            return false;
+        }
+
+        if (!noUseWhereJoined(varOp, retain, taker, assignments, states, releasedInto))
+        {
+            return false;
+        }
+
+        toErase.insert(erased.begin(), erased.end());
+        edgeReleases.append(placed.begin(), placed.end());
+        return true;
+    }
+
+    // The releases of the slot, when the local, the move, its assignments and its releases are all in
+    // the function's body. False when one is not.
+    bool slotReleasesInBody(mlir_ts::VariableOp varOp, mlir::Operation *acquire,
+                            llvm::ArrayRef<mlir::Operation *> assignments, llvm::SmallVectorImpl<mlir::Operation *> &releases)
+    {
         auto &body = getFunction().getFunctionBody();
         if (!varOp || varOp.getCaptured().value_or(false) || varOp->getParentRegion() != &body ||
             acquire->getParentRegion() != &body ||
@@ -6162,7 +6218,6 @@ class OwnershipInferencePass
         }
 
         auto slot = varOp.getResult();
-        llvm::SmallVector<mlir::Operation *> releases;
         for (auto *user : slot.getUsers())
         {
             if (mlir::isa<mlir_ts::ReleaseSlotOp>(user))
@@ -6176,7 +6231,15 @@ class OwnershipInferencePass
             }
         }
 
-        // the slot's state through the function, forward from its entry
+        return true;
+    }
+
+    // The slot's state through the function, forward from its entry: assigned, moved at `acquire`,
+    // released.
+    SlotStates slotStates(mlir_ts::VariableOp varOp, mlir::Operation *acquire, llvm::ArrayRef<mlir::Operation *> assignments,
+                          llvm::ArrayRef<mlir::Operation *> releases)
+    {
+        auto &body = getFunction().getFunctionBody();
         auto step = [&](mlir::Operation *op, unsigned state) -> unsigned {
             if (op == varOp.getOperation() || llvm::is_contained(assignments, op))
             {
@@ -6196,7 +6259,8 @@ class OwnershipInferencePass
             return state;
         };
 
-        llvm::DenseMap<mlir::Block *, unsigned> entry;
+        SlotStates states;
+        auto &entry = states.entry;
         auto exitOf = [&](mlir::Block *block) {
             auto state = entry.lookup(block);
             for (auto &op : *block)
@@ -6225,43 +6289,32 @@ class OwnershipInferencePass
         }
 
         // ...and before each op of the body
-        llvm::DenseMap<mlir::Operation *, unsigned> before;
         for (auto &block : body)
         {
             auto state = entry.lookup(&block);
             for (auto &op : block)
             {
-                before[&op] = state;
+                states.before[&op] = state;
                 state = step(&op, state);
             }
+
+            states.exit[&block] = state;
         }
 
-        auto joinedAt = [&](mlir::Operation *user) {
-            auto *top = body.findAncestorOpInRegion(*user);
-            return !top || isJoined(before.lookup(top));
-        };
+        return states;
+    }
 
-        // every release a moved value reaches goes; one some path reaches with nothing in the slot
-        // is not this rule's
-        llvm::SmallVector<mlir::Operation *> erased;
-        for (auto *release : releases)
-        {
-            auto state = before.lookup(release);
-            if (state & SlotMoved)
-            {
-                if (state & SlotDead)
-                {
-                    return false;
-                }
-
-                erased.push_back(release);
-            }
-        }
+    // Places a release of the slot on every edge into the join that holds the value and has not moved
+    // it. False, with nothing placed, when an edge cannot take one, or there is none.
+    bool unmovedEdges(mlir_ts::VariableOp varOp, const SlotStates &states, llvm::SmallVectorImpl<EdgeRelease> &placed,
+                      llvm::SetVector<mlir::Block *> &releasedInto)
+    {
+        auto &body = getFunction().getFunctionBody();
+        auto slot = varOp.getResult();
+        auto &entry = states.entry;
 
         // the edges into the join that hold the value and did not move it
         auto handler = handlerBlocks();
-        llvm::SmallVector<EdgeRelease> placed;
-        llvm::SetVector<mlir::Block *> releasedInto;
         for (auto &block : body)
         {
             if (!entry.count(&block))
@@ -6269,7 +6322,7 @@ class OwnershipInferencePass
                 continue; // unreachable
             }
 
-            auto state = exitOf(&block);
+            auto state = states.exit.lookup(&block);
             for (auto index : llvm::seq<unsigned>(0, block.getNumSuccessors()))
             {
                 auto into = entry.lookup(block.getSuccessor(index));
@@ -6302,10 +6355,22 @@ class OwnershipInferencePass
             }
         }
 
-        if (placed.empty())
-        {
-            return false;
-        }
+        return !placed.empty();
+    }
+
+    // Whether nothing uses the value where the paths have joined, or after an edge released it.
+    // False, with the use in `joinedUse` where there is one, when the release cannot be placed.
+    bool noUseWhereJoined(mlir_ts::VariableOp varOp, mlir::Operation *retain, mlir::Operation *taker,
+                          llvm::ArrayRef<mlir::Operation *> assignments, const SlotStates &states,
+                          const llvm::SetVector<mlir::Block *> &releasedInto)
+    {
+        auto &body = getFunction().getFunctionBody();
+        auto slot = varOp.getResult();
+
+        auto joinedAt = [&](mlir::Operation *user) {
+            auto *top = body.findAncestorOpInRegion(*user);
+            return !top || isJoined(states.before.lookup(top));
+        };
 
         // Nothing uses the value where the paths have joined - a read there, on the path that did
         // not move it, needs what the edge released - neither through the slot nor through anything
@@ -6481,8 +6546,6 @@ class OwnershipInferencePass
             }
         }
 
-        toErase.insert(erased.begin(), erased.end());
-        edgeReleases.append(placed.begin(), placed.end());
         return true;
     }
 
