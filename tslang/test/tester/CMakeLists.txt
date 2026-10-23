@@ -405,6 +405,7 @@ tslang_add_test(NAME test-compile-00-const-element-read COMMAND test-runner "${P
 tslang_add_test(NAME test-compile-00-const-global-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-compile-00-global-argument-reassigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-compile-00-global-argument-view COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -986,6 +987,7 @@ tslang_add_test(NAME test-jit-00-const-element-read COMMAND test-runner -jit "${
 tslang_add_test(NAME test-jit-00-const-global-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_global_read.ts")
 tslang_add_test(NAME test-jit-00-global-argument-reassigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-jit-00-global-argument-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
+tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
@@ -1957,6 +1959,7 @@ set(TSLANG_CORPUS
     00const_global_read.ts
     00global_argument_reassigned.ts
     00global_argument_view.ts
+    00temporary_read_in_finally.ts
     00unowned_local_store.ts
     00array_argument_held.ts
     00array_data_string_alias.ts
