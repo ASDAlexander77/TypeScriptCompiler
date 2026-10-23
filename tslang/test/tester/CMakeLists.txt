@@ -401,6 +401,7 @@ tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PRO
 tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-compile-00-global-interface-initializer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
 tslang_add_test(NAME test-compile-00-interface-cast-unrelated COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_cast_unrelated.ts")
+tslang_add_test(NAME test-compile-00-interface-union-cast-unrelated COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_union_cast_unrelated.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-compile-00-const-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-compile-00-const-element-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
@@ -998,6 +999,7 @@ tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PR
 tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-jit-00-global-interface-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
 tslang_add_test(NAME test-jit-00-interface-cast-unrelated COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_cast_unrelated.ts")
+tslang_add_test(NAME test-jit-00-interface-union-cast-unrelated COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_union_cast_unrelated.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-jit-00-const-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-jit-00-const-element-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
@@ -1985,6 +1987,7 @@ set(TSLANG_CORPUS
     00global_copy_counted.ts
     00global_interface_initializer.ts
     00interface_cast_unrelated.ts
+    00interface_union_cast_unrelated.ts
     00c_string_copy.ts
     00const_field_read.ts
     00const_element_read.ts
