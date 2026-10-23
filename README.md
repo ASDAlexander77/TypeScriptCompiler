@@ -768,7 +768,7 @@ reference-counted on the heap the way tslang allocates them:
 | `-mm=gc` | 1298 ms | 6 MB | 26x slower |
 | `-mm=rc` | 599 ms | 4 MB | 12x slower |
 | `-mm=none` | 703 ms | 845 MB | 14x slower |
-| `-mm=own` | does not compile yet | | |
+| `-mm=own` | 628 ms | 4.5 MB | 12x slower |
 | C++, values (clang / MSVC) | 51 / 69 ms | | |
 | Rust, values (`Copy` vectors and colors) | 55 ms | 4 MB | 1.1x slower |
 | Rust, every object in an `Rc` | 492 ms | 4 MB | 9.7x slower |
@@ -779,6 +779,10 @@ Rust that allocates the same way is only 1.2x faster than `-mm=rc`, and C++ with
 (atomic counts) is 1.4x slower than it. `-mm=none` is slower than
 `-mm=rc` because it never frees and keeps touching fresh pages. Stack promotion makes no measurable
 difference here yet: the hot allocations are returned from functions or captured by closures.
+`-mm=own` builds the benchmark's copy with two source edits (the shared surfaces are `Shared<T>`
+handles, and one method returns a fresh vector instead of its own field). It runs as fast as
+`-mm=rc` in as little memory, counting only those two handles (its row measured 2026-10-23, when
+`-mm=rc` took 638 ms and peaked at 4.5 MB).
 
 ### `-mm=own`
 

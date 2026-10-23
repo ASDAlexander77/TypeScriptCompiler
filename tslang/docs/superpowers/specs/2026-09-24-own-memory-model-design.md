@@ -4025,3 +4025,100 @@ Not here:
   else (`a.reduce(V.plus, ...)`: a static method is a vtable entry), a parameter that is passed on
   rather than called, an exported or `@keeps`/`@lends` function: no family, as before.
 - The default library's `reduce` (design G5: a follow-up).
+
+## 34. A direct call's result, and the ray tracer (G8 of the ray tracer plan), 2026-10-23
+
+After §25-§33 and the merge of main, the ray tracer's own copy
+(`benchmarks/raytrace/rtbench_own.ts`: `rtbench.ts` with the plan's two source edits,
+`Shared<Surface>` surfaces and a fresh vector from `Plane.normal`) had one error left, built as a
+program: `'this value' borrows a field but is used here after it may be released or overwritten` at
+`render`'s `getPoint(x, y, scene.camera)`, with `Color.toDrawingColor(color)` on the next line as
+the place it may be released. G8's other items (`Camera`'s constructor, `Sphere.normal`, `shade`'s
+ternary, `let d = isect.ray.dir`) were cleared by §28-§33.
+
+The cause was not the closure. `walkBorrowed` follows a borrow through every value made from it, and
+took the result of any call it is given to as one of them, since a result may point into an
+argument. So the vector `getPoint` makes was walked as part of the borrow `scene.camera`; its uses
+(through the record given to `traceRay`) were uses of that borrow; and `toDrawingColor` - which
+builds and calls its `legalize` closure, so it has no `__own_no_drops` - may destroy anything
+reachable from a parameter, `scene.camera` among it. The minimal program is `const p = gp(x,
+sc.cam); const c = drop(p); use(p)` with any function `gp` that returns a new object and any `drop`
+that may destroy. It compiles when nothing after the result may destroy: with `const legalize` in
+place of the ray tracer's `let legalize`, `toDrawingColor` has `__own_no_drops`.
+
+- **A direct call of a function this module defines ends the walk at the call** (`walkBorrowed`,
+  OwnershipInferencePass), as a call marked `__own_fresh_result` already did (an iterator's
+  `next()`, another own module's `..new`). The test is `isFresh` of its one result - a
+  `ts.SymbolCallInternal` or `ts.Invoke` naming a `ts.Func` with a body, with no
+  `__own_result_borrows` - and the call has neither `__own_result_bounded` (a generator's state that
+  borrows its arguments) nor `__own_result_record` (a borrowing record, §32): those are still
+  walked. The call itself is still a use of the borrow for as long as it runs. Sound because such a
+  body hands back nothing that points into what it was given but what its facts name: returning a
+  borrow of a parameter, of a part of one, or a closure, bound method, array or record over one is
+  either a fact its callers see or an error in the body (`borrows a field and cannot be stored,
+  returned or captured`, or, when its callers cannot all know the fact, §31's body errors). A string
+  result is a copy (spec 22).
+- **Not widened:** a call through a value, through an interface, through a callback family or to a
+  declared function is still walked (isFresh is false), and so is a method call: a class method is
+  called through `ts.ThisVirtualSymbolRef`, so `sc.cam.copy()` and `this.point(x, sc.cam)` keep the
+  error. That is a sound over-rejection: the signature pass resolves those calls, but the inference
+  does not learn that a resolved call's result is owned (a follow-up). The ray tracer's `getPoint`
+  is a closure, whose call is a direct call of its lifted function.
+
+`own_fresh_call_result` reads `scene.cam` into a closure's call, a function's call and a record
+given to a method (`{ start: scene.cam.f, dir: getPoint(x, scene.cam) }`), then calls a `toDrawing`
+that may destroy, churns, and uses all three results, in a loop; it prints 124 under own, rc, gc and
+none, AOT and JIT, with no counting under own. Before this section it had three errors (54:26,
+54:32, 51:61). Negatives `own_err_call_result_bounded` (a generator's state made from `s.cam`,
+iterated after `replace(s)`) and `own_err_call_result_record` (a borrowing record `{ v: c.f, n: 1 }`
+made from `s.cam`, read after `replace(s)`), each through a `@noinline` factory with churn and an
+assert; gc, rc and none print 5 and 6. Tooth (a temporary `OWN_TEETH` switch, removed): with every
+call's result ending the walk, `own_err_call_result_bounded` compiles and exits 139 (gc 5);
+`own_err_call_result_record` stays an error through the record's own bound (`borrows the result of
+'hit'`). The positive cannot fail with the rule widened: its results really are fresh.
+
+Probes (own as an executable with `--opt`, before the rule / after / with the tooth): a lifted
+closure returning `sc.cam.f` or a captured borrowing `let`, an exported function returning `c.f`,
+one returning a mortal global's field, a callback family with a member returning its argument, a
+method returning `this` or `this.f`, a virtual override returning `c.f`, `id(c).f`, a `V | null` of
+`c.f`, an `any` holding `c.f`, an element of an array parameter, a function that makes an unrelated
+object and returns `c.f`, a `Shared<V>` parameter's `s.value`, an async function returning `c.f`
+or, after an `await`, `new V(c.f.x)`: rejected before and after. An async function that reads
+`c.f.x` after an `await`, awaited after the drop: accepted before and after, printing what gc
+prints (async is outside this rule either way). A generator over `c.f.x`: rejected before and
+after; with the tooth it compiles and crashes. Newly accepted, and printing what gc prints: a
+function returning `new V(c.f.x)` or `[c.f.x]`, the same called inside a `try` (a `ts.Invoke`), and
+a closure called with `sc.cam` in a loop across a call that may destroy.
+
+**The ray tracer** (`test/tester/own/own_raytrace.ts`: `rtbench_own.ts` at 64x64, ending
+`print("checksum:", sum); assert(sum == 606318)`) compiles under own with no errors and prints
+checksum 606318, as under gc, rc and none. Built as a program only: it exports `Surfaces.shiny` and
+`Surfaces.checkerboard`, which an object file or a DLL opens to other modules (§31, USER decision),
+so test-runner's AOT build (an object file it links itself) cannot build it under own. Registered as
+`test-jit-own-own_raytrace` (the JIT's entry module counts as a program) and
+`test-compile-own-own_raytrace` (`own-exe-run.cmake`: `tslang --emit=exe`, run, match the checksum),
+and under gc, none and rc through test-runner, JIT and AOT. Not in `own_test`: its `Shared<Surface>`
+handles count (`__tslang_inc_ref`/`__tslang_dec_ref` appear only in the handle's retain and release
+routines), as for `own_shared_literal` (§26); for the same reason, and because an
+`--emit=mlir-affine` build is not a program, no `--verify-ownership` run.
+
+Measured (`bench.ps1`, 512x512, Windows 11 x64, the machine otherwise idle; two runs of the script,
+median of 7 runs each after a warm-up): own 627.5 ms both times (`--no-stack-promotion` 626.4 and
+626.8 ms), rc 640.0 and 637.9 ms in the same runs (gc 1295-1299, none 662-666, Rust idiomatic 58,
+Rust `Rc` 515, C++ idiomatic clang 54 ms). Peak working set (`PeakWorkingSet64` polled while the
+process runs, three runs each): own 4.5 MB, own without stack promotion 4.5 MB, rc 4.5-4.9 MB, gc
+6.5 MB, none 840-846 MB. Linux (WSL, ninja Release): own 0.13 s and 4.5 MB maximum resident set, rc
+0.15 s and 4.3 MB, checksum ...369, exit 0, three runs each. Errors left in the own copy: 0.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 525 of
+702 before this section, 526 after: `00owned_any_boxing` gained (`(<string>boxed[0]).length`: the
+generated `___unbox<string>`'s result, a copy, was walked as a borrow of the array's element, which
+the array's release at the return ends; built under own it prints what gc prints). None lost.
+
+Not here:
+- A method call's result (`o.m(borrow)`, through `ts.ThisVirtualSymbolRef`) is still walked as a
+  borrow of its arguments, as is an indirect call's.
+- The benchmark keeps its two source edits; the unedited `rtbench.ts` does not compile under own (a
+  non-goal of the plan).
+- This section is 34, not 35 as the Task 9 addendum expected: the merge of main left notes in §25
+  and §29 and no section of its own.
