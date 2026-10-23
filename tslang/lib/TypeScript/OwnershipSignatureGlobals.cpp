@@ -499,6 +499,17 @@ namespace own_signature
                     continue;
                 }
 
+                // only a store to the global releases its block: a callee that assigns other globals, and
+                // none it cannot name (pinAssignedGlobals, run before), leaves this one's value as it is
+                if (!call.op->hasAttr(OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME))
+                {
+                    auto assigned = call.op->getAttrOfType<mlir::ArrayAttr>(OWN_ASSIGNS_GLOBALS_ATTR_NAME);
+                    if (!assigned || !llvm::is_contained(assigned.getValue(), mlir::StringAttr::get(&getContext(), global.getGlobalName())))
+                    {
+                        continue;
+                    }
+                }
+
                 call.op->emitError("a value read out of the global '")
                     << global.getGlobalName()
                     << "' is lent to a call that may release or overwrite it; -mm=own cannot prove it outlives the call";
