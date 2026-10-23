@@ -700,29 +700,45 @@ class OwnedReturnConsumptionPass
 
     // Is the argument read out of a slot or a place that something between the read and the call
     // overwrites - a later argument (`f(n, (n = mk(), n))`)?
+    //
+    // So is one read out of a field or an element of a value read so: overwriting `n` in
+    // `f({ v: n.v }, (n = mk(), 0))` gives back the object whose field the argument read.
     static bool overwrittenBeforeCall(mlir::Value argument, mlir::Operation *call)
     {
-        auto loadOp = stripCasts(argument).getDefiningOp<mlir_ts::LoadOp>();
-        if (!loadOp || loadOp->getBlock() != call->getBlock())
+        auto value = stripCasts(argument);
+        for (auto depth = 0; depth < 8; depth++)
         {
-            return false;
-        }
-
-        auto reference = loadOp.getReference();
-        for (auto *op = loadOp->getNextNode(); op && op != call; op = op->getNextNode())
-        {
-            auto overwrites = op->walk([&](mlir::Operation *nested) {
-                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(nested);
-                auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(nested);
-                auto place = storeOp ? storeOp.getReference() : releaseSlotOp ? releaseSlotOp.getSlot() : mlir::Value();
-                return place && samePlace(place, reference) ? mlir::WalkResult::interrupt()
-                                                            : mlir::WalkResult::advance();
-            });
-
-            if (overwrites.wasInterrupted())
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            if (!loadOp || loadOp->getBlock() != call->getBlock())
             {
-                return true;
+                return false;
             }
+
+            auto reference = loadOp.getReference();
+            for (auto *op = loadOp->getNextNode(); op && op != call; op = op->getNextNode())
+            {
+                auto overwrites = op->walk([&](mlir::Operation *nested) {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(nested);
+                    auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(nested);
+                    auto place =
+                        storeOp ? storeOp.getReference() : releaseSlotOp ? releaseSlotOp.getSlot() : mlir::Value();
+                    return place && samePlace(place, reference) ? mlir::WalkResult::interrupt()
+                                                                : mlir::WalkResult::advance();
+                });
+
+                if (overwrites.wasInterrupted())
+                {
+                    return true;
+                }
+            }
+
+            auto *place = reference.getDefiningOp();
+            if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::InterfaceSymbolRefOp>(place))
+            {
+                return false;
+            }
+
+            value = stripCasts(place->getOperand(0));
         }
 
         return false;
