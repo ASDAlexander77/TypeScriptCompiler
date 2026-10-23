@@ -1070,6 +1070,11 @@ namespace mlirgen
                 return castObjectToInterface(location, value, objectType, interfaceType, genContext);
             }
 
+            if (auto srcInterfaceType = dyn_cast<mlir_ts::InterfaceType>(valueType))
+            {
+                return castInterfaceToInterface(location, value, srcInterfaceType, interfaceType, genContext);
+            }
+
             // A number, string, boolean or array has no fields an interface's members could be read
             // from: passed for an `{ kind: number }` it compiled, without a word, to a cast that
             // lowering could not make, and the callee read garbage. An interface without members
@@ -1090,6 +1095,133 @@ namespace mlirgen
         }
 
         return std::nullopt;
+    }
+
+    // An interface value keeps the vtable it was made with, laid out for its own interface. Another
+    // interface it is cast to reads that vtable by its own slot numbers, which match only when it is the
+    // value's interface or one it extends (whose members come first): `interface HasDist { dist }` read
+    // `thing`, the first slot of a `Hit { thing; ray; dist }`, and a method slot called whichever method
+    // came first. For any other interface the cast carries where each of the target's slots is in the
+    // source's vtable, and lowering builds the target's vtable from the value's own one. A slot is copied
+    // as it is - a field's offset, a method, a cell, -1 for an absent member - so a member is taken only
+    // where both name it alike: a field for a field of the same type, a method for a method. A member the
+    // source lacks is absent, as an optional one is: such a cast (`tube = ball`, a Ball having no
+    // `length`) was always let through.
+    std::optional<ValueOrLogicalResult> MLIRGenImpl::castInterfaceToInterface(mlir::Location location, mlir::Value value,
+                                                                             mlir_ts::InterfaceType srcInterfaceType,
+                                                                             mlir_ts::InterfaceType interfaceType,
+                                                                             const GenContext &genContext)
+    {
+        if (srcInterfaceType == interfaceType || genContext.allowPartialResolve)
+        {
+            return std::nullopt;
+        }
+
+        auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue());
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        if (!srcInterfaceInfo || !interfaceInfo)
+        {
+            return std::nullopt;
+        }
+
+        SmallVector<int32_t> vtableMap(interfaceInfo->getVTableSize() + INTERFACE_VTABLE_HEADER_SLOTS, -1);
+        vtableMap[INTERFACE_VTABLE_INSTANCEOF_SLOT] = INTERFACE_VTABLE_INSTANCEOF_SLOT;
+
+        // the first member the cast can't map, reported only when the vtable can't serve as it is
+        mlir::Attribute problemMember;
+        StringRef problem;
+        auto cannotCast = [&](mlir::Attribute memberId, StringRef reason) {
+            if (!problemMember)
+            {
+                problemMember = memberId;
+                problem = reason;
+            }
+        };
+
+        // the slots of the target, in its vtable's order: each `extends` block, then its own methods and
+        // fields (InterfaceInfo::getAllMethodsWithVTableOffset)
+        std::function<void(InterfaceInfo::TypePtr, int)> mapSlots = [&](InterfaceInfo::TypePtr info, int baseOffset) {
+            auto offset = baseOffset;
+            for (auto &extent : info->extends)
+            {
+                mapSlots(std::get<1>(extent), offset);
+                offset += std::get<1>(extent)->getVTableSize();
+            }
+
+            for (auto &method : info->methods)
+            {
+                auto slot = method.virtualIndex + baseOffset + INTERFACE_VTABLE_HEADER_SLOTS;
+                auto srcOffset = 0;
+                if (auto *srcMethod = srcInterfaceInfo->findMethod(method.name, srcOffset))
+                {
+                    if (srcMethod->funcType != method.funcType)
+                    {
+                        cannotCast(builder.getStringAttr(method.name), "has another type");
+                    }
+
+                    vtableMap[slot] = srcMethod->virtualIndex + srcOffset + INTERFACE_VTABLE_HEADER_SLOTS;
+                }
+                else if (srcInterfaceInfo->findField(builder.getStringAttr(method.name)))
+                {
+                    cannotCast(builder.getStringAttr(method.name), "is a method of one and a field of the other");
+                }
+            }
+
+            for (auto &field : info->fields)
+            {
+                auto slot = field.virtualIndex + baseOffset + INTERFACE_VTABLE_HEADER_SLOTS;
+                auto srcOffset = 0;
+                if (auto *srcField = srcInterfaceInfo->findField(field.id, srcOffset))
+                {
+                    if (mth.stripLiteralType(srcField->type) != mth.stripLiteralType(field.type))
+                    {
+                        cannotCast(field.id, "has another type");
+                    }
+
+                    if (srcField->isConditional && !field.isConditional)
+                    {
+                        cannotCast(field.id, "is optional");
+                    }
+
+                    vtableMap[slot] = srcField->virtualIndex + srcOffset + INTERFACE_VTABLE_HEADER_SLOTS;
+                }
+                else if (auto fieldName = dyn_cast<mlir::StringAttr>(field.id);
+                         fieldName && srcInterfaceInfo->findMethod(fieldName.getValue()))
+                {
+                    cannotCast(field.id, "is a method of one and a field of the other");
+                }
+            }
+        };
+
+        mapSlots(interfaceInfo, 0);
+
+        // an interface the source extends, or one laid out the same: the vtable serves as it is
+        if (llvm::all_of(llvm::enumerate(vtableMap), [](auto slot) { return slot.value() == (int32_t)slot.index(); }))
+        {
+            return std::nullopt;
+        }
+
+        if (problemMember)
+        {
+            auto diagnostic = emitError(location);
+            diagnostic << "interface '" << to_print(srcInterfaceType) << "' can't be cast to interface '"
+                       << to_print(interfaceType) << "': member ";
+            if (auto memberName = dyn_cast<mlir::StringAttr>(problemMember))
+            {
+                diagnostic << "'" << memberName.getValue() << "' ";
+            }
+            else
+            {
+                diagnostic << problemMember << " ";
+            }
+
+            diagnostic << problem;
+            return mlir::failure();
+        }
+
+        auto castOp = builder.create<mlir_ts::CastOp>(location, interfaceType, value);
+        castOp->setAttr(INTERFACE_VTABLE_MAP_ATTR_NAME, builder.getDenseI32ArrayAttr(vtableMap));
+        return V(castOp);
     }
 
     // A constant array keeps the element type its literal was built with: `const c = [1, 2]` is a

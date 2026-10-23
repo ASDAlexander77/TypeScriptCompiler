@@ -2889,6 +2889,221 @@ struct DialectCastOpLowering : public TsLlvmPattern<mlir_ts::DialectCastOp>
     }
 };
 
+// The vtable an interface value gets when it is cast to an interface whose members are not where its
+// own interface has them (INTERFACE_VTABLE_MAP_ATTR_NAME): slot i is slot map[i] of the value's vtable,
+// or -1 where map[i] is -1. A vtable with the same content is one vtable: it is built the first time it
+// is asked for and kept in a list for as long as the program runs, so a cast made again (in a loop)
+// allocates nothing, and nothing has to free one. A vtable holds function pointers, field offsets and
+// addresses of globals, no heap pointer. A null vtable (a null interface) stays null.
+//   ptr ts_remap_vtable(ptr vtable, ptr map, index count)
+static LLVM::LLVMFuncOp getOrCreateRemapVTableFunction(Operation *op, ConversionPatternRewriter &rewriter,
+                                                       const TypeConverter *typeConverter, CompileOptions &compileOptions)
+{
+    StringRef name = "ts_remap_vtable";
+    StringRef listName = "ts_remap_vtable_list";
+
+    auto parentModule = op->getParentOfType<ModuleOp>();
+    if (auto existing = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
+    {
+        return existing;
+    }
+
+    TypeHelper th(rewriter);
+    TypeConverterHelper tch(typeConverter);
+    LLVMCodeHelper ch(op, rewriter, typeConverter, compileOptions);
+
+    auto loc = rewriter.getUnknownLoc();
+    auto ptrType = th.getPtrType();
+    auto i32Type = th.getI32Type();
+    auto wordType = tch.convertType(th.getIndexType());
+    auto wordBytes = wordType.getIntOrFloatBitWidth() / 8;
+
+    OpBuilder::InsertionGuard insertGuard(rewriter);
+    rewriter.setInsertionPointToStart(parentModule.getBody());
+
+    // the first vtable built; each starts with the next one and its slot count: {next, count, slots...}
+    auto list = rewriter.create<LLVM::GlobalOp>(loc, ptrType, /*isConstant=*/false, LLVM::Linkage::Internal, listName,
+                                                mlir::Attribute{});
+    {
+        OpBuilder::InsertionGuard initGuard(rewriter);
+        rewriter.setInsertionPointToStart(rewriter.createBlock(&list.getInitializerRegion()));
+        mlir::Value nullList = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
+        rewriter.create<LLVM::ReturnOp>(loc, ValueRange{nullList});
+    }
+
+    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+        loc, name, th.getFunctionType(ptrType, {ptrType, ptrType, wordType}), LLVM::Linkage::Internal);
+
+    auto *entryBlock = funcOp.addEntryBlock(rewriter);
+    auto vtable = entryBlock->getArgument(0);
+    auto map = entryBlock->getArgument(1);
+    auto count = entryBlock->getArgument(2);
+
+    auto &body = funcOp.getBody();
+    auto newBlock = [&](ArrayRef<mlir::Type> types) {
+        SmallVector<mlir::Location> locations(types.size(), loc);
+        return rewriter.createBlock(&body, body.end(), types, locations);
+    };
+
+    auto *returnNullBlock = newBlock({});
+    auto *scanStartBlock = newBlock({});
+    auto *scanBlock = newBlock({ptrType});
+    auto *compareCountBlock = newBlock({});
+    auto *compareBlock = newBlock({wordType});
+    auto *compareSlotBlock = newBlock({});
+    auto *foundBlock = newBlock({});
+    auto *nextNodeBlock = newBlock({});
+    auto *insertBlock = newBlock({});
+    auto *fillBlock = newBlock({wordType});
+    auto *fillSlotBlock = newBlock({});
+    auto *linkStartBlock = newBlock({});
+    auto *linkBlock = newBlock({ptrType});
+    auto *linkedBlock = newBlock({});
+
+    auto word = [&](int64_t value) -> mlir::Value {
+        return rewriter.create<LLVM::ConstantOp>(loc, wordType, rewriter.getIntegerAttr(wordType, value));
+    };
+    auto wordAt = [&](mlir::Value base, mlir::Value index) -> mlir::Value {
+        return rewriter.create<LLVM::GEPOp>(loc, ptrType, wordType, base, ValueRange{index});
+    };
+    auto nodeCount = [&](mlir::Value node) { return wordAt(node, word(1)); };
+    auto nodeSlots = [&](mlir::Value node) { return wordAt(node, word(2)); };
+    auto listAddress = [&]() -> mlir::Value { return rewriter.create<LLVM::AddressOfOp>(loc, ptrType, listName); };
+    auto loadList = [&](LLVM::AtomicOrdering ordering) -> mlir::Value {
+        return rewriter.create<LLVM::LoadOp>(loc, ptrType, listAddress(), wordBytes, /*isVolatile=*/false,
+                                             /*isNonTemporal=*/false, /*isInvariant=*/false,
+                                             /*isInvariantGroup=*/false, ordering);
+    };
+    // slot `index` of the vtable being asked for
+    auto mappedSlot = [&](mlir::Value index) -> mlir::Value {
+        mlir::Value fromAddress = rewriter.create<LLVM::GEPOp>(loc, ptrType, i32Type, map, ValueRange{index});
+        mlir::Value from = rewriter.create<LLVM::LoadOp>(loc, i32Type, fromAddress);
+        if (wordType != i32Type)
+        {
+            from = rewriter.create<LLVM::SExtOp>(loc, wordType, from);
+        }
+
+        mlir::Value absent = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, from, word(0));
+        mlir::Value readFrom = rewriter.create<LLVM::SelectOp>(loc, absent, word(0), from);
+        mlir::Value slot = rewriter.create<LLVM::LoadOp>(loc, wordType, wordAt(vtable, readFrom));
+        return rewriter.create<LLVM::SelectOp>(loc, absent, word(-1), slot);
+    };
+
+    rewriter.setInsertionPointToEnd(entryBlock);
+    mlir::Value nullPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
+    mlir::Value isNull = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, vtable, nullPtr);
+    rewriter.create<LLVM::CondBrOp>(loc, isNull, returnNullBlock, scanStartBlock);
+
+    rewriter.setInsertionPointToEnd(returnNullBlock);
+    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{nullPtr});
+
+    rewriter.setInsertionPointToEnd(scanStartBlock);
+    rewriter.create<LLVM::BrOp>(loc, ValueRange{loadList(LLVM::AtomicOrdering::acquire)}, scanBlock);
+
+    // look for a vtable with this content
+    rewriter.setInsertionPointToEnd(scanBlock);
+    auto node = scanBlock->getArgument(0);
+    mlir::Value isEnd = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, node, nullPtr);
+    rewriter.create<LLVM::CondBrOp>(loc, isEnd, insertBlock, compareCountBlock);
+
+    rewriter.setInsertionPointToEnd(compareCountBlock);
+    mlir::Value nodeCountValue = rewriter.create<LLVM::LoadOp>(loc, wordType, nodeCount(node));
+    mlir::Value sameCount = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, nodeCountValue, count);
+    rewriter.create<LLVM::CondBrOp>(loc, sameCount, compareBlock, ValueRange{word(0)}, nextNodeBlock, ValueRange{});
+
+    rewriter.setInsertionPointToEnd(compareBlock);
+    auto compareIndex = compareBlock->getArgument(0);
+    mlir::Value compared = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareIndex, count);
+    rewriter.create<LLVM::CondBrOp>(loc, compared, foundBlock, compareSlotBlock);
+
+    rewriter.setInsertionPointToEnd(compareSlotBlock);
+    mlir::Value nodeSlot = rewriter.create<LLVM::LoadOp>(loc, wordType, wordAt(nodeSlots(node), compareIndex));
+    mlir::Value sameSlot = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, nodeSlot, mappedSlot(compareIndex));
+    mlir::Value nextCompareIndex = rewriter.create<LLVM::AddOp>(loc, compareIndex, word(1));
+    rewriter.create<LLVM::CondBrOp>(loc, sameSlot, compareBlock, ValueRange{nextCompareIndex}, nextNodeBlock, ValueRange{});
+
+    rewriter.setInsertionPointToEnd(foundBlock);
+    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{nodeSlots(node)});
+
+    rewriter.setInsertionPointToEnd(nextNodeBlock);
+    mlir::Value nextNode = rewriter.create<LLVM::LoadOp>(loc, ptrType, node);
+    rewriter.create<LLVM::BrOp>(loc, ValueRange{nextNode}, scanBlock);
+
+    // none: build it
+    rewriter.setInsertionPointToEnd(insertBlock);
+    mlir::Value slotsWithHeader = rewriter.create<LLVM::AddOp>(loc, count, word(2));
+    mlir::Value size = rewriter.create<LLVM::MulOp>(loc, slotsWithHeader, word(wordBytes));
+    auto newNode = ch.MemoryAlloc(size);
+    rewriter.create<LLVM::StoreOp>(loc, count, nodeCount(newNode));
+    rewriter.create<LLVM::BrOp>(loc, ValueRange{word(0)}, fillBlock);
+
+    rewriter.setInsertionPointToEnd(fillBlock);
+    auto fillIndex = fillBlock->getArgument(0);
+    mlir::Value filled = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, fillIndex, count);
+    rewriter.create<LLVM::CondBrOp>(loc, filled, linkStartBlock, fillSlotBlock);
+
+    rewriter.setInsertionPointToEnd(fillSlotBlock);
+    rewriter.create<LLVM::StoreOp>(loc, mappedSlot(fillIndex), wordAt(nodeSlots(newNode), fillIndex));
+    mlir::Value nextFillIndex = rewriter.create<LLVM::AddOp>(loc, fillIndex, word(1));
+    rewriter.create<LLVM::BrOp>(loc, ValueRange{nextFillIndex}, fillBlock);
+
+    // put it first in the list; a cast running at the same time on another thread may add the same
+    // content too, which costs a block and nothing else
+    rewriter.setInsertionPointToEnd(linkStartBlock);
+    rewriter.create<LLVM::BrOp>(loc, ValueRange{loadList(LLVM::AtomicOrdering::monotonic)}, linkBlock);
+
+    rewriter.setInsertionPointToEnd(linkBlock);
+    auto expectedFirst = linkBlock->getArgument(0);
+    rewriter.create<LLVM::StoreOp>(loc, expectedFirst, newNode);
+    auto exchange = rewriter.create<LLVM::AtomicCmpXchgOp>(loc, listAddress(), expectedFirst, newNode,
+                                                           LLVM::AtomicOrdering::acq_rel,
+                                                           LLVM::AtomicOrdering::monotonic);
+    mlir::Value seenFirst = rewriter.create<LLVM::ExtractValueOp>(loc, exchange, ArrayRef<int64_t>{0});
+    mlir::Value linked = rewriter.create<LLVM::ExtractValueOp>(loc, exchange, ArrayRef<int64_t>{1});
+    rewriter.create<LLVM::CondBrOp>(loc, linked, linkedBlock, ValueRange{}, linkBlock, ValueRange{seenFirst});
+
+    rewriter.setInsertionPointToEnd(linkedBlock);
+    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{nodeSlots(newNode)});
+
+    return funcOp;
+}
+
+static mlir::Value remapInterfaceVTable(Operation *op, mlir::Value interfaceValue, ArrayRef<int32_t> vtableMap,
+                                        ConversionPatternRewriter &rewriter, const TypeConverter *typeConverter,
+                                        CompileOptions &compileOptions)
+{
+    TypeHelper th(rewriter);
+    TypeConverterHelper tch(typeConverter);
+
+    auto loc = op->getLoc();
+    auto ptrType = th.getPtrType();
+    auto i32Type = th.getI32Type();
+    auto wordType = tch.convertType(th.getIndexType());
+
+    auto remapFunction = getOrCreateRemapVTableFunction(op, rewriter, typeConverter, compileOptions);
+
+    // the map, one constant per content
+    auto mapName = "ts_vtable_map_" + std::to_string((size_t)llvm::hash_combine_range(vtableMap.begin(), vtableMap.end()));
+    auto parentModule = op->getParentOfType<ModuleOp>();
+    if (!parentModule.lookupSymbol<LLVM::GlobalOp>(mapName))
+    {
+        OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+
+        auto mapType = LLVM::LLVMArrayType::get(i32Type, vtableMap.size());
+        auto mapValue = mlir::DenseIntElementsAttr::get(
+            mlir::RankedTensorType::get({(int64_t)vtableMap.size()}, i32Type), vtableMap);
+        rewriter.create<LLVM::GlobalOp>(loc, mapType, /*isConstant=*/true, LLVM::Linkage::Internal, mapName, mapValue);
+    }
+
+    mlir::Value vtable = rewriter.create<LLVM::ExtractValueOp>(loc, interfaceValue, ArrayRef<int64_t>{DATA_VALUE_INDEX});
+    mlir::Value mapAddress = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, mapName);
+    mlir::Value count = rewriter.create<LLVM::ConstantOp>(loc, wordType, rewriter.getIntegerAttr(wordType, vtableMap.size()));
+    auto remapped = rewriter.create<LLVM::CallOp>(loc, remapFunction, ValueRange{vtable, mapAddress, count});
+    return rewriter.create<LLVM::InsertValueOp>(loc, interfaceValue, remapped.getResult(),
+                                                ArrayRef<int64_t>{DATA_VALUE_INDEX});
+}
+
 struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 {
     using TsLlvmPattern<mlir_ts::CastOp>::TsLlvmPattern;
@@ -2902,6 +3117,13 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 
         auto in = transformed.getIn();
         auto resType = op.getRes().getType();
+
+        if (auto vtableMap = op->getAttrOfType<mlir::DenseI32ArrayAttr>(INTERFACE_VTABLE_MAP_ATTR_NAME))
+        {
+            rewriter.replaceOp(op, remapInterfaceVTable(op, in, vtableMap.asArrayRef(), rewriter, getTypeConverter(),
+                                                        tsLlvmContext->compileOptions));
+            return success();
+        }
 
         CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
         // in case of Union we need mlir_ts::UnionType value
