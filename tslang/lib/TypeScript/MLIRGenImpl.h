@@ -1289,6 +1289,30 @@ class MLIRGenImpl
         definingOp->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
     }
 
+    // A store of a local's own value back into it: `value` is a plain read of `reference`, a local's slot, made
+    // in this block with only reads after it, so the slot still holds what was read. An atomic or volatile
+    // access is the program's to keep.
+    bool isSelfStore(mlir::Value value, mlir::Value reference)
+    {
+        auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || loadOp.getReference() != reference || !reference.getDefiningOp<mlir_ts::VariableOp>() ||
+            loadOp->getBlock() != builder.getInsertionBlock() || loadOp->hasAttr(ATOMIC_ATTR_NAME) ||
+            loadOp->hasAttr(VOLATILE_ATTR_NAME))
+        {
+            return false;
+        }
+
+        for (auto *op = loadOp->getNextNode(); op; op = op->getNextNode())
+        {
+            if (!mlir::isa<mlir_ts::LoadOp>(op))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Storage that hands ownership over when it is overwritten: the incoming value gains an
     // owner and the outgoing one loses one.
     //
@@ -6515,6 +6539,14 @@ class MLIRGenImpl
             if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
             {
                 storeReference = builder.clone(*elementRefOp)->getResult(0);
+            }
+
+            // `n = n`, or `n = (n = f(), n)`: the value was just read out of this local and nothing since has
+            // written anywhere, so storing it back changes nothing. Emitting it anyway costs -mm=own the
+            // local: the read moves the value out, and the release of what the slot held came after it.
+            if (isSelfStore(savingValue, storeReference))
+            {
+                return mlir::success();
             }
 
             // Overwriting owning storage hands the count over: the incoming value gains an
