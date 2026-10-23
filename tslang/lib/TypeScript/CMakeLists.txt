@@ -36,6 +36,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipSignaturePass.cpp
     OwnershipSignatureGlobals.cpp
     OwnershipSignatureInterfaces.cpp
+    OwnershipSignatureResolve.cpp
     OwnedReturnConsumptionPass.cpp
     StackPromotionPass.cpp
     BorrowFactsExportPass.cpp

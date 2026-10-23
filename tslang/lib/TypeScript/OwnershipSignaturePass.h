@@ -872,171 +872,43 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // A class's vtable is a global named `<class>..vtbl` that holds its `..instanceOf`. An
     // interface's vtable for a class (`B.I..vtbl`) holds only the methods and is not one: a call
     // through an interface does not name what it reaches.
-    void collectClassVTables(mlir::ModuleOp module)
-    {
-        llvm::SmallVector<std::pair<llvm::StringRef, llvm::SmallVector<std::pair<int64_t, mlir::StringAttr>>>> vtables;
-        module.walk([&](mlir_ts::GlobalOp globalOp) {
-            auto entries = classVTableEntries(globalOp);
-            if (!entries.empty())
-            {
-                auto name = globalOp.getSymName();
-                classNames.insert(name.drop_back(llvm::StringRef("..vtbl").size()));
-                vtables.push_back({name, std::move(entries)});
-            }
-        });
-
-        for (auto &[name, entries] : vtables)
-        {
-            for (auto [position, symbol] : entries)
-            {
-                families[{position, methodName(symbol.getValue())}].push_back(symbol);
-            }
-        }
-    }
+    void collectClassVTables(mlir::ModuleOp module);
 
     // Does a method reached through an open interface keep a parameter or return a borrow
     // (interfaceReached)? Then its callers through the interface cannot be told, and it has no facts
     // at all.
     bool factsThroughInterface(mlir::Operation *funcOp, const Facts &facts);
 
-    mlir_ts::TupleType storageTupleOf(mlir::Type type)
-    {
-        return own_facts::storageTupleOf(&getContext(), type);
-    }
+    mlir_ts::TupleType storageTupleOf(mlir::Type type);
 
     // The functions a class vtable holds, by position; empty for any other global.
-    static llvm::SmallVector<std::pair<int64_t, mlir::StringAttr>> classVTableEntries(mlir_ts::GlobalOp globalOp)
-    {
-        llvm::SmallVector<std::pair<int64_t, mlir::StringAttr>> entries;
-        if (!globalOp.getSymName().ends_with("..vtbl"))
-        {
-            return entries;
-        }
+    static llvm::SmallVector<std::pair<int64_t, mlir::StringAttr>> classVTableEntries(mlir_ts::GlobalOp globalOp);
 
-        auto isClass = false;
-        globalOp.getInitializerRegion().walk([&](mlir_ts::InsertPropertyOp insertOp) {
-            auto symbolRefOp = insertOp.getValue().getDefiningOp<mlir_ts::SymbolRefOp>();
-            if (!symbolRefOp || insertOp.getPosition().size() != 1)
-            {
-                return;
-            }
-
-            auto symbol = symbolRefOp.getIdentifierAttr().getAttr();
-            isClass = isClass || symbol.getValue().ends_with("..instanceOf");
-            entries.push_back({insertOp.getPosition()[0], symbol});
-        });
-
-        if (!isClass)
-        {
-            entries.clear();
-        }
-
-        return entries;
-    }
-
-    static bool isClassVTableEntry(mlir::Operation *op)
-    {
-        auto globalOp = op->getParentOfType<mlir_ts::GlobalOp>();
-        return globalOp && !classVTableEntries(globalOp).empty();
-    }
+    static bool isClassVTableEntry(mlir::Operation *op);
 
     // `B.get` -> `get`: the symbol with the longest class name that prefixes it taken off. An
     // override keeps its base's method name, which is what puts both in one family.
-    std::string methodName(llvm::StringRef symbol)
-    {
-        size_t best = 0;
-        for (auto &entry : classNames)
-        {
-            auto name = entry.getKey();
-            if (name.size() > best && symbol.size() > name.size() && symbol.starts_with(name) &&
-                symbol[name.size()] == '.')
-            {
-                best = name.size() + 1;
-            }
-        }
+    std::string methodName(llvm::StringRef symbol);
 
-        return symbol.drop_front(best).str();
-    }
-
-    llvm::SmallVector<mlir::StringAttr, 2> familyOf(int64_t index, mlir::StringAttr identifier)
-    {
-        llvm::SmallVector<mlir::StringAttr, 2> members;
-        if (auto found = families.find({index, methodName(identifier.getValue())}); found != families.end())
-        {
-            members = found->second;
-        }
-
-        if (!llvm::is_contained(members, identifier))
-        {
-            members.push_back(identifier);
-        }
-
-        return members;
-    }
+    llvm::SmallVector<mlir::StringAttr, 2> familyOf(int64_t index, mlir::StringAttr identifier);
 
     // Adds `symbol`'s function to `callees`; false when it is not defined in this module.
-    bool addDefined(mlir::StringAttr symbol, Callees &callees)
-    {
-        auto funcOp = functions.lookup(symbol.getValue());
-        if (!funcOp || funcOp.isDeclaration())
-        {
-            return false;
-        }
-
-        if (!llvm::is_contained(callees.funcs, funcOp))
-        {
-            callees.funcs.push_back(funcOp);
-        }
-
-        return true;
-    }
+    bool addDefined(mlir::StringAttr symbol, Callees &callees);
 
     // A function declared here and defined in a library that exported its `__own_no_drops`: one
     // linked with this module, through its import library. Or a C function declared
     // `@nodrops` (OWN_DECLARED_NO_DROPS_ATTR_NAME), or one whose parameters and result hold no
     // heap block (scalarDeclaration).
-    bool addImported(mlir::StringAttr symbol, Callees &callees)
-    {
-        auto funcOp = functions.lookup(symbol.getValue());
-        if (!funcOp || !funcOp.isDeclaration() ||
-            !(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME) ||
-              (scalarDeclaration(funcOp) && !functionsEscape)))
-        {
-            return false;
-        }
-
-        callees.imported = true;
-        callees.importedName = symbol.getValue();
-        return true;
-    }
+    bool addImported(mlir::StringAttr symbol, Callees &callees);
 
     // A number, a boolean, a character, or an enum or a literal of one: a value that holds no block
     // and no function of this module, so given to foreign code it hands it neither. Not an opaque
     // pointer, a reference, a string, a class, an interface, an object, a tuple, an array, a union
     // with such a member, a function, `any` or `unknown`.
-    static bool scalarType(mlir::Type type)
-    {
-        if (auto literalType = mlir::dyn_cast<mlir_ts::LiteralType>(type))
-        {
-            return scalarType(literalType.getElementType());
-        }
-
-        if (auto enumType = mlir::dyn_cast<mlir_ts::EnumType>(type))
-        {
-            return scalarType(enumType.getElementType());
-        }
-
-        return mlir::isa<mlir_ts::NumberType, mlir_ts::BooleanType, mlir_ts::ByteType, mlir_ts::CharType, mlir::IntegerType,
-                         mlir::FloatType, mlir::IndexType>(type);
-    }
+    static bool scalarType(mlir::Type type);
 
     // Every parameter and result scalar (a void result too), and no rest parameter.
-    static bool scalarSignature(mlir_ts::FunctionType functionType)
-    {
-        return !functionType.isVarArg() && llvm::all_of(functionType.getInputs(), scalarType) &&
-               llvm::all_of(functionType.getResults(),
-                            [](mlir::Type type) { return mlir::isa<mlir_ts::VoidType>(type) || scalarType(type); });
-    }
+    static bool scalarSignature(mlir_ts::FunctionType functionType);
 
     // A body-less `declare function` of C (no `export` or import marker: not another TypeScript
     // module's, whose declarations carry `export`) whose parameters and result are scalar
@@ -1046,185 +918,19 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // function it was given - so the rule is off in a module whose foreign surface could hand it
     // one (functionsEscape) - or an exported function reached by name, which a `@nodrops`
     // declaration takes on as well.
-    static bool scalarDeclaration(mlir_ts::FuncOp funcOp)
-    {
-        return funcOp.isDeclaration() && !funcOp->hasAttr("export") && !funcOp->hasAttr("import") &&
-               !funcOp->hasAttr(DLL_EXPORT) && !funcOp->hasAttr(DLL_IMPORT) && scalarSignature(funcOp.getFunctionType());
-    }
+    static bool scalarDeclaration(mlir_ts::FuncOp funcOp);
 
     // `ts.Load(ts.AddressOf @f)`, where the global `f` holds the address of a function exported
     // by a library loaded at run time, looked up by name: that function, if the library exported
     // its `__own_no_drops`.
-    bool addImportedByAddress(mlir::Value callee, Callees &callees)
-    {
-        auto loadOp = callee.getDefiningOp<mlir_ts::LoadOp>();
-        auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
-        if (!addressOfOp)
-        {
-            return false;
-        }
+    bool addImportedByAddress(mlir::Value callee, Callees &callees);
 
-        auto globalOp = globals.lookup(addressOfOp.getGlobalName());
-        if (!globalOp || writtenGlobals.contains(addressOfOp.getGlobalName()))
-        {
-            return false;
-        }
-
-        // the global is never anything but that address: `Cast(SearchForAddressOfSymbol(name))`
-        auto &region = globalOp.getInitializerRegion();
-        if (!region.hasOneBlock())
-        {
-            return false;
-        }
-
-        auto resultOp = mlir::dyn_cast<mlir_ts::GlobalResultOp>(region.front().getTerminator());
-        auto castOp = resultOp && resultOp->getNumOperands() == 1
-                          ? resultOp->getOperand(0).getDefiningOp<mlir_ts::CastOp>()
-                          : mlir_ts::CastOp();
-        auto searchOp = castOp ? castOp.getIn().getDefiningOp<mlir_ts::SearchForAddressOfSymbolOp>()
-                               : mlir_ts::SearchForAddressOfSymbolOp();
-        auto nameOp = searchOp ? searchOp->getOperand(0).getDefiningOp<mlir_ts::ConstantOp>() : mlir_ts::ConstantOp();
-        auto name = nameOp ? mlir::dyn_cast<mlir::StringAttr>(nameOp.getValue()) : mlir::StringAttr();
-        if (!name || !importedNoDrops.contains(name.getValue()))
-        {
-            return false;
-        }
-
-        callees.imported = true;
-        callees.importedName = name.getValue();
-        return true;
-    }
-
-    Callees resolve(mlir::Operation *op)
-    {
-        Callees callees;
-        if (auto callee = directCallee(op))
-        {
-            callees.named.push_back(callee.getAttr());
-            callees.known = addDefined(callee.getAttr(), callees) || addImported(callee.getAttr(), callees);
-        }
-        else if (mlir::isa<mlir_ts::CallInternalOp, mlir_ts::CallIndirectOp, mlir_ts::InvokeOp>(op))
-        {
-            resolveValue(calleeValue(op), callees);
-        }
-
-        if (!callees.known)
-        {
-            callees.funcs.clear();
-        }
-
-        return callees;
-    }
+    Callees resolve(mlir::Operation *op);
 
     // The function value a call goes through: a method of a class, virtual or not, a symbol, or
     // the `.instanceOf` slot. Anything else - a closure, a function read from a field, an
     // interface's method - is unknown.
-    void resolveValue(mlir::Value callee, Callees &callees)
-    {
-        // `ts.Load(ts.AddressOf @g)`: a dynamic import's global, which may say what the function
-        // keeps; a method of a class imported so is bound to its object first
-        auto function = callee;
-        if (auto getMethodOp = function.getDefiningOp<mlir_ts::GetMethodOp>())
-        {
-            function = getMethodOp.getBoundFunc();
-        }
-
-        if (auto boundOp = function.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
-        {
-            function = boundOp.getFunc();
-        }
-
-        auto loadOp = function.getDefiningOp<mlir_ts::LoadOp>();
-        if (auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
-            addressOfOp && !writtenGlobals.contains(addressOfOp.getGlobalName()))
-        {
-            callees.named.push_back(addressOfOp.getGlobalNameAttr().getAttr());
-        }
-
-        if (addImportedByAddress(callee, callees))
-        {
-            callees.known = true;
-            return;
-        }
-
-        if (auto getMethodOp = callee.getDefiningOp<mlir_ts::GetMethodOp>())
-        {
-            callee = getMethodOp.getBoundFunc();
-        }
-
-        auto *def = callee.getDefiningOp();
-        mlir::StringAttr identifier;
-        int64_t index = -1;
-        if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisVirtualSymbolRefOp>(def))
-        {
-            identifier = refOp.getIdentifierAttr().getAttr();
-            index = refOp.getIndex();
-        }
-        else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::VirtualSymbolRefOp>(def))
-        {
-            identifier = refOp.getIdentifierAttr().getAttr();
-            index = refOp.getIndex();
-        }
-        else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::ThisSymbolRefOp>(def))
-        {
-            identifier = refOp.getIdentifierAttr().getAttr();
-        }
-        else if (auto refOp = mlir::dyn_cast_or_null<mlir_ts::SymbolRefOp>(def))
-        {
-            identifier = refOp.getIdentifierAttr().getAttr();
-        }
-        else if (isInstanceOfSlot(def))
-        {
-            callees.known = true;
-            callees.instanceOf = true;
-            return;
-        }
-        else if (auto symbol = fieldFunctions.of(def))
-        {
-            callees.known = addDefined(symbol, callees);
-            callees.fieldFunction = callees.known;
-            return;
-        }
-        else if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def))
-        {
-            resolveInterfaceSlot(interfaceRefOp, interfaceFamilies, callees);
-            return;
-        }
-        else if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
-        {
-            resolveCallback(loadOp, callees);
-            return;
-        }
-        else if (auto boundOp = mlir::dyn_cast_or_null<mlir_ts::CreateBoundFunctionOp>(def))
-        {
-            // a function-typed field of an interface, called: `ts.CreateBoundFunction(
-            // ts.ExtractInterfaceThis(i), ts.Load(ts.InterfaceSymbolRef(i, f)))`
-            auto loadOp = boundOp.getFunc().getDefiningOp<mlir_ts::LoadOp>();
-            auto refOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>() : mlir_ts::InterfaceSymbolRefOp();
-            auto thisOp = boundOp.getThisVal().getDefiningOp<mlir_ts::ExtractInterfaceThisOp>();
-            if (refOp && isInterfaceField(refOp.getResult()) && thisOp && thisOp.getInterfaceVal() == refOp.getInterfaceVal())
-            {
-                resolveInterfaceSlot(refOp, interfaceFieldFamilies, callees);
-            }
-
-            return;
-        }
-
-        if (!identifier)
-        {
-            return;
-        }
-
-        if (index < 0)
-        {
-            callees.named.push_back(identifier);
-            callees.known = addDefined(identifier, callees) || addImported(identifier, callees);
-            return;
-        }
-
-        callees.named = familyOf(index, identifier);
-        resolveFamily(index, identifier, callees);
-    }
+    void resolveValue(mlir::Value callee, Callees &callees);
 
     // A method of a closed interface (interfaceFamilies), `ts.InterfaceSymbolRef(value, index)`, or a
     // function-typed field of one (interfaceFieldFamilies), read and called: the family of the slot
@@ -1620,41 +1326,14 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // A class another module can see may be extended there, and its override is a candidate this
     // module never sees: every member has to be private and defined here.
-    void resolveFamily(int64_t index, mlir::StringAttr identifier, Callees &callees)
-    {
-        callees.known = true;
-        for (auto member : familyOf(index, identifier))
-        {
-            callees.known = addDefined(member, callees) && callees.known;
-        }
-
-        callees.known = callees.known && llvm::all_of(callees.funcs, [&](mlir_ts::FuncOp funcOp) { return !callableFromOutside(funcOp); });
-    }
+    void resolveFamily(int64_t index, mlir::StringAttr identifier, Callees &callees);
 
     // `ts.Cast(ts.VTableOffsetRef(vtable, 0))`, where `vtable` is the one an object's first word
     // points to or an interface value's own: slot 0 of either is `.instanceOf` - a class's
     // generated one, a string compare, or `.instanceOf.none` for an object literal behind an
     // interface. Only mlirGenInstanceOfThroughVTable builds a call through it. Neither destroys
     // anything.
-    static bool isInstanceOfSlot(mlir::Operation *def)
-    {
-        auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(def);
-        auto slot = castOp ? castOp.getIn().getDefiningOp<mlir_ts::VTableOffsetRefOp>() : mlir_ts::VTableOffsetRefOp();
-        if (!slot || slot.getIndex() != INTERFACE_VTABLE_INSTANCEOF_SLOT)
-        {
-            return false;
-        }
-
-        // a class vtable, read out of an object's first word, or an interface's own vtable,
-        // whose slot 0 is its implementer's `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS)
-        auto *vtable = slot.getVtable().getDefiningOp();
-        if (auto classVTable = mlir::dyn_cast_or_null<mlir_ts::VTableOffsetRefOp>(vtable))
-        {
-            return classVTable.getIndex() == 0;
-        }
-
-        return mlir::isa_and_nonnull<mlir_ts::ExtractInterfaceVTableOp>(vtable);
-    }
+    static bool isInstanceOfSlot(mlir::Operation *def);
 
     // Is every use of this function value the callee of a call - through `ts.GetMethod`, with
     // `ts.GetThis` reading the object beside it?
