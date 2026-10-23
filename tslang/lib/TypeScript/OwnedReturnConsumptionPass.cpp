@@ -1317,7 +1317,7 @@ class OwnedReturnConsumptionPass
         mlir::OpBuilder builder(&getContext());
         for (auto *op : discarded)
         {
-            if (!allUsesReleasableInOwnBlock(op))
+            if (!allUsesReleasableInOwnBlock(op) || storedIntoUnownedLocalOutside(op))
             {
                 continue;
             }
@@ -1467,6 +1467,42 @@ class OwnedReturnConsumptionPass
         }
 
         return true;
+    }
+
+    // Is the value stored into a local that owns nothing, declared outside the value's block? Such
+    // a local - one declared with no initializer (`let n: N;`), or in a catch or finally clause
+    // (MLIRGenImpl::localTakesOwnership) - takes no count for what it is given, so the value's own
+    // reference is all that keeps it, and the local holds it until its own scope ends: later than
+    // the end of the value's block. `let n: N; if (c) { n = mk(); } use(n)` gave the new value back
+    // at the end of the `if`, and `finally { let n = mk(); for (..) { use(n); n = mk(); } }` at the
+    // end of the loop body; the local then read a freed block. Such a value is left with no one to
+    // give it back - a leak - which is the side the whole arc keeps the uncertain case on.
+    static bool storedIntoUnownedLocalOutside(mlir::Operation *op)
+    {
+        llvm::SmallVector<mlir::Value> values{op->getResult(0)};
+        while (!values.empty())
+        {
+            auto value = values.pop_back_val();
+            for (auto *user : value.getUsers())
+            {
+                if (auto castOp = mlir::dyn_cast<mlir_ts::CastOp>(user))
+                {
+                    values.push_back(castOp.getRes());
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
+                auto varOp = storeOp && storeOp.getValue() == value
+                                 ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                 : mlir_ts::VariableOp();
+                if (varOp && !varOp->hasAttr(OWNED_LOCAL_ATTR_NAME) && varOp->getBlock() != op->getBlock())
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // Can a release at the end of this value's own block give its reference back safely? See
