@@ -6486,6 +6486,16 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // An element's address is taken anew once the value is ready. The one the left side was
+            // read through was taken before the right side ran, and the right side may grow the array:
+            // `a[0] = f()` with `f` pushing to `a` moved its elements to a new block, and the store went
+            // into the one given back (a value lost under every model, a freed block written to under
+            // rc). The array and the index are the ones the left side evaluated, as JavaScript has it.
+            if (auto elementRefOp = storeReference.getDefiningOp<mlir_ts::ElementRefOp>())
+            {
+                storeReference = builder.clone(*elementRefOp)->getResult(0);
+            }
+
             // Overwriting owning storage hands the count over: the incoming value gains an
             // owner and the outgoing one loses it. Retaining first is what makes `x = x` safe -
             // releasing first could drop the last reference and free the value about to be
