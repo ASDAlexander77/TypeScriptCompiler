@@ -1523,34 +1523,72 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         return words;
     }
 
-    void collectInterfaceFamilies(mlir::ModuleOp module)
+    // the vtables: an interface's (`ts.InsertProperty` of each slot, slot 0 `.instanceOf` of a
+    // class that is not the vtable's owner, or `.instanceOf.none` of an object literal), and the
+    // slots of a class's own vtable that hold the address of one of its interface vtables
+    struct InterfaceVTable
     {
+        mlir_ts::TupleType type;
+        llvm::DenseMap<int64_t, mlir::StringAttr> slots;
+        // a field's slot: the object literal's field it is the offset of
+        llvm::DenseMap<int64_t, std::pair<mlir::Type, int64_t>> fields;
+        bool written = false;
+    };
+
+    // What collectInterfaceFamilies learns of the module, one step after another.
+    struct InterfaceScan
+    {
+        // the interfaces open whatever their vtables hold
         llvm::StringSet<> open;
-        auto openAll = [&](const llvm::StringSet<> &names) {
-            for (auto &entry : names)
-            {
-                open.insert(entry.getKey());
-            }
-        };
-
-        // the vtables: an interface's (`ts.InsertProperty` of each slot, slot 0 `.instanceOf` of a
-        // class that is not the vtable's owner, or `.instanceOf.none` of an object literal), and the
-        // slots of a class's own vtable that hold the address of one of its interface vtables
-        struct InterfaceVTable
-        {
-            mlir_ts::TupleType type;
-            llvm::DenseMap<int64_t, mlir::StringAttr> slots;
-            // a field's slot: the object literal's field it is the offset of
-            llvm::DenseMap<int64_t, std::pair<mlir::Type, int64_t>> fields;
-            bool written = false;
-        };
-
         llvm::StringMap<InterfaceVTable> vtables;
         // `..vtbl` globals that are neither (no `.instanceOf` this reads in slot 0)
         llvm::SmallVector<llvm::StringRef> unread;
         // interface name -> the interface vtables class vtables hold for it, read through an
         // object's class at run time (`ts.VTableOffsetRef` of the object's vtable)
         llvm::StringMap<llvm::SetVector<llvm::StringRef>> classHeld;
+        // interface name -> the vtables its values are made with
+        llvm::StringMap<llvm::SetVector<llvm::StringRef>> madeWith;
+        // An interface value made out of another one reaches the other's members: both are open. One
+        // made out of `any` or an opaque pointer may be any interface value put into one: every
+        // interface so boxed is open with it, and every interface at all when it is untraceable.
+        bool allOpen = false;
+        llvm::StringSet<> boxed;
+        llvm::StringSet<> unboxedInto;
+        bool unboxedFunction = false;
+        // the interfaces a cast makes a value of out of another interface's or an opaque one, and
+        // the ones it came from: closed over their members' types below
+        llvm::StringSet<> castOpened;
+        // interface -> the interfaces its members' types mention: its vtables' slots and what is
+        // read out of its values (`ts.InterfaceSymbolRef`), function signatures and class fields
+        // included
+        llvm::StringMap<llvm::StringSet<>> memberInterfaces;
+        llvm::DenseSet<llvm::StringRef> tied;
+
+        void openAll(const llvm::StringSet<> &names)
+        {
+            for (auto &entry : names)
+            {
+                open.insert(entry.getKey());
+            }
+        }
+    };
+
+    void collectInterfaceFamilies(mlir::ModuleOp module)
+    {
+        InterfaceScan scan;
+        readInterfaceVTables(module, scan);
+        traceInterfaceValues(module, scan);
+        openExposedInterfaces(module, scan);
+        openThroughMembers(scan);
+        openLooseVTables(scan);
+        buildInterfaceFamilies(scan);
+        collectFieldFunctions(module);
+        markInterfaceReached(scan);
+    }
+
+    // The vtables: each interface vtable's slots, and the interface vtables a class's own vtable holds.
+    void readInterfaceVTables(mlir::ModuleOp module, InterfaceScan &scan)
+    {
         module.walk([&](mlir_ts::GlobalOp globalOp) {
             auto name = globalOp.getSymName();
             if (!name.ends_with("..vtbl"))
@@ -1571,7 +1609,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(globalOp.getType());
             if (!header || !tupleType)
             {
-                unread.push_back(name);
+                scan.unread.push_back(name);
                 return;
             }
 
@@ -1596,10 +1634,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                         continue;
                     }
 
-                    classHeld[id.getValue()].insert(addressOfOp.getGlobalName());
+                    scan.classHeld[id.getValue()].insert(addressOfOp.getGlobalName());
                     if (exposed)
                     {
-                        open.insert(id.getValue()); // another module may extend the class
+                        scan.open.insert(id.getValue()); // another module may extend the class
                     }
                 }
 
@@ -1608,11 +1646,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             if (!header.getValue().ends_with("..instanceOf") && header.getValue() != ".instanceOf.none")
             {
-                unread.push_back(name);
+                scan.unread.push_back(name);
                 return;
             }
 
-            auto &vtable = vtables[name];
+            auto &vtable = scan.vtables[name];
             vtable.type = tupleType;
             for (auto &[position, value] : values)
             {
@@ -1626,14 +1664,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 }
             }
         });
+    }
 
-        // interface name -> the vtables its values are made with
-        llvm::StringMap<llvm::SetVector<llvm::StringRef>> madeWith;
+    // What makes an interface value, out of which vtable; the casts that box, unbox or reinterpret one;
+    // the interfaces its members' types mention; the vtables written.
+    void traceInterfaceValues(mlir::ModuleOp module, InterfaceScan &scan)
+    {
         auto vtableOf = [&](mlir::Value value) -> llvm::StringRef {
             // the global itself
             if (auto addressOfOp = addressOfThroughCasts(value))
             {
-                return vtables.count(addressOfOp.getGlobalName()) ? addressOfOp.getGlobalName() : llvm::StringRef();
+                return scan.vtables.count(addressOfOp.getGlobalName()) ? addressOfOp.getGlobalName() : llvm::StringRef();
             }
 
             // a copy of it on the heap, its absent members' slots patched
@@ -1652,7 +1693,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                                       ? storeOp.getValue().getDefiningOp<mlir_ts::LoadOp>()
                                       : mlir_ts::LoadOp();
                     auto addressOfOp = loadOp ? addressOfThroughCasts(loadOp.getReference()) : mlir_ts::AddressOfOp();
-                    if (addressOfOp && vtables.count(addressOfOp.getGlobalName()))
+                    if (addressOfOp && scan.vtables.count(addressOfOp.getGlobalName()))
                     {
                         if (!copied.empty())
                         {
@@ -1711,20 +1752,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             });
         };
 
-        // An interface value made out of another one reaches the other's members: both are open. One
-        // made out of `any` or an opaque pointer may be any interface value put into one: every
-        // interface so boxed is open with it, and every interface at all when it is untraceable.
-        auto allOpen = false;
-        llvm::StringSet<> boxed;
-        llvm::StringSet<> unboxedInto;
-        auto unboxedFunction = false;
-        // the interfaces a cast makes a value of out of another interface's or an opaque one, and
-        // the ones it came from: closed over their members' types below
-        llvm::StringSet<> castOpened;
-        // interface -> the interfaces its members' types mention: its vtables' slots and what is
-        // read out of its values (`ts.InterfaceSymbolRef`), function signatures and class fields
-        // included
-        llvm::StringMap<llvm::StringSet<>> memberInterfaces;
         auto isOpaque = [](mlir::Type type) { return mlir::isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::OpaqueType>(type); };
         module.walk([&](mlir::Operation *op) {
             if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(op))
@@ -1733,24 +1760,24 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 auto vtable = newInterfaceOp.getInterfaceVTable();
                 if (auto found = vtableOf(vtable); !found.empty())
                 {
-                    madeWith[name].insert(found);
+                    scan.madeWith[name].insert(found);
                 }
                 else if (readFromClass(vtable))
                 {
                     // any class's vtable for the interface (classHeld, all in its families below)
-                    if (!classHeld.count(name))
+                    if (!scan.classHeld.count(name))
                     {
-                        open.insert(name);
+                        scan.open.insert(name);
                     }
                 }
                 else if (auto extractOp = vtable.getDefiningOp<mlir_ts::ExtractInterfaceVTableOp>())
                 {
-                    castOpened.insert(name);
-                    valueInterfaces(extractOp.getInterfaceVal().getType(), castOpened);
+                    scan.castOpened.insert(name);
+                    valueInterfaces(extractOp.getInterfaceVal().getType(), scan.castOpened);
                 }
                 else
                 {
-                    allOpen = true;
+                    scan.allOpen = true;
                 }
 
                 return;
@@ -1762,16 +1789,16 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 auto out = castOp.getType();
                 if (isOpaque(out))
                 {
-                    valueInterfaces(in, boxed);
+                    valueInterfaces(in, scan.boxed);
                 }
 
                 if (castMakesInterface(in, out))
                 {
-                    valueInterfaces(out, castOpened);
-                    valueInterfaces(in, castOpened);
+                    valueInterfaces(out, scan.castOpened);
+                    valueInterfaces(in, scan.castOpened);
                     if (isOpaque(in))
                     {
-                        valueInterfaces(out, unboxedInto);
+                        valueInterfaces(out, scan.unboxedInto);
                     }
                 }
 
@@ -1781,17 +1808,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 auto boxing = false;
                 if (castReinterpretsFunction(in, out, signatures, boxing))
                 {
-                    openAll(signatures);
+                    scan.openAll(signatures);
                     if (isOpaque(in))
                     {
-                        unboxedFunction = true;
+                        scan.unboxedFunction = true;
                     }
                 }
                 else if (boxing)
                 {
                     for (auto &entry : signatures)
                     {
-                        boxed.insert(entry.getKey());
+                        scan.boxed.insert(entry.getKey());
                     }
                 }
 
@@ -1802,7 +1829,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 if (!interfaceRefOp->use_empty())
                 {
-                    open.insert(interfaceRefOp.getIdentifier());
+                    scan.open.insert(interfaceRefOp.getIdentifier());
                 }
 
                 return;
@@ -1812,7 +1839,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             {
                 if (auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(symbolRefOp.getInterfaceVal().getType()))
                 {
-                    memberTypeInterfaces(symbolRefOp.getType(), memberInterfaces[interfaceType.getName().getValue()]);
+                    memberTypeInterfaces(symbolRefOp.getType(), scan.memberInterfaces[interfaceType.getName().getValue()]);
                 }
 
                 return;
@@ -1820,13 +1847,17 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
             if (auto addressOfOp = mlir::dyn_cast<mlir_ts::AddressOfOp>(op))
             {
-                if (auto found = vtables.find(addressOfOp.getGlobalName()); found != vtables.end() && !onlyMakesValues(addressOfOp.getResult()))
+                if (auto found = scan.vtables.find(addressOfOp.getGlobalName()); found != scan.vtables.end() && !onlyMakesValues(addressOfOp.getResult()))
                 {
                     found->second.written = true;
                 }
             }
         });
+    }
 
+    // The interfaces another module sees, and the ones a value boxed into `any` may be unboxed into.
+    void openExposedInterfaces(mlir::ModuleOp module, InterfaceScan &scan)
+    {
         // seen from another module: a word of its exported declarations, or in a reachable type. An
         // executable's exports are seen by no other module (USER decision, spec 31): only what it
         // imports - a declared function, an imported global - comes from outside.
@@ -1835,7 +1866,6 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             exportWords = exportedWords(module);
         }
 
-        auto &words = exportWords;
         llvm::StringSet<> exposed;
         llvm::DenseSet<mlir::Type> seen;
         for (auto &entry : functions)
@@ -1863,16 +1893,20 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
-        openAll(exposed);
-        if (!unboxedInto.empty() || unboxedFunction)
+        scan.openAll(exposed);
+        if (!scan.unboxedInto.empty() || scan.unboxedFunction)
         {
-            openAll(boxed);
-            for (auto &entry : boxed)
+            scan.openAll(scan.boxed);
+            for (auto &entry : scan.boxed)
             {
-                castOpened.insert(entry.getKey());
+                scan.castOpened.insert(entry.getKey());
             }
         }
+    }
 
+    // Every interface the members of one made out of another mention, recursively.
+    void openThroughMembers(InterfaceScan &scan)
+    {
         // An interface value made out of another one (or out of `any`) is called with the other's
         // members: `HasF2 { f: (o: Op2, ...) }` seen as `HasF { f: (o: Op, ...) }` hands an `Op` to a
         // function that calls through `Op2` (review6r1 v5, v11f). So every interface either side's
@@ -1882,22 +1916,22 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // makes an interface value of the class (a method called directly then keeps its facts), and
         // their slots' types are the interface's members' types: an interface whose values are all
         // made from class objects is read through them (review6r2 d1-d3).
-        for (auto &[name, held] : classHeld)
+        for (auto &[name, held] : scan.classHeld)
         {
-            madeWith[name].insert(held.begin(), held.end());
+            scan.madeWith[name].insert(held.begin(), held.end());
         }
 
-        for (auto &[name, made] : madeWith)
+        for (auto &[name, made] : scan.madeWith)
         {
             for (auto vtableName : made)
             {
-                if (auto found = vtables.find(vtableName); found != vtables.end() && found->second.type)
+                if (auto found = scan.vtables.find(vtableName); found != scan.vtables.end() && found->second.type)
                 {
                     for (auto [position, field] : llvm::enumerate(found->second.type.getFields()))
                     {
                         if (position > 0)
                         {
-                            memberTypeInterfaces(field.type, memberInterfaces[name]);
+                            memberTypeInterfaces(field.type, scan.memberInterfaces[name]);
                         }
                     }
                 }
@@ -1905,7 +1939,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         llvm::SmallVector<std::string> work;
-        for (auto &entry : castOpened)
+        for (auto &entry : scan.castOpened)
         {
             work.push_back(entry.getKey().str());
         }
@@ -1919,31 +1953,29 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
-            open.insert(name);
-            for (auto &member : memberInterfaces[name])
+            scan.open.insert(name);
+            for (auto &member : scan.memberInterfaces[name])
             {
                 work.push_back(member.getKey().str());
             }
         }
+    }
 
-        auto isOpen = [&](llvm::StringRef name) {
-            // a namespaced interface is declared by its last name
-            auto last = name.rsplit('.').second;
-            return allOpen || open.contains(name) || words.contains(name) || (!last.empty() && words.contains(last));
-        };
-
+    // An interface with a vtable this pass could not tie to its values.
+    void openLooseVTables(InterfaceScan &scan)
+    {
         // A vtable this pass could not read, or one no value of any interface is made with, that is
         // named for an interface (`<class>.<I>..vtbl`, `<I>.<n>..vtbl`): the interface may have an
         // implementation outside its families. Belt and braces - every way to make an interface
         // value is traced above - but a missed member would get its family's facts.
         llvm::DenseSet<llvm::StringRef> made;
-        for (auto &entry : madeWith)
+        for (auto &entry : scan.madeWith)
         {
             made.insert(entry.second.begin(), entry.second.end());
         }
 
-        llvm::SmallVector<llvm::StringRef> loose(unread.begin(), unread.end());
-        for (auto &entry : vtables)
+        llvm::SmallVector<llvm::StringRef> loose(scan.unread.begin(), scan.unread.end());
+        for (auto &entry : scan.vtables)
         {
             if (!made.contains(entry.getKey()))
             {
@@ -1951,38 +1983,49 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
-        for (auto &entry : madeWith)
+        for (auto &entry : scan.madeWith)
         {
             auto name = entry.getKey().str();
             if (llvm::any_of(loose, [&](llvm::StringRef vtableName) {
                     return vtableName.ends_with("." + name + "..vtbl") || vtableName.starts_with(name + ".");
                 }))
             {
-                open.insert(entry.getKey());
+                scan.open.insert(entry.getKey());
             }
         }
+    }
+
+    // The families of each interface's slots - its methods and its function-typed fields - closed
+    // where nothing opened the interface.
+    void buildInterfaceFamilies(InterfaceScan &scan)
+    {
+        auto &words = exportWords;
+        auto isOpen = [&](llvm::StringRef name) {
+            // a namespaced interface is declared by its last name
+            auto last = name.rsplit('.').second;
+            return scan.allOpen || scan.open.contains(name) || words.contains(name) || (!last.empty() && words.contains(last));
+        };
 
         // the families
-        llvm::DenseSet<llvm::StringRef> tied;
-        for (auto &[name, made] : madeWith)
+        for (auto &[name, made] : scan.madeWith)
         {
             // a class vtable's slot holding a vtable this pass did not read (another module's)
-            auto allRead = llvm::all_of(made, [&](llvm::StringRef vtableName) { return vtables.count(vtableName); });
+            auto allRead = llvm::all_of(made, [&](llvm::StringRef vtableName) { return scan.vtables.count(vtableName); });
             auto closed = !isOpen(name) && allRead;
             for (auto vtableName : made)
             {
-                if (!vtables.count(vtableName))
+                if (!scan.vtables.count(vtableName))
                 {
                     continue;
                 }
 
                 if (allRead)
                 {
-                    interfaceVTableTypes[name].push_back(vtables[vtableName].type);
+                    interfaceVTableTypes[name].push_back(scan.vtables[vtableName].type);
                 }
 
-                tied.insert(vtableName);
-                auto &vtable = vtables[vtableName];
+                scan.tied.insert(vtableName);
+                auto &vtable = scan.vtables[vtableName];
                 for (auto [position, field] : llvm::enumerate(vtable.type.getFields()))
                 {
                     if (position == 0)
@@ -2026,9 +2069,11 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 }
             }
         }
+    }
 
-        collectFieldFunctions(module);
-
+    // What an open family holds, and what a vtable no interface value is made with holds.
+    void markInterfaceReached(InterfaceScan &scan)
+    {
         // what an open family holds, and a vtable no interface value is made with, is reached
         // through calls that are not resolved
         auto reached = [&](mlir::StringAttr member) {
@@ -2046,9 +2091,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
         }
 
-        for (auto &entry : vtables)
+        for (auto &entry : scan.vtables)
         {
-            if (!tied.contains(entry.getKey()))
+            if (!scan.tied.contains(entry.getKey()))
             {
                 for (auto &slot : entry.second.slots)
                 {
