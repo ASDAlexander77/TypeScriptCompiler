@@ -63,6 +63,11 @@ namespace mlir_ts = mlir::typescript;
 // result is the caller's to own, but no use of it may come after any of these arguments is given
 // back, and it may not be kept anywhere that outlives them.
 #define OWN_RESULT_BOUNDED_ATTR_NAME "__own_result_bounded"
+// The globals a call may give a new value, by name: a store to one, or its release, in a callee or
+// in a call it makes. A call that may drop and whose callees are not known may assign any of them
+// (OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME). A read of a global ends at such a call (checkGlobalRead).
+#define OWN_ASSIGNS_GLOBALS_ATTR_NAME "__own_assigns_globals"
+#define OWN_ASSIGNS_ANY_GLOBAL_ATTR_NAME "__own_assigns_any_global"
 // An immortal global (spec 25): a class-typed global of this module, not exported, whose only
 // write is its initializer, which gives it an object made there (not a call's result) or another
 // immortal global's. Like a

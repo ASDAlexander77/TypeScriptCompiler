@@ -3709,6 +3709,12 @@ foreach(kept_mm own rc none gc)
     tslang_add_test(NAME test-compile-${kept_mm}-own-global-kept-argument COMMAND test-runner -mm=${kept_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_kept_argument.ts")
 endforeach()
 
+# A read of a global used after calls that give only other globals new values; the same program under
+# every model.
+foreach(read_mm own rc none gc)
+    tslang_add_test(NAME test-jit-${read_mm}-own-global-read-callee-other COMMAND test-runner -jit -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+    tslang_add_test(NAME test-compile-${read_mm}-own-global-read-callee-other COMMAND test-runner -mm=${read_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_read_callee_other.ts")
+endforeach()
 # An interface-typed global given a fresh class object owns it; the same program under every model.
 foreach(iface_mm own rc none gc)
     tslang_add_test(NAME test-jit-${iface_mm}-own-global-interface-fresh COMMAND test-runner -jit -mm=${iface_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_interface_fresh.ts")
@@ -4000,6 +4006,8 @@ set(own_error_cases
     "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_argument_transitive|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_read_callee_assigns|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_read_callee_assigns_transitive|borrows 'G' but is used here after 'G' is released or overwritten"
     "own_err_argument_assigned|is lent to 'g', but is given a new value before the call takes it"
     "own_err_argument_assigned_conditional|is lent to 'g', but is given a new value before the call takes it"
     "own_err_argument_assigned_closure|is lent to 'g', but is given a new value before the call takes it"
