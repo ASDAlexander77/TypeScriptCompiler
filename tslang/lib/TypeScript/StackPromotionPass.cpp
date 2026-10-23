@@ -376,6 +376,13 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
             return "unclassified";
         }
 
+        // -mm=own: a borrowing record's box (own spec 32) is released through its interface's tag,
+        // whose routine leaves the fields it borrows; ts.ReleaseContents would give back every field
+        if (site->hasAttr(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME))
+        {
+            return "borrowing-record";
+        }
+
         // A promoted object gives back what it owns when its function returns, later than the heap
         // object it replaces would have been destroyed. Only a Shared<T> handle's count can see
         // that, so under the models that count, a module using Shared keeps every object that

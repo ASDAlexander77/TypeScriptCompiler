@@ -36,6 +36,18 @@ export function swapFirst(n: Node, l: List): Node {
     return l.first;
 }
 
+// a borrowing record of two arguments (spec 32): the caller owns the box, which may not outlive
+// either, and whose release leaves both to their owners
+export interface Pair {
+    a: Node;
+    b: Node;
+}
+
+@lends("a", "b")
+export function pairOf(a: Node, b: Node): Pair {
+    return { a: a, b: b };
+}
+
 class Vec {
     x: number;
 
@@ -62,6 +74,16 @@ function main() {
     const kept = swapFirst(new Node(3), l);
     churn();
     assert(kept.v == 1 && l.second.v == 3 && l.first.v == 1);
+
+    const n1 = new Node(5);
+    const n2 = new Node(6);
+    for (let i = 0; i < 100; i++) {
+        const pr = pairOf(n1, n2);
+        churn();
+        assert(pr.a.v == 5 && pr.b.v == 6);
+    }
+
+    assert(n1.v == 5 && n2.v == 6);
 
     print("done.");
 }
