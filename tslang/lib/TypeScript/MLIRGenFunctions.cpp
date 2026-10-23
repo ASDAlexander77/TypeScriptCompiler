@@ -2013,6 +2013,21 @@ namespace mlirgen
 
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);
+
+            // A copy is taken through the reference only when that reference is the variable's own
+            // storage. A `const` folded into a read (`const v = n.v`, `const v = G`) has none: the
+            // reference is where it was read from, and dereferenced now it gave the closure what the
+            // place holds by the time the closure is made - `n.v = d` in between, and `v` in the
+            // closure was `d`. The value itself is what the const names.
+            auto isOwnStorage = refValue && (refValue.getDefiningOp<mlir_ts::VariableOp>() ||
+                                             refValue.getDefiningOp<mlir_ts::ParamOp>() ||
+                                             refValue.getDefiningOp<mlir_ts::ParamOptionalOp>() ||
+                                             isCapturedCellSlot(refValue));
+            if (refValue && !capturedByRef && !isOwnStorage)
+            {
+                refValue = mlir::Value();
+            }
+
             if (refValue && !capturedByRef)
             {
                 // the box holds a copy, exactly as it does for a value with no reference at all
