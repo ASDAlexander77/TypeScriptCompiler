@@ -1,7 +1,8 @@
 # Builds a program under -mm=own with `tslang --emit=exe` and runs it: one line of the output must
-# be EXPECT (a regex), and the last "done.". For a program that exports from its root, whose exports only an executable
-# keeps from other modules (own spec 31, USER decision): test-runner builds an object file with
-# --entry-point and links it itself, which another module could import, so it cannot build one.
+# be EXPECT (a regex), and the last "done.". For a program that exports from its root, whose
+# exports only an executable keeps from other modules (own spec 31, USER decision): test-runner
+# builds an object file with --entry-point and links it itself, which another module could
+# import, so it cannot build one.
 
 cmake_minimum_required(VERSION 3.17.3)
 

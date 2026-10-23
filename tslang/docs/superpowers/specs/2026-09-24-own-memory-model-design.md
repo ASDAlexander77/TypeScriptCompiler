@@ -2899,6 +2899,136 @@ counting. `test-own-global-loop-store-mortal` checks its `--emit=mlir-affine`: `
 'K.w' and cannot be stored, returned or captured". Teeth (a temporary `OWN_TEETH` switch skipping
 `mayRunAgain`, removed): the mortal check fails (`K.w`/`S.w` marked) and both negatives compile.
 
+**A `const` read of a mortal global ends at its assignment (fix-up review C1, 2026-10-23).** Making
+those globals mortal exposed an older hole, on main too: `const c = G` names the read itself (a
+`ts.Load` of the global's `ts.AddressOf`, `__owned_result_named`, with no retain), which no check
+bounded - `let c = G` is a borrowing local, rejected, but the `const` was neither a place read nor
+a local. So `const c = K.w; K.w = new V(i + 1); print(c.x)` in a static block's or top-level code's
+loop compiled and, now that the store frees the old block, read freed memory (exit 139 on Windows
+and Linux); before the fix-up it leaked instead. The same in any function (`const c = G; G = new
+V(1); print(c.x)`) read freed memory on main. OwnershipInferencePass now checks each read of a
+mortal global (`isGlobalRead`: not immortal, owns a heap block, not a handle; `checkGlobalRead`):
+its uses, and the uses of what it produces (walkBorrowed, made again at the read), must not come
+after a `ts.Store` or `ts.ReleaseSlot` of that global in the same function ("'this value' borrows
+'G' but is used here after 'G' is released or overwritten": the name is the read's, as in the
+other own diagnostics, and `ownerName` finds a variable's name only with `--di`). Where the walk
+meets a keep, the read is followed into what holds it or rejected (both below). Not here: a call that assigns the global (`const c = G; reset(); print(c.x)`, still accepted; #639
+covers such a call only when the read is its argument), and the same with a local
+(`g(n, n = mk(2))`, still accepted, and wrong at run time under own before and after). A `const`
+of an owning local (`const c = n; n = mk(5); print(c.x)`) is a move, which is sound. Tests:
+`own_err_global_const_store_static`, `own_err_global_const_store_script` and
+`own_err_global_const_store` (runnable programs; gc prints `1 64 ... 5`). Tooth (a temporary
+`OWN_TEETH` switch skipping the check, removed): the three compile, and the built programs exit
+139 under `MALLOC_PERTURB_` on Linux. Newly rejected: only programs of this shape; the corpus
+keeps its 526 files.
+
+**An object literal that holds such a read is bounded by the global too (fix-up re-review N1,
+2026-10-23).** An object literal built in a local (`const o = { v: c }`, `{ v: K.w }`,
+`{ p: { v: K.w } }`, `const { v } = { v: G }`) takes the read with no retain: a `ts.Store` into a
+`ts.PropertyRef` of the local's value tuple, or the local's initializer. walkBorrowed took that
+store for a keep, and checkGlobalRead ended there, so `o.v.x` after `K.w = new V(i + 1)` read the
+freed block (exit 139 on Windows and Linux; BASE leaked instead, and the module-global form
+`const o = { v: G }; G = new V(1)` read freed memory on main). The literal holds the borrow, not
+a second owner, so checkGlobalRead now follows it (`recordLocalHolding`): every use of the local -
+its fields' reads, a copy (`const o = b`), a spread (`{ ...b }`, through `ts.DeconstructTuple`),
+a destructuring - and what those lead to are uses of the read, made again where the local is
+declared. A value made from the borrow and stored into another such local makes that local a
+holder too. Tests:
+`own_err_global_record_static` (the static block's loop) and `own_err_global_record` (a module
+global in a function), runnable, gc printing `1 64 ... 5` and `0 64 ... 5`. Tooth (a temporary
+`OWN_TEETH` switch ending the follow at once, removed): both compile, and the built programs exit
+139 on Windows and under `MALLOC_PERTURB_` on Linux. The ray tracer is unchanged: the globals its
+records read (`Color.*`) are immortal and its `Surfaces.*` are handles, which this check skips.
+
+**Every keep is followed or rejected (fix-up re-review N2, 2026-10-23).** A `let` that takes the
+value back out of such a literal (`const o = { v: K.w }; let l = o.v`, `let l: V = o.v`,
+`let l = o["v"]`, `let l = <V>o.v`, an interface-typed `let`, `const p = o.v; let l = p`,
+`let { v } = o`, `let { v } = { v: K.w }`) was still a keep that ended the walk in silence, and the
+`let` itself passes as a borrowing `let` of `o`'s field, bounded by `o`, not by the global: `l.x`
+after `K.w = new V(i + 1)` read the freed block (exit 139 on Windows and Linux; the module-global
+form on main too). So checkGlobalRead no longer lets a keep go. Each keep the walk meets is
+either:
+- followed as a holder (`borrowHolderOf`): a local - a `let`, a `const`, an object literal built in
+  place, a destructured local - declared from the read, assigned it, or given it in a field of its
+  value tuple at any depth. Its uses under the field path that holds the borrow, and what they lead
+  to, are uses of the read, made again only where the local is given a new value (its declaration
+  when it has an initializer, and a store into that path or a prefix of it; the paragraphs
+  below); its own retain and releases
+  are its bookkeeping, which the owner checks decide. A sibling field never given the borrow
+  (`{ v: K.w, z: Z.z }` with only `o.z` read later) is not followed. A tuple taken apart
+  (`ts.DeconstructTuple`) is followed field by field, and a value made from the borrow that
+  declares or is stored into another local makes it a holder too. rc's temporary release of a
+  call's result that borrows an argument goes with that result, as in checkPlaceRead;
+- or rejected: "the value read from 'G' is kept where its end at an assignment of 'G' cannot be
+  checked; -mm=own cannot prove it outlives the global's value" - a field of an object, an array,
+  a global, a callee that keeps it, a capture, a return. A string read is copied where it is kept
+  (§22), so its keeps are not this check's.
+
+Tests: `own_err_global_let_holder_static` (a static block's loop), `own_err_global_let_destructure`
+(`let { v } = { v: K.w }` in a top-level loop) and `own_err_global_let_holder` (a module global),
+runnable, gc printing `1 64 ... 5` and `0 64 ... 5`. Tooth (a temporary `OWN_TEETH` switch that
+lets a keep go and follows no plain local, removed): the three compile, and the built programs
+exit 139 on Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them: the unsafe
+shapes, and one correct one - a spread of a holder (`const o = { v: K.w, z: Z.z }; const q =
+{ ...o }`, then `q.z` read after the store): `ts.DeconstructTuple` is followed field by field, so
+every field of the copy holds the borrow and the copy loses the field path. That is a sound
+over-rejection, kept. The corpus keeps 526 files, the ray tracer has no error, and the sibling
+field of round 2's over-rejection is accepted again.
+
+**A holder is renewed where it is stored, never at the read (fix-up re-review N3, 2026-10-23).**
+The follow above made a holder's uses again at the read as well as at the local's declaration
+(the kills the walk reached it with). For a holder declared before the loop that is wrong: `const
+o = { v: Z.z }; for (...) { const c = G; print(o.v.x); o.v = c; G = new V(i + 1); churn(); }`
+reads the read's block in the next round - the path back from the store goes through
+`const c = G`, which renews `c`, not `o.v` - and own accepted it (exit 139 on Windows and Linux;
+the module-global form on main too, the static-block and top-level forms since the loop-store
+fix-up). So a holder's uses are now made again only where the holder is given a new value
+(`holderRenewals`): the local's declaration, and every store into the field path that holds the
+borrow or into a prefix of it (the whole local, `o.p` for `o.p.v`); a store into a sibling field
+or below the path is not one. Those depend on the holder alone, not on the way the walk reached
+it, so a holder is followed once. A value loaded out of the holder is made again only by a path
+back through that load, which is itself a use bounded by the renewals; and a store that is a
+renewal is also a use of the value it stores, bounded by that value's own renewals, so a store of
+a stale borrow into the path is rejected at the store. Reachability goes around the back edge: a
+store in one round reaches a use in the next. Accepted by this: the field stored before each
+round's use (`o.v = c; print(o.v.x); G = ...`), a second read re-stored after the store
+(`G = ...; const d = G; o.v = d; print(o.v.x)`), a fresh value stored into the path or a prefix
+of it after the store (`o.v = Z.z`, `o.p = { v: Z.z }`), and a sibling read. Rejected: the use
+before the store in the next round (`for`, `while`, `do`, `for-of`, `continue`, a labelled
+`continue`, nested loops, a holder in an enclosing block or an outer loop, nested paths, two
+globals in one holder), a store on one arm only, the holder used after the loop, and a stale value
+stored back (`const t = o.v; G = ...; o.v = t`). Tests: `own_err_global_outer_holder` (a module
+global, the shape above) and `own_err_global_outer_holder_static` (a static block's loop, the
+store in one round and the use in the later ones), runnable, gc printing `42 64 0 64 1 64 2 64 4`
+and `1 64 1 64 1 64 5`. Tooth (a temporary `OWN_TEETH` switch making the read and the
+declaration the renewals again, removed): both compile, and the built programs exit 139 on
+Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them: the unsafe shapes, and
+two correct ones, both sound over-rejections - a holder stored on one arm of an inner loop before
+every use in practice (`for (j ...) { if (j == 0) { o.v = c; } print(o.v.x); }`), which the CFG
+cannot order, and a holder copied into another holder, renewed and copied again
+(`h.v = c; outer.h = h; G = ...; h.v = Z.z; outer.h = h; print(outer.h.v.x)`); the corpus keeps
+526 files and the ray tracer has no error.
+
+**A declaration without an initializer renews nothing (fix-up re-review N4, 2026-10-23).** `let
+l!: V` (or `let l: V`, `let o: { v: V }`) declared inside the loop body stores nothing: tslang
+does not reset the slot each round, so it still holds the last round's value. The renewal rule
+above counted every declaration, so `for (...) { let l!: V; if (i > 1) { print(l.x); } const c =
+K.w; if (i == 1) { l = c; } K.w = new V(i + 1); churn(); }` was accepted and read the freed block
+in round 2 (exit 139; the module-global form on main too, the static-block and top-level forms
+since the loop-store fix-up). Now a declaration is a renewal only when it has an initializer
+(`holderRenewals`, and walkBorrowed's `passesOn` says the same for the non-owning local it hands a
+value to - a narrowing for every borrow check, which can only reject more: a place read into such
+a `let` in a loop was accepted the same way, `const c = p.v; if (i == 1) { l = c; } p.v = new
+V(i + 1)`, and is rejected now). `let l: V | undefined` has an initializer and is a renewal. Still
+accepted: the same `let` assigned before each round's use, a `const o = { v: Z.z }` declared in the
+loop (its initializer re-stores every round), and `for (x of arr)` into an outer `let x!: V`
+(each round's element is stored first). Tests: `own_err_global_uninit_let_static` (the shape
+above, in a static block whose only store of `K.w` is the loop's) and `own_err_global_uninit_let`
+(a module global in a function), runnable, gc printing `1 64 1 64 4`. Tooth (a temporary
+`OWN_TEETH` switch counting every declaration again, removed): both compile, and the built
+programs exit 139 on Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them:
+only the unsafe shapes; the corpus keeps 526 files and the ray tracer has no error.
+
 ## 26. `Shared<I>` of an object literal (G4 of the ray tracer plan), 2026-10-21
 
 The ray tracer's surfaces are module-level `new Shared<Surface>({ ...function fields... })`. The
@@ -4163,6 +4293,12 @@ the array's release at the return ends; built under own it prints what gc prints
 Not here:
 - A method call's result (`o.m(borrow)`, through `ts.ThisVirtualSymbolRef`) is still walked as a
   borrow of its arguments, as is an indirect call's.
+- Known limit of the teeth (fix-up, 2026-10-23): with the `isFresh` test alone removed,
+  `own_err_field_function_reassigned` (a conservative negative) compiles and prints gc's output;
+  with the borrowing-record exclusion alone removed, `own_err_call_result_record` stays an error
+  through the record's own bound (`borrows the result of 'hit'`). No probe (review9's 95, T9's,
+  the merge review's, every `own_err_*`) was accepted unsafely with either removed, so no negative
+  shows a use-after-free that only those two tests prevent.
 - The benchmark keeps its two source edits; the unedited `rtbench.ts` does not compile under own (a
   non-goal of the plan).
 - This section is 34, not 35 as the Task 9 addendum expected: the merge of main left notes in §25
