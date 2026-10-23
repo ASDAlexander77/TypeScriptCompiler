@@ -1,5 +1,5 @@
-// -mm=own, phase 2 rejects: the same through a finally clause's local. (`a` is read after
-// `let b = a`, so `b` cannot take its value over and borrows it.)
+// -mm=own, phase 2 rejects: the same through a finally clause's local. (`a` is given to two
+// `let`s, so neither takes its value over: each borrows it. One `let` would take it over, spec 29.)
 class C {
     v: number[] = [];
     constructor(public x: number) {}
@@ -19,7 +19,8 @@ function main() {
     let a = new C(1);
     a.v.push(1);
     let b = a;
-    print(a.x);
+    let c = a;
+    print(a.x, c.x);
     try {
         print(b.x);
     } finally {

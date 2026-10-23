@@ -1626,7 +1626,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it owns, given anywhere but an owning local or the result | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_given` |
+| an object literal holding a value it does not own outright: a literal nested by value, or one holding a borrowed or `let` field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
@@ -2789,3 +2789,1540 @@ used `let b = a; … a = new C()` to make `b` a borrow, but that is a move now. 
 after `let b = a`, which keeps `b` a borrow. `own_move_reassign` runs the shapes under own, rc
 and gc: own holds 4.4 MB, as rc's 4.5 MB. On a quarantine heap it runs clean; with the
 assignment's release kept, it is a double free. Corpus: 467 of 628 compile under own, unchanged.
+
+## 25. Immortal globals (G1 of the ray tracer plan), 2026-10-21
+
+A read of a global was a borrow that could not be stored, returned or captured (§21.2): the global
+owns its value, and a call or an assignment may give it another. The ray tracer's `Color.white`,
+`Color.black` and `Color.background = Color.black` are never given another value, and are returned
+and stored everywhere. Such a global is now **immortal**, like a string literal: its block's header
+is `HEAP_BLOCK_IMMORTAL`, so every release skips it, and a read of it owns nothing and may go
+anywhere - returned, stored into a field or another global, given to a call that keeps it, merged
+with a fresh value (`n > 1 ? K.w : new V(n)` is an owned result on both paths; the caller's release
+of `K.w` does nothing).
+
+- **Which globals.** OwnershipSignaturePass (`findImmortalGlobals`) marks a `ts.Global`
+  `__own_immortal` when it is of a class type that owns a heap block, is not exported (no `export`,
+  `import`, `dllexport` or `dllimport`), and is written once, by its initializer. The initializer is
+  either the global's own region (`const c = new V(1)`: every `ts.AddressOf` of it only loaded), or,
+  for a class static, its region yields only the default and the one `ts.Store` through a
+  `ts.AddressOf` of it is in a static constructor a `ts.GlobalConstructor` runs. Every symbol use of
+  the global is checked (`SymbolTable::getSymbolUses`), not only `ts.AddressOf`: a static is also
+  reached through its class's vtable, and `k.w = x` with `k: typeof K` writes it through a
+  `ts.VirtualSymbolRef` that `writtenGlobals` never sees. When any vtable reference is written
+  through, no static is immortal. A module-level `export let`, an exported class's static, and a
+  global assigned anywhere else stay mortal. Top-level script code is itself a function a
+  `ts.GlobalConstructor` runs, so its one straight-line store into a global (`let c: V;` then
+  `c = new V(1)` at the top level, or `K.w = new V(1)`) is accepted like a static constructor's.
+  The store must run once (fix-up of 2026-10-23, below): one in a loop op, or in a block on a cycle
+  of its function's CFG, leaves the global mortal.
+- **Which values.** The initializer gives it an object made right there (`ts.New`, an owning
+  literal; none it gives back with a `ts.Release`), nothing, or another immortal global's value
+  (found to a fixpoint). A call's result never qualifies, whatever its callee: the pass decides
+  before it knows which callees return a borrow, and a global's region is no function the
+  inference checks. So `static w = id(new V(1))`, `const c = id(new V(1))` and
+  `const c = firstOf(list)` stay mortal and keep today's errors (`own_err_immortal_region_call`,
+  `own_err_immortal_region_borrow`), as does a borrowed initializer (`static first = K.list[0]`,
+  `own_err_immortal_borrowed_init`). Marking a block someone else owns immortal would turn its
+  owner's free into a silent leak; marking a temporary the region frees would write the header
+  into a freed block, and the global would hold it. Since main's #638 (merged into this branch
+  after T8) a global's region calls get their callees' facts (`ownGlobalInitializerCalls`), and a
+  region that holds a call's borrowing result is rejected there first ("the initializer of global
+  'c' holds the result of 'id', which borrows its argument"); `own_err_immortal_region_call` now
+  pins that message. They stay mortal all the same: `findImmortalGlobals` runs first and still
+  refuses them. `own_err_immortal_region_borrow` (since the fix-up of 2026-10-23) calls through a
+  function value instead, `const c = pick()(list)`, whose callee #638 cannot know, so it again shows
+  this refusal: `f`'s `return c` is "borrows the global 'c' and cannot be stored, returned or
+  captured".
+  Main's two other global checks step aside for an immortal global's read: a global may be given
+  one (#636, `let e = c`), and one may be lent to a call that may drop (#639; a static's one store
+  in its static constructor is in `writtenGlobals`, so `lend(b, K.w)` was rejected after the merge
+  - `own_immortal_global` now runs it).
+- **Only the global's own block.** `K.n.c = x` still destroys the old `c`, and a borrow of `K.n.c`
+  stays bounded (`own_err_immortal_field_overwritten`).
+- **Inference.** `own_facts::isImmortalGlobalRead` is a `ts.Load` of a `ts.AddressOf` the pass
+  marked, seen through views. `isImmortalLiteral` includes it, and its retains (a `ts.Retain`, or a
+  `ts.RetainSlot` where the slot still holds it) are erased, as a constant's are. `moveIntoGlobals`
+  erases a global region's retain of one.
+- **Lowering.** The initializing `ts.Store` carries `__own_immortal`; under own its lowering writes
+  `HEAP_BLOCK_IMMORTAL` into the block's header when the value is not null. A region that gives
+  the global its value is always made a `__cctor` (it would otherwise become a constant
+  initializer, with no store), and the store the `__cctor` makes is marked from the global's
+  attribute. A static's region, which yields only the default, is left alone: a `__cctor` of it
+  would run after the static constructor and put the default back. So every block the global ever
+  holds is one no release frees, whatever reads of it are taken to own; the value test makes it a
+  block that was the global's to keep.
+
+Not fixed here, and older than this section: a mortal global whose region stores a call's result
+that borrows a temporary the region frees (`export const c = id(new V(1))`, or `const c = ...`
+read only in place) holds a freed block, and a read of it in place is accepted. The region is no
+function, and the call's facts are not pinned there.
+
+`own_immortal_global` runs the static shapes (from another global, returned, stored into a field,
+merged with a fresh value, in a loop of 100000) and `own_immortal_global_region` the module-level
+ones (`const c = new V(1)`, `let e = c`), under own, rc, gc and none; own emits no counting.
+`own_err_global_returned` and `own_err_param_kept_not_owned` now also give the global another
+value, which keeps them errors: their programs as they were are accepted. (Since the merge of main,
+`own_err_param_kept_not_owned`'s `keep` pushes instead of storing into a field: a keeper that
+drops is rejected at the call by #639 before phase 4's message.) The brief's text for
+`own_err_immortal_borrowed_init` (`the initializer of global 'K.first' takes a second reference`)
+is moveIntoGlobals', which only a region initializer reaches; a static's borrowed initializer is
+reported by inference in its static constructor, as before (`borrows 'K.list[]' and cannot be
+stored, returned or captured`). Teeth: with the header store skipped, the AOT and JIT runs of both
+fail with `0xC0000374` (heap corruption: the first release frees `K.w`, and later reads and
+releases use the freed block). With the loop at 30 million (20 million fresh `V`s freed), own
+peaks at 4.3 MB, as rc does.
+
+**Fix-up, 2026-10-23: the store must run once.** "Written once" counted store ops, not how often
+they run. A static's one store in a loop of its static block (`static { for (1e6) K.w = new
+V(i + 1); }`), or a global's in a loop of top-level script code, marked every block it was given
+immortal, and the `ts.ReleaseSlot` before each store skipped the old one: own peaked at 589 MB for
+a million `V`s of 64 numbers (static block), 602 MB (`let c: V;` written in a top-level loop) and
+600 MB (`K.w` written in a top-level loop), rc at 4.4-4.5 MB. A leak, not a use-after-free: no block
+was freed early. `findImmortalGlobals` now refuses a store that may run again (`mayRunAgain`: an
+enclosing loop op, kept for safety, or a block on a cycle of its region's CFG, which is what the
+affine lowering leaves of every loop). Such a global is mortal: each store releases the value it
+replaces, and the three programs peak at 4.4 MB under own. A store in an `if` still runs once and
+is still accepted. What only compiled because the global was immortal is now an error, as for any
+mortal global: `let e = c` after the top-level loop ("borrows the global 'c' and cannot be stored,
+returned or captured", #636), and `let e = K.w` after the static block loop ("the initializer of
+global 'e' reads a value another owner keeps").
+
+`own_global_loop_store` writes `K.w` in a loop of its static block, `S.w` in a `while` of
+top-level code and `T.w` once in an `if` of its static block (returned from `t()`, which only an
+immortal global allows), 10000 rounds, under own, rc, gc and none, AOT and JIT; own emits no
+counting. `test-own-global-loop-store-mortal` checks its `--emit=mlir-affine`: `T.w`'s
+`ts.AddressOf` is marked `__own_immortal`, `K.w`'s and `S.w`'s are not. The module-level form
+`let c: V;` is not in the test: a `let` with no initializer warns. Negatives
+`own_err_global_loop_store_static` (`return K.w` after a static block loop) and
+`own_err_global_loop_store_script` (`let e = K.w` after a top-level loop), "borrows the global
+'K.w' and cannot be stored, returned or captured". Teeth (a temporary `OWN_TEETH` switch skipping
+`mayRunAgain`, removed): the mortal check fails (`K.w`/`S.w` marked) and both negatives compile.
+
+**The other write guards (final review I4, 2026-10-23).** A global wrongly marked immortal and
+later written frees what its reads were taken to own nothing of - a use-after-free, not a leak -
+so each guard of "written once, by its initializer" has a program of its own, checked the same
+way (`test-own-global-mortal-*`, `--emit=mlir-affine`: `M`'s `ts.AddressOf` is not marked
+`__own_immortal`, `I`'s is): `own_global_mortal_export` (`export let M` and an exported class's
+static `MK.m`), `own_global_mortal_typeof` (`k.w = I` with `k: typeof M`: the vtable-write guard,
+the only one that reads a `ts.VirtualSymbolRef`'s users; a write through `typeof K` is that route,
+not another), `own_global_mortal_static_twice` (two stores in one static block) and
+`own_global_mortal_static_method` (`this.w = new V(3)` in a static method, the static's only
+store: a function no `ts.GlobalConstructor` runs). Each program has one guard between `M` and
+immortality. Teeth (one temporary `OWN_TEETH` switch per guard, removed): skipping the `export`
+test, `vtableWritten`, the second-store test (`initStore`) or the static-constructor test each
+makes its own check fail (`M`, `MK.m` / `M.w` marked) and leaves the other three passing. The
+typeof write of a fresh value (`k.w = new V(3)`) is not used: it is an error today (`'this value'
+takes a second reference`), and `k.w = M.w` reaches checkGlobalRead's keep backstop.
+
+**A `const` read of a mortal global ends at its assignment (fix-up review C1, 2026-10-23).** Making
+those globals mortal exposed an older hole, on main too: `const c = G` names the read itself (a
+`ts.Load` of the global's `ts.AddressOf`, `__owned_result_named`, with no retain), which no check
+bounded - `let c = G` is a borrowing local, rejected, but the `const` was neither a place read nor
+a local. So `const c = K.w; K.w = new V(i + 1); print(c.x)` in a static block's or top-level code's
+loop compiled and, now that the store frees the old block, read freed memory (exit 139 on Windows
+and Linux); before the fix-up it leaked instead. The same in any function (`const c = G; G = new
+V(1); print(c.x)`) read freed memory on main. OwnershipInferencePass now checks each read of a
+mortal global (`isGlobalRead`: not immortal, owns a heap block, not a handle; `checkGlobalRead`):
+its uses, and the uses of what it produces (walkBorrowed, made again at the read), must not come
+after a `ts.Store` or `ts.ReleaseSlot` of that global in the same function ("'this value' borrows
+'G' but is used here after 'G' is released or overwritten": the name is the read's, as in the
+other own diagnostics, and `ownerName` finds a variable's name only with `--di`). Where the walk
+meets a keep, the read is followed into what holds it or rejected (both below). Not here: a call that assigns the global (`const c = G; reset(); print(c.x)`, still accepted; #639
+covers such a call only when the read is its argument), and the same with a local
+(`g(n, n = mk(2))`, still accepted, and wrong at run time under own before and after). A `const`
+of an owning local (`const c = n; n = mk(5); print(c.x)`) is a move, which is sound. Tests:
+`own_err_global_const_store_static`, `own_err_global_const_store_script` and
+`own_err_global_const_store` (runnable programs; gc prints `1 64 ... 5`). Tooth (a temporary
+`OWN_TEETH` switch skipping the check, removed): the three compile, and the built programs exit
+139 under `MALLOC_PERTURB_` on Linux. Newly rejected: only programs of this shape; the corpus
+keeps its 526 files.
+
+**An object literal that holds such a read is bounded by the global too (fix-up re-review N1,
+2026-10-23).** An object literal built in a local (`const o = { v: c }`, `{ v: K.w }`,
+`{ p: { v: K.w } }`, `const { v } = { v: G }`) takes the read with no retain: a `ts.Store` into a
+`ts.PropertyRef` of the local's value tuple, or the local's initializer. walkBorrowed took that
+store for a keep, and checkGlobalRead ended there, so `o.v.x` after `K.w = new V(i + 1)` read the
+freed block (exit 139 on Windows and Linux; BASE leaked instead, and the module-global form
+`const o = { v: G }; G = new V(1)` read freed memory on main). The literal holds the borrow, not
+a second owner, so checkGlobalRead now follows it (`recordLocalHolding`): every use of the local -
+its fields' reads, a copy (`const o = b`), a spread (`{ ...b }`, through `ts.DeconstructTuple`),
+a destructuring - and what those lead to are uses of the read, made again where the local is
+declared. A value made from the borrow and stored into another such local makes that local a
+holder too. Tests:
+`own_err_global_record_static` (the static block's loop) and `own_err_global_record` (a module
+global in a function), runnable, gc printing `1 64 ... 5` and `0 64 ... 5`. Tooth (a temporary
+`OWN_TEETH` switch ending the follow at once, removed): both compile, and the built programs exit
+139 on Windows and under `MALLOC_PERTURB_` on Linux. The ray tracer is unchanged: the globals its
+records read (`Color.*`) are immortal and its `Surfaces.*` are handles, which this check skips.
+
+**Every keep is followed or rejected (fix-up re-review N2, 2026-10-23).** A `let` that takes the
+value back out of such a literal (`const o = { v: K.w }; let l = o.v`, `let l: V = o.v`,
+`let l = o["v"]`, `let l = <V>o.v`, an interface-typed `let`, `const p = o.v; let l = p`,
+`let { v } = o`, `let { v } = { v: K.w }`) was still a keep that ended the walk in silence, and the
+`let` itself passes as a borrowing `let` of `o`'s field, bounded by `o`, not by the global: `l.x`
+after `K.w = new V(i + 1)` read the freed block (exit 139 on Windows and Linux; the module-global
+form on main too). So checkGlobalRead no longer lets a keep go. Each keep the walk meets is
+either:
+- followed as a holder (`borrowHolderOf`): a local - a `let`, a `const`, an object literal built in
+  place, a destructured local - declared from the read, assigned it, or given it in a field of its
+  value tuple at any depth. Its uses under the field path that holds the borrow, and what they lead
+  to, are uses of the read, made again only where the local is given a new value (its declaration
+  when it has an initializer, and a store into that path or a prefix of it; the paragraphs
+  below); its own retain and releases
+  are its bookkeeping, which the owner checks decide. A sibling field never given the borrow
+  (`{ v: K.w, z: Z.z }` with only `o.z` read later) is not followed. A tuple taken apart
+  (`ts.DeconstructTuple`) is followed field by field, and a value made from the borrow that
+  declares or is stored into another local makes it a holder too. rc's temporary release of a
+  call's result that borrows an argument goes with that result, as in checkPlaceRead;
+- or rejected: "the value read from 'G' is kept where its end at an assignment of 'G' cannot be
+  checked; -mm=own cannot prove it outlives the global's value" - a field of an object, an array,
+  a global, a callee that keeps it, a capture, a return. A string read is copied where it is kept
+  (§22), so its keeps are not this check's.
+
+Tests: `own_err_global_let_holder_static` (a static block's loop), `own_err_global_let_destructure`
+(`let { v } = { v: K.w }` in a top-level loop) and `own_err_global_let_holder` (a module global),
+runnable, gc printing `1 64 ... 5` and `0 64 ... 5`. Tooth (a temporary `OWN_TEETH` switch that
+lets a keep go and follows no plain local, removed): the three compile, and the built programs
+exit 139 on Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them: the unsafe
+shapes, and one correct one - a spread of a holder (`const o = { v: K.w, z: Z.z }; const q =
+{ ...o }`, then `q.z` read after the store): `ts.DeconstructTuple` is followed field by field, so
+every field of the copy holds the borrow and the copy loses the field path. That is a sound
+over-rejection, kept. The corpus keeps 526 files, the ray tracer has no error, and the sibling
+field of round 2's over-rejection is accepted again.
+
+**A holder is renewed where it is stored, never at the read (fix-up re-review N3, 2026-10-23).**
+The follow above made a holder's uses again at the read as well as at the local's declaration
+(the kills the walk reached it with). For a holder declared before the loop that is wrong: `const
+o = { v: Z.z }; for (...) { const c = G; print(o.v.x); o.v = c; G = new V(i + 1); churn(); }`
+reads the read's block in the next round - the path back from the store goes through
+`const c = G`, which renews `c`, not `o.v` - and own accepted it (exit 139 on Windows and Linux;
+the module-global form on main too, the static-block and top-level forms since the loop-store
+fix-up). So a holder's uses are now made again only where the holder is given a new value
+(`holderRenewals`): the local's declaration when it has an initializer (N4, below), and every
+store into the field path that holds the borrow or into a prefix of it (the whole local, `o.p` for
+`o.p.v`); a store into a sibling field or below the path is not one. Those depend on the holder
+alone, not on the way the walk reached it, so a holder is followed once. A value loaded out of the holder is made again only by a path
+back through that load, which is itself a use bounded by the renewals; and a store that is a
+renewal is also a use of the value it stores, bounded by that value's own renewals, so a store of
+a stale borrow into the path is rejected at the store. Reachability goes around the back edge: a
+store in one round reaches a use in the next. Accepted by this: the field stored before each
+round's use (`o.v = c; print(o.v.x); G = ...`), a second read re-stored after the store
+(`G = ...; const d = G; o.v = d; print(o.v.x)`), a fresh value stored into the path or a prefix
+of it after the store (`o.v = Z.z`, `o.p = { v: Z.z }`), and a sibling read. Rejected: the use
+before the store in the next round (`for`, `while`, `do`, `for-of`, `continue`, a labelled
+`continue`, nested loops, a holder in an enclosing block or an outer loop, nested paths, two
+globals in one holder), a store on one arm only, the holder used after the loop, and a stale value
+stored back (`const t = o.v; G = ...; o.v = t`). Tests: `own_err_global_outer_holder` (a module
+global, the shape above) and `own_err_global_outer_holder_static` (a static block's loop, the
+store in one round and the use in the later ones), runnable, gc printing `42 64 0 64 1 64 2 64 4`
+and `1 64 1 64 1 64 5`. Tooth (a temporary `OWN_TEETH` switch making the read and the
+declaration the renewals again, removed): both compile, and the built programs exit 139 on
+Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them: the unsafe shapes, and
+two correct ones, both sound over-rejections - a holder stored on one arm of an inner loop before
+every use in practice (`for (j ...) { if (j == 0) { o.v = c; } print(o.v.x); }`), which the CFG
+cannot order, and a holder copied into another holder, renewed and copied again
+(`h.v = c; outer.h = h; G = ...; h.v = Z.z; outer.h = h; print(outer.h.v.x)`); the corpus keeps
+526 files and the ray tracer has no error.
+
+**A declaration without an initializer renews nothing (fix-up re-review N4, 2026-10-23).** `let
+l!: V` (or `let l: V`, `let o: { v: V }`) declared inside the loop body stores nothing: tslang
+does not reset the slot each round, so it still holds the last round's value. The renewal rule
+above counted every declaration, so `for (...) { let l!: V; if (i > 1) { print(l.x); } const c =
+K.w; if (i == 1) { l = c; } K.w = new V(i + 1); churn(); }` was accepted and read the freed block
+in round 2 (exit 139; the module-global form on main too, the static-block and top-level forms
+since the loop-store fix-up). Now a declaration is a renewal only when it has an initializer
+(`holderRenewals`, and walkBorrowed's `passesOn` says the same for the non-owning local it hands a
+value to - a narrowing for every borrow check, which can only reject more: a place read into such
+a `let` in a loop was accepted the same way, `const c = p.v; if (i == 1) { l = c; } p.v = new
+V(i + 1)`, and is rejected now). `let l: V | undefined` has an initializer and is a renewal. Still
+accepted: the same `let` assigned before each round's use, a `const o = { v: Z.z }` declared in the
+loop (its initializer re-stores every round), and `for (x of arr)` into an outer `let x!: V`
+(each round's element is stored first). Tests: `own_err_global_uninit_let_static` (the shape
+above, in a static block whose only store of `K.w` is the loop's) and `own_err_global_uninit_let`
+(a module global in a function), runnable, gc printing `1 64 1 64 4`. Tooth (a temporary
+`OWN_TEETH` switch counting every declaration again, removed): both compile, and the built
+programs exit 139 on Windows and under `MALLOC_PERTURB_` on Linux. Newly rejected beside them:
+only the unsafe shapes; the corpus keeps 526 files and the ray tracer has no error.
+
+## 26. `Shared<I>` of an object literal (G4 of the ray tracer plan), 2026-10-21
+
+The ray tracer's surfaces are module-level `new Shared<Surface>({ ...function fields... })`. The
+literal is a boxed object (`ts.New` of its record) seen as the interface through `ts.NewInterface`,
+which §18.2 makes a view of the box. MLIRGen gives the payload to `ts.SharedNew` with rc's retain
+right before it (`mlirGenRetainCaptured`): a `new C()` arrives carrying its reference and has no
+such retain, but the interface view is retained.
+
+- **In a function** the inference already took that retain as the move into the handle (§23.2):
+  `let l = new Shared<S>({...})` compiled before this section, and needed no change.
+- **In a global's initializer** `moveIntoGlobals` judged the retain and found its value going into
+  `ts.SharedNew` rather than the global's `ts.GlobalResult`: `the initializer of global 'g' takes a
+  second reference`. `movesIntoResult` now takes `new Shared(x)`'s payload operand as a move: the
+  handle's block owns `x` from then on, whatever becomes of the handle, which rc counts. The other
+  conditions stay: the value is fresh (the box, seen through its views), retained once, and given
+  back by nothing in the region. So `let b = new Shared<S>(a.value)`, a second owner of `a`'s
+  payload, keeps the error (`own_err_shared_literal_borrowed`).
+- **Not here: calling a function field through the handle.** `g.value.f(3)` and `l.value.f(3)` are
+  still `'this value' borrows a field but is used here after it may be released or overwritten`. A
+  borrow read through a handle ends at any call that may drop (§23.3), and a call through an
+  interface slot has no facts: the signature pass does not name what it reaches. That is not the
+  literal's: `new Shared<S>(new K())` with a class `K`, and `p.s.f(3)` on a parameter `p` with no
+  handle at all, fail the same way, and a direct method call through a handle (`l.value.m(3)` on a
+  `Shared<C>`) compiles. It is G9 (facts through a module-private interface).
+
+`own_shared_literal` makes a global and a local `Shared<S>` of a literal with function fields,
+copies the local's handle, reuses freed memory, and reads `roughness` through all three handles,
+under own, rc, gc and none, AOT and JIT; `--verify-ownership` is quiet on it under own and rc. Teeth:
+with the global's move replaced by a release of the literal (freed while the handle points at it),
+the AOT run fails its assertion that the global's literal is alive: its block was freed and reused.
+
+## 27. Owning literals moved anywhere (G3 of the ray tracer plan), 2026-10-22
+
+An object literal was moved only into an owning local or the result (§18.1, §20.2): `len({ start:
+p, dir: d })`, `[{ pos: new V(1) }, { pos: new V(2) }]`, `const r: Ray = {...}` and `return { ls:
+[...], c: new V(3) }` through an interface type were `an object literal that holds a value it owns
+is moved only into a local or returned as it is`, 13 of the ray tracer's 44 errors. Such a literal is
+now a value like a fresh object.
+
+- **The box.** A literal given as an object or an interface is built in a local a `ts.Constant`
+  starts, read once, and the read copied into a block of its own: a `ts.New` of a `value_ref`
+  filled by that one store, seen as the object (`ts.Cast`) and the interface (`ts.NewInterface`),
+  which are views of it (§18.2). `recordRetainOf` now takes that copy as the record's owner, beside
+  the result slot and an owning local, when the read goes nowhere else. rc's `ts.Retain` of the
+  read is then where the fresh values stored into the fields move in, as for a record built to be
+  returned: each value's own check erases its release, which the retain dominates, and reports a use
+  of it after the literal (`const p` moved into two literals, `own_err_literal_moved_twice`: `is used
+  here after its value was moved`; one moved in a loop it was made outside of: `is moved inside a
+  loop`).
+- **Where the box goes** is the box's own check, as for any `ts.New`: a call argument is released
+  after a callee that borrows it, and moves into one that keeps it (`__own_params`: `keepRay` pushes
+  it, and the caller's release goes); an array literal element moves into the `ts.CreateArray`; a
+  `const r: Ray = {...}` is the box, released at the end of its scope; a literal returned is the
+  result. A literal in an interface-typed field of another literal (`{ inner: { start: ... } }` with
+  `inner: Ray`) is a fresh box stored into the outer record, which moves in like any fresh value.
+- **`own_facts::isOwningRecord`** names such a record - its read, its box, or a view of the box -
+  when every field that owns a block holds what the constant put there, nothing, or a fresh value: a
+  new object, a call's result that borrows nothing, a literal, a `const` local folded into the value
+  it holds. `holdsConstantsOrMoves` reads its fields through it. A field that holds no block (`null`
+  in a `V | null`) is now accepted too; it moves nothing.
+
+Not here, and still `an object literal that holds a value it owns ...`:
+- **A `let` read into a field** (`own_err_record_literal_let`). Its slot keeps its release at the end
+  of its scope, which nothing cancels: accepting it would free the block twice. A sound narrowing of
+  the plan's "a moved local": a `const` local is folded into its value and moves in.
+- **A borrowed field**: a parameter (`{ start: a }`) or a field read (`{ start: this.pos }`, also
+  `borrows a field and cannot be stored`). The box's release would free the borrowed block. That is
+  G2's borrowing record, whose release skips borrowed fields; the ray tracer's `{ start: pos, dir:
+  rd }` is one.
+- **A literal nested by value** (`const o = { inner: { item: new C() } }` with no interface type),
+  §20.6's catch-all: the inner record is copied into the outer one's field, not boxed.
+
+A literal stored into a field of a nullable interface type (`k.r = {...}` with `r: Ray | null`) is
+`takes a second reference`: in the IR the pass sees, the box is retained once for the interface and
+again for the union, and released nowhere in the function (the program compiles and runs under rc).
+Into an `r: Ray` field it compiles.
+
+**A method that keeps its argument or returns a borrow, reached through an interface.** A call
+through an interface (`s.take(x)` with `s: Sink`, a `ts.InterfaceSymbolRef` and an indirect call)
+is not resolved, so it gets none of the method's facts. The caller released what the method kept,
+and released a result that borrows (an argument, `this.v`, `this.items[0]`) as its own: a double
+free under own either way, older than this section (`s.take(new V(1))`, `g.get(a)`), which a
+literal argument now reached too. The interface's vtable for a class (`KS.Sink..vtbl`) holds the
+class's `..instanceOf`, so the signature pass took it for a class vtable and its entries for calls
+it resolves. Now `collectInterfaceReached` tells it apart by its name (`<class>.<interface>..vtbl`,
+where the class's own `..instanceOf` is `<class>..instanceOf`), and a method it holds that keeps a
+parameter or returns a borrow, by its body or by `@keeps` / `@lends`, loses its facts. Its body is
+then the error the path that finds it gives - `'<param>' is a parameter, kept here, but -mm=own
+cannot make the callers of 'KS.take' give it up`, `... is a parameter, returned here, but -mm=own
+cannot tell the callers of 'G.get' that the result borrows it`, `borrows a field (an element) and
+cannot be stored, returned or captured` - noted `it is reached through an interface, whose calls are
+not given its facts`, which wins over an exported method's `'@lends' or '@keeps' would say it`
+(`own_err_interface_keeps_literal`, `own_err_interface_keeps_param`,
+`own_err_interface_borrow_param`, `own_err_interface_borrow_element`,
+`own_err_interface_borrow_field`). A direct call of such a method (`ks.take(x)`) is refused too
+whenever the class implements the interface: its interface vtable is made for the `implements`
+clause, cast or not. G9 (facts through a module-private interface) relaxes this for closed
+interfaces by giving the interface call the meet of these facts.
+
+`own_literal_moves` runs the shapes (two moved `const`s; a fresh call result beside a moved one; an
+array of literals; a `const r: Ray`; a returned interface record holding an array; 1000 literals
+given to a callee that keeps them) under own, rc, gc and none, AOT and JIT, and on Linux;
+`own_record_literal_given` (was `own_err_record_literal_given`) returns `{ v: new Vec(n) }` as a
+`Holder`. Own emits no counting. Teeth: with the moved-in values' releases kept, both AOT and JIT
+runs of both fail with `0xC0000374` (heap corruption: the box's release frees the field, then the
+value's own release frees it again). A loop of 2 million iterations of every shape (about 10
+blocks each) peaks at 4.8 MB under own, as under rc (gc 6.7 MB): the box's release frees its fields.
+
+## 28. A field read through an interface (G6 of the ray tracer plan), 2026-10-22
+
+`let d = r.dir` with `r: R` an interface was `takes a second reference; -mm=own cannot prove a move
+or a borrow here yet`, while the same read of a class field borrows (§2.3, phase 3). The field of an
+interface is a `ts.InterfaceSymbolRef` - the object's field at the offset the interface's vtable
+holds - and `isPlace` named only `ts.PropertyRef`, `ts.ElementRef` and `s.value`. So the read was no
+borrow at all: a `let` from it fell through to the second-reference error, and a `const` from it, or
+a read used in place, was not checked against anything. That was a use after free older than this
+section: `const c = h.c; h.c = new C(9); print(c.x)` with `h: HI` printed a freed block's value. The
+overwrite was invisible too: `hi.c = new C(9)` through an interface view of `h` did not end a borrow
+of the class field `h.c`, and the signature pass gave `function set(hi: HI) { hi.c = new C(9); }`
+`__own_no_drops`, so its callers kept their borrows of `hi.c` across the call.
+
+- **An interface field is a place** (`own_facts::isInterfaceField`: an `InterfaceSymbolRef` whose
+  result is a reference; a method is a bound function, not a place). Its read borrows, as a class
+  field's does: tenure-checked against the ends of what it was read through and against the drops
+  (`checkPlaceRead`), through any chain of field reads and interface views (`i.ray.dir`: the chain
+  `dir`, `ray`, parameter `i`). A call ends it only when the call's facts say it may drop - `V.plus`
+  does not - and any call does for a root the function does not own, as `own_err_param_read_call`
+  pins for a class field. `borrowedParam`, `reachesSharedValue` and the signature pass's
+  `reachesOutside` walk through it, so `function dirOf(r: R) { return r.dir; }` returns a borrow of
+  `r`, bounded by the caller's `r`, and an overwrite through an interface parameter is a drop. A
+  parameter stored through an interface field (`function keep(r: R, v: V) { r.dir = v; }`) is kept
+  (`__own_params`), as one stored into a class field is: the caller moves it in. Before, that was
+  `is a parameter, kept here, but -mm=own cannot make the callers of 'keep' give it up`.
+- **Which field it is** is not known where it is read: the interface's index is not the class's
+  position, and a class may declare the field narrower than the interface. So the chain records it
+  as `Chain::InterfaceField`, and `dropsChain` matches it with any field overwrite of any position
+  and type, and an overwrite through an interface with every field on a chain. Elements and `s.value`
+  keep their own matching.
+
+`own_field_chain_let` runs `let d = r.dir` and `let d = i.ray.dir` (a nested interface literal, as
+§27 accepts it) with `V.plus` between the reads, a class implementing the interface passed as it,
+and `dirOf`'s borrowed result, 100,000 times, then `keep` moving a `const` into a field through an
+interface and reading it 1000 times, under own, rc, gc and none, AOT and JIT, and on Linux;
+own emits no counting. Negatives: `own_err_iface_field_overwritten` (overwritten through the
+parameter), `own_err_iface_field_view_overwritten` (a class field's borrow, overwritten through an
+interface view), `own_err_iface_field_call` (a callee given the interface overwrites it: no
+`__own_no_drops`), `own_err_iface_field_result` (`dirOf`'s result read after the field is
+overwritten), all `borrows ... but is used here after it may be released or overwritten`. Teeth:
+with the borrowing `let`'s releases kept (only its retain erased), the AOT run of
+`own_field_chain_let` fails with `0xC0000374` (heap corruption: the `let`'s release frees `r.dir`),
+and so does the JIT run; with the interface clause of `dropsChain` skipped,
+`own_err_iface_field_view_overwritten` compiles and prints a freed block's value. With the call's
+`__own_result_borrows` dropped for a callee that reads through an interface field (the caller then
+owns `dirOf`'s result and releases `r.dir` while the record holds it), and with the call's
+`__own_params` dropped for such a callee (the caller still releases `nv` after `keep` stored it in
+`k.dir`), the AOT run fails with `0xC0000374` both times. A loop of 2 million iterations (about 6
+blocks each) peaks at 4.3 MB under own, as under rc.
+
+Only fields: `borrowedParam`, `reachesSharedValue` and `reachesOutside` walk through an
+`InterfaceSymbolRef` only when it is a field (`isInterfaceField`). A method read through an
+interface (`function getM(m: M) { return m.get; }`) is what it was before this section.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`): 519 of 693
+compile on Linux before this section and 519 after, the same files; none lost, none gained. On
+Windows 522 after (`00catch_value`, `00cppvtable_hidden_return` and `00throw_in_block_debug_info`
+compile there and not on Linux, before and after). One file that fails either way fails earlier,
+with a more precise error: `00array_assignment5` was `takes a second reference` and is now `borrows
+'Test.lineTokens.tokens' and cannot be stored, returned or captured`.
+
+Not here: the ray tracer's `shade` still fails at `let d = isect.ray.dir`, now as `borrows a field
+but is used here after it may be released or overwritten`, because `isect.thing.normal(pos)` is a
+call through an interface, which has no facts (§27) and so may drop anything the function does not
+own. Checking reads through an interface also reports the reads the ray tracer used in place across
+such calls (`scene.camera.pos` beside the `getPoint` closure, `scene.lights` given to `reduce` with
+a closure, the rest of `shade`): 24 errors before, 33 now, none of them a new kind.
+
+They are G9's (facts through a module-private interface), G5's (`reduce`) and G2's (borrowing
+records).
+
+Seen on the way, and rc's own, older than this section: under rc, `const c = h.c; h.c = new C(9);
+churn(); print(c.x)` with a class `H` prints 999 (gc prints 0): the `const` takes no reference, so
+the overwrite frees what it reads. A `let` is retained.
+
+## 29. A read after a move, through the new owner (G7 of the ray tracer plan), 2026-10-22
+
+`h.c = c; print(c.x)`, `n.v = a; print(a.length)` and `best = v; s += v.x` were `is used here after
+its value was moved`: a move (§2.2) allowed no use of the old name after it. Now a use after a move
+that only reads the value is a borrow of the place the value moved into, as a read of `h.c` itself
+would be (§2.3), and is accepted while that place still holds it (USER decision).
+
+- **What a read is** (`isReadAfterMove`): a field, element or length read through the value, a
+  method reached through it, a comparison or arithmetic, `print`, `assert`, a test, or an argument
+  the callee borrows (`!isKeptArgument`). What the read produces - a field's reference, a bound
+  method - is walked as a borrow's uses are (`walkBorrowed`, starting not borrowed); a call result
+  that borrows its argument is the value again and may not be kept. A method reached through it
+  whose callee keeps its `this` is not a read. A store through a field read (`h.c = c; c.x = 7`)
+  is a use of the borrow, not a keep: the block stays the place's. Anything else after the move -
+  a store of the value, an owning `let`, a keeping call, a return, rc's retain for a receiver - is
+  still a second owner and keeps the error.
+- **Where it moved** (`destinationChain`): an owning local (a declaration, or an assignment), or a
+  field or element of a local or a parameter (`this`), described as the `Chain` `checkPlaceRead`
+  reads (`chainOf` from the store's place). A move into a call that keeps the argument, a `push`, a
+  return, a global's field, a captured variable or a handle's payload is not such a destination.
+- **The kill walk** is `checkPlaceRead`'s: the ends of the chain's roots (`rootEnds`) and the drops
+  that may destroy what the place holds (`dropsChain`, with the moved value standing in for the
+  read's result): an overwrite of the place, matched by position and type, through an interface
+  view too (§28); a call whose facts may drop (no `__own_no_drops`) given something that reaches the
+  place's root, or any such call for a root the function does not own; a call given a closure; and
+  an assignment to a global, for a root the function does not own (below). The read fails when
+  some end or drop E has a path move -> E (not through the value's definition, the local's
+  declaration or its assignments) and a path E -> the read or anything it produced (not through
+  those either, nor through the move again). Together the two are exactly one path from
+  the move through E to the read on which the value is neither made again nor moved again; a path
+  that moves the same value again without making it again is the `moved inside a loop` error
+  already. A read of the old name again after E is no new value - the move leaves the slot as it
+  was - so, unlike `checkPlaceRead`, the read itself is no kill. In a loop that makes the value in
+  each iteration (`let v = ...; best = v; s += v.x`), the next iteration's `best = v` overwrite is
+  reached from the move only through `let v`, so the read in the same iteration stands.
+- `movesOf` (a fresh SSA value, a folded `const`) asks it of each read after a taker;
+  `checkSlotMove` (an owning local) of every use of a slot read the move reaches, and of each late
+  use `readUsedAfter` finds.
+
+`own_read_after_move` runs the straight-line moves into a field (`n.v = a`, `h.c = c`), into an
+element (`arr[0] = ce`) and into a field of `this` (`this.f = c` in a method), each read after
+same-size allocations; a move into an owning local in a loop that makes the value each iteration;
+100,000 iterations of a move into a field and into a local each read after it; and a declaration
+that takes a value over (`let q = p; print(p.x); p = mkv(8)`: `q` keeps the first value, §24).
+Then it allocates same-size blocks, reads the moved values again and asserts them, under own, rc,
+gc and none, AOT and JIT, and on Linux; own emits no counting. Its values come from factories
+(`mkc(n)`), so stack promotion leaves them heap blocks. Negatives, all `is used here after its
+value was moved`: `own_err_field_alias` (`n.v = [2]` after `n.v = a`), `own_err_union_moved`
+(`h.c = null`), `own_err_read_after_move_overwritten` (overwritten on one path),
+`own_err_read_after_move_view` (overwritten through an interface view `hv.c = null`),
+`own_err_read_after_move_call` (`clear(h)`, which may drop),
+`own_err_read_after_move_loop` (the read at the top of a loop reached around the back edge after
+the iteration's `best = new V(i)` freed the moved value), `own_err_read_after_move_after_loop`
+(a read after a loop that overwrote the destination). `own_err_param_kept_used`, `own_err_push_let`,
+`own_err_two_owners` and `own_err_literal_two_records` still fail as before.
+
+`own_err_borrow_bound_method`, `own_err_borrow_catch_local` and `own_err_borrow_finally_local`
+(phase 2) made `let b = a` a borrow by reading `a` after it. That read now goes through `b`, which
+takes the value over, and `a = new C(2)` frees nothing `b` holds: the programs are correct (they
+print what rc prints, on Windows and Linux). They now give `a` to a second `let`, so that each
+borrows it, as before.
+
+**An assignment to a global is a drop** for a chain with a root this function does not own (found
+in review). `G = mkH()` is `ts.ReleaseSlot(ts.AddressOf @G)` before its store, and the drops took
+only a `ts.ReleaseSlot` of a place or a cell. So `function run(h: H) { const c = mk(); h.c = c; G =
+mkH(); churn(); print(c.x); }`, called as `run(G)`, compiled and printed 999 (a freed block that
+the allocations reused; rc prints 5), and so did the same through `this` in a method of the
+global's class. A parameter, `this`, or a value read out of a field or a global may be the global's
+old value, or under it, and the assignment frees it. The plain place read had it too, older than
+this section: `h.c = mk(); const x = h.c; G = mkH(); print(x.x)`. Now such a `ts.ReleaseSlot` is a
+drop, and `dropsChain` takes it for every chain that is not owned (`!chain.owned()`); a local or a
+value this function made cannot be the global's. An immortal global's (§25) one store is its
+initializer, whose old value is empty, so its `ts.ReleaseSlot` drops nothing. A callee that assigns
+a global was already no `__own_no_drops` (`dropsInBody`), so a call of it ends such chains.
+Negatives: `own_err_read_after_move_global` (the parameter, `this`, and the assignment in a callee:
+`is used here after its value was moved`) and `own_err_field_let_global_overwritten` (the place
+read: `borrows a field but is used here after it may be released or overwritten`). Teeth: with the
+global's `ts.ReleaseSlot` dropping nothing, both compile but the callee's case; the first prints
+garbage (`9.88131e-324`) for the parameter and 999 for `this`, the second `9.88131e-324`, instead
+of 5. Still open, every model (rc too): a parameter itself read after the global it came from is
+assigned (`function run(h: C) { G = mk(); print(h.x); }` called as `run(G)`): no place is read,
+so there is no chain to end. Under own main's #639 (merged into this branch after T8) closes that
+one at the caller: a value read out of a global something assigns, lent to a call that may drop,
+is an error ("a value read out of the global 'G' is lent to a call that may release or overwrite
+it"). That error comes first for `run(G)`, `GK.run()` and `runCallee(G)` too, so since the merge
+both negatives give their callees fresh values (`run(mkH())`, `new K().run()`) and pin this
+section's callee-side rule alone; the teeth above were measured with the global passed, before
+the merge. The original shapes are #639 negatives of their own (fix-up of 2026-10-23), so a
+narrower #639 would still meet them: `own_err_global_argument_transitive` (`run(G)`, `run` calls
+`reset`, which assigns `G`), `own_err_global_method_transitive` (`G.m()`, `m` calls `reset`),
+`own_err_global_this_field_move` (`GK.run()` moves into `this.f`, then assigns `GK`),
+`own_err_global_argument_field_let` (`run(G)`, `const x = h.c`, then `G` assigned) and
+`own_err_global_kept_field` (`keep(h, g)` stores `c` into `h.c`, `g` assigned by a `reset`
+elsewhere), each "a value read out of the global '...' is lent to a call that may release or
+overwrite it".
+
+Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
+compile, and AOT runs with same-size allocations before the read print a freed block's value:
+`c.x` prints 0 (overwritten on one path, `clear`, set to null) and 999 (through the view) instead
+of 5; `a.length, a[0]` prints `64 6.4649e-312` instead of `1 1`; the loop's sum is 1999 instead of
+3; the read after the loop prints 999 instead of 1. The positive cannot show it: by design nothing
+in it overwrites a destination before a read. With the rule off, the positive fails to
+compile with `is used here after its value was moved`, at every read after a move. A loop of 2
+million iterations peaks at 4.5 MB under own, as under rc.
+
+Not here: an assignment that moves on some paths only (`if (v.x > m) { best = v; }`) is `is moved
+here on some paths only; -mm=own cannot release it on the others yet` - the local's one release at
+the join is on a path that moved it and one that did not. The use-after-move error came first and
+hid it. It is G10 (Task 5b, static drop elaboration), not a follow-on of G7; the ray tracer's
+`intersections` has this shape, and the `moved here on some paths only` of design G8 is it too.
+Matching an overwrite by position and type also matches another class's field of the same type at
+the same position (`dropsChain`, as for any place read): `own_read_after_move`'s loop holder keeps
+its field elsewhere for that reason.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 522 of
+693 before this section, 527 after; none lost. Gained: `00class_recursive`,
+`00generator_manual_next2`, `00globals_entry_point`, `00owned_locals`, `00union_value_equality`,
+each accepted by this rule. Each prints under own what it prints under rc (Windows AOT) and runs
+clean under own on Linux.
+
+The ray tracer (`rtbench_own.ts`) has 33 errors, as at §28, but none of them is `is used here
+after its value was moved` any more. Two are `is moved here on some paths only` (G10), which the
+use-after-move errors used to hide. The rest are G9's, G5's and G2's (§28).
+
+## 30. A move on some paths only (G10 of the ray tracer plan), 2026-10-22
+
+`let v = ...; if (v.x > m) { best = v; }` was `is moved here on some paths only; -mm=own cannot
+release it on the others yet`: where the paths join, `v`'s one `ts.ReleaseSlot` is on a path that
+moved the value and on one that did not, and no run-time record of the move is kept (§2.2). Now the
+release is placed statically (static drop elaboration, controller ruling; a run-time drop flag was
+ruled out): on each edge into the join that holds the value and did not move it, and nowhere on
+the paths that moved it. The releases after the join go. Each path frees the value once - through
+the new owner where it moved, on the edge where it did not.
+
+- **The state of the slot** (`placeOnUnmovedEdges`): a forward walk of the function's CFG gives,
+  before each op of the body, what the local's slot may hold - nothing (before its `ts.Variable`,
+  after a release), its value (after the `ts.Variable` or an assignment), or a moved value (after
+  the move's acquire). A point that some paths reach holding the value and others having moved it
+  is *joined*. Every `ts.ReleaseSlot` that may hold a moved value goes; one that some path also
+  reaches with nothing in the slot keeps the error. An assignment's own release before its store
+  is one of them: an assignment over a value that may have moved frees the old value only where it
+  did not move (`if (k % 3 == 0) { kept = r; } r = new V(k);` in a loop).
+- **Where the release goes**: on every edge from a block that ends holding the value, and only the
+  value, into a joined block - at the end of the block when it has no other successor (a `then` or
+  `else` branch, a loop's latch), else in a new block on the edge. A joined block that some path
+  reaches with nothing in the slot, an edge whose branch is not `cf.br`/`cf.cond_br` (an
+  `Invoke`), and an edge out of an exception handler (from a landing pad to its
+  `EndCatch`/`EndCleanup`) keep the error.
+- **The safety condition**: the release moves earlier, from the end of the local's scope to where
+  the paths join, so nothing may use the value at a joined point: no read of the slot, and nothing
+  read out of it - followed forward through every op's results (a field's reference, a view, a
+  bound method, a block argument), through a store into a local (every read of that local), and
+  out of a region (a closure, an async body) through the op that holds it. A store of such a value
+  into a place or into a captured local is not followed and keeps the error. A call's result is
+  followed only when its facts say it borrows that argument (`__own_result_borrows`); anything
+  else a call returns is its own block. The move hands the value to its new owner, whose reads are
+  its own, and rc's retain for it is erased. A value the slot is given (its initializer, an
+  assignment's) is the slot's only once stored, so a use of it before that - the constructor's, or
+  one around a loop before the value is made again - is no use of the slot's value.
+- **...and past the joined points** (found in review): what was read out of the value before an
+  edge released it - a bound method `v.get`, an interface view `const i: I = v` - may not be used
+  anywhere reachable from the start of a block the edge released it into, before the read it came
+  from (or the op that made the value) runs again: not after a new value is stored into the local
+  (`if (c) { b = v; } v = mkv(2); m()`), where the state is no longer joined, and not after the
+  scope ends. A read of the slot itself after a new value is stored reads the new one, and stays
+  accepted. The error then carries a note at the use: `used here, after the paths join, so it
+  cannot be released before they do`.
+- A `string` read out of the value counts as a pointer into it, though own copies strings in some
+  places: too strict, but sound.
+- **One receiver**: the rule applies when the move is the local's one receiver (`decideSlot`).
+  With two, `if (c) { a = v; } else { b = v; }`, each move's other paths include the other's, and
+  the error stays.
+- **Reads after the join**: a read of `v` after the paths join (`if (c) { b = v; } print(v.x);`)
+  goes through `b` on the path that moved it (§29), but on the other `v` must free the value after
+  the read, where only a run-time record could tell the paths apart: the error stays. So does a
+  `let` declared outside a loop, moved on some iterations and read in the next without a new value
+  (`moved inside a loop`).
+- **Unwind paths** are paths of the CFG (`ts.Invoke`'s unwind edge to a landing pad), and get the
+  same treatment: a release on the normal edge into a joined `try` body comes before the call that
+  may throw, and a cleanup's `__unwind_only` release of a joined slot goes with the others.
+- The releases are recorded during the analysis (which runs twice, dry and real, and tries a move
+  quietly before a borrow) and put in only after it, before the erasures (`placeEdgeReleases`).
+
+`own_conditional_move` runs: the brief's loop that keeps the largest value (`best = v` on some
+iterations, `v` declared in the loop); a straight-line move taken and one not taken; 100,000
+iterations of a move into a local on even iterations, read through the new owner inside the branch
+(§29) and freed by the local on odd ones; an assignment in a loop over a value that may have moved;
+a value moved into a field on every path and given a new value on some, which that path frees
+before the paths join (the old `own_err_reassign_some_paths`); a move into a call that keeps its
+argument on one arm of `?:` (the ray tracer's `shade`), and on the right of `&&`, whose skipping
+edge carries the `&&`'s value, so the release goes in a block of its own that passes the value on;
+and a move in a `try` whose call throws on
+half of 20,000 calls, with a `finally`. It prints the same under own, rc, gc and none, AOT and JIT,
+and on Linux; own emits no counting. Negatives: `own_err_conditional_move_read` (`b = undefined`
+after the join, then `v.x`: `is used here after its value was moved`),
+`own_err_conditional_move_outer` (`moved inside a loop but was made outside it`),
+`own_err_conditional_move_read_after_join` (`v.x` after the join),
+`own_err_conditional_move_field_borrow` (a field of `v` read after the join),
+`own_err_conditional_move_catch` (the move inside a `catch`), `own_err_conditional_move_bound_method`
+(`const m = v.get` called after the join), `own_err_conditional_move_view` (`const i: I = v` read
+after the join) and `own_err_conditional_move_old_view` (both, used after `v` is given a new value
+past the join), the last six `is moved here on some paths only`.
+
+The brief's positive read `t` after the join (`if (k % 2 == 0) { b = t; } s += t.x;`). That is the
+shape the rule leaves out, so the read moved into the branch (`b = t; s += t.x;`) and before the
+`if`, and `s` is 199999 instead of 149999.
+
+`own_err_reassign_some_paths` (a value moved, then given a new value on some paths) and
+`own_err_borrow_derived_ref` (phase 2: `let b = a`, then `a = new C(2)` in a loop) became correct
+programs: the path that gave `a` a new value frees it before the paths join, and the move into `b`
+needs no borrow. They print what rc prints. The first now reads `a` after the join, and the second
+gives `a` to a second `let`, so that each borrows it; both fail as before.
+
+Teeth: with the release placed on the edges that moved the value as well, `own_conditional_move`
+(AOT, `test-compile-own-`) exits 0xC0000374 (heap corruption), and so do the brief's loop, the `?:`
+move into a keeping call and the `try` with a throwing call, each alone; the straight-line
+`if (v.x > 0) { best = v; } print(best.x)` prints 0 instead of 1. With the safety condition off,
+`own_err_conditional_move_read_after_join` compiles, and a copy with same-size allocations before
+the read prints 0 for `v.x` on the path that did not move it, instead of 1; no other check covers
+it, since §29 accepts the read on the path that moved. With what is read out of `v` not followed
+(only the slot's reads), `own_err_conditional_move_bound_method` and `_view` compile - no older
+check sees them - and their AOT runs crash (0xC0000005), where rc prints `1 1`. With the walk
+checking only joined points (as first written), both forms of `own_err_conditional_move_old_view`
+compile and read the freed old value: the bound method printed `3 4` on one run and crashed
+(0xC0000005) on the other, instead of `3 3`; the view printed `3 1002` and `3 1004`. A field of
+`v` read after the join, a `const` alias of `v` and a call result that borrows `v` are each also
+rejected by an older check (the move ends a place borrow of `v`; two receivers; `borrows the
+result of`). Still open, every model (rc prints garbage too): a bound method or a view of a
+local used after the local is given a new value, with no move at all (`const m = v.get; v =
+mkv(2); m()`).
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 527 of
+693 before this section, 528 after; none lost. Gained: `00nullish_values`; it prints under own what
+it prints under rc (Windows AOT) and runs clean under own on Linux.
+
+The ray tracer (`rtbench_own.ts`) has 31 errors, from 33: both `is moved here on some paths only`
+are gone - `intersections` (`closestInter = inter` on some iterations) and `shade` (`pos` and
+`reflectDir` moved into `getReflectionColor`, whose facts keep them, on one arm of `?:`). The rest
+are G9's, G5's and G2's (§28): 21 `borrows a field`, 5 object-literal moves, 2 `borrows an
+element`, 1 mixed return, 1 kept parameter (the `reduce`), 1 `borrows a field and cannot be
+stored`.
+
+## 31. Facts through a closed interface (G9 of the ray tracer plan), 2026-10-22
+
+A call through an interface (`ts.InterfaceSymbolRef`, then an indirect call) was not resolved: it
+had no facts, so it might destroy anything, and since §27 every method held in an interface vtable
+lost its keep and borrow facts, called directly or not. `sc.ts[i].area(r)` ended the borrow of
+`sc.ts` it was made through (`borrows an element but is used here after it may be released or
+overwritten`), and `s.take(x)` / `g.get(a)` / `i.first()` / `h.hold()` were the §27 errors in the
+method's body. Now a call through an interface only this module can see is resolved like a call
+of a private virtual family.
+
+- **Closed.** An interface is open when another module can see it - its name is a word of the
+  module's exported declarations (`__decls`), or `!ts.iface<@I>` is in the type of an exported or
+  declared function or of a global that is not private or is exported or imported (a class's
+  fields included) - or when a value of it may be made other than by `ts.NewInterface` over a
+  vtable the signature pass reads: the global, a heap copy of it, or the one an object's class
+  vtable holds for it. A cast into the interface from another interface opens both (the other's
+  members are reached through it); one from `any` or an opaque pointer opens every interface boxed
+  into one; a `ts.InterfaceRef` used as a value, a vtable read other than to make a value, an
+  exported class whose vtable holds one of its vtables, and a vtable named for it that no value is
+  made with all open it. An untraceable `ts.NewInterface` opens every interface.
+- **Families.** Each slot of a closed interface (its vtable position) has the functions its
+  vtables hold there - a class's method, an object literal's method, never a declaration, never one
+  that says `@keeps` or `@lends`. A call through the slot gets `__own_no_drops` when every member
+  destroys nothing, and the kept parameters and borrowed result its members agree on: `meetFacts`
+  demotes a family that disagrees, as it does a class family, so the borrowing or keeping member's
+  body is the error it was (`own_err_interface_family_disagrees`). That is a sound narrowing of the
+  plan's "a parameter kept by any member is kept by the call": a member that does not keep a moved-in
+  argument has no release for it, which would leak. A `public` method is open (§15) and gives its
+  family no facts; an object literal's method is open too (its symbol is a value in the literal).
+- **Members keep their facts.** §27's stripping (`interfaceReached`) applies only to the members of
+  open families and to vtables no value is made with, so a direct call of a method of a closed
+  interface keeps its facts (`ks.take(x)`, `f.first()`).
+- **A result that borrows `this`** through the interface is bounded by the interface value:
+  `boundThis` sees `ts.GetThis` of an interface-bound method as the object the interface value is a
+  view of (`own_err_interface_result_outlives`: the local holding it is given a new value before the
+  read).
+- **Function-typed fields** (`f: (x: number) => number`, the ray tracer's `Surface`): the slot holds
+  the offset of an object literal's field, and the call goes to whatever function the field holds.
+  When the interface is closed and every function ever stored into those fields is one this module
+  defines - the literal's own (`{ f: function ... }`, in its `ts.Constant`, a closure over locals
+  included: its captures are a field of the object), or one stored later through the object or
+  through the interface - the call gets their facts. A store of anything else, the field reached
+  other than to be read or stored, an object of the literal's type made other than by the literal,
+  a function-typed store through an open interface, or a class implementer (its slot is a thunk's
+  cell) keeps the call open. In the language as it is, a function stored into such a field is
+  always the literal's: `s.f = fn` through the interface is `saving to constant object`, and a
+  function without `this` (a parameter, a named function) is held through a thunk, which is open
+  (`own_err_interface_fn_field_unknown`).
+
+`own_interface_facts` runs the plan's loop over `sc.ts` (prints 9), a field borrowed across a call
+through two class members and an object-literal member, the closed forms of the five §27 negatives
+(a kept literal, a kept `const`, a kept value, through the interface and directly; a borrowed
+argument, element and field, through the interface and directly), each read after churn, under own,
+rc, gc and none, AOT and JIT, and on Linux; own emits no counting. `own_interface_fn_field` calls a
+function field through a global and a local `Shared<S>` of a literal, through a parameter with no
+handle, and through a handle given as a parameter, each after churn, under the four models (counted,
+so not in `own_test`), and `--verify-ownership` is quiet under own and rc. The five §27 negatives
+now export their interface (the open form, same texts). New negatives: `own_err_interface_exported_impl`
+(the plan's program with `export class B`), `own_err_interface_family_disagrees`,
+`own_err_interface_member_drops`, `own_err_interface_from_interface`,
+`own_err_interface_result_outlives`, `own_err_interface_fn_field_drops`,
+`own_err_interface_fn_field_unknown`, `own_err_interface_fn_field_exported`.
+
+Teeth: with the call's `__own_params` dropped for a call through a closed interface, and with its
+`__own_result_borrows` dropped, the AOT and JIT runs of `own_interface_facts` fail with `0xC0000374`
+(heap corruption: the caller releases what `KS.take` kept, and what `G.get` lent). With
+`__own_no_drops` given to a call through a family one of whose members overwrites a field of its
+argument, `own_err_interface_member_drops` (with same-size allocations before the read) compiles and
+prints 77777 instead of 5 (gc prints 5); the same for a function field whose function overwrites
+`this.v` (`own_err_interface_fn_field_drops`): 77777 instead of 5. The store-of-unknown-origin
+condition has no program that reaches it (above), so it has no tooth.
+
+Measured: 2 million iterations of a kept argument, a borrowed result and a function-field call
+through closed interfaces peak at 4.4 MB under own, as under rc (gc 6.4 MB).
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer (`rtbench_own.ts`) has 31 errors, as at §30: none of them is cleared, for two reasons
+outside this rule. `Sphere.normal` and `Sphere.intersect` call `Math.sqrt`, whose `sqrt` is declared
+without `@nodrops`, so they may destroy anything and the `Thing` families get no `__own_no_drops`;
+`checkerboard`'s functions call `Math.floor` the same way. And `Surface` is exported:
+`export let shiny` in `module Surfaces` puts the globals and `interface Surface` into `__decls`, so
+another module may store its own function into a surface. Measured on copies: with the four C
+declarations `@nodrops`, 22 errors before this section and 18 after (cleared: both errors at
+`scene.things[i].intersect(ray)` in `intersections`, `isect.thing.normal(pos)` and the
+`Vector.minus(d, ...)` after it in `shade`); with the `export`s dropped too, 22 and 14 (also
+`thing.surface.value.reflect(pos)`, `diffuse(pos)`, `specular(pos)` and the `roughness` read); with
+only the `export`s dropped, 31 and 30 (`specular(pos)`). Neither is one of the plan's two source
+edits.
+
+Not here:
+- **Kept parameters do not take the union** across members (above): a family whose members
+  disagree is demoted, as a class family is.
+- **Class families group by (position, name)** across every vtable that holds an `.instanceOf`,
+  interface vtables included (unchanged): two closed interfaces with a same-named method at the same
+  position demote each other when they disagree. Too strict, but sound.
+- A class implementing a function-typed field (`f = (x) => ...`) is held through a thunk's cell and
+  stays open.
+- **A `public` method** is open (§15: a function that is not private may be called from another
+  module), so its effective facts are empty, and a family it is in can agree only on none: a
+  `public get(v) { return v; }` beside a private one returning the same borrow demotes both (the
+  ray tracer's `Plane.normal` and `Plane.intersect` are `public`). For type exposure this section
+  reads only exported and declared functions; `findOpen` does not, yet.
+- **`export` inside a namespace** exports the declaration from the module (`__decls` lists `namespace
+  NS { interface Th ... }`), so an interface declared `export` in a namespace for use outside it is
+  open; one used only inside its namespace is closed.
+
+**After review** (2026-10-22). The two "not here" items above on `public` methods and namespace
+exports are now handled as follows, and `own_interface_facts`' churn now keeps 2000 blocks alive, so
+a block freed too early is reused before it is read.
+
+- **A function value reinterpreted** carried an interface value into a closed family unseen (found
+  in review, a new acceptance that crashed under own): `f2 as any as (o: Op, a: V) => number` with
+  `f2` taking an `Op2` let an `Op` value reach `Op2`'s calls, and so did `(() => Op)` cast through
+  `any` to `(() => Op2)`. Now a cast that makes a function out of `any` or `unknown`, or sees one
+  function as a function of another signature, opens every interface either signature mentions (a
+  class's fields included). A function boxed into `any` puts its signature's interfaces among the
+  boxed ones, which any unboxing opens. A bound function's `this` and an opaque `this` are not part
+  of the comparison: a closure seen as a plain function of the same parameters is the same.
+  Negatives `own_err_interface_fn_any_param`, `_result`, `_drops`.
+- **C declarations of numbers** (controller ruling): a body-less `declare function` with no `export`
+  or import marker (another TypeScript module's declarations carry `export`), not variadic, whose
+  parameters and result are numbers, booleans, characters, integers or enums of them, destroys
+  nothing: it is given no block of this module. `sqrt`, `floor`, `pow` and `fabs` in the ray tracer.
+  The risk, as for `@nodrops`, is a C function calling back into the module: one registered through
+  another declaration (`signal(15, onSig as Opaque)`, then `raise(15)`; a window procedure and
+  `SendMessage`), or an exported function reached by name. The first is answered by type below (the
+  rule is off in a module that casts a function-holding value to a type that holds none, or has a
+  call that is not resolved to functions of this module with an argument whose type holds a
+  function); the second remains.
+  `own_declared_scalar_no_drops` holds a field's
+  borrow across `sqrt`, across a function that calls `sqrt` and `floor`, and across a call through a
+  closed interface whose member does; `own_err_declared_drops` (`strlen(s: string)`) is unchanged.
+- **A `public` method of a class no other module can name** (controller ruling) is not callable from
+  another module: the class is not exported (its vtable is private), not a word of `__decls`, and not
+  in the type of an exported or declared function or of an exported or imported global (a derived
+  class's storage holds its base, so a nameable class makes its bases nameable). `findOpen` and class
+  families use the same test (`callableFromOutside`). `own_err_interface_public_exported` (an exported
+  class) and `own_err_interface_public_reachable` (a class an exported function returns) keep the
+  error; `own_interface_facts` calls `public` methods that return a borrow through a closed interface.
+  `own_err_generator_method_this` exports its class to keep what it tests.
+- **An executable's exports** (USER decision): a module built into a program - `--emit=exe`, or the
+  module the JIT enters (`isExecutable || isJit`; a module the JIT cache compiles beside it has
+  `isJit` off) - is imported by no other module, so its `__decls`, exported functions and globals, and
+  exported classes open no interface and make no class nameable. What it imports still does: a
+  declared function, an imported global, a global with no initializer (an import of a `.ts` module).
+  An object file (test-runner's AOT build is `--emit=obj --entry-point`), a DLL and a `-shared`
+  library stay as they were; the pass takes the kind as an option, a library when not told.
+  `own_interface_exe_exports` (an exported interface and an exported global of it) runs under the
+  JIT and as `tslang --emit=exe`, and is the error on `G.get` as `--emit=obj` and `--emit=dll`
+  (`own-exe-exports.cmake`). The rule covers interfaces and classes, not functions:
+  `callableFromOutside` ignores the kind, so a program's `export function` is still taken as one
+  another module calls - never a closed function, a callback-family member or a family member with
+  facts of its own. A sound over-rejection (final review M3): the function is treated as a
+  library's exported function is.
+- **An iterator `next()` through a closed interface** (ruling) gets the family's facts like any other
+  call; it is no longer assumed fresh.
+
+Teeth: with function reinterpretations not opening anything, `own_err_interface_fn_any_param` and
+`_result` compile and their AOT runs fail with `0xC0000374` (with and without `--opt`), and `_drops`
+prints 77777 instead of 5 (gc 5). With every declaration without `export` taken as destroying
+nothing, `own_err_declared_drops` compiles, and so does a program that lends a field and passes the
+field's object to a declared `free(p: V)`; its AOT run fails with `0xC0000374`. With a `public`
+method's class never nameable, `own_err_interface_public_reachable` compiles; with every module taken
+for an executable, `own-exe-exports.cmake` fails (the object file and the DLL compile), and so do
+`own_err_interface_exported_impl` and `own_err_interface_keeps_param`. The last two rules protect
+callers in another module, which no single-module run can show.
+
+Corpus (`--emit=obj`, not an executable): 528 of 693 before this section and after, the same files.
+
+The ray tracer built as a program, `tslang --emit=exe --opt --opt_level=3 --no-default-lib -mm=own
+rtbench_own.ts`: 31 errors before this section, 15 after. Cleared: `Camera`'s constructor (three,
+`Vector.norm` reaching `sqrt`), `Sphere.normal`, `this` in `Sphere.intersect`, both errors at
+`scene.things[i].intersect(ray)`, `isect.thing.normal(pos)` and the `Vector.minus(d, ...)` after it
+in `shade`, `thing.surface.value.reflect(pos)`, `.diffuse(pos)`, `.specular(pos)` and the
+`roughness` read, the three `camera.forward/right/up` reads in `getPoint`, and one of the two at
+`traceRay({ start: scene.camera.pos, ... })`. New in their place: `scene.things[i].intersect(ray)`
+is `moved inside a loop but was made outside it` - the call now has the family's facts, and
+`Sphere.intersect` and `Plane.intersect` keep `this` and `ray` in the record they return; that is
+G2's borrowing record. As an object file (`--emit=obj`) it has 19: the `Surface` calls stay open.
+
+Not here, also:
+- A member that says `@keeps` or `@lends` opens its family (above): a sound narrowing of the plan,
+  which carried declared facts through closed interfaces too (controller ruling: accepted). Such an
+  implementer through an interface stays the error it was.
+- An abstract class's interface vtable is always open: too strict, but sound.
+- A class value reinterpreted through `any` (`new C() as any as C2`, `C2`'s field an `Op2` where
+  `C`'s is an `Op`) is not followed; the program stops at run time under every model, before any
+  call through the field.
+- A function value retyped inside a `ts.CreateTuple` or `ts.CreateArray` (a `HasF2` element put
+  into a `HasF` field) is not seen as a cast, by the member closure or by the C-callback test; no
+  program that compiles today reaches it (every such program is stopped by another ownership
+  error first).
+
+**After re-review** (2026-10-22):
+
+- **An interface made out of another one hands over its members' arguments.** A `HasF2`
+  (`f: (o: Op2, h: H) => number`) seen as a `HasF` (`f: (o: Op, h: H) => number`) - by
+  assignment, through `any`, as a parameter - lets a caller hand an `Op` to a function that calls
+  through `Op2`; so does a `Runner2` (`go(o: Op2, ...)`) seen as a `Runner`. Now a cast that makes an
+  interface value out of another interface or out of `any` opens, with the two interfaces, every
+  interface their members mention - the types of their vtables' slots and of what is read out of
+  their values, function signatures and class fields included - and theirs, recursively. Null seen
+  as an interface makes nothing (it has no vtable), so `return null` from a method typed `Intersection`
+  opens nothing. Negatives `own_err_interface_member_types`, `own_err_interface_member_methods`.
+- **An override of a method of a class another module can name, or defines,** is called from that
+  module through the base's vtable without its facts, whatever the override's own class is: a
+  `public keep` of an unexported `Der extends Base`, with `Base` exported and handed out by
+  `export function mk(): Base`, kept its argument while an importer released it; and an importer's
+  `Der extends Base` of an imported `Base` (abstract or with a body) was called by the library the
+  same way. Now a method of a class whose base chain (the first field of a derived class's storage)
+  holds a nameable class, or one with no own vtable here, is callable from outside, private or not -
+  the private form was accepted before this section too. Negatives
+  `own_err_override_nameable_base` (library side), `own_err_override_imported_base` and
+  `own_err_override_imported_class` (importer side, the latter a private override of a concrete
+  base); the library-and-importer pairs run under rc, gc and none (`test-runner -shared`).
+- **C callbacks.** A C function the module declares may call a function of the module back during
+  the call, and that function may destroy what a caller borrows (`signal(15, onSig as Opaque)`,
+  then `const c = gh.c; raise(15); ... c.x` with `onSig` overwriting `gh.c`). Foreign code can only
+  learn of a function of this module through the module's foreign surface, or through a function
+  turned into data; so the C-scalar rule holds only in a module whose **entire foreign surface is
+  scalar** and that **turns no function into data by the means the pass sees**: a `ts.Cast`, an
+  `inline_asm`, a `call_intrinsic` (controller ruling, fix round 5; a closed-world test, in place
+  of the three earlier rounds' list of the routes a function value takes out, which each review
+  extended). A type is scalar when it is a number, a boolean, a character, an integer or
+  float kind, or an enum or a literal of one. Not scalar: an opaque pointer, a reference, a string,
+  a class, an interface, an object, a tuple, an array, a union with such a member, a function type,
+  `any`, `unknown`, a rest parameter. The foreign surface, every item of which must be scalar:
+  - every body-less function - each parameter and the result (void is fine): a C declaration,
+    another module's function (declared here with `import`, or a DLL's), a `declare class`'s
+    method, a `@cpp` class's `@slot` declaration, and the compiler's own members of a `declare
+    class` (`..instanceOf`, `..new`), which take the class;
+  - every global declared with no initializer or imported: a `declare var`, a `declare class`'s
+    vtable and type-name string (so a `declare class` always turns the rule off: a sound narrowing
+    of the ruling's "any member");
+  - every `@cpp` class's fields and its bases' (a base is a `@cpp` class of its own), with no method
+    of its own with a body: C++ calls one through the C++ vtable;
+  - every function found in a library at run time (`SearchForAddressOfSymbol`): the function type
+    its address is cast to.
+
+  What turns a function into data, or makes an address of foreign memory:
+  - a `ts.Cast` from a type that holds a function to a type that holds none (`any`, `unknown`, an
+    opaque pointer, an integer, a reference, anything else but a boolean, which cannot carry one);
+    a class or object input counts its fields for every output but a class (its base) or an
+    interface (a view of it, read through its vtable only) - `<Reference<u64>>k` with `K { f:
+    (s: s32) => void }`, then a load of the field, is counted (final patch; before it only
+    `any`, `unknown` and opaque outputs counted the fields, review6r5 g1-g4, f7); a vtable's
+    address is the compiler's own and does not count;
+  - a `ts.Cast` to an opaque pointer or a reference from a type that is not itself an address of
+    memory this module made (`<Opaque>0x1234`, then `Deref(<Reference<fn>>p) = onSig`): a number,
+    `any`, a union;
+  - an `inline_asm<T>(...)` or `call_intrinsic<T>(...)` (`ts.InlineAsm`, `ts.CallIntrinsicOp`)
+    given an operand whose type holds a function, fields counted (final patch; review6r5 h1, h2:
+    `inline_asm<u64>("mov $1, $0", "=r,r", onSig)`, an identity intrinsic on `onSig`).
+
+  A type holds a function when it is one, or a union's or optional's member, a tuple's field, an
+  array's element or a reference's pointee does, recursively; a class or object does when a field
+  does; an interface does when a slot of a vtable its values are made with, past the header, holds
+  a method or a function-typed field, or a field's type holds one (recursively: an interface field
+  whose interface has methods, a class field with a function field, an array of them) - the header
+  `.instanceOf`, the compiler's own, does not count - and an interface no vtable of this module
+  makes values with (one a declared function returns) holds one. The test runs after the class
+  storages and the interface families are known. No ordinary call is examined: a function value
+  given to one can only reach foreign code through a declared symbol, which the surface test
+  already judged by its type; the two builtins that are calls of no declared symbol, `inline_asm`
+  and `call_intrinsic`, are examined by their operands (above). Not here: a function reached by
+  name - an exported function of a library
+  module, which another module may hand to C - stays accepted, as it was with `@nodrops` (an
+  executable's exports are visible to no module, above). Negatives
+  `own_err_declared_callback` (`signal(15, onSig as Opaque)`; `onSig` overwrites `gh.c`, which a
+  caller of `raise(15)` borrows), `_global` (`let cb = onSig`), `_method` (`k.m as Opaque`),
+  `_tuple` (`reg([onSig, 1])`, compiled only), `_indirect` (`let sg = signal; sg(15, onSig)`),
+  `_wrapper` (`reg(signal)`, `reg` calling its parameter with `onSig`), `_class_method`
+  (`w.reg(onSig)` on a `declare class`, compiled only), `_interface_field` (a data-only `Box`
+  whose field is a `CB` with a method, given to a declared function through a function value,
+  compiled only), `_stored_global` (`declare var hook: (s: s32) => void; hook = onSig`, compiled
+  only), `_stored_reference` (`Deref(getSlot()) = onSig` through a declared
+  `getSlot(): Reference<(s: s32) => void>`, compiled only), `_cpp_class` (`addListener(new
+  MyL())`, `MyL` a `@cpp` class whose `on` has a body, compiled only), `_field_reference`
+  (`<Reference<u64>>k`, the field loaded as an integer into `signal(s32, u64)`) and `_intrinsic`
+  (`call_intrinsic<Opaque>("llvm.launder.invariant.group.p0", onSig)`, then `<u64>`). Cost: a module with any
+  non-scalar declaration - a C function taking a string, a struct or a pointer, a `declare class`,
+  a `@cpp` class with methods, an imported function - loses the rule for its scalar declarations
+  too (explicit `@nodrops` still works); a data-only interface handed to a declared function
+  (review6r4 b9) is such a declaration. The ray tracer declares four scalar functions and nothing
+  else.
+
+Teeth: with the member closure skipped, `own_err_interface_member_types` and `_methods` compile and
+print `5 77777` (gc `5 5`). With the C rule kept on despite an escaping function,
+`own_err_declared_callback` prints `77777 9` (gc `5 9`). With a base chain never making a method
+callable from outside, every override negative compiles, and the pairs under `-mm=own` fail their
+assert (`kept value still there`): the library side AOT, the importer side AOT and under the JIT
+(gc passes all of them).
+
+The ray tracer built as a program stays at 15 errors (the same ones); as an object file, 19.
+Corpus: 528 before and after, the same files.
+
+**Fix round 3** (2026-10-22). The member types of an interface whose values are all made from class
+objects (`const r2: Runner2 = rr`, the vtable read through the object's class) were not read: the
+class vtables joined the interface's vtables only after the member closure. They join before it now
+(negatives `own_err_interface_member_class`, `own_err_interface_member_any`). The C-callback test is
+by type (the bullet above). Teeth: with the class vtables left out of the closure, both new member
+negatives compile and print `5 77777` (gc `5 5`); with the type test off, `_global` and `_method`
+print `77777 9` (gc `5 9`). The ray tracer built as a program stays at 15 errors; corpus 528, the
+same files.
+
+**Fix round 4** (2026-10-22). The C-callback test looked only at direct calls of declarations, so a
+declared function called through a value (`let sg = signal; sg(15, onSig)`, a global holding it, a
+wrapper's parameter, a C-returned pointer cast to a function), a `declare class` or `@cpp` method
+and a foreign interface's member left the rule on (own printed `77777 9`, gc `5 9`). A call is now
+judged by what it resolves to (the bullet above), interfaces count by what their vtables hold, and
+a class or object cast to `any`/`unknown`/opaque takes its fields along. "An interface holds a
+function" was first taken as every interface (controller ruling, option (a)): that turned the rule
+off in the ray tracer through `reduce`'s helper, `___array_reduce<Light, Color>`, whose
+`f(r, v)` calls its function parameter with a `Light` - `{ pos; color }`, no method, no function
+field - and the ray tracer went to 31 errors, the 16 cleared by the C-scalar rule back. Option (b),
+by the vtable's slots past the header, recursively through field types, keeps it at the same 15 and
+rejects every probe of the review (n7b, n7d, n7e, n7g, n8b, n8c, n9, n1b, n11, n2b, and the earlier
+k1-k10, c3, n6, n10, n13, n16, n17, n18). Negatives `_indirect`, `_wrapper`, `_class_method`,
+`_interface_field`. Teeth: with the call test back to direct calls of declarations, `_indirect` and
+`_wrapper` compile and print `77777 9` (gc `5 9`), and `_class_method` and `_interface_field`
+compile. The ray tracer built as a program stays at 15 errors (the same ones); as an object file,
+19. Corpus 528, the same files.
+
+**Fix round 5** (2026-10-22). Round 4's test still listed the routes a function takes out of the
+module - a cast, a call into foreign code - and the re-review found two it did not list: a
+function stored into memory C reads (`declare var hook: fn; hook = onSig`; `Deref(getSlot()) =
+onSig` through a declared `Reference<fn>`; an `Opaque` a C function returned seen as a class with
+a function field, then a store; a `declare class` with a function field) and a `@cpp` object handed
+to C++, whose C++ vtable slots are this module's methods (`addListener(new MyL())`, also as
+`Opaque`, also through a C++ method). The test is inverted (the bullet above): instead of naming
+what takes a function out, the rule holds only where nothing can - every declared, imported,
+`@cpp` or run-time-found symbol is scalar, and no cast turns a function into data or makes an
+address out of a number. The enumeration it replaces is gone: no call is resolved for it, no
+argument's type is walked. Also from the re-review: a cast to a boolean (`if (s)` on an interface
+with methods, `if (cb)` on an optional callback, `cb?.(1)`) no longer turns the rule off; the
+earlier text's "no route of the value matters" was false, and the `.instanceOf` slot and a field
+holding only defined functions are no longer part of any call test. Negatives `_stored_global`,
+`_stored_reference`, `_cpp_class`. Teeth: with the surface test skipped, `own_err_declared_callback`
+(`signal(15, onSig as Opaque)`) compiles and prints `77777 9` (gc `5 9`), and the three new
+negatives, review6r4 s8 and the `@cpp`-through-an-integer probe (`addListener(<u64>(new MyL() as
+Opaque))`, rejected only by the `@cpp` clause) compile. Every probe of rounds 1-4 is still
+rejected (review6r1 c3, review6r2 k1-k10, review6r3 n1b n2b n6 n7b n7d n7e n7g n8b n8c n9 n10 n11
+n13 n16 n17 n18, review6r4 a1-a8, b2-b8, e1-e3, s1 s3 s5 s6 s8 s9, c1 c2 c3); d1, d3, d4, d5, d6, d6c
+keep the rule; so does a program declaring only scalar functions. Newly rejected by the
+whitelist, as its cost: review6r3 n0 (an unused `declare function signal(sig: s32, handler:
+Opaque)`), review6r4 b1, b1b, b5 and b9 (a class or a data-only interface given to a declared
+function). The ray tracer built as a program stays at 15 errors (the same ones). Corpus 528, the
+same files.
+
+**Final patch** (2026-10-22, user decision: keep the implicit C-scalar rule with these two fixes,
+then stop). Re-review 5 found two ways a function became data that the cast test did not see: a
+class or array with a function field cast to an integer or a reference (`<Reference<u64>>k`,
+`<Reference<Reference<Reference<u64>>>>ks`, `<u64>ks`; the field then loaded as an integer into
+the all-scalar `signal(s32, u64)`; own printed `77777 9`, gc `5 9`) - the fields of a class or
+object input were counted only into `any`, `unknown` and opaque outputs, a narrowing left from
+round 3 - and `inline_asm<T>(...)` / `call_intrinsic<T>(...)`, calls of no declared symbol that
+take any operand (`inline_asm<u64>("mov $1, $0", "=r,r", onSig)`; an identity intrinsic on
+`onSig`). Now a cast counts the input's fields for every output but a class or an interface, and
+an `inline_asm` or `call_intrinsic` with an operand whose type holds a function (fields counted)
+turns the rule off. Negatives `own_err_declared_callback_field_reference` (review6r5 g2) and
+`_intrinsic` (h2), both runnable. Teeth, one switch per fix: with the fields counted only into
+`any`/`unknown`/opaque again, `_field_reference` compiles and prints `77777 9` under own (gc `5
+9`) while `_intrinsic` stays rejected; with the `inline_asm`/`call_intrinsic` clause off,
+`_intrinsic` prints `77777 9` while `_field_reference` stays rejected. g1-g5, f7, f9, f10, h1, h2
+rejected; d1-d9 and the scalar-only control keep the rule. The ray tracer built as a program stays
+at 15 errors (the same ones); as an object file, 19. Corpus 528, the same files.
+
+## 32. Borrowing records (G2 of the ray tracer plan), 2026-10-22
+
+`{ thing: this, ray: ray, dist: d }` returned as an `Intersection` was `an object literal that holds
+a value it owns is moved only into a local or returned as it is` (§27): the box's release would free
+`this` and `ray`, which are the caller's. So were the ray tracer's call-argument temporaries `{
+start: pos, dir: rd }`, `{ start: pos, dir: livec }` and `{ start: scene.camera.pos, dir:
+getPoint(...) }`, and `const r: Ray = { start: this.pos, dir: new V(1) }`. Such a literal is now a
+**borrowing record** (USER decision): Rust's `struct Hit<'a> { thing: &'a Th, ray: &'a Ray, dist }`.
+Its box is owned like any fresh block - by the local that holds it, the temporary, or, returned, the
+caller - and its release frees the box and the fields it owns and leaves the borrowed ones to their
+owners. What it borrows bounds every use of it. (The plan calls the result "a borrow" of its sources;
+a caller that owned nothing would leave every box and its fresh fields to nobody, and the plan's
+own interplay - a record moved on some paths only, read through its new owner, released by a
+routine that frees only its fresh fields - is an owner's. The bound is a borrow's: the same chain
+and the same errors as a call's result that borrows its arguments.)
+
+- **Which literals.** The signature pass classifies each object literal box seen only as interfaces
+  (`classifyRecordBoxes`, in every round of the facts fixpoint, since a field's call may turn out to
+  return a borrow): each field that holds a block is *owned* - a fresh value, which moves in as in
+  §27 - or *borrowed* (`recordFieldSource`): `this` or a parameter, seen through views; a read out
+  of a place, or a call's result that borrows an argument; an owning local's value (`let d`); a
+  captured variable's value (a closure body's read of a cell); an immortal global or literal. A
+  field is never both, and never a string (strings are copied, §22). A box with a borrowed field is
+  marked, and so is every interface made of it (`__own_record_borrowed_fields`, the fields' tuple
+  positions); a store into a borrowed field keeps nothing (`keeps`, so `this` and `ray` are not
+  kept parameters of `hit` any more).
+- **The release travels with the value** (the design's builder check). The interface's tag names a
+  descriptor of its own (variant `r<i>...`) whose release routine (`tsrelrec_<type>_<fields>`) frees
+  the box and the fields it owns and skips the marked ones; a non-escaping closure's box
+  (`__own_borrows_captures`) is the precedent. Every release of the record - a temporary's, a
+  local's at the end of its scope, §30's edge release, an overwrite of a local, the caller's - reads
+  the tag, so records made at
+  different sites (`Sphere.intersect`, `Plane.intersect`) may meet in one local. A box that is seen
+  as anything but interfaces is not classified (its static object type's routine would free every
+  field), and stack promotion refuses a marked box (its `ts.ReleaseContents` would give back every
+  field); today's escape analysis refuses every box seen as an interface anyway ("converted").
+- **The facts.** `__own_result_borrows` is a set (`DenseI32ArrayAttr` of argument indices, the
+  receiver 0 for a method; `own_facts::resultBorrowsAll`). Alone it is a plain borrow and names one
+  argument, as before (`resultBorrows` keeps that index; a declared `@lends` of several is a plain
+  borrow of each). With `__own_result_record` the result is a borrowing record: the caller owns the
+  box, and it may hold a borrow of each argument named. A function's result is a record when every
+  heap value it returns is one - a box made there, or a record call's result - through views,
+  merges and the owning locals that hold it (`recordParamsOf`), and every field it borrows is a
+  parameter's, `this`'s, or a read out of one: those parameters are the set. A record on one path
+  and anything else on another (a plain borrow, a fresh object) gives no facts. `closest` returns
+  `bestHit`, which holds `sc.ts[i].hit(ray)`'s records: its result borrows `ray` and `sc`.
+  `@lends` may name several parameters: `@lends("a", "b") pairOf(a, b): Pair { return { a: a, b: b }
+  }` (`own_lends`). A declaration's `@lends`, seen from another module without its body, is a plain
+  borrow: a record's box then leaks at that caller, and nothing is freed twice.
+- **Families** meet by agreement, as before (`meetFacts`): members whose sets or record-ness differ
+  are demoted. The union of the sets would be sound for records (the caller would bound the result by
+  more arguments), but not across a record and a plain borrow, whose callers release different
+  things; agreement is what the ray tracer needs (`Sphere.intersect` and `Plane.intersect` both lend
+  `this` and `ray`).
+- **Where the record is made** (`classifyRecords`, `checkBorrowingRecords`): every use of it and of
+  what is read out of it, through its views, merges and the locals that hold it (`walkRecord`), is a
+  use of each borrowed field's source. A read out of a place has them as its own uses
+  (`walkBorrowed`, through the field's store, now a borrow), so a drop of the place before a use is
+  `borrows a field but is used here after ...`. An owning local's value is bounded by the local's
+  ends (`borrows 'd' but is used here after 'd' is released or overwritten`), a captured variable's
+  by whatever may assign it (an assignment through a cell, a call that may drop), a parameter the
+  function keeps by its moves. `this` and other parameters are the caller's for the whole call.
+  rc's retain of the record read goes (`holdsConstantsOrMoves`); its fresh fields move in against it
+  as an owning record's do. The record stored anywhere but a local (a field, an element, a global, a
+  capture), given to a callee that keeps it, or written through (`r.start = ...`: the overwrite would
+  release a borrowed value, and the release would leave the one written) is `... and cannot be
+  stored, returned or captured`. Returned, every field it borrows must be a parameter's that the
+  function's facts lend; a local's value, or a function whose facts are lost (an exported one
+  without `@lends`), is the same error.
+- **Where a call returns one** (`checkRecordResults`): the result is fresh (`isFresh`, whatever the
+  call goes through), so its moves and releases are the ordinary ones - `let h = ...`, §30's move
+  into `bestHit` on some paths with its release on the other edges, §29's reads through the new
+  owner - and each release is the per-site routine. It may hold a borrow of each named argument,
+  somewhere under it, so the chain `checkPlaceRead` builds for a borrowing call, now over all of
+  them (`chainOf`), bounds every use: `borrows the result of 'A.hit' but is used here after it may
+  be released or overwritten`. Kept, it is `borrows the result of ... and cannot be stored`;
+  returned, its arguments must be parameters this function lends. rc's retain of a fresh argument
+  right before the call is no end there: the box's own check decides it. A call's result that
+  records a value is followed by `derivedFrom` and by §30's taint. A method reached through an
+  interface is named `<interface>.<method>` in these errors (`own_err_interface_result_outlives`
+  reads `the result of 'First.first'`).
+- **Iterators** (§31): no `next()` or field function whose result is a record is marked
+  `__own_fresh_result`; a record's bound applies.
+
+`own_borrowing_record` is the brief's program: `A.hit` and `B.hit` (`null` on some paths) return
+records through the closed interface `Th`, and `closest` keeps the best in a local and returns it,
+1000 times with churn between, under own, rc, gc and none, AOT and JIT, and on Linux; own emits no
+counting. `own_borrowing_record_arg` covers the addendum: call-argument temporaries with two
+parameters, a parameter and a fresh value, a field read and a fresh value, an owning local's value
+and a captured parameter (the ray tracer's `addLight`), a `let` read into a field, `const` and `let`
+locals holding a record, and a method returning one; the borrowed values are read again after the
+records are gone. The brief's program as written does not compile in any model (`k = 1` is an
+`s32`, which does not match the interface's `number`, and `cond ? null : {...}` cannot be cast to
+`Hit`), so the test declares `k: number` and returns `null` from an `if`.
+
+Negatives: `own_err_borrowing_record_stored` (`keep.h = sc.ts[0].hit(ray)`, a global's field),
+`_outlives` (`a = new A()` before `h.thing.k`), `_kept_arg` (a temporary given to a callee that keeps
+it), `_let_outlives`, `_cell`, `_kept_param`, `_place_overwritten`, `_returned_local`, `_open`,
+`_field_written`, `_borrowed_again`. `own_err_record_literal_let` (§27: a `let` read into a field) is
+a correct program now - the record borrows the `let`'s value, and the `let` keeps its release - and
+is gone; its shape is in `own_borrowing_record_arg`. `own_err_lends_two_params` now reads `'@lends'
+of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`. A method's `@lends` reaches its
+class's declaration as a 64-bit mask, so since the final review (M4, 2026-10-23) an index past 63 is
+an error rather than a borrow an importer silently never learns of: `own_err_lends_index_64` (a
+method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names its argument
+64, but a method's '@lends' can name only its arguments 0 to 63". The compiler before it accepted
+the program; the 63rd parameter (argument 63) is still accepted, under own, rc and gc.
+
+Teeth (temporary `OWN_TEETH` switches, removed): with the per-site routine dropped (every record's
+interface given its type's descriptor), the AOT runs of `own_borrowing_record` and
+`own_borrowing_record_arg` fail with `0xC0000005` and `0xC0000374`; with only the boxes of records
+that are not returned (the call-argument temporaries) given their type's routine,
+`own_borrowing_record_arg` fails with `0xC0000374` and `own_borrowing_record` passes (its only
+temporary owns both fields). The rules each have a negative that reads a freed block with the rule
+off: the caller's bound skipped, `_outlives` prints 77777
+and `_stored` 6.95159e-310 (gc 1 and 1); a local's, a captured variable's and a kept parameter's
+ends skipped, `_let_outlives`, `_cell` and `_kept_param` print 77779 (gc 3); the return check and
+the local's ends skipped, `_returned_local` prints 77777 (gc 1), and `_open` compiles; the kept
+check skipped, `_kept_arg` prints 77777 (gc 3), and with the place read's hook skipped too,
+`_field_written` exits `0xC0000374` (gc `8 3`); the hook alone skipped, `_place_overwritten`
+prints 77778 (gc 4). `_borrowed_again` is the hole review of this rule found: `const h2 = id(h)`
+was bounded by `h`'s ends, not by what `h` borrows; before the fix it compiled and printed 77777
+(gc 1). With stack promotion's refusal skipped nothing changes: its escape analysis refuses every
+box seen as an interface already ("converted").
+
+Measured: 2 million iterations of the brief's loop and a call-argument temporary (about 7 blocks
+each) peak at 4.2 MB under own, as under rc (gc 6.2 MB), AOT with `--opt`.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer built as a program (`--emit=exe`): 15 errors before this section, 10 after.
+Cleared: the records `Sphere.intersect` and `Plane.intersect` return (148, 163); `moved inside a
+loop` at `scene.things[i].intersect(ray)` (203: `ray` and the receiver are borrowed now, not kept);
+`getReflectionColor`'s `{ start: pos, dir: rd }` (243) and `addLight`'s `{ start: pos, dir: livec }`
+(250); `scene.camera.pos` stored into `render`'s literal (279:43). That literal (279:29) is now
+`borrows a field but is used here after it may be released or overwritten`: the record holds
+`scene.camera.pos` across `traceRay`, which may drop because `getNaturalColor` calls `reduce` with
+a closure. New for the same reason: `traceRay`'s `this.shade(isect, ...)`, where `isect` borrows
+the result of `intersections` (227). The rest are G5's (`reduce`: 237-239 and 266 across
+`getNaturalColor`, the generated `___array_reduce`, `addLight` returning its parameter on one path)
+and the `getPoint` read (279:75), present before this section (G8). With `reduce` replaced by a
+loop, 2 errors remain: `addLight`'s mixed return and the `getPoint` read.
+
+Not here:
+- A record whose box is seen as an object rather than an interface (`const o = { a: this.p }` with
+  no interface type) is not classified: its static type's routine would free the borrowed field.
+  §27's error stands.
+- A field written through a borrowing record is an error even when it is a field the record owns.
+- A record's borrowed field may not hold a string.
+- Plain borrows are still of one argument (`c ? a : b` is no borrow), and do not flow through an
+  owning local assigned in a loop; only records do.
+
+## 33. `reduce` takes its accumulator (G5 of the ray tracer plan), 2026-10-22
+
+`a.reduce((acc: V, v: V) => V.plus(acc, v), new V(0))` was `'init' is a parameter, kept here, but
+-mm=own cannot make the callers of '___array_reduce<...>' give it up` (the generated helper's `let r =
+init`, then `r = f(r, v)`), and `borrows an element but is used here after it may be released`: the
+call through `f` went to an unknown function, which may drop anything. A callback that returns its
+accumulator on some paths (the ray tracer's `addLight`, `return col` when in shadow) was `returns a
+borrow of its argument on some paths and another value on others`. Now the initial value moves in,
+each callback is given the accumulator to keep, and its result is the next one, like Rust's
+`fold(init, |acc, x| ...)`, whose closure takes `acc` by value.
+
+- **A parameter returned on some paths only is kept** (`mixedReturnParam`, OwnershipSignaturePass).
+  When every value a function returns that holds a block is either one parameter itself (its slot's
+  read, through views and merges) or one the function owns, and both occur, that parameter is kept
+  (`__own_params`): the callers move the argument in, the path that returns it moves it out, and
+  every other path releases it. Not when the parameter is returned on every path (a borrowed result,
+  as before), two parameters are returned, a part of one is (`acc.next`), a borrowing record is, or
+  the value is a string (copied, spec 22) or a handle. A caller that still uses the argument after
+  the call is `is used here after its value was moved` (`own_err_mixed_return`, rewritten:
+  `print(pick(c, true).n, c.n)`). A function whose facts are lost (an exported one, one used as a
+  value) keeps today's error in its body.
+- **Its releases are placed statically** (OwnershipInferencePass, `releaseKeptParamsAtExits`). Such
+  a parameter is named in `__own_params_released`: a kept parameter its body never takes into a
+  field, an element, a global, a keeping call or an assigned owning local (one it does take there
+  keeps the old rule, the move must reach every return: `own_err_param_kept_some_paths`). MLIRGen
+  makes no owner of a parameter, so the inference puts a release of its slot before each
+  `ts.ReturnInternal` and each `ts.ThrowCall` that leaves the function (not one whose thrown value
+  is read out of the parameter), as MLIRGen puts an owning local's. The move's own check
+  (`checkSlotMove` with §30's placement) then erases every release the moved value reaches and
+  places one on each edge into the join from a path that did not move it; nothing may use the value
+  where the paths have joined (§30's safety condition, followed through what was read out of it).
+  `pick`'s `V.plus(acc, v)` arm releases `acc` before the arms join; an early return, a `break` out
+  of a loop, a return from inside a loop or from a `try` with a `finally`, a `throw`, each release
+  it once. No run-time flag, no pointer comparison. A parameter kept this way and moved by two
+  receivers (`if (n > 5) return a; if (n < 0) return a;`) is still `used here after its value was
+  moved`.
+- **A parameter read into an owning `let` that is given another value is kept** (`keeps`): `let r =
+  init; ... r = f(r, v)` cannot borrow `init`, since the assignment releases what `r` holds, so
+  `init` moves into `r` (the move dominates every return, as for any kept parameter, and rc's
+  `ts.RetainSlot` goes with it). Not a string: the local copies it. `___array_reduce`'s source is
+  unchanged; this rule makes its accumulator a moved local.
+- **Callbacks** (`collectCallbackFamilies`). A function-typed parameter of a closed function (private,
+  every use of its symbol a direct call) that is only ever called, and to which every caller passes a
+  function this module defines - its symbol, through casts between function types, or a closure over
+  a capture box built of it - reaches exactly those functions: the parameter's family. Its members
+  are closed when every other use of their symbols is a direct call (`callbackPassing` in `findOpen`),
+  and a call through the parameter is resolved to them (`resolveCallback`): it gets the facts they
+  agree on, and `__own_no_drops` when none of them drops. A closure's body takes its capture box
+  first, so its parameter k is the call's argument k - 1 (`shiftFacts`); a fact about the box itself
+  agrees with nothing. `__own_params = [0]` on `___array_reduce`'s `f(r, v)` moves `r` in; the
+  assignment's release of the old `r` goes with the move (#528), and `r` owns the result.
+- **Agreement by promotion** (`meetCallbacks`). `own_reduce` passes `(acc, v) => V.plus(acc, v)`,
+  which only borrows `acc`, and `pick`, which keeps it, to the one `___array_reduce<V, V>`. A kept
+  parameter of some member that every other member only borrows - a plain slot, not a string or a
+  handle, not lent by the result - is given to all of them to keep; the others release it on every
+  path (`__own_params_released`). Any other disagreement demotes every member, as a class family's
+  are, and their bodies fail with the note `a function passed in its place disagrees`
+  (`own_err_callback_disagrees`: `pick` beside `(acc, v) => acc`). A member a callback family demoted
+  is never promoted again, so the meet settles. Class and interface families still agree or demote
+  (addendum): promotion is only for callbacks; a closed interface whose implementations both return
+  their accumulator on some paths agrees and keeps it, one beside a plain borrow demotes both. A
+  promoted member called directly moves its argument in too (`own_reduce`'s `add`;
+  `own_err_callback_promoted_used` reads the argument after).
+- **The immortal start value.** `a.reduce(pick, K.zero)` moves the immortal `K.zero` (§25) in: its
+  retains are erased, and the releases `pick` and `main` make of it are skipped by its header.
+  `own_reduce` reduces `[new V(5), new V(7)]` with `pick` from `K.zero`, so `pick` returns `K.zero`
+  itself and `main` releases it at its end; after churn `K.zero.x` reads 0, and is asserted. No path
+  writes it: `V.plus` makes a new object.
+- `___array_reduce` has no foreign surface, and the C-scalar rule (§31) does not read it: nothing
+  changed there.
+
+`own_reduce` runs the brief's program (`r.x, q.x` is `6 3`), a reduce that returns the immortal
+start value, a named callback `add` that only borrows its accumulator beside `pick` (promoted), and
+20,000 iterations of an early return, a return from inside a loop, a return from a `try` with a
+`finally`, a `throw` that the caller catches, and a direct call of `add`, each read after churn,
+under own, rc, gc and none, AOT and JIT, and on Linux; own emits no counting, and
+`--verify-ownership` is quiet on it under own and rc. Negatives: `own_err_mixed_return`
+(rewritten), `own_err_mixed_return_join_use` (a field read out of the kept parameter before the join
+and used after it: `is moved here on some paths only`), `own_err_callback_escapes` (`pick` also
+called through a `let`: `cannot make the callers of 'pick' give it up`), `own_err_callback_disagrees`,
+`own_err_callback_promoted_used`. `own_err_borrowed_result_escapes` passed `firstOf` straight to
+`apply`; the call through `g` now reaches only `firstOf` and gets its borrowed result, so the program
+is correct (it prints what gc prints). It now passes `firstOf` through a `let`, and fails as before.
+
+Teeth (temporary `OWN_TEETH` switches, removed): with the exit releases kept on the paths that
+return the parameter (the returning path releases it too), the AOT run of `own_reduce` exits
+`0xC0000374` (heap corruption), and so do the brief's two reduces alone and the early-return, loop
+and `try` returns alone; with the call through the callback given no kept parameter
+(`___array_reduce` releases the accumulator it handed to a callback that keeps it), the AOT run of
+`own_reduce` and of the brief's reduces alone exit `0xC0000374`, and the direct returns alone pass.
+
+Measured: 2 million iterations of both reduces and an early return (about 9 blocks each) peak at
+4.9 MB under own, as under rc (gc 6.5 MB), AOT.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 528 of
+693 before this section and 528 after, the same files.
+
+The ray tracer built as a program (`--emit=exe`): 10 errors before this section, 1 after. Cleared:
+`addLight`'s mixed return (253) and the two in the generated `___array_reduce` (its kept `init`, and
+the element its call through `f` borrows); and, since the call through `f` now has the closure's
+facts and destroys nothing, so does `getNaturalColor`, and the reads held across it or across what
+calls it: `scene.lights` given to `reduce` (266), `shade`'s three (237-239), `traceRay`'s
+`this.shade(isect, ...)` (227) and `scene.camera.pos` in `render`'s literal across `traceRay`
+(279:29). Left: the `scene.camera` argument of `getPoint` in `render` (279:75, G8), now reported
+against `Color.toDrawingColor(color)` (280:25), which builds and calls its `legalize` closure and so
+may drop. It was there before §32. It does not reproduce in three smaller programs (a closure over
+`camera` called in a loop beside a call that may drop, inside a record argument, in a method), and
+a method in place of the closure fails the same way, so it is not the closure's call.
+
+On a scratch copy whose only other change is `legalize` made a module-level function (so
+`toDrawingColor` destroys nothing; not one of the plan's source edits), the program compiles under
+own as an executable and runs: checksum 38837369 as under rc, exit 0, peak 4.9 MB as rc's 4.9 MB on
+Windows, and 4.3 MB (rc 4.4 MB) on Linux, where glibc reports no bad free.
+
+**After review** (2026-10-22). The `let` rule above accepted a read of freed memory (found in review):
+`const inner = p.v; let r = p; r = new N(new V(2)); ... inner.x` moved `p` into `r`, and the
+assignment freed `p` and `p.v` while `inner` still read them (own printed 779000, gc 501500; BASE
+rejected the program, since `p` was not kept). The same shape with a field as the new owner, `const
+inner = p.v; h.n = p; h.n = new N(...); inner.x`, was wrong before this section too (BASE and HEAD
+both printed 779000): a borrow read out of a kept parameter had no ends at all - the parameter is the
+caller's for the whole call, unless the function keeps it. Now a borrow read out of a parameter the
+function keeps, before the parameter moves, is bounded by the new owner from the move on, as a read
+through that owner would be (§29's destination chain, `keptParamOutlives` in `checkPlaceRead`): the
+owner's ends and the drops of its place after the move end it. A move into anything that is not such
+a place (a call that keeps it, a return, a push) ends it at the move, and so do the parameter slot's
+releases (the exit releases above). A borrow read before the move and used while the new owner
+still holds it is accepted (`h.n = p; churn(); inner.x`, and `let r = p; inner.x + r.v.x` before `r`
+is given another value). Negatives `own_err_kept_param_let_overwritten` and
+`own_err_kept_param_field_overwritten` (each built through a `@noinline` factory, with churn: an
+argument made at the call site can be stack-promoted, and its release then frees nothing): `borrows
+a field but is used here after it may be released or overwritten`. Tooth: with the bound skipped, both
+compile, print 779000 instead of 501500 (gc), and fail their assertion. `own_reduce`, the ray tracer
+(1 error, the same) and the corpus (528, the same files) are unchanged. It narrows one shape that
+was correct: a borrow read out of `p` and used in a `finally` after `return p` (the return ends it at
+the move, though the caller then holds the value) is now rejected; no suite test or corpus file has
+it.
+
+**After re-review** (2026-10-22). A call that keeps one argument and is given the same value again
+through another operand let the callee free what it still borrowed: `f(p, q) { const inner = q.v;
+let r = p; r = new N(...); inner.x }` called as `f(n, n)` printed 631370 (gc 501500), a variant
+crashed, and the same with `n` an owning `let` printed 639140 - BASE rejected them, since `p` was not
+kept, and the `let` rule above made them reachable. The same through a field keep (`f(h, n, n)` with
+`h.n = p; h.n = new N(...)`, then `q.v`) was wrong before this section too. The caller's
+use-after-move checks skipped the taker itself as a use: `movesOf` for a fresh or folded value,
+`checkSlotMove`'s reads for an owning slot. Now (`callGivenAgain`) a call that keeps an argument is a
+use after the move when another of its operands - the value again, a view of it, something read out
+of it (`f(h, n, n.v)`), another read of the same slot, its receiver - may point into the moved block:
+`is used here after its value was moved`. `___array_reduce`'s `f(r, v)` passes the accumulator once.
+Negatives `own_err_kept_and_borrowed_arg` (a folded `const`), `_slot` (an owning `let`) and `_field`
+(the field keep), each through a `@noinline` factory with churn and an assert. Tooth: with the check
+skipped, the first two print 779000 instead of 501500 and fail their assertion, and the third crashes
+(0xC0000005). `own_reduce`, the ray tracer (1 error, the same) and the corpus (528, the same files)
+are unchanged.
+
+**After the second re-review** (2026-10-22). One value at two kept positions of one call (`f(n, n)`
+with both `p` and `q` kept: two `let`s given other values, a field and a `let`, two fields, two
+pushes) is two owners of one block, each of which frees it; `callGivenAgain` passed over every kept
+operand rooted at the moved value. Now it passes over one - the move itself - and a second is a use
+after it (`is used here after its value was moved`). The `let` forms printed wrong or crashed only
+since this section's `let` rule (BASE rejected them); two fields and two pushes were wrong at BASE
+too. Negatives `own_err_kept_twice` (two `let`s), `_field` (a field and a `let`), `_push` (two
+pushes), each through a `@noinline` factory with churn and an assert. Tooth: with every kept position
+passed over again, they exit `0xC0000374`, `0xC0000005` and `0xC0000374`. Distinct objects (`f(n,
+m)`, `f(h, n, m)`) stay accepted. Also, for an owning slot the other reads counted are only those
+that reach the call without crossing an assignment of the slot (or its declaration): `const arr =
+[n]; n = mk(5); f(n, arr)`, which reads the old value into `arr`, is accepted again, as before the
+first re-review. That is not "holds the moved value" by itself; it is, once the move's own read is
+held to the same condition (the third re-review, below).
+
+**After the third re-review** (2026-10-22). The read filter above dropped every read of the old value
+when the slot was assigned inside the call's own argument list, the move's read among them:
+`let n = mk(i); f(n, n, (n = mk(5), 0))` with `p` kept and `q` borrowed was accepted and crashed
+(0xC0000005; the previous round rejected it). Underneath, the assignment alone is wrong, with no
+second operand: `f(n, (n = mk(7), 0))` with `p` kept in a `let` (BASE rejected it, since `p` was not
+kept) or in a field (wrong at BASE too) frees the old `n` at the assignment's release and then hands
+it to `f`. Now `checkSlotMove` rejects a move whose own read does not reach the taker without
+crossing an assignment of the slot (`!reachableAfter(load, taker, kills)`; the taker itself may be
+the slot's assignment, `n = n`, which is the destination, not an assignment between), reporting the
+assignment between them as `is used here after its value was moved` (the call is "value moved here"). That
+test asks whether every path from the read to the call is assigned; it misses an assignment on one
+arm (the fourth re-review, below), and the read filter is not made exact by it: a read made after
+the assignment on the assigning arm holds a new value and still passes (an over-rejection, harmless).
+`f(n, (n = mk(i), 0), n)` (the old `n` kept, the new one borrowed) stays rejected,
+by this check. Negatives `own_err_kept_arg_assigned_in_call` (`f(n, (n = mk(7), 0))`, `p` kept in a
+`let`) and `own_err_kept_and_borrowed_arg_assigned_in_call` (`f(n, n, (n = mk(5), 0))`, `q`
+borrowed), each through a `@noinline` factory with churn and an assert; gc and none print 501500.
+Tooth: with the check skipped, both, and the field-keep form, compile and exit `0xC0000005` with no
+output. `const arr = [n]; n = mk(5); f(n, arr)`, distinct objects at two kept positions, `own_reduce`,
+the ray tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
+
+**After the fourth re-review** (2026-10-22). The check above was an all-paths test: with the
+assignment on one arm of a conditional in the argument list - `f(n, i % 2 == 0 ? (n = mk(7), 0) :
+0)`, the same through `&&` or `||`, or with an `await` on the other arm - the other arm is a path
+from the read to the call that crosses no assignment, so the move was accepted, and on the assigning
+arm the old `n` was freed before `f` kept it (exit 139; BASE rejected the `let` forms, and the
+field-keep form was wrong at BASE too). Now the test is existential: the move is rejected when some
+assignment of the slot other than the taker lies on a path from the move's read to the taker
+(`reachableAfter(load, a, varOp) && reachableAfter(a, taker, {load, varOp})`), reported at that
+assignment with the same text; the all-paths test stays as a fallback (reported at the taker), and a
+read and taker `reachableAfter` cannot order (one statement kept as a region, or outside the body;
+unreachable today, since the moved-in-loop check takes those first and no op of a body holds a
+region by this pass) now refuse instead of passing. Shapes that stay accepted, and why the predicate
+leaves them alone: an assignment before the read, with the read between it and the call (`n = mk(i);
+f(n, 0)` in a loop over a slot declared outside it, `f((n = mk(i), n), 0)`, `const arr = [n]; n =
+mk(5); f(n, arr)`); an assignment after the call, conditional or not (the way back to the taker
+crosses the read, or the declaration); `n = n`, `n = (n = mk(5), n)`, `n = acc(n, i)`. Negatives
+`own_err_kept_arg_assigned_on_arm` (`i >= 0 ? (n = mk(7), 0) : 0`) and `own_err_kept_arg_assigned_in_and`
+(`(i % 2 == 0 && (n = mk(7), true)) ? 0 : 0`), each through a `@noinline` factory with churn and an
+assert; gc and none print 501500. Tooth: with the check skipped, both, and the field-keep form with
+the conditional assignment, compile and exit `0xC0000005` with no output. `own_reduce`, the ray
+tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
+
+Not here:
+- A slot assigned inside the argument list of a call that keeps it (`f(n, (n = mk(7), 0))`,
+  with or without a second operand, unconditionally or on one arm) crashes under rc as well (exit
+  139): rc releases the slot's old value before the store, ahead of the callee that keeps it. That is
+  rc's codegen, out of scope here; own rejects these shapes since the third and fourth re-reviews.
+- Unwinding out of the function - a call that throws outside a `try` - before a kept parameter is
+  moved leaks it, as it leaks an owning local; so does a `throw` of any value computed from it, even
+  a number (`throw acc.x`): the release before a leaving throw is skipped when the thrown value is
+  computed from the parameter at all, where only one that can hold its block needs it.
+- After `r = f(r, v)` moves `r` into the call, `r`'s slot still holds the moved pointer until the
+  call's result is stored into it. If `f` throws, the slot dangles. That is benign only because
+  owning locals are not released on unwind; a change that releases them there must not release a
+  slot whose value a call took.
+- A callback passed through a `let`, a field or a global, a member whose symbol is used anywhere
+  else (`a.reduce(V.plus, ...)`: a static method is a vtable entry), a parameter that is passed on
+  rather than called, an exported or `@keeps`/`@lends` function: no family, as before.
+- The default library's `reduce` (design G5: a follow-up).
+
+## 34. A direct call's result, and the ray tracer (G8 of the ray tracer plan), 2026-10-23
+
+After §25-§33 and the merge of main, the ray tracer's own copy
+(`benchmarks/raytrace/rtbench_own.ts`: `rtbench.ts` with the plan's two source edits,
+`Shared<Surface>` surfaces and a fresh vector from `Plane.normal`) had one error left, built as a
+program: `'this value' borrows a field but is used here after it may be released or overwritten` at
+`render`'s `getPoint(x, y, scene.camera)`, with `Color.toDrawingColor(color)` on the next line as
+the place it may be released. G8's other items (`Camera`'s constructor, `Sphere.normal`, `shade`'s
+ternary, `let d = isect.ray.dir`) were cleared by §28-§33.
+
+The cause was not the closure. `walkBorrowed` follows a borrow through every value made from it, and
+took the result of any call it is given to as one of them, since a result may point into an
+argument. So the vector `getPoint` makes was walked as part of the borrow `scene.camera`; its uses
+(through the record given to `traceRay`) were uses of that borrow; and `toDrawingColor` - which
+builds and calls its `legalize` closure, so it has no `__own_no_drops` - may destroy anything
+reachable from a parameter, `scene.camera` among it. The minimal program is `const p = gp(x,
+sc.cam); const c = drop(p); use(p)` with any function `gp` that returns a new object and any `drop`
+that may destroy. It compiles when nothing after the result may destroy: with `const legalize` in
+place of the ray tracer's `let legalize`, `toDrawingColor` has `__own_no_drops`.
+
+- **A direct call of a function this module defines ends the walk at the call** (`walkBorrowed`,
+  OwnershipInferencePass), as a call marked `__own_fresh_result` already did (an iterator's
+  `next()`, another own module's `..new`). The test is `isFresh` of its one result - a
+  `ts.SymbolCallInternal` or `ts.Invoke` naming a `ts.Func` with a body, with no
+  `__own_result_borrows` - and the call has neither `__own_result_bounded` (a generator's state that
+  borrows its arguments) nor `__own_result_record` (a borrowing record, §32): those are still
+  walked. The call itself is still a use of the borrow for as long as it runs. Sound because such a
+  body hands back nothing that points into what it was given but what its facts name: returning a
+  borrow of a parameter, of a part of one, or a closure, bound method, array or record over one is
+  either a fact its callers see or an error in the body (`borrows a field and cannot be stored,
+  returned or captured`, or, when its callers cannot all know the fact, §31's body errors). A string
+  is no exception: one read out of a parameter and returned is not copied but is a borrow fact like
+  any other (`function nm(c: Cam) { return c.name; }` gets `__own_result_borrows`, so `nm(sc.cam)`
+  is still walked, and its result read after `drop(sc)` is "borrows the result of 'nm' but is used
+  here after it may be released or overwritten"). Since the fix-up of 2026-10-23 this test and the
+  `__own_fresh_result` one are one helper, `callResultIsOwn`.
+- **Not widened:** a call through a value, through an interface, through a callback family or to a
+  declared function is still walked (isFresh is false), and so is a method call: a class method is
+  called through `ts.ThisVirtualSymbolRef`, so `sc.cam.copy()` and `this.point(x, sc.cam)` keep the
+  error. That is a sound over-rejection: the signature pass resolves those calls, but the inference
+  does not learn that a resolved call's result is owned (a follow-up). The ray tracer's `getPoint`
+  is a closure, whose call is a direct call of its lifted function.
+
+`own_fresh_call_result` reads `scene.cam` into a closure's call, a function's call and a record
+given to a method (`{ start: scene.cam.f, dir: getPoint(x, scene.cam) }`), then calls a `toDrawing`
+that may destroy, churns, and uses all three results, in a loop; it prints 124 under own, rc, gc and
+none, AOT and JIT, with no counting under own. Before this section it had three errors (54:26,
+54:32, 51:61). Negatives `own_err_call_result_bounded` (a generator's state made from `s.cam`,
+iterated after `replace(s)`) and `own_err_call_result_record` (a borrowing record `{ v: c.f, n: 1 }`
+made from `s.cam`, read after `replace(s)`), each through a `@noinline` factory with churn and an
+assert; gc, rc and none print 5 and 6. Tooth (a temporary `OWN_TEETH` switch, removed): with every
+call's result ending the walk, `own_err_call_result_bounded` compiles and exits 139 (gc 5);
+`own_err_call_result_record` stays an error through the record's own bound (`borrows the result of
+'hit'`). The positive cannot fail with the rule widened: its results really are fresh.
+
+Probes (own as an executable with `--opt`, before the rule / after / with the tooth): a lifted
+closure returning `sc.cam.f` or a captured borrowing `let`, an exported function returning `c.f`,
+one returning a mortal global's field, a callback family with a member returning its argument, a
+method returning `this` or `this.f`, a virtual override returning `c.f`, `id(c).f`, a `V | null` of
+`c.f`, an `any` holding `c.f`, an element of an array parameter, a function that makes an unrelated
+object and returns `c.f`, a `Shared<V>` parameter's `s.value`, an async function returning `c.f`
+or, after an `await`, `new V(c.f.x)`: rejected before and after. An async function that reads
+`c.f.x` after an `await`, awaited after the drop: accepted before and after, printing what gc
+prints (async is outside this rule either way). A generator over `c.f.x`: rejected before and
+after; with the tooth it compiles and crashes. Newly accepted, and printing what gc prints: a
+function returning `new V(c.f.x)` or `[c.f.x]`, the same called inside a `try` (a `ts.Invoke`), and
+a closure called with `sc.cam` in a loop across a call that may destroy.
+
+**The ray tracer** (`test/tester/own/own_raytrace.ts`: `rtbench_own.ts` at 64x64, ending
+`print("checksum:", sum); assert(sum == 606318)`) compiles under own with no errors and prints
+checksum 606318, as under gc, rc and none. Built as a program only: it exports `Surfaces.shiny` and
+`Surfaces.checkerboard`, which an object file or a DLL opens to other modules (§31, USER decision),
+so test-runner's AOT build (an object file it links itself) cannot build it under own. Registered as
+`test-jit-own-own_raytrace` (the JIT's entry module counts as a program) and
+`test-compile-own-own_raytrace` (`own-exe-run.cmake`: `tslang --emit=exe`, run, match the checksum),
+and under gc, none and rc through test-runner, JIT and AOT. Not in `own_test`: its `Shared<Surface>`
+handles count (`__tslang_inc_ref`/`__tslang_dec_ref` appear only in the handle's retain and release
+routines), as for `own_shared_literal` (§26); for the same reason, and because an
+`--emit=mlir-affine` build is not a program, no `--verify-ownership` run.
+
+Measured (`bench.ps1`, 512x512, Windows 11 x64, the machine otherwise idle; two runs of the script,
+median of 7 runs each after a warm-up): own 627.5 ms both times (`--no-stack-promotion` 626.4 and
+626.8 ms), rc 640.0 and 637.9 ms in the same runs (gc 1295-1299, none 662-666, Rust idiomatic 58,
+Rust `Rc` 515, C++ idiomatic clang 54 ms). Peak working set (`PeakWorkingSet64` polled while the
+process runs, three runs each): own 4.5 MB, own without stack promotion 4.5 MB, rc 4.5-4.9 MB, gc
+6.5 MB, none 840-846 MB. Linux (WSL, ninja Release): own 0.13 s and 4.5 MB maximum resident set, rc
+0.15 s and 4.3 MB, checksum ...369, exit 0, three runs each. Errors left in the own copy: 0.
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 525 of
+702 before this section, 526 after: `00owned_any_boxing` gained (`(<string>boxed[0]).length`: the
+generated `___unbox<string>`'s result, a copy, was walked as a borrow of the array's element, which
+the array's release at the return ends; built under own it prints what gc prints). None lost.
+
+Not here:
+- A method call's result (`o.m(borrow)`, through `ts.ThisVirtualSymbolRef`) is still walked as a
+  borrow of its arguments, as is an indirect call's.
+- Known limit of the teeth (fix-up, 2026-10-23): with the `isFresh` test alone removed,
+  `own_err_field_function_reassigned` (a conservative negative) compiles and prints gc's output;
+  with the borrowing-record exclusion alone removed, `own_err_call_result_record` stays an error
+  through the record's own bound (`borrows the result of 'hit'`). No probe (review9's 95, T9's,
+  the merge review's, every `own_err_*`) was accepted unsafely with either removed, so no negative
+  shows a use-after-free that only those two tests prevent.
+- The benchmark keeps its two source edits; the unedited `rtbench.ts` does not compile under own (a
+  non-goal of the plan).
