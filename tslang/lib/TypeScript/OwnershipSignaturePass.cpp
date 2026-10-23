@@ -1695,6 +1695,21 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     return use.getOperandNumber() == 0 && user->getParentOfType<mlir_ts::GlobalOp>() != nullptr;
                 }
 
+                // the vtable a class object is seen through, chosen by a test for null
+                // (castToInterfaceSpecialCases): what the choice makes, a `ts.If`'s result or, once
+                // lowered, the block argument the branches pass it to
+                if (mlir::isa<mlir_ts::ResultOp>(user))
+                {
+                    auto ifOp = mlir::dyn_cast<mlir_ts::IfOp>(user->getParentOp());
+                    return ifOp && onlyMakesValues(ifOp.getResult(use.getOperandNumber()));
+                }
+
+                if (auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(user))
+                {
+                    auto blockArgument = branchOp.getSuccessorBlockArgument(use.getOperandNumber());
+                    return blockArgument && onlyMakesValues(*blockArgument);
+                }
+
                 // the copy: read whole, and stored into a block `ts.New` made
                 if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user))
                 {
@@ -1728,27 +1743,105 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             if (auto newInterfaceOp = mlir::dyn_cast<mlir_ts::NewInterfaceOp>(op))
             {
                 auto name = mlir::cast<mlir_ts::InterfaceType>(newInterfaceOp.getType()).getName().getValue();
-                auto vtable = newInterfaceOp.getInterfaceVTable();
-                if (auto found = vtableOf(vtable); !found.empty())
-                {
-                    madeWith[name].insert(found);
-                }
-                else if (readFromClass(vtable))
-                {
-                    // any class's vtable for the interface (classHeld, all in its families below)
-                    if (!classHeld.count(name))
+
+                // a class object's vtable is chosen by a test for null (castToInterfaceSpecialCases):
+                // a `ts.If` yields one from each branch or, once lowered, the branches pass one each
+                // to a block argument; a null object's is null
+                llvm::SmallVector<mlir::Value> vtableChoices;
+                auto addChoice = [&](mlir::Value yielded) {
+                    auto stripped = yielded;
+                    while (auto castOp = stripped.getDefiningOp<mlir_ts::CastOp>())
                     {
-                        open.insert(name);
+                        stripped = castOp.getIn();
+                    }
+
+                    if (!stripped.getDefiningOp<mlir_ts::NullOp>())
+                    {
+                        vtableChoices.push_back(yielded);
+                    }
+                };
+
+                auto vtableValue = newInterfaceOp.getInterfaceVTable();
+                if (auto ifOp = vtableValue.getDefiningOp<mlir_ts::IfOp>())
+                {
+                    auto resultIndex = mlir::cast<mlir::OpResult>(vtableValue).getResultNumber();
+                    for (auto *region : {&ifOp.getThenRegion(), &ifOp.getElseRegion()})
+                    {
+                        auto resultOp = region->empty() ? mlir_ts::ResultOp()
+                                                        : mlir::dyn_cast<mlir_ts::ResultOp>(region->front().getTerminator());
+                        if (!resultOp)
+                        {
+                            allOpen = true;
+                            return;
+                        }
+
+                        addChoice(resultOp.getOperand(resultIndex));
                     }
                 }
-                else if (auto extractOp = vtable.getDefiningOp<mlir_ts::ExtractInterfaceVTableOp>())
+                else if (auto blockArgument = mlir::dyn_cast<mlir::BlockArgument>(vtableValue))
                 {
-                    castOpened.insert(name);
-                    valueInterfaces(extractOp.getInterfaceVal().getType(), castOpened);
+                    auto *block = blockArgument.getOwner();
+                    if (block->hasNoPredecessors())
+                    {
+                        allOpen = true;
+                        return;
+                    }
+
+                    for (auto *predecessor : block->getPredecessors())
+                    {
+                        auto branchOp = mlir::dyn_cast<mlir::BranchOpInterface>(predecessor->getTerminator());
+                        if (!branchOp)
+                        {
+                            allOpen = true;
+                            return;
+                        }
+
+                        for (auto successorIndex : llvm::seq<unsigned>(0, predecessor->getTerminator()->getNumSuccessors()))
+                        {
+                            if (predecessor->getTerminator()->getSuccessor(successorIndex) != block)
+                            {
+                                continue;
+                            }
+
+                            auto passed = branchOp.getSuccessorOperands(successorIndex)[blockArgument.getArgNumber()];
+                            if (!passed)
+                            {
+                                allOpen = true;
+                                return;
+                            }
+
+                            addChoice(passed);
+                        }
+                    }
                 }
                 else
                 {
-                    allOpen = true;
+                    vtableChoices.push_back(vtableValue);
+                }
+
+                for (auto vtable : vtableChoices)
+                {
+                    if (auto found = vtableOf(vtable); !found.empty())
+                    {
+                        madeWith[name].insert(found);
+                    }
+                    else if (readFromClass(vtable))
+                    {
+                        // any class's vtable for the interface (classHeld, all in its families below)
+                        if (!classHeld.count(name))
+                        {
+                            open.insert(name);
+                        }
+                    }
+                    else if (auto extractOp = vtable.getDefiningOp<mlir_ts::ExtractInterfaceVTableOp>())
+                    {
+                        castOpened.insert(name);
+                        valueInterfaces(extractOp.getInterfaceVal().getType(), castOpened);
+                    }
+                    else
+                    {
+                        allOpen = true;
+                    }
                 }
 
                 return;
