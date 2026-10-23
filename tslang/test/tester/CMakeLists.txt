@@ -400,6 +400,7 @@ tslang_add_test(NAME test-compile-00-const-interface-of-local COMMAND test-runne
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-compile-00-global-interface-initializer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
+tslang_add_test(NAME test-compile-00-interface-cast-unrelated COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_cast_unrelated.ts")
 tslang_add_test(NAME test-compile-00-c-string-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-compile-00-const-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-compile-00-const-element-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
@@ -991,6 +992,7 @@ tslang_add_test(NAME test-jit-00-const-interface-of-local COMMAND test-runner -j
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-jit-00-global-interface-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
+tslang_add_test(NAME test-jit-00-interface-cast-unrelated COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00interface_cast_unrelated.ts")
 tslang_add_test(NAME test-jit-00-c-string-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00c_string_copy.ts")
 tslang_add_test(NAME test-jit-00-const-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_field_read.ts")
 tslang_add_test(NAME test-jit-00-const-element-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_element_read.ts")
@@ -1972,6 +1974,7 @@ set(TSLANG_CORPUS
     00string_view_copy.ts
     00global_copy_counted.ts
     00global_interface_initializer.ts
+    00interface_cast_unrelated.ts
     00c_string_copy.ts
     00const_field_read.ts
     00const_element_read.ts
@@ -3097,6 +3100,26 @@ add_test(NAME test-compile-interface-cast-empty
                  -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-empty.obj")
 set_tests_properties(test-compile-interface-cast-empty
                      PROPERTIES FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+
+# An interface cast to another one it does not extend gets a vtable built from its own one, slot for
+# slot (00interface_cast_unrelated.ts); a member that is a method in one and a field in the other, or a
+# field of another type, has no slot to copy.
+set(interface_cast_error_cases
+    "method_field|interface 'F' can't be cast to interface 'M': member 'g' is a method of one and a field of the other"
+    "field_type|interface 'S1' can't be cast to interface 'T1': member 'b' has another type")
+foreach(interface_cast_error_case ${interface_cast_error_cases})
+    string(FIND "${interface_cast_error_case}" "|" interface_cast_error_sep)
+    string(SUBSTRING "${interface_cast_error_case}" 0 ${interface_cast_error_sep} interface_cast_error_name)
+    math(EXPR interface_cast_error_sep "${interface_cast_error_sep} + 1")
+    string(SUBSTRING "${interface_cast_error_case}" ${interface_cast_error_sep} -1 interface_cast_error_message)
+    add_test(NAME test-compile-interface-cast-${interface_cast_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/interface-cast/${interface_cast_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/interface-cast-${interface_cast_error_name}.obj")
+    set_tests_properties(test-compile-interface-cast-${interface_cast_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${interface_cast_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
 
 # `instanceof` with a number, a string, a boolean or a bigint value on the right is an error: the
 # test compared the two types. A type there (`type str = TypeOf<"">`) stays an extension.

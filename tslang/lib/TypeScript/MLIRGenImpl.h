@@ -13331,6 +13331,9 @@ class MLIRGenImpl
     // class or tuple or object to interface
     std::optional<ValueOrLogicalResult> castToInterfaceSpecialCases(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
+    std::optional<ValueOrLogicalResult> castInterfaceToInterface(mlir::Location location, mlir::Value value, mlir_ts::InterfaceType srcInterfaceType,
+        mlir_ts::InterfaceType interfaceType, const GenContext &genContext);
+
     // casts between tuple-like types (tuple, const tuple, class storage, interface fields)
     std::optional<ValueOrLogicalResult> castTupleLikeVariants(mlir::Location location, mlir::Type type, mlir::Value value, mlir::Type valueType, const GenContext &genContext);
 
