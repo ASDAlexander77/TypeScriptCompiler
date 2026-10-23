@@ -1694,11 +1694,14 @@ namespace mlirgen
 
         // `C | null` given to `I | null`: both are stored as their one member (null is a null pointer
         // in it), so this is the class-to-interface cast of `C` to `I`. A plain cast read the class
-        // pointer as an interface.
+        // pointer as an interface. `J | null` given to `I | null` is the interface-to-interface cast
+        // of `J` to `I` in the same way: a plain cast kept `J`'s vtable, and a field read through `I`
+        // took a method slot of it for the field's offset.
         if (auto srcUnionType = dyn_cast<mlir_ts::UnionType>(valueType); srcUnionType && isa<mlir_ts::InterfaceType>(baseType))
         {
             mlir::Type srcBaseType;
-            if (mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType) || !isa_and_nonnull<mlir_ts::ClassType>(srcBaseType))
+            if (mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType)
+                || !isa_and_nonnull<mlir_ts::ClassType, mlir_ts::InterfaceType>(srcBaseType) || srcBaseType == baseType)
             {
                 return std::nullopt;
             }
