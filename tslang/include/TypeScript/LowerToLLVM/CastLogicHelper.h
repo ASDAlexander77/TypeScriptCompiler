@@ -424,10 +424,11 @@ class CastLogicHelper
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
+            // set when its `this` is: a null interface may be seen through a vtable (UnaryBinLogicalOrHelper)
             if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue =
-                    rewriter.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                    rewriter.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
                 auto llvmBoolType = tch.convertType(boolType);
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);

@@ -1011,24 +1011,55 @@ namespace mlirgen
     {
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(type))
         {
+            // null (or undefined) is an interface over a null `this`, seen through the interface's null
+            // vtable, whose methods throw (mlirGenNullInterfaceVTable)
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
+            {
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                if (!interfaceInfo)
+                {
+                    return std::nullopt;
+                }
+
+                auto nullVTable = mlirGenNullInterfaceVTable(location, interfaceInfo, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
+                auto nullThis = builder.create<mlir_ts::NullOp>(location, getNullType());
+                auto opaqueVTable = builder.create<mlir_ts::CastOp>(location, mth.getInterfaceVTableType(interfaceType), V(nullVTable));
+                return V(builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, nullThis, opaqueVTable));
+            }
+
             // A class object is a pointer that may be null (`C | null` is stored as `C`), and null
-            // stays null. The vtable may be read through the object, so only it is chosen by a test
-            // for null: a null object is seen through a null vtable, which is what an interface
-            // compares to null by. The interface is built over the object outside the test, so that
-            // the ownership passes see it is the object (a view), not a value merged from branches.
+            // stays null: an interface over a null `this`. The vtable may be read through the object,
+            // so it is chosen by a test for null: a null object is seen through the interface's null
+            // vtable, whose methods throw (mlirGenNullInterfaceVTable). The interface is built over
+            // the object outside the test, so that the ownership passes see it is the object (a view),
+            // not a value merged from branches.
             if (auto classType = dyn_cast<mlir_ts::ClassType>(valueType))
             {
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                assert(interfaceInfo);
+
                 auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
                 auto isNotNull = builder.create<mlir_ts::LogicalBinaryOp>(
                     location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsEqualsToken), value, nullValue);
 
+                auto vtableType = mth.getInterfaceVTableType(interfaceType);
                 MLIRCodeLogicHelper mclh(builder, location, compileOptions);
                 auto interfaceVTable = mclh.conditionalValue(isNotNull,
                     [&]() -> ValueOrLogicalResult {
-                        return mlirGenClassInterfaceVTable(location, value, classType, interfaceType, genContext);
+                        auto classVTable = mlirGenClassInterfaceVTable(location, value, classType, interfaceType, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(classVTable)
+                        if (V(classVTable).getType() == vtableType)
+                        {
+                            return classVTable;
+                        }
+
+                        return V(builder.create<mlir_ts::CastOp>(location, vtableType, V(classVTable)));
                     },
-                    [&](mlir::Type vtableType) -> ValueOrLogicalResult {
-                        return V(builder.create<mlir_ts::CastOp>(location, vtableType, builder.create<mlir_ts::NullOp>(location, getNullType())));
+                    [&](mlir::Type) -> ValueOrLogicalResult {
+                        auto nullVTable = mlirGenNullInterfaceVTable(location, interfaceInfo, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(nullVTable)
+                        return V(builder.create<mlir_ts::CastOp>(location, vtableType, V(nullVTable)));
                     });
                 EXIT_IF_FAILED_OR_NO_VALUE(interfaceVTable)
 
@@ -1545,6 +1576,14 @@ namespace mlirgen
             auto member = builder.create<mlir_ts::GetValueFromUnionOp>(location, srcBaseType, value);
             CAST_A(casted, location, baseType, member, genContext);
             return V(builder.create<mlir_ts::CastOp>(location, type, casted));
+        }
+
+        // null given to `I | null` is the null interface, as null given to `I` is (castToInterfaceSpecialCases)
+        if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType) && isa<mlir_ts::InterfaceType>(baseType))
+        {
+            auto casted = cast(location, baseType, value, genContext, /*disableStrictNullCheck=*/true);
+            EXIT_IF_FAILED_OR_NO_VALUE(casted)
+            return V(builder.create<mlir_ts::CastOp>(location, type, V(casted)));
         }
 
         if (isa<mlir_ts::NullType>(valueType) || isa<mlir_ts::UndefinedType>(valueType) || isa<mlir_ts::AnyType>(valueType)

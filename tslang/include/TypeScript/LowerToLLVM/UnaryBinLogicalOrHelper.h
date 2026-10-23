@@ -270,24 +270,26 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     }
     else if (isa<mlir_ts::InterfaceType>(leftType))
     {
-        // TODO, extract interface VTable to compare
-        auto leftVtableValue =
+        // an interface is the object it is made over: compared by its `this`. A null interface's
+        // `this` is null whatever vtable it is seen through (the interface's null vtable, whose
+        // methods throw - mlirGenNullInterfaceVTable - or none at all, zeroed storage)
+        auto leftThisValue =
             left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::ZeroOp>() || matchPattern(left, m_Zero())
                 ? left
-                : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
-        auto rightVtableValue =
+                : builder.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
+        auto rightThisValue =
             right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
-                : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
+                : builder.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
 
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
 
-        mlir::Value leftVtableValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftVtableValue.getType()), leftVtableValue);
-        mlir::Value rightVtableValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightVtableValue.getType()), rightVtableValue);
+        mlir::Value leftThisValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftThisValue.getType()), leftThisValue);
+        mlir::Value rightThisValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightThisValue.getType()), rightThisValue);
 
-        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftVtableValueAsLLVMType);
-        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightVtableValueAsLLVMType);
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftThisValueAsLLVMType);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightThisValueAsLLVMType);
 
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;

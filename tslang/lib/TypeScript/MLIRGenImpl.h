@@ -3724,6 +3724,10 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenCatchCopyThunk(mlir::Location location, StringRef name, mlir::Type source, mlir::Type target);
     MethodInfo mlirGenNoInstanceOfFunction(mlir::Location location);
+    mlir::LogicalResult mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
+                                                  mlir_ts::FunctionType funcType, const GenContext &genContext);
+    ValueOrLogicalResult mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
+                                                    const GenContext &genContext);
 
     void setCatchCopyThunkBuilder(MLIRRTTIHelperVC &rtti);
 
