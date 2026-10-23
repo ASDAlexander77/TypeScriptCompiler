@@ -195,7 +195,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         module.walk([&](mlir_ts::GlobalConstructorOp constructorOp) { constructors.insert(constructorOp.getGlobalName()); });
 
         // a static's address taken out of a class's vtable (`k.w = x`, `k: typeof K`) and written
-        // through: it may be any class's static the vtable slot holds, so no static is immortal
+        // through: it may be any class's static the vtable slot holds, so no static is immortal.
+        // MLIRGen makes a `ts.ThisVirtualSymbolRef` only for a method (a bound function, never a
+        // `!ts.ref`), so no program reaches this through one today; it is listed for an IR that would.
         auto vtableWritten = false;
         module.walk([&](mlir::Operation *op) {
             if (mlir::isa<mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp>(op) &&
