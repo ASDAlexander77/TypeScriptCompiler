@@ -1,6 +1,9 @@
 // -mm=own rejects: `c` is never assigned, but its initializer is a call's result, a borrow of an
 // element `list` owns. Marking that block immortal would make the array's free of it a silent
-// leak, so `c` stays mortal. A global cannot hold a borrow: the initializer is the error (#638).
+// leak, so `c` stays mortal, and `f` returns a borrow of it. The call goes through a function value
+// `pick` returns, whose facts the global's region does not know (#638 cannot see it), so this is
+// findImmortalGlobals' refusal of any call's result, not the region check. (`firstOf`, returned as
+// a value, is an error of its own.)
 class V {
     constructor(public x: number) {}
 }
@@ -8,7 +11,10 @@ const list = [new V(1)];
 function firstOf(a: V[]) {
     return a[0];
 }
-const c = firstOf(list);
+function pick(): (a: V[]) => V {
+    return firstOf;
+}
+const c = pick()(list);
 function f() {
     return c;
 }

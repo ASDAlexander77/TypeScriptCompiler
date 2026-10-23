@@ -2828,8 +2828,12 @@ of `K.w` does nothing).
   into a freed block, and the global would hold it. Since main's #638 (merged into this branch
   after T8) a global's region calls get their callees' facts (`ownGlobalInitializerCalls`), and a
   region that holds a call's borrowing result is rejected there first ("the initializer of global
-  'c' holds the result of 'id', which borrows its argument"); the two negatives now pin that
-  message. They stay mortal all the same: `findImmortalGlobals` runs first and still refuses them.
+  'c' holds the result of 'id', which borrows its argument"); `own_err_immortal_region_call` now
+  pins that message. They stay mortal all the same: `findImmortalGlobals` runs first and still
+  refuses them. `own_err_immortal_region_borrow` (since the fix-up of 2026-10-23) calls through a
+  function value instead, `const c = pick()(list)`, whose callee #638 cannot know, so it again shows
+  this refusal: `f`'s `return c` is "borrows the global 'c' and cannot be stored, returned or
+  captured".
   Main's two other global checks step aside for an immortal global's read: a global may be given
   one (#636, `let e = c`), and one may be lent to a call that may drop (#639; a static's one store
   in its static constructor is in `writtenGlobals`, so `lend(b, K.w)` was rejected after the merge
@@ -3165,7 +3169,14 @@ is an error ("a value read out of the global 'G' is lent to a call that may rele
 it"). That error comes first for `run(G)`, `GK.run()` and `runCallee(G)` too, so since the merge
 both negatives give their callees fresh values (`run(mkH())`, `new K().run()`) and pin this
 section's callee-side rule alone; the teeth above were measured with the global passed, before
-the merge.
+the merge. The original shapes are #639 negatives of their own (fix-up of 2026-10-23), so a
+narrower #639 would still meet them: `own_err_global_argument_transitive` (`run(G)`, `run` calls
+`reset`, which assigns `G`), `own_err_global_method_transitive` (`G.m()`, `m` calls `reset`),
+`own_err_global_this_field_move` (`GK.run()` moves into `this.f`, then assigns `GK`),
+`own_err_global_argument_field_let` (`run(G)`, `const x = h.c`, then `G` assigned) and
+`own_err_global_kept_field` (`keep(h, g)` stores `c` into `h.c`, `g` assigned by a `reset`
+elsewhere), each "a value read out of the global '...' is lent to a call that may release or
+overwrite it".
 
 Teeth: with the kill walk skipped (`readsThroughOwner` accepting every read), all seven negatives
 compile, and AOT runs with same-size allocations before the read print a freed block's value:
