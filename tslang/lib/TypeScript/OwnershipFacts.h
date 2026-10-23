@@ -831,6 +831,39 @@ inline bool argumentHoldsNoBlock(mlir::Value arg)
     return !mlir::isa<mlir_ts::OpaqueType>(arg.getType()) && holdsNoBlock(arg);
 }
 
+// The one value a merge can bring a block in by: every other way into the block passes a default
+// (`ts.Default`, `ts.Null`, `ts.Undef`) or what holds no block. `let [x, y] = a` reads each element
+// behind a test of the array's length whose other side is the default, so `x` is that element read.
+// Null when no way in, or more than one, passes a block.
+inline mlir::Value soleBlockMergedInto(mlir::Value value)
+{
+    auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+    llvm::SmallVector<mlir::Value> passed;
+    if (!argument || !mergedInto(argument, passed))
+    {
+        return {};
+    }
+
+    mlir::Value sole;
+    for (auto incoming : passed)
+    {
+        if (mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(incoming.getDefiningOp()) ||
+            holdsNoBlock(incoming))
+        {
+            continue;
+        }
+
+        if (sole && sole != incoming)
+        {
+            return {};
+        }
+
+        sole = incoming;
+    }
+
+    return sole;
+}
+
 // A value -mm=own copies rather than give a second owner (spec 22.1): a string, a string literal,
 // a union of strings and null that needs no tag (one pointer), or an optional of one of those
 // (`{ptr, i1}`).

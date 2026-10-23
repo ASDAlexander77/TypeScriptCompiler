@@ -3603,7 +3603,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
-                 own_reduce own_fresh_call_result own_ternary_outer_loop)
+                 own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3688,6 +3688,16 @@ foreach(ternary_loop_mm rc gc none)
     tslang_add_test(NAME test-jit-${ternary_loop_mm}-own_ternary_outer_loop COMMAND test-runner -jit -mm=${ternary_loop_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_ternary_outer_loop.ts")
     tslang_add_test(NAME test-compile-${ternary_loop_mm}-own_ternary_outer_loop COMMAND test-runner -mm=${ternary_loop_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_ternary_outer_loop.ts")
 endforeach()
+
+# `let [a, b] = pair` reads each element behind a length test; under own the local is a borrow of the
+# element, as `let a = pair[0]` is. The same program under every other model, and the corpus file
+# whose destructuring own refused.
+foreach(destructure_mm rc gc none)
+    tslang_add_test(NAME test-jit-${destructure_mm}-own_destructure_elements COMMAND test-runner -jit -mm=${destructure_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_destructure_elements.ts")
+    tslang_add_test(NAME test-compile-${destructure_mm}-own_destructure_elements COMMAND test-runner -mm=${destructure_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_destructure_elements.ts")
+endforeach()
+tslang_add_test(NAME test-jit-own-00-owned-locals COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
+tslang_add_test(NAME test-compile-own-00-owned-locals COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/00owned_locals.ts")
 
 # A call through an interface closed in its module gets its implementations' facts (spec 31); the
 # same program under every other model.
@@ -4208,7 +4218,9 @@ set(own_error_cases
     "own_err_borrowing_record_kept_param|:30:12: error: '[^']*' borrows '[^']*' but is used here after it may be released or overwritten"
     "own_err_borrowing_record_place_overwritten|:28:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_borrowing_record_open|:17:31: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
-    "own_err_borrowing_record_borrowed_again|:29:11: error: '[^']*' borrows the result of 'A[.]hit' but is used here after it may be released or overwritten")
+    "own_err_borrowing_record_borrowed_again|:29:11: error: '[^']*' borrows the result of 'A[.]hit' but is used here after it may be released or overwritten"
+    "own_err_destructure_element_reassigned|:10:11: error: '[^']*' borrows an element but is used here after it may be released or overwritten"
+    "own_err_destructure_element_returned|:9:5: error: '[^']*' borrows an element and cannot be stored, returned or captured")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
