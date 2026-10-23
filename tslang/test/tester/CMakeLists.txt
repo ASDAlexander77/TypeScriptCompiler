@@ -406,6 +406,7 @@ tslang_add_test(NAME test-compile-00-const-global-read COMMAND test-runner "${PR
 tslang_add_test(NAME test-compile-00-global-argument-reassigned COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-compile-00-global-argument-view COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
 tslang_add_test(NAME test-compile-00-bound-method-counts-object COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_counts_object.ts")
+tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-compile-00-array-data-string-alias COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-compile-00-arrays7 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-compile-00-arrays8-tuple-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -986,6 +987,7 @@ tslang_add_test(NAME test-jit-00-const-global-read COMMAND test-runner -jit "${P
 tslang_add_test(NAME test-jit-00-global-argument-reassigned COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_reassigned.ts")
 tslang_add_test(NAME test-jit-00-global-argument-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
 tslang_add_test(NAME test-jit-00-bound-method-counts-object COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00bound_method_counts_object.ts")
+tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
 tslang_add_test(NAME test-jit-00-array-data-string-alias COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_data_string_alias.ts")
 tslang_add_test(NAME test-jit-00-arrays7 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array7.ts")
 tslang_add_test(NAME test-jit-00-arrays8-tuple-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array8_tuple_spread.ts")
@@ -1956,6 +1958,7 @@ set(TSLANG_CORPUS
     00global_argument_reassigned.ts
     00global_argument_view.ts
     00bound_method_counts_object.ts
+    00array_argument_held.ts
     00array_data_string_alias.ts
     00array7.ts
     00array8_tuple_spread.ts
@@ -3517,7 +3520,13 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_string_copy_branch own_array_param_push
                  own_declared_no_drops own_return_paths own_string_concat_element
                  own_final_fresh_result own_final_field_lend own_null_narrowing_di
-                 own_param_markers own_generator_locals own_string_param_assigned own_lends)
+                 own_param_markers own_generator_locals own_string_param_assigned own_lends
+                 own_immortal_global own_immortal_global_region own_global_loop_store
+                 own_literal_moves own_record_literal_given
+                 own_field_chain_let own_read_after_move own_conditional_move
+                 own_interface_facts own_declared_scalar_no_drops
+                 own_borrowing_record own_borrowing_record_arg
+                 own_reduce own_fresh_call_result)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3529,12 +3538,136 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                                     FAIL_REGULAR_EXPRESSION "__tslang_inc_ref|__tslang_dec_ref|error:|Stack dump")
 endforeach()
 
+# A global never reassigned is immortal under own (spec 25); the same program under every other model.
+foreach(immortal_mm rc gc none)
+    foreach(immortal_test own_immortal_global own_immortal_global_region own_global_loop_store)
+        tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
+        tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
+    endforeach()
+endforeach()
+
+# A global whose one store runs in a loop is mortal (spec 25): its stores are not marked, so each
+# releases the value before it, which an immortal header would leak. The `if` arm's store runs once.
+add_test(NAME test-own-global-loop-store-mortal
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_loop_store.ts")
+set_tests_properties(test-own-global-loop-store-mortal
+                     PROPERTIES PASS_REGULAR_EXPRESSION "global_name = @T[.]w}> {__own_immortal}"
+                                FAIL_REGULAR_EXPRESSION "global_name = @[KS][.]w}> {__own_immortal}|error|Stack dump")
+
+# The other write guards of an immortal global (spec 25), one program each: an exported global, a
+# static written through its class's vtable (`k: typeof M`), a second store in a static block, and a
+# store in a static method leave `M` (`M.w`, `MK.m`) mortal; `I` (`I.w`) is immortal.
+foreach(mortal_test export typeof static_twice static_method)
+    string(REPLACE "_" "-" mortal_name "${mortal_test}")
+    add_test(NAME test-own-global-mortal-${mortal_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_mortal_${mortal_test}.ts")
+    set_tests_properties(test-own-global-mortal-${mortal_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "global_name = @I([.]w)?}> {__own_immortal}"
+                                    FAIL_REGULAR_EXPRESSION "global_name = @M[^}]*}> {__own_immortal}|error|Stack dump")
+endforeach()
+
+# An object literal that owns its fields moves anywhere a fresh object does under own (spec 27);
+# the same programs under every other model.
+foreach(owning_record_mm rc gc none)
+    foreach(owning_record_test own_literal_moves own_record_literal_given)
+        tslang_add_test(NAME test-jit-${owning_record_mm}-${owning_record_test} COMMAND test-runner -jit -mm=${owning_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${owning_record_test}.ts")
+        tslang_add_test(NAME test-compile-${owning_record_mm}-${owning_record_test} COMMAND test-runner -mm=${owning_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${owning_record_test}.ts")
+    endforeach()
+endforeach()
+
 # ...and built with debug info, whose records of narrowed variables are ops of their own
 add_test(NAME test-own-di-null-narrowing
          COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --di --opt_level=0 --no-default-lib -mm=own
                  "${PROJECT_SOURCE_DIR}/test/tester/own/own_null_narrowing_di.ts")
 set_tests_properties(test-own-di-null-narrowing PROPERTIES PASS_REGULAR_EXPRESSION "ts.Func"
                                                            FAIL_REGULAR_EXPRESSION "error|Stack dump")
+
+# A field read through an interface is a place read under own (spec 28); the same program under
+# every other model.
+foreach(field_chain_mm rc gc none)
+    tslang_add_test(NAME test-jit-${field_chain_mm}-own_field_chain_let COMMAND test-runner -jit -mm=${field_chain_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_field_chain_let.ts")
+    tslang_add_test(NAME test-compile-${field_chain_mm}-own_field_chain_let COMMAND test-runner -mm=${field_chain_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_field_chain_let.ts")
+endforeach()
+
+# A read after a move, through the new owner, under own (spec 29); the same program under every
+# other model.
+foreach(read_after_move_mm rc gc none)
+    tslang_add_test(NAME test-jit-${read_after_move_mm}-own_read_after_move COMMAND test-runner -jit -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
+    tslang_add_test(NAME test-compile-${read_after_move_mm}-own_read_after_move COMMAND test-runner -mm=${read_after_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_read_after_move.ts")
+endforeach()
+
+# A value moved out of a local on some paths only, released on the others (spec 30); the same
+# program under every other model.
+foreach(conditional_move_mm rc gc none)
+    tslang_add_test(NAME test-jit-${conditional_move_mm}-own_conditional_move COMMAND test-runner -jit -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
+    tslang_add_test(NAME test-compile-${conditional_move_mm}-own_conditional_move COMMAND test-runner -mm=${conditional_move_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_conditional_move.ts")
+endforeach()
+
+# A call through an interface closed in its module gets its implementations' facts (spec 31); the
+# same program under every other model.
+foreach(interface_facts_mm rc gc none)
+    foreach(interface_facts_test own_interface_facts own_declared_scalar_no_drops own_interface_exe_exports)
+        tslang_add_test(NAME test-jit-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -jit -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
+        tslang_add_test(NAME test-compile-${interface_facts_mm}-${interface_facts_test} COMMAND test-runner -mm=${interface_facts_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${interface_facts_test}.ts")
+    endforeach()
+endforeach()
+
+# An object literal that borrows some of what it holds - a borrowing record, returned or a temporary -
+# under own (spec 32); the same programs under every other model.
+foreach(borrowing_record_mm rc gc none)
+    foreach(borrowing_record_test own_borrowing_record own_borrowing_record_arg)
+        tslang_add_test(NAME test-jit-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -jit -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
+        tslang_add_test(NAME test-compile-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
+    endforeach()
+endforeach()
+
+# `reduce` takes its accumulator, and a parameter returned on some paths only is kept (spec 33);
+# the same program under every other model.
+foreach(reduce_mm rc gc none)
+    tslang_add_test(NAME test-jit-${reduce_mm}-own_reduce COMMAND test-runner -jit -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
+    tslang_add_test(NAME test-compile-${reduce_mm}-own_reduce COMMAND test-runner -mm=${reduce_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_reduce.ts")
+endforeach()
+
+# A direct call's result is the caller's own, not a use of a borrow given to it (spec 34); the same
+# program under every other model.
+foreach(fresh_call_mm rc gc none)
+    tslang_add_test(NAME test-jit-${fresh_call_mm}-own_fresh_call_result COMMAND test-runner -jit -mm=${fresh_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_call_result.ts")
+    tslang_add_test(NAME test-compile-${fresh_call_mm}-own_fresh_call_result COMMAND test-runner -mm=${fresh_call_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_fresh_call_result.ts")
+endforeach()
+
+# The ray tracer, own's copy of the benchmark at 64x64 (spec 34), under every model. Its surfaces are
+# Shared handles, which count, so it is not in own_test (its no-counting check). It exports its
+# `Surfaces` globals, which an object file opens to other modules (spec 31), so under own the JIT's
+# entry module and `tslang --emit=exe` build it (own-exe-run.cmake), not test-runner's object file.
+foreach(raytrace_mm gc none rc)
+    tslang_add_test(NAME test-jit-${raytrace_mm}-own_raytrace COMMAND test-runner -jit -mm=${raytrace_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+    tslang_add_test(NAME test-compile-${raytrace_mm}-own_raytrace COMMAND test-runner -mm=${raytrace_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+endforeach()
+tslang_add_test(NAME test-jit-own-own_raytrace COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts")
+add_test(NAME test-compile-own-own_raytrace
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/own/own_raytrace.ts"
+                 "-DEXPECT=checksum: 606318"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-raytrace"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-exe-run.cmake")
+
+# An executable's exports leave its interfaces closed (spec 31, USER decision): under own the JIT's
+# entry module and `tslang --emit=exe` compile own_interface_exe_exports; an object file and a DLL
+# do not (own-exe-exports.cmake). test-runner's own AOT build is an object file, so it is not run.
+tslang_add_test(NAME test-jit-own-own_interface_exe_exports COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_exe_exports.ts")
+add_test(NAME test-own-exe-exports
+         COMMAND ${CMAKE_COMMAND}
+                 "-DTSLANG=$<TARGET_FILE:tslang>"
+                 "-DSOURCE=${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_exe_exports.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-exe-exports"
+                 "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                 "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/own-exe-exports.cmake")
 
 # A global declared in top-level code owns what it is given, under every model that counts.
 foreach(global_mm rc none gc)
@@ -3633,6 +3766,34 @@ foreach(shared_verify_mm own rc)
                              PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
     endforeach()
 endforeach()
+# Shared<I> of an object literal (spec 26), global and local: the literal moves into the handle.
+# Counted like every Shared test, so not in own_test (its no-counting check).
+foreach(shared_literal_mm gc none rc own)
+    tslang_add_test(NAME test-jit-${shared_literal_mm}-own_shared_literal COMMAND test-runner -jit -mm=${shared_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+    tslang_add_test(NAME test-compile-${shared_literal_mm}-own_shared_literal COMMAND test-runner -mm=${shared_literal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+endforeach()
+foreach(shared_literal_verify_mm own rc)
+    add_test(NAME test-${shared_literal_verify_mm}-verify-ownership-own_shared_literal
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${shared_literal_verify_mm} --verify-ownership
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_shared_literal.ts")
+    set_tests_properties(test-${shared_literal_verify_mm}-verify-ownership-own_shared_literal
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endforeach()
+
+# A function-typed field of an interface closed in its module, called through a global and a local
+# Shared<I> of a literal and through a parameter (spec 31). Counted like every Shared test, so not in
+# own_test (its no-counting check).
+foreach(fn_field_mm gc none rc own)
+    tslang_add_test(NAME test-jit-${fn_field_mm}-own_interface_fn_field COMMAND test-runner -jit -mm=${fn_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+    tslang_add_test(NAME test-compile-${fn_field_mm}-own_interface_fn_field COMMAND test-runner -mm=${fn_field_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+endforeach()
+foreach(fn_field_verify_mm own rc)
+    add_test(NAME test-${fn_field_verify_mm}-verify-ownership-own_interface_fn_field
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=${fn_field_verify_mm} --verify-ownership
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_interface_fn_field.ts")
+    set_tests_properties(test-${fn_field_verify_mm}-verify-ownership-own_interface_fn_field
+                         PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+endforeach()
 
 # Across a library boundary: the library exports its functions' `__own_no_drops`, and a borrow held
 # across a call to one survives. Run as a -shared pair (the library loaded at run time) and, on
@@ -3655,6 +3816,16 @@ if (WIN32)
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-shared-no-drops.cmake")
 endif()
+
+# An override of a method of a class another module can name, or defines, is called from that module
+# through the base's vtable (own spec 31): under own each library or importer below is an error
+# (own_error_cases); the pairs are ordinary TypeScript under every other model.
+foreach(override_mm rc none gc)
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-nameable-base COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_nameable_main.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_nameable_base.ts")
+    tslang_add_test(NAME test-jit-${override_mm}-shared-override-imported-base COMMAND test-runner -jit -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_base.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-imported-base COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_base.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+    tslang_add_test(NAME test-compile-${override_mm}-shared-override-imported-class COMMAND test-runner -shared -mm=${override_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_err_override_imported_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/own/own_override_base_lib.ts")
+endforeach()
 
 # The ownership verifier runs under own too, on the IR before inference erases its birth takes.
 add_test(NAME test-own-verify-ownership
@@ -3747,7 +3918,25 @@ set(own_error_cases
     "own_err_param_kept_loop|is moved inside a loop"
     "own_err_param_kept_not_owned|is given to 'keep', which keeps it, but -mm=own cannot move it here"
     "own_err_delete|'delete' is not supported by -mm=own yet"
-    "own_err_mixed_return|'pick' returns a borrow of its argument on some paths and another value on others"
+    "own_err_mixed_return|is used here after its value was moved"
+    "own_err_mixed_return_join_use|is moved here on some paths only"
+    "own_err_callback_escapes|cannot make the callers of 'pick' give it up"
+    "own_err_callback_disagrees|a function passed in its place disagrees"
+    "own_err_callback_promoted_used|is used here after its value was moved"
+    "own_err_kept_param_let_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_kept_param_field_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_kept_and_borrowed_arg|is used here after its value was moved"
+    "own_err_kept_and_borrowed_arg_slot|is used here after its value was moved"
+    "own_err_kept_and_borrowed_arg_field|is used here after its value was moved"
+    "own_err_kept_twice|is used here after its value was moved"
+    "own_err_kept_twice_field|is used here after its value was moved"
+    "own_err_kept_twice_push|is used here after its value was moved"
+    "own_err_kept_arg_assigned_in_call|is used here after its value was moved"
+    "own_err_kept_and_borrowed_arg_assigned_in_call|is used here after its value was moved"
+    "own_err_kept_arg_assigned_on_arm|is used here after its value was moved"
+    "own_err_kept_arg_assigned_in_and|is used here after its value was moved"
+    "own_err_call_result_bounded|borrows a field but is used here after it may be released or overwritten"
+    "own_err_call_result_record|borrows a field but is used here after it may be released or overwritten"
     "own_err_param_returned_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'identity' that the result borrows it"
     "own_err_param_kept_exported|is a parameter, kept here, but -mm=own cannot make the callers of 'Animal.constructor' give it up"
     "own_err_param_assigned|is a parameter and cannot be assigned under -mm=own yet"
@@ -3757,13 +3946,74 @@ set(own_error_cases
     "own_err_global_borrowed_temporary|the initializer of global 'c' holds the result of 'id', which borrows its argument"
     "own_err_global_kept_not_fresh|the initializer of global 'n' gives 'N.constructor' a value it keeps, but -mm=own cannot move it there"
     "own_err_global_returned|borrows the global 'V.def' and cannot be stored, returned or captured"
+    "own_err_immortal_borrowed_init|borrows 'K.list.*' and cannot be stored, returned or captured"
+    "own_err_immortal_field_overwritten|borrows .* but is used here after .* released or overwritten"
+    "own_err_immortal_region_borrow|borrows the global 'c' and cannot be stored, returned or captured"
+    "own_err_immortal_region_call|the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_loop_store_static|borrows the global 'K[.]w' and cannot be stored, returned or captured"
+    "own_err_global_loop_store_script|borrows the global 'K[.]w' and cannot be stored, returned or captured"
+    "own_err_global_const_store_static|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_const_store_script|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_const_store|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_record_static|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_record|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_let_holder_static|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_let_destructure|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_let_holder|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_outer_holder|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_outer_holder_static|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
+    "own_err_global_uninit_let|borrows 'G' but is used here after 'G' is released or overwritten"
+    "own_err_global_uninit_let_static|borrows 'K[.]w' but is used here after 'K[.]w' is released or overwritten"
     "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_argument_transitive|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_method_transitive|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_this_field_move|a value read out of the global 'GK' is lent to a call that may release or overwrite it"
+    "own_err_global_argument_field_let|a value read out of the global 'G' is lent to a call that may release or overwrite it"
+    "own_err_global_kept_field|a value read out of the global 'g' is lent to a call that may release or overwrite it"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
     "own_err_global_from_global|the initializer of global 'k' reads a value another owner keeps"
     "own_err_global_from_field|the initializer of global 'k' reads a value another owner keeps"
     "own_err_captured_returned|borrows a captured variable and cannot be stored, returned or captured"
-    "own_err_record_literal_given|an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_literal_moved_twice|is used here after its value was moved"
+    "own_err_interface_keeps_literal|is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take' give it up"
+    "own_err_interface_keeps_param|is a parameter, kept here, but -mm=own cannot make the callers of 'KV.take' give it up"
+    "own_err_interface_borrow_param|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
+    "own_err_interface_borrow_element|borrows an element and cannot be stored, returned or captured"
+    "own_err_interface_borrow_field|borrows a field and cannot be stored, returned or captured"
+    "own_err_interface_exported_impl|borrows .* but is used here after it may be released or overwritten"
+    "own_err_interface_family_disagrees|is a parameter, returned here, but -mm=own cannot tell the callers of 'GA.get' that the result borrows it"
+    "own_err_interface_member_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_from_interface|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.get' that the result borrows it"
+    "own_err_interface_result_outlives|borrows the result of 'First.first' but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_unknown|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_field_exported|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_fn_any_param|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.take' that the result borrows it"
+    "own_err_interface_fn_any_result|is a parameter, returned here, but -mm=own cannot tell the callers of 'G.take' that the result borrows it"
+    "own_err_interface_fn_any_drops|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_public_exported|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
+    "own_err_interface_public_reachable|is a parameter, returned here, but -mm=own cannot tell the callers of 'PA.pick' that the result borrows it"
+    "own_err_interface_member_types|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_member_methods|borrows a field but is used here after it may be released or overwritten"
+    "own_err_declared_callback|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_global|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_method|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_tuple|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_indirect|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_wrapper|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_class_method|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_interface_field|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_stored_global|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_stored_reference|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_cpp_class|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_field_reference|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_declared_callback_intrinsic|borrows 'gh.c' but is used here after it may be released or overwritten"
+    "own_err_interface_member_class|borrows a field but is used here after it may be released or overwritten"
+    "own_err_interface_member_any|borrows a field but is used here after it may be released or overwritten"
+    "own_err_override_nameable_base|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
+    "own_err_override_imported_base|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
+    "own_err_override_imported_class|is a parameter, kept here, but -mm=own cannot make the callers of 'Der.keep' give it up"
     "own_err_string_kept_param_known|is used here after its value was moved"
     "own_err_keeps_mismatch|'@keeps' of 'Pair.constructor' names 'a', but its body keeps 'b'"
     "own_err_borrows_not_generator|'@borrows' of 'copyOf' names 'w', but it neither makes a generator whose state borrows its arguments nor returns one"
@@ -3774,7 +4024,8 @@ set(own_error_cases
     "own_err_lends_mismatch|'@lends' of 'pick' names 'a', but its body returns a borrow of 'b'"
     "own_err_lends_not_borrow|'@lends' of 'made' names 'l', but its body does not return a borrow of it"
     "own_err_lends_and_borrows|'firstOf' cannot say both '@lends' and '@borrows'"
-    "own_err_lends_two_params|'@lends' names one parameter, the one the result is a borrow of"
+    "own_err_lends_two_params|'@lends' of 'pick' names 'a', 'b', but its body returns a borrow of 'a'"
+    "own_err_lends_index_64|'@lends' of 'K[.]pick' names its argument 64, but a method's '@lends' can name only its arguments 0 to 63"
     "own_err_lends_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"
@@ -3790,7 +4041,38 @@ set(own_error_cases
     "own_err_shared_place_arg|borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_literal|borrows a field and cannot be stored, returned or captured"
-    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured")
+    "own_err_shared_place_tuple|borrows a field and cannot be stored, returned or captured"
+    "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
+    "own_err_iface_field_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_iface_field_view_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_iface_field_call|borrows a field but is used here after it may be released or overwritten"
+    "own_err_iface_field_result|borrows the result of 'dirOf' but is used here after it may be released or overwritten"
+    "own_err_read_after_move_overwritten|is used here after its value was moved"
+    "own_err_read_after_move_view|is used here after its value was moved"
+    "own_err_read_after_move_call|is used here after its value was moved"
+    "own_err_read_after_move_loop|is used here after its value was moved"
+    "own_err_read_after_move_after_loop|is used here after its value was moved"
+    "own_err_read_after_move_global|is used here after its value was moved"
+    "own_err_field_let_global_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_conditional_move_read|is used here after its value was moved"
+    "own_err_conditional_move_outer|is moved inside a loop but was made outside it"
+    "own_err_conditional_move_read_after_join|is moved here on some paths only"
+    "own_err_conditional_move_field_borrow|is moved here on some paths only"
+    "own_err_conditional_move_catch|is moved here on some paths only"
+    "own_err_conditional_move_bound_method|is moved here on some paths only"
+    "own_err_conditional_move_view|is moved here on some paths only"
+    "own_err_conditional_move_old_view|is moved here on some paths only"
+    "own_err_borrowing_record_stored|borrows the result of .* and cannot be stored, returned or captured"
+    "own_err_borrowing_record_outlives|borrows the result of .* but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_kept_arg|borrows a field and cannot be stored, returned or captured"
+    "own_err_borrowing_record_let_outlives|borrows '.*' but is used here after '.*' is released or overwritten"
+    "own_err_borrowing_record_returned_local|borrows '.*' and cannot be stored, returned or captured"
+    "own_err_borrowing_record_field_written|borrows a field and cannot be stored, returned or captured"
+    "own_err_borrowing_record_cell|borrows a captured variable but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_kept_param|borrows '.*' but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_place_overwritten|borrows a field but is used here after it may be released or overwritten"
+    "own_err_borrowing_record_open|borrows '.*' and cannot be stored, returned or captured"
+    "own_err_borrowing_record_borrowed_again|borrows the result of .* but is used here after it may be released or overwritten")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
