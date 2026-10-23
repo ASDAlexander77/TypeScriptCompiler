@@ -1147,6 +1147,23 @@ class OwnedReturnConsumptionPass
                 mlir::OpBuilder builder(loadOp->getContext());
                 builder.setInsertionPointAfter(loadOp);
                 builder.create<mlir_ts::RetainOp>(loadOp->getLoc(), value);
+                return;
+            }
+
+            // A method bound to an object (`let c = mk().get`, `let c = G.v.get`, `let c = ix.get`)
+            // is born with no count, and only its receivers take one; under rc the bound value counts
+            // the object it is bound to. The global is the receiver here: without a count of its
+            // own, a temporary object was given back at the end of the region, and the first
+            // `c = d` released it a second time.
+            auto *boundOp = value.getDefiningOp();
+            auto isBoundMethod =
+                mlir::isa_and_nonnull<mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::ThisSymbolRefOp>(boundOp) ||
+                (mlir::isa_and_nonnull<mlir_ts::InterfaceSymbolRefOp>(boundOp) &&
+                 mlir::isa<mlir_ts::BoundFunctionType>(value.getType())) ||
+                (mlir::isa_and_nonnull<mlir_ts::CreateBoundFunctionOp>(boundOp) && !boundOp->hasAttr(OWNS_CAPTURE_ATTR_NAME));
+            if (isBoundMethod)
+            {
+                retainForGlobal(resultOp, resultOp->getOperand(0));
             }
         });
     }
