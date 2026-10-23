@@ -26,7 +26,7 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
-## Results 2026-10-21
+## Results 2026-10-21 (own rows 2026-10-23)
 
 main 49b5f6bb, Release, Windows 11 x64; Rust 1.99.0, clang 21.1.4, MSVC from Visual Studio 18;
 median of 7 runs after a warm-up. Every build prints the same checksum.
@@ -39,8 +39,8 @@ median of 7 runs after a warm-up. Every build prints the same checksum.
 | tslang rc, `--no-stack-promotion` | 600 ms | | |
 | tslang none | 703 ms | 845 MB | 14x |
 | tslang none, `--no-stack-promotion` | 727 ms | | |
-| tslang own | 628 ms | 4.5 MB | 12x |
-| tslang own, `--no-stack-promotion` | 627 ms | | |
+| tslang own (2026-10-23) | 628 ms | 4.5 MB | 12x |
+| tslang own, `--no-stack-promotion` (2026-10-23) | 627 ms | | |
 | Rust idiomatic | 55 ms | 4 MB | 1.1x |
 | Rust Rc-boxed | 492 ms | 4 MB | 9.7x |
 | C++ idiomatic (clang) | 51 ms | | 1x |

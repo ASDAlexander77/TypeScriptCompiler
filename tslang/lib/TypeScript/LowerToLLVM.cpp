@@ -40,7 +40,7 @@
 #include "TypeScript/LowerToLLVM/LLVMDebugInfoFixer.h"
 #include "TypeScript/LowerToLLVM/ArrayLayout.h"
 
-// OWN_IMMORTAL_GLOBAL_ATTR_NAME
+// OWN_IMMORTAL_GLOBAL_ATTR_NAME, own_facts::regionYieldsDefault
 #include "OwnershipFacts.h"
 
 #include "scanner_enums.h"
@@ -5017,14 +5017,10 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         // an immortal global (own spec 25) whose region gives it its value gets it from a store,
         // which marks the block. A class static's region yields only the default: the store in the
         // static constructor gives it its value, and a constructor here would run after that one.
-        if (globalOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) && globalOp.getInitializerBlock())
+        if (globalOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) && globalOp.getInitializerBlock() &&
+            !own_facts::regionYieldsDefault(globalOp))
         {
-            auto *terminator = globalOp.getInitializerBlock()->getTerminator();
-            auto *valueOp = terminator && terminator->getNumOperands() == 1 ? terminator->getOperand(0).getDefiningOp() : nullptr;
-            if (!mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(valueOp))
-            {
-                createAsGlobalConstructor = true;
-            }
+            createAsGlobalConstructor = true;
         }
 
         auto linkage = globalOp.getLinkage();

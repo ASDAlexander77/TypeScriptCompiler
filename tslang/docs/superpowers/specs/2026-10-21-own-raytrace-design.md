@@ -90,7 +90,8 @@ Today: `'this value' borrows the global 'K.w' and cannot be stored, returned or 
   module is the program's entry and nothing imports it - other modules may assign it. (In the ray
   tracer, `Color.*` statics are not exported; `Surfaces.*` are `Shared` anyway.)
 - **Which values** (builder check, my call): only a global whose initializer is a fresh value
-  (`new C()`, a fresh call result, an owning literal) or another immortal global. A borrowed
+  (`new C()`, an owning literal) or another immortal global; no call's result, fresh or not (as
+  built: own-model spec §25, which supersedes this list). A borrowed
   initializer (`static x = arr[0]`, a call that returns a borrow) stays mortal and keeps today's
   error: marking a block someone else owns immortal would turn its later free into a silent leak.
 - **Mechanism:** the existing `HEAP_BLOCK_IMMORTAL` header (OwnershipRoutineLogic.h): the global's

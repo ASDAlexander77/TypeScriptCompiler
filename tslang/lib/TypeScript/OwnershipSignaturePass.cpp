@@ -297,13 +297,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             }
 
             // a static's region yields only its default, which the store replaces
-            auto regionValue = resultOp->getOperand(0);
-            if (initStore && !mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(regionValue.getDefiningOp()))
+            if (initStore && !regionYieldsDefault(globalOp))
             {
                 return;
             }
 
-            candidates[globalOp] = {initStore ? initStore.getValue() : regionValue, initStore};
+            candidates[globalOp] = {initStore ? initStore.getValue() : resultOp->getOperand(0), initStore};
         });
 
         // given a fresh object, nothing, or another immortal global's value: in module order, until
@@ -321,9 +320,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             forEachUse(root, [&](mlir::Operation *user, mlir::Value) { released = released || mlir::isa<mlir_ts::ReleaseOp>(user); });
             return !released;
         };
+        // isImmortalGlobalRead, of the globals found so far: none is marked yet
         auto readsImmortal = [&](mlir::Value value) {
-            auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
-            auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+            auto addressOfOp = globalReadOf(value);
             return addressOfOp && immortal.contains(addressOfOp.getGlobalName());
         };
 
@@ -3087,7 +3086,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
         else if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def))
         {
-            resolveInterfaceSlot(interfaceRefOp, callees);
+            resolveInterfaceSlot(interfaceRefOp, interfaceFamilies, callees);
             return;
         }
         else if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))
@@ -3104,7 +3103,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
             auto thisOp = boundOp.getThisVal().getDefiningOp<mlir_ts::ExtractInterfaceThisOp>();
             if (refOp && isInterfaceField(refOp.getResult()) && thisOp && thisOp.getInterfaceVal() == refOp.getInterfaceVal())
             {
-                resolveInterfaceField(refOp, callees);
+                resolveInterfaceSlot(refOp, interfaceFieldFamilies, callees);
             }
 
             return;
@@ -3126,9 +3125,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         resolveFamily(index, identifier, callees);
     }
 
-    // A method of a closed interface (interfaceFamilies), `ts.InterfaceSymbolRef(value, index)`: the
-    // family of the slot after the vtable's header. Open, the call is unknown, as before.
-    void resolveInterfaceSlot(mlir_ts::InterfaceSymbolRefOp refOp, Callees &callees)
+    // A method of a closed interface (interfaceFamilies), `ts.InterfaceSymbolRef(value, index)`, or a
+    // function-typed field of one (interfaceFieldFamilies), read and called: the family of the slot
+    // after the vtable's header - every function the vtables hold there, or every function the
+    // implementing literals' fields are ever given. Open, the call is unknown, as before.
+    template <typename Family>
+    void resolveInterfaceSlot(mlir_ts::InterfaceSymbolRefOp refOp, const std::map<std::pair<std::string, int64_t>, Family> &families,
+                              Callees &callees)
     {
         auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType());
         auto identifier = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
@@ -3138,36 +3141,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         }
 
         auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
-        auto found = interfaceFamilies.find({interfaceType.getName().getValue().str(), position});
-        if (found == interfaceFamilies.end() || !found->second.closed || found->second.field != identifier ||
-            found->second.members.empty())
-        {
-            return;
-        }
-
-        callees.named.assign(found->second.members.begin(), found->second.members.end());
-        callees.viaInterface = true;
-        callees.known = true;
-        for (auto member : found->second.members)
-        {
-            callees.known = addDefined(member, callees) && callees.known;
-        }
-    }
-
-    // A function-typed field of a closed interface (interfaceFieldFamilies), read and called: every
-    // function its implementing literals' fields are ever given.
-    void resolveInterfaceField(mlir_ts::InterfaceSymbolRefOp refOp, Callees &callees)
-    {
-        auto interfaceType = mlir::dyn_cast<mlir_ts::InterfaceType>(refOp.getInterfaceVal().getType());
-        auto identifier = mlir::dyn_cast<mlir::StringAttr>(refOp.getIdentifier());
-        if (!interfaceType || !identifier)
-        {
-            return;
-        }
-
-        auto position = static_cast<int64_t>(refOp.getIndex()) + INTERFACE_VTABLE_HEADER_SLOTS;
-        auto found = interfaceFieldFamilies.find({interfaceType.getName().getValue().str(), position});
-        if (found == interfaceFieldFamilies.end() || !found->second.closed || found->second.field != identifier ||
+        auto found = families.find({interfaceType.getName().getValue().str(), position});
+        if (found == families.end() || !found->second.closed || found->second.field != identifier ||
             found->second.members.empty())
         {
             return;

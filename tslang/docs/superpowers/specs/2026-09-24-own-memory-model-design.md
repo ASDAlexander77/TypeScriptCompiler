@@ -1626,7 +1626,7 @@ place, so all four places that report it get the same names. Each message has a 
 | a global's value, stored, returned or boxed | `'x' borrows the global 'g' and cannot be stored, returned or captured` | `own_err_global_returned` |
 | a global's value read into a local | `'x' borrows the global 'g', but -mm=own cannot prove the global keeps its value while 'x' is used: a call or an assignment may overwrite it` | `own_err_global_let_call` |
 | a captured variable's value, through its cell | `'x' borrows a captured variable and cannot be stored, returned or captured` | `own_err_captured_returned` |
-| an object literal holding a value it does not own outright: a `let` read into a field, a borrowed field (a parameter, `this.pos`), or a literal nested by value (since §27; before, any literal given anywhere but an owning local or the result) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | `own_err_record_literal_let` (§27; was `own_err_record_literal_given`) |
+| an object literal holding a value it does not own outright: a literal nested by value, or one holding a borrowed or `let` field when it is not seen as an interface (§32; since §27, before which any literal given anywhere but an owning local or the result was one) | `an object literal that holds a value it owns is moved only into a local or returned as it is; -mm=own cannot move it here yet` | the interface-typed shapes are borrowing records (§32): `own_err_borrowing_record_*`, `own_literal_moves`, `own_borrowing_record_arg`; `own_err_record_literal_let` (§27) is gone |
 
 The mixed-return message is the largest bucket (17 files). Most are two synthesized helpers:
 - `___unbox<string>` (`<string>` of an `any`) returns the box's own string when it holds one, and a
@@ -2899,6 +2899,22 @@ counting. `test-own-global-loop-store-mortal` checks its `--emit=mlir-affine`: `
 'K.w' and cannot be stored, returned or captured". Teeth (a temporary `OWN_TEETH` switch skipping
 `mayRunAgain`, removed): the mortal check fails (`K.w`/`S.w` marked) and both negatives compile.
 
+**The other write guards (final review I4, 2026-10-23).** A global wrongly marked immortal and
+later written frees what its reads were taken to own nothing of - a use-after-free, not a leak -
+so each guard of "written once, by its initializer" has a program of its own, checked the same
+way (`test-own-global-mortal-*`, `--emit=mlir-affine`: `M`'s `ts.AddressOf` is not marked
+`__own_immortal`, `I`'s is): `own_global_mortal_export` (`export let M` and an exported class's
+static `MK.m`), `own_global_mortal_typeof` (`k.w = I` with `k: typeof M`: the vtable-write guard,
+the only one that reads a `ts.VirtualSymbolRef`'s users; a write through `typeof K` is that route,
+not another), `own_global_mortal_static_twice` (two stores in one static block) and
+`own_global_mortal_static_method` (`this.w = new V(3)` in a static method, the static's only
+store: a function no `ts.GlobalConstructor` runs). Each program has one guard between `M` and
+immortality. Teeth (one temporary `OWN_TEETH` switch per guard, removed): skipping the `export`
+test, `vtableWritten`, the second-store test (`initStore`) or the static-constructor test each
+makes its own check fail (`M`, `MK.m` / `M.w` marked) and leaves the other three passing. The
+typeof write of a fresh value (`k.w = new V(3)`) is not used: it is an error today (`'this value'
+takes a second reference`), and `k.w = M.w` reaches checkGlobalRead's keep backstop.
+
 **A `const` read of a mortal global ends at its assignment (fix-up review C1, 2026-10-23).** Making
 those globals mortal exposed an older hole, on main too: `const c = G` names the read itself (a
 `ts.Load` of the global's `ts.AddressOf`, `__owned_result_named`, with no retain), which no check
@@ -2983,10 +2999,10 @@ reads the read's block in the next round - the path back from the store goes thr
 `const c = G`, which renews `c`, not `o.v` - and own accepted it (exit 139 on Windows and Linux;
 the module-global form on main too, the static-block and top-level forms since the loop-store
 fix-up). So a holder's uses are now made again only where the holder is given a new value
-(`holderRenewals`): the local's declaration, and every store into the field path that holds the
-borrow or into a prefix of it (the whole local, `o.p` for `o.p.v`); a store into a sibling field
-or below the path is not one. Those depend on the holder alone, not on the way the walk reached
-it, so a holder is followed once. A value loaded out of the holder is made again only by a path
+(`holderRenewals`): the local's declaration when it has an initializer (N4, below), and every
+store into the field path that holds the borrow or into a prefix of it (the whole local, `o.p` for
+`o.p.v`); a store into a sibling field or below the path is not one. Those depend on the holder
+alone, not on the way the walk reached it, so a holder is followed once. A value loaded out of the holder is made again only by a path
 back through that load, which is itself a use bounded by the renewals; and a store that is a
 renewal is also a use of the value it stores, bounded by that value's own renewals, so a store of
 a stale borrow into the path is rejected at the store. Reachability goes around the back edge: a
@@ -3605,7 +3621,11 @@ a block freed too early is reused before it is read.
   library stay as they were; the pass takes the kind as an option, a library when not told.
   `own_interface_exe_exports` (an exported interface and an exported global of it) runs under the
   JIT and as `tslang --emit=exe`, and is the error on `G.get` as `--emit=obj` and `--emit=dll`
-  (`own-exe-exports.cmake`).
+  (`own-exe-exports.cmake`). The rule covers interfaces and classes, not functions:
+  `callableFromOutside` ignores the kind, so a program's `export function` is still taken as one
+  another module calls - never a closed function, a callback-family member or a family member with
+  facts of its own. A sound over-rejection (final review M3): the function is treated as a
+  library's exported function is.
 - **An iterator `next()` through a closed interface** (ruling) gets the family's facts like any other
   call; it is no longer assumed fresh.
 
@@ -3920,7 +3940,12 @@ it), `_let_outlives`, `_cell`, `_kept_param`, `_place_overwritten`, `_returned_l
 `_field_written`, `_borrowed_again`. `own_err_record_literal_let` (§27: a `let` read into a field) is
 a correct program now - the record borrows the `let`'s value, and the `let` keeps its release - and
 is gone; its shape is in `own_borrowing_record_arg`. `own_err_lends_two_params` now reads `'@lends'
-of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`.
+of 'pick' names 'a', 'b', but its body returns a borrow of 'a'`. A method's `@lends` reaches its
+class's declaration as a 64-bit mask, so since the final review (M4, 2026-10-23) an index past 63 is
+an error rather than a borrow an importer silently never learns of: `own_err_lends_index_64` (a
+method of 64 parameters lending its last, argument 64), "'@lends' of 'K.pick' names its argument
+64, but a method's '@lends' can name only its arguments 0 to 63". The compiler before it accepted
+the program; the 63rd parameter (argument 63) is still accepted, under own, rc and gc.
 
 Teeth (temporary `OWN_TEETH` switches, removed): with the per-site routine dropped (every record's
 interface given its type's descriptor), the AOT runs of `own_borrowing_record` and
@@ -4180,7 +4205,7 @@ the conditional assignment, compile and exit `0xC0000005` with no output. `own_r
 tracer (1 error, the same) and the corpus (528, the same files) are unchanged.
 
 Not here:
-- A slot assigned inside the argument list of a call it was passed to (`f(n, (n = mk(7), 0))`,
+- A slot assigned inside the argument list of a call that keeps it (`f(n, (n = mk(7), 0))`,
   with or without a second operand, unconditionally or on one arm) crashes under rc as well (exit
   139): rc releases the slot's old value before the store, ahead of the callee that keeps it. That is
   rc's codegen, out of scope here; own rejects these shapes since the third and fourth re-reviews.
@@ -4301,5 +4326,3 @@ Not here:
   shows a use-after-free that only those two tests prevent.
 - The benchmark keeps its two source edits; the unedited `rtbench.ts` does not compile under own (a
   non-goal of the plan).
-- This section is 34, not 35 as the Task 9 addendum expected: the merge of main left notes in §25
-  and §29 and no section of its own.

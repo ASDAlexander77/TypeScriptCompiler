@@ -12686,7 +12686,16 @@ class MLIRGenImpl
                     methodInfo.ownLendsMask = 0;
                     for (auto index : lends.asArrayRef())
                     {
-                        if (index >= 0 && index < 64)
+                        // the mask the class's declaration is printed from (DeclarationPrinter) has
+                        // 64 bits: an index past it would be a borrow an importer never learns of
+                        if (index >= 64)
+                        {
+                            emitError(location) << "'@lends' of '" << funcOp.getSymName() << "' names its argument " << index
+                                                << ", but a method's '@lends' can name only its arguments 0 to 63";
+                            return false;
+                        }
+
+                        if (index >= 0)
                         {
                             methodInfo.ownLendsMask |= uint64_t(1) << index;
                         }

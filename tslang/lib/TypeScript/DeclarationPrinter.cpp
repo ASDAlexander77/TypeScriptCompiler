@@ -700,6 +700,7 @@ namespace typescript
                 newline();
             }
 
+            // every index `@lends` names: MLIRGen refuses one past 63, which the mask cannot hold
             SmallVector<int32_t> lends;
             for (int32_t index = 0; index < 64; ++index)
             {

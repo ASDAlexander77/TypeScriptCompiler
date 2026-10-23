@@ -3540,6 +3540,19 @@ set_tests_properties(test-own-global-loop-store-mortal
                      PROPERTIES PASS_REGULAR_EXPRESSION "global_name = @T[.]w}> {__own_immortal}"
                                 FAIL_REGULAR_EXPRESSION "global_name = @[KS][.]w}> {__own_immortal}|error|Stack dump")
 
+# The other write guards of an immortal global (spec 25), one program each: an exported global, a
+# static written through its class's vtable (`k: typeof M`), a second store in a static block, and a
+# store in a static method leave `M` (`M.w`, `MK.m`) mortal; `I` (`I.w`) is immortal.
+foreach(mortal_test export typeof static_twice static_method)
+    string(REPLACE "_" "-" mortal_name "${mortal_test}")
+    add_test(NAME test-own-global-mortal-${mortal_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                     "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_mortal_${mortal_test}.ts")
+    set_tests_properties(test-own-global-mortal-${mortal_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "global_name = @I([.]w)?}> {__own_immortal}"
+                                    FAIL_REGULAR_EXPRESSION "global_name = @M[^}]*}> {__own_immortal}|error|Stack dump")
+endforeach()
+
 # An object literal that owns its fields moves anywhere a fresh object does under own (spec 27);
 # the same programs under every other model.
 foreach(owning_record_mm rc gc none)
@@ -3997,6 +4010,7 @@ set(own_error_cases
     "own_err_lends_not_borrow|'@lends' of 'made' names 'l', but its body does not return a borrow of it"
     "own_err_lends_and_borrows|'firstOf' cannot say both '@lends' and '@borrows'"
     "own_err_lends_two_params|'@lends' of 'pick' names 'a', 'b', but its body returns a borrow of 'a'"
+    "own_err_lends_index_64|'@lends' of 'K[.]pick' names its argument 64, but a method's '@lends' can name only its arguments 0 to 63"
     "own_err_lends_outlives|borrows the result of 'firstOf' but is used here after it may be released or overwritten"
     "own_err_generator_method_this|'this value' is a parameter, kept here, but -mm=own cannot make the callers of 'S.chars' give it up"
     "own_err_string_call_keeps_twice|borrows a field and cannot be stored, returned or captured"

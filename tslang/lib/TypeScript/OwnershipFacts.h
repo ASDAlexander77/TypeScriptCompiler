@@ -269,14 +269,32 @@ inline mlir::Value rootOf(mlir::Value value)
     return value;
 }
 
+// The `ts.AddressOf` of the global a value is read out of, seen through its views, or null.
+inline mlir_ts::AddressOfOp globalReadOf(mlir::Value value)
+{
+    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+    return loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+}
+
 // A read of an immortal global (OWN_IMMORTAL_GLOBAL_ATTR_NAME), seen through its views: the
 // global's own block, which no release frees. Its fields are not immortal: a read out of one is a
 // place read like any other.
 inline bool isImmortalGlobalRead(mlir::Value value)
 {
-    auto loadOp = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
-    auto addressOfOp = loadOp ? loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>() : mlir_ts::AddressOfOp();
+    auto addressOfOp = globalReadOf(value);
     return addressOfOp && addressOfOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME);
+}
+
+// Does a global's initializer region yield only the default (`ts.Default`, `ts.Null`,
+// `ts.Undef`)? A class static's does: the one store in its static constructor gives it its value
+// (spec 25). OwnershipSignaturePass marks such a global immortal only with that store, and the
+// lowering then makes no `__cctor` of the region, which would put the default back after it.
+inline bool regionYieldsDefault(mlir_ts::GlobalOp globalOp)
+{
+    auto *block = globalOp.getInitializerBlock();
+    auto *terminator = block ? block->getTerminator() : nullptr;
+    auto *valueOp = terminator && terminator->getNumOperands() == 1 ? terminator->getOperand(0).getDefiningOp() : nullptr;
+    return mlir::isa_and_nonnull<mlir_ts::DefaultOp, mlir_ts::NullOp, mlir_ts::UndefOp>(valueOp);
 }
 
 // Every user of `root` and of the views of it, with the value it uses. A view itself is not a
