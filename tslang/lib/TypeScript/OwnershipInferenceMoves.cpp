@@ -521,10 +521,17 @@ namespace own_inference
             }
         });
 
-        // a merge that only borrows it (movesOf) takes nothing
+        // a merge that only borrows it (movesOf) takes nothing; a field taken out of a record (`let [a, b] =
+        // pair()`) is taken by what takes the field
         llvm::SmallVector<mlir::Operation *> takers;
         for (auto [user, used] : notReads)
         {
+            if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
+            {
+                fieldTakersOf(user, takers);
+                continue;
+            }
+
             llvm::SmallVector<BorrowUse> uses;
             if (!borrowsThroughMerge(user, used, value.getDefiningOp(), releases, uses, toErase))
             {
@@ -686,6 +693,42 @@ namespace own_inference
         return true;
     }
 
+    bool OwnershipInferencePass::fieldOnlyRead(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &reads)
+    {
+        auto onlyRead = true;
+        forEachUse(extract->getResult(0), [&](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
+            {
+                onlyRead = fieldOnlyRead(user, reads) && onlyRead;
+                return;
+            }
+
+            if (!isBorrow(user, used))
+            {
+                onlyRead = false;
+                return;
+            }
+
+            reads.push_back(user);
+        });
+
+        return onlyRead;
+    }
+
+    void OwnershipInferencePass::fieldTakersOf(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &takers)
+    {
+        forEachUse(extract->getResult(0), [&](mlir::Operation *user, mlir::Value used) {
+            if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
+            {
+                fieldTakersOf(user, takers);
+            }
+            else if (!mlir::isa<mlir_ts::RetainOp>(user) && !isBorrow(user, used))
+            {
+                takers.push_back(user);
+            }
+        });
+    }
+
     bool OwnershipInferencePass::movesOf(mlir::Value value, llvm::SetVector<mlir::Operation *> &toErase)
     {
         llvm::SmallVector<mlir::Operation *> takers;
@@ -699,6 +742,7 @@ namespace own_inference
                 return;
             }
 
+            llvm::SmallVector<mlir::Operation *> fieldReads;
             if (mlir::isa<mlir_ts::ReleaseOp>(user))
             {
                 releases.push_back(user);
@@ -707,6 +751,11 @@ namespace own_inference
             {
                 reads.push_back(user);
                 readOf.try_emplace(user, used);
+            }
+            else if (mlir::isa<mlir_ts::ExtractPropertyOp>(user) && fieldOnlyRead(user, fieldReads))
+            {
+                reads.push_back(user);
+                reads.append(fieldReads.begin(), fieldReads.end());
             }
             else if (!mergedValuesOf(user, used).empty())
             {

@@ -326,6 +326,11 @@ namespace own_inference
                 continue; // a `let` that borrows a merge: borrowsThroughMerge erased it
             }
 
+            if (toErase.contains(op))
+            {
+                continue; // decided already: a `let` that borrows a field of a record (checkValueMoves)
+            }
+
             // a retain of what holds no block takes nothing: a union's number payload made into
             // another union is a view of the union it came from, but a number all the way
             if (auto retainOp = mlir::dyn_cast<mlir_ts::RetainOp>(op); retainOp && holdsNoBlock(retainOp.getReference()))
