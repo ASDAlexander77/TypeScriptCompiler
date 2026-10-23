@@ -1702,9 +1702,15 @@ class MLIRGenImpl
         }
 
         // The value an interface or a bound method is made over: `v` seen through `I` in
-        // `const i: I = v`, or `this` of `const m = v.get`.
+        // `const i: I = v`, or `this` of `const m = v.get`, through any casts: a declared type
+        // (`const m: () => number = v.get`) casts the bound method to a hybrid function.
         static mlir::Value viewedValue(mlir::Value value)
         {
+            while (auto castOp = value ? value.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+            {
+                value = castOp.getIn();
+            }
+
             auto *definingOp = value ? value.getDefiningOp() : nullptr;
             if (auto newInterfaceOp = dyn_cast_or_null<mlir_ts::NewInterfaceOp>(definingOp))
             {
