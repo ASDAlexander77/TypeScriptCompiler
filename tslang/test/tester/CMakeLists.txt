@@ -408,6 +408,7 @@ tslang_add_test(NAME test-compile-00-global-argument-reassigned COMMAND test-run
 tslang_add_test(NAME test-compile-00-global-argument-view COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
 tslang_add_test(NAME test-compile-00-const-interface-field-read COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-compile-00-argument-place-overwritten COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
+tslang_add_test(NAME test-compile-00-argument-place-aliased COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-compile-00-temporary-read-in-finally COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-compile-00-unowned-local-store COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-compile-00-array-argument-held COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
@@ -993,6 +994,7 @@ tslang_add_test(NAME test-jit-00-global-argument-reassigned COMMAND test-runner 
 tslang_add_test(NAME test-jit-00-global-argument-view COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_argument_view.ts")
 tslang_add_test(NAME test-jit-00-const-interface-field-read COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_field_read.ts")
 tslang_add_test(NAME test-jit-00-argument-place-overwritten COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_overwritten.ts")
+tslang_add_test(NAME test-jit-00-argument-place-aliased COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00argument_place_aliased.ts")
 tslang_add_test(NAME test-jit-00-temporary-read-in-finally COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00temporary_read_in_finally.ts")
 tslang_add_test(NAME test-jit-00-unowned-local-store COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00unowned_local_store.ts")
 tslang_add_test(NAME test-jit-00-array-argument-held COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_argument_held.ts")
@@ -1968,6 +1970,7 @@ set(TSLANG_CORPUS
     00global_argument_view.ts
     00const_interface_field_read.ts
     00argument_place_overwritten.ts
+    00argument_place_aliased.ts
     00temporary_read_in_finally.ts
     00unowned_local_store.ts
     00array_argument_held.ts
