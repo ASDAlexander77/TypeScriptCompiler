@@ -131,11 +131,55 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         });
     }
 
+    // Whether `op` may run more than once in one run of its function: it is inside a loop op, or its
+    // block - or the block of a region op holding it - is on a cycle of its region's CFG, a path from
+    // the block's successors back to it. (By this pass the affine lowering has made every loop a CFG
+    // cycle of the function body; the loop op is kept for safety.)
+    static bool mayRunAgain(mlir::Operation *op)
+    {
+        for (auto *at = op; at && !mlir::isa<mlir_ts::FuncOp>(at); at = at->getParentOp())
+        {
+            if (mlir::isa<mlir::LoopLikeOpInterface>(at))
+            {
+                return true;
+            }
+
+            auto *block = at->getBlock();
+            if (!block)
+            {
+                return true; // not in a function: nothing is known of how often it runs
+            }
+
+            llvm::SmallPtrSet<mlir::Block *, 16> seen;
+            llvm::SmallVector<mlir::Block *> work(block->getSuccessors().begin(), block->getSuccessors().end());
+            while (!work.empty())
+            {
+                auto *next = work.pop_back_val();
+                if (next == block)
+                {
+                    return true;
+                }
+
+                if (seen.insert(next).second)
+                {
+                    work.append(next->getSuccessors().begin(), next->getSuccessors().end());
+                }
+            }
+        }
+
+        return false;
+    }
+
     // The immortal globals (OWN_IMMORTAL_GLOBAL_ATTR_NAME, spec 25). A global of a class type,
-    // not exported, is immortal when it is written once, by its initializer, and given a fresh
+    // not exported, is immortal when only its initializer writes it, once, and gives it a fresh
     // object, nothing, or another immortal global's value. Its initializer is either its own region
     // (`const c = new C()`) or, for a class static, the one store into it in the class's static
     // constructor, which a `ts.GlobalConstructor` runs (the region then yields only the default).
+    // Top-level script code is such a constructor too, so a module-level `let c: C;` it stores
+    // into once is one as well. "Once" is how often the store runs, not how many stores there are:
+    // a store in a loop (`static { for (...) K.w = new V(i); }`) would mark every block it is given
+    // immortal, and each old one would leak, so a store that may run again leaves the global mortal,
+    // and each store releases the old value, as for any other global.
     //
     // The store - the region's, which the lowering makes - marks the block HEAP_BLOCK_IMMORTAL, so
     // every block the global ever holds is one no release frees. The value test makes sure the block
@@ -232,11 +276,12 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                         continue;
                     }
 
-                    // the one store, in a static constructor
+                    // the one store, in a static constructor, run once
                     auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(addressUser);
                     auto funcOp = storeOp ? storeOp->getParentOfType<mlir_ts::FuncOp>() : mlir_ts::FuncOp();
                     if (initStore || !storeOp || storeOp.getReference() != addressOfOp.getResult() ||
-                        storeOp.getValue() == addressOfOp.getResult() || !funcOp || !constructors.contains(funcOp.getSymName()))
+                        storeOp.getValue() == addressOfOp.getResult() || !funcOp || !constructors.contains(funcOp.getSymName()) ||
+                        mayRunAgain(storeOp))
                     {
                         return;
                     }
@@ -5530,9 +5575,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                     }
                 }
 
-                // an immortal global (spec 25) is written once, by its initializer (a static's is a
-                // store in its static constructor, which writtenGlobals counts), and no release
-                // frees its block
+                // an immortal global (spec 25) is written by its initializer only, and that runs once
+                // (a static's is a store in its static constructor, outside any loop, which
+                // writtenGlobals counts), and no release frees its block
                 if (isHandle(argument) || isImmortalGlobalRead(argument) || !ownsHeap(call.op->getLoc(), argument.getType()))
                 {
                     continue;

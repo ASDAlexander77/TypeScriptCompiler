@@ -2810,8 +2810,12 @@ of `K.w` does nothing).
   the global is checked (`SymbolTable::getSymbolUses`), not only `ts.AddressOf`: a static is also
   reached through its class's vtable, and `k.w = x` with `k: typeof K` writes it through a
   `ts.VirtualSymbolRef` that `writtenGlobals` never sees. When any vtable reference is written
-  through, no static is immortal. A module-level `export let`, an exported class's static, a global
-  top-level script code assigns, and a global assigned anywhere else stay mortal.
+  through, no static is immortal. A module-level `export let`, an exported class's static, and a
+  global assigned anywhere else stay mortal. Top-level script code is itself a function a
+  `ts.GlobalConstructor` runs, so its one straight-line store into a global (`let c: V;` then
+  `c = new V(1)` at the top level, or `K.w = new V(1)`) is accepted like a static constructor's.
+  The store must run once (fix-up of 2026-10-23, below): one in a loop op, or in a block on a cycle
+  of its function's CFG, leaves the global mortal.
 - **Which values.** The initializer gives it an object made right there (`ts.New`, an owning
   literal; none it gives back with a `ts.Release`), nothing, or another immortal global's value
   (found to a fixpoint). A call's result never qualifies, whatever its callee: the pass decides
@@ -2864,6 +2868,32 @@ stored, returned or captured`). Teeth: with the header store skipped, the AOT an
 fail with `0xC0000374` (heap corruption: the first release frees `K.w`, and later reads and
 releases use the freed block). With the loop at 30 million (20 million fresh `V`s freed), own
 peaks at 4.3 MB, as rc does.
+
+**Fix-up, 2026-10-23: the store must run once.** "Written once" counted store ops, not how often
+they run. A static's one store in a loop of its static block (`static { for (1e6) K.w = new
+V(i + 1); }`), or a global's in a loop of top-level script code, marked every block it was given
+immortal, and the `ts.ReleaseSlot` before each store skipped the old one: own peaked at 589 MB for
+a million `V`s of 64 numbers (static block), 602 MB (`let c: V;` written in a top-level loop) and
+600 MB (`K.w` written in a top-level loop), rc at 4.4-4.5 MB. A leak, not a use-after-free: no block
+was freed early. `findImmortalGlobals` now refuses a store that may run again (`mayRunAgain`: an
+enclosing loop op, kept for safety, or a block on a cycle of its region's CFG, which is what the
+affine lowering leaves of every loop). Such a global is mortal: each store releases the value it
+replaces, and the three programs peak at 4.4 MB under own. A store in an `if` still runs once and
+is still accepted. What only compiled because the global was immortal is now an error, as for any
+mortal global: `let e = c` after the top-level loop ("borrows the global 'c' and cannot be stored,
+returned or captured", #636), and `let e = K.w` after the static block loop ("the initializer of
+global 'e' reads a value another owner keeps").
+
+`own_global_loop_store` writes `K.w` in a loop of its static block, `S.w` in a `while` of
+top-level code and `T.w` once in an `if` of its static block (returned from `t()`, which only an
+immortal global allows), 10000 rounds, under own, rc, gc and none, AOT and JIT; own emits no
+counting. `test-own-global-loop-store-mortal` checks its `--emit=mlir-affine`: `T.w`'s
+`ts.AddressOf` is marked `__own_immortal`, `K.w`'s and `S.w`'s are not. The module-level form
+`let c: V;` is not in the test: a `let` with no initializer warns. Negatives
+`own_err_global_loop_store_static` (`return K.w` after a static block loop) and
+`own_err_global_loop_store_script` (`let e = K.w` after a top-level loop), "borrows the global
+'K.w' and cannot be stored, returned or captured". Teeth (a temporary `OWN_TEETH` switch skipping
+`mayRunAgain`, removed): the mortal check fails (`K.w`/`S.w` marked) and both negatives compile.
 
 ## 26. `Shared<I>` of an object literal (G4 of the ray tracer plan), 2026-10-21
 

@@ -3506,7 +3506,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_declared_no_drops own_return_paths own_string_concat_element
                  own_final_fresh_result own_final_field_lend own_null_narrowing_di
                  own_param_markers own_generator_locals own_string_param_assigned own_lends
-                 own_immortal_global own_immortal_global_region
+                 own_immortal_global own_immortal_global_region own_global_loop_store
                  own_literal_moves own_record_literal_given
                  own_field_chain_let own_read_after_move own_conditional_move
                  own_interface_facts own_declared_scalar_no_drops
@@ -3525,11 +3525,20 @@ endforeach()
 
 # A global never reassigned is immortal under own (spec 25); the same program under every other model.
 foreach(immortal_mm rc gc none)
-    foreach(immortal_test own_immortal_global own_immortal_global_region)
+    foreach(immortal_test own_immortal_global own_immortal_global_region own_global_loop_store)
         tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
         tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
     endforeach()
 endforeach()
+
+# A global whose one store runs in a loop is mortal (spec 25): its stores are not marked, so each
+# releases the value before it, which an immortal header would leak. The `if` arm's store runs once.
+add_test(NAME test-own-global-loop-store-mortal
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=own
+                 "${PROJECT_SOURCE_DIR}/test/tester/own/own_global_loop_store.ts")
+set_tests_properties(test-own-global-loop-store-mortal
+                     PROPERTIES PASS_REGULAR_EXPRESSION "global_name = @T[.]w}> {__own_immortal}"
+                                FAIL_REGULAR_EXPRESSION "global_name = @[KS][.]w}> {__own_immortal}|error|Stack dump")
 
 # An object literal that owns its fields moves anywhere a fresh object does under own (spec 27);
 # the same programs under every other model.
@@ -3913,6 +3922,8 @@ set(own_error_cases
     "own_err_immortal_field_overwritten|borrows .* but is used here after .* released or overwritten"
     "own_err_immortal_region_borrow|the initializer of global 'c' holds the result of 'firstOf', which borrows its argument"
     "own_err_immortal_region_call|the initializer of global 'c' holds the result of 'id', which borrows its argument"
+    "own_err_global_loop_store_static|borrows the global 'K[.]w' and cannot be stored, returned or captured"
+    "own_err_global_loop_store_script|borrows the global 'K[.]w' and cannot be stored, returned or captured"
     "own_err_global_argument_assigned|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_method_assigns|a value read out of the global 'G' is lent to a call that may release or overwrite it"
     "own_err_global_let_call|borrows the global 'names', but -mm=own cannot prove the global keeps its value"
