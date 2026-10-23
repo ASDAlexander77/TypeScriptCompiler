@@ -1566,8 +1566,13 @@ namespace mlirgen
     // string - starts a local of its own the same way, which own makes from a copy of the caller's string (spec
     // 22.3) and which then owns each string assigned to it. Left as the parameter's slot, what was assigned to it
     // had no owner: it leaked, and `return s` gave back a copy of it - read up to its first NUL, so the default
-    // library's `"".clone().resize(n)` returned a string of one byte that its caller wrote n into. Any other
-    // parameter own refuses to assign (OwnershipInferencePass), and a collector needs none of this.
+    // library's `"".clone().resize(n)` returned a string of one byte that its caller wrote n into.
+    //
+    // -mm=own: a Shared<T> parameter the body assigns is copied too. Own steps aside for Shared handles - their
+    // counts are rc's - so it accepts the assignment, and the slot held a handle that only borrowed the new
+    // value: assigned in a loop, the handle was released at the end of the loop body and a later `p.value` read
+    // freed memory. Any other parameter own refuses to assign (OwnershipInferencePass), and a collector needs
+    // none of this.
     mlir::LogicalResult MLIRGenImpl::mlirGenFunctionOwnAssignedParams(mlir::Location location,
                                                                       FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                                       FunctionPrototypeDOM::TypePtr funcProto,
@@ -1585,7 +1590,7 @@ namespace mlirgen
         for (const auto &param : funcProto->getParams())
         {
             if (param->getBindingPattern() || !mth.ownsHeapMemory(location, param->getType()) ||
-                (own && !mlir::isa<mlir_ts::StringType>(param->getType())))
+                (own && !mlir::isa<mlir_ts::StringType, mlir_ts::SharedType>(param->getType())))
             {
                 continue;
             }
