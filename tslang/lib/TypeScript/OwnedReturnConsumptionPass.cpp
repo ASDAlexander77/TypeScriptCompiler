@@ -555,6 +555,18 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
+                // An argument read out of a slot or a place that a later argument of the same call
+                // overwrites (`f(n, (n = mk(), n))`), or out of a field or an element of an object
+                // the call is given as well (`f(n, n.items[0])`, which `f` may overwrite through
+                // its other parameter): either one frees the block the argument read. Under rc the
+                // caller holds it, as it holds a global's (A1, R8 of the fuzzer).
+                if (compileOptions.isRefCounted() &&
+                    (overwrittenBeforeCall(argument, op) || readFromOtherArgument(argument, op)))
+                {
+                    held.push_back({op, argument});
+                    continue;
+                }
+
                 auto global = globalOf(argument, false);
                 auto isHandle = MLIRTypeHelper::isSharedHandleType(argument.getType());
                 if (global.empty() || (isHandle ? !mayAssign(op, global) : !compileOptions.isRefCounted()))
@@ -637,6 +649,110 @@ class OwnedReturnConsumptionPass
             handlerBuilder.create<mlir_ts::StoreOp>(
                 location, handlerBuilder.create<mlir_ts::DefaultOp>(location, argument.getType()), slot);
         }
+    }
+
+    static mlir::Value stripCasts(mlir::Value value)
+    {
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            value = castOp.getIn();
+        }
+
+        return value;
+    }
+
+    // Do two references name the same place? One SSA reference, one global, or one field of the
+    // same value - each access to a field builds a `ts.PropertyRef` of its own.
+    static bool samePlace(mlir::Value a, mlir::Value b)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+
+        auto globalA = a.getDefiningOp<mlir_ts::AddressOfOp>();
+        auto globalB = b.getDefiningOp<mlir_ts::AddressOfOp>();
+        if (globalA && globalB)
+        {
+            return globalA.getGlobalName() == globalB.getGlobalName();
+        }
+
+        auto fieldA = a.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto fieldB = b.getDefiningOp<mlir_ts::PropertyRefOp>();
+        return fieldA && fieldB && fieldA.getPosition() == fieldB.getPosition() &&
+               sameValue(fieldA->getOperand(0), fieldB->getOperand(0));
+    }
+
+    // Are two values one value: one SSA value, or reads of one place?
+    static bool sameValue(mlir::Value a, mlir::Value b)
+    {
+        a = stripCasts(a);
+        b = stripCasts(b);
+        if (a == b)
+        {
+            return true;
+        }
+
+        auto loadA = a.getDefiningOp<mlir_ts::LoadOp>();
+        auto loadB = b.getDefiningOp<mlir_ts::LoadOp>();
+        return loadA && loadB && samePlace(loadA.getReference(), loadB.getReference());
+    }
+
+    // Is the argument read out of a slot or a place that something between the read and the call
+    // overwrites - a later argument (`f(n, (n = mk(), n))`)?
+    static bool overwrittenBeforeCall(mlir::Value argument, mlir::Operation *call)
+    {
+        auto loadOp = stripCasts(argument).getDefiningOp<mlir_ts::LoadOp>();
+        if (!loadOp || loadOp->getBlock() != call->getBlock())
+        {
+            return false;
+        }
+
+        auto reference = loadOp.getReference();
+        for (auto *op = loadOp->getNextNode(); op && op != call; op = op->getNextNode())
+        {
+            auto overwrites = op->walk([&](mlir::Operation *nested) {
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(nested);
+                auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(nested);
+                auto place = storeOp ? storeOp.getReference() : releaseSlotOp ? releaseSlotOp.getSlot() : mlir::Value();
+                return place && samePlace(place, reference) ? mlir::WalkResult::interrupt()
+                                                            : mlir::WalkResult::advance();
+            });
+
+            if (overwrites.wasInterrupted())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Is the argument read out of a field or an element of a value the call is given as another
+    // argument (`f(n, n.items[0])`)?
+    static bool readFromOtherArgument(mlir::Value argument, mlir::Operation *call)
+    {
+        auto value = stripCasts(argument);
+        for (auto depth = 0; depth < 8; depth++)
+        {
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+            if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::InterfaceSymbolRefOp>(place))
+            {
+                return false;
+            }
+
+            value = place->getOperand(0);
+            for (auto other : own_facts::callArgs(call))
+            {
+                if (stripCasts(other) != stripCasts(argument) && sameValue(other, value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // Where an exception out of `op` is taken first within its function: the region of the try
