@@ -4368,6 +4368,3 @@ Not here:
   are not values `movesOf` checks, so `each`'s `ts.RetainSlot` is still `merged from several
   branches` (and `moved inside a loop`). A `const each` of the same reads compiled before this section
   and still does.
-- Under rc a folded `const` that a ternary yields is never given back (`releaseDiscardedTemporaries`
-  skips a value a `ts.Result` uses), so the class cases leak `h` and `h2` under rc, and under own
-  too. The interface cases do not: their `ts.New` is used by the view, not by the branch.
