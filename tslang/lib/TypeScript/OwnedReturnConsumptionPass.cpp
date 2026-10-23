@@ -464,7 +464,9 @@ class OwnedReturnConsumptionPass
             auto value = argument;
             for (;;)
             {
-                if (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+                // a constant array cast to an array is copied to the heap there: the copy is the read
+                auto castOp = value.getDefiningOp<mlir_ts::CastOp>();
+                if (castOp && !mlir::isa<mlir_ts::ConstArrayType>(castOp.getIn().getType()))
                 {
                     value = castOp.getIn();
                 }
@@ -523,6 +525,44 @@ class OwnedReturnConsumptionPass
             reads.push_back(value);
         };
 
+        // A new array given straight to a call (`g([mk(1)])`) is born at count 0 (bornUncounted), and
+        // nothing else owns it: a count the callee took and gave back - `const a = p` in a loop, or a
+        // parameter it assigns, copied into an owned local - freed the array the callee still read.
+        // Under rc the caller holds it across the call too, and so gives it back after the call,
+        // which nothing did before.
+        auto arrayMadeFor = [](mlir::Value value, mlir::Operation *call) {
+            auto *definingOp = value.getDefiningOp();
+            auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(definingOp);
+            auto isNewArray =
+                mlir::isa_and_nonnull<mlir_ts::CreateArrayOp, mlir_ts::NewArrayOp, mlir_ts::NewEmptyArrayOp>(definingOp) ||
+                (castOp && mlir::isa<mlir_ts::ConstArrayType>(castOp.getIn().getType()) &&
+                 mlir::isa<mlir_ts::ArrayType>(value.getType()));
+            if (!isNewArray)
+            {
+                return false;
+            }
+
+            // its one use is the call, through casts
+            while (value.hasOneUse())
+            {
+                auto *user = *value.getUsers().begin();
+                if (user == call)
+                {
+                    return true;
+                }
+
+                auto userCastOp = mlir::dyn_cast<mlir_ts::CastOp>(user);
+                if (!userCastOp)
+                {
+                    return false;
+                }
+
+                value = userCastOp.getRes();
+            }
+
+            return false;
+        };
+
         llvm::SmallVector<std::pair<mlir::Operation *, mlir::Value>> held;
         module.walk([&](mlir::Operation *op) {
             if (!own_facts::isCall(op) || op->hasTrait<mlir::OpTrait::IsTerminator>() ||
@@ -552,6 +592,12 @@ class OwnedReturnConsumptionPass
             {
                 if (!mth.ownsHeapMemory(op->getLoc(), argument.getType()) || !seen.insert(argument).second)
                 {
+                    continue;
+                }
+
+                if (compileOptions.isRefCounted() && arrayMadeFor(argument, op))
+                {
+                    held.push_back({op, argument});
                     continue;
                 }
 
