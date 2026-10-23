@@ -1104,7 +1104,9 @@ namespace mlirgen
     // came first. For any other interface the cast carries where each of the target's slots is in the
     // source's vtable, and lowering builds the target's vtable from the value's own one. A slot is copied
     // as it is - a field's offset, a method, a cell, -1 for an absent member - so a member is taken only
-    // where both name it alike: a field for a field of the same type, a method for a method.
+    // where both name it alike: a field for a field of the same type, a method for a method. A member the
+    // source lacks is absent, as an optional one is: such a cast (`tube = ball`, a Ball having no
+    // `length`) was always let through.
     std::optional<ValueOrLogicalResult> MLIRGenImpl::castInterfaceToInterface(mlir::Location location, mlir::Value value,
                                                                              mlir_ts::InterfaceType srcInterfaceType,
                                                                              mlir_ts::InterfaceType interfaceType,
@@ -1163,10 +1165,6 @@ namespace mlirgen
                 {
                     cannotCast(builder.getStringAttr(method.name), "is a method of one and a field of the other");
                 }
-                else if (!method.isConditional)
-                {
-                    cannotCast(builder.getStringAttr(method.name), "is missing");
-                }
             }
 
             for (auto &field : info->fields)
@@ -1191,10 +1189,6 @@ namespace mlirgen
                          fieldName && srcInterfaceInfo->findMethod(fieldName.getValue()))
                 {
                     cannotCast(field.id, "is a method of one and a field of the other");
-                }
-                else if (!field.isConditional)
-                {
-                    cannotCast(field.id, "is missing");
                 }
             }
         };
