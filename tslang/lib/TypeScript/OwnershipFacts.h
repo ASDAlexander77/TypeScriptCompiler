@@ -421,13 +421,60 @@ inline bool isInterfaceField(mlir::Value ref)
     return ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>() && mlir::isa<mlir_ts::RefType>(ref.getType());
 }
 
+// The kinds of place (isPlace), and the value each is reached through (placeBase).
+enum class PlaceKind
+{
+    None,
+    Field,         // `o.f`: the object
+    Element,       // `a[i]`: the array
+    SharedValue,   // `s.value`, a handle's payload (spec 23.1): the handle
+    InterfaceField // `i.f`, a field reached through an interface (spec 28): the interface value
+};
+
+struct PlaceBase
+{
+    mlir::Value base;
+    PlaceKind kind = PlaceKind::None;
+
+    explicit operator bool() const
+    {
+        return kind != PlaceKind::None;
+    }
+};
+
+// The one definition of a place: every walk from a place up to what holds it starts here, so a
+// new kind of place is seen by all of them. Each walk decides for itself what a kind means.
+inline PlaceBase placeBase(mlir::Value ref)
+{
+    auto *def = ref.getDefiningOp();
+    if (auto propertyRefOp = mlir::dyn_cast_or_null<mlir_ts::PropertyRefOp>(def))
+    {
+        return {propertyRefOp.getObjectRef(), PlaceKind::Field};
+    }
+
+    if (auto elementRefOp = mlir::dyn_cast_or_null<mlir_ts::ElementRefOp>(def))
+    {
+        return {elementRefOp.getArray(), PlaceKind::Element};
+    }
+
+    if (auto sharedValueRefOp = mlir::dyn_cast_or_null<mlir_ts::SharedValueRefOp>(def))
+    {
+        return {sharedValueRefOp.getShared(), PlaceKind::SharedValue};
+    }
+
+    if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def); interfaceRefOp && isInterfaceField(ref))
+    {
+        return {interfaceRefOp.getInterfaceVal(), PlaceKind::InterfaceField};
+    }
+
+    return {};
+}
+
 // A field, an element, or `s.value` - the payload of a handle (spec 23.1) - and a field reached
 // through an interface (spec 28).
 inline bool isPlace(mlir::Value ref)
 {
-    return mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::SharedValueRefOp>(
-               ref.getDefiningOp()) ||
-           isInterfaceField(ref);
+    return static_cast<bool>(placeBase(ref));
 }
 
 // The storage a reference addresses - a local's `ts.Variable` or a global's `ts.AddressOf` - itself
@@ -679,22 +726,14 @@ inline bool reachesSharedValue(mlir::Value ref)
             continue;
         }
 
-        if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+        if (auto place = placeBase(value))
         {
-            return true;
-        }
+            if (place.kind == PlaceKind::SharedValue)
+            {
+                return true;
+            }
 
-        if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
-        {
-            work.push_back(propertyRefOp.getObjectRef());
-        }
-        else if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
-        {
-            work.push_back(elementRefOp.getArray());
-        }
-        else if (auto interfaceRefOp = value.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>(); interfaceRefOp && isInterfaceField(value))
-        {
-            work.push_back(interfaceRefOp.getInterfaceVal());
+            work.push_back(place.base);
         }
         else if (auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>(); loadOp && isPlace(loadOp.getReference()))
         {
@@ -733,11 +772,21 @@ inline mlir_ts::LoadOp slotLoadOf(mlir::Value value)
     return loadOp;
 }
 
+// The ownership passes ask MLIRTypeHelper about types only, under the default options.
+inline MLIRTypeHelper typeHelper(mlir::MLIRContext *context)
+{
+    return MLIRTypeHelper(context, CompileOptions{});
+}
+
 // Does a value of this type own a block that a release would destroy?
+inline bool ownsHeap(mlir::Location location, mlir::Type type)
+{
+    return typeHelper(type.getContext()).ownsHeapMemory(location, type);
+}
+
 inline bool ownsHeap(mlir::Value value)
 {
-    MLIRTypeHelper mth(value.getContext(), CompileOptions{});
-    return mth.ownsHeapMemory(value.getLoc(), value.getType());
+    return ownsHeap(value.getLoc(), value.getType());
 }
 
 // Holds no block: a number, `null` or `undefined` widened, an empty optional, a string literal.
@@ -811,8 +860,7 @@ inline bool isCopyableString(mlir::Type type)
         }
 
         // only a union that lowers to one pointer: a tagged union is a struct
-        MLIRTypeHelper mth(type.getContext(), CompileOptions{});
-        return !mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), unionType);
+        return !typeHelper(type.getContext()).isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), unionType);
     }
 
     return isText(type);
@@ -976,7 +1024,7 @@ inline bool isOwningRecord(mlir::Value value)
         return false;
     }
 
-    MLIRTypeHelper mth(value.getContext(), CompileOptions{});
+    auto mth = typeHelper(value.getContext());
     for (auto *user : varOp->getUsers())
     {
         auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
@@ -1175,19 +1223,11 @@ inline int borrowedParam(mlir::Value value, int depth = 0)
         return borrowedParam(unboxOp.getIn(), depth + 1);
     }
 
-    if (auto propertyRefOp = mlir::dyn_cast_or_null<mlir_ts::PropertyRefOp>(def))
+    // a field, an element, a field through an interface: the argument's block holds them. A
+    // handle's payload is any handle's, no parameter's.
+    if (auto place = placeBase(value); place && place.kind != PlaceKind::SharedValue)
     {
-        return borrowedParam(propertyRefOp.getObjectRef(), depth + 1);
-    }
-
-    if (auto elementRefOp = mlir::dyn_cast_or_null<mlir_ts::ElementRefOp>(def))
-    {
-        return borrowedParam(elementRefOp.getArray(), depth + 1);
-    }
-
-    if (auto interfaceRefOp = mlir::dyn_cast_or_null<mlir_ts::InterfaceSymbolRefOp>(def); interfaceRefOp && isInterfaceField(value))
-    {
-        return borrowedParam(interfaceRefOp.getInterfaceVal(), depth + 1);
+        return borrowedParam(place.base, depth + 1);
     }
 
     if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(def))

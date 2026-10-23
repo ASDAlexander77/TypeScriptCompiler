@@ -1783,10 +1783,9 @@ class OwnershipInferencePass
             }
 
             auto name = varName(varOp);
-            MLIRTypeHelper mth(&getContext(), CompileOptions{});
             auto elementType = mlir::cast<mlir_ts::RefType>(value.getType()).getElementType();
             // a handle's cell holds a count of its own, whoever's the value was (spec 23.2)
-            if (!isOwningVariable(varOp) && !closure.borrowsValues && mth.ownsHeapMemory(varOp.getLoc(), elementType) &&
+            if (!isOwningVariable(varOp) && !closure.borrowsValues && ownsHeap(varOp.getLoc(), elementType) &&
                 !MLIRTypeHelper::isSharedHandleType(elementType))
             {
                 reportEscapingCellNotOwned(move, closure.escape, "its value is the caller's");
@@ -1870,9 +1869,8 @@ class OwnershipInferencePass
                 return;
             }
 
-            MLIRTypeHelper mth(&getContext(), CompileOptions{});
             auto elementType = mlir::cast<mlir_ts::RefType>(cell.getType()).getElementType();
-            if (!mth.ownsHeapMemory(varOp.getLoc(), elementType))
+            if (!ownsHeap(varOp.getLoc(), elementType))
             {
                 return;
             }
@@ -3707,31 +3705,26 @@ class OwnershipInferencePass
             else
             {
                 auto ref = refs.pop_back_val();
-                mlir::Value base;
-                if (auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>())
+                auto place = placeBase(ref);
+                assert(place && "chainOf walks places only");
+                switch (place.kind)
                 {
-                    chain.places.push_back({propertyRefOp.getPosition(), propertyRefOp.getType()});
-                    base = propertyRefOp.getObjectRef();
-                }
-                else if (auto sharedValueRefOp = ref.getDefiningOp<mlir_ts::SharedValueRefOp>())
-                {
-                    chain.places.push_back({Chain::SharedValue, sharedValueRefOp.getType()});
-                    base = sharedValueRefOp.getShared();
-                    handleBases.insert(rootOf(base));
-                }
-                else if (auto interfaceRefOp = ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
-                {
-                    chain.places.push_back({Chain::InterfaceField, interfaceRefOp.getType()});
-                    base = interfaceRefOp.getInterfaceVal();
-                }
-                else
-                {
-                    auto elementRefOp = ref.getDefiningOp<mlir_ts::ElementRefOp>();
-                    chain.places.push_back({-1, elementRefOp.getType()});
-                    base = elementRefOp.getArray();
+                case PlaceKind::Field:
+                    chain.places.push_back({ref.getDefiningOp<mlir_ts::PropertyRefOp>().getPosition(), ref.getType()});
+                    break;
+                case PlaceKind::SharedValue:
+                    chain.places.push_back({Chain::SharedValue, ref.getType()});
+                    handleBases.insert(rootOf(place.base));
+                    break;
+                case PlaceKind::InterfaceField:
+                    chain.places.push_back({Chain::InterfaceField, ref.getType()});
+                    break;
+                default:
+                    chain.places.push_back({-1, ref.getType()});
+                    break;
                 }
 
-                bases.push_back(rootOf(base));
+                bases.push_back(rootOf(place.base));
             }
 
             while (!bases.empty())
@@ -4678,46 +4671,41 @@ class OwnershipInferencePass
 
     std::string pathOf(mlir::Value ref)
     {
-        mlir::Value base;
+        auto place = placeBase(ref);
         std::string step;
-        if (auto propertyRefOp = ref.getDefiningOp<mlir_ts::PropertyRefOp>())
+        switch (place.kind)
         {
-            auto field = fieldName(propertyRefOp);
+        case PlaceKind::Field: {
+            auto field = fieldName(ref.getDefiningOp<mlir_ts::PropertyRefOp>());
             if (field.empty())
             {
                 return {};
             }
 
-            base = propertyRefOp.getObjectRef();
             step = "." + field;
+            break;
         }
-        else if (auto elementRefOp = ref.getDefiningOp<mlir_ts::ElementRefOp>())
-        {
-            base = elementRefOp.getArray();
+        case PlaceKind::Element:
             step = "[]";
-        }
-        else if (auto sharedValueRefOp = ref.getDefiningOp<mlir_ts::SharedValueRefOp>())
-        {
-            base = sharedValueRefOp.getShared();
+            break;
+        case PlaceKind::SharedValue:
             step = ".value";
-        }
-        else if (auto interfaceRefOp = ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
-        {
-            auto field = mlir::dyn_cast<mlir::StringAttr>(interfaceRefOp.getIdentifier());
+            break;
+        case PlaceKind::InterfaceField: {
+            auto field = mlir::dyn_cast<mlir::StringAttr>(ref.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>().getIdentifier());
             if (!field)
             {
                 return {};
             }
 
-            base = interfaceRefOp.getInterfaceVal();
             step = "." + field.getValue().str();
+            break;
         }
-        else
-        {
+        case PlaceKind::None:
             return {};
         }
 
-        base = rootOf(base);
+        auto base = rootOf(place.base);
         std::string prefix;
         if (isPlace(base))
         {
@@ -4869,8 +4857,7 @@ class OwnershipInferencePass
 
     bool ownsHeap(mlir::Location location, mlir::Type type)
     {
-        MLIRTypeHelper mth(&getContext(), CompileOptions{});
-        return mth.ownsHeapMemory(location, type);
+        return own_facts::ownsHeap(location, type);
     }
 
     // A tuple read out of a local that a `ts.Constant` initializes, whose owning fields hold what

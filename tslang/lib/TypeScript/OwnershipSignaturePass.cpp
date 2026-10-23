@@ -222,7 +222,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         // each candidate with the value its initializer gives it, and the store that does, if any
         llvm::MapVector<mlir_ts::GlobalOp, std::pair<mlir::Value, mlir_ts::StoreOp>> candidates;
-        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        auto mth = typeHelper(&getContext());
         module.walk([&](mlir_ts::GlobalOp globalOp) {
             if (!mlir::isa<mlir_ts::ClassType>(globalOp.getType()) || !mth.ownsHeapMemory(globalOp.getLoc(), globalOp.getType()) ||
                 globalOp->hasAttr("export") || globalOp->hasAttr("import") || globalOp->hasAttr(DLL_EXPORT) ||
@@ -4425,7 +4425,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         // each field that holds a block: owned (made here, or nothing) or borrowed, never both
         RecordBox info;
         llvm::SmallVector<int32_t> borrowed;
-        MLIRTypeHelper mth(&getContext(), CompileOptions{});
+        auto mth = typeHelper(&getContext());
         for (auto *user : varOp->getUsers())
         {
             auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
@@ -5205,8 +5205,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     bool ownsHeap(mlir::Location location, mlir::Type type)
     {
-        MLIRTypeHelper mth(&getContext(), CompileOptions{});
-        return mth.ownsHeapMemory(location, type);
+        return own_facts::ownsHeap(location, type);
     }
 
     void findBorrowingStates(mlir::ModuleOp module)
@@ -5914,27 +5913,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
                 continue;
             }
 
-            // a handle's payload: any other handle may reach it (spec 23.3)
-            if (value.getDefiningOp<mlir_ts::SharedValueRefOp>())
+            if (auto place = placeBase(value))
             {
-                return true;
-            }
+                // a handle's payload: any other handle may reach it (spec 23.3)
+                if (place.kind == PlaceKind::SharedValue)
+                {
+                    return true;
+                }
 
-            if (auto propertyRefOp = value.getDefiningOp<mlir_ts::PropertyRefOp>())
-            {
-                work.push_back(propertyRefOp.getObjectRef());
-                continue;
-            }
-
-            if (auto elementRefOp = value.getDefiningOp<mlir_ts::ElementRefOp>())
-            {
-                work.push_back(elementRefOp.getArray());
-                continue;
-            }
-
-            if (auto interfaceRefOp = value.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>(); interfaceRefOp && isInterfaceField(value))
-            {
-                work.push_back(interfaceRefOp.getInterfaceVal());
+                work.push_back(place.base);
                 continue;
             }
 
