@@ -1086,6 +1086,20 @@ namespace mlirgen
                 return castInterfaceToInterface(location, value, srcInterfaceType, interfaceType, genContext);
             }
 
+            // `J | null` or `C | null` (a `J | undefined` given to `I | undefined` gets here too) is stored
+            // as its one member, null a null pointer in it: this is the cast of that member. A plain cast
+            // kept J's vtable for I, and lowering could not make a class pointer an interface.
+            if (auto srcUnionType = dyn_cast<mlir_ts::UnionType>(valueType))
+            {
+                mlir::Type srcBaseType;
+                if (!mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType)
+                    && isa_and_nonnull<mlir_ts::ClassType, mlir_ts::InterfaceType>(srcBaseType))
+                {
+                    auto member = builder.create<mlir_ts::GetValueFromUnionOp>(location, srcBaseType, value);
+                    return cast(location, interfaceType, member, genContext);
+                }
+            }
+
             // A number, string, boolean or array has no fields an interface's members could be read
             // from: passed for an `{ kind: number }` it compiled, without a word, to a cast that
             // lowering could not make, and the callee read garbage. An interface without members
@@ -1692,11 +1706,13 @@ namespace mlirgen
 
         // `C | null` given to `I | null`: both are stored as their one member (null is a null pointer
         // in it), so this is the class-to-interface cast of `C` to `I`. A plain cast read the class
-        // pointer as an interface.
+        // pointer as an interface. `J | null` given to `I | null` is likewise the cast of `J` to `I`,
+        // which gives an `I` that `J` does not extend a vtable of its own (castInterfaceToInterface).
         if (auto srcUnionType = dyn_cast<mlir_ts::UnionType>(valueType); srcUnionType && isa<mlir_ts::InterfaceType>(baseType))
         {
             mlir::Type srcBaseType;
-            if (mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType) || !isa_and_nonnull<mlir_ts::ClassType>(srcBaseType))
+            if (mth.isUnionTypeNeedsTag(location, srcUnionType, srcBaseType)
+                || !isa_and_nonnull<mlir_ts::ClassType, mlir_ts::InterfaceType>(srcBaseType))
             {
                 return std::nullopt;
             }
