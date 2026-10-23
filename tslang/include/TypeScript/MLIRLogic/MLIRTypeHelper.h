@@ -3978,9 +3978,9 @@ protected:
 
         // An interface is a reference to whatever it was made from, and holds it alive the
         // same way a class reference does. The concrete layout is not recoverable from the
-        // type - which is why this used to answer no - but it does not have to be: the value
-        // carries the runtime type tag of its `this` (INTERFACE_TYPE_INDEX), and release and
-        // retain go through that, exactly as they do for an `any` box.
+        // type - which is why this used to answer no - but it does not have to be: the value's
+        // vtable carries the runtime type tag of its `this` (INTERFACE_VTABLE_TYPE_SLOT), and
+        // release and retain go through that, exactly as they do for an `any` box.
         if (isa<mlir_ts::InterfaceType>(type))
         {
             return true;

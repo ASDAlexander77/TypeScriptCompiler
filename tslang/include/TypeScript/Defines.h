@@ -165,14 +165,23 @@
 #define SIZE_NAME ".size"
 #define INSTANCEOF_NAME ".instanceOf"
 #define INSTANCEOF_PARAM_NAME "rttiParam"
-// Every interface vtable starts with the `.instanceOf` of what implements it, ahead of the
-// interface's own members: a class's own `.instanceOf`, or, for an object literal, which is no
-// instance of any class, INSTANCEOF_NONE_NAME, which answers false. That lets `i instanceof C`
-// and `<C>anyHoldingAnInterface` ask an interface value what it is. An interface member's slot
-// (InterfaceSymbolRefOp's index) is its index among the members, so the vtable slot is that plus
-// INTERFACE_VTABLE_HEADER_SLOTS.
-#define INTERFACE_VTABLE_INSTANCEOF_SLOT 0
-#define INTERFACE_VTABLE_HEADER_SLOTS 1
+// Every interface vtable starts with a header ahead of the interface's own members:
+// - the runtime type tag of what implements it (INTERFACE_VTABLE_TYPE_SLOT): the type descriptor of
+//   the class or the object literal the vtable is for, through which an interface value is released
+//   and retained (see OwnershipRoutineLogic and section 9.31). Null when that type owns no heap
+//   memory, and in an interface's null vtable (mlirGenNullInterfaceVTable).
+// - the `.instanceOf` of what implements it: a class's own `.instanceOf`, or, for an object literal,
+//   which is no instance of any class, INSTANCEOF_NONE_NAME, which answers false. That lets
+//   `i instanceof C` and `<C>anyHoldingAnInterface` ask an interface value what it is.
+// An interface member's slot (InterfaceSymbolRefOp's index) is its index among the members, so the
+// vtable slot is that plus INTERFACE_VTABLE_HEADER_SLOTS.
+// a class's own vtable starts with its `.instanceOf`
+#define CLASS_VTABLE_INSTANCEOF_SLOT 0
+#define INTERFACE_VTABLE_TYPE_SLOT 0
+#define INTERFACE_VTABLE_INSTANCEOF_SLOT 1
+#define INTERFACE_VTABLE_HEADER_SLOTS 2
+// the name of the type tag's slot in an interface vtable's tuple
+#define INTERFACE_VTABLE_TYPE_NAME ".type"
 // on the global of an interface's null vtable (mlirGenNullInterfaceVTable): a null interface is seen
 // through it, and nothing implements the interface by it
 #define NULL_INTERFACE_VTABLE_ATTR_NAME "__null_interface_vtable"
@@ -344,16 +353,11 @@
 #define DATA_VALUE_INDEX 0
 #define THIS_VALUE_INDEX 1
 
-// An interface value is { vtable, this, type } - the first two share the indexes above with
-// every other pair-shaped value. The third is the runtime type tag of whatever `this` points
-// at, which an interface needs for the same reason an `any` box does: the interface type
-// carries only a name, so the layout behind `this` is not recoverable from it. With the tag
-// there, an interface can be released and retained like anything else, through the concrete
-// type's own routines (see OwnershipRoutineLogic and section 9.31).
-//
-// Null when `this` owns no heap memory - a null interface, or one made from a value that
-// carries nothing.
-#define INTERFACE_TYPE_INDEX 2
+// An interface value is { vtable, this }, sharing the indexes above with every other pair-shaped
+// value. The runtime type tag of whatever `this` points at, which an interface needs for the same
+// reason an `any` box does - the interface type carries only a name, so the layout behind `this`
+// is not recoverable from it - is the vtable's first slot (INTERFACE_VTABLE_TYPE_SLOT): the vtable
+// is made for that type, the class's or the object literal's.
 
 // A bound or hybrid function value is { func, this, type }, and the third word is there for the
 // same reason as an interface's: the `this` of a closure is its capture box, heap-allocated and

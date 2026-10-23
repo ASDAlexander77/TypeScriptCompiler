@@ -96,7 +96,7 @@ namespace own_signature
             }
 
             return llvm::any_of(found->second, [&](mlir_ts::TupleType vtableType) {
-                return llvm::any_of(llvm::drop_begin(vtableType.getFields(), 1),
+                return llvm::any_of(llvm::drop_begin(vtableType.getFields(), INTERFACE_VTABLE_HEADER_SLOTS),
                                     [&](const mlir_ts::FieldInfo &info) { return holdsFunction(info.type, /*fields=*/true, seen); });
             });
         }

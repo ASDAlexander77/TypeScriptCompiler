@@ -413,10 +413,27 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
             return mlir::failure();
         }
 
+        // -mm=own: a borrowing record's box (own spec 32) has a routine, and so a descriptor, of its
+        // own, which leaves the fields it borrows to their owners: the tag of the vtable it is seen
+        // through as an interface (OwnershipSignaturePass::giveBorrowingRecordsTheirVTables)
+        llvm::ArrayRef<int32_t> borrowed;
+        if (auto attr = op->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
+            attr && tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            borrowed = attr.asArrayRef();
+        }
+
+        std::string variant;
+        for (auto index : borrowed)
+        {
+            variant += "r" + std::to_string(index);
+        }
+
         // generated first: the descriptor's initializer takes the routine's address, so the
         // symbol has to exist before the global is built
         OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        auto releaseRoutineName = orl.getOrCreateReleaseRoutine(descriptorType);
+        auto releaseRoutineName = borrowed.empty() ? orl.getOrCreateReleaseRoutine(descriptorType)
+                                                   : orl.getOrCreateRecordReleaseRoutine(descriptorType, borrowed);
         // Under own nothing retains: the descriptor's retain slot is read only from inside
         // retain routines (retainViaDescriptor), none of which can run, and building one would
         // bring `__tslang_inc_ref` into a model that promises it is never referenced. A Shared<T>
@@ -429,7 +446,7 @@ class TypeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::TypeDescriptorOp>
 
         rewriter.replaceOp(op, ch.getOrCreateTypeDescriptorName(descriptorType, name,
                                                                TypeOfOpHelper::typeKindFromName(name),
-                                                               releaseRoutineName, retainRoutineName));
+                                                               releaseRoutineName, retainRoutineName, variant));
 
         return success();
     }
@@ -6680,7 +6697,8 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                              MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        // the vtable starts with the implementer's `.instanceOf` - see INTERFACE_VTABLE_HEADER_SLOTS
+        // the vtable starts with its header, the implementer's type tag and `.instanceOf` - see
+        // INTERFACE_VTABLE_HEADER_SLOTS
         auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
             loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex() + INTERFACE_VTABLE_HEADER_SLOTS);
 
@@ -6729,10 +6747,10 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
             // (getBoundObjectTypeTag), and a receiver of the bound value - `c = ix.get` - holds the
             // object. Bound through an interface, the object's type is not known here, so the bound
             // value had no tag, counted nothing, and `c()` ran on a freed object once the interface
-            // went. The interface carries the tag of what it points at (NewInterfaceOpLowering), and
-            // the bound value takes that one: null for a missing optional method, whose `this` is.
-            mlir::Value tag = rewriter.create<LLVM::ExtractValueOp>(
-                loc, th.getPtrType(), transformed.getInterfaceVal(), MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
+            // went. The interface's vtable carries the tag of what it points at (INTERFACE_VTABLE_TYPE_SLOT),
+            // and the bound value takes that one: null for a missing optional method, whose `this` is.
+            // The method's slot is read out of the same vtable, so it is not a null one.
+            mlir::Value tag = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getPtrType(), vtable, INTERFACE_VTABLE_TYPE_SLOT);
             if (isOptional)
             {
                 auto isNullThis = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, thisValEffective,
@@ -6906,74 +6924,13 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 {
     using TsLlvmPattern<mlir_ts::NewInterfaceOp>::TsLlvmPattern;
 
-    // The runtime type tag for whatever `this` points at, to go in INTERFACE_TYPE_INDEX.
-    //
-    // Null when that type owns no heap memory - which covers `null` and `undefined` cast to
-    // an interface, where `this` is a null pointer and there would be nothing to release
-    // anyway. A null tag states that positively, the same way a null descriptor slot does.
-    //
-    // The descriptor this returns is keyed by the concrete type, not by the `typeof` name, so
-    // two object literals of different shapes get their own records rather than sharing the
-    // one every "object" would otherwise map to.
-    mlir::Value getTypeTag(mlir_ts::NewInterfaceOp newInterfaceOp, ConversionPatternRewriter &rewriter) const
-    {
-        TypeHelper th(rewriter);
-        auto loc = newInterfaceOp.getLoc();
-        auto thisType = newInterfaceOp.getThisVal().getType();
-
-        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
-        if (!mth.ownsHeapMemory(loc, thisType))
-        {
-            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
-        }
-
-        TypeOfOpHelper toh(rewriter);
-        auto name = toh.typeOfAsString(thisType);
-        if (name.empty())
-        {
-            // an interface over a type with no `typeof` name: nothing to key a descriptor on,
-            // so it goes untracked and leaks rather than guessing at a record
-            return rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
-        }
-
-        // generated first: the descriptor's initializer takes their addresses
-        OwnershipRoutineLogic orl(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        // -mm=own: a borrowing record's box (own spec 32) has a routine, and so a descriptor, of its
-        // own, which leaves the fields it borrows to their owners
-        llvm::ArrayRef<int32_t> borrowed;
-        if (auto attr = newInterfaceOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_BORROWED_FIELDS_ATTR_NAME);
-            attr && tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
-        {
-            borrowed = attr.asArrayRef();
-        }
-
-        auto releaseRoutineName = borrowed.empty() ? orl.getOrCreateReleaseRoutine(thisType)
-                                                   : orl.getOrCreateRecordReleaseRoutine(thisType, borrowed);
-        // under own nothing retains: see TypeDescriptorOpLowering
-        auto retainRoutineName = tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn
-                                     ? std::string()
-                                     : orl.getOrCreateRetainRoutine(thisType);
-
-        std::string variant;
-        for (auto index : borrowed)
-        {
-            variant += "r" + std::to_string(index);
-        }
-
-        LLVMCodeHelper ch(newInterfaceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        return ch.getOrCreateTypeDescriptorName(thisType, name, TypeOfOpHelper::typeKindFromName(name),
-                                                releaseRoutineName, retainRoutineName, variant);
-    }
-
+    // { vtable, this }: the runtime type tag of what `this` points at is the vtable's, made for
+    // that type (INTERFACE_VTABLE_TYPE_SLOT, mlirGenInterfaceVTableTypeTag)
     LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         Location loc = newInterfaceOp.getLoc();
 
-        TypeHelper th(rewriter);
-        CodeLogicHelper clh(newInterfaceOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
         auto llvmInterfaceType = tch.convertType(newInterfaceOp.getType());
@@ -6984,14 +6941,7 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
-        // Every interface value in the program is built here - a cast from a class, from an
-        // object literal, and even `null`/`undefined` as an interface all end up at this op
-        // (CastLogicHelper) - which is what makes the type tag safe to rely on: there is no
-        // other way to produce an interface value with the slot left undefined.
-        auto structVal4 = rewriter.create<LLVM::InsertValueOp>(loc, structVal3, getTypeTag(newInterfaceOp, rewriter),
-                                                               MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
-
-        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal4});
+        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
 
         return success();
     }
@@ -8326,11 +8276,10 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         TypeHelper th(m.getContext());
 
         SmallVector<mlir::Type> rtInterfaceType;
-        // vtable
+        // vtable, whose header holds the runtime type tag of what `this` points at - see
+        // INTERFACE_VTABLE_TYPE_SLOT
         rtInterfaceType.push_back(th.getPtrType());
         // this
-        rtInterfaceType.push_back(th.getPtrType());
-        // runtime type tag of what `this` points at - see INTERFACE_TYPE_INDEX
         rtInterfaceType.push_back(th.getPtrType());
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);

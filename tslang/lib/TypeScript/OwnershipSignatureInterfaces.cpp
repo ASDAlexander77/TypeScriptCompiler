@@ -750,7 +750,11 @@ namespace own_signature
                 }
             });
 
-            auto header = slotFunction(values.lookup(0));
+            // a class's own vtable starts with its `..instanceOf`; an interface vtable has the type tag
+            // ahead of it (INTERFACE_VTABLE_TYPE_SLOT)
+            auto classHeader = slotFunction(values.lookup(0));
+            auto isClassVTable = classHeader && classHeader.getValue() == (owner + "..instanceOf").str();
+            auto header = isClassVTable ? classHeader : slotFunction(values.lookup(INTERFACE_VTABLE_INSTANCEOF_SLOT));
             auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(globalOp.getType());
             if (!header || !tupleType)
             {
@@ -758,7 +762,7 @@ namespace own_signature
                 return;
             }
 
-            if (header.getValue() == (owner + "..instanceOf").str())
+            if (isClassVTable)
             {
                 // an exported class (not in an executable, whose exports no module sees)
                 auto exposed = !executable && (!globalOp.isPrivate() || globalOp->hasAttr("export") || globalOp->hasAttr(DLL_EXPORT));
@@ -799,7 +803,7 @@ namespace own_signature
             vtable.type = tupleType;
             for (auto &[position, value] : values)
             {
-                if (position > 0)
+                if (position >= INTERFACE_VTABLE_HEADER_SLOTS)
                 {
                     vtable.slots[position] = slotFunction(value);
                     if (auto field = slotField(value); field.first)
@@ -1165,7 +1169,7 @@ namespace own_signature
                 {
                     for (auto [position, field] : llvm::enumerate(found->second.type.getFields()))
                     {
-                        if (position > 0)
+                        if (position >= INTERFACE_VTABLE_HEADER_SLOTS)
                         {
                             memberTypeInterfaces(field.type, scan.memberInterfaces[name]);
                         }
@@ -1261,7 +1265,7 @@ namespace own_signature
                 auto &vtable = scan.vtables[vtableName];
                 for (auto [position, field] : llvm::enumerate(vtable.type.getFields()))
                 {
-                    if (position == 0)
+                    if (position < INTERFACE_VTABLE_HEADER_SLOTS)
                     {
                         continue;
                     }

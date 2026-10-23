@@ -1171,6 +1171,8 @@ namespace mlirgen
         }
 
         SmallVector<int32_t> vtableMap(interfaceInfo->getVTableSize() + INTERFACE_VTABLE_HEADER_SLOTS, -1);
+        // the header is the value's, whatever interface it is seen through
+        vtableMap[INTERFACE_VTABLE_TYPE_SLOT] = INTERFACE_VTABLE_TYPE_SLOT;
         vtableMap[INTERFACE_VTABLE_INSTANCEOF_SLOT] = INTERFACE_VTABLE_INSTANCEOF_SLOT;
 
         // the first member the cast can't map, reported only when the vtable can't serve as it is

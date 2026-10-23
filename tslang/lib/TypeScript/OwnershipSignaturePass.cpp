@@ -136,6 +136,9 @@ namespace own_signature
                                  mlir::DenseI32ArrayAttr::get(&getContext(), assigned.getArrayRef()));
             }
         });
+
+        // last: the boxes that borrow are settled
+        giveBorrowingRecordsTheirVTables(module);
     }
 
     mlir_ts::FuncOp OwnershipSignaturePass::closureBody(mlir_ts::CreateBoundFunctionOp boundOp)

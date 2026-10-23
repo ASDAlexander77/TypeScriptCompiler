@@ -802,6 +802,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     llvm::DenseMap<mlir::Operation *, RecordBox> recordBoxes;
 
     void classifyRecordBoxes();
+    void giveBorrowingRecordsTheirVTables(mlir::ModuleOp module);
 
     void classifyRecordBox(mlir_ts::NewOp newOp);
 

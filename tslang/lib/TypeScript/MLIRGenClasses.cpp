@@ -2582,8 +2582,9 @@ genContext);
             return result;
         }
 
-        // slot 0: the class's own `.instanceOf` (INTERFACE_VTABLE_HEADER_SLOTS), ahead of the
-        // interface's members, so an interface value can be asked what class it holds. A class
+        // the header (INTERFACE_VTABLE_HEADER_SLOTS), ahead of the interface's members: the class's
+        // type tag, through which an interface value over an object of it is released and retained,
+        // and its own `.instanceOf`, so an interface value can be asked what class it holds. A class
         // with no `.instanceOf` (no vtable of its own) is an instance of nothing it can answer for.
         if (auto *instanceOf = newClassPtr->findMethod(INSTANCEOF_NAME))
         {
@@ -2594,6 +2595,8 @@ genContext);
             auto noInstanceOf = mlirGenNoInstanceOfFunction(location);
             virtualTable.insert(virtualTable.begin(), VirtualMethodOrFieldInfo(noInstanceOf));
         }
+
+        virtualTable.insert(virtualTable.begin(), interfaceVTableTypeSlot());
 
         // a method implementing this interface can itself be owned by a dynamically imported
         // class (not just a base of it) - such a slot can't be a link-time constant SymbolRefOp
@@ -2772,7 +2775,13 @@ genContext);
                 auto fieldIndex = 0;
                 for (auto methodOrField : virtualTable)
                 {
-                    if (methodOrField.isMissing)
+                    if (isInterfaceVTableTypeSlot(methodOrField))
+                    {
+                        auto typeTag = mlirGenInterfaceVTableTypeTag(location, newClassPtr->classType);
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, typeTag, vtableValue, MLIRHelper::getStructIndex(builder, fieldIndex));
+                    }
+                    else if (methodOrField.isMissing)
                     {
                         // a genuinely-absent optional (`?`) interface field/method the class
                         // doesn't implement - mirrors the object-literal handling in
