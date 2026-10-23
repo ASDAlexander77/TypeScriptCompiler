@@ -6457,15 +6457,15 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 thisValEffective = rewriter.create<LLVM::SelectOp>(loc, isMissing, nullThisVal, thisVal);
             }
 
-            auto thisOpaque =
-                rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisValEffective);
-            auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
-                loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
-                methodOrFieldPtr);
-            auto boundFuncVal =
-                rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
             if (!tsLlvmContext->compileOptions.isRefCounted())
             {
+                auto thisOpaque = rewriter.create<mlir_ts::CastOp>(
+                    loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisValEffective);
+                auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
+                    loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
+                    methodOrFieldPtr);
+                auto boundFuncVal =
+                    rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
                 rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
                 return success();
             }
@@ -6485,12 +6485,16 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 tag = rewriter.create<LLVM::SelectOp>(loc, isNullThis, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), tag);
             }
 
-            auto llvmBoundFunctionType = tch.convertType(boundFunc);
-            auto boundLLVM =
-                rewriter.create<mlir::UnrealizedConversionCastOp>(loc, llvmBoundFunctionType, boundFuncVal.getResult()).getResult(0);
-            auto tagged = rewriter.create<LLVM::InsertValueOp>(loc, boundLLVM, tag,
-                                                               MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
-            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{tagged});
+            // built here as CreateBoundFunctionOpLowering builds it, rather than over a
+            // ts.CreateBoundFunction still waiting for its own conversion
+            auto structVal = rewriter.create<LLVM::UndefOp>(loc, tch.convertType(boundFunc));
+            auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, methodOrFieldPtr,
+                                                                   MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+            auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, thisValEffective,
+                                                                   MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
+            auto structVal4 = rewriter.create<LLVM::InsertValueOp>(loc, structVal3, tag,
+                                                                   MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{structVal4});
         }
         else
         {
