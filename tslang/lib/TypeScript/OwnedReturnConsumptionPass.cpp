@@ -17,6 +17,9 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
+#include <set>
+#include <tuple>
+
 #define DEBUG_TYPE "pass"
 
 namespace mlir_ts = mlir::typescript;
@@ -601,6 +604,18 @@ class OwnedReturnConsumptionPass
                     continue;
                 }
 
+                // An argument read out of a slot or a place that a later argument of the same call
+                // overwrites (`f(n, (n = mk(), n))`), or out of a field or an element of an object
+                // the call is given as well (`f(n, n.items[0])`, which `f` may overwrite through
+                // its other parameter): either one frees the block the argument read. Under rc the
+                // caller holds it, as it holds a global's (A1, R8 of the fuzzer).
+                if (compileOptions.isRefCounted() &&
+                    (overwrittenBeforeCall(argument, op) || readFromOtherArgument(argument, op)))
+                {
+                    held.push_back({op, argument});
+                    continue;
+                }
+
                 auto global = globalOf(argument, false);
                 auto isHandle = MLIRTypeHelper::isSharedHandleType(argument.getType());
                 if (global.empty() || (isHandle ? !mayAssign(op, global) : !compileOptions.isRefCounted()))
@@ -683,6 +698,126 @@ class OwnedReturnConsumptionPass
             handlerBuilder.create<mlir_ts::StoreOp>(
                 location, handlerBuilder.create<mlir_ts::DefaultOp>(location, argument.getType()), slot);
         }
+    }
+
+    static mlir::Value stripCasts(mlir::Value value)
+    {
+        while (auto castOp = value.getDefiningOp<mlir_ts::CastOp>())
+        {
+            value = castOp.getIn();
+        }
+
+        return value;
+    }
+
+    // Do two references name the same place? One SSA reference, one global, or one field of the
+    // same value - each access to a field builds a `ts.PropertyRef` of its own.
+    static bool samePlace(mlir::Value a, mlir::Value b)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+
+        auto globalA = a.getDefiningOp<mlir_ts::AddressOfOp>();
+        auto globalB = b.getDefiningOp<mlir_ts::AddressOfOp>();
+        if (globalA && globalB)
+        {
+            return globalA.getGlobalName() == globalB.getGlobalName();
+        }
+
+        auto fieldA = a.getDefiningOp<mlir_ts::PropertyRefOp>();
+        auto fieldB = b.getDefiningOp<mlir_ts::PropertyRefOp>();
+        return fieldA && fieldB && fieldA.getPosition() == fieldB.getPosition() &&
+               sameValue(fieldA->getOperand(0), fieldB->getOperand(0));
+    }
+
+    // Are two values one value: one SSA value, or reads of one place?
+    static bool sameValue(mlir::Value a, mlir::Value b)
+    {
+        a = stripCasts(a);
+        b = stripCasts(b);
+        if (a == b)
+        {
+            return true;
+        }
+
+        auto loadA = a.getDefiningOp<mlir_ts::LoadOp>();
+        auto loadB = b.getDefiningOp<mlir_ts::LoadOp>();
+        return loadA && loadB && samePlace(loadA.getReference(), loadB.getReference());
+    }
+
+    // Is the argument read out of a slot or a place that something between the read and the call
+    // overwrites - a later argument (`f(n, (n = mk(), n))`)?
+    //
+    // So is one read out of a field or an element of a value read so: overwriting `n` in
+    // `f({ v: n.v }, (n = mk(), 0))` gives back the object whose field the argument read.
+    static bool overwrittenBeforeCall(mlir::Value argument, mlir::Operation *call)
+    {
+        auto value = stripCasts(argument);
+        for (auto depth = 0; depth < 8; depth++)
+        {
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            if (!loadOp || loadOp->getBlock() != call->getBlock())
+            {
+                return false;
+            }
+
+            auto reference = loadOp.getReference();
+            for (auto *op = loadOp->getNextNode(); op && op != call; op = op->getNextNode())
+            {
+                auto overwrites = op->walk([&](mlir::Operation *nested) {
+                    auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(nested);
+                    auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(nested);
+                    auto place =
+                        storeOp ? storeOp.getReference() : releaseSlotOp ? releaseSlotOp.getSlot() : mlir::Value();
+                    return place && samePlace(place, reference) ? mlir::WalkResult::interrupt()
+                                                                : mlir::WalkResult::advance();
+                });
+
+                if (overwrites.wasInterrupted())
+                {
+                    return true;
+                }
+            }
+
+            auto *place = reference.getDefiningOp();
+            if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::InterfaceSymbolRefOp>(place))
+            {
+                return false;
+            }
+
+            value = stripCasts(place->getOperand(0));
+        }
+
+        return false;
+    }
+
+    // Is the argument read out of a field or an element of a value the call is given as another
+    // argument (`f(n, n.items[0])`)?
+    static bool readFromOtherArgument(mlir::Value argument, mlir::Operation *call)
+    {
+        auto value = stripCasts(argument);
+        for (auto depth = 0; depth < 8; depth++)
+        {
+            auto loadOp = value.getDefiningOp<mlir_ts::LoadOp>();
+            auto *place = loadOp ? loadOp.getReference().getDefiningOp() : nullptr;
+            if (!mlir::isa_and_nonnull<mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::InterfaceSymbolRefOp>(place))
+            {
+                return false;
+            }
+
+            value = place->getOperand(0);
+            for (auto other : own_facts::callArgs(call))
+            {
+                if (stripCasts(other) != stripCasts(argument) && sameValue(other, value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // Where an exception out of `op` is taken first within its function: the region of the try
@@ -1361,6 +1496,7 @@ class OwnedReturnConsumptionPass
         });
 
         mlir::OpBuilder builder(&getContext());
+        std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> placedAfterFinally;
         for (auto *op : discarded)
         {
             if (!allUsesReleasableInOwnBlock(op) || storedIntoUnownedLocalOutside(op))
@@ -1414,7 +1550,7 @@ class OwnedReturnConsumptionPass
                     auto leavesBlock = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(nested) ||
                                        (mlir::isa<mlir_ts::BreakOp, mlir_ts::ContinueOp>(nested) &&
                                         jumpLeavesBlock(nested, block));
-                    if (leavesBlock)
+                    if (leavesBlock && !releaseAfterFinally(builder, op, nested, block, placedAfterFinally))
                     {
                         builder.setInsertionPoint(nested);
                         builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
@@ -1444,6 +1580,85 @@ class OwnedReturnConsumptionPass
 
             builder.create<mlir_ts::ReleaseOp>(op->getLoc(), op->getResult(0));
         }
+    }
+
+    // A jump out of a `try` body or catch clause runs the `finally` first, and the finally may read
+    // the temporary: `const v = mv(); try { if (c) continue; } finally { s += v.get(); }` gave `v`
+    // back at the `continue`, before the finally read it. Or the finally may leave by a jump of its
+    // own, which releases the temporary in front of it too: `try { continue; } finally { break; }`
+    // gave it back twice. When a jump passes through a finally between it and the temporary's block,
+    // the release goes at the end of the outermost such finally instead - the last one the jump
+    // runs - inside a `ts.If` tagged with the jump, as MLIRGen does for the scopes the jump leaves
+    // (mlirGenScopeExitAfterFinally), so that TryOpLowering keeps it in the copy of the finally that
+    // jump runs and in no other. A finally that leaves on its own never reaches it. False when the
+    // jump passes through no finally.
+    //
+    // Every jump with one key runs one copy, so the release goes in once for each (`placed`).
+    static bool releaseAfterFinally(mlir::OpBuilder &builder, mlir::Operation *op, mlir::Operation *jump,
+                                    mlir::Block *block,
+                                    std::set<std::tuple<mlir::Operation *, mlir::Operation *, std::string>> &placed)
+    {
+        mlir_ts::TryOp lastTry;
+        for (auto *child = jump; child->getBlock() != block; child = child->getParentOp())
+        {
+            auto tryOp = mlir::dyn_cast<mlir_ts::TryOp>(child->getParentOp());
+            if (!tryOp || child->getParentRegion() == &tryOp.getFinally() ||
+                child->getParentRegion() == &tryOp.getCleanup())
+            {
+                continue;
+            }
+
+            auto &finally = tryOp.getFinally();
+            if (finally.empty() || &finally.front().front() == finally.front().getTerminator())
+            {
+                continue;
+            }
+
+            lastTry = tryOp;
+        }
+
+        if (!lastTry)
+        {
+            return false;
+        }
+
+        auto value = op->getResult(0);
+
+        auto isReturn = mlir::isa<mlir_ts::ReturnValOp, mlir_ts::ReturnOp>(jump);
+        std::string key;
+        if (!isReturn)
+        {
+            auto isBreak = mlir::isa<mlir_ts::BreakOp>(jump);
+            auto label = isBreak ? mlir::cast<mlir_ts::BreakOp>(jump).getLabelAttr()
+                                 : mlir::cast<mlir_ts::ContinueOp>(jump).getLabelAttr();
+            key = std::string(isBreak ? JUMP_ONLY_BREAK_KEY : JUMP_ONLY_CONTINUE_KEY) +
+                  (label ? label.getValue().str() : std::string());
+        }
+
+        if (!placed.insert({op, lastTry.getOperation(), isReturn ? std::string(RETURN_ONLY_ATTR_NAME) : key}).second)
+        {
+            return true;
+        }
+
+        auto location = op->getLoc();
+        auto &finallyEnd = lastTry.getFinally().back();
+        builder.setInsertionPoint(finallyEnd.getTerminator());
+        auto alwaysTrue = builder.create<mlir_ts::ConstantOp>(location, mlir_ts::BooleanType::get(builder.getContext()),
+                                                              builder.getBoolAttr(true));
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, alwaysTrue, /*withElseRegion=*/false);
+        if (isReturn)
+        {
+            ifOp->setAttr(RETURN_ONLY_ATTR_NAME, builder.getUnitAttr());
+        }
+        else
+        {
+            ifOp->setAttr(JUMP_ONLY_ATTR_NAME, builder.getStringAttr(key));
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        builder.create<mlir_ts::ReleaseOp>(location, value);
+        return true;
     }
 
     // Does `op` catch this jump - is it the loop, switch or labelled statement the jump names?
