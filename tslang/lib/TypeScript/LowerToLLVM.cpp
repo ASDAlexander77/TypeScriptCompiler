@@ -6464,7 +6464,33 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 methodOrFieldPtr);
             auto boundFuncVal =
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
-            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
+            if (!tsLlvmContext->compileOptions.isRefCounted())
+            {
+                rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
+                return success();
+            }
+
+            // Under rc a method bound to an object counts it through the object's type tag
+            // (getBoundObjectTypeTag), and a receiver of the bound value - `c = ix.get` - holds the
+            // object. Bound through an interface, the object's type is not known here, so the bound
+            // value had no tag, counted nothing, and `c()` ran on a freed object once the interface
+            // went. The interface carries the tag of what it points at (NewInterfaceOpLowering), and
+            // the bound value takes that one: null for a missing optional method, whose `this` is.
+            mlir::Value tag = rewriter.create<LLVM::ExtractValueOp>(
+                loc, th.getPtrType(), transformed.getInterfaceVal(), MLIRHelper::getStructIndex(rewriter, INTERFACE_TYPE_INDEX));
+            if (isOptional)
+            {
+                auto isNullThis = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, thisValEffective,
+                                                                rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()));
+                tag = rewriter.create<LLVM::SelectOp>(loc, isNullThis, rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType()), tag);
+            }
+
+            auto llvmBoundFunctionType = tch.convertType(boundFunc);
+            auto boundLLVM =
+                rewriter.create<mlir::UnrealizedConversionCastOp>(loc, llvmBoundFunctionType, boundFuncVal.getResult()).getResult(0);
+            auto tagged = rewriter.create<LLVM::InsertValueOp>(loc, boundLLVM, tag,
+                                                               MLIRHelper::getStructIndex(rewriter, CLOSURE_TYPE_INDEX));
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{tagged});
         }
         else
         {
