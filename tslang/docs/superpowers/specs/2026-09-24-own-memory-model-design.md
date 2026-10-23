@@ -994,7 +994,13 @@ checks that the program is rejected against the rc library.
 
 - An exported function, or a method of an exported class, gets no owned or borrowed facts (§15.8
   says why they cannot be exported), and a virtual call on one gets no `__own_no_drops`. That is
-  sound and restrictive for `-shared` modules.
+  sound and restrictive for `-shared` modules. The exception is a call on an object of another
+  module's `@final` class. It still goes through the vtable, but no class can extend the class, so
+  the slot holds the method the call names. MLIRGen marks its `ts.ThisVirtualSymbolRef`
+  `__final_receiver`, and the signature pass resolves the call as one to that imported function,
+  so its `__own_no_drops` applies. A record (§32) can then be read across such a call
+  (`import_own_record.ts`); across a method call on a class that is not `@final` it cannot
+  (`import_own_record_open_method.ts`).
 - A value an importer under own receives from a library built under rc (a call's result, now an
   object it builds with `new` too) is destroyed at the end of its owner's scope. Own's release
   skips only immortal blocks. So if the library kept a reference of its own, that is a
