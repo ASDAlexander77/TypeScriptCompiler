@@ -470,6 +470,22 @@ TEST_F(DeclarationPrinterTest, plain_interface_has_no_value_decorator)
     EXPECT_THAT(text, testing::Not(testing::HasSubstr("@value")));
 }
 
+// a field of a @value interface is readonly, and an importer re-parsing the declaration checks it
+TEST_F(DeclarationPrinterTest, value_interface_prints_readonly_fields)
+{
+    auto ii = makeInterface("Rec");
+    ii->isValue = true;
+    ii->fields.push_back(ifield(strAttr("x"), get<mlir_ts::NumberType>()));
+    auto text = printInterface(ii);
+    EXPECT_THAT(text, testing::HasSubstr("readonly x: number;"));
+
+    auto plain = makeInterface("Rec2");
+    plain->fields.push_back(ifield(strAttr("x"), get<mlir_ts::NumberType>()));
+    auto plainText = printInterface(plain);
+    EXPECT_THAT(plainText, testing::HasSubstr("x: number;"));
+    EXPECT_THAT(plainText, testing::Not(testing::HasSubstr("readonly")));
+}
+
 TEST_F(DeclarationPrinterTest, abstract_method_prints_abstract_keyword)
 {
     auto ci = makeClass("Shape");

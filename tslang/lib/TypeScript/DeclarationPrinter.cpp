@@ -861,6 +861,9 @@ namespace typescript
                 continue;
 
             os.indent(4);
+            // every field of a @value interface is readonly, and the importer checks it again
+            if (interfaceType->isValue)
+                os << "readonly ";
             printAsFieldName(field.id);
             if (field.isConditional)
                 os << "?";
