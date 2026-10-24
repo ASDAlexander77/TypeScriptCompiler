@@ -1882,10 +1882,29 @@ namespace mlirgen
                 && !funcProto->getParams().empty() && funcProto->getParams().front()->getName() == THIS_NAME)
             {
                 auto thisRefType = dyn_cast<mlir_ts::RefType>(funcProto->getParams().front()->getType());
-                if (auto classInfo = thisRefType ? getValueClassInfo(thisRefType.getElementType()) : ClassInfo::TypePtr();
-                    classInfo && failed(checkValueConstructorThisUses(functionLikeDeclarationBaseAST, classInfo->name)))
+                if (auto classInfo = thisRefType ? getValueClassInfo(thisRefType.getElementType()) : ClassInfo::TypePtr())
                 {
-                    return mlir::failure();
+                    auto thisUses = checkValueConstructorThisUses(functionLikeDeclarationBaseAST->body, classInfo->name);
+
+                    // ...and so do its instance fields' initializers, which run in it (in the one made
+                    // for them when none is written)
+                    if (classInfo->processingDeclaration)
+                    {
+                        for (auto &member : classInfo->processingDeclaration->members)
+                        {
+                            if (member == SyntaxKind::PropertyDeclaration && !hasModifier(member, SyntaxKind::StaticKeyword)
+                                && member.as<PropertyDeclaration>()->initializer
+                                && failed(checkValueConstructorThisUses(member.as<PropertyDeclaration>()->initializer, classInfo->name)))
+                            {
+                                thisUses = mlir::failure();
+                            }
+                        }
+                    }
+
+                    if (failed(thisUses))
+                    {
+                        return mlir::failure();
+                    }
                 }
             }
 
@@ -2224,8 +2243,9 @@ namespace mlirgen
     // object would have it. So `this` may only be the object of a member access (`this.a`,
     // `this.a = x`, `this.a++`, `this.m()`, `this["a"]`), read as the slot is at that point, in the
     // constructor or in an arrow function inside it, whose `this` is the constructor's. A function,
-    // method, accessor or class inside it has a `this` of its own.
-    mlir::LogicalResult MLIRGenImpl::checkValueConstructorThisUses(FunctionLikeDeclarationBase constructorAST, StringRef className)
+    // method, accessor or class inside it has a `this` of its own. `root` is the constructor's body, or
+    // an instance field's initializer, which runs in the constructor too (mlirGenFunctionBody).
+    mlir::LogicalResult MLIRGenImpl::checkValueConstructorThisUses(Node root, StringRef className)
     {
         auto result = mlir::success();
 
@@ -2289,7 +2309,7 @@ namespace mlirgen
             return undefined;
         };
 
-        ts::forEachChild(constructorAST->body, visitNode, visitArray);
+        visitNode(root);
         return result;
     }
 

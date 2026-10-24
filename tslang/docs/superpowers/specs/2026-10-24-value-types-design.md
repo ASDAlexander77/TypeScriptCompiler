@@ -120,7 +120,9 @@ would not know its class.
   of `this` as a whole value - `const self = this`, `let s = this`, `f(this)`, `arr.push(this)`,
   `return this`, `[this]`, `{ v: this }`, `...this`, `() => this` - is an error: "'this' of the
   @value class 'V' is not a value until its constructor returns; read 'this.f'". A copy taken
-  there would miss the fields stored after it, where TypeScript's object has them.
+  there would miss the fields stored after it, where TypeScript's object has them. An instance
+  field's initializer runs in the constructor (in the one made for it when none is written), so the
+  same rule holds there: `readonly b = show(this)` is the error, `readonly b = this.a * 2` is not.
 - Instance methods and getters take `this` as a value (or a pointer to a caller copy: builder's
   choice) and are called directly; there is no vtable and no `.instanceOf`. Setters are an error.
 - Static members are unchanged. A static field of the class's own type (`static white = new

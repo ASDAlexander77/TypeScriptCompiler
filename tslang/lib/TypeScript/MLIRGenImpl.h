@@ -11870,7 +11870,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkValueConstructorClosures(mlir_ts::FuncOp funcOp);
 
-    mlir::LogicalResult checkValueConstructorThisUses(FunctionLikeDeclarationBase constructorAST, StringRef className);
+    mlir::LogicalResult checkValueConstructorThisUses(Node root, StringRef className);
 
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
                                            mlir::Value thisValue, bool addGenericAttrFlag,

@@ -3114,7 +3114,9 @@ set(value_error_cases
     "value_self_iface|@value type 'L' contains itself through 'next'. a value cannot hold itself"
     "value_self_class|@value type 'N' contains itself through 'next'. a value cannot hold itself"
     "value_self_mutual|@value type 'A' contains itself through 'b.a'. a value cannot hold itself"
-    "value_self_array|@value type 'L' contains itself through 'next'. a value cannot hold itself")
+    "value_self_array|@value type 'L' contains itself through 'next'. a value cannot hold itself"
+    "value_ctor_this_init|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_init_noctor|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
     string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
