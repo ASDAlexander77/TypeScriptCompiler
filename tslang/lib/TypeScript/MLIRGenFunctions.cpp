@@ -1876,8 +1876,9 @@ namespace mlirgen
                 return mlir::failure();
             }
 
-            // a @value class's constructor reads `this` only through its members
-            if (!funcGenContext.dummyRun && functionLikeDeclarationBaseAST == SyntaxKind::Constructor
+            // a @value class's constructor reads `this` only through its members - in a discovery run
+            // too, where a use of `this` whole may fail first with an error of its own (`{ ...this }`)
+            if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor
                 && !funcProto->getParams().empty() && funcProto->getParams().front()->getName() == THIS_NAME)
             {
                 auto thisRefType = dyn_cast<mlir_ts::RefType>(funcProto->getParams().front()->getType());
