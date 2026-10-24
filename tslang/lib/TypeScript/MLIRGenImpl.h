@@ -3677,7 +3677,7 @@ class MLIRGenImpl
                 auto optValue = 
                     isa<mlir_ts::OptionalType>(value.getType())
                         ? value
-                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                        : mlirGenOptionalValueOf(location, value);
                 return ValueOrLogicalResult(optValue); 
             }, 
             [&](mlir::Type trueValueType) { 
@@ -3804,7 +3804,8 @@ class MLIRGenImpl
     bool isInterfaceVTableTypeSlot(const VirtualMethodOrFieldInfo &methodOrField);
     mlir::Value mlirGenInterfaceVTableTypeTag(mlir::Location location, mlir::Type implementerType);
     mlir::LogicalResult mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
-                                                  mlir_ts::FunctionType funcType, const GenContext &genContext);
+                                                  mlir_ts::FunctionType funcType, const GenContext &genContext,
+                                                  StringRef message = "method is abstract");
     ValueOrLogicalResult mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
                                                     const GenContext &genContext);
     ValueOrLogicalResult mlirGenNullInterfaceVTableCast(mlir::Location location, mlir::Type type,
@@ -8594,6 +8595,62 @@ class MLIRGenImpl
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
                                  mlir::Attribute id, mlir::Value argument, const GenContext &genContext);
 
+    // The value a @value value that may be missing (MLIRTypeHelper::getMissingValueType) holds. When it
+    // holds null or undefined the read throws, as a member of a null interface does: through a stub
+    // made as that one's methods are (mlirGenThrowingMethodStub). The check is a branch with no result,
+    // so nothing is merged.
+    ValueOrLogicalResult mlirGenPresentValue(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        auto valueType = MLIRTypeHelper::getMissingValueElement(value.getType());
+        assert(valueType);
+
+        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto missing = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsToken, value, nullValue, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(missing)
+
+        auto stubName = concat(valueType.getName().getValue(), ".missing");
+        auto stubType = getFunctionType({getOpaqueType()}, {}, false);
+        if (mlir::failed(mlirGenThrowingMethodStub(location, ".missing", stubName, stubType, genContext,
+                                                   "a @" VALUE_DECORATOR " value is null or undefined")))
+        {
+            return mlir::failure();
+        }
+
+        {
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, V(missing), false);
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+            auto stubRef = builder.create<mlir_ts::SymbolRefOp>(
+                location, stubType, mlir::FlatSymbolRefAttr::get(builder.getContext(), stubName));
+            auto nullThis = builder.create<mlir_ts::CastOp>(location, getOpaqueType(),
+                                                            builder.create<mlir_ts::NullOp>(location, getNullType()));
+            builder.create<mlir_ts::CallIndirectOp>(MLIRHelper::getCallSiteLocation(stubRef, location), stubRef,
+                                                    mlir::ValueRange{nullThis});
+        }
+
+        auto unionValue = value;
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+        {
+            unionValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
+        }
+
+        return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, valueType, unionValue));
+    }
+
+    // `value` as an optional of its type (getOptionalType): a @value value is the present value of
+    // the one optional every missing value of its type is
+    mlir::Value mlirGenOptionalValueOf(mlir::Location location, mlir::Value value)
+    {
+        auto optType = getOptionalType(value.getType());
+        if (isa<mlir_ts::ValueType>(value.getType()))
+        {
+            value = builder.create<mlir_ts::CastOp>(location, mlir::cast<mlir_ts::OptionalType>(optType).getElementType(), value);
+        }
+
+        return builder.create<mlir_ts::OptionalValueOp>(location, optType, value);
+    }
+
     // vtableOffset is the declaring interface's slot-block position within the root
     // interface's combined vtable (0 unless fieldInfo was found through an `extends` chain
     // - see InterfaceInfo::findField's doc comment, MLIRGenStore.h).
@@ -8633,6 +8690,17 @@ class MLIRGenImpl
                                     ? fieldRefType.getElementType()
                                     : mlir_ts::OptionalType::get(fieldRefType.getElementType());
             value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
+
+            // a missing @value T is the one optional of `T | null` (getMissingValueType): the member's
+            // T and whether it is there go into that
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(fieldRefType.getElementType()))
+            {
+                auto missingType = mlir::cast<mlir_ts::OptionalType>(getOptionalType(valueType));
+                auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+                auto present = builder.create<mlir_ts::ValueOp>(location, valueType, value);
+                auto asUnion = builder.create<mlir_ts::CastOp>(location, missingType.getElementType(), present);
+                value = builder.create<mlir_ts::OptionalOp>(location, missingType, asUnion, hasValue);
+            }
         }
 
         // if it is FuncType, we need to create BoundMethod again
@@ -10121,9 +10189,7 @@ class MLIRGenImpl
 
         if (isa<mlir_ts::NullType>(nullishType))
         {
-            // ...except an optional of a @value type, which is `T | null` as well as `T | undefined`:
-            // with no value it holds the null
-            if (!isLoose && !isa<mlir_ts::ValueType>(optType.getElementType()))
+            if (!isLoose)
             {
                 return mlirGenBooleanValue(location, isNotEquals);
             }

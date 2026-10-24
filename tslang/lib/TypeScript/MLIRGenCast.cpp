@@ -751,6 +751,15 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // one that may be missing is read as the value it holds, and throws when it holds none
+            // (under `@strict-null false`, where TypeScript would throw only at a later read)
+            if (MLIRTypeHelper::getMissingValueElement(valueType))
+            {
+                auto present = mlirGenPresentValue(location, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(present)
+                return cast(location, type, V(present), genContext, disableStrictNullCheck);
+            }
+
             if (!isa<mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
             {
                 CAST_A(storage, location, destValueType.getStorageType(), valueStorage(location, value), genContext);
@@ -761,11 +770,11 @@ namespace mlirgen
         {
             return cast(location, type, valueStorage(location, value), genContext, disableStrictNullCheck);
         }
-        // null into `T | null` (`OptionalType<T>`) is the missing value, as undefined is
-        else if (auto optType = dyn_cast<mlir_ts::OptionalType>(type);
-                 optType && isa<mlir_ts::ValueType>(optType.getElementType()) && isa<mlir_ts::NullType>(valueType))
+        // one that may be missing is true when it holds a value, as an object is
+        else if (isa<mlir_ts::BooleanType>(type) && MLIRTypeHelper::getMissingValueElement(valueType))
         {
-            return V(builder.create<mlir_ts::OptionalUndefOp>(location, optType));
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            return mlirGenBinaryValues(location, SyntaxKind::ExclamationEqualsToken, value, nullValue, genContext);
         }
 
         // see isCppVTableClass: `any` is unboxed and an interface made by asking the object

@@ -121,7 +121,7 @@ namespace mlirgen
             }
 
             auto optValue = isa<mlir_ts::OptionalType>(value.getType())
-                    ? value : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                    ? value : mlirGenOptionalValueOf(location, value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -386,13 +386,36 @@ namespace mlirgen
                         location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), 
                         argument, genContext);
                 })
-                .Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                .Case<mlir_ts::OptionalType>([&](auto optionalType) -> mlir::Value {
+                    // a member of a missing @value value throws
+                    if (MLIRTypeHelper::getMissingValueElement(optionalType))
+                    {
+                        auto present = mlirGenPresentValue(location, objectValue, genContext);
+                        if (present.failed_or_no_value())
+                        {
+                            return mlir::Value();
+                        }
+
+                        return mlirGenPropertyAccessExpression(location, V(present), name, false, genContext);
+                    }
+
                     // this is needed for conditional access to properties
                     auto elementType = optionalType.getElementType();
                     auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
                     return mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
                 })
-                .Case<mlir_ts::UnionType>([&](auto unionType) {
+                .Case<mlir_ts::UnionType>([&](auto unionType) -> mlir::Value {
+                    if (MLIRTypeHelper::getMissingValueElement(unionType))
+                    {
+                        auto present = mlirGenPresentValue(location, objectValue, genContext);
+                        if (present.failed_or_no_value())
+                        {
+                            return mlir::Value();
+                        }
+
+                        return mlirGenPropertyAccessExpression(location, V(present), name, false, genContext);
+                    }
+
                     // TODO: when access of property in union is finished use it instead of using first type
                     // all union types must have the same property
                     // 1) cast to first type
@@ -1815,7 +1838,7 @@ namespace mlirgen
             if (value)
             {
                 auto optValue =
-                    builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                    mlirGenOptionalValueOf(location, value);
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
                 // else

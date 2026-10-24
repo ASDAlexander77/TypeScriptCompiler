@@ -3538,6 +3538,12 @@ namespace mlirgen
             return type;
         }        
 
+        // `v?: T` of a @value type is the one optional value every missing T is
+        if (auto valueType = dyn_cast<mlir_ts::ValueType>(type))
+        {
+            return mth.getMissingValueType(valueType);
+        }
+
         return mlir_ts::OptionalType::get(type);
     }
 

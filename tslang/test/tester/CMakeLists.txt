@@ -3068,6 +3068,7 @@ set(value_error_cases
     "value_iface_identity|a @value type has no identity. compare its fields"
     "value_switch_identity|a @value type has no identity. compare its fields"
     "value_missing_identity|a @value type has no identity. compare its fields"
+    "value_compare_number|a @value type has no identity. compare its fields"
     "value_null_plain|a @value type has no null. write 'Hit \\| null'")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
@@ -3112,6 +3113,11 @@ add_test(NAME test-value-no-alloc
 foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-missing-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
     tslang_add_test(NAME test-jit-value-missing-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
+endforeach()
+# ...and a field read, a getter call or a conversion to the plain type of a missing one throws
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-missing-read-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
+    tslang_add_test(NAME test-jit-value-missing-read-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
 endforeach()
 
 # A call on a @final class is direct, and the program runs the same under every model.

@@ -148,12 +148,23 @@ would not know its class.
 
 TypeScript lets `null` and `undefined` stand for an `Intersection`. A value has no null pointer.
 
-- A `@value` type `T` written as `T | null`, `T | undefined` or `f?: T` is stored as
-  `OptionalType<T>` (`{T, i1}`), whose comparisons with `null`/`undefined` already exist
-  (`OptionalLogicHelper`). `T | null | undefined` keeps which of the two it holds (builder's choice
-  of encoding: a tagged union, or an optional with a state byte), so `x === undefined` stays false
-  for `null`, as in TypeScript.
-- Reading a field of a missing value fails as it does for a null object today.
+- Every way of writing that a `@value` type `T` may be missing - `T | null`, `T | undefined`,
+  `T | null | undefined`, an optional parameter `v?: T`, an optional field `f?: T` - is one
+  encoding with three states: `OptionalType<UnionType<T, null>>`
+  (`MLIRTypeHelper::getMissingValueType`). undefined is the empty optional, null is the union's
+  null member, and a value is the union holding `T`. Converting between the spellings changes
+  nothing, so null stays null and undefined stays undefined, and converting a plain `T` to one
+  makes a present value.
+- Strict comparisons with `null` and `undefined` are exact, as in TypeScript: `x === undefined` is
+  false for `null`, and `x === null` false for `undefined`. Loose `x == null` and `x != null` ask
+  whether `x` holds a value. Comparing one with anything else (another value, a number) is the
+  identity error above.
+- Reading a field of a missing value, calling a method or getter on it, or converting it to a
+  plain `T` throws at run time, as a method of a null interface does (the same throwing stub,
+  with its own message).
+- Under `// @strict-null false`, a conversion such as `const h: Hit = find(-1)` therefore throws at
+  the conversion, where TypeScript would throw only at a later read of `h`. This divergence is
+  accepted (controller's ruling).
 - Assigning, returning or initializing `null`/`undefined` into a plain `T` is an error, even in a
   `// @strict-null false` file: "a @value type has no null; write `T | null`". This is the user's
   ruling: it costs four type annotations in the benchmark and keeps every other `@value` slot free

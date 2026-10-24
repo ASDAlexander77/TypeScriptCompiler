@@ -132,14 +132,6 @@ class MLIRCodeLogic
         {
             if (auto nestedRef = GetReferenceFromValue(location, valueOp.getIn()))
             {
-                // a `?` member of an interface is read as an optional out of its T's place
-                // (InterfaceFieldAccess): for a @value T that place is already the value's
-                auto nestedRefType = dyn_cast<mlir_ts::RefType>(nestedRef.getType());
-                if (isa<mlir_ts::ValueType>(valueOp.getType()) && nestedRefType && nestedRefType.getElementType() == valueOp.getType())
-                {
-                    return nestedRef;
-                }
-
                 return builder.create<mlir_ts::PropertyRefOp>(
                     location, 
                     mlir_ts::RefType::get(valueOp.getType()), 

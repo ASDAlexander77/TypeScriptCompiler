@@ -907,11 +907,14 @@ namespace mlirgen
     {
         // a @value value is copied wherever it goes: two of them have no identity to compare, and
         // comparing their fields here would answer differently from the TypeScript program. So also
-        // when either may be missing (`T | null`): only null and undefined are compared with one
+        // when either may be missing (`T | null`), and against anything else: only null and
+        // undefined are compared with one
+        auto isNullish = [](mlir::Value value) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(value.getType()); };
         if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
              || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
             && leftExpressionValue && rightExpressionValue
-            && MLIRTypeHelper::holdsValueType(leftExpressionValue.getType()) && MLIRTypeHelper::holdsValueType(rightExpressionValue.getType()))
+            && (MLIRTypeHelper::holdsValueType(leftExpressionValue.getType()) || MLIRTypeHelper::holdsValueType(rightExpressionValue.getType()))
+            && !isNullish(leftExpressionValue) && !isNullish(rightExpressionValue))
         {
             emitError(location) << "a @" VALUE_DECORATOR " type has no identity; compare its fields";
             return mlir::failure();
@@ -1071,7 +1074,7 @@ namespace mlirgen
                 auto optValue = 
                     isa<mlir_ts::OptionalType>(value.getType())
                         ? value
-                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                        : mlirGenOptionalValueOf(location, value);
                 return ValueOrLogicalResult(optValue); 
             }, 
             [&](mlir::Type trueValueType) { 

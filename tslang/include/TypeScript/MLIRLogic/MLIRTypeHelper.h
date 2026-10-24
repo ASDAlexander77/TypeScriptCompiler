@@ -217,8 +217,53 @@ class MLIRTypeHelper
         return type;
     }
 
-    // A @value type, or one that may be missing: `T | null`, `T | undefined` (an optional value),
-    // `T | null | undefined` (an optional of `T | null`)
+    // A @value type has no null pointer. Each way of writing that one may be missing - `T | null`,
+    // `T | undefined`, `T | null | undefined`, `v?: T`, `f?: T` - is this one type, an optional of
+    // `T | null`: undefined is the empty optional, null the union's null member, a value otherwise.
+    // So converting between the spellings changes nothing, and null stays apart from undefined.
+    // The union's members are ordered as normalizeUnionType orders them.
+    static mlir::Type getMissingValueType(mlir_ts::ValueType valueType)
+    {
+        mlir::SmallVector<mlir::Type> members{valueType, mlir_ts::NullType::get(valueType.getContext())};
+        std::sort(members.begin(), members.end(), [](auto i, auto j) { return i.getAsOpaquePointer() < j.getAsOpaquePointer(); });
+        return mlir_ts::OptionalType::get(mlir_ts::UnionType::get(valueType.getContext(), members));
+    }
+
+    // `T | null` of a @value type T, which getMissingValueType wraps in the optional
+    static bool isMissingValueUnion(mlir_ts::UnionType unionType)
+    {
+        auto types = unionType.getTypes();
+        return types.size() == 2 && llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::ValueType>(type); })
+               && llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::NullType>(type); });
+    }
+
+    // The @value type a value that may be missing holds when it holds one: of getMissingValueType, or
+    // of its `T | null` alone (what is left of it once undefined is ruled out)
+    static mlir_ts::ValueType getMissingValueElement(mlir::Type type)
+    {
+        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(type))
+        {
+            type = optType.getElementType();
+        }
+
+        auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(type);
+        if (!unionType || !isMissingValueUnion(unionType))
+        {
+            return mlir_ts::ValueType();
+        }
+
+        for (auto member : unionType.getTypes())
+        {
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(member))
+            {
+                return valueType;
+            }
+        }
+
+        return mlir_ts::ValueType();
+    }
+
+    // A @value type, or one that may be missing (getMissingValueType)
     static bool holdsValueType(mlir::Type type)
     {
         if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(type))
@@ -2340,15 +2385,15 @@ class MLIRTypeHelper
 
     bool isUnionTypeNeedsTag(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
-        auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
-
-        // `T | null | undefined` of a @value type keeps null as a tagged member (getUnionTypeMergeTypes).
-        // Its members merged again are `T | null`, which is an optional value, not this union.
-        if (auto optType = dyn_cast<mlir_ts::OptionalType>(storeType); optType && isa<mlir_ts::ValueType>(optType.getElementType()))
+        // `T | null` of a @value type is a tagged union of its own (getMissingValueType): its members
+        // merged again would be the optional around it, not it
+        if (isMissingValueUnion(unionType))
         {
-            storeType = unionType;
+            baseType = unionType;
+            return true;
         }
 
+        auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
         baseType = storeType;
         return isa<mlir_ts::UnionType>(storeType);
     }
@@ -3527,14 +3572,11 @@ class MLIRTypeHelper
         {
             auto resType = typesAll.front();
 
-            // a @value type has no null pointer: `T | null` is an optional value, as `T | undefined`
-            // is, under strict null checks or not. `T | null | undefined` keeps null as a member, as
-            // `number | null | undefined` does, so that it stays apart from undefined.
+            // a @value type that may be missing, under strict null checks or not
             // (docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values")
-            if (isa<mlir_ts::ValueType>(resType) && unionContext.isNullable)
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(resType); valueType && (unionContext.isNullable || unionContext.isUndefined))
             {
-                mlir::SmallVector<mlir::Type> withNull{resType, getNullType()};
-                return mlir_ts::OptionalType::get(unionContext.isUndefined ? getUnionType(withNull) : resType);
+                return getMissingValueType(valueType);
             }
 
             // the null the checker needs goes in before undefined wraps the type: undefined makes it
@@ -3697,7 +3739,13 @@ class MLIRTypeHelper
 
         if (normalizedTypes.size() == 1)
         {
-            return isUndefined ? mlir_ts::OptionalType::get(*normalizedTypes.begin()) : *normalizedTypes.begin();
+            auto single = *normalizedTypes.begin();
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(single); valueType && isUndefined)
+            {
+                return getMissingValueType(valueType);
+            }
+
+            return isUndefined ? mlir_ts::OptionalType::get(single) : single;
         }
 
         mlir::SmallVector<mlir::Type> newTypes;
@@ -4072,6 +4120,12 @@ protected:
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
+            // `T | null` of a @value type holds T or nothing: it owns what T owns
+            if (isMissingValueUnion(unionType))
+            {
+                return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return ownsHeapMemory(location, member, visiting); });
+            }
+
             mlir::Type baseType;
             if (isUnionTypeNeedsTag(location, unionType, baseType))
             {

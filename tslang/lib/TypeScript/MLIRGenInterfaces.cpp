@@ -503,10 +503,12 @@ namespace mlirgen
 
     // `<stubName>(this, ...) { throw new Error("method is abstract"); }`, typed as the interface's
     // method (`this` opaque): what a null interface's vtable holds for each method
-    // (mlirGenNullInterfaceVTable). Without the default library there is no `Error`, and the message
-    // itself is thrown.
+    // (mlirGenNullInterfaceVTable), and what a read of a missing @value value calls
+    // (mlirGenPresentValue), with its own message. Without the default library there is no `Error`,
+    // and the message itself is thrown.
     mlir::LogicalResult MLIRGenImpl::mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
-                                                               mlir_ts::FunctionType funcType, const GenContext &genContext)
+                                                               mlir_ts::FunctionType funcType, const GenContext &genContext,
+                                                               StringRef message)
     {
         if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
         {
@@ -541,7 +543,7 @@ namespace mlirgen
             location, name, stubName, funcType,
             [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
                 NodeFactory nf(NodeFactoryFlags::None);
-                Expression thrown = nf.createStringLiteral(S("method is abstract"));
+                Expression thrown = nf.createStringLiteral(stows(message.str()));
                 if (getClassInfoByFullName("Error"))
                 {
                     NodeArray<Expression> argumentsArray;
