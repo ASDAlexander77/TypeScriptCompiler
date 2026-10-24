@@ -26,6 +26,47 @@ pwsh tslang/benchmarks/raytrace/bench.ps1
 - Rust: `opt-level=3`, `lto="fat"`, `codegen-units=1`, `panic="abort"`
 - C++: `clang++ -std=c++20 -O3`, and `cl /std:c++20 /O2 /EHsc /MT`
 
+## Results 2026-10-24
+
+Release, Windows 11 x64, the same machine and toolchains as below; median of 7 runs after a
+warm-up, `bench.ps1`. Every build prints the same checksum. "main" is 63712f3b; "allocator as
+malloc" adds the change that declares the process-heap allocator to LLVM as LLVM declares `malloc`
+(ProcessHeapPass): its result is a block no other pointer reaches (`noalias`), and it touches only
+the allocator's own state.
+
+| Build | main | allocator as malloc | vs Rust idiomatic |
+|---|---|---|---|
+| tslang gc | 1189 ms | 1199 ms | 22x |
+| tslang rc | 606 ms | 630 ms | 11.6x |
+| tslang none | 642 ms | 434 ms | 8.0x |
+| tslang own | 597 ms | 444 ms | 8.2x |
+| Rust idiomatic | 54 ms | | 1x |
+| Rust Rc-boxed | 490 ms | | 9.0x |
+| C++ idiomatic (clang) | 50 ms | | 0.9x |
+| C++ idiomatic (MSVC) | 68 ms | | 1.2x |
+| C++ shared_ptr (clang) | 829 ms | | 15x |
+| C++ shared_ptr (MSVC) | 896 ms | | 16x |
+
+`--no-stack-promotion` changes rc and own by 2% or less in either column.
+
+Where the time goes, from the optimized LLVM IR of `RayTracer.shade` and its neighbours:
+
+- LLVM inlines `Vector.plus`, `Color.scale` and the rest, but each inlined copy still allocates.
+  Before this change the allocator was declared as writing other memory, so every `new` clobbered
+  the fields just stored into the previous object: they were loaded back from the heap instead of
+  reused, and the object could not be deleted. With the `malloc` declaration, own and none drop
+  about a quarter of their time. gc uses its own allocator (GCPass) and is unchanged; rc is 4%
+  slower, which this run does not explain.
+- Under own, a release first reads the block's header to skip immortal objects (globals such as
+  `Color.black`). On an object the function just made, that read can only see a mortal header, but
+  LLVM does not prove it here, and the one load keeps the block alive. Removing it by hand from the
+  optimized IR (a simulation, not a compiler change) takes own to about 295 ms.
+- What is left escapes in ways no local rewrite removes: vectors passed to calls through the `Thing`
+  interface (`isect.thing.normal(pos)`), the surface functions and the virtual `RayTracer` methods;
+  the `Ray` and `Intersection` literals, boxed as interfaces; and the `addLight` closure. Those need
+  objects that live on the caller's stack across a call, or values that are not heap objects at
+  all.
+
 ## Results 2026-10-21 (own rows 2026-10-23)
 
 main 49b5f6bb, Release, Windows 11 x64; Rust 1.99.0, clang 21.1.4, MSVC from Visual Studio 18;
