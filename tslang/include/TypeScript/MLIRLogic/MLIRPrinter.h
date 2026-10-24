@@ -411,6 +411,10 @@ class MLIRPrinter
             .template Case<mlir_ts::InterfaceType>([&](auto t) {
                 out << t.getName().getValue().str().c_str();
             })
+            // a @value class or interface is named as it was declared
+            .template Case<mlir_ts::ValueType>([&](auto t) {
+                out << t.getName().getValue().str().c_str();
+            })
             .template Case<mlir_ts::ConstArrayType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";

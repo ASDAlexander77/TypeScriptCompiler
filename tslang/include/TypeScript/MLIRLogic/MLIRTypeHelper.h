@@ -203,9 +203,23 @@ class MLIRTypeHelper
     }
 #endif    
 
+    // A @value type (ValueType) is laid out as its storage tuple: a walker that looks at the fields
+    // of a value - their types, sizes, what they own - sees the tuple. Anything else is unchanged.
+    // Sites that box or re-represent a tuple do not call this: a ValueType reaches them only as the
+    // tuple it is cast to (MLIRGenImpl::valueStorage), where a conversion of it is allowed.
+    static mlir::Type stripValueType(mlir::Type type)
+    {
+        if (auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(type))
+        {
+            return valueType.getStorageType();
+        }
+
+        return type;
+    }
+
     bool isValueType(mlir::Type typeIn)
     {
-        auto type = getBaseType(typeIn);
+        auto type = stripValueType(getBaseType(typeIn));
         return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type) || isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::CharType>(type) ||
             isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ConstArrayType>(type));
     }
@@ -438,8 +452,9 @@ class MLIRTypeHelper
     // A tuple literal folded to a constant (`[1, [6, 7]]`, `{ items: [1, 2] }`) keeps each array
     // in it as a static header over constant data (#479): such a tuple has to be rebuilt with
     // heap copies before anything can change one of its arrays.
-    static bool constTupleHoldsArray(mlir::Type type)
+    static bool constTupleHoldsArray(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         ArrayRef<mlir_ts::FieldInfo> fields;
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
@@ -1591,6 +1606,12 @@ class MLIRTypeHelper
             return true;
         }
 
+        // a @value interface is structural: it converts as its fields do
+        if (isa<mlir_ts::ValueType>(srcType) || isa<mlir_ts::ValueType>(destType))
+        {
+            return canCastFromTo(location, stripValueType(srcType), stripValueType(destType));
+        }
+
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
             if (auto matchConstTuple = dyn_cast<mlir_ts::ConstTupleType>(destType))
@@ -1694,8 +1715,9 @@ class MLIRTypeHelper
         return llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); });
     }
 
-    bool hasUndefines(mlir::Type type)
+    bool hasUndefines(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             return hasUndefinesLogic(constTuple);
@@ -1724,8 +1746,9 @@ class MLIRTypeHelper
     // class/array/object types, is NOT already pointer-like at the LLVM level --
     // so a binding of this type needs real storage (an address) to let mutation
     // be visible across property accesses / call sites, even when declared `const`.
-    bool hasBoundMethodField(mlir::Type type)
+    bool hasBoundMethodField(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             return hasBoundMethodFieldLogic(constTuple);
@@ -2124,13 +2147,15 @@ class MLIRTypeHelper
         return false;
     }
 
-    bool isSizeEqual(mlir::Type srcType, mlir::Type dstType)
+    bool isSizeEqual(mlir::Type srcTypeIn, mlir::Type dstTypeIn)
     {
-        if (!srcType || !dstType)
+        if (!srcTypeIn || !dstTypeIn)
         {
             return false;
         }
 
+        auto srcType = stripValueType(srcTypeIn);
+        auto dstType = stripValueType(dstTypeIn);
         if (srcType == dstType)
         {
             return true;
@@ -2268,9 +2293,10 @@ class MLIRTypeHelper
     }
 
     // Field types of a record-shaped type, empty for anything else.
-    llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type type)
+    llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type typeIn)
     {
         llvm::SmallVector<mlir::Type> result;
+        auto type = stripValueType(typeIn);
 
         auto addFields = [&](auto fields) {
             for (auto &field : fields)
@@ -2447,12 +2473,14 @@ class MLIRTypeHelper
         return mlir_ts::NeverType::get(context);    
     }    
 
-    mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
+    mlir::LogicalResult getFields(mlir::Type srcTypeIn, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
     {       
-        if (!srcType)
+        if (!srcTypeIn)
         {
             return mlir::failure();
         }
+
+        auto srcType = stripValueType(srcTypeIn);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
@@ -2560,8 +2588,9 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
-    int getFieldIndexByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
+    int getFieldIndexByFieldName(mlir::Type srcTypeIn, mlir::Attribute fieldName)
     {
+        auto srcType = stripValueType(srcTypeIn);
         LLVM_DEBUG(llvm::dbgs() << "!! get index of field '" << fieldName << "' of '" << srcType << "'\n";);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
@@ -2577,8 +2606,9 @@ class MLIRTypeHelper
         return -1;
     }
 
-    mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcType, int index)
+    mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcTypeIn, int index)
     {
+        auto srcType = stripValueType(srcTypeIn);
         LLVM_DEBUG(llvm::dbgs() << "!! get #" << index << " of '" << srcType << "'\n";);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
@@ -2598,7 +2628,7 @@ class MLIRTypeHelper
     {
         LLVM_DEBUG(llvm::dbgs() << "!! get type of field '" << fieldName << "' of '" << srcType << "'\n";);
 
-        srcType = stripLiteralType(srcType);
+        srcType = stripValueType(stripLiteralType(srcType));
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
@@ -2881,6 +2911,13 @@ class MLIRTypeHelper
         if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
         {
             return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+        }
+
+        // a @value interface is structural: it extends what a type literal of its fields does
+        if (isa_and_nonnull<mlir_ts::ValueType>(srcType) || isa<mlir_ts::ValueType>(extendType))
+        {
+            return extendsType(location, stripValueType(srcType), stripValueType(extendType), typeParamsWithArgs,
+                               useTupleWhenMergeTypes);
         }
 
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
@@ -3449,7 +3486,9 @@ class MLIRTypeHelper
         for (auto type : unionContext.types)
         {
             typesAll.push_back(type);
-            isAllValueTypes &= isValueType(type);
+            // a @value type with null is not a union with a null member: how it is stored is its own
+            // (`T | null`, docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values")
+            isAllValueTypes &= isValueType(type) && !isa<mlir_ts::ValueType>(type);
             isAllLiteralTypes &= isa<mlir_ts::LiteralType>(type);
         }
 

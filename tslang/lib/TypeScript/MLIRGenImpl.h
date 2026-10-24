@@ -1960,6 +1960,17 @@ class MLIRGenImpl
             // And a tuple literal built at run time (`const nt = [x, [2, [3, 4]]]`), whose arrays
             // are born with no count: folded, nothing counted them, and `nt[1][1].push(5)` had no
             // reference to change the array through (#486).
+            // A literal of a @value type is the record read out of the literal's slot, made a value by a
+            // cast that lowers to nothing: the record the two literal checks below look for.
+            auto initialRecord = initial;
+            if (auto valueCast = initial ? initial.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+                valueCast && isa<mlir_ts::ValueType>(valueCast.getType()))
+            {
+                initialRecord = valueCast.getIn();
+            }
+
+            auto recordType = MLIRTypeHelper::stripValueType(type);
+
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
                 || MLIRTypeHelper::isConstTupleHoldingArray(type)
@@ -1970,9 +1981,9 @@ class MLIRGenImpl
                              || readsField(viewedValue(initial)) || readsElement(viewedValue(initial))
                              || readsGlobal(viewedValue(initial)))
                          && mth.ownsHeapMemory(location, type))
-                     || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
+                     || (readsLiteralSlot(mth, location, initialRecord) && isa<mlir_ts::TupleType>(recordType)
                          && mth.ownsHeapMemory(location, type))
-                     || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)
+                     || (initialRecord && initialRecord.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(recordType)
                          && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
@@ -10950,8 +10961,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext);
 
     // TODO: replace usage of this method with getFields method
-    mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverType)
+    mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverTypeIn)
     {
+        auto receiverType = MLIRTypeHelper::stripValueType(receiverTypeIn);
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(receiverType))
         {
             auto index = tupleType.getIndex(fieldName);
@@ -13171,6 +13183,27 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
+    }
+
+    // The type of a @value interface: its name and its fields as a tuple, in declaration order (the
+    // fields of a @value interface it extends first).
+    mlir_ts::ValueType getValueTypeOfInterface(InterfaceInfo::TypePtr interfaceInfo)
+    {
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        interfaceInfo->getTupleTypeFields(fields, builder.getContext());
+        return mlir_ts::ValueType::get(interfaceInfo->interfaceType.getName(), getTupleType(fields));
+    }
+
+    // A @value value seen as its storage tuple: the cast lowers to nothing. Anything else is returned
+    // as it is.
+    mlir::Value valueStorage(mlir::Location location, mlir::Value value)
+    {
+        if (auto valueType = dyn_cast<mlir_ts::ValueType>(value.getType()))
+        {
+            return builder.create<mlir_ts::CastOp>(location, valueType.getStorageType(), value);
+        }
+
+        return value;
     }
 
     mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, int orderWeight, bool declareInterface = true);

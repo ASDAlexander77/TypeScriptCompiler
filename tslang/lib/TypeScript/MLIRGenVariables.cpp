@@ -1320,6 +1320,12 @@ namespace mlirgen
                 return mlir::Type();
             }
 
+            // a @value interface is a value of its fields, not a reference seen through a vtable
+            if (interfaceInfo->isValue)
+            {
+                return getValueTypeOfInterface(interfaceInfo);
+            }
+
             return interfaceInfo->interfaceType;
         }
 
@@ -1351,6 +1357,11 @@ namespace mlirgen
             auto interfaceInfo = getInterfaceInfoByFullName(fullName);
             if (interfaceInfo)
             {
+                if (interfaceInfo->isValue)
+                {
+                    return getValueTypeOfInterface(interfaceInfo);
+                }
+
                 return interfaceInfo->interfaceType;
             }
         }

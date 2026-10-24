@@ -905,6 +905,17 @@ namespace mlirgen
                                                           mlir::Value rightExpressionValue, const GenContext &genContext,
                                                           bool saveResult)
     {
+        // a @value value is copied wherever it goes: two of them have no identity to compare, and
+        // comparing their fields here would answer differently from the TypeScript program
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue
+            && isa<mlir_ts::ValueType>(leftExpressionValue.getType()) && isa<mlir_ts::ValueType>(rightExpressionValue.getType()))
+        {
+            emitError(location) << "a @" VALUE_DECORATOR " type has no identity; compare its fields";
+            return mlir::failure();
+        }
+
         if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;
@@ -1891,6 +1902,20 @@ namespace mlirgen
     ValueOrLogicalResult MLIRGenImpl::mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         auto location = loc(objectLiteral);
+
+        // A literal of a @value type is built as its storage tuple - its fields reordered to the
+        // declaration's, as for a type literal - and that tuple is the value. It is never boxed.
+        if (genContext.receiverType)
+        {
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(mth.stripOptionalType(genContext.receiverType)))
+            {
+                GenContext storageGenContext(genContext);
+                storageGenContext.receiverType = valueType.getStorageType();
+                auto result = mlirGen(objectLiteral, storageGenContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                return cast(location, valueType, V(result), genContext);
+            }
+        }
 
         ObjectLiteralInfo oli{};
         oli.objectLiteral = objectLiteral;

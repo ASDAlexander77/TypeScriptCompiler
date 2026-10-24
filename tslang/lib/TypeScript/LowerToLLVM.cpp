@@ -5208,7 +5208,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                     inType = literalType.getElementType();
                 }
 
-                if (isa<mlir_ts::ArrayType>(castType) || isa<mlir_ts::TupleType>(castType))
+                if (isa<mlir_ts::ArrayType>(castType) || isa<mlir_ts::TupleType>(MLIRTypeHelper::stripValueType(castType)))
                 {
                    createAsGlobalConstructor = true;
                 }
@@ -8178,6 +8178,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         }
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, TUPLE_TYPE_PACKED);
+    });
+
+    // a @value class or interface is laid out as its storage tuple
+    converter.addConversion([&](mlir_ts::ValueType type) {
+        return converter.convertType(type.getStorageType());
     });
 
     converter.addConversion([&](mlir_ts::BoundRefType type) {

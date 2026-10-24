@@ -205,7 +205,12 @@ namespace mlirgen
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
-                .Case<mlir_ts::StringType>([&](auto stringType) { 
+                // a field of a @value value is a field of its storage tuple
+                .Case<mlir_ts::ValueType>([&](auto valueType) {
+                    cl.setExpression(valueStorage(location, objectValue));
+                    return cl.Tuple(mlir::cast<mlir_ts::TupleType>(valueType.getStorageType()));
+                })
+                .Case<mlir_ts::StringType>([&](auto stringType) {
                     if (auto value = cl.String(stringType))
                     {
                         return value;
@@ -1201,6 +1206,12 @@ namespace mlirgen
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(arrayType))
         {
             return mlirGenElementAccessTuple(location, expression, argumentExpression, tupleType);
+        }
+        // `v["f"]` of a @value value is a field of its storage tuple
+        else if (auto valueType = dyn_cast<mlir_ts::ValueType>(arrayType))
+        {
+            return mlirGenElementAccessTuple(location, valueStorage(location, expression), argumentExpression,
+                                             mlir::cast<mlir_ts::TupleType>(valueType.getStorageType()));
         }
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(arrayType))
         {
@@ -2385,7 +2396,8 @@ namespace mlirgen
         assert(type);
 
         auto resultType = type;
-        if (mth.isValueType(type))
+        // a tuple made by `new` is boxed on the heap; a @value value never is
+        if (mth.isValueType(type) && !isa<mlir_ts::ValueType>(type))
         {
             resultType = getValueRefType(type);
         }

@@ -215,6 +215,12 @@ class TypeOfOpHelper
             return "unknown";
         }
 
+        // a @value class or interface is an object to the program, as in TypeScript
+        if (isa<mlir_ts::ValueType>(type))
+        {
+            return "object";
+        }
+
         if (isa<mlir_ts::ConstTupleType>(type))
         {
             return "tuple";

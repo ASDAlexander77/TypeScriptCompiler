@@ -1186,21 +1186,36 @@ namespace mlirgen
             auto result = mlirGen(extendsType, genContext);
             EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
+
+            // a @value interface (its type is a ValueType) or an ordinary one
+            auto baseInterfaceInfo = InterfaceInfo::TypePtr();
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(ifaceType.getType()))
+            {
+                baseInterfaceInfo = getInterfaceInfoByFullName(valueType.getName().getValue());
+            }
+            else if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(ifaceType.getType()))
+            {
+                baseInterfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            }
+
+            // a value has no base layout to widen, and an interface that is not a value is seen
+            // through a vtable: a @value interface extends only another @value interface's fields
+            if (newInterfacePtr->isValue && !(baseInterfaceInfo && baseInterfaceInfo->isValue))
+            {
+                auto baseName = baseInterfaceInfo ? baseInterfaceInfo->name.str()
+                                                  : MLIRHelper::getName(extendsType->expression.as<ts::Node>());
+                emitError(loc(extendsType)) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name << "' cannot extend '"
+                                            << baseName << "': it is not @" VALUE_DECORATOR;
+                return mlir::failure();
+            }
+
             auto success = false;
-            mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
+            auto baseType = baseInterfaceInfo ? mlir::Type(baseInterfaceInfo->interfaceType) : ifaceType.getType();
+            mlir::TypeSwitch<mlir::Type>(baseType)
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     if (interfaceInfo)
                     {
-                        // a value has no base layout to widen, and an interface that is not a value
-                        // is seen through a vtable
-                        if (newInterfacePtr->isValue && !interfaceInfo->isValue)
-                        {
-                            emitError(loc(extendsType)) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name
-                                                        << "' cannot extend '" << interfaceInfo->name << "': it is not @" VALUE_DECORATOR;
-                            return;
-                        }
-
                         // mlirGen(InterfaceDeclaration) can run more than once for the same
                         // already-declared interface (e.g. re-visited from another module or a
                         // discovery pass) - mlirGenInterfaceAddFieldMember/addInterfaceMethod are
@@ -1267,6 +1282,19 @@ namespace mlirgen
         // do not proceed for Generic Interfaces for declaration
         if (interfaceDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
         {
+            // a value is one layout: each instantiation would be another type to copy
+            auto isValueInterface = false;
+            iterateDecorators(interfaceDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                isValueInterface = isValueInterface || name == VALUE_DECORATOR;
+            });
+            if (isValueInterface)
+            {
+                emitError(loc(interfaceDeclarationAST)) << "@" VALUE_DECORATOR " interface '"
+                                                        << MLIRHelper::getName(interfaceDeclarationAST->name)
+                                                        << "' cannot have type parameters";
+                return mlir::failure();
+            }
+
             return registerGenericInterface(interfaceDeclarationAST, genContext);
         }
 
@@ -1409,6 +1437,15 @@ namespace mlirgen
         MLIRCodeLogic mcl(builder, compileOptions);
 
         SyntaxKind kind = interfaceMember;
+
+        // a @value interface is a value of its fields, with no vtable: a method, an accessor or a
+        // signature would have nothing to be called through
+        if (newInterfacePtr->isValue && kind != SyntaxKind::PropertySignature)
+        {
+            emitError(location) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name << "' can only have fields";
+            return mlir::failure();
+        }
+
         if (kind == SyntaxKind::PropertySignature)
         {
             // property declaration
@@ -1416,6 +1453,22 @@ namespace mlirgen
             auto isConditional = !!propertySignature->questionToken;
 
             fieldId = TupleFieldName(propertySignature->name, genContext);
+
+            // a field a @value value could change would make its copies differ
+            if (newInterfacePtr->isValue && !hasModifier(propertySignature, SyntaxKind::ReadonlyKeyword))
+            {
+                emitError(location) << "field '" << MLIRHelper::getName(propertySignature->name) << "' of @" VALUE_DECORATOR
+                                    << " interface '" << newInterfacePtr->name << "' must be readonly";
+                return mlir::failure();
+            }
+
+            // ...and a field it could leave out has no slot in it
+            if (newInterfacePtr->isValue && isConditional)
+            {
+                emitError(location) << "field '" << MLIRHelper::getName(propertySignature->name) << "' of @" VALUE_DECORATOR
+                                    << " interface '" << newInterfacePtr->name << "' cannot be optional";
+                return mlir::failure();
+            }
 
             auto [type, init, typeProvided] = getTypeAndInit(propertySignature, genContext);
             if (!type)

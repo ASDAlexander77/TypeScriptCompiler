@@ -705,6 +705,24 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // A @value type is laid out as its storage tuple. Converting to one is converting to that
+        // tuple - a field copy in the target's order - and taking the tuple as the value; converting
+        // from one is converting its tuple, which boxes a copy for `any`, `Object` or an ordinary
+        // interface. So a @value value never reaches the tuple paths below as itself. With null,
+        // undefined, an optional or a union on either side it is the cases below (`T | null`).
+        if (auto destValueType = dyn_cast<mlir_ts::ValueType>(type))
+        {
+            if (!isa<mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
+            {
+                CAST_A(storage, location, destValueType.getStorageType(), valueStorage(location, value), genContext);
+                return V(builder.create<mlir_ts::CastOp>(location, destValueType, storage));
+            }
+        }
+        else if (isa<mlir_ts::ValueType>(valueType) && !isa<mlir_ts::OptionalType, mlir_ts::UnionType>(type))
+        {
+            return cast(location, type, valueStorage(location, value), genContext, disableStrictNullCheck);
+        }
+
         // see isCppVTableClass: `any` is unboxed and an interface made by asking the object
         if ((isa<mlir_ts::AnyType>(valueType) && isCppVTableClass(type))
             || ((isa<mlir_ts::AnyType>(type) || isa<mlir_ts::InterfaceType>(type)) && isCppVTableClass(valueType)))

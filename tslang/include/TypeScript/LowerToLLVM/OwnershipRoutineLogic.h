@@ -1106,8 +1106,11 @@ class OwnershipRoutineLogic
         return fields;
     }
 
-    void buildBody(mlir::Type type, mlir::Value slotPtr)
+    void buildBody(mlir::Type typeIn, mlir::Value slotPtr)
     {
+        // a @value value is its storage tuple: released field by field below
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
@@ -1306,8 +1309,11 @@ class OwnershipRoutineLogic
     // duplicate the object's own references to its fields, so retain must not touch them.
     // Only values held *inline* - tuples, optionals, tagged unions - propagate a retain
     // inwards, because copying one really does duplicate every reference it holds.
-    void buildRetainBody(mlir::Type type, mlir::Value slotPtr)
+    void buildRetainBody(mlir::Type typeIn, mlir::Value slotPtr)
     {
+        // a @value value is its storage tuple: retained field by field below
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 

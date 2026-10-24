@@ -3050,7 +3050,14 @@ set(value_error_cases
     "extends_value|class 'X' cannot extend 'V': it is @value"
     "value_implements|@value class 'V' cannot implement an interface"
     "value_generic|@value class 'V' cannot have type parameters"
-    "value_iface_extends|@value interface 'R' cannot extend 'I': it is not @value")
+    "value_iface_extends|@value interface 'R' cannot extend 'I': it is not @value"
+    "value_iface_extends_class|@value interface 'R' cannot extend 'C': it is not @value"
+    "value_iface_generic|@value interface 'R' cannot have type parameters"
+    "value_iface_mutable|field 'f' of @value interface 'R' must be readonly"
+    "value_iface_optional|field 'f' of @value interface 'R' cannot be optional"
+    "value_iface_method|@value interface 'R' can only have fields"
+    # `.` matches the message's `;`, which a CMake list cannot hold
+    "value_iface_identity|a @value type has no identity. compare its fields")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
     string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
@@ -3064,6 +3071,25 @@ foreach(value_error_case ${value_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${value_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# A literal of a @value interface is a value: built in the interface's field order, read, passed,
+# nested and converted to `any`, an ordinary interface and a type literal.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-interface-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
+    set(value_interface_x86_twin "${TSLANG_X86_TWIN}")
+    tslang_add_test(NAME test-jit-value-interface-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
+    # own with references inside @value values: Task 6
+    if (value_mm STREQUAL "own")
+        set_tests_properties(test-compile-value-interface-own test-jit-value-interface-own ${value_interface_x86_twin}
+                             PROPERTIES DISABLED TRUE)
+    endif()
+endforeach()
+# ...and its optimized code allocates nothing for it
+add_test(NAME test-value-no-alloc
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_no_alloc.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-no-alloc.cmake")
 
 # A call on a @final class is direct, and the program runs the same under every model.
 foreach(final_mm gc rc none own)

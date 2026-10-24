@@ -192,6 +192,9 @@ namespace mlirgen
             concreteType = objectType.getStorageType();
         }
 
+        // a @value value infers from its fields, as a type literal of them does
+        concreteType = MLIRTypeHelper::stripValueType(concreteType);
+
         if (auto typeTuple = dyn_cast<mlir_ts::TupleType>(concreteType))
         {
             return tryInferTupleFields(location, tempTuple, typeTuple, results, genContext);

@@ -1860,7 +1860,8 @@ namespace mlirgen
             return mth.getFieldNames(type);
         }
 
-        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        // a @value value's keys are its fields'
+        if (isa<mlir_ts::TupleType, mlir_ts::ValueType>(type))
         {
             return mth.getFieldNames(type);
         }
@@ -2034,7 +2035,7 @@ namespace mlirgen
         }
 
         // TODO: sync it with mth.getFields
-        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        if (isa<mlir_ts::TupleType, mlir_ts::ValueType>(type))
         {
             return mth.getFieldTypeByIndexType(type, indexType);
         }
