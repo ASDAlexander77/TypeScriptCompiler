@@ -5202,16 +5202,28 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto switchValueEffective = switchValue;
-            auto actualCaseType = mth.stripLiteralType(caseValue.getType());
-            if (switchValue.getType() != actualCaseType)
+            // a case compares a @value value as `===` does: two of them have no identity, and
+            // `case null:` asks whether a `T | null` holds a value
+            mlir::Value condition;
+            if (MLIRTypeHelper::holdsValueType(switchValue.getType()) || MLIRTypeHelper::holdsValueType(caseValue.getType()))
             {
-                CAST(switchValueEffective, location, actualCaseType, switchValue, genContext);
+                auto compared = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsEqualsToken, switchValue, caseValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(compared)
+                condition = V(compared);
             }
+            else
+            {
+                auto switchValueEffective = switchValue;
+                auto actualCaseType = mth.stripLiteralType(caseValue.getType());
+                if (switchValue.getType() != actualCaseType)
+                {
+                    CAST(switchValueEffective, location, actualCaseType, switchValue, genContext);
+                }
 
-            auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
-                switchValueEffective, caseValue);
+                condition = builder.create<mlir_ts::LogicalBinaryOp>(
+                    location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                    switchValueEffective, caseValue);
+            }
 
             CAST_A(conditionI1, location, builder.getI1Type(), condition, genContext);
 
@@ -10109,7 +10121,9 @@ class MLIRGenImpl
 
         if (isa<mlir_ts::NullType>(nullishType))
         {
-            if (!isLoose)
+            // ...except an optional of a @value type, which is `T | null` as well as `T | undefined`:
+            // with no value it holds the null
+            if (!isLoose && !isa<mlir_ts::ValueType>(optType.getElementType()))
             {
                 return mlirGenBooleanValue(location, isNotEquals);
             }

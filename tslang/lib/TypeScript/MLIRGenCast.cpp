@@ -743,7 +743,15 @@ namespace mlirgen
         // undefined, an optional or a union on either side it is the cases below (`T | null`).
         if (auto destValueType = dyn_cast<mlir_ts::ValueType>(type))
         {
-            if (!isa<mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
+            // ...and it has no null pointer: a missing value is written `T | null` (an optional
+            // value), even where null checks are not strict
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
+            {
+                emitError(location) << "a @" VALUE_DECORATOR " type has no null; write '" << to_print(type) << " | null'";
+                return mlir::failure();
+            }
+
+            if (!isa<mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
             {
                 CAST_A(storage, location, destValueType.getStorageType(), valueStorage(location, value), genContext);
                 return V(builder.create<mlir_ts::CastOp>(location, destValueType, storage));
@@ -752,6 +760,12 @@ namespace mlirgen
         else if (isa<mlir_ts::ValueType>(valueType) && !isa<mlir_ts::OptionalType, mlir_ts::UnionType>(type))
         {
             return cast(location, type, valueStorage(location, value), genContext, disableStrictNullCheck);
+        }
+        // null into `T | null` (`OptionalType<T>`) is the missing value, as undefined is
+        else if (auto optType = dyn_cast<mlir_ts::OptionalType>(type);
+                 optType && isa<mlir_ts::ValueType>(optType.getElementType()) && isa<mlir_ts::NullType>(valueType))
+        {
+            return V(builder.create<mlir_ts::OptionalUndefOp>(location, optType));
         }
 
         // see isCppVTableClass: `any` is unboxed and an interface made by asking the object

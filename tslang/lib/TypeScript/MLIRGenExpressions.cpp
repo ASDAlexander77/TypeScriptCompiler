@@ -906,11 +906,12 @@ namespace mlirgen
                                                           bool saveResult)
     {
         // a @value value is copied wherever it goes: two of them have no identity to compare, and
-        // comparing their fields here would answer differently from the TypeScript program
+        // comparing their fields here would answer differently from the TypeScript program. So also
+        // when either may be missing (`T | null`): only null and undefined are compared with one
         if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
              || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
             && leftExpressionValue && rightExpressionValue
-            && isa<mlir_ts::ValueType>(leftExpressionValue.getType()) && isa<mlir_ts::ValueType>(rightExpressionValue.getType()))
+            && MLIRTypeHelper::holdsValueType(leftExpressionValue.getType()) && MLIRTypeHelper::holdsValueType(rightExpressionValue.getType()))
         {
             emitError(location) << "a @" VALUE_DECORATOR " type has no identity; compare its fields";
             return mlir::failure();
