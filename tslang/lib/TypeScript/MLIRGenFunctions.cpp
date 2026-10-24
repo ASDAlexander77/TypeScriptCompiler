@@ -1756,6 +1756,12 @@ namespace mlirgen
             loopLabelAliases = std::move(outerLoopLabelAliases);
         });
 
+        // nor is a @value type a body needs one the field being typed around it waits for (an
+        // initializer's return type inferred from this body)
+        auto outerValueLayoutFrames = std::move(valueLayoutFrames);
+        valueLayoutFrames.clear();
+        auto restoreValueLayoutFrames = llvm::make_scope_exit([&]() { valueLayoutFrames = std::move(outerValueLayoutFrames); });
+
         auto location = loc(functionLikeDeclarationBaseAST);
 
         // Debug Info

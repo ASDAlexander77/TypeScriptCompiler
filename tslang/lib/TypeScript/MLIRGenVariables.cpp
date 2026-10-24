@@ -1419,7 +1419,7 @@ namespace mlirgen
             }
         }    
 
-        if (!isEmbededType(name) && !circularTypeAliases.contains(name))
+        if (!isEmbededType(name) && !circularTypeAliases.contains(name) && !valueTypesHoldingThemselves.contains(name))
             emitError(location, "can't find type by name: ") << name;
 
         return mlir::Type();    

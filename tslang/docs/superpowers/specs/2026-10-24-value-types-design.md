@@ -151,6 +151,15 @@ would not know its class.
   benchmark change for it is decided separately.
 - Stack promotion and the escape facts need no new reason codes: there is no allocation to
   report.
+- A `@value` type cannot contain itself, directly or through other `@value` types: it is the tuple
+  of its fields, held in place, so `next: L | null` (or `A.b: B | null` with `B.a: A`) would make it
+  infinitely large. The error names the type and the fields from it back to itself: "@value type 'L'
+  contains itself through 'next'; a value cannot hold itself", "@value type 'A' contains itself
+  through 'b.a'; ..." (each type of a longer cycle is reported, from its own field). An array of
+  itself in a field (`next: L[]`) or a function type naming it is the same error: the field's type is
+  made from the `ValueType` being made, which names its whole tuple, so it cannot refer to itself.
+  An ordinary class or interface between them (`box: Box` with `Box.l: L | null`) is a reference,
+  and works.
 
 ### Missing values
 

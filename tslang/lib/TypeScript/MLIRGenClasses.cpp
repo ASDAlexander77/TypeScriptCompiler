@@ -1574,6 +1574,9 @@ namespace mlirgen
             }
         }
 
+        // an instance field: a static one is a global, not part of the value
+        auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, location,
+                                            MLIRHelper::getName(name));
         auto [type, init] = mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
         if (init)
         {
@@ -1772,7 +1775,8 @@ namespace mlirgen
         return mlir::success();
     }    
 
-    mlir::LogicalResult MLIRGenImpl::mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                      SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                                       ConstructorDeclaration constructorDeclaration, const GenContext &genContext)
     {
         for (auto &parameter : constructorDeclaration->parameters)
@@ -1800,6 +1804,8 @@ namespace mlirgen
                 isPrivate |= strAttr.getValue().starts_with("#");
             }
 
+            auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, loc(parameter),
+                                                MLIRHelper::getName(parameter->name));
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
 
             if (mth.isNoneType(type))
@@ -1964,7 +1970,7 @@ namespace mlirgen
         if (classMember == SyntaxKind::Constructor && !isStatic)
         {
             auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
-            if (mlir::failed(mlirGenClassConstructorPublicDataFieldMembers(location, fieldInfos, constructorDeclaration, genContext)))
+            if (mlir::failed(mlirGenClassConstructorPublicDataFieldMembers(location, newClassPtr, fieldInfos, constructorDeclaration, genContext)))
             {
                 return mlir::failure();
             }

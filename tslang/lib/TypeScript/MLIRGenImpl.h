@@ -54,6 +54,7 @@
 #endif
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
@@ -12490,7 +12491,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassStaticFieldMemberDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext);
 
-    mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                      SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                                       ConstructorDeclaration constructorDeclaration, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenClassProcessClassPropertyByFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember);
@@ -13397,10 +13399,100 @@ class MLIRGenImpl
 
         if (!laidOut(interfaceInfo))
         {
+            noteValueLayoutWait(interfaceInfo->fullName, interfaceInfo->name);
             return mlir::Type();
         }
 
+        valueLayoutWaits.erase(interfaceInfo->fullName);
         return getValueTypeOfInterface(interfaceInfo);
+    }
+
+    // The field of a @value type whose type is being resolved, until the result goes out of scope: a
+    // @value type that type needs and that is not laid out yet is one this type waits for
+    // (noteValueLayoutWait). Nothing for a type that is not @value.
+    auto valueLayoutField(bool isValue, StringRef owner, StringRef ownerName, mlir::Location location, StringRef field)
+    {
+        if (isValue)
+        {
+            valueLayoutFrames.push_back({owner.str(), ownerName.str(), field.str(), location});
+        }
+
+        return llvm::make_scope_exit([this, isValue]() {
+            if (isValue)
+            {
+                valueLayoutFrames.pop_back();
+            }
+        });
+    }
+
+    // A @value type is the tuple of its fields, held in place, so it cannot hold itself, directly or
+    // through other @value types (`next: L | null`; `A.b: B | null` and `B.a: A`): it would be
+    // infinitely large. The field being resolved (valueLayoutFrames) needs `waitedFor`, which is not
+    // laid out yet, so its type waits for it, and is retried in the next discovery pass; a type that
+    // waits, through the types it waits for, for itself never is laid out - "can't find type by name"
+    // said so without the reason. An array of it in a field (`next: L[]`), or a function type that
+    // names it, is the same here: the field's type is made of the type being made. An ordinary class
+    // or interface between them (`box: Box`, `Box.l: L | null`) is a reference, which waits for nothing.
+    void noteValueLayoutWait(StringRef waitedFor, StringRef waitedForName)
+    {
+        if (valueLayoutFrames.empty())
+        {
+            return;
+        }
+
+        auto &frame = valueLayoutFrames.back();
+        auto &waits = valueLayoutWaits[frame.owner];
+        if (llvm::none_of(waits, [&](const ValueLayoutWait &wait) { return wait.waitedFor == waitedFor && wait.field == frame.field; }))
+        {
+            waits.push_back({waitedFor.str(), waitedForName.str(), frame.field});
+        }
+
+        // the fields from the one being resolved back to its own type
+        llvm::SmallVector<const ValueLayoutWait *> path;
+        llvm::StringSet<> visited;
+        std::function<bool(StringRef)> reaches = [&](StringRef from) {
+            if (from == frame.owner)
+            {
+                return true;
+            }
+
+            auto it = valueLayoutWaits.find(from);
+            if (!visited.insert(from).second || it == valueLayoutWaits.end())
+            {
+                return false;
+            }
+
+            for (auto &wait : it->second)
+            {
+                path.push_back(&wait);
+                if (reaches(wait.waitedFor))
+                {
+                    return true;
+                }
+
+                path.pop_back();
+            }
+
+            return false;
+        };
+
+        if (!reaches(waitedFor))
+        {
+            return;
+        }
+
+        auto through = frame.field;
+        valueTypesHoldingThemselves.insert(frame.ownerName);
+        valueTypesHoldingThemselves.insert(waitedForName);
+        for (auto *wait : path)
+        {
+            through += ".";
+            through += wait->field;
+            valueTypesHoldingThemselves.insert(wait->waitedForName);
+        }
+
+        emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' contains itself through '"
+                                  << through << "'; a value cannot hold itself";
     }
 
     // The type of a @value class: its name and its instance fields as a tuple, in declaration order
@@ -13438,9 +13530,11 @@ class MLIRGenImpl
 
         if (!laidOut(classInfo->processing) && !laidOut(classInfo->processingAtEvaluation))
         {
+            noteValueLayoutWait(classInfo->fullName, classInfo->name);
             return mlir::Type();
         }
 
+        valueLayoutWaits.erase(classInfo->fullName);
         return getValueTypeOfClass(classInfo);
     }
 
@@ -15495,6 +15589,28 @@ class MLIRGenImpl
     // unwound: every error on the way out follows from the one reported.
     std::string circularTypeAliasUnwinding;
     bool reportingCircularTypeAlias = false;
+
+    // The field of a @value type whose type is being resolved (valueLayoutField), innermost last.
+    struct ValueLayoutFrame
+    {
+        std::string owner;
+        std::string ownerName;
+        std::string field;
+        mlir::Location location;
+    };
+    llvm::SmallVector<ValueLayoutFrame> valueLayoutFrames;
+    // A @value type not laid out yet that one of its fields' types needs (noteValueLayoutWait).
+    struct ValueLayoutWait
+    {
+        std::string waitedFor;
+        std::string waitedForName;
+        std::string field;
+    };
+    // what each @value type, by full name, waits for before it can be laid out
+    llvm::StringMap<llvm::SmallVector<ValueLayoutWait>> valueLayoutWaits;
+    // @value types reported as holding themselves, by name: "can't find type" for each mention after
+    // it would only repeat it
+    llvm::StringSet<> valueTypesHoldingThemselves;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the

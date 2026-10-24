@@ -1503,6 +1503,8 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            auto layoutField = valueLayoutField(newInterfacePtr->isValue, newInterfacePtr->fullName, newInterfacePtr->name,
+                                                location, MLIRHelper::getName(propertySignature->name));
             auto [type, init, typeProvided] = getTypeAndInit(propertySignature, genContext);
             if (!type)
             {
