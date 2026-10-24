@@ -1,8 +1,8 @@
 // `@value class`: `new` makes a value - a struct of the class's readonly fields on the stack,
 // with no box and no vtable. Static helpers, an instance method and a getter (both take `this`
 // by value), a static field of the class's own type and one of another class; values passed,
-// returned, stored in a field of an ordinary class and in an array, and copied. A constructor passes
-// `this` on as a value and calls a method on it.
+// returned, stored in a field of an ordinary class and in an array, and copied. A constructor reads
+// `this` through its fields and calls a method on it.
 @value
 class V {
     constructor(public readonly x: number, public readonly y: number, public readonly z: number) {}
@@ -34,12 +34,7 @@ class P {
     }
 }
 
-// a constructor seeing `this` as a value: passed to a function (a copy of what is set so far) and
-// a method called on it
-function sumOf(q: Q) {
-    return q.a + q.b;
-}
-
+// a constructor reading `this` through its fields and calling a method on it
 @value
 class Q {
     readonly a: number;
@@ -50,7 +45,7 @@ class Q {
     constructor(a: number) {
         this.a = a;
         this.b = a * 2;
-        this.s = sumOf(this);
+        this.s = this.a + this.b;
         this.t = this.twice();
     }
 

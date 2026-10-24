@@ -3103,7 +3103,13 @@ set(value_error_cases
     "value_readonly_method|cannot assign to 'node': the fields of a @value type are readonly"
     "value_readonly_outside|cannot assign to 'x': the fields of a @value type are readonly"
     "value_readonly_outside_iface|cannot assign to 'start': the fields of a @value type are readonly"
-    "value_readonly_incdec|cannot assign to 'x': the fields of a @value type are readonly")
+    "value_readonly_incdec|cannot assign to 'x': the fields of a @value type are readonly"
+    "value_ctor_this_const|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_closure|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_arg|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_push|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_arrow|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_literal|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
     string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
@@ -3203,6 +3209,12 @@ add_test(NAME test-value-ctor-capture
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_capture.ts"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/value-ctor-capture.cmake")
+# ...and `this` in a @value constructor read through its members - a method, a closure, `this["a"]` -
+# sees the fields stored so far (used whole, it is an error: value_ctor_this_* above)
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-ctor-this-method-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_this_method.ts")
+    tslang_add_test(NAME test-jit-value-ctor-this-method-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_this_method.ts")
+endforeach()
 
 # A call on a @final class is direct, and the program runs the same under every model.
 foreach(final_mm gc rc none own)

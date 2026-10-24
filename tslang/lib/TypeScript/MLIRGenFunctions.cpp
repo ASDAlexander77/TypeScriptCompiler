@@ -1432,8 +1432,9 @@ namespace mlirgen
             LLVM_DEBUG(llvm::dbgs() << "Location for Param: " << location << "\n");
 
             // `this` of a @value class's constructor is the slot `new` made for the value: the
-            // variable `this` lives in it, so `this.a = a` writes the value's field, and `this` read as a
-            // value (`f(this)`, `const c = this`) is a copy of it, and has its class's members
+            // variable `this` lives in it, so `this.a = a` writes the value's field and `this.m()` sees
+            // the fields stored so far; read whole (`f(this)`, `const c = this`) it is an error
+            // (checkValueConstructorThisUses)
             if (param->getName() == THIS_NAME && index == firstIndex)
             {
                 auto refType = dyn_cast<mlir_ts::RefType>(param->getType());
@@ -1862,6 +1863,18 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // a @value class's constructor reads `this` only through its members
+            if (!funcGenContext.dummyRun && functionLikeDeclarationBaseAST == SyntaxKind::Constructor
+                && !funcProto->getParams().empty() && funcProto->getParams().front()->getName() == THIS_NAME)
+            {
+                auto thisRefType = dyn_cast<mlir_ts::RefType>(funcProto->getParams().front()->getType());
+                if (auto classInfo = thisRefType ? getValueClassInfo(thisRefType.getElementType()) : ClassInfo::TypePtr();
+                    classInfo && failed(checkValueConstructorThisUses(functionLikeDeclarationBaseAST, classInfo->name)))
+                {
+                    return mlir::failure();
+                }
+            }
+
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
             if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
@@ -2187,6 +2200,82 @@ namespace mlirgen
             }
         });
 
+        return result;
+    }
+
+    // `this` of a @value class's constructor is the slot `new` is filling (mlirGenFunctionParams): the
+    // value is made when the constructor returns. Read whole before that - `const self = this`,
+    // `f(this)`, `[this]`, `{ v: this }`, `...this`, `return this`, `() => this` - it would be a copy
+    // of the fields stored so far, and a later `this.a = 1` would not reach it, where TypeScript's
+    // object would have it. So `this` may only be the object of a member access (`this.a`,
+    // `this.a = x`, `this.a++`, `this.m()`, `this["a"]`), read as the slot is at that point, in the
+    // constructor or in an arrow function inside it, whose `this` is the constructor's. A function,
+    // method, accessor or class inside it has a `this` of its own.
+    mlir::LogicalResult MLIRGenImpl::checkValueConstructorThisUses(FunctionLikeDeclarationBase constructorAST, StringRef className)
+    {
+        auto result = mlir::success();
+
+        auto isThis = [](Node expression) {
+            while (expression == SyntaxKind::ParenthesizedExpression)
+            {
+                expression = expression.as<ParenthesizedExpression>()->expression;
+            }
+
+            return expression == SyntaxKind::ThisKeyword;
+        };
+
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+
+        visitNode = [&](Node node) -> Node {
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::Constructor:
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::ClassExpression:
+                return undefined;
+            case SyntaxKind::PropertyAccessExpression:
+                if (isThis(node.as<PropertyAccessExpression>()->expression))
+                {
+                    return undefined;
+                }
+
+                break;
+            case SyntaxKind::ElementAccessExpression:
+                if (auto elementAccess = node.as<ElementAccessExpression>(); isThis(elementAccess->expression))
+                {
+                    return visitNode(elementAccess->argumentExpression);
+                }
+
+                break;
+            case SyntaxKind::ThisKeyword:
+                emitError(loc(node)) << "'this' of the @" VALUE_DECORATOR " class '" << className
+                                     << "' is not a value until its constructor returns; read 'this.f'";
+                result = mlir::failure();
+                return undefined;
+            default:
+                break;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        ts::forEachChild(constructorAST->body, visitNode, visitArray);
         return result;
     }
 

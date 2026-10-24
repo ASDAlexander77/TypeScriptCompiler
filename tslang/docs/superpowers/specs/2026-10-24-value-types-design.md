@@ -112,7 +112,15 @@ would not know its class.
   field reads.
 - `new C(args)` reserves a stack slot for the tuple, runs the constructor with `this` pointing at
   the slot, and loads the value. In the constructor `this` may be read and its fields assigned, as
-  `readonly` allows. Using `this` as a value inside the constructor copies it.
+  `readonly` allows. `this` there is the slot being filled, not a value yet, so it may only be the
+  object of a member access: `this.f` reads, `this.f = x` and `this.f++` writes, `this.m()` (the
+  method sees the fields stored so far), `this["f"]`, in the constructor or in an arrow function
+  inside it (a closure that captures `this` may only be called there: "a closure that captures
+  'this' of the @value class 'V' can only be called inside its constructor"). Any use
+  of `this` as a whole value - `const self = this`, `let s = this`, `f(this)`, `arr.push(this)`,
+  `return this`, `[this]`, `{ v: this }`, `...this`, `() => this` - is an error: "'this' of the
+  @value class 'V' is not a value until its constructor returns; read 'this.f'". A copy taken
+  there would miss the fields stored after it, where TypeScript's object has them.
 - Instance methods and getters take `this` as a value (or a pointer to a caller copy: builder's
   choice) and are called directly; there is no vtable and no `.instanceOf`. Setters are an error.
 - Static members are unchanged. A static field of the class's own type (`static white = new
