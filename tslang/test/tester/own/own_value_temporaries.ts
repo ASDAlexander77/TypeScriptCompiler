@@ -16,6 +16,18 @@ interface Ray {
 
 type Pair = { a: Vec; b: Vec };
 
+// a value that owns its vector (a fresh one moved in), whose number field is printed straight:
+// converting the number to a string takes nothing of the value
+@value
+interface Owned {
+    readonly v: Vec;
+    readonly n: number;
+}
+
+function owned(): Owned {
+    return { v: new Vec(3, 4), n: 2 };
+}
+
 @value
 class W {
     readonly a: number;
@@ -63,5 +75,10 @@ function main() {
     assert(r.start.x == 5 && r.dir.y == 6);
 
     assert(new W(4).b == 5);
+
+    const o = owned();
+    print(o.n);
+    churn();
+    assert(o.v.x == 3 && o.n == 2);
     print("done.");
 }

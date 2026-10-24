@@ -4470,7 +4470,12 @@ read in place, a `@value` constructor's closure), under own (no counting), rc, g
 JIT; `value_iface_cycle` and `value_ternary_null` under own too. Negatives:
 `own_err_value_record_place_dropped` (the record borrows `p.child`, which a call overwrites before
 `o.s` is read in place), `_stored` (pushed into an array), `_let_reassigned`, `_mixed_local`,
-`_field_written`, `_param_field_kept` (a callee pushes a record parameter's borrowed field). `own_err_record_literal_let_field` now reads `borrows ... and cannot be stored` at
+`_field_written`, `_param_field_kept` (a callee pushes a record parameter's borrowed field), and the
+exits of a record that borrows a `let`: `_returned`, `_captured` (by a closure that escapes),
+`_field_stored` (a class field), `_global`. `own_err_value_refs_copy` pins `value_refs`' copy
+shape (a copy out of an array read after the element is overwritten); own rejects it at the read
+even without the overwrite, an over-rejection that predates this section. `value_interface` runs
+under own; its two gaps (below) are in `value_interface_own_gaps`, which every other model runs. `own_err_record_literal_let_field` now reads `borrows ... and cannot be stored` at
 the push (the literal borrows the `let`); `own_err_shared_place_literal` pins the handle exclusion (with
 it missing, it compiled and crashed with 0xC0000005).
 
@@ -4489,12 +4494,10 @@ after; it prints the checksum 38837369.
 Not here:
 - A literal nested in another whose fields own new values (`{ ray: { dir: new Vec(..), .. }, thing:
   new T1() }`), and an owning literal pushed into an array or stored into a field: #679's owning
-  tuples move only into a local or the result. `value_interface` stays off under own for its nested
-  literal.
+  tuples move only into a local or the result (`value_interface_own_gaps`, off under own).
 - An unboxed record converted to an ordinary interface (`const s: HasStart = mk(new Vec(6, 0), ..)`):
   the box made from the value would own the fields the record borrows. It needs section 32's box
-  classification for a box filled from a record value, not from a literal. `value_interface` stays
-  off under own for it too.
+  classification for a box filled from a record value, not from a literal (`value_interface_own_gaps`).
 - A closure inside a closure in a `@value` method that captures `this` (`value_refs`' `Box.nested`):
   the inner capture of the outer box's copy is a keep.
 - `value_refs` as a whole: it copies values that hold owned Nodes out of arrays, fields, a generic and
@@ -4502,3 +4505,6 @@ Not here:
   the copy is a borrow of the original, and those programs read freed blocks; own rejects each one
   (`borrows an element and cannot be stored`, `... but is used here after ...`), correctly.
 - An exported function returning an unboxed record (see the facts above).
+- `const ts: Th[] = [new A(), new B()]; const h = ts[1].hit(ray); print(h.dist)` outside a loop is
+  `borrows an element but is used here after it may be released or overwritten` for a record with a
+  box (section 32) as much as for one without; the same call inside a loop over `ts` compiles.

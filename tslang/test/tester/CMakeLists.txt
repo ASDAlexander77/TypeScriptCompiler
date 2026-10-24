@@ -3097,16 +3097,21 @@ foreach(value_error_case ${value_error_cases})
 endforeach()
 
 # A literal of a @value interface is a value: built in the interface's field order, read, passed,
-# nested and converted to `any`, an ordinary interface and a type literal.
+# and converted to `any` and a type literal.
 foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-interface-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
-    set(value_interface_x86_twin "${TSLANG_X86_TWIN}")
     tslang_add_test(NAME test-jit-value-interface-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
-    # own rejects two of its lines (spec 36 "Not here"): a literal nested in another holding new
-    # vectors (an owning tuple moved into a tuple's field, #679's limit), and a record that borrows
-    # temporaries converted to an ordinary interface (its box would own what the record borrows)
+endforeach()
+# ...nested in another literal, two levels out of order, and converted to an ordinary interface
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-interface-own-gaps-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface_own_gaps.ts")
+    set(value_interface_gaps_x86_twin "${TSLANG_X86_TWIN}")
+    tslang_add_test(NAME test-jit-value-interface-own-gaps-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface_own_gaps.ts")
+    # own rejects both (spec 36 "Not here"): a literal nested in another holding new vectors (an
+    # owning tuple moved into a tuple's field, #679's limit), and a record that borrows temporaries
+    # converted to an ordinary interface (its box would own what the record borrows)
     if (value_mm STREQUAL "own")
-        set_tests_properties(test-compile-value-interface-own test-jit-value-interface-own ${value_interface_x86_twin}
+        set_tests_properties(test-compile-value-interface-own-gaps-own test-jit-value-interface-own-gaps-own ${value_interface_gaps_x86_twin}
                              PROPERTIES DISABLED TRUE)
     endif()
 endforeach()
@@ -4398,6 +4403,11 @@ set(own_error_cases
     "own_err_value_record_mixed_local|:21:5: error: a value that borrows what it holds and owns nothing [(]a tuple that holds a borrow[)] meets a value that owns a block here"
     "own_err_value_record_field_written|:20:5: error: '[^']*' borrows the result of 'mk' and cannot be stored, returned or captured"
     "own_err_value_record_param_field_kept|:8:37: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_value_record_returned|:26:22: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_captured|:28:11: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_field_stored|:32:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_global|:30:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_refs_copy|:32:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"
     "own_err_shared_place_tuple|:31:39: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
     "own_err_iface_field_overwritten|:23:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"

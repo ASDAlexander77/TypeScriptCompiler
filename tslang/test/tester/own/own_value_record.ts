@@ -73,6 +73,11 @@ function main() {
             const h = things[k].hit(ray);
             churn();
             if (h != null) {
+                // a number field printed straight: converting it to a string takes nothing of the record
+                if (i < 5) {
+                    print(h.dist);
+                }
+
                 total += h.thing.id() + h.dist + h.ray.start.x;
             } else {
                 missing++;
@@ -80,6 +85,7 @@ function main() {
         }
     }
 
+    // printed above: 1 (S, i = 2), 2 (P, i = 3), 4 (P, i = 4)
     print(total, missing);
     // S hits 333 times (id 1, dist 1); P 200 times with dist 2 and 200 with dist 4 (id 2)
     assert(total == 2666);
