@@ -606,6 +606,11 @@ namespace typescript
                 os << "private ";
             }
 
+            // every field of a @value class is readonly (a parameter property is one of them), and the
+            // importer checks it again
+            if (classType->isValue)
+                os << "readonly ";
+
             printAsFieldName(field.id);
             if (field.isConditional)
                 os << "?";
@@ -614,6 +619,17 @@ namespace typescript
             os << ";";
             newline();
         }
+
+        // `this` of an instance method of a @value class is the value (the slot `new` made, in the
+        // constructor), not the class: it is the first parameter, which the importer adds again
+        auto thisTypeOf = [&](bool isStatic, ArrayRef<mlir::Type> params) -> mlir::Type {
+            if (classType->isValue && !isStatic && !params.empty())
+            {
+                return params.front();
+            }
+
+            return classType->classType;
+        };
 
         // index signature ([x: T]: U;) - not stored in storageType's fields,
         // and (unlike accessors) its get/set methods are ordinary named
@@ -635,7 +651,7 @@ namespace typescript
                 accessor.isStatic, "get", accessor.name, accessor.getAccessLevel,
                 accessor.get.funcType.getParams(),
                 accessor.get.funcType.getNumResults() > 0 ? accessor.get.funcType.getResult(0) : mlir::Type(),
-                classType->classType,
+                thisTypeOf(accessor.isStatic, accessor.get.funcType.getParams()),
                 accessor.get.dllName);
         };
 
@@ -644,7 +660,7 @@ namespace typescript
                 accessor.isStatic, "set", accessor.name, accessor.setAccessLevel,
                 accessor.set.funcType.getParams(),
                 mlir::Type(),
-                classType->classType,
+                thisTypeOf(accessor.isStatic, accessor.set.funcType.getParams()),
                 accessor.set.dllName);
         };
 
@@ -761,7 +777,7 @@ namespace typescript
                 StringRef(method.name).split(CPP_OVERLOAD_SEPARATOR).first,
                 funcType.getParams(),
                 funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type(),
-                classType->classType);
+                thisTypeOf(method.isStatic, funcType.getParams()));
 
             newline();
         }

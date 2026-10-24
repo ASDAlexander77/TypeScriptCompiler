@@ -3056,7 +3056,12 @@ set(value_error_cases
     "value_iface_mutable|field 'f' of @value interface 'R' must be readonly"
     "value_iface_optional|field 'f' of @value interface 'R' cannot be optional"
     "value_iface_method|@value interface 'R' can only have fields"
+    "value_mutable_field|field 'x' of @value class 'V' must be readonly"
+    "value_setter|@value class 'V' cannot have a setter"
+    "value_instanceof|instanceof can't be used with the @value class 'V': its values have no type information"
+    "value_to_any|the @value class 'V' cannot be converted to 'any'"
     # `.` matches the message's `;`, which a CMake list cannot hold
+    "value_identity|a @value type has no identity. compare its fields"
     "value_iface_identity|a @value type has no identity. compare its fields")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
@@ -3083,6 +3088,12 @@ foreach(value_mm gc rc none own)
         set_tests_properties(test-compile-value-interface-own test-jit-value-interface-own ${value_interface_x86_twin}
                              PROPERTIES DISABLED TRUE)
     endif()
+endforeach()
+# `new` of a @value class makes a value: constructor, static helpers and field, a method and a
+# getter taking `this` by value; stored in an ordinary class's field and in an array, and copied.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-class-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_class.ts")
+    tslang_add_test(NAME test-jit-value-class-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_class.ts")
 endforeach()
 # ...and its optimized code allocates nothing for it
 add_test(NAME test-value-no-alloc

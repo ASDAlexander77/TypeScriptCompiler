@@ -705,6 +705,26 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // A @value class is nominal. Its value seen as `any`, `unknown`, `Object` or an ordinary
+        // interface would be a boxed copy that has lost its class (no vtable to call its methods by);
+        // seen as another @value type, a value of a class it is not. With null or undefined it is
+        // itself (`V | null`), and so in a union of @value types.
+        if (auto valueClassInfo = getValueClassInfo(valueType))
+        {
+            auto isValueMember = [](mlir::Type memberType) {
+                return isa<mlir_ts::ValueType, mlir_ts::NullType, mlir_ts::UndefinedType>(memberType);
+            };
+
+            auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+            if (isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::ObjectType, mlir_ts::InterfaceType, mlir_ts::ValueType>(type)
+                || (unionType && !llvm::all_of(unionType.getTypes(), isValueMember)))
+            {
+                emitError(location) << "the @" VALUE_DECORATOR " class '" << valueClassInfo->name << "' cannot be converted to '"
+                                    << to_print(type) << "'";
+                return mlir::failure();
+            }
+        }
+
         // A @value type is laid out as its storage tuple. Converting to one is converting to that
         // tuple - a field copy in the target's order - and taking the tuple as the value; converting
         // from one is converting its tuple, which boxes a copy for `any`, `Object` or an ordinary

@@ -1971,9 +1971,25 @@ class MLIRGenImpl
 
             auto recordType = MLIRTypeHelper::stripValueType(type);
 
+            // And a @value value read out of a place that can be written again - a local, a parameter,
+            // a field, an element or a global (`const w = v`): its fields are read in place
+            // (GetReferenceFromValue), so folded, `v = new V(9)` changed what `w.x` read. A copy of its
+            // own is what a value is.
+            auto valueReadFromPlace = false;
+            if (isa<mlir_ts::ValueType>(type))
+            {
+                auto read = initial;
+                while (auto castOp = read ? read.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+                {
+                    read = castOp.getIn();
+                }
+
+                valueReadFromPlace = read && read.getDefiningOp<mlir_ts::LoadOp>();
+            }
+
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || MLIRTypeHelper::isConstTupleHoldingArray(type)
+                || MLIRTypeHelper::isConstTupleHoldingArray(type) || valueReadFromPlace
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
                      || (compileOptions.isRefCounted()
@@ -6238,6 +6254,17 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // a value has no vtable, so nothing to ask its class of
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
+        {
+            if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()); classInfo && classInfo->isValue)
+            {
+                emitError(location) << "instanceof can't be used with the @" VALUE_DECORATOR " class '" << classInfo->name
+                                    << "': its values have no type information";
+                return mlir::failure();
+            }
+        }
+
 #ifdef ENABLE_RTTI
         if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
         {
@@ -8522,6 +8549,12 @@ class MLIRGenImpl
                              mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
                              bool finalReceiver = false);
 
+    mlir::Value ValueClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
+                                        mlir::StringRef name, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+
+    mlir::Value valueClassFunctionRef(mlir::Location location, ClassInfo::TypePtr classInfo, const MethodInfo &methodInfo,
+                                      const GenContext &genContext);
+
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
     {
         auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
@@ -9091,6 +9124,12 @@ class MLIRGenImpl
 
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
+
+    ValueOrLogicalResult NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                               NodeArray<Expression> arguments, const GenContext &genContext);
+
+    ValueOrLogicalResult NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                               SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
@@ -12311,6 +12350,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassProcessClassPropertyByFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember);
 
+    mlir::LogicalResult mlirGenValueClassMemberRules(ClassInfo::TypePtr newClassPtr, ClassElement classMember);
+
     mlir::LogicalResult mlirGenClassFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
                                                 const GenContext &genContext);
@@ -12785,7 +12826,8 @@ class MLIRGenImpl
             isImport = newClassPtr->isImport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
             isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
     #ifdef ALL_METHODS_VIRTUAL
-            isForceVirtual |= !isConstructor;
+            // a @value class has no vtable: its methods are called directly
+            isForceVirtual |= !isConstructor && !newClassPtr->isValue;
     #endif
             isVirtual = isForceVirtual;
         };
@@ -13192,6 +13234,47 @@ class MLIRGenImpl
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         interfaceInfo->getTupleTypeFields(fields, builder.getContext());
         return mlir_ts::ValueType::get(interfaceInfo->interfaceType.getName(), getTupleType(fields));
+    }
+
+    // The type of a @value class: its name and its instance fields as a tuple, in declaration order
+    // (parameter properties included). It has no vtable field: the class's storage is the tuple.
+    mlir_ts::ValueType getValueTypeOfClass(ClassInfo::TypePtr classInfo)
+    {
+        auto storageType = mlir::cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+        llvm::SmallVector<mlir_ts::FieldInfo> fields(storageType.getFields().begin(), storageType.getFields().end());
+        return mlir_ts::ValueType::get(classInfo->classType.getName(), getTupleType(fields));
+    }
+
+    // The @value class a value of this type is of; none for anything else (a @value interface too).
+    ClassInfo::TypePtr getValueClassInfo(mlir::Type type)
+    {
+        if (auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(type))
+        {
+            if (auto classInfo = getClassInfoByFullName(valueType.getName().getValue()); classInfo && classInfo->isValue)
+            {
+                return classInfo;
+            }
+        }
+
+        return ClassInfo::TypePtr();
+    }
+
+    // A @value class used as a type, once its fields are known: a type taken before they are would
+    // keep a tuple of none. The fields stay from a discovery pass to the pass after it.
+    mlir::Type getValueTypeOfClassIfLaidOut(ClassInfo::TypePtr classInfo)
+    {
+        // past the storage, or failed after it
+        auto laidOut = [](ProcessingStages stage) {
+            return stage >= ProcessingStages::ProcessedStorageClass
+                || (stage >= ProcessingStages::ErrorInMembers && stage <= ProcessingStages::ErrorInVTable);
+        };
+
+        if (!laidOut(classInfo->processing) && !laidOut(classInfo->processingAtEvaluation))
+        {
+            return mlir::Type();
+        }
+
+        return getValueTypeOfClass(classInfo);
     }
 
     // A @value value seen as its storage tuple: the cast lowers to nothing. Anything else is returned

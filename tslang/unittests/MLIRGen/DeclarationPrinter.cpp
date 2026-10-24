@@ -486,6 +486,32 @@ TEST_F(DeclarationPrinterTest, value_interface_prints_readonly_fields)
     EXPECT_THAT(plainText, testing::Not(testing::HasSubstr("readonly")));
 }
 
+// a field of a @value class is readonly (a parameter property `constructor(public readonly x)` is
+// one), and an importer re-parsing the declaration checks it. `this` of its methods is the value -
+// of its constructor, the slot `new` made - and is left out as a class's `this` is.
+TEST_F(DeclarationPrinterTest, value_class_prints_readonly_fields)
+{
+    auto ci = makeClass("Vec");
+    ci->isValue = true;
+    setClassFields(ci, {classField(strAttr("x"), get<mlir_ts::NumberType>())});
+    auto storage = mlir_ts::TupleType::get(getContext(), {classField(strAttr("x"), get<mlir_ts::NumberType>())});
+    auto valueType = mlir_ts::ValueType::get(sym("Vec"), storage);
+    ci->methods.push_back(method("constructor", getF({mlir_ts::RefType::get(storage), get<mlir_ts::NumberType>()}, {})));
+    ci->methods.push_back(method("dot", getF({valueType, valueType}, {get<mlir_ts::NumberType>()})));
+    ci->methods.push_back(method("plus", getF({valueType, valueType}, {valueType}), /*isStatic*/ true));
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::HasSubstr("readonly x: number;"));
+    EXPECT_THAT(text, testing::HasSubstr("constructor(p1 : number)"));
+    EXPECT_THAT(text, testing::HasSubstr("dot(p1 : Vec) : number"));
+    EXPECT_THAT(text, testing::HasSubstr("static plus(p0 : Vec, p1 : Vec) : Vec"));
+
+    auto plain = makeClass("Vec2");
+    setClassFields(plain, {classField(strAttr("x"), get<mlir_ts::NumberType>())});
+    auto plainText = printClass(plain);
+    EXPECT_THAT(plainText, testing::HasSubstr("x: number;"));
+    EXPECT_THAT(plainText, testing::Not(testing::HasSubstr("readonly")));
+}
+
 TEST_F(DeclarationPrinterTest, abstract_method_prints_abstract_keyword)
 {
     auto ci = makeClass("Shape");
