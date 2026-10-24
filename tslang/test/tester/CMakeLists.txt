@@ -3165,6 +3165,12 @@ foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-missing-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
     tslang_add_test(NAME test-jit-value-missing-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
 endforeach()
+# ...and `g?.ray.dir.x` (and `.len()`) of a missing one skips the rest of the chain: undefined, as is a
+# type literal's
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-optional-chain-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_optional_chain.ts")
+    tslang_add_test(NAME test-jit-value-optional-chain-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_optional_chain.ts")
+endforeach()
 # ...and a field read, a getter call or a conversion to the plain type of a missing one throws
 foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-missing-read-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")

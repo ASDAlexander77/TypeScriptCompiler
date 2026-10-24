@@ -10072,6 +10072,16 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext);
 
+    Expression optionalChainObject(Expression expressionAST);
+
+    ValueOrLogicalResult mlirGenOptionalChain(Expression chainAST, Expression questionDotObject, const GenContext &genContext);
+
+    // an expression node, as optionalChainObjects knows it
+    static const void *optionalChainKey(Node node)
+    {
+        return node.operator->();
+    }
+
     ValueOrLogicalResult mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext);
@@ -15611,6 +15621,10 @@ class MLIRGenImpl
     // @value types reported as holding themselves, by name: "can't find type" for each mention after
     // it would only repeat it
     llvm::StringSet<> valueTypesHoldingThemselves;
+
+    // the object of a `?.` its optional chain has read and tested, while the rest of the chain is made
+    // on it (mlirGenOptionalChain)
+    llvm::DenseMap<const void *, mlir::Value> optionalChainObjects;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the

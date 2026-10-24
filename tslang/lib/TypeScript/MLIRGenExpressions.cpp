@@ -14,6 +14,20 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(Expression expressionAST, const GenContext &genContext)
     {
+        // the object of a `?.` that the optional chain around it has read and tested
+        if (!optionalChainObjects.empty())
+        {
+            if (auto known = optionalChainObjects.find(optionalChainKey(expressionAST)); known != optionalChainObjects.end())
+            {
+                return known->second;
+            }
+        }
+
+        if (auto questionDotObject = optionalChainObject(expressionAST))
+        {
+            return mlirGenOptionalChain(expressionAST, questionDotObject, genContext);
+        }
+
         auto kind = (SyntaxKind)expressionAST;
         if (kind == SyntaxKind::Identifier)
         {
@@ -1581,6 +1595,152 @@ namespace mlirgen
         }
 
         return value;
+    }
+
+    // `a?.b.c`: once a `?.` meets null or undefined, TypeScript skips the whole rest of its chain, and
+    // the chain is undefined. A link reads only the link before it, so `.c` read `a?.b`'s undefined:
+    // `.c` of a missing @value type threw, of a missing type literal read 0. So a link of a chain (`.c`,
+    // `[i]`, `.m()`, `!`) that is not a `?.` itself and has one below it is made whole here
+    // (mlirGenOptionalChain): this is the object of the nearest `?.` below it (`a`), or none.
+    // Made on that object (optionalChainObjects), the chain is a chain as before.
+    Expression MLIRGenImpl::optionalChainObject(Expression expressionAST)
+    {
+        // (an absent expression - `for (;;)` - is made as an empty one)
+        if (!expressionAST || (expressionAST->flags & NodeFlags::OptionalChain) != NodeFlags::OptionalChain)
+        {
+            return undefined;
+        }
+
+        // whether a link has a `?.`, and its object; a node of any other kind ends the chain
+        auto linkOf = [](Node link, Expression &object) -> std::optional<bool> {
+            switch ((SyntaxKind)link)
+            {
+            case SyntaxKind::PropertyAccessExpression:
+                object = link.as<PropertyAccessExpression>()->expression;
+                return !!link.as<PropertyAccessExpression>()->questionDotToken;
+            case SyntaxKind::ElementAccessExpression:
+                object = link.as<ElementAccessExpression>()->expression;
+                return !!link.as<ElementAccessExpression>()->questionDotToken;
+            case SyntaxKind::CallExpression:
+                object = link.as<CallExpression>()->expression;
+                return !!link.as<CallExpression>()->questionDotToken;
+            case SyntaxKind::NonNullExpression:
+                object = link.as<NonNullExpression>()->expression;
+                return false;
+            default:
+                return std::nullopt;
+            }
+        };
+
+        Node link = expressionAST;
+        Expression object;
+        for (;;)
+        {
+            if ((link->flags & NodeFlags::OptionalChain) != NodeFlags::OptionalChain)
+            {
+                return undefined;
+            }
+
+            auto hasQuestionDot = linkOf(link, object);
+            if (!hasQuestionDot)
+            {
+                return undefined;
+            }
+
+            if (*hasQuestionDot)
+            {
+                break;
+            }
+
+            link = object;
+        }
+
+        // a `?.` link tests its object itself (mlirGenPropertyAccessExpressionLogic, the element access);
+        // a call's `?.()` is not tested anywhere, which this does not change; and a chain being made on
+        // its object already is a chain as before
+        if (link == expressionAST || link == SyntaxKind::CallExpression || optionalChainObjects.count(optionalChainKey(object)))
+        {
+            return undefined;
+        }
+
+        return object;
+    }
+
+    // ...made whole: the object of the nearest `?.` is read once and tested as that `?.` tests it, the
+    // chain is made on the value read only when it is there, as an optional, and is undefined when not;
+    // a chain that ends in a call of a void function (`c?.m.print()`) is only made when it is there.
+    // The `?.` tests it again, which is the chain as it was made before.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenOptionalChain(Expression chainAST, Expression questionDotObject,
+                                                           const GenContext &genContext)
+    {
+        auto location = loc(chainAST);
+
+        auto objectResult = mlirGen(questionDotObject, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(objectResult)
+        auto objectValue = V(objectResult);
+
+        auto key = optionalChainKey(questionDotObject);
+        optionalChainObjects[key] = objectValue;
+        auto forget = llvm::make_scope_exit([&]() { optionalChainObjects.erase(key); });
+
+        if (!MLIRTypeCore::isNullableOrOptionalType(objectValue.getType()))
+        {
+            return mlirGen(chainAST, genContext);
+        }
+
+        CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
+
+        // the result's type is the chain's, known once it is made
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
+        auto abandon = [&]() {
+            builder.setInsertionPoint(ifOp);
+            ifOp.erase();
+            return mlir::failure();
+        };
+
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto chainResult = mlirGen(chainAST, genContext);
+        if (chainResult.failed())
+        {
+            return abandon();
+        }
+
+        if (!chainResult.value)
+        {
+            // no value: the chain's ops move to an `if` with none
+            builder.setInsertionPoint(ifOp);
+            auto voidIfOp = builder.create<mlir_ts::IfOp>(location, condValue, false);
+            auto &thenBlock = voidIfOp.getThenRegion().front();
+            auto at = !thenBlock.empty() && thenBlock.back().hasTrait<mlir::OpTrait::IsTerminator>()
+                ? mlir::Block::iterator(&thenBlock.back()) : thenBlock.end();
+            thenBlock.getOperations().splice(at, ifOp.getThenRegion().front().getOperations());
+            ifOp.erase();
+            builder.setInsertionPointAfter(voidIfOp);
+            return mlir::success();
+        }
+
+        auto chainValue = V(chainResult);
+        if (mth.isNoneType(chainValue.getType()))
+        {
+            // a discovery pass that could not resolve the chain yet (a call's UndefOp of none)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{chainValue});
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto noneValue = builder.create<mlir_ts::UndefOp>(location, builder.getNoneType());
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{noneValue});
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        }
+
+        auto optValue = isa<mlir_ts::OptionalType>(chainValue.getType()) ? chainValue : mlirGenOptionalValueOf(location, chainValue);
+        ifOp.getResults().front().setType(optValue.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
+
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+        auto undefValue = builder.create<mlir_ts::OptionalUndefOp>(location, optValue.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{undefValue});
+
+        builder.setInsertionPointAfter(ifOp);
+        return V(ifOp.getResults().front());
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext)

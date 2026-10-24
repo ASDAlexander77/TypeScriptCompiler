@@ -1762,6 +1762,13 @@ namespace mlirgen
         valueLayoutFrames.clear();
         auto restoreValueLayoutFrames = llvm::make_scope_exit([&]() { valueLayoutFrames = std::move(outerValueLayoutFrames); });
 
+        // nor are the objects an optional chain around it read (mlirGenOptionalChain) this body's: made
+        // again inside the chain - a recursive function's result inferred - the chain's nodes are made
+        // anew
+        auto outerOptionalChainObjects = std::move(optionalChainObjects);
+        optionalChainObjects.clear();
+        auto restoreOptionalChainObjects = llvm::make_scope_exit([&]() { optionalChainObjects = std::move(outerOptionalChainObjects); });
+
         auto location = loc(functionLikeDeclarationBaseAST);
 
         // Debug Info
