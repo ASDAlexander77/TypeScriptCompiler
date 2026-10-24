@@ -172,6 +172,20 @@ TypeScript lets `null` and `undefined` stand for an `Intersection`. A value has 
   null member, and a value is the union holding `T`. Converting between the spellings changes
   nothing, so null stays null and undefined stays undefined, and converting a plain `T` to one
   makes a present value.
+- As emitted, that is a tagged union inside an optional. `isUnionTypeNeedsTag` answers yes for
+  the union (`isMissingValueUnion`: one `ValueType` member and `null`), where merging its members
+  would give the optional back, so it is laid out as any tagged union is: a packed
+  `<{ ptr, payload }>`. The tag is a pointer to the member's name in a type-descriptor constant
+  (`@td_<n>_object` for the value, since `typeof` of a value is `"object"`; `@td_<n>_null` for
+  null), pointing past the descriptor's 32-byte header at the name string. The payload is an
+  array of `i64` as large as the largest member (`<{ [1 x i64] }>` for `{ dist: number }`), and
+  holds the value's storage tuple. The optional adds its has-value `i1`, so `Hit | null` of
+  `@value interface Hit { readonly dist: number }` is passed and returned as
+  `{ <{ ptr, <{ [1 x i64] }> }>, i1 }`. undefined is all zeroes (`i1` false); null is `i1` true
+  with the `null` descriptor's tag and a zero payload; a value is `i1` true with the
+  `object` tag and the tuple. `=== undefined` reads the `i1`; `=== null` and `== null` read it and
+  then compare the tag with the string `"null"` (`strcmp` when the tag is not a null pointer).
+  This is the cost the benchmark README measures for `Intersection | null`.
 - Strict comparisons with `null` and `undefined` are exact, as in TypeScript: `x === undefined` is
   false for `null`, and `x === null` false for `undefined`. Loose `x == null` and `x != null` ask
   whether `x` holds a value. Comparing one with anything else (another value, a number) is the
