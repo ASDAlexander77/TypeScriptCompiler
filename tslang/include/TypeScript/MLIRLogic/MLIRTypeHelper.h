@@ -263,6 +263,23 @@ class MLIRTypeHelper
         return mlir_ts::ValueType();
     }
 
+    // A plain `f: T` field (of a class or a literal) where an interface's optional member of the @value
+    // type T is: the member is read as the optional value a `f?: T` field stores (getMissingValueType),
+    // and a T is not laid out as one, so it cannot stand in for it
+    static mlir_ts::ValueType getPlainValueForOptionalMember(mlir::Type memberType, mlir::Type fieldType)
+    {
+        auto valueType = isa_and_nonnull<mlir_ts::OptionalType>(memberType) ? getMissingValueElement(memberType) : mlir_ts::ValueType();
+        return valueType && fieldType == valueType ? valueType : mlir_ts::ValueType();
+    }
+
+    static void emitPlainValueForOptionalMemberError(mlir::Location location, mlir::Attribute id, mlir_ts::ValueType valueType,
+                                                     StringRef interfaceName)
+    {
+        auto name = isa<mlir::StringAttr>(id) ? mlir::cast<mlir::StringAttr>(id).getValue() : StringRef();
+        emitError(location) << "field '" << name << "' must be declared '" << name << "?: " << valueType.getName().getValue()
+                            << "' to implement the optional @" VALUE_DECORATOR " member '" << name << "' of '" << interfaceName << "'";
+    }
+
     // A @value type, or one that may be missing (getMissingValueType)
     static bool holdsValueType(mlir::Type type)
     {
@@ -1557,6 +1574,12 @@ class MLIRTypeHelper
 
                         if (!suppressErrors)
                         {
+                            if (auto valueType = getPlainValueForOptionalMember(fieldType, stripLiteralType(foundField.type)))
+                            {
+                                emitPlainValueForOptionalMemberError(location, id, valueType, newInterfacePtr->fullName);
+                                return {emptyFieldInfo, mlir::failure()};
+                            }
+
                             emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
                                                 << foundField.type << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";

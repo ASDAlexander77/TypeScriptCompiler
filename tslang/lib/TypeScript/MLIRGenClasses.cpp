@@ -2622,6 +2622,12 @@ genContext);
                 {
                     if (!found && !isConditional || found)
                     {
+                        if (auto valueType = found ? MLIRTypeHelper::getPlainValueForOptionalMember(fieldType, foundField.type) : mlir_ts::ValueType())
+                        {
+                            MLIRTypeHelper::emitPlainValueForOptionalMemberError(location, id, valueType, newInterfacePtr->fullName);
+                            return {emptyFieldInfo, mlir::failure()};
+                        }
+
                         emitError(location)
                             << "field type not matching for " << id << " for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";

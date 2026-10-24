@@ -3069,6 +3069,8 @@ set(value_error_cases
     "value_switch_identity|a @value type has no identity. compare its fields"
     "value_missing_identity|a @value type has no identity. compare its fields"
     "value_compare_number|a @value type has no identity. compare its fields"
+    "value_optional_member_plain_field|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
+    "value_optional_member_literal|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
     "value_null_plain|a @value type has no null. write 'Hit \\| null'")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)

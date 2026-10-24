@@ -20,6 +20,13 @@ class HitBox implements Holder {
     hit?: Hit;
 }
 
+interface Based {
+    x: number;
+}
+
+// `f` is a member of one side only: of the intersection, an optional one
+type Either = Based & ({ f: Hit } | { g: number });
+
 function find(d: number): Hit | null {
     if (d < 0) return null;
     return { dist: d };
@@ -115,6 +122,11 @@ function main() {
     assert(plainBox.hit === null);
     viaShape.hit = undefined;
     assert(plainBox.hit === undefined);
+
+    const withF: Either = { x: 1, f: { dist: 9 } };
+    assert(withF.f.dist == 9);
+    const withG: Either = { x: 2, g: 3 };
+    assert(withG.f === undefined && !(withG.f === null));
 
     let u: Hit | null | undefined = null;
     assert(!(u === undefined));

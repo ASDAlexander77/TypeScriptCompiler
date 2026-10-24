@@ -3476,7 +3476,11 @@ namespace mlirgen
             // an intersection type's own `{ ... }` member (e.g. `F1 & F2 & { c: number }`'s `c`),
             // masked only because getVirtualTable() used to overwrite virtualIndex as a side effect
             // of every cast - see docs/interface-vtable-simplification-design.md §4.
-            dest->fields.push_back({item.id, item.type, item.isConditional || conditional, 0, dest->getNextVTableMemberIndex()});
+            // an optional member of a @value type is read as the optional value every missing T is
+            // (mlirGenInterfaceAddFieldMember)
+            auto isConditional = item.isConditional || conditional;
+            auto type = isConditional && isa<mlir_ts::ValueType>(item.type) ? getOptionalType(item.type) : item.type;
+            dest->fields.push_back({item.id, type, isConditional, 0, dest->getNextVTableMemberIndex()});
         }
 
         return mlir::success();
