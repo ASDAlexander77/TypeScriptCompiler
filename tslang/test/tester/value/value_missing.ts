@@ -16,6 +16,10 @@ class Box {
     hit?: Hit;
 }
 
+class HitBox implements Holder {
+    hit?: Hit;
+}
+
 function find(d: number): Hit | null {
     if (d < 0) return null;
     return { dist: d };
@@ -81,6 +85,36 @@ function main() {
     assert(box.hit === undefined);
     box.hit = find(7);
     assert(box.hit.dist == 7);
+
+    // a class's `hit?: Hit` seen through the interface, in each state, and written through it
+    const hitBox = new HitBox();
+    const viaImplements: Holder = hitBox;
+    assert(viaImplements.hit === undefined && !(viaImplements.hit === null));
+    hitBox.hit = null;
+    assert(viaImplements.hit === null && !(viaImplements.hit === undefined));
+    hitBox.hit = find(6);
+    assert(viaImplements.hit.dist == 6);
+    viaImplements.hit = find(2);
+    assert(hitBox.hit.dist == 2);
+    viaImplements.hit = null;
+    assert(hitBox.hit === null && !(hitBox.hit === undefined));
+    viaImplements.hit = undefined;
+    assert(hitBox.hit === undefined && !(hitBox.hit === null));
+
+    // ...and of one that does not say it implements it
+    const plainBox = new Box();
+    const viaShape: Holder = plainBox;
+    assert(viaShape.hit === undefined && !(viaShape.hit === null));
+    plainBox.hit = null;
+    assert(viaShape.hit === null && !(viaShape.hit === undefined));
+    plainBox.hit = find(4);
+    assert(viaShape.hit.dist == 4);
+    viaShape.hit = find(3);
+    assert(plainBox.hit.dist == 3);
+    viaShape.hit = null;
+    assert(plainBox.hit === null);
+    viaShape.hit = undefined;
+    assert(plainBox.hit === undefined);
 
     let u: Hit | null | undefined = null;
     assert(!(u === undefined));

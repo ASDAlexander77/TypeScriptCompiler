@@ -1402,6 +1402,14 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        // `f?: T` of a @value type is read as the one optional every missing T is
+        // (MLIRTypeHelper::getMissingValueType), which is how a class's or a literal's `f?: T` stores it:
+        // the slot is that field, read as it is, null and undefined apart
+        if (isConditional && isa<mlir_ts::ValueType>(type))
+        {
+            type = getOptionalType(type);
+        }
+
         auto fieldIndex = newInterfacePtr->getFieldIndex(fieldId);
         if (fieldIndex == -1)
         {

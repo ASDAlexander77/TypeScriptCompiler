@@ -4823,6 +4823,13 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             isOptional = optType.getElementType() == elementType;
         }
 
+        // an interface's `f?: T` of a @value type is read as the optional it is stored as
+        // (MLIRTypeHelper::getMissingValueType); a member the object lacks has no address, and reads
+        // as undefined
+        auto interfaceSymbolRefOp = loadOp.getReference().getDefiningOp<mlir_ts::InterfaceSymbolRefOp>();
+        auto isMissingValueMember = resultType == elementType && MLIRTypeHelper::getMissingValueElement(resultType)
+            && interfaceSymbolRefOp && interfaceSymbolRefOp.getOptional().value_or(false);
+
         mlir::Value loadedValue;
         auto loadedValueFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
             mlir::Value loadedValue;
@@ -4909,7 +4916,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             return loadedValue;
         };
 
-        if (isOptional)
+        if (isOptional || isMissingValueMember)
         {
             auto resultTypeLlvm = tch.convertType(resultType);
 
@@ -4921,6 +4928,11 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
             auto createOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                 auto dataValue = loadedValueFunc(builder, location);
+                if (isMissingValueMember)
+                {
+                    return dataValue;
+                }
+
                 mlir::Value val = rewriter.create<mlir_ts::OptionalValueOp>(loc, resultType, dataValue);
                 mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
                 return valAsLLVMType;

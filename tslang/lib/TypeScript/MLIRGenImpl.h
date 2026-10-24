@@ -8690,17 +8690,6 @@ class MLIRGenImpl
                                     ? fieldRefType.getElementType()
                                     : mlir_ts::OptionalType::get(fieldRefType.getElementType());
             value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
-
-            // a missing @value T is the one optional of `T | null` (getMissingValueType): the member's
-            // T and whether it is there go into that
-            if (auto valueType = dyn_cast<mlir_ts::ValueType>(fieldRefType.getElementType()))
-            {
-                auto missingType = mlir::cast<mlir_ts::OptionalType>(getOptionalType(valueType));
-                auto hasValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
-                auto present = builder.create<mlir_ts::ValueOp>(location, valueType, value);
-                auto asUnion = builder.create<mlir_ts::CastOp>(location, missingType.getElementType(), present);
-                value = builder.create<mlir_ts::OptionalOp>(location, missingType, asUnion, hasValue);
-            }
         }
 
         // if it is FuncType, we need to create BoundMethod again
