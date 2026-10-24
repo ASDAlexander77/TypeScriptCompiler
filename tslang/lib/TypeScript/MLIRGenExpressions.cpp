@@ -14,6 +14,20 @@ namespace mlirgen
 
     ValueOrLogicalResult MLIRGenImpl::mlirGen(Expression expressionAST, const GenContext &genContext)
     {
+        // the object of a `?.` that the optional chain around it has read and tested
+        if (!optionalChainObjects.empty())
+        {
+            if (auto known = optionalChainObjects.find(optionalChainKey(expressionAST)); known != optionalChainObjects.end())
+            {
+                return known->second;
+            }
+        }
+
+        if (auto questionDotObject = optionalChainObject(expressionAST))
+        {
+            return mlirGenOptionalChain(expressionAST, questionDotObject, genContext);
+        }
+
         auto kind = (SyntaxKind)expressionAST;
         if (kind == SyntaxKind::Identifier)
         {
@@ -616,6 +630,12 @@ namespace mlirgen
             }
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
+            // an assignment as well: a field of a @value value is readonly
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            {
+                return mlir::failure();
+            }
+
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -641,6 +661,12 @@ namespace mlirgen
         {
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
+            // an assignment as well: a field of a @value value is readonly
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            {
+                return mlir::failure();
+            }
+
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
                                                              builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -905,6 +931,21 @@ namespace mlirgen
                                                           mlir::Value rightExpressionValue, const GenContext &genContext,
                                                           bool saveResult)
     {
+        // a @value value is copied wherever it goes: two of them have no identity to compare, and
+        // comparing their fields here would answer differently from the TypeScript program. So also
+        // when either may be missing (`T | null`), and against anything else: only null and
+        // undefined are compared with one
+        auto isNullish = [](mlir::Value value) { return isa<mlir_ts::NullType, mlir_ts::UndefinedType>(value.getType()); };
+        if ((opCode == SyntaxKind::EqualsEqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken
+             || opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::ExclamationEqualsToken)
+            && leftExpressionValue && rightExpressionValue
+            && (MLIRTypeHelper::holdsValueType(leftExpressionValue.getType()) || MLIRTypeHelper::holdsValueType(rightExpressionValue.getType()))
+            && !isNullish(leftExpressionValue) && !isNullish(rightExpressionValue))
+        {
+            emitError(location) << "a @" VALUE_DECORATOR " type has no identity; compare its fields";
+            return mlir::failure();
+        }
+
         if (auto folded = foldNullishCompare(location, opCode, leftExpressionValue, rightExpressionValue))
         {
             return *folded;
@@ -1059,7 +1100,7 @@ namespace mlirgen
                 auto optValue = 
                     isa<mlir_ts::OptionalType>(value.getType())
                         ? value
-                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                        : mlirGenOptionalValueOf(location, value);
                 return ValueOrLogicalResult(optValue); 
             }, 
             [&](mlir::Type trueValueType) { 
@@ -1556,6 +1597,152 @@ namespace mlirgen
         return value;
     }
 
+    // `a?.b.c`: once a `?.` meets null or undefined, TypeScript skips the whole rest of its chain, and
+    // the chain is undefined. A link reads only the link before it, so `.c` read `a?.b`'s undefined:
+    // `.c` of a missing @value type threw, of a missing type literal read 0. So a link of a chain (`.c`,
+    // `[i]`, `.m()`, `!`) that is not a `?.` itself and has one below it is made whole here
+    // (mlirGenOptionalChain): this is the object of the nearest `?.` below it (`a`), or none.
+    // Made on that object (optionalChainObjects), the chain is a chain as before.
+    Expression MLIRGenImpl::optionalChainObject(Expression expressionAST)
+    {
+        // (an absent expression - `for (;;)` - is made as an empty one)
+        if (!expressionAST || (expressionAST->flags & NodeFlags::OptionalChain) != NodeFlags::OptionalChain)
+        {
+            return undefined;
+        }
+
+        // whether a link has a `?.`, and its object; a node of any other kind ends the chain
+        auto linkOf = [](Node link, Expression &object) -> std::optional<bool> {
+            switch ((SyntaxKind)link)
+            {
+            case SyntaxKind::PropertyAccessExpression:
+                object = link.as<PropertyAccessExpression>()->expression;
+                return !!link.as<PropertyAccessExpression>()->questionDotToken;
+            case SyntaxKind::ElementAccessExpression:
+                object = link.as<ElementAccessExpression>()->expression;
+                return !!link.as<ElementAccessExpression>()->questionDotToken;
+            case SyntaxKind::CallExpression:
+                object = link.as<CallExpression>()->expression;
+                return !!link.as<CallExpression>()->questionDotToken;
+            case SyntaxKind::NonNullExpression:
+                object = link.as<NonNullExpression>()->expression;
+                return false;
+            default:
+                return std::nullopt;
+            }
+        };
+
+        Node link = expressionAST;
+        Expression object;
+        for (;;)
+        {
+            if ((link->flags & NodeFlags::OptionalChain) != NodeFlags::OptionalChain)
+            {
+                return undefined;
+            }
+
+            auto hasQuestionDot = linkOf(link, object);
+            if (!hasQuestionDot)
+            {
+                return undefined;
+            }
+
+            if (*hasQuestionDot)
+            {
+                break;
+            }
+
+            link = object;
+        }
+
+        // a `?.` link tests its object itself (mlirGenPropertyAccessExpressionLogic, the element access);
+        // a call's `?.()` is not tested anywhere, which this does not change; and a chain being made on
+        // its object already is a chain as before
+        if (link == expressionAST || link == SyntaxKind::CallExpression || optionalChainObjects.count(optionalChainKey(object)))
+        {
+            return undefined;
+        }
+
+        return object;
+    }
+
+    // ...made whole: the object of the nearest `?.` is read once and tested as that `?.` tests it, the
+    // chain is made on the value read only when it is there, as an optional, and is undefined when not;
+    // a chain that ends in a call of a void function (`c?.m.print()`) is only made when it is there.
+    // The `?.` tests it again, which is the chain as it was made before.
+    ValueOrLogicalResult MLIRGenImpl::mlirGenOptionalChain(Expression chainAST, Expression questionDotObject,
+                                                           const GenContext &genContext)
+    {
+        auto location = loc(chainAST);
+
+        auto objectResult = mlirGen(questionDotObject, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(objectResult)
+        auto objectValue = V(objectResult);
+
+        auto key = optionalChainKey(questionDotObject);
+        optionalChainObjects[key] = objectValue;
+        auto forget = llvm::make_scope_exit([&]() { optionalChainObjects.erase(key); });
+
+        if (!MLIRTypeCore::isNullableOrOptionalType(objectValue.getType()))
+        {
+            return mlirGen(chainAST, genContext);
+        }
+
+        CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
+
+        // the result's type is the chain's, known once it is made
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
+        auto abandon = [&]() {
+            builder.setInsertionPoint(ifOp);
+            ifOp.erase();
+            return mlir::failure();
+        };
+
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+        auto chainResult = mlirGen(chainAST, genContext);
+        if (chainResult.failed())
+        {
+            return abandon();
+        }
+
+        if (!chainResult.value)
+        {
+            // no value: the chain's ops move to an `if` with none
+            builder.setInsertionPoint(ifOp);
+            auto voidIfOp = builder.create<mlir_ts::IfOp>(location, condValue, false);
+            auto &thenBlock = voidIfOp.getThenRegion().front();
+            auto at = !thenBlock.empty() && thenBlock.back().hasTrait<mlir::OpTrait::IsTerminator>()
+                ? mlir::Block::iterator(&thenBlock.back()) : thenBlock.end();
+            thenBlock.getOperations().splice(at, ifOp.getThenRegion().front().getOperations());
+            ifOp.erase();
+            builder.setInsertionPointAfter(voidIfOp);
+            return mlir::success();
+        }
+
+        auto chainValue = V(chainResult);
+        if (mth.isNoneType(chainValue.getType()))
+        {
+            // a discovery pass that could not resolve the chain yet (a call's UndefOp of none)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{chainValue});
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto noneValue = builder.create<mlir_ts::UndefOp>(location, builder.getNoneType());
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{noneValue});
+            builder.setInsertionPointAfter(ifOp);
+            return V(ifOp.getResults().front());
+        }
+
+        auto optValue = isa<mlir_ts::OptionalType>(chainValue.getType()) ? chainValue : mlirGenOptionalValueOf(location, chainValue);
+        ifOp.getResults().front().setType(optValue.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
+
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+        auto undefValue = builder.create<mlir_ts::OptionalUndefOp>(location, optValue.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{undefValue});
+
+        builder.setInsertionPointAfter(ifOp);
+        return V(ifOp.getResults().front());
+    }
+
     ValueOrLogicalResult MLIRGenImpl::mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext)
     {
         auto location = loc(ommitedExpression);
@@ -1892,6 +2079,28 @@ namespace mlirgen
     {
         auto location = loc(objectLiteral);
 
+        // A literal of a @value type is built as its storage tuple - its fields reordered to the
+        // declaration's, as for a type literal - and that tuple is the value. It is never boxed.
+        // Received as one that may be missing (`T | null`), the literal is the T: so is each branch of
+        // `c ? { d: 1 } : null`, which then makes the missing type of T and null.
+        if (genContext.receiverType)
+        {
+            auto valueType = dyn_cast<mlir_ts::ValueType>(mth.stripOptionalType(genContext.receiverType));
+            if (!valueType)
+            {
+                valueType = MLIRTypeHelper::getMissingValueElement(genContext.receiverType);
+            }
+
+            if (valueType)
+            {
+                GenContext storageGenContext(genContext);
+                storageGenContext.receiverType = valueType.getStorageType();
+                auto result = mlirGen(objectLiteral, storageGenContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                return cast(location, valueType, V(result), genContext);
+            }
+        }
+
         ObjectLiteralInfo oli{};
         oli.objectLiteral = objectLiteral;
 
@@ -2172,7 +2381,7 @@ namespace mlirgen
 
         // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted
         // as embeded type "index"
-        if (!isEmbededType(name) && !circularTypeAliases.contains(name))
+        if (!isEmbededType(name) && !circularTypeAliases.contains(name) && !valueTypesHoldingThemselves.contains(name))
             emitError(location, "can't resolve name: ") << name;
 
         return mlir::failure();

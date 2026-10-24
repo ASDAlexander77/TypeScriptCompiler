@@ -1554,7 +1554,7 @@ namespace mlirgen
                         declSymbol.starts_with(std::string(SHARED_LIB_DECLARATIONS_2UNDERSCORE) + "_generic_");
 
                     auto importData = convertUTF8toWide(dataPtr);
-                    if (mlir::failed(parsePartialStatements(importData, genContext, false, !isGenericClassDecl)))
+                    if (mlir::failed(parsePartialStatements(importData, genContext, false, !isGenericClassDecl, true)))
                     {
                         //assert(false);
                         return mlir::failure();

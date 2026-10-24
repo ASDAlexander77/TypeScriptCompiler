@@ -255,6 +255,12 @@ class MLIRTypeIterator
 
                               return true;
                           })
+                          // a @value value is its storage tuple
+                          .Case<mlir_ts::ValueType>([&](auto t) {
+                              if (!iterate(t.getStorageType()))
+                                  return false;
+                              return true;
+                          })
                           .Case<mlir_ts::UnionType>([&](auto t) {
                               for (auto subType : t.getTypes())
                               {

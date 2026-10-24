@@ -45,7 +45,10 @@ set(not_compilable_alone
     export_cppvtable_hidden_return.ts
     import_cppvtable_hidden_return.ts
     # an error by design: it extends a @final class (test-compile-shared-import-final-extends)
-    import_final_extends.ts)
+    import_final_extends.ts
+    # an error by design: an object literal for an imported @value class
+    # (test-compile-shared-import-value-types-structural)
+    import_value_types_structural.ts)
 
 file(GLOB corpus "${TESTS_DIR}/*.ts")
 list(SORT corpus)

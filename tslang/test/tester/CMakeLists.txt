@@ -1589,6 +1589,28 @@ foreach(final_mm gc rc own)
     tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
     tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 endforeach()
+# @value across the boundary: the importer knows the class and interfaces from __decls (`Hit`
+# printed before the `Ray` it holds), builds and reads values of them, and gives them back
+foreach(value_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-value-types-${value_mm} COMMAND test-runner -shared -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-value-types-${value_mm} COMMAND test-runner -jit -shared -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+endforeach()
+# ...and an imported @value class is nominal: an object literal of its shape is not one
+add_test(NAME test-compile-shared-import-value-types-structural
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types_structural.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+set_tests_properties(test-compile-shared-import-value-types-structural PROPERTIES PASS_REGULAR_EXPRESSION "type '.*' cannot be converted to the @value class 'V'"
+                                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A forward reference in __decls: an exported interface names one declared after it, and the
+# importer reads each declaration again once the others are in
+foreach(forward_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-forward-iface-${forward_mm} COMMAND test-runner -shared -mm=${forward_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_forward_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_forward_iface.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-forward-iface-${forward_mm} COMMAND test-runner -jit -shared -mm=${forward_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_forward_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_forward_iface.ts")
+endforeach()
+# ...while a type they name and never declare is still an error
+add_test(NAME test-compile-shared-import-unresolved-iface
+         COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_unresolved_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_unresolved_iface.ts")
+set_tests_properties(test-compile-shared-import-unresolved-iface PROPERTIES PASS_REGULAR_EXPRESSION "error: can't find type by name: Hidden"
+                                                                            FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
 # other models ignore them
 foreach(markers_mm gc rc own)
@@ -3038,6 +3060,195 @@ foreach(final_error_case ${final_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${final_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# `@value` (docs/superpowers/specs/2026-10-24-value-types-design.md): a class or interface whose
+# values are copied, not shared. Each file in value/ breaks one rule; the test passes when the
+# compiler prints the message.
+set(value_error_cases
+    "value_cpp|class 'V' cannot be both @value and @cpp"
+    "value_abstract|class 'V' cannot be both @value and abstract"
+    "value_final|class 'V' cannot be both @value and @final"
+    "value_extends|@value class 'V' cannot extend 'B'"
+    "extends_value|class 'X' cannot extend 'V': it is @value"
+    "value_implements|@value class 'V' cannot implement an interface"
+    "value_generic|@value class 'V' cannot have type parameters"
+    "value_iface_extends|@value interface 'R' cannot extend 'I': it is not @value"
+    "value_iface_extends_class|@value interface 'R' cannot extend 'C': it is not @value"
+    "value_iface_generic|@value interface 'R' cannot have type parameters"
+    "value_iface_mutable|field 'f' of @value interface 'R' must be readonly"
+    "value_iface_optional|field 'f' of @value interface 'R' cannot be optional"
+    "value_iface_method|@value interface 'R' can only have fields"
+    "value_mutable_field|field 'x' of @value class 'V' must be readonly"
+    "value_setter|@value class 'V' cannot have a setter"
+    "value_instanceof|instanceof can't be used with the @value class 'V': its values have no type information"
+    "value_to_any|the @value class 'V' cannot be converted to 'any'"
+    "value_from_literal|type '.*' cannot be converted to the @value class 'V'"
+    "value_from_iface|type 'R' cannot be converted to the @value class 'V'"
+    "value_from_class|type 'C' cannot be converted to the @value class 'V'"
+    # `.` matches the message's `;`, which a CMake list cannot hold
+    "value_identity|a @value type has no identity. compare its fields"
+    "value_iface_identity|a @value type has no identity. compare its fields"
+    "value_switch_identity|a @value type has no identity. compare its fields"
+    "value_missing_identity|a @value type has no identity. compare its fields"
+    "value_compare_number|a @value type has no identity. compare its fields"
+    "value_optional_member_plain_field|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
+    "value_optional_member_literal|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
+    "value_null_plain|a @value type has no null. write 'Hit \\| null'"
+    "value_ctor_closure_escape_global|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_field|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_arg|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_nested_store|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_nested_return|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_readonly_nested_ctor|cannot assign to 'node': the fields of a @value type are readonly"
+    "value_readonly_method|cannot assign to 'node': the fields of a @value type are readonly"
+    "value_readonly_outside|cannot assign to 'x': the fields of a @value type are readonly"
+    "value_readonly_outside_iface|cannot assign to 'start': the fields of a @value type are readonly"
+    "value_readonly_incdec|cannot assign to 'x': the fields of a @value type are readonly"
+    "value_ctor_this_const|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_closure|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_arg|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_push|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_arrow|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_literal|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_spread|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_self_iface|@value type 'L' contains itself through 'next'. a value cannot hold itself"
+    "value_self_class|@value type 'N' contains itself through 'next'. a value cannot hold itself"
+    "value_self_mutual|@value type 'A' contains itself through 'b.a'. a value cannot hold itself"
+    "value_self_array|@value type 'L' contains itself through 'next'. a value cannot hold itself"
+    "value_self_generic|@value type 'L' reaches itself through 'box' in the type arguments of 'Box<L>'. a @value type cannot hold a generic type made from it"
+    "value_self_generic_class|@value type 'L' reaches itself through 'box' in the type arguments of 'Box<L>'. a @value type cannot hold a generic type made from it"
+    "value_self_generic_mutual|@value type 'A' reaches itself through 'p.a' in the type arguments of 'Box<B>'. a @value type cannot hold a generic type made from it"
+    "value_self_generic_pair|@value type 'A' reaches itself through 'p.a' in the type arguments of 'Pair<B, number>'. a @value type cannot hold a generic type made from it"
+    "value_generic_unknown|can't find type by name: Nope"
+    "value_ctor_this_init|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
+    "value_ctor_this_init_noctor|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'")
+foreach(value_error_case ${value_error_cases})
+    string(FIND "${value_error_case}" "|" value_error_sep)
+    string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
+    math(EXPR value_error_sep "${value_error_sep} + 1")
+    string(SUBSTRING "${value_error_case}" ${value_error_sep} -1 value_error_message)
+    add_test(NAME test-compile-value-${value_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/value/${value_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/value-${value_error_name}.obj")
+    set_tests_properties(test-compile-value-${value_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${value_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
+# A literal of a @value interface is a value: built in the interface's field order, read, passed,
+# and converted to `any` and a type literal.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-interface-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
+    tslang_add_test(NAME test-jit-value-interface-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
+endforeach()
+# ...nested in another literal, two levels out of order, and converted to an ordinary interface
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-interface-own-gaps-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface_own_gaps.ts")
+    set(value_interface_gaps_x86_twin "${TSLANG_X86_TWIN}")
+    tslang_add_test(NAME test-jit-value-interface-own-gaps-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface_own_gaps.ts")
+    # own rejects both (spec 36 "Not here"): a literal nested in another holding new vectors (an
+    # owning tuple moved into a tuple's field, #679's limit), and a record that borrows temporaries
+    # converted to an ordinary interface (its box would own what the record borrows)
+    if (value_mm STREQUAL "own")
+        set_tests_properties(test-compile-value-interface-own-gaps-own test-jit-value-interface-own-gaps-own ${value_interface_gaps_x86_twin}
+                             PROPERTIES DISABLED TRUE)
+    endif()
+endforeach()
+# `new` of a @value class makes a value: constructor, static helpers and field, a method and a
+# getter taking `this` by value; stored in an ordinary class's field and in an array, and copied.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-class-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_class.ts")
+    tslang_add_test(NAME test-jit-value-class-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_class.ts")
+endforeach()
+# ...and its optimized code allocates nothing for it
+add_test(NAME test-value-no-alloc
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_no_alloc.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-no-alloc.cmake")
+# `T | null`, `T | undefined` and `v?: T` of a @value type are an optional value: returned,
+# compared with null and undefined, switched on, and read after a check or through `?.`.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-missing-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
+    tslang_add_test(NAME test-jit-value-missing-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing.ts")
+endforeach()
+# ...and `g?.ray.dir.x` (and `.len()`) of a missing one skips the rest of the chain: undefined, as is a
+# type literal's
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-optional-chain-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_optional_chain.ts")
+    tslang_add_test(NAME test-jit-value-optional-chain-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_optional_chain.ts")
+endforeach()
+# ...and a field read, a getter call or a conversion to the plain type of a missing one throws
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-missing-read-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
+    tslang_add_test(NAME test-jit-value-missing-read-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
+endforeach()
+# Methods of an ordinary class calling each other before all are declared, returning a @value class:
+# discovery's unresolved results are not conversions to report.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-mutual-methods-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
+    tslang_add_test(NAME test-jit-value-mutual-methods-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
+endforeach()
+# A @value interface holding an interface whose method returns it, declared before it: the interface
+# and the class implementing it see the @value type with all its fields.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-iface-cycle-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
+    tslang_add_test(NAME test-jit-value-iface-cycle-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
+endforeach()
+# A @value interface reaching itself through an ordinary class (it holds itself in place, it is an
+# error: value_self_*). Not under own: `l.v` of `const l = b.box.l` after `l !== null` is "borrows a
+# field but is used here after it may be released or overwritten", an own rule outside this one.
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-self-through-class-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_self_through_class.ts")
+    tslang_add_test(NAME test-jit-value-self-through-class-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_self_through_class.ts")
+endforeach()
+# ...and one holding a generic of another @value type declared after it, the generic declared last or
+# first: typed once that type is laid out, not as the unspecialized generic
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-generic-field-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field.ts")
+    tslang_add_test(NAME test-jit-value-generic-field-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field.ts")
+    tslang_add_test(NAME test-compile-value-generic-field-first-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field_first.ts")
+    tslang_add_test(NAME test-jit-value-generic-field-first-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field_first.ts")
+endforeach()
+# `c ? { ... } : null` into `T | null` of a @value type: the literal is built as the T
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-ternary-null-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ternary_null.ts")
+    tslang_add_test(NAME test-jit-value-ternary-null-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ternary_null.ts")
+endforeach()
+# A @value value holding references copies them as a tuple does (rc retains each one): copies out of
+# an array, through a generic and into closures keep their Nodes after the originals are overwritten.
+# A closure captures a @value local's binding, `reduce` works on copies, and a closure in a @value
+# constructor reads `this`. Not under own: most of it copies a value that holds an owned Node and reads
+# the copy after the original's Node is overwritten, which single ownership rejects (spec 36).
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-refs-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+    tslang_add_test(NAME test-jit-value-refs-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+endforeach()
+# ...every retain of it paired with a release on every path (the ownership verifier)
+add_test(NAME test-rc-verify-ownership-value-refs
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc --verify-ownership
+                 "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+set_tests_properties(test-rc-verify-ownership-value-refs PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+# ...a field of a value in a class's field, read into a const or a literal, is retained as a type
+# literal's is
+add_test(NAME test-value-rc-field-retain
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_rc_field_retain.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-rc-field-retain.cmake")
+# ...and the box of a closure capturing `this` in a @value constructor borrows the slot `new` made
+add_test(NAME test-value-ctor-capture
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_capture.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-ctor-capture.cmake")
+# ...and `this` in a @value constructor read through its members - a method, a closure, `this["a"]` -
+# sees the fields stored so far (used whole, it is an error: value_ctor_this_* above)
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-ctor-this-method-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_this_method.ts")
+    tslang_add_test(NAME test-jit-value-ctor-this-method-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_this_method.ts")
+endforeach()
+
 # A call on a @final class is direct, and the program runs the same under every model.
 foreach(final_mm gc rc none own)
     tslang_add_test(NAME test-compile-final-dispatch-${final_mm} COMMAND test-runner -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")
@@ -3638,7 +3849,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
-                 own_tuple_record_values)
+                 own_tuple_record_values own_value_record own_value_loop own_value_temporaries)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3764,6 +3975,16 @@ foreach(borrowing_record_mm rc gc none)
     foreach(borrowing_record_test own_borrowing_record own_borrowing_record_arg)
         tslang_add_test(NAME test-jit-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -jit -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
         tslang_add_test(NAME test-compile-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
+    endforeach()
+endforeach()
+
+# A tuple that holds borrows and owns nothing - a @value record returned through an interface, held
+# in a local the loop reassigns, a temporary given to a call - under own (spec 36); the same programs
+# under every other model.
+foreach(value_record_mm rc gc none)
+    foreach(value_record_test own_value_record own_value_loop own_value_temporaries)
+        tslang_add_test(NAME test-jit-${value_record_mm}-${value_record_test} COMMAND test-runner -jit -mm=${value_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${value_record_test}.ts")
+        tslang_add_test(NAME test-compile-${value_record_mm}-${value_record_test} COMMAND test-runner -mm=${value_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${value_record_test}.ts")
     endforeach()
 endforeach()
 
@@ -4175,7 +4396,7 @@ set(own_error_cases
     "own_err_global_from_field|:12:7: error: the initializer of global 'k' reads a value another owner keeps"
     "own_err_global_kept_typeof|:15:9: error: the value read from 'M[.]w' is kept where its end at an assignment of 'M[.]w' cannot be checked"
     "own_err_record_literal_nested|:8:24: error: an object literal that holds a value it owns is moved only into a local or returned as it is"
-    "own_err_record_literal_let_field|:10:11: error: an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_record_literal_let_field|:12:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
     "own_err_captured_returned|:6:9: error: '[^']*' borrows a captured variable and cannot be stored, returned or captured"
     "own_err_literal_moved_twice|:14:16: error: '[^']*' is used here after its value was moved"
     "own_err_interface_keeps_literal|is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take' give it up"
@@ -4243,6 +4464,17 @@ set(own_error_cases
     "own_err_shared_place_arg|:29:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|:32:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_literal|:31:15: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_value_record_place_dropped|:44:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_value_record_stored|:33:9: error: '[^']*' borrows the result of 'mk' and cannot be stored, returned or captured"
+    "own_err_value_record_let_reassigned|:35:11: error: '[^']*' borrows the result of 'mk' but is used here after it may be released or overwritten"
+    "own_err_value_record_mixed_local|:21:5: error: a value that borrows what it holds and owns nothing [(]a tuple that holds a borrow[)] meets a value that owns a block here"
+    "own_err_value_record_field_written|:20:5: error: '[^']*' borrows the result of 'mk' and cannot be stored, returned or captured"
+    "own_err_value_record_param_field_kept|:8:37: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_value_record_returned|:26:22: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_captured|:28:11: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_field_stored|:32:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_record_global|:30:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
+    "own_err_value_refs_copy|:32:11: error: '[^']*' borrows an element and cannot be stored, returned or captured"
     "own_err_shared_place_tuple|:31:39: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
     "own_err_iface_field_overwritten|:23:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
@@ -4286,7 +4518,8 @@ set(own_error_cases
     "own_err_borrowing_record_const_field|:20:11: error: '[^']*' borrows the result of 'hit' but is used here after it may be released or overwritten"
     "own_err_record_without_lends|:11:1: error: '@record' of 'pairOf' says its result is a borrowing record, but no '@lends' names what it borrows"
     "own_err_record_not_record|:7:1: error: '@record' of 'first' says its result is a record that borrows 'a', but its body returns a borrow of it as it is"
-    "own_err_record_exported_unsaid|:12:1: error: 'pairOf' returns a record that borrows 'a', 'b', which another module can learn only from '@record' beside its '@lends'")
+    "own_err_record_exported_unsaid|:12:1: error: 'pairOf' returns a record that borrows 'a', 'b', which another module can learn only from '@record' beside its '@lends'"
+    "own_err_value_export_borrowing|:13:1: error: 'wrap' returns a tuple that borrows 'n' and owns nothing, which -mm=own cannot tell another module yet")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

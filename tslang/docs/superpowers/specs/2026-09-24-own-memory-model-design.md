@@ -4392,3 +4392,119 @@ Not here:
   are not values `movesOf` checks, so `each`'s `ts.RetainSlot` is still `merged from several
   branches` (and `moved inside a loop`). A `const each` of the same reads compiled before this section
   and still does.
+
+## 36. Records with no box: tuples that hold borrows (`@value` records), 2026-10-24
+
+With `@value` (docs/superpowers/specs/2026-10-24-value-types-design.md) the ray tracer's
+`Intersection` is a tuple, not a box: `{ thing: this, ray: ray, dist: dist }` returned as
+`Intersection | null` through the interface `Thing`, and `closestInter` given the nearer one inside
+`intersections`' loop. Section 32's records are boxes, found where `ts.New` is filled from the
+literal's local; a tuple has none, so the store of `this` into the literal's field was a keep, the
+facts were lost (`'S.intersect' could return a borrow or keep a parameter, but it is reached through
+an interface`), and every use downstream was an error. The same held for a type literal (`type Hit =
+{ thing: Thing; d: number }`). The marked benchmark had 13 own errors.
+
+**The rule.** A tuple that holds borrows and owns nothing is a borrowing record with no box: Rust's
+`struct Hit<'a> { thing: &'a Th, .. }` passed by value. What it borrows bounds every use of it, as in
+section 32; there is nothing to give back, so no copy of it is counted and no release of it, or of a
+local that holds only such records, frees anything.
+
+- **Which literals** (OwnershipSignatureRecords, `classifyUnboxedRecord`, in every round of the facts
+  fixpoint beside `classifyRecordBoxes`). An object literal's local (`isConstantRecordLocal`) whose
+  read is never boxed (`recordBoxOfLocal`), read whole (a literal whose fields are read one by one, to
+  be re-made as another tuple, is not one), where every field that holds a block borrows it - `this` or
+  a parameter, a read out of a place, a call's result that borrows, an owning local's value, a
+  captured variable's, an immortal value - and at least one does. A fresh value counts only in a
+  *temporary*, a literal whose read is only given to calls that do not keep it and read
+  (`len({ start: new Vec(1, 2), dir: new Vec(3, 4) })`): the new vectors keep their own releases, and
+  the record borrows them too. Anywhere else a fresh field is one the tuple would own (an owning tuple,
+  #679's rules). Never a handle (counted, section 23), a string (copied, section 22), or a field of a
+  generator's state (whether that read moves the value out is the generator's rule, decided after the
+  facts: `findYieldedFields`). The local is marked `__own_record_unboxed_fields` (and
+  `__own_record_temporary`); each read of it is a record in `recordBoxes`.
+- **The facts.** A function whose returned values are all such records (through views, merges and
+  owning locals: `recordParamsOf`) has record facts as in section 32, plus `__own_result_record_unboxed`
+  on the function and its calls (`Facts.unboxed`). Boxes and unboxed records in one value, or on two
+  return paths, give no facts: their callers release them differently. Families agree on it as on the
+  rest. A function with `@lends` and `@record` that another module can call and whose body returns an
+  unboxed record is an error: `@record` tells the importer it owns a box, and it cannot be told this.
+- **Where the record is made and where a call returns one** (OwnershipInferenceRecords). The unboxed
+  record joins `records` (no box; its reads are the starts of `walkRecord`), and a call that returns
+  one goes through `checkRecordResults` as before. `walkRecord` follows what a tuple adds: a field
+  taken out of the record (`ts.ExtractProperty`) that may point into a block is the record still - kept,
+  it is the record kept - and a field read in place out of a local that holds the record
+  (`ts.PropertyRef` of the local, or of the local seen as its storage tuple) is a read of the record,
+  whose loaded value is the record's, and a write of that field (`r.s = x`) is a keep. A temporary's
+  fresh field is bounded by that value's own release.
+- **No owner to find.** A value whose sources are only unboxed records and values that hold no block
+  (`unboxedRecordFlow`: through views, merges and owning locals) has no owner check
+  (`checkOwnershipOps` skips it: copies are free), its retains go (`decideRetains`), and after the
+  moves are placed `dropUnboxedRecordCounts` erases every retain and release of it, and every
+  `ts.RetainSlot` and `ts.ReleaseSlot` of a local that holds only such values - the edge releases of
+  section 30 included. A local or a merge that holds one beside a value that owns a block is `a value
+  that borrows what it holds and owns nothing (a tuple that holds a borrow) meets a value that owns a
+  block here; -mm=own cannot release them alike`. A handle's counts are left alone. A `@value` local
+  is reached through a cast of its reference to its storage tuple, and every one of these walks
+  looks through it (`slotVariableOf`, `valuesStoredInto`).
+
+Fixes on the way, each needed by a test of this section:
+
+- `isView`: a `ts.Cast` between a `@value` type and its storage tuple is the same value (it lowers to
+  nothing). The type walkers of the signature pass (`valueInterfaces`, `anyInterfaces`,
+  `functionValues`, `castMakesInterface`, `holdsFunction`, `storageTupleOf`) read a `@value` type as
+  its tuple (`asStorageTuple`): `castMakesInterface(value, tuple)` answered yes and opened `Thing`, which
+  is why the facts above were "reached through an interface".
+- `recordRetainOf` follows the record's read through its views (a `@value` literal is read, then cast
+  to its type, then retained and returned).
+- `fieldTakersOf` and `fieldOnlyRead`: a field taken out of a record that holds no block takes nothing
+  (`print(h.dist)` converted the number to a string, which counted as a taker of the record).
+- A closure that does not escape and captures, by reference, storage of this frame or one a parameter
+  points to that holds no block (`this` of a `@value` constructor whose fields are numbers) needs no
+  owner: `'this value' is captured by a closure, but -mm=own cannot tell who owns its value here` before.
+
+Tests: `own_value_record` (the brief's `S` with a ternary and `P` with an `if`, through `Thing`, 1000
+rays with churn), `own_value_loop` (the `intersections` loop: `closest` starts undefined, takes the
+nearer `t.hit(ray)`, is returned and shaded through `thing`), `own_value_temporaries` (call-argument
+temporaries of a `@value` interface and of a type literal, a `const` record borrowing a `let` twice
+read in place, a `@value` constructor's closure), under own (no counting), rc, gc and none, AOT and
+JIT; `value_iface_cycle` and `value_ternary_null` under own too. Negatives:
+`own_err_value_record_place_dropped` (the record borrows `p.child`, which a call overwrites before
+`o.s` is read in place), `_stored` (pushed into an array), `_let_reassigned`, `_mixed_local`,
+`_field_written`, `_param_field_kept` (a callee pushes a record parameter's borrowed field), and the
+exits of a record that borrows a `let`: `_returned`, `_captured` (by a closure that escapes),
+`_field_stored` (a class field), `_global`. `own_err_value_refs_copy` pins `value_refs`' copy
+shape (a copy out of an array read after the element is overwritten); own rejects it at the read
+even without the overwrite, an over-rejection that predates this section. `value_interface` runs
+under own; its two gaps (below) are in `value_interface_own_gaps`, which every other model runs. `own_err_record_literal_let_field` now reads `borrows ... and cannot be stored` at
+the push (the literal borrows the `let`); `own_err_shared_place_literal` pins the handle exclusion (with
+it missing, it compiled and crashed with 0xC0000005).
+
+Teeth (temporary switches, removed): with `dropUnboxedRecordCounts` off, the AOT builds of
+`own_value_record` exit 0xC0000005 and `own_value_loop` and `own_value_temporaries` 0xC0000374; with the
+in-place field read of `walkRecord` off, `own_err_value_record_place_dropped` compiles and prints 11
+(gc 5; before the storage cast was followed it printed 77777).
+
+Corpus (`test/tester/tests/*.ts` under `-mm=own --no-default-lib`, `--emit=obj`, Windows): 542
+before, 543 after: `00spread` compiles and prints what gc prints, AOT and JIT.
+
+The marked benchmark (`rtbench.ts` with the value-types edits and `rtbench_own.ts`'s `Shared<Surface>`,
+`Plane.normal` returning `this.norm`), `--emit=exe --opt --opt_level=3 -mm=own`: 13 errors before, none
+after; it prints the checksum 38837369.
+
+Not here:
+- A literal nested in another whose fields own new values (`{ ray: { dir: new Vec(..), .. }, thing:
+  new T1() }`), and an owning literal pushed into an array or stored into a field: #679's owning
+  tuples move only into a local or the result (`value_interface_own_gaps`, off under own).
+- An unboxed record converted to an ordinary interface (`const s: HasStart = mk(new Vec(6, 0), ..)`):
+  the box made from the value would own the fields the record borrows. It needs section 32's box
+  classification for a box filled from a record value, not from a literal (`value_interface_own_gaps`).
+- A closure inside a closure in a `@value` method that captures `this` (`value_refs`' `Box.nested`):
+  the inner capture of the outer box's copy is a keep.
+- `value_refs` as a whole: it copies values that hold owned Nodes out of arrays, fields, a generic and
+  closures and reads the copies after the originals' Nodes are overwritten. Under single ownership
+  the copy is a borrow of the original, and those programs read freed blocks; own rejects each one
+  (`borrows an element and cannot be stored`, `... but is used here after ...`), correctly.
+- An exported function returning an unboxed record (see the facts above).
+- `const ts: Th[] = [new A(), new B()]; const h = ts[1].hit(ray); print(h.dist)` outside a loop is
+  `borrows an element but is used here after it may be released or overwritten` for a record with a
+  box (section 32) as much as for one without; the same call inside a loop over `ts` compiles.

@@ -682,6 +682,15 @@ namespace mlirgen
             return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
         }
 
+        // A field of a @value type naming a generic whose instantiation fails - a type argument that is a
+        // @value type not laid out yet (`box: Box<L>`, `box: Box<K>` with K declared later), or not
+        // declared yet, or not at all (`Box<Nope>`): the generic type itself, unspecialized, would
+        // become the field's type - for good, as the value's layout. The field fails instead and is
+        // typed again in the next pass (noteValueLayoutWait); one that never resolves is reported. The
+        // generic's own declaration, specialized, is not the field (suspendValueLayoutFrames).
+        auto inValueLayout = !valueLayoutFrames.empty();
+        auto valueLayoutArgs = valueLayoutGenericArgs(typeReferenceAST);
+
         if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
         {
             auto classType = genericClassTypeInfo->classType;
@@ -692,7 +701,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return classType;
+            return inValueLayout ? mlir::Type() : classType;
         }
 
         if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
@@ -705,7 +714,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return interfaceType;
+            return inValueLayout ? mlir::Type() : interfaceType;
         }
 
         return mlir::Type();
@@ -802,7 +811,7 @@ namespace mlirgen
                     }
 
                     auto argName = MLIRHelper::getName(typeArg.as<TypeReferenceNode>()->typeName);
-                    return circularTypeAliases.contains(argName);
+                    return circularTypeAliases.contains(argName) || valueTypesHoldingThemselves.contains(argName);
                 });
                 if (!argumentIsCircular)
                 {
@@ -1860,7 +1869,8 @@ namespace mlirgen
             return mth.getFieldNames(type);
         }
 
-        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        // a @value value's keys are its fields'
+        if (isa<mlir_ts::TupleType, mlir_ts::ValueType>(type))
         {
             return mth.getFieldNames(type);
         }
@@ -2034,7 +2044,7 @@ namespace mlirgen
         }
 
         // TODO: sync it with mth.getFields
-        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        if (isa<mlir_ts::TupleType, mlir_ts::ValueType>(type))
         {
             return mth.getFieldTypeByIndexType(type, indexType);
         }
@@ -3475,7 +3485,11 @@ namespace mlirgen
             // an intersection type's own `{ ... }` member (e.g. `F1 & F2 & { c: number }`'s `c`),
             // masked only because getVirtualTable() used to overwrite virtualIndex as a side effect
             // of every cast - see docs/interface-vtable-simplification-design.md §4.
-            dest->fields.push_back({item.id, item.type, item.isConditional || conditional, 0, dest->getNextVTableMemberIndex()});
+            // an optional member of a @value type is read as the optional value every missing T is
+            // (mlirGenInterfaceAddFieldMember)
+            auto isConditional = item.isConditional || conditional;
+            auto type = isConditional && isa<mlir_ts::ValueType>(item.type) ? getOptionalType(item.type) : item.type;
+            dest->fields.push_back({item.id, type, isConditional, 0, dest->getNextVTableMemberIndex()});
         }
 
         return mlir::success();
@@ -3536,6 +3550,12 @@ namespace mlirgen
         {
             return type;
         }        
+
+        // `v?: T` of a @value type is the one optional value every missing T is
+        if (auto valueType = dyn_cast<mlir_ts::ValueType>(type))
+        {
+            return mth.getMissingValueType(valueType);
+        }
 
         return mlir_ts::OptionalType::get(type);
     }

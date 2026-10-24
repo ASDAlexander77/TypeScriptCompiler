@@ -203,9 +203,114 @@ class MLIRTypeHelper
     }
 #endif    
 
+    // A @value type (ValueType) is laid out as its storage tuple: a walker that looks at the fields
+    // of a value - their types, sizes, what they own - sees the tuple. Anything else is unchanged.
+    // Sites that box or re-represent a tuple do not call this: a ValueType reaches them only as the
+    // tuple it is cast to (MLIRGenImpl::valueStorage), where a conversion of it is allowed.
+    static mlir::Type stripValueType(mlir::Type type)
+    {
+        if (auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(type))
+        {
+            return valueType.getStorageType();
+        }
+
+        return type;
+    }
+
+    // `this` of a @value class's constructor captured by a closure: a `ref` to the class's value named
+    // `this`. Its storage is the slot `new` made in the caller's frame, not a cell, so a capture box
+    // borrows it: nothing counts it in or out (MLIRGenImpl::mlirGenResolveCapturedVars,
+    // OwnershipRoutineLogic::releaseCapturedFields), and a closure holding it may only be called
+    // inside the constructor (MLIRGenImpl::checkValueConstructorClosures).
+    static bool isValueConstructorThisCapture(mlir::Attribute name, mlir::Type type)
+    {
+        auto nameAttr = dyn_cast_or_null<mlir::StringAttr>(name);
+        auto refType = dyn_cast_or_null<mlir_ts::RefType>(type);
+        return nameAttr && nameAttr.getValue() == THIS_NAME && refType && isa<mlir_ts::ValueType>(refType.getElementType());
+    }
+
+    // A @value type has no null pointer. Each way of writing that one may be missing - `T | null`,
+    // `T | undefined`, `T | null | undefined`, `v?: T`, `f?: T` - is this one type, an optional of
+    // `T | null`: undefined is the empty optional, null the union's null member, a value otherwise.
+    // So converting between the spellings changes nothing, and null stays apart from undefined.
+    // The union's members are ordered as normalizeUnionType orders them.
+    static mlir::Type getMissingValueType(mlir_ts::ValueType valueType)
+    {
+        mlir::SmallVector<mlir::Type> members{valueType, mlir_ts::NullType::get(valueType.getContext())};
+        std::sort(members.begin(), members.end(), [](auto i, auto j) { return i.getAsOpaquePointer() < j.getAsOpaquePointer(); });
+        return mlir_ts::OptionalType::get(mlir_ts::UnionType::get(valueType.getContext(), members));
+    }
+
+    // `T | null` of a @value type T, which getMissingValueType wraps in the optional
+    static bool isMissingValueUnion(mlir_ts::UnionType unionType)
+    {
+        auto types = unionType.getTypes();
+        return types.size() == 2 && llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::ValueType>(type); })
+               && llvm::any_of(types, [](mlir::Type type) { return isa<mlir_ts::NullType>(type); });
+    }
+
+    // The @value type a value that may be missing holds when it holds one: of getMissingValueType, or
+    // of its `T | null` alone (what is left of it once undefined is ruled out)
+    static mlir_ts::ValueType getMissingValueElement(mlir::Type type)
+    {
+        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(type))
+        {
+            type = optType.getElementType();
+        }
+
+        auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(type);
+        if (!unionType || !isMissingValueUnion(unionType))
+        {
+            return mlir_ts::ValueType();
+        }
+
+        for (auto member : unionType.getTypes())
+        {
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(member))
+            {
+                return valueType;
+            }
+        }
+
+        return mlir_ts::ValueType();
+    }
+
+    // A plain `f: T` field (of a class or a literal) where an interface's optional member of the @value
+    // type T is: the member is read as the optional value a `f?: T` field stores (getMissingValueType),
+    // and a T is not laid out as one, so it cannot stand in for it
+    static mlir_ts::ValueType getPlainValueForOptionalMember(mlir::Type memberType, mlir::Type fieldType)
+    {
+        auto valueType = isa_and_nonnull<mlir_ts::OptionalType>(memberType) ? getMissingValueElement(memberType) : mlir_ts::ValueType();
+        return valueType && fieldType == valueType ? valueType : mlir_ts::ValueType();
+    }
+
+    static void emitPlainValueForOptionalMemberError(mlir::Location location, mlir::Attribute id, mlir_ts::ValueType valueType,
+                                                     StringRef interfaceName)
+    {
+        auto name = isa<mlir::StringAttr>(id) ? mlir::cast<mlir::StringAttr>(id).getValue() : StringRef();
+        emitError(location) << "field '" << name << "' must be declared '" << name << "?: " << valueType.getName().getValue()
+                            << "' to implement the optional @" VALUE_DECORATOR " member '" << name << "' of '" << interfaceName << "'";
+    }
+
+    // A @value type, or one that may be missing (getMissingValueType)
+    static bool holdsValueType(mlir::Type type)
+    {
+        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(type))
+        {
+            type = optType.getElementType();
+        }
+
+        if (auto unionType = dyn_cast_or_null<mlir_ts::UnionType>(type))
+        {
+            return llvm::any_of(unionType.getTypes(), [](mlir::Type member) { return isa<mlir_ts::ValueType>(member); });
+        }
+
+        return isa_and_nonnull<mlir_ts::ValueType>(type);
+    }
+
     bool isValueType(mlir::Type typeIn)
     {
-        auto type = getBaseType(typeIn);
+        auto type = stripValueType(getBaseType(typeIn));
         return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type) || isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::CharType>(type) ||
             isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ConstArrayType>(type));
     }
@@ -438,8 +543,9 @@ class MLIRTypeHelper
     // A tuple literal folded to a constant (`[1, [6, 7]]`, `{ items: [1, 2] }`) keeps each array
     // in it as a static header over constant data (#479): such a tuple has to be rebuilt with
     // heap copies before anything can change one of its arrays.
-    static bool constTupleHoldsArray(mlir::Type type)
+    static bool constTupleHoldsArray(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         ArrayRef<mlir_ts::FieldInfo> fields;
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
@@ -1480,6 +1586,12 @@ class MLIRTypeHelper
 
                         if (!suppressErrors)
                         {
+                            if (auto valueType = getPlainValueForOptionalMember(fieldType, stripLiteralType(foundField.type)))
+                            {
+                                emitPlainValueForOptionalMemberError(location, id, valueType, newInterfacePtr->fullName);
+                                return {emptyFieldInfo, mlir::failure()};
+                            }
+
                             emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
                                                 << foundField.type << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";
@@ -1591,6 +1703,12 @@ class MLIRTypeHelper
             return true;
         }
 
+        // a @value interface is structural: it converts as its fields do
+        if (isa<mlir_ts::ValueType>(srcType) || isa<mlir_ts::ValueType>(destType))
+        {
+            return canCastFromTo(location, stripValueType(srcType), stripValueType(destType));
+        }
+
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
             if (auto matchConstTuple = dyn_cast<mlir_ts::ConstTupleType>(destType))
@@ -1694,8 +1812,9 @@ class MLIRTypeHelper
         return llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); });
     }
 
-    bool hasUndefines(mlir::Type type)
+    bool hasUndefines(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             return hasUndefinesLogic(constTuple);
@@ -1724,8 +1843,9 @@ class MLIRTypeHelper
     // class/array/object types, is NOT already pointer-like at the LLVM level --
     // so a binding of this type needs real storage (an address) to let mutation
     // be visible across property accesses / call sites, even when declared `const`.
-    bool hasBoundMethodField(mlir::Type type)
+    bool hasBoundMethodField(mlir::Type typeIn)
     {
+        auto type = stripValueType(typeIn);
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             return hasBoundMethodFieldLogic(constTuple);
@@ -2124,13 +2244,15 @@ class MLIRTypeHelper
         return false;
     }
 
-    bool isSizeEqual(mlir::Type srcType, mlir::Type dstType)
+    bool isSizeEqual(mlir::Type srcTypeIn, mlir::Type dstTypeIn)
     {
-        if (!srcType || !dstType)
+        if (!srcTypeIn || !dstTypeIn)
         {
             return false;
         }
 
+        auto srcType = stripValueType(srcTypeIn);
+        auto dstType = stripValueType(dstTypeIn);
         if (srcType == dstType)
         {
             return true;
@@ -2268,9 +2390,10 @@ class MLIRTypeHelper
     }
 
     // Field types of a record-shaped type, empty for anything else.
-    llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type type)
+    llvm::SmallVector<mlir::Type> getOwnershipFieldTypes(mlir::Type typeIn)
     {
         llvm::SmallVector<mlir::Type> result;
+        auto type = stripValueType(typeIn);
 
         auto addFields = [&](auto fields) {
             for (auto &field : fields)
@@ -2297,6 +2420,14 @@ class MLIRTypeHelper
 
     bool isUnionTypeNeedsTag(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
+        // `T | null` of a @value type is a tagged union of its own (getMissingValueType): its members
+        // merged again would be the optional around it, not it
+        if (isMissingValueUnion(unionType))
+        {
+            baseType = unionType;
+            return true;
+        }
+
         auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
         baseType = storeType;
         return isa<mlir_ts::UnionType>(storeType);
@@ -2447,12 +2578,14 @@ class MLIRTypeHelper
         return mlir_ts::NeverType::get(context);    
     }    
 
-    mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
+    mlir::LogicalResult getFields(mlir::Type srcTypeIn, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
     {       
-        if (!srcType)
+        if (!srcTypeIn)
         {
             return mlir::failure();
         }
+
+        auto srcType = stripValueType(srcTypeIn);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
@@ -2560,8 +2693,9 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
-    int getFieldIndexByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
+    int getFieldIndexByFieldName(mlir::Type srcTypeIn, mlir::Attribute fieldName)
     {
+        auto srcType = stripValueType(srcTypeIn);
         LLVM_DEBUG(llvm::dbgs() << "!! get index of field '" << fieldName << "' of '" << srcType << "'\n";);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
@@ -2577,8 +2711,9 @@ class MLIRTypeHelper
         return -1;
     }
 
-    mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcType, int index)
+    mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcTypeIn, int index)
     {
+        auto srcType = stripValueType(srcTypeIn);
         LLVM_DEBUG(llvm::dbgs() << "!! get #" << index << " of '" << srcType << "'\n";);
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
@@ -2598,7 +2733,7 @@ class MLIRTypeHelper
     {
         LLVM_DEBUG(llvm::dbgs() << "!! get type of field '" << fieldName << "' of '" << srcType << "'\n";);
 
-        srcType = stripLiteralType(srcType);
+        srcType = stripValueType(stripLiteralType(srcType));
 
         if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
         {
@@ -2881,6 +3016,13 @@ class MLIRTypeHelper
         if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
         {
             return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+        }
+
+        // a @value interface is structural: it extends what a type literal of its fields does
+        if (isa_and_nonnull<mlir_ts::ValueType>(srcType) || isa<mlir_ts::ValueType>(extendType))
+        {
+            return extendsType(location, stripValueType(srcType), stripValueType(extendType), typeParamsWithArgs,
+                               useTupleWhenMergeTypes);
         }
 
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
@@ -3449,7 +3591,9 @@ class MLIRTypeHelper
         for (auto type : unionContext.types)
         {
             typesAll.push_back(type);
-            isAllValueTypes &= isValueType(type);
+            // a @value type with null is not a union with a null member: how it is stored is its own
+            // (`T | null`, docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values")
+            isAllValueTypes &= isValueType(type) && !isa<mlir_ts::ValueType>(type);
             isAllLiteralTypes &= isa<mlir_ts::LiteralType>(type);
         }
 
@@ -3462,6 +3606,13 @@ class MLIRTypeHelper
         if (typesAll.size() == 1)
         {
             auto resType = typesAll.front();
+
+            // a @value type that may be missing, under strict null checks or not
+            // (docs/superpowers/specs/2026-10-24-value-types-design.md "Missing values")
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(resType); valueType && (unionContext.isNullable || unionContext.isUndefined))
+            {
+                return getMissingValueType(valueType);
+            }
 
             // the null the checker needs goes in before undefined wraps the type: undefined makes it
             // optional, it must not take the null away - `string | null | undefined` accepts null as
@@ -3623,7 +3774,13 @@ class MLIRTypeHelper
 
         if (normalizedTypes.size() == 1)
         {
-            return isUndefined ? mlir_ts::OptionalType::get(*normalizedTypes.begin()) : *normalizedTypes.begin();
+            auto single = *normalizedTypes.begin();
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(single); valueType && isUndefined)
+            {
+                return getMissingValueType(valueType);
+            }
+
+            return isUndefined ? mlir_ts::OptionalType::get(single) : single;
         }
 
         mlir::SmallVector<mlir::Type> newTypes;
@@ -3998,6 +4155,12 @@ protected:
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
+            // `T | null` of a @value type holds T or nothing: it owns what T owns
+            if (isMissingValueUnion(unionType))
+            {
+                return llvm::any_of(unionType.getTypes(), [&](mlir::Type member) { return ownsHeapMemory(location, member, visiting); });
+            }
+
             mlir::Type baseType;
             if (isUnionTypeNeedsTag(location, unionType, baseType))
             {

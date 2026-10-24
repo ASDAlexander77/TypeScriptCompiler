@@ -124,65 +124,58 @@ namespace own_inference
         mlir::Operation *retain = nullptr;
         auto boxed = false;
         auto other = false;
-        for (auto *user : read->getUsers())
-        {
+        auto bad = false;
+        // the read and its views (a `@value` value seen as its tuple, or the other way round)
+        forEachUse(read.getResult(), [&](mlir::Operation *user, mlir::Value used) {
+            if (bad)
+            {
+                return;
+            }
+
             if (mlir::isa<mlir_ts::RetainOp>(user))
             {
-                if (retain)
-                {
-                    return nullptr;
-                }
-
+                bad = retain != nullptr;
                 retain = user;
-                continue;
+                return;
             }
 
             // copied into the block it is given in as an object or an interface (spec 27): the box
             // owns what the record held, and its own check decides where the box goes
             auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user);
-            auto box = storeOp && storeOp.getValue() == read.getResult() ? recordBoxOf(storeOp.getReference())
-                                                                         : mlir_ts::NewOp();
+            auto box = storeOp && storeOp.getValue() == used ? recordBoxOf(storeOp.getReference()) : mlir_ts::NewOp();
             if (box && box.getResult() == storeOp.getReference())
             {
-                if (boxed)
-                {
-                    return nullptr;
-                }
-
+                bad = boxed;
                 boxed = true;
-                continue;
+                return;
             }
 
             other = true;
             if (mlir::isa<mlir_ts::ReturnInternalOp>(user))
             {
-                continue;
+                return;
             }
 
             // `let a = { item: new C() }`: the read is what an owning local starts with, and rc's
             // `ts.RetainSlot` of that local is the record's retain
             if (auto ownerOp = mlir::dyn_cast<mlir_ts::VariableOp>(user))
             {
-                auto *slotRetain = ownerOp.getInitializer() == read.getResult() && isOwningVariable(ownerOp)
-                                       ? onlyRetainSlotOf(ownerOp)
-                                       : nullptr;
-                if (!slotRetain || retain)
-                {
-                    return nullptr;
-                }
-
+                auto *slotRetain = ownerOp.getInitializer() == used && isOwningVariable(ownerOp) ? onlyRetainSlotOf(ownerOp)
+                                                                                                 : nullptr;
+                bad = !slotRetain || retain;
                 retain = slotRetain;
-                continue;
+                return;
             }
 
             // stored into the result slot, or into an owning local (`a = { item: new C() }`)
-            auto slot = storeOp && storeOp.getValue() == read.getResult()
-                            ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
-                            : mlir_ts::VariableOp();
-            if (!slot || !(isResultSlot(slot) || isOwningVariable(slot)))
-            {
-                return nullptr;
-            }
+            auto slot = storeOp && storeOp.getValue() == used ? storeOp.getReference().getDefiningOp<mlir_ts::VariableOp>()
+                                                              : mlir_ts::VariableOp();
+            bad = !slot || !(isResultSlot(slot) || isOwningVariable(slot));
+        });
+
+        if (bad)
+        {
+            return nullptr;
         }
 
         // a boxed record goes nowhere else: the box is its one owner
@@ -696,6 +689,12 @@ namespace own_inference
     bool OwnershipInferencePass::fieldOnlyRead(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &reads)
     {
         auto onlyRead = true;
+        if (holdsNoBlock(extract->getResult(0)))
+        {
+            reads.push_back(extract);
+            return true;
+        }
+
         forEachUse(extract->getResult(0), [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
             {
@@ -717,6 +716,12 @@ namespace own_inference
 
     void OwnershipInferencePass::fieldTakersOf(mlir::Operation *extract, llvm::SmallVectorImpl<mlir::Operation *> &takers)
     {
+        // a number taken out takes nothing of the record: `print(h.dist)` converts it to a string
+        if (holdsNoBlock(extract->getResult(0)))
+        {
+            return;
+        }
+
         forEachUse(extract->getResult(0), [&](mlir::Operation *user, mlir::Value used) {
             if (mlir::isa<mlir_ts::ExtractPropertyOp>(user))
             {

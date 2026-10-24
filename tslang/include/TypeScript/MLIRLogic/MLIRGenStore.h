@@ -310,7 +310,14 @@ struct InterfaceInfo
 
     bool hasNew;
 
-    InterfaceInfo() : hasNew(false)
+    // `@value`: its values are copied, not shared (see ClassInfo::isValue)
+    bool isValue;
+
+    // every member resolved: the fields a @value interface's type is made of are all known (see
+    // MLIRGenImpl::getValueTypeOfInterfaceIfLaidOut)
+    bool membersResolved;
+
+    InterfaceInfo() : hasNew(false), isValue(false), membersResolved(false)
     {
     }
 
@@ -811,6 +818,9 @@ struct ClassInfo
     // `@final`: nothing extends it, so a method of a value of this type is called directly. The
     // vtable stays: interfaces, `instanceof` and calls through a base type use it.
     bool isFinal;
+    // `@value`: its values are copied, not shared - no identity, no vtable, no base class, no
+    // interface, no type parameters. Set for a `declare` declaration too.
+    bool isValue;
     // a @cpp class with methods that have bodies: C++ methods implemented here, so C++ can
     // call them through its objects. It has a vtable (the C++ one's layout: the slots and nothing
     // else, a slot left to a declared C++ method null), may have a constructor and field
@@ -829,7 +839,7 @@ struct ClassInfo
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
-          isPublic(false), isDynamicImport(false), hasRTTI(false), isCppVTable(false), isFinal(false),
+          isPublic(false), isDynamicImport(false), hasRTTI(false), isCppVTable(false), isFinal(false), isValue(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }

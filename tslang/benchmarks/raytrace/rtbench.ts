@@ -3,6 +3,9 @@
 // every pixel's drawing color into a checksum (38837369), so the render cannot be optimized away
 // and every build, including the Rust ports in rust/, can be checked against the others.
 // print() shows the sum with 6 significant digits, so the low digits are printed separately.
+// Vector and Color are @value classes and Ray and Intersection @value interfaces: their values are
+// structs copied on the stack, not heap objects. A missing intersection is spelled
+// `Intersection | null` (or `| undefined`), since a @value type has no null of its own.
 declare function sqrt(v: number): number;
 declare function floor(v: number): number;
 declare function pow(v: number, s: number): number;
@@ -32,10 +35,11 @@ class Math {
     }
 }
 
+@value
 class Vector {
-    constructor(public x: number,
-        public y: number,
-        public z: number) {
+    constructor(public readonly x: number,
+        public readonly y: number,
+        public readonly z: number) {
     }
     static times(k: number, v: Vector) { return new Vector(k * v.x, k * v.y, k * v.z); }
     static minus(v1: Vector, v2: Vector) { return new Vector(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z); }
@@ -54,10 +58,11 @@ class Vector {
     }
 }
 
+@value
 class Color {
-    constructor(public r: number,
-        public g: number,
-        public b: number) {
+    constructor(public readonly r: number,
+        public readonly g: number,
+        public readonly b: number) {
     }
     static scale(k: number, v: Color) { return new Color(k * v.r, k * v.g, k * v.b); }
     static plus(v1: Color, v2: Color) { return new Color(v1.r + v2.r, v1.g + v2.g, v1.b + v2.b); }
@@ -90,15 +95,17 @@ class Camera {
     }
 }
 
+@value
 interface Ray {
-    start: Vector;
-    dir: Vector;
+    readonly start: Vector;
+    readonly dir: Vector;
 }
 
+@value
 interface Intersection {
-    thing: Thing;
-    ray: Ray;
-    dist: number;
+    readonly thing: Thing;
+    readonly ray: Ray;
+    readonly dist: number;
 }
 
 interface Surface {
@@ -109,7 +116,7 @@ interface Surface {
 }
 
 interface Thing {
-    intersect(ray: Ray): Intersection;
+    intersect(ray: Ray): Intersection | null;
     normal(pos: Vector): Vector;
     surface: Surface;
 }
@@ -132,7 +139,7 @@ class Sphere implements Thing {
         this.radius2 = radius * radius;
     }
     normal(pos: Vector): Vector { return Vector.norm(Vector.minus(pos, this.center)); }
-    intersect(ray: Ray): Intersection {
+    intersect(ray: Ray): Intersection | null {
         let eo = Vector.minus(this.center, ray.start);
         let v = Vector.dot(eo, ray.dir);
         let dist = 0.0;
@@ -154,7 +161,7 @@ class Plane implements Thing {
     constructor(public norm: Vector, public offset: number, public surface: Surface) {
     }
     public normal(pos: Vector): Vector { return this.norm; }
-    public intersect(ray: Ray): Intersection {
+    public intersect(ray: Ray): Intersection | null {
         let denom = Vector.dot(this.norm, ray.dir);
         if (denom > 0) {
             return null;
@@ -198,7 +205,7 @@ class RayTracer {
 
     private intersections(ray: Ray, scene: Scene) {
         let closest = +Infinity;
-        let closestInter: Intersection = undefined;
+        let closestInter: Intersection | undefined = undefined;
         for (let i in scene.things) {
             let inter = scene.things[i].intersect(ray);
             if (inter != null && inter.dist < closest) {

@@ -705,6 +705,86 @@ namespace mlirgen
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
+        // A @value class is nominal. Its value seen as `any`, `unknown`, `Object` or an ordinary
+        // interface would be a boxed copy that has lost its class (no vtable to call its methods by);
+        // seen as another @value type, a value of a class it is not. With null or undefined it is
+        // itself (`V | null`), and so in a union of @value types.
+        if (auto valueClassInfo = getValueClassInfo(valueType))
+        {
+            auto isValueMember = [](mlir::Type memberType) {
+                return isa<mlir_ts::ValueType, mlir_ts::NullType, mlir_ts::UndefinedType>(memberType);
+            };
+
+            auto unionType = dyn_cast<mlir_ts::UnionType>(type);
+            if (isa<mlir_ts::AnyType, mlir_ts::UnknownType, mlir_ts::ObjectType, mlir_ts::InterfaceType, mlir_ts::ValueType>(type)
+                || (unionType && !llvm::all_of(unionType.getTypes(), isValueMember)))
+            {
+                emitError(location) << "the @" VALUE_DECORATOR " class '" << valueClassInfo->name << "' cannot be converted to '"
+                                    << to_print(type) << "'";
+                return mlir::failure();
+            }
+        }
+
+        // ...and only its own values are values of it: a literal, a tuple, a @value interface value or
+        // an object of the same fields is not one (its constructor never ran). With null or undefined
+        // it is `V | null` (the cases below).
+        if (auto destClassInfo = getValueClassInfo(type);
+            destClassInfo && !isa<mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
+        {
+            // Discovery sees results not resolved yet - a method calling one declared after it gives
+            // `void` - and keeps going, as it does for any other cast it cannot make yet. Its IR is
+            // thrown away; the final pass checks the real conversion.
+            if (genContext.dummyRun || genContext.allowPartialResolve)
+            {
+                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+            }
+
+            emitError(location) << "type '" << to_print(valueType) << "' cannot be converted to the @" VALUE_DECORATOR " class '"
+                                << destClassInfo->name << "'";
+            return mlir::failure();
+        }
+
+        // A @value type is laid out as its storage tuple. Converting to one is converting to that
+        // tuple - a field copy in the target's order - and taking the tuple as the value; converting
+        // from one is converting its tuple, which boxes a copy for `any`, `Object` or an ordinary
+        // interface. So a @value value never reaches the tuple paths below as itself. With null,
+        // undefined, an optional or a union on either side it is the cases below (`T | null`).
+        if (auto destValueType = dyn_cast<mlir_ts::ValueType>(type))
+        {
+            // ...and it has no null pointer: a missing value is written `T | null` (an optional
+            // value), even where null checks are not strict
+            if (isa<mlir_ts::NullType, mlir_ts::UndefinedType>(valueType))
+            {
+                emitError(location) << "a @" VALUE_DECORATOR " type has no null; write '" << to_print(type) << " | null'";
+                return mlir::failure();
+            }
+
+            // one that may be missing is read as the value it holds, and throws when it holds none
+            // (under `@strict-null false`, where TypeScript would throw only at a later read)
+            if (MLIRTypeHelper::getMissingValueElement(valueType))
+            {
+                auto present = mlirGenPresentValue(location, value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(present)
+                return cast(location, type, V(present), genContext, disableStrictNullCheck);
+            }
+
+            if (!isa<mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
+            {
+                CAST_A(storage, location, destValueType.getStorageType(), valueStorage(location, value), genContext);
+                return V(builder.create<mlir_ts::CastOp>(location, destValueType, storage));
+            }
+        }
+        else if (isa<mlir_ts::ValueType>(valueType) && !isa<mlir_ts::OptionalType, mlir_ts::UnionType>(type))
+        {
+            return cast(location, type, valueStorage(location, value), genContext, disableStrictNullCheck);
+        }
+        // one that may be missing is true when it holds a value, as an object is
+        else if (isa<mlir_ts::BooleanType>(type) && MLIRTypeHelper::getMissingValueElement(valueType))
+        {
+            auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+            return mlirGenBinaryValues(location, SyntaxKind::ExclamationEqualsToken, value, nullValue, genContext);
+        }
+
         // see isCppVTableClass: `any` is unboxed and an interface made by asking the object
         if ((isa<mlir_ts::AnyType>(valueType) && isCppVTableClass(type))
             || ((isa<mlir_ts::AnyType>(type) || isa<mlir_ts::InterfaceType>(type)) && isCppVTableClass(valueType)))

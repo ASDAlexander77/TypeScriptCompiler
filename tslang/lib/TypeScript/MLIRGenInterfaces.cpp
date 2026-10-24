@@ -503,10 +503,12 @@ namespace mlirgen
 
     // `<stubName>(this, ...) { throw new Error("method is abstract"); }`, typed as the interface's
     // method (`this` opaque): what a null interface's vtable holds for each method
-    // (mlirGenNullInterfaceVTable). Without the default library there is no `Error`, and the message
-    // itself is thrown.
+    // (mlirGenNullInterfaceVTable), and what a read of a missing @value value calls
+    // (mlirGenPresentValue), with its own message. Without the default library there is no `Error`,
+    // and the message itself is thrown.
     mlir::LogicalResult MLIRGenImpl::mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
-                                                               mlir_ts::FunctionType funcType, const GenContext &genContext)
+                                                               mlir_ts::FunctionType funcType, const GenContext &genContext,
+                                                               StringRef message)
     {
         if (auto existing = theModule.lookupSymbol<mlir_ts::FuncOp>(stubName))
         {
@@ -541,7 +543,7 @@ namespace mlirgen
             location, name, stubName, funcType,
             [&](mlir::Location location, const GenContext &genContext) -> mlir::LogicalResult {
                 NodeFactory nf(NodeFactoryFlags::None);
-                Expression thrown = nf.createStringLiteral(S("method is abstract"));
+                Expression thrown = nf.createStringLiteral(stows(message.str()));
                 if (getClassInfoByFullName("Error"))
                 {
                     NodeArray<Expression> argumentsArray;
@@ -1120,7 +1122,19 @@ namespace mlirgen
                                                 const GenContext &genContext)
     {
         auto name = getNameWithArguments(interfaceDeclarationAST, genContext);
-        return mlirGenInterfaceInfo(name, declareInterface, genContext);
+        auto newInterfacePtr = mlirGenInterfaceInfo(name, declareInterface, genContext);
+        if (newInterfacePtr)
+        {
+            // `declare interface` too: the declaration is what an importer reads
+            iterateDecorators(interfaceDeclarationAST, genContext, [&](StringRef decoratorName, SmallVector<StringRef> args) {
+                if (decoratorName == VALUE_DECORATOR)
+                {
+                    newInterfacePtr->isValue = true;
+                }
+            });
+        }
+
+        return newInterfacePtr;
     }
 
     InterfaceInfo::TypePtr MLIRGenImpl::mlirGenInterfaceInfo(const std::string &name, bool &declareInterface,
@@ -1174,8 +1188,32 @@ namespace mlirgen
             auto result = mlirGen(extendsType, genContext);
             EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
+
+            // a @value interface (its type is a ValueType) or an ordinary one
+            auto baseInterfaceInfo = InterfaceInfo::TypePtr();
+            if (auto valueType = dyn_cast<mlir_ts::ValueType>(ifaceType.getType()))
+            {
+                baseInterfaceInfo = getInterfaceInfoByFullName(valueType.getName().getValue());
+            }
+            else if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(ifaceType.getType()))
+            {
+                baseInterfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            }
+
+            // a value has no base layout to widen, and an interface that is not a value is seen
+            // through a vtable: a @value interface extends only another @value interface's fields
+            if (newInterfacePtr->isValue && !(baseInterfaceInfo && baseInterfaceInfo->isValue))
+            {
+                auto baseName = baseInterfaceInfo ? baseInterfaceInfo->name.str()
+                                                  : MLIRHelper::getName(extendsType->expression.as<ts::Node>());
+                emitError(loc(extendsType)) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name << "' cannot extend '"
+                                            << baseName << "': it is not @" VALUE_DECORATOR;
+                return mlir::failure();
+            }
+
             auto success = false;
-            mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
+            auto baseType = baseInterfaceInfo ? mlir::Type(baseInterfaceInfo->interfaceType) : ifaceType.getType();
+            mlir::TypeSwitch<mlir::Type>(baseType)
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     if (interfaceInfo)
@@ -1246,6 +1284,19 @@ namespace mlirgen
         // do not proceed for Generic Interfaces for declaration
         if (interfaceDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
         {
+            // a value is one layout: each instantiation would be another type to copy
+            auto isValueInterface = false;
+            iterateDecorators(interfaceDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                isValueInterface = isValueInterface || name == VALUE_DECORATOR;
+            });
+            if (isValueInterface)
+            {
+                emitError(loc(interfaceDeclarationAST)) << "@" VALUE_DECORATOR " interface '"
+                                                        << MLIRHelper::getName(interfaceDeclarationAST->name)
+                                                        << "' cannot have type parameters";
+                return mlir::failure();
+            }
+
             return registerGenericInterface(interfaceDeclarationAST, genContext);
         }
 
@@ -1313,10 +1364,33 @@ namespace mlirgen
 
         } while (notResolved > 0);
 
+        // a @value interface is laid out in its declaration order, the order its fields are listed in
+        // whichever pass resolved each: `thing: Thing` resolved a pass after `d` (Thing declared
+        // later) would come after it here, and before it in a module that saw Thing first
+        if (newInterfacePtr->isValue)
+        {
+            llvm::SmallVector<mlir::Attribute> declared;
+            for (auto &interfaceMember : interfaceDeclarationAST->members)
+            {
+                if ((SyntaxKind)interfaceMember == SyntaxKind::PropertySignature)
+                {
+                    declared.push_back(TupleFieldName(interfaceMember.as<PropertySignature>()->name, ifaceGenContext));
+                }
+            }
+
+            auto position = [&](const InterfaceFieldInfo &field) {
+                return std::distance(declared.begin(), llvm::find(declared, field.id));
+            };
+            std::stable_sort(newInterfacePtr->fields.begin(), newInterfacePtr->fields.end(),
+                             [&](const InterfaceFieldInfo &a, const InterfaceFieldInfo &b) { return position(a) < position(b); });
+        }
+
         // fix up vtable slot numbers to the canonical methods-then-fields order now that
         // all members are known - see assignCanonicalVirtualIndexes() for why this can't
         // be left to getVirtualTable()'s per-cast assignment alone.
         newInterfacePtr->assignCanonicalVirtualIndexes();
+
+        newInterfacePtr->membersResolved = true;
 
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))
@@ -1349,6 +1423,14 @@ namespace mlirgen
         {
             LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " FAILED\n");
             return mlir::failure();
+        }
+
+        // `f?: T` of a @value type is read as the one optional every missing T is
+        // (MLIRTypeHelper::getMissingValueType), which is how a class's or a literal's `f?: T` stores it:
+        // the slot is that field, read as it is, null and undefined apart
+        if (isConditional && isa<mlir_ts::ValueType>(type))
+        {
+            type = getOptionalType(type);
         }
 
         auto fieldIndex = newInterfacePtr->getFieldIndex(fieldId);
@@ -1388,6 +1470,15 @@ namespace mlirgen
         MLIRCodeLogic mcl(builder, compileOptions);
 
         SyntaxKind kind = interfaceMember;
+
+        // a @value interface is a value of its fields, with no vtable: a method, an accessor or a
+        // signature would have nothing to be called through
+        if (newInterfacePtr->isValue && kind != SyntaxKind::PropertySignature)
+        {
+            emitError(location) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name << "' can only have fields";
+            return mlir::failure();
+        }
+
         if (kind == SyntaxKind::PropertySignature)
         {
             // property declaration
@@ -1396,6 +1487,24 @@ namespace mlirgen
 
             fieldId = TupleFieldName(propertySignature->name, genContext);
 
+            // a field a @value value could change would make its copies differ
+            if (newInterfacePtr->isValue && !hasModifier(propertySignature, SyntaxKind::ReadonlyKeyword))
+            {
+                emitError(location) << "field '" << MLIRHelper::getName(propertySignature->name) << "' of @" VALUE_DECORATOR
+                                    << " interface '" << newInterfacePtr->name << "' must be readonly";
+                return mlir::failure();
+            }
+
+            // ...and a field it could leave out has no slot in it
+            if (newInterfacePtr->isValue && isConditional)
+            {
+                emitError(location) << "field '" << MLIRHelper::getName(propertySignature->name) << "' of @" VALUE_DECORATOR
+                                    << " interface '" << newInterfacePtr->name << "' cannot be optional";
+                return mlir::failure();
+            }
+
+            auto layoutField = valueLayoutField(newInterfacePtr->isValue, newInterfacePtr->fullName, newInterfacePtr->name,
+                                                location, MLIRHelper::getName(propertySignature->name));
             auto [type, init, typeProvided] = getTypeAndInit(propertySignature, genContext);
             if (!type)
             {

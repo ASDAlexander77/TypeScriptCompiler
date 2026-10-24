@@ -538,7 +538,8 @@ class StackPromotionPass : public mlir::PassWrapper<StackPromotionPass, mlir::Op
         }
 
         uint64_t bytes = word;
-        if (isa<mlir_ts::TupleType, mlir_ts::ClassStorageType, mlir_ts::ObjectStorageType>(type))
+        // a @value value is its storage tuple's fields (getOwnershipFieldTypes looks through it)
+        if (isa<mlir_ts::TupleType, mlir_ts::ValueType, mlir_ts::ClassStorageType, mlir_ts::ObjectStorageType>(type))
         {
             MLIRTypeHelper mth(&getContext(), compileOptions);
             bytes = 0;

@@ -1431,6 +1431,22 @@ namespace mlirgen
 
             LLVM_DEBUG(llvm::dbgs() << "Location for Param: " << location << "\n");
 
+            // `this` of a @value class's constructor is the slot `new` made for the value: the
+            // variable `this` lives in it, so `this.a = a` writes the value's field and `this.m()` sees
+            // the fields stored so far; read whole (`f(this)`, `const c = this`) it is an error
+            // (checkValueConstructorThisUses)
+            if (param->getName() == THIS_NAME && index == firstIndex)
+            {
+                auto refType = dyn_cast<mlir_ts::RefType>(param->getType());
+                if (refType && getValueClassInfo(refType.getElementType()))
+                {
+                    auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, refType.getElementType(), location);
+                    thisDecl->setReadWriteAccess();
+                    DECLARE(thisDecl, arguments[index]);
+                    continue;
+                }
+            }
+
             // alloc all args
             // process optional parameters
             if (param->hasInitValue())
@@ -1456,6 +1472,14 @@ namespace mlirgen
             {
                 // redefine variable
                 param->setReadWriteAccess();
+                // `this` of a @value class's method is the value, which nothing assigns: a closure
+                // takes a copy of it, not its cell (so a `ref` named `this` in a capture is the
+                // constructor's slot alone)
+                if (param->getName() == THIS_NAME && index == firstIndex && getValueClassInfo(param->getType()))
+                {
+                    param->setCaptureByValue();
+                }
+
                 DECLARE(param, paramValue);
             }
         }
@@ -1732,6 +1756,19 @@ namespace mlirgen
             loopLabelAliases = std::move(outerLoopLabelAliases);
         });
 
+        // nor is a @value type a body needs one the field being typed around it waits for (an
+        // initializer's return type inferred from this body)
+        auto outerValueLayoutFrames = std::move(valueLayoutFrames);
+        valueLayoutFrames.clear();
+        auto restoreValueLayoutFrames = llvm::make_scope_exit([&]() { valueLayoutFrames = std::move(outerValueLayoutFrames); });
+
+        // nor are the objects an optional chain around it read (mlirGenOptionalChain) this body's: made
+        // again inside the chain - a recursive function's result inferred - the chain's nodes are made
+        // anew
+        auto outerOptionalChainObjects = std::move(optionalChainObjects);
+        optionalChainObjects.clear();
+        auto restoreOptionalChainObjects = llvm::make_scope_exit([&]() { optionalChainObjects = std::move(outerOptionalChainObjects); });
+
         auto location = loc(functionLikeDeclarationBaseAST);
 
         // Debug Info
@@ -1839,6 +1876,38 @@ namespace mlirgen
                 return mlir::failure();
             }
 
+            // a @value class's constructor reads `this` only through its members - in a discovery run
+            // too, where a use of `this` whole may fail first with an error of its own (`{ ...this }`)
+            if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor
+                && !funcProto->getParams().empty() && funcProto->getParams().front()->getName() == THIS_NAME)
+            {
+                auto thisRefType = dyn_cast<mlir_ts::RefType>(funcProto->getParams().front()->getType());
+                if (auto classInfo = thisRefType ? getValueClassInfo(thisRefType.getElementType()) : ClassInfo::TypePtr())
+                {
+                    auto thisUses = checkValueConstructorThisUses(functionLikeDeclarationBaseAST->body, classInfo->name);
+
+                    // ...and so do its instance fields' initializers, which run in it (in the one made
+                    // for them when none is written)
+                    if (classInfo->processingDeclaration)
+                    {
+                        for (auto &member : classInfo->processingDeclaration->members)
+                        {
+                            if (member == SyntaxKind::PropertyDeclaration && !hasModifier(member, SyntaxKind::StaticKeyword)
+                                && member.as<PropertyDeclaration>()->initializer
+                                && failed(checkValueConstructorThisUses(member.as<PropertyDeclaration>()->initializer, classInfo->name)))
+                            {
+                                thisUses = mlir::failure();
+                            }
+                        }
+                    }
+
+                    if (failed(thisUses))
+                    {
+                        return mlir::failure();
+                    }
+                }
+            }
+
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
             if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
@@ -1876,6 +1945,11 @@ namespace mlirgen
 
         // add exit code
         if (failed(mlirGenFunctionExit(location, funcGenContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (!funcGenContext.dummyRun && failed(checkValueConstructorClosures(funcOp)))
         {
             return mlir::failure();
         }
@@ -2017,7 +2091,7 @@ namespace mlirgen
             // reference of its own; retaining the cell instead leaves the value with one owner
             // fewer than the releases that will run for it, which is what freed the source array
             // of a generator out from under the generator (§9.50).
-            auto capturedByRef = item.second && item.second->getReadWriteAccess();
+            auto capturedByRef = item.second && item.second->getCaptureByReference();
 
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);
@@ -2062,6 +2136,12 @@ namespace mlirgen
                     paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
                     builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
+                else if (MLIRTypeHelper::isValueConstructorThisCapture(builder.getStringAttr(item.first()),
+                                                                       refValue.getType()))
+                {
+                    // `this` of a @value class's constructor, seen in a closure through its box: the
+                    // slot `new` made, which this box borrows as the first one does - not a cell
+                }
                 else if (isCapturedCellSlot(refValue))
                 {
                     // A closure inside a closure, capturing the same variable. There is nothing
@@ -2076,7 +2156,9 @@ namespace mlirgen
                 {
                     // no retain here: what makes a variable's storage a cell is being marked
                     // captured, and nothing was marked. Retaining a stack slot would write a
-                    // count into the frame word in front of it.
+                    // count into the frame word in front of it. `this` of a @value class's
+                    // constructor lands here by design: its storage is the slot `new` made, which
+                    // the box borrows (OwnershipRoutineLogic::releaseCapturedFields skips it).
                     // TODO: review it.
                     // find out if u need to ensure that data is captured and belong to VariableOp or ParamOp with
                     // captured = true
@@ -2095,6 +2177,140 @@ namespace mlirgen
         }
 
         return mlir::success();
+    }
+
+    // A use of a closure holding the slot of a @value constructor's `this` other than calling it
+    // (GetThis/GetMethod) or counting it (Retain/Release); null when there is none. Captured by another
+    // closure is such a use: inside that one it is a field of a box, which could be stored or returned
+    // from there unseen.
+    static mlir::Operation *escapingUseOfValueConstructorClosure(mlir::Value closure)
+    {
+        for (auto *user : closure.getUsers())
+        {
+            if (!isa<mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user))
+            {
+                return user;
+            }
+        }
+
+        return nullptr;
+    }
+
+    // A closure that captures `this` of a @value class's constructor holds the address of the slot
+    // `new` made, which dies with `new`'s caller (MLIRTypeHelper::isValueConstructorThisCapture). So
+    // it may only be called, in the function that made it: the constructor, or a closure inside it
+    // that captures `this` itself. Stored, returned, passed on or captured, it could read a dead slot.
+    mlir::LogicalResult MLIRGenImpl::checkValueConstructorClosures(mlir_ts::FuncOp funcOp)
+    {
+        auto result = mlir::success();
+        funcOp.walk([&](mlir_ts::CreateBoundFunctionOp boundFuncOp) {
+            auto captureOp = boundFuncOp.getThisVal().getDefiningOp<mlir_ts::CaptureOp>();
+            auto captureRefType = captureOp ? dyn_cast<mlir_ts::RefType>(captureOp->getResult(0).getType()) : mlir_ts::RefType();
+            auto captureTupleType = captureRefType ? dyn_cast<mlir_ts::TupleType>(captureRefType.getElementType()) : mlir_ts::TupleType();
+            if (!captureTupleType)
+            {
+                return;
+            }
+
+            for (auto &field : captureTupleType.getFields())
+            {
+                if (!MLIRTypeHelper::isValueConstructorThisCapture(field.id, field.type))
+                {
+                    continue;
+                }
+
+                if (auto *use = escapingUseOfValueConstructorClosure(boundFuncOp.getResult()))
+                {
+                    auto valueType = mlir::cast<mlir_ts::RefType>(field.type).getElementType();
+                    auto classInfo = getValueClassInfo(valueType);
+                    auto className = classInfo ? classInfo->name.str() : to_print(valueType);
+                    emitError(use->getLoc()) << "a closure that captures 'this' of the @" VALUE_DECORATOR " class '"
+                                             << className << "' can only be called inside its constructor";
+                    result = mlir::failure();
+                }
+
+                return;
+            }
+        });
+
+        return result;
+    }
+
+    // `this` of a @value class's constructor is the slot `new` is filling (mlirGenFunctionParams): the
+    // value is made when the constructor returns. Read whole before that - `const self = this`,
+    // `f(this)`, `[this]`, `{ v: this }`, `...this`, `return this`, `() => this` - it would be a copy
+    // of the fields stored so far, and a later `this.a = 1` would not reach it, where TypeScript's
+    // object would have it. So `this` may only be the object of a member access (`this.a`,
+    // `this.a = x`, `this.a++`, `this.m()`, `this["a"]`), read as the slot is at that point, in the
+    // constructor or in an arrow function inside it, whose `this` is the constructor's. A function,
+    // method, accessor or class inside it has a `this` of its own. `root` is the constructor's body, or
+    // an instance field's initializer, which runs in the constructor too (mlirGenFunctionBody).
+    mlir::LogicalResult MLIRGenImpl::checkValueConstructorThisUses(Node root, StringRef className)
+    {
+        auto result = mlir::success();
+
+        auto isThis = [](Node expression) {
+            while (expression == SyntaxKind::ParenthesizedExpression)
+            {
+                expression = expression.as<ParenthesizedExpression>()->expression;
+            }
+
+            return expression == SyntaxKind::ThisKeyword;
+        };
+
+        ts::FuncT<> visitNode;
+        ts::ArrayFuncT<> visitArray;
+
+        visitNode = [&](Node node) -> Node {
+            switch ((SyntaxKind)node)
+            {
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+            case SyntaxKind::Constructor:
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::ClassExpression:
+                return undefined;
+            case SyntaxKind::PropertyAccessExpression:
+                if (isThis(node.as<PropertyAccessExpression>()->expression))
+                {
+                    return undefined;
+                }
+
+                break;
+            case SyntaxKind::ElementAccessExpression:
+                if (auto elementAccess = node.as<ElementAccessExpression>(); isThis(elementAccess->expression))
+                {
+                    return visitNode(elementAccess->argumentExpression);
+                }
+
+                break;
+            case SyntaxKind::ThisKeyword:
+                emitError(loc(node)) << "'this' of the @" VALUE_DECORATOR " class '" << className
+                                     << "' is not a value until its constructor returns; read 'this.f'";
+                result = mlir::failure();
+                return undefined;
+            default:
+                break;
+            }
+
+            ts::forEachChild(node, visitNode, visitArray);
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        visitNode(root);
+        return result;
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,

@@ -121,7 +121,7 @@ namespace mlirgen
             }
 
             auto optValue = isa<mlir_ts::OptionalType>(value.getType())
-                    ? value : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                    ? value : mlirGenOptionalValueOf(location, value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -205,7 +205,25 @@ namespace mlirgen
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
-                .Case<mlir_ts::StringType>([&](auto stringType) { 
+                // a field of a @value value is a field of its storage tuple
+                .Case<mlir_ts::ValueType>([&](auto valueType) {
+                    cl.setExpression(valueStorage(location, objectValue));
+                    auto storageType = mlir::cast<mlir_ts::TupleType>(valueType.getStorageType());
+                    // ...and anything else of a @value class's value is a member of the class
+                    if (auto classInfo = getValueClassInfo(valueType))
+                    {
+                        auto accessingFromLevel = detectAccessLevel(classInfo->classType, genContext);
+                        if (auto value = cl.TupleNoError(storageType, accessingFromLevel))
+                        {
+                            return value;
+                        }
+
+                        return ValueClassMembersAccess(location, objectValue, classInfo, name, accessingFromLevel, genContext);
+                    }
+
+                    return cl.Tuple(storageType);
+                })
+                .Case<mlir_ts::StringType>([&](auto stringType) {
                     if (auto value = cl.String(stringType))
                     {
                         return value;
@@ -368,13 +386,36 @@ namespace mlirgen
                         location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), 
                         argument, genContext);
                 })
-                .Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                .Case<mlir_ts::OptionalType>([&](auto optionalType) -> mlir::Value {
+                    // a member of a missing @value value throws
+                    if (MLIRTypeHelper::getMissingValueElement(optionalType))
+                    {
+                        auto present = mlirGenPresentValue(location, objectValue, genContext);
+                        if (present.failed_or_no_value())
+                        {
+                            return mlir::Value();
+                        }
+
+                        return mlirGenPropertyAccessExpression(location, V(present), name, false, genContext);
+                    }
+
                     // this is needed for conditional access to properties
                     auto elementType = optionalType.getElementType();
                     auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
                     return mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
                 })
-                .Case<mlir_ts::UnionType>([&](auto unionType) {
+                .Case<mlir_ts::UnionType>([&](auto unionType) -> mlir::Value {
+                    if (MLIRTypeHelper::getMissingValueElement(unionType))
+                    {
+                        auto present = mlirGenPresentValue(location, objectValue, genContext);
+                        if (present.failed_or_no_value())
+                        {
+                            return mlir::Value();
+                        }
+
+                        return mlirGenPropertyAccessExpression(location, V(present), name, false, genContext);
+                    }
+
                     // TODO: when access of property in union is finished use it instead of using first type
                     // all union types must have the same property
                     // 1) cast to first type
@@ -1072,6 +1113,83 @@ namespace mlirgen
         return mlir::Value();
     }
 
+    // A member of a @value class's value that is not one of its fields: an instance method, called
+    // directly with the value as its `this` (an extension function of it: no vtable, nothing bound),
+    // or a getter, called the same way. Anything else is looked up as for any class, which says what
+    // it can't find.
+    mlir::Value MLIRGenImpl::ValueClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
+                                                     mlir::StringRef name, mlir_ts::AccessLevel accessingFromLevel,
+                                                     const GenContext &genContext)
+    {
+        auto methodIndex = classInfo->getMethodIndex(name);
+        if (methodIndex >= 0 && !classInfo->methods[methodIndex].isStatic)
+        {
+            auto &methodInfo = classInfo->methods[methodIndex];
+            if (accessingFromLevel < methodInfo.accessLevel)
+            {
+                emitError(location, "Class member '") << methodInfo.name << "' is not accessable";
+                return mlir::Value();
+            }
+
+            auto funcRef = valueClassFunctionRef(location, classInfo, methodInfo, genContext);
+            if (!funcRef)
+            {
+                return mlir::Value();
+            }
+
+            return builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                location, getExtensionFunctionType(methodInfo.funcType), thisValue, funcRef);
+        }
+
+        auto accessorIndex = classInfo->getAccessorIndex(name);
+        if (accessorIndex >= 0 && !classInfo->accessors[accessorIndex].isStatic)
+        {
+            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, false, accessingFromLevel, genContext,
+                                       /*finalReceiver=*/true);
+        }
+
+        return ClassMembersAccess(location, thisValue, classInfo, name, false, mlir::Value(), accessingFromLevel, genContext);
+    }
+
+    // The function of a method or the constructor of a @value class, to call directly: its symbol, or,
+    // for a class imported from a DLL loaded at run time, the address the DLL has for it (as
+    // ClassMethodAccess resolves a dynamic import's member).
+    mlir::Value MLIRGenImpl::valueClassFunctionRef(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                   const MethodInfo &methodInfo, const GenContext &genContext)
+    {
+        StringRef funcName = methodInfo.funcName;
+        auto symbolRef = [&]() -> mlir::Value {
+            return builder.create<mlir_ts::SymbolRefOp>(location, methodInfo.funcType,
+                                                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+        };
+
+        if (!classInfo->isDynamicImport)
+        {
+            return symbolRef();
+        }
+
+        if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName); funcOp && !funcOp.getBody().empty())
+        {
+            return symbolRef();
+        }
+
+        if (auto globalFuncVar = resolveFullNameIdentifier(location, funcName, false, genContext))
+        {
+            return globalFuncVar;
+        }
+
+        auto symbolNameValue = V(mlirGenStringValue(location, methodInfo.dllName.empty() ? funcName.str() : methodInfo.dllName, true));
+        auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), symbolNameValue);
+        auto castResult = cast(location, methodInfo.funcType, referenceToFuncOpaque, genContext);
+        if (castResult.failed_or_no_value())
+        {
+            emitError(location, "Class member '") << funcName << "' can't be resolved (dynamic import)";
+            return mlir::Value();
+        }
+
+        return V(castResult);
+    }
+
     mlir::Value MLIRGenImpl::InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
                                  mlir::Attribute id, mlir::Value argument, const GenContext &genContext)
     {
@@ -1201,6 +1319,12 @@ namespace mlirgen
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(arrayType))
         {
             return mlirGenElementAccessTuple(location, expression, argumentExpression, tupleType);
+        }
+        // `v["f"]` of a @value value is a field of its storage tuple
+        else if (auto valueType = dyn_cast<mlir_ts::ValueType>(arrayType))
+        {
+            return mlirGenElementAccessTuple(location, valueStorage(location, expression), argumentExpression,
+                                             mlir::cast<mlir_ts::TupleType>(valueType.getStorageType()));
         }
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(arrayType))
         {
@@ -1714,7 +1838,7 @@ namespace mlirgen
             if (value)
             {
                 auto optValue =
-                    builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                    mlirGenOptionalValueOf(location, value);
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
                 // else
@@ -2082,6 +2206,11 @@ namespace mlirgen
         // `C(...)` and `new C(...)` are one thing: where the object lives is the stack promotion
         // pass's decision, not the spelling's (docs/superpowers/specs/2026-10-18-stack-promotion-design.md)
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (classInfo && classInfo->isValue)
+        {
+            return NewValueClassInstance(location, classInfo, operands, genContext);
+        }
+
         auto newOp = ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
         EXIT_IF_FAILED_OR_NO_VALUE(newOp)
         if (mlir::failed(mlirGenCallConstructor(location, classInfo, V(newOp), operands, false, genContext)))
@@ -2090,6 +2219,94 @@ namespace mlirgen
         }
 
         return V(newOp);
+    }
+
+    // `new V(...)` of a @value class: a stack slot for its storage tuple, the constructor run with
+    // `this` pointing at the slot, and the value loaded from it. Nothing is allocated, and nothing
+    // keeps the slot: what `new` gives is a copy.
+    ValueOrLogicalResult MLIRGenImpl::NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                            NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        auto constructorIndex = classInfo->getMethodIndex(CONSTRUCTOR_NAME);
+        if (genContext.dummyRun || constructorIndex < 0)
+        {
+            // discovery (or a constructor not declared yet): the arguments are walked for what they
+            // capture, as NewClassInstance does, and the value is all the type that is wanted
+            for (auto argument : arguments)
+            {
+                mlirGen(argument, genContext);
+            }
+
+            SmallVector<mlir::Value, 4> noOperands;
+            return NewValueClassInstance(location, classInfo, noOperands, genContext);
+        }
+
+        auto funcType = classInfo->methods[constructorIndex].funcType;
+        SmallVector<mlir::Value, 4> operands;
+        if (mlir::failed(mlirGenOperands(arguments, operands, funcType, genContext, 1/*this params shift*/)))
+        {
+            emitError(location) << "Call constructor: can't resolve values of all parameters";
+            return mlir::failure();
+        }
+
+        return NewValueClassInstance(location, classInfo, operands, genContext);
+    }
+
+    ValueOrLogicalResult MLIRGenImpl::NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                            SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        auto valueType = getValueTypeOfClass(classInfo);
+        auto storageType = valueType.getStorageType();
+
+        // zeroed, as a new object is: a field the constructor does not set reads as nothing, and a
+        // store into one has no old value to give back
+        auto zero = builder.create<mlir_ts::CastOp>(location, valueType, builder.create<mlir_ts::DefaultOp>(location, storageType));
+        auto slot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(valueType), zero,
+                                                        builder.getBoolAttr(false), builder.getIndexAttr(0));
+
+        // discovery wants the type only; the value is still a load, not a constant: a static field
+        // initialized with `new V()` is set by the static constructor, not folded (isConstValue)
+        if (!genContext.dummyRun && classInfo->getHasConstructor())
+        {
+            auto constructorIndex = classInfo->getMethodIndex(CONSTRUCTOR_NAME);
+            if (constructorIndex < 0)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "Call Constructor: can't find constructor";
+                }
+
+                return mlir::failure();
+            }
+
+            auto &constructorInfo = classInfo->methods[constructorIndex];
+            if (detectAccessLevel(classInfo->classType, genContext) < classInfo->constructorAccessLevel)
+            {
+                emitError(location, "Class constructor is not accessable");
+                return mlir::failure();
+            }
+
+            auto constructorRef = valueClassFunctionRef(location, classInfo, constructorInfo, genContext);
+            if (!constructorRef)
+            {
+                return mlir::failure();
+            }
+
+            auto callResult = mlirGenCallFunction(location, constructorInfo.funcType, constructorRef, slot, operands, genContext);
+            EXIT_IF_FAILED(callResult)
+        }
+
+        // The constructor stored into the slot's fields as into an owned local's
+        // (isValueConstructorSlot): a reference in one is counted for the slot, and the slot is left
+        // behind. The value arrives owned, as a new instance does: its receiver takes those counts
+        // over, and where nothing does they are given back at the end of the block (§9.30).
+        auto value = builder.create<mlir_ts::LoadOp>(location, valueType, slot);
+        if (mth.ownsHeapMemory(location, valueType))
+        {
+            value->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return V(value);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
@@ -2385,7 +2602,8 @@ namespace mlirgen
         assert(type);
 
         auto resultType = type;
-        if (mth.isValueType(type))
+        // a tuple made by `new` is boxed on the heap; a @value value never is
+        if (mth.isValueType(type) && !isa<mlir_ts::ValueType>(type))
         {
             resultType = getValueRefType(type);
         }
@@ -2409,7 +2627,13 @@ namespace mlirgen
                 }
 
                 emitError(location) << "Can't find class " << to_print(classType);
-                return mlir::failure(); 
+                return mlir::failure();
+            }
+
+            // a @value class: a value made on the stack, never a heap object (no `..new` either)
+            if (classInfo->isValue)
+            {
+                return NewValueClassInstance(location, classInfo, arguments, genContext);
             }
 
             if (genContext.dummyRun)

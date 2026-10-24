@@ -891,6 +891,20 @@ namespace own_inference
                     }
                     else if (!isLoadedCell(value))
                     {
+                        // a local of this frame, or storage a parameter refers to (`this` of a @value
+                        // constructor, the slot its `new` made), that holds no block - its fields are
+                        // numbers: the closure, which does not escape, reads storage that lives as
+                        // long as this call, and nothing in it can be freed
+                        auto elementType = mlir::cast<mlir_ts::RefType>(value.getType()).getElementType();
+                        auto argument = mlir::dyn_cast<mlir::BlockArgument>(value);
+                        auto frameStorage = value.getDefiningOp<mlir_ts::VariableOp>() ||
+                                            (argument && argument.getOwner()->isEntryBlock() &&
+                                             mlir::isa<mlir_ts::FuncOp>(argument.getOwner()->getParentOp()));
+                        if (frameStorage && !ownsHeap(value.getLoc(), elementType))
+                        {
+                            continue;
+                        }
+
                         reportCaptureNotOwned(fill.second, captured);
                         ok = false;
                         continue;

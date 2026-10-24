@@ -178,6 +178,13 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(location, tupleType, to_print(tupleType), false, file, line, scope);
         }
 
+        // a @value value is laid out as its storage tuple
+        if (auto valueType = dyn_cast<mlir_ts::ValueType>(type))
+        {
+            return getDITypeWithFields(location, valueType.getStorageType(), valueType.getName().getValue().str(), false, file,
+                                       line, scope);
+        }
+
         if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
         {
             return getDITypeWithFields(location, optionalType, to_print(optionalType), false, file, line, scope);

@@ -26,6 +26,193 @@ namespace own_signature
 
             classifyRecordBox(newOp);
         });
+
+        getOperation().walk([&](mlir_ts::VariableOp varOp) {
+            varOp->removeAttr(OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME);
+            varOp->removeAttr(OWN_RECORD_TEMPORARY_ATTR_NAME);
+            classifyUnboxedRecord(varOp);
+        });
+    }
+
+    void OwnershipSignaturePass::classifyUnboxedRecord(mlir_ts::VariableOp varOp)
+    {
+        // an object literal's local whose read is never boxed: the tuple is the value
+        if (!isConstantRecordLocal(varOp) || recordBoxOfLocal(varOp))
+        {
+            return;
+        }
+
+        // the record is its read, the whole tuple; a literal whose fields are read out one by one (to be
+        // re-made as another tuple) is not one
+        auto read = false;
+        for (auto *user : varOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                read = true;
+            }
+            else if (llvm::any_of(user->getUsers(), [](mlir::Operation *fieldUser) {
+                         return mlir::isa<mlir_ts::LoadOp>(fieldUser) && !fieldUser->use_empty();
+                     }))
+            {
+                return;
+            }
+        }
+
+        if (!read)
+        {
+            return;
+        }
+
+        // a literal no one takes - its read is only given to calls that do not keep it, and read - is
+        // a temporary (a call's argument): what it holds keeps its own owner, a fresh value too, whose
+        // release (the temporary's) bounds the record
+        auto temporary = true;
+        for (auto *user : varOp->getUsers())
+        {
+            auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(user);
+            if (!loadOp)
+            {
+                continue;
+            }
+
+            forEachUse(loadOp.getResult(), [&](mlir::Operation *readUser, mlir::Value used) {
+                if ((!isCall(readUser) && !mlir::isa<mlir_ts::ExtractPropertyOp, mlir_ts::DebugVariableOp>(readUser)) ||
+                    keeps(readUser, used))
+                {
+                    temporary = false;
+                }
+            });
+        }
+
+        RecordBox info;
+        info.unboxed = true;
+        llvm::SmallVector<int32_t> borrowed;
+        auto mth = typeHelper(&getContext());
+        for (auto *user : varOp->getUsers())
+        {
+            auto propertyRefOp = mlir::dyn_cast<mlir_ts::PropertyRefOp>(user);
+            if (!propertyRefOp)
+            {
+                continue;
+            }
+
+            auto field = propertyRefOp.getResult();
+            auto refType = mlir::dyn_cast<mlir_ts::RefType>(field.getType());
+            if (!refType || !mth.ownsHeapMemory(field.getLoc(), refType.getElementType()))
+            {
+                continue;
+            }
+
+            auto borrows = false;
+            for (auto *fieldUser : field.getUsers())
+            {
+                if (mlir::isa<mlir_ts::LoadOp>(fieldUser))
+                {
+                    continue;
+                }
+
+                auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(fieldUser);
+                if (!storeOp || storeOp.getReference() != field)
+                {
+                    return;
+                }
+
+                // a handle is counted, never borrowed (spec 23.2)
+                auto value = storeOp.getValue();
+                if (isHandle(value))
+                {
+                    return;
+                }
+
+                // a field of a generator's state, read into the record a yield or `next()` makes: the
+                // generator's rules decide whether that read moves the value out (findYieldedFields,
+                // after the facts) or borrows it, not this one
+                auto stateRead = rootOf(value).getDefiningOp<mlir_ts::LoadOp>();
+                auto stateField = stateRead ? stateRead.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
+                if (auto stateType = stateField ? storageTupleOf(stateField.getObjectRef().getType()) : mlir_ts::TupleType();
+                    stateType && fieldIndex(stateType, ".step") >= 0)
+                {
+                    return;
+                }
+
+                switch (recordFieldSource(value))
+                {
+                case RecordFieldSource::NoBlock:
+                    continue;
+                // a fresh value the temporary borrows: its own release bounds the record, which
+                // cannot be returned
+                case RecordFieldSource::Fresh:
+                    if (!temporary)
+                    {
+                        // a field it would own: the tuple is no borrow (an owning tuple, #679), and
+                        // its release would free the field
+                        return;
+                    }
+
+                    info.returnable = false;
+                    borrows = true;
+                    continue;
+                case RecordFieldSource::Unknown:
+                    return;
+                case RecordFieldSource::Immortal:
+                    borrows = true;
+                    continue;
+                case RecordFieldSource::Param:
+                case RecordFieldSource::Place:
+                    if (auto param = borrowedParam(value); param >= 0)
+                    {
+                        info.params.push_back(param);
+                    }
+                    else
+                    {
+                        info.returnable = false;
+                    }
+
+                    borrows = true;
+                    continue;
+                case RecordFieldSource::Slot:
+                case RecordFieldSource::Cell:
+                    info.returnable = false;
+                    borrows = true;
+                    continue;
+                }
+            }
+
+            // a string is copied, not borrowed (spec 22)
+            if (borrows && isCopyableString(refType.getElementType()))
+            {
+                return;
+            }
+
+            if (borrows)
+            {
+                borrowed.push_back(propertyRefOp.getPosition());
+            }
+        }
+
+        if (borrowed.empty())
+        {
+            return;
+        }
+
+        llvm::sort(borrowed);
+        borrowed.erase(std::unique(borrowed.begin(), borrowed.end()), borrowed.end());
+        llvm::sort(info.params);
+        info.params.erase(std::unique(info.params.begin(), info.params.end()), info.params.end());
+
+        varOp->setAttr(OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME, mlir::DenseI32ArrayAttr::get(&getContext(), borrowed));
+        if (temporary)
+        {
+            varOp->setAttr(OWN_RECORD_TEMPORARY_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+        }
+        for (auto *user : varOp->getUsers())
+        {
+            if (mlir::isa<mlir_ts::LoadOp>(user))
+            {
+                recordBoxes[user] = info;
+            }
+        }
     }
 
     void OwnershipSignaturePass::classifyRecordBox(mlir_ts::NewOp newOp)
@@ -267,12 +454,16 @@ namespace own_signature
         });
     }
 
-    OwnershipSignaturePass::RecordFlow OwnershipSignaturePass::recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params)
+    OwnershipSignaturePass::RecordFlow OwnershipSignaturePass::recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params,
+                                                                              bool *unboxed)
     {
         llvm::SmallVector<mlir::Value> work{value};
         llvm::SmallPtrSet<mlir::Value, 8> seen;
         auto record = false;
         auto other = false;
+        // boxes and unboxed records met in one value: their releases differ
+        auto boxes = false;
+        auto tuples = false;
         while (!work.empty())
         {
             // what holds no block, by its own type (a box's `value_ref` owns nothing by type, but
@@ -294,11 +485,13 @@ namespace own_signature
 
                 params.append(found->second.params.begin(), found->second.params.end());
                 record = true;
+                (found->second.unboxed ? tuples : boxes) = true;
                 continue;
             }
 
             if (def && isCall(def) && isRecordResult(def))
             {
+                (isUnboxedRecordResult(def) ? tuples : boxes) = true;
                 auto args = callArgs(def);
                 for (auto index : resultBorrowsAll(def))
                 {
@@ -368,7 +561,12 @@ namespace own_signature
             return RecordFlow::None;
         }
 
-        return other ? RecordFlow::Bad : RecordFlow::Record;
+        if (unboxed)
+        {
+            *unboxed = tuples;
+        }
+
+        return other || (boxes && tuples) ? RecordFlow::Bad : RecordFlow::Record;
     }
 
 } // namespace own_signature

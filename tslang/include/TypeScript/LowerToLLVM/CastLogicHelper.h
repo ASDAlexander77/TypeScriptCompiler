@@ -110,6 +110,31 @@ class CastLogicHelper
             return in;
         }
 
+        // a @value type is its storage tuple: the cast to or from that exact tuple changes nothing
+        // (MLIRGenImpl::valueStorage, and the cast that makes a tuple a value)
+        if (auto inValueType = dyn_cast<mlir_ts::ValueType>(inType); inValueType && inValueType.getStorageType() == resType)
+        {
+            return in;
+        }
+
+        if (auto resValueType = dyn_cast<mlir_ts::ValueType>(resType); resValueType && resValueType.getStorageType() == inType)
+        {
+            return in;
+        }
+
+        // ...and so is its place: a field of a @value value is read in place (GetReferenceFromValue)
+        if (auto inRefType = dyn_cast<mlir_ts::RefType>(inType))
+        {
+            if (auto resRefType = dyn_cast<mlir_ts::RefType>(resType))
+            {
+                auto inValueType = dyn_cast<mlir_ts::ValueType>(inRefType.getElementType());
+                if (inValueType && inValueType.getStorageType() == resRefType.getElementType())
+                {
+                    return in;
+                }
+            }
+        }
+
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(inType))
         {
             return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);

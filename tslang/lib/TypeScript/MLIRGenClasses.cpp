@@ -84,6 +84,19 @@ namespace mlirgen
         auto isGenericClass = classDeclarationAST->typeParameters.size() > 0;
         if (isGenericClass && genContext.typeParamsWithArgs.size() == 0)
         {
+            // a value is one layout: each instantiation would be another type to copy
+            auto isValueClass = false;
+            iterateDecorators(classDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                isValueClass = isValueClass || name == VALUE_DECORATOR;
+            });
+            if (isValueClass)
+            {
+                emitError(loc(classDeclarationAST)) << "@" VALUE_DECORATOR " class '"
+                                                    << MLIRHelper::getName(classDeclarationAST->name)
+                                                    << "' cannot have type parameters";
+                return {mlir::failure(), ""};
+            }
+
             return {registerGenericClass(classDeclarationAST, genContext), ""};
         }
 
@@ -100,6 +113,16 @@ namespace mlirgen
             emitError(loc(classDeclarationAST))
                 << "class '" << newClassPtr->name << "' cannot be both @" FINAL_DECORATOR " and "
                 << (newClassPtr->isAbstract ? "abstract" : "@" CPP_VTABLE);
+            return {mlir::failure(), ""};
+        }
+
+        // a value has no vtable, so it cannot be abstract, a C++ binding or @final (nothing extends
+        // a value: saying so twice would suggest it could be)
+        if (newClassPtr->isValue && (newClassPtr->isAbstract || newClassPtr->isCppVTable || newClassPtr->isFinal))
+        {
+            emitError(loc(classDeclarationAST))
+                << "class '" << newClassPtr->name << "' cannot be both @" VALUE_DECORATOR " and "
+                << (newClassPtr->isAbstract ? "abstract" : newClassPtr->isCppVTable ? "@" CPP_VTABLE : "@" FINAL_DECORATOR);
             return {mlir::failure(), ""};
         }
 
@@ -236,9 +259,13 @@ namespace mlirgen
             mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, classGenContext);
         }
 
+        // a @value class has a constructor and nothing an object has: no vtable, no `.instanceOf`,
+        // no `..new` - `new` makes the value in place (NewValueClassInstance)
+        auto hasObjectMembers = hasOwnRuntimeMembers && !newClassPtr->isValue;
+
 #ifdef ENABLE_RTTI
         // no `.instanceOf`: a C++ vtable has only the C++ methods
-        if (hasOwnRuntimeMembers && !newClassPtr->isCppVTable)
+        if (hasObjectMembers && !newClassPtr->isCppVTable)
         {
             // INFO: .instanceOf must be first element in VTable for Cast Any
             mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
@@ -247,14 +274,14 @@ namespace mlirgen
 
 #if ENABLE_TYPED_GC
         auto enabledGC = compileOptions.needsGCRuntime();
-        if (enabledGC && hasOwnRuntimeMembers)
+        if (enabledGC && hasObjectMembers)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
         }
 #endif
 
-        if (hasOwnRuntimeMembers)
+        if (hasObjectMembers)
         {
             mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
         }
@@ -314,7 +341,7 @@ namespace mlirgen
             }
         }
 
-        if (hasOwnRuntimeMembers)
+        if (hasObjectMembers)
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
             {
@@ -416,6 +443,11 @@ namespace mlirgen
                 if (name == FINAL_DECORATOR)
                 {
                     newClassPtr->isFinal = true;
+                }
+
+                if (name == VALUE_DECORATOR)
+                {
+                    newClassPtr->isValue = true;
                 }
             });
 
@@ -1062,9 +1094,9 @@ namespace mlirgen
         }
 
 #if ENABLE_RTTI
-        if (newClassPtr->isCppVTable)
+        if (newClassPtr->isCppVTable || newClassPtr->isValue)
         {
-            // no RTTI: a C++ object can't answer `instanceof`
+            // no RTTI: a C++ object can't answer `instanceof`, nor can a value, which has no vtable
         }
         else if (newClassPtr->isDynamicImport)
         {
@@ -1258,6 +1290,22 @@ namespace mlirgen
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Public});
 
                         auto classInfo = getClassInfoByFullName(baseName);
+                        // a value has no base layout, and nothing extends one: no vtable to override
+                        // through
+                        if (newClassPtr->isValue)
+                        {
+                            emitError(loc(extendingType)) << "@" VALUE_DECORATOR " class '" << newClassPtr->name
+                                                          << "' cannot extend '" << (classInfo ? classInfo->name : baseName) << "'";
+                            return;
+                        }
+
+                        if (classInfo && classInfo->isValue)
+                        {
+                            emitError(loc(extendingType)) << "class '" << newClassPtr->name << "' cannot extend '"
+                                                          << classInfo->name << "': it is @" VALUE_DECORATOR;
+                            return;
+                        }
+
                         // calls on a @final class are direct (ClassMethodAccess): an override
                         // would never run
                         if (classInfo && classInfo->isFinal)
@@ -1298,6 +1346,14 @@ namespace mlirgen
 
         if (heritageClause->token == SyntaxKind::ImplementsKeyword)
         {
+            // a value has no vtable to see it through an interface by
+            if (newClassPtr->isValue)
+            {
+                emitError(loc(heritageClause)) << "@" VALUE_DECORATOR " class '" << newClassPtr->name
+                                               << "' cannot implement an interface";
+                return mlir::failure();
+            }
+
             newClassPtr->hasVirtualTable = true;
 
             auto &interfaceInfos = newClassPtr->implements;
@@ -1518,6 +1574,9 @@ namespace mlirgen
             }
         }
 
+        // an instance field: a static one is a global, not part of the value
+        auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, location,
+                                            MLIRHelper::getName(name));
         auto [type, init] = mlirGenClassDataFieldType(location, propertyDeclaration, genContext);
         if (init)
         {
@@ -1716,7 +1775,8 @@ namespace mlirgen
         return mlir::success();
     }    
 
-    mlir::LogicalResult MLIRGenImpl::mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    mlir::LogicalResult MLIRGenImpl::mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                      SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                                       ConstructorDeclaration constructorDeclaration, const GenContext &genContext)
     {
         for (auto &parameter : constructorDeclaration->parameters)
@@ -1744,6 +1804,8 @@ namespace mlirgen
                 isPrivate |= strAttr.getValue().starts_with("#");
             }
 
+            auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, loc(parameter),
+                                                MLIRHelper::getName(parameter->name));
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
 
             if (mth.isNoneType(type))
@@ -1793,7 +1855,8 @@ namespace mlirgen
             }
         }
 
-        if (newClassPtr->isStatic)
+        // a @value class has no vtable: its methods are called directly
+        if (newClassPtr->isStatic || newClassPtr->isValue)
         {
             return mlir::success();
         }
@@ -1816,6 +1879,47 @@ namespace mlirgen
         return mlir::success();
     }
 
+    // An instance member of a @value class: every field `readonly` (a parameter property too), and no
+    // setter. Statics are as any class's.
+    mlir::LogicalResult MLIRGenImpl::mlirGenValueClassMemberRules(ClassInfo::TypePtr newClassPtr, ClassElement classMember)
+    {
+        auto fieldMustBeReadonly = [&](Node fieldNode, Node nameNode) {
+            emitError(loc(fieldNode)) << "field '" << MLIRHelper::getName(nameNode) << "' of @" VALUE_DECORATOR " class '"
+                                      << newClassPtr->name << "' must be readonly";
+            return mlir::failure();
+        };
+
+        if (classMember == SyntaxKind::PropertyDeclaration)
+        {
+            auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+            if (!hasModifier(propertyDeclaration, SyntaxKind::ReadonlyKeyword))
+            {
+                return fieldMustBeReadonly(propertyDeclaration, propertyDeclaration->name);
+            }
+        }
+
+        if (classMember == SyntaxKind::Constructor)
+        {
+            for (auto &parameter : classMember.as<ConstructorDeclaration>()->parameters)
+            {
+                auto isProperty = hasModifier(parameter, SyntaxKind::PublicKeyword) || hasModifier(parameter, SyntaxKind::ProtectedKeyword)
+                                  || hasModifier(parameter, SyntaxKind::PrivateKeyword) || hasModifier(parameter, SyntaxKind::ReadonlyKeyword);
+                if (isProperty && !hasModifier(parameter, SyntaxKind::ReadonlyKeyword))
+                {
+                    return fieldMustBeReadonly(parameter, parameter->name);
+                }
+            }
+        }
+
+        if (classMember == SyntaxKind::SetAccessor)
+        {
+            emitError(loc(classMember)) << "@" VALUE_DECORATOR " class '" << newClassPtr->name << "' cannot have a setter";
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult MLIRGenImpl::mlirGenClassFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
                                                 const GenContext &genContext)
@@ -1829,6 +1933,12 @@ namespace mlirgen
         auto location = loc(classMember);
 
         mlirGenClassProcessClassPropertyByFieldMember(newClassPtr, classMember);
+
+        // the copies of a @value value must not differ: no field it could change, no setter
+        if (newClassPtr->isValue && !isStatic && mlir::failed(mlirGenValueClassMemberRules(newClassPtr, classMember)))
+        {
+            return mlir::failure();
+        }
 
         if (classMember == SyntaxKind::PropertyDeclaration)
         {
@@ -1860,7 +1970,7 @@ namespace mlirgen
         if (classMember == SyntaxKind::Constructor && !isStatic)
         {
             auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
-            if (mlir::failed(mlirGenClassConstructorPublicDataFieldMembers(location, fieldInfos, constructorDeclaration, genContext)))
+            if (mlir::failed(mlirGenClassConstructorPublicDataFieldMembers(location, newClassPtr, fieldInfos, constructorDeclaration, genContext)))
             {
                 return mlir::failure();
             }
@@ -2518,6 +2628,12 @@ genContext);
                 {
                     if (!found && !isConditional || found)
                     {
+                        if (auto valueType = found ? MLIRTypeHelper::getPlainValueForOptionalMember(fieldType, foundField.type) : mlir_ts::ValueType())
+                        {
+                            MLIRTypeHelper::emitPlainValueForOptionalMemberError(location, id, valueType, newInterfacePtr->fullName);
+                            return {emptyFieldInfo, mlir::failure()};
+                        }
+
                         emitError(location)
                             << "field type not matching for " << id << " for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";
@@ -3291,6 +3407,17 @@ genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = newClassPtr->classType;
         funcGenContext.thisClassType = newClassPtr->classType;
+        // `this` of a @value class: in the constructor the slot `new` made, whose fields it assigns
+        // (the variable `this` is that slot: mlirGenFunctionParams); in a method or a getter the value
+        // itself, a copy. A static member's `this` is the class.
+        if (newClassPtr->isValue && !classMethodMemberInfo.isStatic)
+        {
+            auto valueType = getValueTypeOfClass(newClassPtr);
+            funcGenContext.thisType = classMethodMemberInfo.isConstructor
+                ? mlir::Type(mlir_ts::RefType::get(valueType))
+                : mlir::Type(valueType);
+        }
+
         if (classMethodMemberInfo.isConstructor)
         {
             if (classMethodMemberInfo.isStatic && !genContext.allowPartialResolve)

@@ -1042,11 +1042,21 @@ class OwnershipRoutineLogic
         auto loc = op->getLoc();
         auto ptrTy = th.getPtrType();
         auto llvmTupleType = tch.convertType(tupleType);
+        auto captureTupleType = dyn_cast<mlir_ts::TupleType>(tupleType);
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(tupleType)))
         {
             auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType);
             if (!refFieldType && (borrowsContents || !ownsHeapMemory(fieldType)))
+            {
+                continue;
+            }
+
+            // `this` of a @value class's constructor is captured by reference, but its storage is
+            // the slot `new` made in the caller's frame, not a cell: the box borrows it and gives
+            // nothing back for it
+            if (captureTupleType &&
+                MLIRTypeHelper::isValueConstructorThisCapture(captureTupleType.getFields()[index].id, fieldType))
             {
                 continue;
             }
@@ -1106,8 +1116,11 @@ class OwnershipRoutineLogic
         return fields;
     }
 
-    void buildBody(mlir::Type type, mlir::Value slotPtr)
+    void buildBody(mlir::Type typeIn, mlir::Value slotPtr)
     {
+        // a @value value is its storage tuple: released field by field below
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
@@ -1306,8 +1319,11 @@ class OwnershipRoutineLogic
     // duplicate the object's own references to its fields, so retain must not touch them.
     // Only values held *inline* - tuples, optionals, tagged unions - propagate a retain
     // inwards, because copying one really does duplicate every reference it holds.
-    void buildRetainBody(mlir::Type type, mlir::Value slotPtr)
+    void buildRetainBody(mlir::Type typeIn, mlir::Value slotPtr)
     {
+        // a @value value is its storage tuple: retained field by field below
+        auto type = MLIRTypeHelper::stripValueType(typeIn);
+
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 

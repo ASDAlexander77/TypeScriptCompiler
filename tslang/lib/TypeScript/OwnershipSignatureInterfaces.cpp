@@ -252,6 +252,7 @@ namespace own_signature
             }
         };
 
+        type = asStorageTuple(type);
         if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
         {
             fields(tupleType.getFields());
@@ -336,7 +337,7 @@ namespace own_signature
             return;
         }
 
-        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(asStorageTuple(type)))
         {
             fields(tupleType.getFields());
             return;
@@ -372,6 +373,7 @@ namespace own_signature
             }
         };
 
+        type = asStorageTuple(type);
         if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
         {
             fields(tupleType.getFields());
@@ -579,6 +581,7 @@ namespace own_signature
         }
 
         auto tupleFields = [](mlir::Type type) -> std::optional<llvm::ArrayRef<mlir_ts::FieldInfo>> {
+            type = asStorageTuple(type);
             if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
             {
                 return tupleType.getFields();

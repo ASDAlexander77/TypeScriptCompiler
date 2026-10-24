@@ -446,6 +446,16 @@ namespace own_signature
 
                     signalPassFailure();
                 }
+                else if (!lends.empty() && local.record && local.unboxed && !executable &&
+                         (funcOp->hasAttr("export") || funcOp->hasAttr(DLL_EXPORT)))
+                {
+                    // `@record` tells an importer it owns a box; an unboxed record (spec 36) owns nothing,
+                    // and the importer's release of it would free what it borrows
+                    funcOp.emitError("'")
+                        << funcOp.getSymName() << "' returns a tuple that borrows " << describeParams(funcOp, lends)
+                        << " and owns nothing, which -mm=own cannot tell another module yet";
+                    signalPassFailure();
+                }
                 else if (!lends.empty() && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME) != local.record)
                 {
                     // An importer knows the result is a record only from `@record` (spec 32): told a plain
@@ -570,6 +580,7 @@ namespace own_signature
     {
         auto found = -1;
         auto record = false;
+        std::optional<bool> unboxed;
         llvm::SmallVector<int32_t> params;
         for (auto value : returnedValues(funcOp))
         {
@@ -584,11 +595,20 @@ namespace own_signature
                 return {};
             }
 
-            switch (recordParamsOf(value, params))
+            auto tuples = false;
+            switch (recordParamsOf(value, params, &tuples))
             {
             case RecordFlow::Bad:
                 return {};
             case RecordFlow::Record:
+                // a box on one path and a tuple that owns nothing on another: the caller's release of
+                // the one would be wrong for the other
+                if (unboxed && *unboxed != tuples)
+                {
+                    return {};
+                }
+
+                unboxed = tuples;
                 record = true;
                 continue;
             case RecordFlow::None:
@@ -613,7 +633,7 @@ namespace own_signature
         {
             llvm::sort(params);
             params.erase(std::unique(params.begin(), params.end()), params.end());
-            return {params, true};
+            return {params, true, unboxed.value_or(false)};
         }
 
         if (found >= 0)
@@ -806,6 +826,7 @@ namespace own_signature
                     Facts facts;
                     facts.borrows = std::move(result.borrows);
                     facts.record = result.record;
+                    facts.unboxed = result.unboxed;
                     facts.owned = localOwnedParams(entry.second);
                     // what the body takes into something on every path; a parameter it returns on
                     // some paths only is kept too, and released on the others (spec 33)
@@ -889,6 +910,7 @@ namespace own_signature
                 said.record = !said.borrows.empty() &&
                               (entry.second.isDeclaration() ? entry.second->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME)
                                                             : local.record && local.borrows == said.borrows);
+                said.unboxed = said.record && !entry.second.isDeclaration() && local.unboxed;
                 if (factsThroughInterface(entry.second, said))
                 {
                     continue;
@@ -994,6 +1016,7 @@ namespace own_signature
         auto *context = op->getContext();
         op->removeAttr(OWN_RESULT_BORROWS_ATTR_NAME);
         op->removeAttr(OWN_RESULT_RECORD_ATTR_NAME);
+        op->removeAttr(OWN_RESULT_RECORD_UNBOXED_ATTR_NAME);
         op->removeAttr(OWN_PARAMS_ATTR_NAME);
         if (!facts.borrows.empty())
         {
@@ -1001,6 +1024,10 @@ namespace own_signature
             if (facts.record)
             {
                 op->setAttr(OWN_RESULT_RECORD_ATTR_NAME, mlir::UnitAttr::get(context));
+                if (facts.unboxed)
+                {
+                    op->setAttr(OWN_RESULT_RECORD_UNBOXED_ATTR_NAME, mlir::UnitAttr::get(context));
+                }
             }
         }
 

@@ -1301,6 +1301,13 @@ namespace mlirgen
                 return mlir::Type();
             }
 
+            // a @value class is a value of its fields; used as a value (`V.plus`), its name is still
+            // the class (resolveIdentifier), whose statics are as any class's
+            if (classInfo->isValue)
+            {
+                return getValueTypeOfClassIfLaidOut(classInfo);
+            }
+
             return classInfo->classType;
         }
 
@@ -1318,6 +1325,12 @@ namespace mlirgen
             {
                 emitError(location) << "can't find interface: " << name << "\n";
                 return mlir::Type();
+            }
+
+            // a @value interface is a value of its fields, not a reference seen through a vtable
+            if (interfaceInfo->isValue)
+            {
+                return getValueTypeOfInterfaceIfLaidOut(interfaceInfo);
             }
 
             return interfaceInfo->interfaceType;
@@ -1345,12 +1358,22 @@ namespace mlirgen
             auto classInfo = getClassInfoByFullName(fullName);
             if (classInfo)
             {
+                if (classInfo->isValue)
+                {
+                    return getValueTypeOfClassIfLaidOut(classInfo);
+                }
+
                 return classInfo->classType;
             }
 
             auto interfaceInfo = getInterfaceInfoByFullName(fullName);
             if (interfaceInfo)
             {
+                if (interfaceInfo->isValue)
+                {
+                    return getValueTypeOfInterfaceIfLaidOut(interfaceInfo);
+                }
+
                 return interfaceInfo->interfaceType;
             }
         }
@@ -1396,7 +1419,7 @@ namespace mlirgen
             }
         }    
 
-        if (!isEmbededType(name) && !circularTypeAliases.contains(name))
+        if (!isEmbededType(name) && !circularTypeAliases.contains(name) && !valueTypesHoldingThemselves.contains(name))
             emitError(location, "can't find type by name: ") << name;
 
         return mlir::Type();    
@@ -1470,6 +1493,19 @@ namespace mlirgen
         }
 
         auto type = resolveTypeByNameInNamespace(location, name, genContext);
+
+        // as a value, a @value class's name is the class (`V.plus`, `new V()`), as any class's is -
+        // before its fields are laid out too, when it has no type yet
+        if (auto valueClassInfo = getValueClassInfo(type))
+        {
+            type = valueClassInfo->classType;
+        }
+        else if (auto classInfo = !type && getClassesMap().count(name) ? getClassesMap().lookup(name) : ClassInfo::TypePtr();
+                 classInfo && classInfo->isValue && classInfo->classType)
+        {
+            type = classInfo->classType;
+        }
+
         if (type)
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(type))

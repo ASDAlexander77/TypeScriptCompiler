@@ -54,6 +54,7 @@
 #endif
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
@@ -1328,7 +1329,74 @@ class MLIRGenImpl
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
                isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference) ||
-               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference);
+               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference) ||
+               isValueConstructorSlot(reference);
+    }
+
+    // The fields of a @value value are readonly (TypeScript's TS2540): only `this.f = ...` in the class's own
+    // constructor body assigns one - a store into the slot `new` made, which that body has as its `this`
+    // parameter (isValueConstructorSlot). A closure inside the constructor sees the slot through its box
+    // (and its store would go uncounted), a method has a copy of the value, and any other place holds a
+    // value of its own.
+    mlir::LogicalResult checkValueFieldAssignment(mlir::Location location, mlir::Value left)
+    {
+        mlir_ts::ValueType valueType;
+        int64_t position = -1;
+        if (auto loadOp = left.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto castOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+            auto refType = castOp ? dyn_cast<mlir_ts::RefType>(castOp.getIn().getType()) : mlir_ts::RefType();
+            valueType = refType ? dyn_cast<mlir_ts::ValueType>(refType.getElementType()) : mlir_ts::ValueType();
+            if (!valueType || isValueConstructorSlot(castOp.getIn()))
+            {
+                return mlir::success();
+            }
+
+            position = propertyRefOp.getPosition();
+        }
+        else if (auto extractPropertyOp = left.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            auto castOp = extractPropertyOp.getObject().getDefiningOp<mlir_ts::CastOp>();
+            valueType = castOp ? dyn_cast<mlir_ts::ValueType>(castOp.getIn().getType()) : mlir_ts::ValueType();
+            if (!valueType)
+            {
+                return mlir::success();
+            }
+
+            position = extractPropertyOp.getPosition().front();
+        }
+        else
+        {
+            return mlir::success();
+        }
+
+        mlir::StringAttr name;
+        if (auto storageType = dyn_cast<mlir_ts::TupleType>(valueType.getStorageType());
+            storageType && position >= 0 && position < (int64_t)storageType.getFields().size())
+        {
+            name = dyn_cast_or_null<mlir::StringAttr>(storageType.getFields()[position].id);
+        }
+
+        emitError(location) << "cannot assign to '" << (name ? name.getValue() : StringRef("?"))
+                            << "': the fields of a @" VALUE_DECORATOR " type are readonly";
+        return mlir::failure();
+    }
+
+    // `this` of a @value class's constructor: the slot `new` made for the value (a `ref` parameter, seen as
+    // its storage tuple when a field is written). It owns what its fields hold, as an owned local does:
+    // `new` hands the value it loads out of the slot to its receiver as an owned one
+    // (NewValueClassInstance), so `this.node = new Node()` hands the count over and `this.node = n`
+    // takes one. The slot starts zeroed, so there is no old value to give back the first time.
+    bool isValueConstructorSlot(mlir::Value reference)
+    {
+        if (auto castOp = reference.getDefiningOp<mlir_ts::CastOp>())
+        {
+            reference = castOp.getIn();
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && isa<mlir_ts::ValueType>(refType.getElementType()) && isa<mlir::BlockArgument>(reference);
     }
 
     // `s.value` (own spec 23): the payload is owned by the handle's block, as a field by its object
@@ -1960,9 +2028,36 @@ class MLIRGenImpl
             // And a tuple literal built at run time (`const nt = [x, [2, [3, 4]]]`), whose arrays
             // are born with no count: folded, nothing counted them, and `nt[1][1].push(5)` had no
             // reference to change the array through (#486).
+            // A literal of a @value type is the record read out of the literal's slot, made a value by a
+            // cast that lowers to nothing: the record the two literal checks below look for.
+            auto initialRecord = initial;
+            if (auto valueCast = initial ? initial.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+                valueCast && isa<mlir_ts::ValueType>(valueCast.getType()))
+            {
+                initialRecord = valueCast.getIn();
+            }
+
+            auto recordType = MLIRTypeHelper::stripValueType(type);
+
+            // And a @value value read out of a place that can be written again - a local, a parameter,
+            // a field, an element or a global (`const w = v`): its fields are read in place
+            // (GetReferenceFromValue), so folded, `v = new V(9)` changed what `w.x` read. A copy of its
+            // own is what a value is.
+            auto valueReadFromPlace = false;
+            if (isa<mlir_ts::ValueType>(type))
+            {
+                auto read = initial;
+                while (auto castOp = read ? read.getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp())
+                {
+                    read = castOp.getIn();
+                }
+
+                valueReadFromPlace = read && read.getDefiningOp<mlir_ts::LoadOp>();
+            }
+
             MLIRTypeHelper mth(builder.getContext(), compileOptions);
             needsIdentityStorage = mth.hasBoundMethodField(type) || isa<mlir_ts::ConstArrayType>(type)
-                || MLIRTypeHelper::isConstTupleHoldingArray(type)
+                || MLIRTypeHelper::isConstTupleHoldingArray(type) || valueReadFromPlace
                 || ((isa<mlir_ts::ArrayType>(type) || MLIRTypeHelper::isSharedHandleType(type)
                      || ((readsLocalSlot(initial) || viewsLocalSlot(initial)) && mth.ownsHeapMemory(location, type))
                      || (compileOptions.isRefCounted()
@@ -1970,9 +2065,9 @@ class MLIRGenImpl
                              || readsField(viewedValue(initial)) || readsElement(viewedValue(initial))
                              || readsGlobal(viewedValue(initial)))
                          && mth.ownsHeapMemory(location, type))
-                     || (readsLiteralSlot(mth, location, initial) && isa<mlir_ts::TupleType>(type)
+                     || (readsLiteralSlot(mth, location, initialRecord) && isa<mlir_ts::TupleType>(recordType)
                          && mth.ownsHeapMemory(location, type))
-                     || (initial && initial.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(type)
+                     || (initialRecord && initialRecord.getDefiningOp<mlir_ts::CreateTupleOp>() && isa<mlir_ts::TupleType>(recordType)
                          && mth.ownsHeapMemory(location, type)))
                     && !(varClass == VariableType::ConstRef)
                     && !(initial && initial.getDefiningOp<mlir_ts::SafeCastOp>()));
@@ -3650,7 +3745,7 @@ class MLIRGenImpl
                 auto optValue = 
                     isa<mlir_ts::OptionalType>(value.getType())
                         ? value
-                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                        : mlirGenOptionalValueOf(location, value);
                 return ValueOrLogicalResult(optValue); 
             }, 
             [&](mlir::Type trueValueType) { 
@@ -3777,7 +3872,8 @@ class MLIRGenImpl
     bool isInterfaceVTableTypeSlot(const VirtualMethodOrFieldInfo &methodOrField);
     mlir::Value mlirGenInterfaceVTableTypeTag(mlir::Location location, mlir::Type implementerType);
     mlir::LogicalResult mlirGenThrowingMethodStub(mlir::Location location, StringRef name, StringRef stubName,
-                                                  mlir_ts::FunctionType funcType, const GenContext &genContext);
+                                                  mlir_ts::FunctionType funcType, const GenContext &genContext,
+                                                  StringRef message = "method is abstract");
     ValueOrLogicalResult mlirGenNullInterfaceVTable(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
                                                     const GenContext &genContext);
     ValueOrLogicalResult mlirGenNullInterfaceVTableCast(mlir::Location location, mlir::Type type,
@@ -5175,16 +5271,28 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto switchValueEffective = switchValue;
-            auto actualCaseType = mth.stripLiteralType(caseValue.getType());
-            if (switchValue.getType() != actualCaseType)
+            // a case compares a @value value as `===` does: two of them have no identity, and
+            // `case null:` asks whether a `T | null` holds a value
+            mlir::Value condition;
+            if (MLIRTypeHelper::holdsValueType(switchValue.getType()) || MLIRTypeHelper::holdsValueType(caseValue.getType()))
             {
-                CAST(switchValueEffective, location, actualCaseType, switchValue, genContext);
+                auto compared = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsEqualsToken, switchValue, caseValue, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(compared)
+                condition = V(compared);
             }
+            else
+            {
+                auto switchValueEffective = switchValue;
+                auto actualCaseType = mth.stripLiteralType(caseValue.getType());
+                if (switchValue.getType() != actualCaseType)
+                {
+                    CAST(switchValueEffective, location, actualCaseType, switchValue, genContext);
+                }
 
-            auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
-                switchValueEffective, caseValue);
+                condition = builder.create<mlir_ts::LogicalBinaryOp>(
+                    location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                    switchValueEffective, caseValue);
+            }
 
             CAST_A(conditionI1, location, builder.getI1Type(), condition, genContext);
 
@@ -6227,6 +6335,17 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // a value has no vtable, so nothing to ask its class of
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
+        {
+            if (auto classInfo = getClassInfoByFullName(classType.getName().getValue()); classInfo && classInfo->isValue)
+            {
+                emitError(location) << "instanceof can't be used with the @" VALUE_DECORATOR " class '" << classInfo->name
+                                    << "': its values have no type information";
+                return mlir::failure();
+            }
+        }
+
 #ifdef ENABLE_RTTI
         if (auto classType = dyn_cast<mlir_ts::ClassType>(rightType))
         {
@@ -6519,6 +6638,11 @@ class MLIRGenImpl
         if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
         {
             leftExpressionValueBeforeCast = safeCastOp.getValue();
+        }
+
+        if (mlir::failed(checkValueFieldAssignment(location, leftExpressionValueBeforeCast)))
+        {
+            return mlir::failure();
         }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
@@ -8511,6 +8635,12 @@ class MLIRGenImpl
                              mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext,
                              bool finalReceiver = false);
 
+    mlir::Value ValueClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
+                                        mlir::StringRef name, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext);
+
+    mlir::Value valueClassFunctionRef(mlir::Location location, ClassInfo::TypePtr classInfo, const MethodInfo &methodInfo,
+                                      const GenContext &genContext);
+
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
     {
         auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
@@ -8537,6 +8667,62 @@ class MLIRGenImpl
 
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
                                  mlir::Attribute id, mlir::Value argument, const GenContext &genContext);
+
+    // The value a @value value that may be missing (MLIRTypeHelper::getMissingValueType) holds. When it
+    // holds null or undefined the read throws, as a member of a null interface does: through a stub
+    // made as that one's methods are (mlirGenThrowingMethodStub). The check is a branch with no result,
+    // so nothing is merged.
+    ValueOrLogicalResult mlirGenPresentValue(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        auto valueType = MLIRTypeHelper::getMissingValueElement(value.getType());
+        assert(valueType);
+
+        auto nullValue = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto missing = mlirGenBinaryValues(location, SyntaxKind::EqualsEqualsToken, value, nullValue, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(missing)
+
+        auto stubName = concat(valueType.getName().getValue(), ".missing");
+        auto stubType = getFunctionType({getOpaqueType()}, {}, false);
+        if (mlir::failed(mlirGenThrowingMethodStub(location, ".missing", stubName, stubType, genContext,
+                                                   "a @" VALUE_DECORATOR " value is null or undefined")))
+        {
+            return mlir::failure();
+        }
+
+        {
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, V(missing), false);
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+            auto stubRef = builder.create<mlir_ts::SymbolRefOp>(
+                location, stubType, mlir::FlatSymbolRefAttr::get(builder.getContext(), stubName));
+            auto nullThis = builder.create<mlir_ts::CastOp>(location, getOpaqueType(),
+                                                            builder.create<mlir_ts::NullOp>(location, getNullType()));
+            builder.create<mlir_ts::CallIndirectOp>(MLIRHelper::getCallSiteLocation(stubRef, location), stubRef,
+                                                    mlir::ValueRange{nullThis});
+        }
+
+        auto unionValue = value;
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(value.getType()))
+        {
+            unionValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
+        }
+
+        return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, valueType, unionValue));
+    }
+
+    // `value` as an optional of its type (getOptionalType): a @value value is the present value of
+    // the one optional every missing value of its type is
+    mlir::Value mlirGenOptionalValueOf(mlir::Location location, mlir::Value value)
+    {
+        auto optType = getOptionalType(value.getType());
+        if (isa<mlir_ts::ValueType>(value.getType()))
+        {
+            value = builder.create<mlir_ts::CastOp>(location, mlir::cast<mlir_ts::OptionalType>(optType).getElementType(), value);
+        }
+
+        return builder.create<mlir_ts::OptionalValueOp>(location, optType, value);
+    }
 
     // vtableOffset is the declaring interface's slot-block position within the root
     // interface's combined vtable (0 unless fieldInfo was found through an `extends` chain
@@ -9080,6 +9266,12 @@ class MLIRGenImpl
 
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
+
+    ValueOrLogicalResult NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                               NodeArray<Expression> arguments, const GenContext &genContext);
+
+    ValueOrLogicalResult NewValueClassInstance(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                               SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext);
@@ -9879,6 +10071,16 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext);
 
     ValueOrLogicalResult mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext);
+
+    Expression optionalChainObject(Expression expressionAST);
+
+    ValueOrLogicalResult mlirGenOptionalChain(Expression chainAST, Expression questionDotObject, const GenContext &genContext);
+
+    // an expression node, as optionalChainObjects knows it
+    static const void *optionalChainKey(Node node)
+    {
+        return node.operator->();
+    }
 
     ValueOrLogicalResult mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext);
 
@@ -10950,8 +11152,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext);
 
     // TODO: replace usage of this method with getFields method
-    mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverType)
+    mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverTypeIn)
     {
+        auto receiverType = MLIRTypeHelper::stripValueType(receiverTypeIn);
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(receiverType))
         {
             auto index = tupleType.getIndex(fieldName);
@@ -11665,6 +11868,10 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,
                                               SmallVector<mlir::Value> capturedValues, const GenContext &genContext);
 
+    mlir::LogicalResult checkValueConstructorClosures(mlir_ts::FuncOp funcOp);
+
+    mlir::LogicalResult checkValueConstructorThisUses(Node root, StringRef className);
+
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
                                            mlir::Value thisValue, bool addGenericAttrFlag,
                                            const GenContext &genContext);
@@ -12294,10 +12501,13 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassStaticFieldMemberDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext);
 
-    mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+    mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                      SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                                       ConstructorDeclaration constructorDeclaration, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenClassProcessClassPropertyByFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember);
+
+    mlir::LogicalResult mlirGenValueClassMemberRules(ClassInfo::TypePtr newClassPtr, ClassElement classMember);
 
     mlir::LogicalResult mlirGenClassFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
@@ -12773,7 +12983,8 @@ class MLIRGenImpl
             isImport = newClassPtr->isImport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
             isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
     #ifdef ALL_METHODS_VIRTUAL
-            isForceVirtual |= !isConstructor;
+            // a @value class has no vtable: its methods are called directly
+            isForceVirtual |= !isConstructor && !newClassPtr->isValue;
     #endif
             isVirtual = isForceVirtual;
         };
@@ -13171,6 +13382,218 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
+    }
+
+    // The type of a @value interface: its name and its fields as a tuple, in declaration order (the
+    // fields of a @value interface it extends first).
+    mlir_ts::ValueType getValueTypeOfInterface(InterfaceInfo::TypePtr interfaceInfo)
+    {
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        interfaceInfo->getTupleTypeFields(fields, builder.getContext());
+        return mlir_ts::ValueType::get(interfaceInfo->interfaceType.getName(), getTupleType(fields));
+    }
+
+    // A @value interface used as a type, once all its fields are known (and those of the @value
+    // interfaces it extends): a type taken before would keep the fields resolved so far, and a
+    // declaration that took it (`intersect(): Hit | null` of an interface `Hit.thing` refers to) would
+    // disagree with one that took it later. Not known yet, the declaration fails and is retried in
+    // the next discovery pass, as for a @value class (getValueTypeOfClassIfLaidOut).
+    mlir::Type getValueTypeOfInterfaceIfLaidOut(InterfaceInfo::TypePtr interfaceInfo)
+    {
+        llvm::SmallPtrSet<InterfaceInfo *, 4> visited;
+        std::function<bool(InterfaceInfo::TypePtr)> laidOut = [&](InterfaceInfo::TypePtr info) {
+            return !visited.insert(info.get()).second
+                || (info->membersResolved
+                    && llvm::all_of(info->extends, [&](auto &extent) { return laidOut(std::get<1>(extent)); }));
+        };
+
+        if (!laidOut(interfaceInfo))
+        {
+            noteValueLayoutWait(interfaceInfo->fullName, interfaceInfo->name);
+            return mlir::Type();
+        }
+
+        valueLayoutWaits.erase(interfaceInfo->fullName);
+        return getValueTypeOfInterface(interfaceInfo);
+    }
+
+    // The field of a @value type whose type is being resolved, until the result goes out of scope: a
+    // @value type that type needs and that is not laid out yet is one this type waits for
+    // (noteValueLayoutWait). Nothing for a type that is not @value.
+    auto valueLayoutField(bool isValue, StringRef owner, StringRef ownerName, mlir::Location location, StringRef field)
+    {
+        if (isValue)
+        {
+            valueLayoutFrames.push_back({owner.str(), ownerName.str(), field.str(), location});
+        }
+
+        return llvm::make_scope_exit([this, isValue]() {
+            if (isValue)
+            {
+                valueLayoutFrames.pop_back();
+            }
+        });
+    }
+
+    // A @value type is the tuple of its fields, held in place, so it cannot hold itself, directly or
+    // through other @value types (`next: L | null`; `A.b: B | null` and `B.a: A`): it would be
+    // infinitely large. The field being resolved (valueLayoutFrames) needs `waitedFor`, which is not
+    // laid out yet, so its type waits for it, and is retried in the next discovery pass; a type that
+    // waits, through the types it waits for, for itself never is laid out - "can't find type by name"
+    // said so without the reason. An array of it in a field (`next: L[]`), or a function type that
+    // names it, is the same here: the field's type is made of the type being made. An ordinary class
+    // or interface between them (`box: Box`, `Box.l: L | null`) is a reference, which waits for nothing.
+    void noteValueLayoutWait(StringRef waitedFor, StringRef waitedForName)
+    {
+        if (valueLayoutFrames.empty())
+        {
+            return;
+        }
+
+        auto &frame = valueLayoutFrames.back();
+        auto &waits = valueLayoutWaits[frame.owner];
+        if (llvm::none_of(waits, [&](const ValueLayoutWait &wait) { return wait.waitedFor == waitedFor && wait.field == frame.field; }))
+        {
+            waits.push_back({waitedFor.str(), waitedForName.str(), frame.field});
+        }
+
+        // the fields from the one being resolved back to its own type
+        llvm::SmallVector<const ValueLayoutWait *> path;
+        llvm::StringSet<> visited;
+        std::function<bool(StringRef)> reaches = [&](StringRef from) {
+            if (from == frame.owner)
+            {
+                return true;
+            }
+
+            auto it = valueLayoutWaits.find(from);
+            if (!visited.insert(from).second || it == valueLayoutWaits.end())
+            {
+                return false;
+            }
+
+            for (auto &wait : it->second)
+            {
+                path.push_back(&wait);
+                if (reaches(wait.waitedFor))
+                {
+                    return true;
+                }
+
+                path.pop_back();
+            }
+
+            return false;
+        };
+
+        if (!reaches(waitedFor))
+        {
+            return;
+        }
+
+        auto through = frame.field;
+        valueTypesHoldingThemselves.insert(frame.ownerName);
+        valueTypesHoldingThemselves.insert(waitedForName);
+        for (auto *wait : path)
+        {
+            through += ".";
+            through += wait->field;
+            valueTypesHoldingThemselves.insert(wait->waitedForName);
+        }
+
+        // `box: Box<L>`: the specialized generic's type is made from L's, so L cannot hold it
+        if (!frame.generic.empty())
+        {
+            emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' reaches itself through '" << through
+                                      << "' in the type arguments of '" << frame.generic
+                                      << "'; a @" VALUE_DECORATOR " type cannot hold a generic type made from it";
+            return;
+        }
+
+        emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' contains itself through '"
+                                  << through << "'; a value cannot hold itself";
+    }
+
+    // A generic's declaration specialized for a field of a @value type (`Box<K>`'s members), until the
+    // result goes out of scope: its own types are not the field's (resolveGenericTypeInNamespace).
+    auto suspendValueLayoutFrames()
+    {
+        auto outer = std::make_shared<llvm::SmallVector<ValueLayoutFrame>>(std::move(valueLayoutFrames));
+        valueLayoutFrames.clear();
+        return llvm::make_scope_exit([this, outer]() { valueLayoutFrames = std::move(*outer); });
+    }
+
+    // The generic a field of a @value type names (`box: Box<L>`), while its type arguments are
+    // resolved: a @value type they wait for is waited for through it (noteValueLayoutWait).
+    auto valueLayoutGenericArgs(TypeReferenceNode typeReferenceAST)
+    {
+        auto set = !valueLayoutFrames.empty() && valueLayoutFrames.back().generic.empty();
+        if (set)
+        {
+            valueLayoutFrames.back().generic = print(typeReferenceAST);
+        }
+
+        return llvm::make_scope_exit([this, set]() {
+            if (set && !valueLayoutFrames.empty())
+            {
+                valueLayoutFrames.back().generic.clear();
+            }
+        });
+    }
+
+    // The type of a @value class: its name and its instance fields as a tuple, in declaration order
+    // (parameter properties included). It has no vtable field: the class's storage is the tuple.
+    mlir_ts::ValueType getValueTypeOfClass(ClassInfo::TypePtr classInfo)
+    {
+        auto storageType = mlir::cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
+        llvm::SmallVector<mlir_ts::FieldInfo> fields(storageType.getFields().begin(), storageType.getFields().end());
+        return mlir_ts::ValueType::get(classInfo->classType.getName(), getTupleType(fields));
+    }
+
+    // The @value class a value of this type is of; none for anything else (a @value interface too).
+    ClassInfo::TypePtr getValueClassInfo(mlir::Type type)
+    {
+        if (auto valueType = dyn_cast_or_null<mlir_ts::ValueType>(type))
+        {
+            if (auto classInfo = getClassInfoByFullName(valueType.getName().getValue()); classInfo && classInfo->isValue)
+            {
+                return classInfo;
+            }
+        }
+
+        return ClassInfo::TypePtr();
+    }
+
+    // A @value class used as a type, once its fields are known: a type taken before they are would
+    // keep a tuple of none. The fields stay from a discovery pass to the pass after it.
+    mlir::Type getValueTypeOfClassIfLaidOut(ClassInfo::TypePtr classInfo)
+    {
+        // past the storage, or failed after it
+        auto laidOut = [](ProcessingStages stage) {
+            return stage >= ProcessingStages::ProcessedStorageClass
+                || (stage >= ProcessingStages::ErrorInMembers && stage <= ProcessingStages::ErrorInVTable);
+        };
+
+        if (!laidOut(classInfo->processing) && !laidOut(classInfo->processingAtEvaluation))
+        {
+            noteValueLayoutWait(classInfo->fullName, classInfo->name);
+            return mlir::Type();
+        }
+
+        valueLayoutWaits.erase(classInfo->fullName);
+        return getValueTypeOfClass(classInfo);
+    }
+
+    // A @value value seen as its storage tuple: the cast lowers to nothing. Anything else is returned
+    // as it is.
+    mlir::Value valueStorage(mlir::Location location, mlir::Value value)
+    {
+        if (auto valueType = dyn_cast<mlir_ts::ValueType>(value.getType()))
+        {
+            return builder.create<mlir_ts::CastOp>(location, valueType.getStorageType(), value);
+        }
+
+        return value;
     }
 
     mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, int orderWeight, bool declareInterface = true);
@@ -15001,7 +15424,10 @@ class MLIRGenImpl
         return parsePartialStatements(src, emptyContext);
     }
 
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false)
+    // `declarations`: src is a library's declarations (__decls), printed in its source order, so one
+    // may name another declared after it (`interface Hit { ray: Ray }` before `Ray`). Each that fails
+    // is tried again once the others are in, as a module's own statements are.
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false, bool declarations = false)
     {
         Parser parser;
         // .d.ts will mark all variables as external (be careful)
@@ -15018,6 +15444,23 @@ class MLIRGenImpl
             {
                 overwriteLoc = stripMetadata(overwriteLoc);
             }
+        }
+
+        if (declarations)
+        {
+            auto messagesBefore = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+            if (mlir::failed(mlirGen(module->statements, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // all resolved: what the tries before then reported is not an error
+            if (genContext.postponedMessages)
+            {
+                rollbackPostponedErrorMessages(genContext.postponedMessages, messagesBefore);
+            }
+
+            return mlir::success();
         }
 
         for (auto statement : module->statements)
@@ -15192,6 +15635,34 @@ class MLIRGenImpl
     // unwound: every error on the way out follows from the one reported.
     std::string circularTypeAliasUnwinding;
     bool reportingCircularTypeAlias = false;
+
+    // The field of a @value type whose type is being resolved (valueLayoutField), innermost last.
+    struct ValueLayoutFrame
+    {
+        std::string owner;
+        std::string ownerName;
+        std::string field;
+        mlir::Location location;
+        // the generic whose type arguments are being resolved for the field (`Box<L>`), if any
+        std::string generic;
+    };
+    llvm::SmallVector<ValueLayoutFrame> valueLayoutFrames;
+    // A @value type not laid out yet that one of its fields' types needs (noteValueLayoutWait).
+    struct ValueLayoutWait
+    {
+        std::string waitedFor;
+        std::string waitedForName;
+        std::string field;
+    };
+    // what each @value type, by full name, waits for before it can be laid out
+    llvm::StringMap<llvm::SmallVector<ValueLayoutWait>> valueLayoutWaits;
+    // @value types reported as holding themselves, by name: "can't find type" for each mention after
+    // it would only repeat it
+    llvm::StringSet<> valueTypesHoldingThemselves;
+
+    // the object of a `?.` its optional chain has read and tested, while the rest of the chain is made
+    // on it (mlirGenOptionalChain)
+    llvm::DenseMap<const void *, mlir::Value> optionalChainObjects;
 
     // the declaration (no body) each declared function's full name came from, and the module it was
     // generated into - discovery's is thrown away, and a library's __decls is parsed again for the

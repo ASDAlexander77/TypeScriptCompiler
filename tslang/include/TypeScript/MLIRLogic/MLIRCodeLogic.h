@@ -145,10 +145,26 @@ class MLIRCodeLogic
             if (auto nestedRef = GetReferenceFromValue(location, extractPropertyOp.getObject()))
             {
                 return builder.create<mlir_ts::PropertyRefOp>(
-                    location, 
-                    mlir_ts::RefType::get(extractPropertyOp.getType()), 
-                    nestedRef, 
+                    location,
+                    mlir_ts::RefType::get(extractPropertyOp.getType()),
+                    nestedRef,
                     extractPropertyOp.getPosition().front());
+            }
+        }
+
+        // A @value value seen as its storage tuple (MLIRGenImpl::valueStorage) read out of a place
+        // has that place, seen as the tuple's: its fields are read in place, as a tuple's are, which
+        // is what tells a read of a field from a value of its own (readsField, readsLiteralSlot).
+        if (auto castOp = object.getDefiningOp<mlir_ts::CastOp>())
+        {
+            auto valueType = dyn_cast<mlir_ts::ValueType>(castOp.getIn().getType());
+            if (valueType && valueType.getStorageType() == castOp.getType())
+            {
+                auto nestedRef = GetReferenceFromValue(location, castOp.getIn());
+                if (nestedRef && isa<mlir_ts::RefType>(nestedRef.getType()))
+                {
+                    return builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(castOp.getType()), nestedRef);
+                }
             }
         }
 
@@ -261,8 +277,8 @@ class MLIRCodeLogic
             fields.push_back(
                 mlir_ts::FieldInfo{
                     MLIRHelper::TupleFieldName(value->getName(), context),
-                    value->getReadWriteAccess() 
-                        ? mlir_ts::RefType::get(value->getType()) 
+                    value->getCaptureByReference()
+                        ? mlir_ts::RefType::get(value->getType())
                         : value->getType(),
                     false,
                     mlir_ts::AccessLevel::Public

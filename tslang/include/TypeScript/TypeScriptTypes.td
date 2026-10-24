@@ -681,6 +681,38 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   ];
 }
 
+def TypeScript_Value : TypeScript_Type<"Value"> {
+  let mnemonic = "value";
+
+  let summary = "A @value class or interface: a struct of its readonly fields, copied, never shared";
+  let description = [{
+    Syntax:
+
+    ```
+    value-type ::= `value<` symbol-ref-id `,` tuple-type `>`
+    ```
+
+    The declaration's name and its fields as a tuple in declaration order. A value of this type is
+    laid out as the tuple; `ts.Cast` between the two, either way, lowers to nothing. The name is
+    what keeps it apart from a plain tuple or type literal of the same fields.
+
+    Examples:
+
+    ```mlir
+    !ts.value<@Ray, !ts.tuple<{"start",!ts.number},{"dir",!ts.number}>>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$storageType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$storageType), [{
+      return Base::get(storageType.getContext(), name, storageType);
+    }]>
+  ];
+}
+
 def TypeScript_Namespace : TypeScript_Type<"Namespace"> {
   let mnemonic = "namespace";
 
