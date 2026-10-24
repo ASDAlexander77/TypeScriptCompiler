@@ -1921,9 +1921,17 @@ namespace mlirgen
 
         // A literal of a @value type is built as its storage tuple - its fields reordered to the
         // declaration's, as for a type literal - and that tuple is the value. It is never boxed.
+        // Received as one that may be missing (`T | null`), the literal is the T: so is each branch of
+        // `c ? { d: 1 } : null`, which then makes the missing type of T and null.
         if (genContext.receiverType)
         {
-            if (auto valueType = dyn_cast<mlir_ts::ValueType>(mth.stripOptionalType(genContext.receiverType)))
+            auto valueType = dyn_cast<mlir_ts::ValueType>(mth.stripOptionalType(genContext.receiverType));
+            if (!valueType)
+            {
+                valueType = MLIRTypeHelper::getMissingValueElement(genContext.receiverType);
+            }
+
+            if (valueType)
             {
                 GenContext storageGenContext(genContext);
                 storageGenContext.receiverType = valueType.getStorageType();

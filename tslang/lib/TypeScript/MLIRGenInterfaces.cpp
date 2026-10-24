@@ -1364,10 +1364,33 @@ namespace mlirgen
 
         } while (notResolved > 0);
 
+        // a @value interface is laid out in its declaration order, the order its fields are listed in
+        // whichever pass resolved each: `thing: Thing` resolved a pass after `d` (Thing declared
+        // later) would come after it here, and before it in a module that saw Thing first
+        if (newInterfacePtr->isValue)
+        {
+            llvm::SmallVector<mlir::Attribute> declared;
+            for (auto &interfaceMember : interfaceDeclarationAST->members)
+            {
+                if ((SyntaxKind)interfaceMember == SyntaxKind::PropertySignature)
+                {
+                    declared.push_back(TupleFieldName(interfaceMember.as<PropertySignature>()->name, ifaceGenContext));
+                }
+            }
+
+            auto position = [&](const InterfaceFieldInfo &field) {
+                return std::distance(declared.begin(), llvm::find(declared, field.id));
+            };
+            std::stable_sort(newInterfacePtr->fields.begin(), newInterfacePtr->fields.end(),
+                             [&](const InterfaceFieldInfo &a, const InterfaceFieldInfo &b) { return position(a) < position(b); });
+        }
+
         // fix up vtable slot numbers to the canonical methods-then-fields order now that
         // all members are known - see assignCanonicalVirtualIndexes() for why this can't
         // be left to getVirtualTable()'s per-cast assignment alone.
         newInterfacePtr->assignCanonicalVirtualIndexes();
+
+        newInterfacePtr->membersResolved = true;
 
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))

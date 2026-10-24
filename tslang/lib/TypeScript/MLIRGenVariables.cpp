@@ -1330,7 +1330,7 @@ namespace mlirgen
             // a @value interface is a value of its fields, not a reference seen through a vtable
             if (interfaceInfo->isValue)
             {
-                return getValueTypeOfInterface(interfaceInfo);
+                return getValueTypeOfInterfaceIfLaidOut(interfaceInfo);
             }
 
             return interfaceInfo->interfaceType;
@@ -1371,7 +1371,7 @@ namespace mlirgen
             {
                 if (interfaceInfo->isValue)
                 {
-                    return getValueTypeOfInterface(interfaceInfo);
+                    return getValueTypeOfInterfaceIfLaidOut(interfaceInfo);
                 }
 
                 return interfaceInfo->interfaceType;

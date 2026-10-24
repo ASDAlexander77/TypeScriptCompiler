@@ -313,7 +313,11 @@ struct InterfaceInfo
     // `@value`: its values are copied, not shared (see ClassInfo::isValue)
     bool isValue;
 
-    InterfaceInfo() : hasNew(false), isValue(false)
+    // every member resolved: the fields a @value interface's type is made of are all known (see
+    // MLIRGenImpl::getValueTypeOfInterfaceIfLaidOut)
+    bool membersResolved;
+
+    InterfaceInfo() : hasNew(false), isValue(false), membersResolved(false)
     {
     }
 

@@ -13379,6 +13379,28 @@ class MLIRGenImpl
         return mlir_ts::ValueType::get(interfaceInfo->interfaceType.getName(), getTupleType(fields));
     }
 
+    // A @value interface used as a type, once all its fields are known (and those of the @value
+    // interfaces it extends): a type taken before would keep the fields resolved so far, and a
+    // declaration that took it (`intersect(): Hit | null` of an interface `Hit.thing` refers to) would
+    // disagree with one that took it later. Not known yet, the declaration fails and is retried in
+    // the next discovery pass, as for a @value class (getValueTypeOfClassIfLaidOut).
+    mlir::Type getValueTypeOfInterfaceIfLaidOut(InterfaceInfo::TypePtr interfaceInfo)
+    {
+        llvm::SmallPtrSet<InterfaceInfo *, 4> visited;
+        std::function<bool(InterfaceInfo::TypePtr)> laidOut = [&](InterfaceInfo::TypePtr info) {
+            return !visited.insert(info.get()).second
+                || (info->membersResolved
+                    && llvm::all_of(info->extends, [&](auto &extent) { return laidOut(std::get<1>(extent)); }));
+        };
+
+        if (!laidOut(interfaceInfo))
+        {
+            return mlir::Type();
+        }
+
+        return getValueTypeOfInterface(interfaceInfo);
+    }
+
     // The type of a @value class: its name and its instance fields as a tuple, in declaration order
     // (parameter properties included). It has no vtable field: the class's storage is the tuple.
     mlir_ts::ValueType getValueTypeOfClass(ClassInfo::TypePtr classInfo)

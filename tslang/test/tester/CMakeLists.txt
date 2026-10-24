@@ -3137,6 +3137,17 @@ foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-mutual-methods-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
     tslang_add_test(NAME test-jit-value-mutual-methods-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
 endforeach()
+# A @value interface holding an interface whose method returns it, declared before it: the interface
+# and the class implementing it see the @value type with all its fields.
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-iface-cycle-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
+    tslang_add_test(NAME test-jit-value-iface-cycle-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
+endforeach()
+# `c ? { ... } : null` into `T | null` of a @value type: the literal is built as the T
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-ternary-null-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ternary_null.ts")
+    tslang_add_test(NAME test-jit-value-ternary-null-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_ternary_null.ts")
+endforeach()
 # A @value value holding references copies them as a tuple does (rc retains each one): copies out of
 # an array, through a generic and into closures keep their Nodes after the originals are overwritten.
 # A closure captures a @value local's binding, `reduce` works on copies, and a closure in a @value
