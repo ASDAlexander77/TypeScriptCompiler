@@ -13450,8 +13450,6 @@ class MLIRGenImpl
             return;
         }
 
-        valueLayoutWaitsNoted++;
-
         auto &frame = valueLayoutFrames.back();
         auto &waits = valueLayoutWaits[frame.owner];
         if (llvm::none_of(waits, [&](const ValueLayoutWait &wait) { return wait.waitedFor == waitedFor && wait.field == frame.field; }))
@@ -13514,6 +13512,15 @@ class MLIRGenImpl
 
         emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' contains itself through '"
                                   << through << "'; a value cannot hold itself";
+    }
+
+    // A generic's declaration specialized for a field of a @value type (`Box<K>`'s members), until the
+    // result goes out of scope: its own types are not the field's (resolveGenericTypeInNamespace).
+    auto suspendValueLayoutFrames()
+    {
+        auto outer = std::make_shared<llvm::SmallVector<ValueLayoutFrame>>(std::move(valueLayoutFrames));
+        valueLayoutFrames.clear();
+        return llvm::make_scope_exit([this, outer]() { valueLayoutFrames = std::move(*outer); });
     }
 
     // The generic a field of a @value type names (`box: Box<L>`), while its type arguments are
@@ -15640,8 +15647,6 @@ class MLIRGenImpl
         std::string generic;
     };
     llvm::SmallVector<ValueLayoutFrame> valueLayoutFrames;
-    // how many times a field of a @value type waited (noteValueLayoutWait)
-    unsigned valueLayoutWaitsNoted = 0;
     // A @value type not laid out yet that one of its fields' types needs (noteValueLayoutWait).
     struct ValueLayoutWait
     {

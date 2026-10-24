@@ -682,12 +682,14 @@ namespace mlirgen
             return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
         }
 
-        // A field of a @value type naming a generic whose type argument is a @value type not laid out
-        // yet (`box: Box<L>`, `box: Box<K>` with K declared later): the instantiation fails, and the
-        // generic type itself, unspecialized, would become the field's type - for good, as the value's
-        // layout. The field fails instead and is typed again in the next pass (noteValueLayoutWait).
+        // A field of a @value type naming a generic whose instantiation fails - a type argument that is a
+        // @value type not laid out yet (`box: Box<L>`, `box: Box<K>` with K declared later), or not
+        // declared yet, or not at all (`Box<Nope>`): the generic type itself, unspecialized, would
+        // become the field's type - for good, as the value's layout. The field fails instead and is
+        // typed again in the next pass (noteValueLayoutWait); one that never resolves is reported. The
+        // generic's own declaration, specialized, is not the field (suspendValueLayoutFrames).
+        auto inValueLayout = !valueLayoutFrames.empty();
         auto valueLayoutArgs = valueLayoutGenericArgs(typeReferenceAST);
-        auto waitsBefore = valueLayoutWaitsNoted;
 
         if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
         {
@@ -699,7 +701,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return valueLayoutWaitsNoted != waitsBefore ? mlir::Type() : classType;
+            return inValueLayout ? mlir::Type() : classType;
         }
 
         if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
@@ -712,7 +714,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return valueLayoutWaitsNoted != waitsBefore ? mlir::Type() : interfaceType;
+            return inValueLayout ? mlir::Type() : interfaceType;
         }
 
         return mlir::Type();

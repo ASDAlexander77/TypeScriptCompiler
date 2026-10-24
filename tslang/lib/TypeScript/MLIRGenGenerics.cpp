@@ -1205,6 +1205,7 @@ namespace mlirgen
             declarationMode = false;
 
             // create new instance of interface with TypeArguments
+            auto ownLayout = suspendValueLayoutFrames();
             if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
                 return {mlir::failure(), mlir::Type()};
@@ -1287,6 +1288,7 @@ namespace mlirgen
             MLIRValueGuard<bool> declarationModeGuard(declarationMode);
             declarationMode = false;
 
+            auto ownLayout = suspendValueLayoutFrames();
             auto res = std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext));
             count--;
 
@@ -1463,6 +1465,7 @@ namespace mlirgen
                        llvm::dbgs() << "\n";);
 
             // create new instance of interface with TypeArguments
+            auto ownLayout = suspendValueLayoutFrames();
             if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
             {
                 // return mlir::Type();

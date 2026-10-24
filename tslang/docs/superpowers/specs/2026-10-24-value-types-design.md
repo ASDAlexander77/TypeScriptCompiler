@@ -164,8 +164,11 @@ would not know its class.
   and works. A generic one specialized with the type itself (`box: Box<L>`) is not: the specialized
   class's type is made from L's, so it is "@value type 'L' reaches itself through 'box' in the type
   arguments of 'Box<L>'; a @value type cannot hold a generic type made from it". (The unspecialized
-  `Box` was taken in its place before, and the compiler crashed at a literal of L.) A generic of
-  another @value type declared later (`box: Box<K>`) is typed once K is laid out.
+  `Box` was taken in its place before, and the compiler crashed at a literal of L.) The same holds
+  through another @value type (`A.p: Box<B>` with `B.a: A`). A generic of another @value type
+  declared later (`box: Box<K>`) is typed once K is laid out, wherever the generic is declared;
+  while a @value type's field is typed, a failed instantiation is never replaced by the
+  unspecialized generic, so `Box<Nope>` is "can't find type by name: Nope".
 
 ### Missing values
 
