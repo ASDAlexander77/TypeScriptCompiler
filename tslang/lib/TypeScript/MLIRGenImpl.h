@@ -13450,6 +13450,8 @@ class MLIRGenImpl
             return;
         }
 
+        valueLayoutWaitsNoted++;
+
         auto &frame = valueLayoutFrames.back();
         auto &waits = valueLayoutWaits[frame.owner];
         if (llvm::none_of(waits, [&](const ValueLayoutWait &wait) { return wait.waitedFor == waitedFor && wait.field == frame.field; }))
@@ -13501,8 +13503,35 @@ class MLIRGenImpl
             valueTypesHoldingThemselves.insert(wait->waitedForName);
         }
 
+        // `box: Box<L>`: the specialized generic's type is made from L's, so L cannot hold it
+        if (!frame.generic.empty())
+        {
+            emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' reaches itself through '" << through
+                                      << "' in the type arguments of '" << frame.generic
+                                      << "'; a @" VALUE_DECORATOR " type cannot hold a generic type made from it";
+            return;
+        }
+
         emitError(frame.location) << "@" VALUE_DECORATOR " type '" << frame.ownerName << "' contains itself through '"
                                   << through << "'; a value cannot hold itself";
+    }
+
+    // The generic a field of a @value type names (`box: Box<L>`), while its type arguments are
+    // resolved: a @value type they wait for is waited for through it (noteValueLayoutWait).
+    auto valueLayoutGenericArgs(TypeReferenceNode typeReferenceAST)
+    {
+        auto set = !valueLayoutFrames.empty() && valueLayoutFrames.back().generic.empty();
+        if (set)
+        {
+            valueLayoutFrames.back().generic = print(typeReferenceAST);
+        }
+
+        return llvm::make_scope_exit([this, set]() {
+            if (set && !valueLayoutFrames.empty())
+            {
+                valueLayoutFrames.back().generic.clear();
+            }
+        });
     }
 
     // The type of a @value class: its name and its instance fields as a tuple, in declaration order
@@ -15607,8 +15636,12 @@ class MLIRGenImpl
         std::string ownerName;
         std::string field;
         mlir::Location location;
+        // the generic whose type arguments are being resolved for the field (`Box<L>`), if any
+        std::string generic;
     };
     llvm::SmallVector<ValueLayoutFrame> valueLayoutFrames;
+    // how many times a field of a @value type waited (noteValueLayoutWait)
+    unsigned valueLayoutWaitsNoted = 0;
     // A @value type not laid out yet that one of its fields' types needs (noteValueLayoutWait).
     struct ValueLayoutWait
     {

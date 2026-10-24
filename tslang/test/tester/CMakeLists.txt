@@ -3115,6 +3115,8 @@ set(value_error_cases
     "value_self_class|@value type 'N' contains itself through 'next'. a value cannot hold itself"
     "value_self_mutual|@value type 'A' contains itself through 'b.a'. a value cannot hold itself"
     "value_self_array|@value type 'L' contains itself through 'next'. a value cannot hold itself"
+    "value_self_generic|@value type 'L' reaches itself through 'box' in the type arguments of 'Box<L>'. a @value type cannot hold a generic type made from it"
+    "value_self_generic_class|@value type 'L' reaches itself through 'box' in the type arguments of 'Box<L>'. a @value type cannot hold a generic type made from it"
     "value_ctor_this_init|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'"
     "value_ctor_this_init_noctor|'this' of the @value class 'V' is not a value until its constructor returns. read 'this.f'")
 foreach(value_error_case ${value_error_cases})
@@ -3197,6 +3199,12 @@ endforeach()
 foreach(value_mm gc rc none)
     tslang_add_test(NAME test-compile-value-self-through-class-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_self_through_class.ts")
     tslang_add_test(NAME test-jit-value-self-through-class-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_self_through_class.ts")
+endforeach()
+# ...and one holding a generic of another @value type declared after it: typed once that type is laid
+# out, not as the unspecialized generic
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-generic-field-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field.ts")
+    tslang_add_test(NAME test-jit-value-generic-field-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_generic_field.ts")
 endforeach()
 # `c ? { ... } : null` into `T | null` of a @value type: the literal is built as the T
 foreach(value_mm gc rc none own)

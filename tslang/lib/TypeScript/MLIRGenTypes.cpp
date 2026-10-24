@@ -682,6 +682,13 @@ namespace mlirgen
             return expandTypeAlias(location, name, [&]() { return getType(typeNode, genericTypeGenContext); });
         }
 
+        // A field of a @value type naming a generic whose type argument is a @value type not laid out
+        // yet (`box: Box<L>`, `box: Box<K>` with K declared later): the instantiation fails, and the
+        // generic type itself, unspecialized, would become the field's type - for good, as the value's
+        // layout. The field fails instead and is typed again in the next pass (noteValueLayoutWait).
+        auto valueLayoutArgs = valueLayoutGenericArgs(typeReferenceAST);
+        auto waitsBefore = valueLayoutWaitsNoted;
+
         if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
         {
             auto classType = genericClassTypeInfo->classType;
@@ -692,7 +699,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return classType;
+            return valueLayoutWaitsNoted != waitsBefore ? mlir::Type() : classType;
         }
 
         if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
@@ -705,7 +712,7 @@ namespace mlirgen
                 return specType;
             }
 
-            return interfaceType;
+            return valueLayoutWaitsNoted != waitsBefore ? mlir::Type() : interfaceType;
         }
 
         return mlir::Type();
@@ -802,7 +809,7 @@ namespace mlirgen
                     }
 
                     auto argName = MLIRHelper::getName(typeArg.as<TypeReferenceNode>()->typeName);
-                    return circularTypeAliases.contains(argName);
+                    return circularTypeAliases.contains(argName) || valueTypesHoldingThemselves.contains(argName);
                 });
                 if (!argumentIsCircular)
                 {

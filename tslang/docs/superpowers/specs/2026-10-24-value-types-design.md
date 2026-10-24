@@ -161,7 +161,11 @@ would not know its class.
   itself in a field (`next: L[]`) or a function type naming it is the same error: the field's type is
   made from the `ValueType` being made, which names its whole tuple, so it cannot refer to itself.
   An ordinary class or interface between them (`box: Box` with `Box.l: L | null`) is a reference,
-  and works.
+  and works. A generic one specialized with the type itself (`box: Box<L>`) is not: the specialized
+  class's type is made from L's, so it is "@value type 'L' reaches itself through 'box' in the type
+  arguments of 'Box<L>'; a @value type cannot hold a generic type made from it". (The unspecialized
+  `Box` was taken in its place before, and the compiler crashed at a literal of L.) A generic of
+  another @value type declared later (`box: Box<K>`) is typed once K is laid out.
 
 ### Missing values
 
