@@ -3038,6 +3038,33 @@ foreach(final_error_case ${final_error_cases})
                          PROPERTIES PASS_REGULAR_EXPRESSION "${final_error_message}"
                                     FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 endforeach()
+
+# `@value` (docs/superpowers/specs/2026-10-24-value-types-design.md): a class or interface whose
+# values are copied, not shared. Each file in value/ breaks one rule; the test passes when the
+# compiler prints the message.
+set(value_error_cases
+    "value_cpp|class 'V' cannot be both @value and @cpp"
+    "value_abstract|class 'V' cannot be both @value and abstract"
+    "value_final|class 'V' cannot be both @value and @final"
+    "value_extends|@value class 'V' cannot extend 'B'"
+    "extends_value|class 'X' cannot extend 'V': it is @value"
+    "value_implements|@value class 'V' cannot implement an interface"
+    "value_generic|@value class 'V' cannot have type parameters"
+    "value_iface_extends|@value interface 'R' cannot extend 'I': it is not @value")
+foreach(value_error_case ${value_error_cases})
+    string(FIND "${value_error_case}" "|" value_error_sep)
+    string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
+    math(EXPR value_error_sep "${value_error_sep} + 1")
+    string(SUBSTRING "${value_error_case}" ${value_error_sep} -1 value_error_message)
+    add_test(NAME test-compile-value-${value_error_name}
+             COMMAND $<TARGET_FILE:tslang> --emit=obj --no-default-lib -mm=none
+                     "${PROJECT_SOURCE_DIR}/test/tester/value/${value_error_name}.ts"
+                     -o "${CMAKE_CURRENT_BINARY_DIR}/value-${value_error_name}.obj")
+    set_tests_properties(test-compile-value-${value_error_name}
+                         PROPERTIES PASS_REGULAR_EXPRESSION "${value_error_message}"
+                                    FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+endforeach()
+
 # A call on a @final class is direct, and the program runs the same under every model.
 foreach(final_mm gc rc none own)
     tslang_add_test(NAME test-compile-final-dispatch-${final_mm} COMMAND test-runner -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/final/final_dispatch.ts")

@@ -492,6 +492,13 @@ namespace typescript
             newline();
         }
 
+        // an importer copies the values of a @value class, and may not extend it
+        if (classType->isValue)
+        {
+            os << "@" VALUE_DECORATOR;
+            newline();
+        }
+
         // `abstract` is layout-relevant, not just semantic: mlirGenClassNew skips
         // synthesizing the `.new` method for abstract classes, so dropping the
         // modifier makes the reimporting module insert a `.new` vtable slot the
@@ -818,6 +825,13 @@ namespace typescript
         printNamespaceBegin(interfaceType->elementNamespace);
 
         printBeforeDeclaration();
+        // an importer copies the values of a @value interface, and has no vtable to see them by
+        if (interfaceType->isValue)
+        {
+            os << "@" VALUE_DECORATOR;
+            newline();
+        }
+
         os << "interface " << interfaceType->name;
 
         if (interfaceType->extends.size() > 0)

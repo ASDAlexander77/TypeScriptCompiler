@@ -443,6 +443,33 @@ TEST_F(DeclarationPrinterTest, non_final_class_has_no_final_decorator)
     EXPECT_THAT(text, testing::Not(testing::HasSubstr("@final")));
 }
 
+// `@value` decides how an importer stores and passes the type, so the reimported declaration has
+// to keep it.
+TEST_F(DeclarationPrinterTest, value_class_prints_value_decorator)
+{
+    auto ci = makeClass("Vec");
+    ci->isValue = true;
+    setClassFields(ci, {});
+    auto text = printClass(ci);
+    EXPECT_THAT(text, testing::HasSubstr("@value"));
+    EXPECT_THAT(text, testing::HasSubstr("class Vec"));
+}
+
+TEST_F(DeclarationPrinterTest, value_interface_prints_value_decorator)
+{
+    auto ii = makeInterface("Rec");
+    ii->isValue = true;
+    auto text = printInterface(ii);
+    EXPECT_THAT(text, testing::HasSubstr("@value"));
+    EXPECT_THAT(text, testing::HasSubstr("interface Rec"));
+}
+
+TEST_F(DeclarationPrinterTest, plain_interface_has_no_value_decorator)
+{
+    auto text = printInterface(makeInterface("Rec"));
+    EXPECT_THAT(text, testing::Not(testing::HasSubstr("@value")));
+}
+
 TEST_F(DeclarationPrinterTest, abstract_method_prints_abstract_keyword)
 {
     auto ci = makeClass("Shape");

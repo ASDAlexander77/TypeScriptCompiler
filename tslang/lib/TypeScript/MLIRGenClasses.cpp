@@ -84,6 +84,19 @@ namespace mlirgen
         auto isGenericClass = classDeclarationAST->typeParameters.size() > 0;
         if (isGenericClass && genContext.typeParamsWithArgs.size() == 0)
         {
+            // a value is one layout: each instantiation would be another type to copy
+            auto isValueClass = false;
+            iterateDecorators(classDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+                isValueClass = isValueClass || name == VALUE_DECORATOR;
+            });
+            if (isValueClass)
+            {
+                emitError(loc(classDeclarationAST)) << "@" VALUE_DECORATOR " class '"
+                                                    << MLIRHelper::getName(classDeclarationAST->name)
+                                                    << "' cannot have type parameters";
+                return {mlir::failure(), ""};
+            }
+
             return {registerGenericClass(classDeclarationAST, genContext), ""};
         }
 
@@ -100,6 +113,16 @@ namespace mlirgen
             emitError(loc(classDeclarationAST))
                 << "class '" << newClassPtr->name << "' cannot be both @" FINAL_DECORATOR " and "
                 << (newClassPtr->isAbstract ? "abstract" : "@" CPP_VTABLE);
+            return {mlir::failure(), ""};
+        }
+
+        // a value has no vtable, so it cannot be abstract, a C++ binding or @final (nothing extends
+        // a value: saying so twice would suggest it could be)
+        if (newClassPtr->isValue && (newClassPtr->isAbstract || newClassPtr->isCppVTable || newClassPtr->isFinal))
+        {
+            emitError(loc(classDeclarationAST))
+                << "class '" << newClassPtr->name << "' cannot be both @" VALUE_DECORATOR " and "
+                << (newClassPtr->isAbstract ? "abstract" : newClassPtr->isCppVTable ? "@" CPP_VTABLE : "@" FINAL_DECORATOR);
             return {mlir::failure(), ""};
         }
 
@@ -416,6 +439,11 @@ namespace mlirgen
                 if (name == FINAL_DECORATOR)
                 {
                     newClassPtr->isFinal = true;
+                }
+
+                if (name == VALUE_DECORATOR)
+                {
+                    newClassPtr->isValue = true;
                 }
             });
 
@@ -1258,6 +1286,22 @@ namespace mlirgen
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Public});
 
                         auto classInfo = getClassInfoByFullName(baseName);
+                        // a value has no base layout, and nothing extends one: no vtable to override
+                        // through
+                        if (newClassPtr->isValue)
+                        {
+                            emitError(loc(extendingType)) << "@" VALUE_DECORATOR " class '" << newClassPtr->name
+                                                          << "' cannot extend '" << (classInfo ? classInfo->name : baseName) << "'";
+                            return;
+                        }
+
+                        if (classInfo && classInfo->isValue)
+                        {
+                            emitError(loc(extendingType)) << "class '" << newClassPtr->name << "' cannot extend '"
+                                                          << classInfo->name << "': it is @" VALUE_DECORATOR;
+                            return;
+                        }
+
                         // calls on a @final class are direct (ClassMethodAccess): an override
                         // would never run
                         if (classInfo && classInfo->isFinal)
@@ -1298,6 +1342,14 @@ namespace mlirgen
 
         if (heritageClause->token == SyntaxKind::ImplementsKeyword)
         {
+            // a value has no vtable to see it through an interface by
+            if (newClassPtr->isValue)
+            {
+                emitError(loc(heritageClause)) << "@" VALUE_DECORATOR " class '" << newClassPtr->name
+                                               << "' cannot implement an interface";
+                return mlir::failure();
+            }
+
             newClassPtr->hasVirtualTable = true;
 
             auto &interfaceInfos = newClassPtr->implements;

@@ -1120,7 +1120,19 @@ namespace mlirgen
                                                 const GenContext &genContext)
     {
         auto name = getNameWithArguments(interfaceDeclarationAST, genContext);
-        return mlirGenInterfaceInfo(name, declareInterface, genContext);
+        auto newInterfacePtr = mlirGenInterfaceInfo(name, declareInterface, genContext);
+        if (newInterfacePtr)
+        {
+            // `declare interface` too: the declaration is what an importer reads
+            iterateDecorators(interfaceDeclarationAST, genContext, [&](StringRef decoratorName, SmallVector<StringRef> args) {
+                if (decoratorName == VALUE_DECORATOR)
+                {
+                    newInterfacePtr->isValue = true;
+                }
+            });
+        }
+
+        return newInterfacePtr;
     }
 
     InterfaceInfo::TypePtr MLIRGenImpl::mlirGenInterfaceInfo(const std::string &name, bool &declareInterface,
@@ -1180,6 +1192,15 @@ namespace mlirgen
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     if (interfaceInfo)
                     {
+                        // a value has no base layout to widen, and an interface that is not a value
+                        // is seen through a vtable
+                        if (newInterfacePtr->isValue && !interfaceInfo->isValue)
+                        {
+                            emitError(loc(extendsType)) << "@" VALUE_DECORATOR " interface '" << newInterfacePtr->name
+                                                        << "' cannot extend '" << interfaceInfo->name << "': it is not @" VALUE_DECORATOR;
+                            return;
+                        }
+
                         // mlirGen(InterfaceDeclaration) can run more than once for the same
                         // already-declared interface (e.g. re-visited from another module or a
                         // discovery pass) - mlirGenInterfaceAddFieldMember/addInterfaceMethod are

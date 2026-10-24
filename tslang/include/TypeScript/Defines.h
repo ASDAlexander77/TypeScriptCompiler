@@ -325,6 +325,9 @@
 // `@final class C`: no class may extend C, so a call on a value of type C is a direct call to the
 // method C has (docs/superpowers/specs/2026-10-19-final-classes-design.md)
 #define FINAL_DECORATOR "final"
+// `@value class C` / `@value interface R`: a type whose values are copied, not shared - no identity,
+// no vtable, no base (docs/superpowers/specs/2026-10-24-value-types-design.md)
+#define VALUE_DECORATOR "value"
 // On a `ts.ThisVirtualSymbolRef` (a method's) or a `ts.VirtualSymbolRef` (an accessor's): the
 // receiver's class is @final, but defined in another module, so the call still goes through the
 // vtable. The slot holds the method the reference names, which
