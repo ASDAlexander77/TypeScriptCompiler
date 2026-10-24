@@ -1589,6 +1589,17 @@ foreach(final_mm gc rc own)
     tslang_add_test(NAME test-compile-shared-export-import-final-class-${final_mm} COMMAND test-runner -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
     tslang_add_test(NAME test-jit-shared-export-import-final-class-${final_mm} COMMAND test-runner -jit -shared -mm=${final_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_final_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_final_class.ts")
 endforeach()
+# @value across the boundary: the importer knows the class and interfaces from __decls (`Hit`
+# printed before the `Ray` it holds), builds and reads values of them, and gives them back
+foreach(value_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-value-types-${value_mm} COMMAND test-runner -shared -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-value-types-${value_mm} COMMAND test-runner -jit -shared -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+endforeach()
+# ...and an imported @value class is nominal: an object literal of its shape is not one
+add_test(NAME test-compile-shared-import-value-types-structural
+         COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types_structural.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
+set_tests_properties(test-compile-shared-import-value-types-structural PROPERTIES PASS_REGULAR_EXPRESSION "type '.*' cannot be converted to the @value class 'V'"
+                                                                                 FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
 # other models ignore them
 foreach(markers_mm gc rc own)
@@ -4451,7 +4462,8 @@ set(own_error_cases
     "own_err_borrowing_record_const_field|:20:11: error: '[^']*' borrows the result of 'hit' but is used here after it may be released or overwritten"
     "own_err_record_without_lends|:11:1: error: '@record' of 'pairOf' says its result is a borrowing record, but no '@lends' names what it borrows"
     "own_err_record_not_record|:7:1: error: '@record' of 'first' says its result is a record that borrows 'a', but its body returns a borrow of it as it is"
-    "own_err_record_exported_unsaid|:12:1: error: 'pairOf' returns a record that borrows 'a', 'b', which another module can learn only from '@record' beside its '@lends'")
+    "own_err_record_exported_unsaid|:12:1: error: 'pairOf' returns a record that borrows 'a', 'b', which another module can learn only from '@record' beside its '@lends'"
+    "own_err_value_export_borrowing|:13:1: error: 'wrap' returns a tuple that borrows 'n' and owns nothing, which -mm=own cannot tell another module yet")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)

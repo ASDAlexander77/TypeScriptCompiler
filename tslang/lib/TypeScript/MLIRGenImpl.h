@@ -15282,7 +15282,10 @@ class MLIRGenImpl
         return parsePartialStatements(src, emptyContext);
     }
 
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false)
+    // `declarations`: src is a library's declarations (__decls), printed in its source order, so one
+    // may name another declared after it (`interface Hit { ray: Ray }` before `Ray`). Each that fails
+    // is tried again once the others are in, as a module's own statements are.
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false, bool declarations = false)
     {
         Parser parser;
         // .d.ts will mark all variables as external (be careful)
@@ -15299,6 +15302,23 @@ class MLIRGenImpl
             {
                 overwriteLoc = stripMetadata(overwriteLoc);
             }
+        }
+
+        if (declarations)
+        {
+            auto messagesBefore = genContext.postponedMessages ? genContext.postponedMessages->size() : 0;
+            if (mlir::failed(mlirGen(module->statements, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // all resolved: what the tries before then reported is not an error
+            if (genContext.postponedMessages)
+            {
+                rollbackPostponedErrorMessages(genContext.postponedMessages, messagesBefore);
+            }
+
+            return mlir::success();
         }
 
         for (auto statement : module->statements)
