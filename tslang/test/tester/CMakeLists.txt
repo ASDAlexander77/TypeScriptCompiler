@@ -399,6 +399,7 @@ tslang_add_test(NAME test-compile-00-conditional-named-const-release COMMAND tes
 tslang_add_test(NAME test-compile-00-array-length-valid COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-compile-00-const-interface-of-local COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-compile-00-self-assign COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
+tslang_add_test(NAME test-compile-00-fresh-objects-folded COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00fresh_objects_folded.ts")
 tslang_add_test(NAME test-compile-00-string-view-copy COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-compile-00-global-copy-counted COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-compile-00-global-interface-initializer COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
@@ -999,6 +1000,7 @@ tslang_add_test(NAME test-jit-00-conditional-named-const-release COMMAND test-ru
 tslang_add_test(NAME test-jit-00-array-length-valid COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00array_length_valid.ts")
 tslang_add_test(NAME test-jit-00-const-interface-of-local COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00const_interface_of_local.ts")
 tslang_add_test(NAME test-jit-00-self-assign COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00self_assign.ts")
+tslang_add_test(NAME test-jit-00-fresh-objects-folded COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00fresh_objects_folded.ts")
 tslang_add_test(NAME test-jit-00-string-view-copy COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00string_view_copy.ts")
 tslang_add_test(NAME test-jit-00-global-copy-counted COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_copy_counted.ts")
 tslang_add_test(NAME test-jit-00-global-interface-initializer COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00global_interface_initializer.ts")
@@ -3900,6 +3902,14 @@ add_test(NAME test-rc-conditional-named-const-release
          COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
                  "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_named_const_release.ts"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/conditional-named-const-release.cmake")
+
+# A fresh object's field read after another allocation is the value just stored: the optimized IR
+# loads nothing back, under none, rc and own (the allocator is declared as LLVM declares malloc).
+add_test(NAME test-fresh-objects-folded
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/tests/00fresh_objects_folded.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/fresh-objects-folded.cmake")
 
 # A generator body's temporaries are released before the yield that ends the call, where no resume
 # point comes between, and the file runs under own as well.

@@ -138,17 +138,27 @@ class ProcessHeapPass : public mlir::PassWrapper<ProcessHeapPass, ModulePass>
 
         auto *context = funcOp->getContext();
 
-        // an allocation writes only the block it makes (other memory, as GCPass says it of
-        // GC_malloc) and the allocator's state; a release or a resize reads and writes the block it
-        // is given as well
+        // an allocation touches only the allocator's state, as LLVM declares malloc
+        // (`memory(inaccessiblemem: readwrite)`): the block it returns is new, not memory anyone
+        // could read before. Said to write other memory, it clobbered every value the program had
+        // just stored, so a field written into a fresh object was loaded back after the next
+        // allocation instead of reused, and the object could never be deleted. Writing the
+        // allocator's state is also what keeps two equal allocations from merging (GCPass). A
+        // release or a resize reads and writes the block it is given as well.
         auto memoryEffects =
             takesBlock ? LLVM::MemoryEffectsAttr::get(context, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::ModRef,
                                                       LLVM::ModRefInfo::ModRef, LLVM::ModRefInfo::NoModRef,
                                                       LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef)
-                       : LLVM::MemoryEffectsAttr::get(context, LLVM::ModRefInfo::Mod, LLVM::ModRefInfo::NoModRef,
+                       : LLVM::MemoryEffectsAttr::get(context, LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef,
                                                       LLVM::ModRefInfo::ModRef, LLVM::ModRefInfo::NoModRef,
                                                       LLVM::ModRefInfo::NoModRef, LLVM::ModRefInfo::NoModRef);
         funcOp.setMemoryEffectsAttr(memoryEffects);
+
+        // and no other pointer reaches the block, as `noalias` says of malloc's result
+        if (!takesBlock && funcOp.getNumResults() > 0)
+        {
+            funcOp.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(), mlir::UnitAttr::get(context));
+        }
 
         if (takesBlock && funcOp.getNumArguments() > 0)
         {
