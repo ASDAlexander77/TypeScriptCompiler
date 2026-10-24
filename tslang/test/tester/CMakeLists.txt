@@ -1600,6 +1600,17 @@ add_test(NAME test-compile-shared-import-value-types-structural
          COMMAND test-runner -shared -mm=own "${PROJECT_SOURCE_DIR}/test/tester/tests/import_value_types_structural.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_value_types.ts")
 set_tests_properties(test-compile-shared-import-value-types-structural PROPERTIES PASS_REGULAR_EXPRESSION "type '.*' cannot be converted to the @value class 'V'"
                                                                                  FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
+# A forward reference in __decls: an exported interface names one declared after it, and the
+# importer reads each declaration again once the others are in
+foreach(forward_mm gc rc own)
+    tslang_add_test(NAME test-compile-shared-export-import-forward-iface-${forward_mm} COMMAND test-runner -shared -mm=${forward_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_forward_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_forward_iface.ts")
+    tslang_add_test(NAME test-jit-shared-export-import-forward-iface-${forward_mm} COMMAND test-runner -jit -shared -mm=${forward_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/import_forward_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_forward_iface.ts")
+endforeach()
+# ...while a type they name and never declare is still an error
+add_test(NAME test-compile-shared-import-unresolved-iface
+         COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_unresolved_iface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_unresolved_iface.ts")
+set_tests_properties(test-compile-shared-import-unresolved-iface PROPERTIES PASS_REGULAR_EXPRESSION "error: can't find type by name: Hidden"
+                                                                            FAIL_REGULAR_EXPRESSION "Stack dump|Assertion failed")
 # @keeps and @borrows across the boundary: the importer reads them from __decls (-mm=own), and the
 # other models ignore them
 foreach(markers_mm gc rc own)
