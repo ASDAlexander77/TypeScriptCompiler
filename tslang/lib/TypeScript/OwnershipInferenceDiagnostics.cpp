@@ -162,7 +162,7 @@ namespace own_inference
         {
             id = storageType.getId(position);
         }
-        else if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type); tupleType && position < tupleType.size())
+        else if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(asStorageTuple(type)); tupleType && position < tupleType.size())
         {
             id = tupleType.getId(position);
         }

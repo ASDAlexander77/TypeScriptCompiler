@@ -118,6 +118,8 @@ namespace own_inference
         // a handle's retains and releases are rc's, and stay (spec 23.2)
         toErase.remove_if([](mlir::Operation *op) { return touchesHandle(op); });
         placeEdgeReleases();
+        // what owns nothing gives nothing back, wherever the moves put its releases (spec 36)
+        dropUnboxedRecordCounts(toErase);
         for (auto *op : toErase)
         {
             op->erase();
@@ -274,6 +276,13 @@ namespace own_inference
         llvm::DenseSet<mlir::Value> proven;
         for (auto value : ops.candidates)
         {
+            // a tuple that owns nothing has no owner to find: copies of it are free, and what it
+            // borrows bounds every use of it (spec 36)
+            if (unboxedRecordFlow(value) == UnboxedFlow::Unboxed)
+            {
+                continue;
+            }
+
             if (checkValueMoves(value, toErase) && isFresh(value))
             {
                 proven.insert(value);
@@ -329,6 +338,13 @@ namespace own_inference
             if (toErase.contains(op))
             {
                 continue; // decided already: a `let` that borrows a field of a record (checkValueMoves)
+            }
+
+            // a tuple that owns nothing takes nothing (spec 36)
+            if (auto value = retainedValue(op); value && unboxedRecordFlow(value) == UnboxedFlow::Unboxed)
+            {
+                toErase.insert(op);
+                continue;
             }
 
             // a retain of what holds no block takes nothing: a union's number payload made into
@@ -465,7 +481,8 @@ namespace own_inference
         returnedParams.clear();
         getFunction().walk([](mlir::Operation *op) {
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_PARAMS_RELEASED_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME,
-                               OWN_RESULT_RECORD_ATTR_NAME,
+                               OWN_RESULT_RECORD_ATTR_NAME, OWN_RESULT_RECORD_UNBOXED_ATTR_NAME,
+                               OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME, OWN_RECORD_TEMPORARY_ATTR_NAME,
                                OWN_NO_DROPS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME,

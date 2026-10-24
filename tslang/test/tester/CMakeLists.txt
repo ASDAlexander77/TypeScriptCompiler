@@ -3102,7 +3102,9 @@ foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-interface-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
     set(value_interface_x86_twin "${TSLANG_X86_TWIN}")
     tslang_add_test(NAME test-jit-value-interface-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_interface.ts")
-    # own with references inside @value values: Task 6
+    # own rejects two of its lines (spec 36 "Not here"): a literal nested in another holding new
+    # vectors (an owning tuple moved into a tuple's field, #679's limit), and a record that borrows
+    # temporaries converted to an ordinary interface (its box would own what the record borrows)
     if (value_mm STREQUAL "own")
         set_tests_properties(test-compile-value-interface-own test-jit-value-interface-own ${value_interface_x86_twin}
                              PROPERTIES DISABLED TRUE)
@@ -3139,7 +3141,7 @@ foreach(value_mm gc rc none own)
 endforeach()
 # A @value interface holding an interface whose method returns it, declared before it: the interface
 # and the class implementing it see the @value type with all its fields.
-foreach(value_mm gc rc none)
+foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-iface-cycle-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
     tslang_add_test(NAME test-jit-value-iface-cycle-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_iface_cycle.ts")
 endforeach()
@@ -3151,7 +3153,8 @@ endforeach()
 # A @value value holding references copies them as a tuple does (rc retains each one): copies out of
 # an array, through a generic and into closures keep their Nodes after the originals are overwritten.
 # A closure captures a @value local's binding, `reduce` works on copies, and a closure in a @value
-# constructor reads `this`. own with references inside @value values: Task 6.
+# constructor reads `this`. Not under own: most of it copies a value that holds an owned Node and reads
+# the copy after the original's Node is overwritten, which single ownership rejects (spec 36).
 foreach(value_mm gc rc none)
     tslang_add_test(NAME test-compile-value-refs-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
     tslang_add_test(NAME test-jit-value-refs-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
@@ -3774,7 +3777,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
-                 own_tuple_record_values)
+                 own_tuple_record_values own_value_record own_value_loop own_value_temporaries)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3900,6 +3903,16 @@ foreach(borrowing_record_mm rc gc none)
     foreach(borrowing_record_test own_borrowing_record own_borrowing_record_arg)
         tslang_add_test(NAME test-jit-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -jit -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
         tslang_add_test(NAME test-compile-${borrowing_record_mm}-${borrowing_record_test} COMMAND test-runner -mm=${borrowing_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${borrowing_record_test}.ts")
+    endforeach()
+endforeach()
+
+# A tuple that holds borrows and owns nothing - a @value record returned through an interface, held
+# in a local the loop reassigns, a temporary given to a call - under own (spec 36); the same programs
+# under every other model.
+foreach(value_record_mm rc gc none)
+    foreach(value_record_test own_value_record own_value_loop own_value_temporaries)
+        tslang_add_test(NAME test-jit-${value_record_mm}-${value_record_test} COMMAND test-runner -jit -mm=${value_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${value_record_test}.ts")
+        tslang_add_test(NAME test-compile-${value_record_mm}-${value_record_test} COMMAND test-runner -mm=${value_record_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${value_record_test}.ts")
     endforeach()
 endforeach()
 
@@ -4311,7 +4324,7 @@ set(own_error_cases
     "own_err_global_from_field|:12:7: error: the initializer of global 'k' reads a value another owner keeps"
     "own_err_global_kept_typeof|:15:9: error: the value read from 'M[.]w' is kept where its end at an assignment of 'M[.]w' cannot be checked"
     "own_err_record_literal_nested|:8:24: error: an object literal that holds a value it owns is moved only into a local or returned as it is"
-    "own_err_record_literal_let_field|:10:11: error: an object literal that holds a value it owns is moved only into a local or returned as it is"
+    "own_err_record_literal_let_field|:12:5: error: '[^']*' borrows '[^']*' and cannot be stored, returned or captured"
     "own_err_captured_returned|:6:9: error: '[^']*' borrows a captured variable and cannot be stored, returned or captured"
     "own_err_literal_moved_twice|:14:16: error: '[^']*' is used here after its value was moved"
     "own_err_interface_keeps_literal|is a parameter, kept here, but -mm=own cannot make the callers of 'KS.take' give it up"
@@ -4379,6 +4392,12 @@ set(own_error_cases
     "own_err_shared_place_arg|:29:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_two_uses|:32:5: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_shared_place_literal|:31:15: error: '[^']*' borrows a field and cannot be stored, returned or captured"
+    "own_err_value_record_place_dropped|:44:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_value_record_stored|:33:9: error: '[^']*' borrows the result of 'mk' and cannot be stored, returned or captured"
+    "own_err_value_record_let_reassigned|:35:11: error: '[^']*' borrows the result of 'mk' but is used here after it may be released or overwritten"
+    "own_err_value_record_mixed_local|:21:5: error: a value that borrows what it holds and owns nothing [(]a tuple that holds a borrow[)] meets a value that owns a block here"
+    "own_err_value_record_field_written|:20:5: error: '[^']*' borrows the result of 'mk' and cannot be stored, returned or captured"
+    "own_err_value_record_param_field_kept|:8:37: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_shared_place_tuple|:31:39: error: '[^']*' borrows a field and cannot be stored, returned or captured"
     "own_err_shared_literal_borrowed|the initializer of global 'b' takes a second reference"
     "own_err_iface_field_overwritten|:23:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"

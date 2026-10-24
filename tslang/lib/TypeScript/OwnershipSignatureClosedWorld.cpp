@@ -105,7 +105,7 @@ namespace own_signature
             return llvm::any_of(infos, [&](const mlir_ts::FieldInfo &info) { return holdsFunction(info.type, fields, seen); });
         };
 
-        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(type))
+        if (auto tupleType = mlir::dyn_cast<mlir_ts::TupleType>(asStorageTuple(type)))
         {
             return any(tupleType.getFields());
         }

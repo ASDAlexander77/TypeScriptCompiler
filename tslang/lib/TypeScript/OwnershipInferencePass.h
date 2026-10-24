@@ -554,9 +554,11 @@ class OwnershipInferencePass
 
     struct BorrowingRecord
     {
+        // null for an unboxed record (spec 36), whose `reads` of `local` are the record
         mlir_ts::NewOp box;
         mlir_ts::VariableOp local;
         llvm::SmallVector<mlir::Value> interfaces;
+        llvm::SmallVector<mlir::Value> reads;
         llvm::SmallVector<BorrowedField> borrowed;
         RecordWalk walk;
     };
@@ -601,6 +603,30 @@ class OwnershipInferencePass
     // and `this` are the caller's for the whole call; a read out of a place has the record's uses as
     // its own (checkPlaceRead).
     void checkBorrowingRecords();
+
+    // ---- Unboxed records (spec 36) ----
+    //
+    // A tuple that holds borrows and owns nothing (OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME where it is made,
+    // OWN_RESULT_RECORD_UNBOXED_ATTR_NAME on a call that returns one) is a record the way a box is - its
+    // uses bounded by what it borrows, moved into the locals that hold it - but there is nothing to give
+    // back: rc's retains and releases of it, and of the locals that hold only such records (or nothing
+    // at all), are erased, whatever the moves decided.
+    enum class UnboxedFlow
+    {
+        None,    // no unboxed record
+        Unboxed, // unboxed records only, or values that hold no block
+        Mixed    // an unboxed record beside a value that owns a block
+    };
+
+    // What `value` is, through its views, merges and the owning locals that hold it.
+    UnboxedFlow unboxedRecordFlow(mlir::Value value);
+
+    // ...and what an owning local holds: its initializer and every value stored into it.
+    UnboxedFlow unboxedRecordSlotFlow(mlir_ts::VariableOp varOp);
+
+    // Erases the counting of every unboxed record; a local or a merge that holds one beside a value it
+    // owns is an error (its release could not tell them apart).
+    void dropUnboxedRecordCounts(llvm::SetVector<mlir::Operation *> &toErase);
 
     // A call whose result is a borrowing record (OWN_RESULT_RECORD_ATTR_NAME, spec 32): the box is
     // this function's to own - it is fresh, and its own check decides its moves and releases - but

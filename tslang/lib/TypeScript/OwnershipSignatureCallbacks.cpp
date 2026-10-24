@@ -289,6 +289,7 @@ namespace own_signature
     {
         shifted = Facts();
         shifted.record = facts.record;
+        shifted.unboxed = facts.unboxed;
         for (auto [from, to] : {std::make_pair(&facts.owned, &shifted.owned), std::make_pair(&facts.borrows, &shifted.borrows)})
         {
             for (auto index : *from)
@@ -363,6 +364,7 @@ namespace own_signature
             kept.erase(std::unique(kept.begin(), kept.end()), kept.end());
             auto promotable = shiftable && llvm::all_of(seen, [&](const Facts &facts) {
                 return facts.borrows == seen.front().borrows && facts.record == seen.front().record &&
+                       facts.unboxed == seen.front().unboxed &&
                        llvm::none_of(kept, [&](int32_t index) { return llvm::is_contained(facts.borrows, index); });
             });
 

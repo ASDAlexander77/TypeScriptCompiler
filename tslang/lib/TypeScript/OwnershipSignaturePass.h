@@ -399,6 +399,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<int32_t> borrows;
         llvm::SmallVector<int32_t> owned;
         bool record = false;
+        // the record is a tuple that owns nothing (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME)
+        bool unboxed = false;
 
         bool empty() const
         {
@@ -407,7 +409,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
         bool operator==(const Facts &other) const
         {
-            return borrows == other.borrows && owned == other.owned && record == other.record;
+            return borrows == other.borrows && owned == other.owned && record == other.record && unboxed == other.unboxed;
         }
 
         bool operator!=(const Facts &other) const
@@ -769,6 +771,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     {
         llvm::SmallVector<int32_t> borrows;
         bool record = false;
+        bool unboxed = false;
     };
 
     // What the function's result borrows (spec 2.4, 32): the one parameter every heap value it returns
@@ -800,6 +803,8 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<int32_t> params;
         // every borrowed field is a parameter's, `this`'s, a read out of one, or immortal
         bool returnable = true;
+        // a tuple built in a local, not boxed, that owns nothing (classifyUnboxedRecord)
+        bool unboxed = false;
     };
 
     llvm::DenseMap<mlir::Operation *, RecordBox> recordBoxes;
@@ -808,6 +813,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     void giveBorrowingRecordsTheirVTables(mlir::ModuleOp module);
 
     void classifyRecordBox(mlir_ts::NewOp newOp);
+
+    // An object literal of tuple type (a `@value` value, a type literal) that is never boxed and holds
+    // a borrow beside nothing it owns - every field that holds a block borrows it - is an unboxed
+    // borrowing record (spec 36): `{ thing: this, ray: ray, dist: d }` returned as a `@value` Hit. The
+    // local it is built in is marked with the fields it borrows (OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME),
+    // and each read of it is a record the way a box is (recordBoxes).
+    void classifyUnboxedRecord(mlir_ts::VariableOp varOp);
 
     enum class RecordFlow
     {
@@ -818,8 +830,9 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // Whether `value` - through views, merges and the owning locals that hold it - is a borrowing
     // record, and the parameters it borrows: a box made here, or a call's result that is one, whose
-    // arguments are this function's parameters or reads out of them.
-    RecordFlow recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params);
+    // arguments are this function's parameters or reads out of them. `unboxed` says whether the
+    // records are tuples that own nothing (spec 36); boxes and such tuples together are Bad.
+    RecordFlow recordParamsOf(mlir::Value value, llvm::SmallVectorImpl<int32_t> &params, bool *unboxed = nullptr);
 
     // ---- Parameters the callee keeps ----
 

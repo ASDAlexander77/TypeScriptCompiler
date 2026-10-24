@@ -43,6 +43,17 @@ namespace mlir_ts = mlir::typescript;
 // the box's release (its interface's tag, OWN_RECORD_BORROWED_FIELDS_ATTR_NAME) frees only the
 // fields the record owns.
 #define OWN_RESULT_RECORD_ATTR_NAME "__own_result_record"
+// Beside OWN_RESULT_RECORD_ATTR_NAME: the record is unboxed - a tuple value (`@value` or a type
+// literal), not a box - and owns nothing: every field that holds a block borrows it. The caller owns
+// nothing it gets back; the record is bounded by the arguments named as a boxed one is, and its
+// releases, and those of the locals that hold it, give nothing back (spec 36).
+#define OWN_RESULT_RECORD_UNBOXED_ATTR_NAME "__own_result_record_unboxed"
+// On the local an object literal of tuple type is built in, when it is an unboxed borrowing record
+// (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME): the fields it borrows.
+#define OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME "__own_record_unboxed_fields"
+// ...beside it, when the record is a temporary (only given to calls that do not keep it, and read): a
+// fresh value it holds keeps its own owner, the temporary's release, and the record borrows it too.
+#define OWN_RECORD_TEMPORARY_ATTR_NAME "__own_record_temporary"
 // The callee destroys nothing its caller can reach: no overwrite of a place it did not make, no
 // assignment of a global, no call that may.
 #define OWN_NO_DROPS_ATTR_NAME "__own_no_drops"
@@ -176,6 +187,13 @@ inline bool isRecordResult(mlir::Operation *op)
     return op && op->hasAttr(OWN_RESULT_RECORD_ATTR_NAME) && op->hasAttr(OWN_RESULT_BORROWS_ATTR_NAME);
 }
 
+// A result that is an unboxed borrowing record (OWN_RESULT_RECORD_UNBOXED_ATTR_NAME): a tuple that owns
+// nothing, bounded by the arguments it borrows.
+inline bool isUnboxedRecordResult(mlir::Operation *op)
+{
+    return isRecordResult(op) && op->hasAttr(OWN_RESULT_RECORD_UNBOXED_ATTR_NAME);
+}
+
 // The argument a call's result is a plain borrow of, or -1: none, or a borrowing record, which the
 // caller owns (isRecordResult). Kept beside resultBorrowsAll for the plain borrow, which names one.
 inline int resultBorrows(mlir::Operation *op)
@@ -211,6 +229,67 @@ inline bool holdsAsIs(mlir::Type wide, mlir::Type narrow, bool onlyNullable = fa
            (!onlyNullable || llvm::all_of(members, [&](mlir::Type member) {
                 return member == narrow || mlir::isa<mlir_ts::NullType, mlir_ts::UndefinedType>(member);
             }));
+}
+
+// A `@value` type is laid out as its storage tuple, and to these passes it is that tuple (the casts
+// between the two lower to nothing): the tuple for a value type, the type itself for any other.
+inline mlir::Type asStorageTuple(mlir::Type type)
+{
+    if (auto valueType = mlir::dyn_cast_or_null<mlir_ts::ValueType>(type))
+    {
+        return valueType.getStorageType();
+    }
+
+    return type;
+}
+
+// A reference to a `@value` value seen as a reference to its storage tuple, or the other way round:
+// the same storage (`ts.Cast` of `this`, or of a local, before a field is reached).
+inline bool isValueStorageRefCast(mlir::Operation *op)
+{
+    auto castOp = mlir::dyn_cast_or_null<mlir_ts::CastOp>(op);
+    auto in = castOp ? mlir::dyn_cast<mlir_ts::RefType>(castOp.getIn().getType()) : mlir_ts::RefType();
+    auto out = castOp ? mlir::dyn_cast<mlir_ts::RefType>(castOp.getType()) : mlir_ts::RefType();
+    return in && out && in != out && asStorageTuple(in.getElementType()) == asStorageTuple(out.getElementType());
+}
+
+// The local a reference is, seen through a cast of a `@value` local to its storage tuple (or back).
+inline mlir_ts::VariableOp slotVariableOf(mlir::Value ref)
+{
+    if (isValueStorageRefCast(ref.getDefiningOp()))
+    {
+        ref = ref.getDefiningOp()->getOperand(0);
+    }
+
+    return ref.getDefiningOp<mlir_ts::VariableOp>();
+}
+
+// The values stored into a local as a whole: through the local, or through it seen as its storage
+// tuple (a `@value` local).
+inline llvm::SmallVector<mlir::Value> valuesStoredInto(mlir_ts::VariableOp varOp)
+{
+    llvm::SmallVector<mlir::Value> refs{varOp.getResult()};
+    for (auto *user : varOp->getUsers())
+    {
+        if (isValueStorageRefCast(user))
+        {
+            refs.push_back(user->getResult(0));
+        }
+    }
+
+    llvm::SmallVector<mlir::Value> values;
+    for (auto ref : refs)
+    {
+        for (auto *user : ref.getUsers())
+        {
+            if (auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(user); storeOp && storeOp.getReference() == ref)
+            {
+                values.push_back(storeOp.getValue());
+            }
+        }
+    }
+
+    return values;
 }
 
 // An op whose result is the very block its operand holds: a class widened to a union or an
@@ -256,8 +335,15 @@ inline bool isView(mlir::Operation *op)
     auto out = castOp.getType();
     auto isNullableView = (isStringOrArray(in) && holdsAsIs(out, in, false)) ||
                           (isStringOrArray(out) && holdsAsIs(in, out, true));
+    // a `@value` value seen as the tuple it is laid out as, or a tuple seen as the value: the same
+    // tuple (the cast lowers to nothing)
+    auto isValueStorage = [](mlir::Type value, mlir::Type tuple) {
+        auto valueType = mlir::dyn_cast<mlir_ts::ValueType>(value);
+        return valueType && valueType.getStorageType() == tuple;
+    };
 
-    return (keeps(in) && keeps(out)) || (isClosure(in) && isClosure(out)) || isMadeObject() || isNullableView;
+    return (keeps(in) && keeps(out)) || (isClosure(in) && isClosure(out)) || isMadeObject() || isNullableView ||
+           isValueStorage(in, out) || isValueStorage(out, in);
 }
 
 // The block a value is a view of.
@@ -1428,14 +1514,32 @@ inline llvm::ArrayRef<int32_t> recordBorrowedFields(mlir::Operation *op)
     return {};
 }
 
+// The fields the unboxed borrowing record built in `varOp` borrows (OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME);
+// empty for any other local.
+inline llvm::ArrayRef<int32_t> unboxedRecordFields(mlir_ts::VariableOp varOp)
+{
+    if (auto attr = varOp ? varOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME) : nullptr)
+    {
+        return attr.asArrayRef();
+    }
+
+    return {};
+}
+
 // A store into a field of a borrowing record that the record borrows: it takes nothing.
 inline bool isBorrowedRecordFieldStore(mlir::Operation *op)
 {
     auto storeOp = mlir::dyn_cast<mlir_ts::StoreOp>(op);
     auto propertyRefOp = storeOp ? storeOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>() : mlir_ts::PropertyRefOp();
     auto varOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::VariableOp>() : mlir_ts::VariableOp();
+    auto position = propertyRefOp ? static_cast<int32_t>(propertyRefOp.getPosition()) : -1;
+    if (llvm::is_contained(unboxedRecordFields(varOp), position))
+    {
+        return true;
+    }
+
     auto boxOp = varOp ? recordBoxOfLocal(varOp) : mlir_ts::NewOp();
-    return boxOp && llvm::is_contained(recordBorrowedFields(boxOp), static_cast<int32_t>(propertyRefOp.getPosition()));
+    return boxOp && llvm::is_contained(recordBorrowedFields(boxOp), position);
 }
 
 // The tuple an object, a reference or a tuple value of this type stores its fields in; null for
@@ -1460,7 +1564,7 @@ inline mlir_ts::TupleType storageTupleOf(mlir::MLIRContext *context, mlir::Type 
         type = valueRefType.getElementType();
     }
 
-    return mlir::dyn_cast<mlir_ts::TupleType>(type);
+    return mlir::dyn_cast<mlir_ts::TupleType>(asStorageTuple(type));
 }
 
 // (tuple type, field) -> the one function an object of that type holds in that field: every
