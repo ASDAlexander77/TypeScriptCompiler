@@ -325,8 +325,9 @@
 // `@final class C`: no class may extend C, so a call on a value of type C is a direct call to the
 // method C has (docs/superpowers/specs/2026-10-19-final-classes-design.md)
 #define FINAL_DECORATOR "final"
-// On a `ts.ThisVirtualSymbolRef`: the receiver's class is @final, but defined in another module, so
-// the call still goes through the vtable. The slot holds the method the reference names, which
+// On a `ts.ThisVirtualSymbolRef` (a method's) or a `ts.VirtualSymbolRef` (an accessor's): the
+// receiver's class is @final, but defined in another module, so the call still goes through the
+// vtable. The slot holds the method the reference names, which
 // -mm=own calls the way it calls that module's function: its `__own_no_drops` applies.
 #define FINAL_RECEIVER_ATTR_NAME "__final_receiver"
 // the old name of @cpp, an error now: unknown, it would leave the class an ordinary one
