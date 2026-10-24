@@ -3395,13 +3395,14 @@ genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = newClassPtr->classType;
         funcGenContext.thisClassType = newClassPtr->classType;
-        // `this` of a @value class: in the constructor the slot `new` made, whose fields it assigns;
-        // in a method or a getter the value itself, a copy. A static member's `this` is the class.
+        // `this` of a @value class: in the constructor the slot `new` made, whose fields it assigns
+        // (the variable `this` is that slot: mlirGenFunctionParams); in a method or a getter the value
+        // itself, a copy. A static member's `this` is the class.
         if (newClassPtr->isValue && !classMethodMemberInfo.isStatic)
         {
             auto valueType = getValueTypeOfClass(newClassPtr);
             funcGenContext.thisType = classMethodMemberInfo.isConstructor
-                ? mlir::Type(mlir_ts::RefType::get(valueType.getStorageType()))
+                ? mlir::Type(mlir_ts::RefType::get(valueType))
                 : mlir::Type(valueType);
         }
 

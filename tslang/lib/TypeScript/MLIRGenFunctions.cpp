@@ -1431,6 +1431,21 @@ namespace mlirgen
 
             LLVM_DEBUG(llvm::dbgs() << "Location for Param: " << location << "\n");
 
+            // `this` of a @value class's constructor is the slot `new` made for the value: the
+            // variable `this` lives in it, so `this.a = a` writes the value's field, and `this` read as a
+            // value (`f(this)`, `const c = this`) is a copy of it, and has its class's members
+            if (param->getName() == THIS_NAME && index == firstIndex)
+            {
+                auto refType = dyn_cast<mlir_ts::RefType>(param->getType());
+                if (refType && getValueClassInfo(refType.getElementType()))
+                {
+                    auto thisDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, refType.getElementType(), location);
+                    thisDecl->setReadWriteAccess();
+                    DECLARE(thisDecl, arguments[index]);
+                    continue;
+                }
+            }
+
             // alloc all args
             // process optional parameters
             if (param->hasInitValue())

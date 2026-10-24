@@ -3060,6 +3060,9 @@ set(value_error_cases
     "value_setter|@value class 'V' cannot have a setter"
     "value_instanceof|instanceof can't be used with the @value class 'V': its values have no type information"
     "value_to_any|the @value class 'V' cannot be converted to 'any'"
+    "value_from_literal|type '.*' cannot be converted to the @value class 'V'"
+    "value_from_iface|type 'R' cannot be converted to the @value class 'V'"
+    "value_from_class|type 'C' cannot be converted to the @value class 'V'"
     # `.` matches the message's `;`, which a CMake list cannot hold
     "value_identity|a @value type has no identity. compare its fields"
     "value_iface_identity|a @value type has no identity. compare its fields")

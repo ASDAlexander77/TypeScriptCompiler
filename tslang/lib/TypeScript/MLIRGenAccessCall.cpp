@@ -2234,18 +2234,16 @@ namespace mlirgen
     {
         auto valueType = getValueTypeOfClass(classInfo);
         auto storageType = valueType.getStorageType();
-        if (genContext.dummyRun)
-        {
-            return V(builder.create<mlir_ts::UndefOp>(location, valueType));
-        }
 
         // zeroed, as a new object is: a field the constructor does not set reads as nothing, and a
         // store into one has no old value to give back
-        auto slot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(storageType),
-                                                        builder.create<mlir_ts::DefaultOp>(location, storageType),
+        auto zero = builder.create<mlir_ts::CastOp>(location, valueType, builder.create<mlir_ts::DefaultOp>(location, storageType));
+        auto slot = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(valueType), zero,
                                                         builder.getBoolAttr(false), builder.getIndexAttr(0));
 
-        if (classInfo->getHasConstructor())
+        // discovery wants the type only; the value is still a load, not a constant: a static field
+        // initialized with `new V()` is set by the static constructor, not folded (isConstValue)
+        if (!genContext.dummyRun && classInfo->getHasConstructor())
         {
             auto constructorIndex = classInfo->getMethodIndex(CONSTRUCTOR_NAME);
             if (constructorIndex < 0)
@@ -2275,8 +2273,7 @@ namespace mlirgen
             EXIT_IF_FAILED(callResult)
         }
 
-        auto storage = builder.create<mlir_ts::LoadOp>(location, storageType, slot);
-        return V(builder.create<mlir_ts::CastOp>(location, valueType, storage));
+        return V(builder.create<mlir_ts::LoadOp>(location, valueType, slot));
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCall(mlir::Location location, mlir::Value funcRefValue,

@@ -725,6 +725,17 @@ namespace mlirgen
             }
         }
 
+        // ...and only its own values are values of it: a literal, a tuple, a @value interface value or
+        // an object of the same fields is not one (its constructor never ran). With null or undefined
+        // it is `V | null` (the cases below).
+        if (auto destClassInfo = getValueClassInfo(type);
+            destClassInfo && !isa<mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
+        {
+            emitError(location) << "type '" << to_print(valueType) << "' cannot be converted to the @" VALUE_DECORATOR " class '"
+                                << destClassInfo->name << "'";
+            return mlir::failure();
+        }
+
         // A @value type is laid out as its storage tuple. Converting to one is converting to that
         // tuple - a field copy in the target's order - and taking the tuple as the value; converting
         // from one is converting its tuple, which boxes a copy for `any`, `Object` or an ordinary
