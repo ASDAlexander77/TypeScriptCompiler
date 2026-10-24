@@ -1471,6 +1471,14 @@ namespace mlirgen
             {
                 // redefine variable
                 param->setReadWriteAccess();
+                // `this` of a @value class's method is the value, which nothing assigns: a closure
+                // takes a copy of it, not its cell (so a `ref` named `this` in a capture is the
+                // constructor's slot alone)
+                if (param->getName() == THIS_NAME && index == firstIndex && getValueClassInfo(param->getType()))
+                {
+                    param->setCaptureByValue();
+                }
+
                 DECLARE(param, paramValue);
             }
         }
@@ -1895,6 +1903,11 @@ namespace mlirgen
             return mlir::failure();
         }
 
+        if (!funcGenContext.dummyRun && failed(checkValueConstructorClosures(funcOp)))
+        {
+            return mlir::failure();
+        }
+
         if (funcGenContext.dummyRun && funcGenContext.cleanUps)
         {
             funcGenContext.cleanUps->push_back(blockPtr);
@@ -2032,7 +2045,7 @@ namespace mlirgen
             // reference of its own; retaining the cell instead leaves the value with one owner
             // fewer than the releases that will run for it, which is what freed the source array
             // of a generator out from under the generator (§9.50).
-            auto capturedByRef = item.second && item.second->getReadWriteAccess();
+            auto capturedByRef = item.second && item.second->getCaptureByReference();
 
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);
@@ -2077,6 +2090,12 @@ namespace mlirgen
                     paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
                     builder.create<mlir_ts::RetainCellOp>(location, refValue);
                 }
+                else if (MLIRTypeHelper::isValueConstructorThisCapture(builder.getStringAttr(item.first()),
+                                                                       refValue.getType()))
+                {
+                    // `this` of a @value class's constructor, seen in a closure through its box: the
+                    // slot `new` made, which this box borrows as the first one does - not a cell
+                }
                 else if (isCapturedCellSlot(refValue))
                 {
                     // A closure inside a closure, capturing the same variable. There is nothing
@@ -2091,7 +2110,9 @@ namespace mlirgen
                 {
                     // no retain here: what makes a variable's storage a cell is being marked
                     // captured, and nothing was marked. Retaining a stack slot would write a
-                    // count into the frame word in front of it.
+                    // count into the frame word in front of it. `this` of a @value class's
+                    // constructor lands here by design: its storage is the slot `new` made, which
+                    // the box borrows (OwnershipRoutineLogic::releaseCapturedFields skips it).
                     // TODO: review it.
                     // find out if u need to ensure that data is captured and belong to VariableOp or ParamOp with
                     // captured = true
@@ -2110,6 +2131,63 @@ namespace mlirgen
         }
 
         return mlir::success();
+    }
+
+    // A use of a closure holding the slot of a @value constructor's `this` other than calling it
+    // (GetThis/GetMethod) or counting it (Retain/Release); null when there is none. Captured by another
+    // closure is such a use: inside that one it is a field of a box, which could be stored or returned
+    // from there unseen.
+    static mlir::Operation *escapingUseOfValueConstructorClosure(mlir::Value closure)
+    {
+        for (auto *user : closure.getUsers())
+        {
+            if (!isa<mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::RetainOp, mlir_ts::ReleaseOp>(user))
+            {
+                return user;
+            }
+        }
+
+        return nullptr;
+    }
+
+    // A closure that captures `this` of a @value class's constructor holds the address of the slot
+    // `new` made, which dies with `new`'s caller (MLIRTypeHelper::isValueConstructorThisCapture). So
+    // it may only be called, in the function that made it: the constructor, or a closure inside it
+    // that captures `this` itself. Stored, returned, passed on or captured, it could read a dead slot.
+    mlir::LogicalResult MLIRGenImpl::checkValueConstructorClosures(mlir_ts::FuncOp funcOp)
+    {
+        auto result = mlir::success();
+        funcOp.walk([&](mlir_ts::CreateBoundFunctionOp boundFuncOp) {
+            auto captureOp = boundFuncOp.getThisVal().getDefiningOp<mlir_ts::CaptureOp>();
+            auto captureRefType = captureOp ? dyn_cast<mlir_ts::RefType>(captureOp->getResult(0).getType()) : mlir_ts::RefType();
+            auto captureTupleType = captureRefType ? dyn_cast<mlir_ts::TupleType>(captureRefType.getElementType()) : mlir_ts::TupleType();
+            if (!captureTupleType)
+            {
+                return;
+            }
+
+            for (auto &field : captureTupleType.getFields())
+            {
+                if (!MLIRTypeHelper::isValueConstructorThisCapture(field.id, field.type))
+                {
+                    continue;
+                }
+
+                if (auto *use = escapingUseOfValueConstructorClosure(boundFuncOp.getResult()))
+                {
+                    auto valueType = mlir::cast<mlir_ts::RefType>(field.type).getElementType();
+                    auto classInfo = getValueClassInfo(valueType);
+                    auto className = classInfo ? classInfo->name.str() : to_print(valueType);
+                    emitError(use->getLoc()) << "a closure that captures 'this' of the @" VALUE_DECORATOR " class '"
+                                             << className << "' can only be called inside its constructor";
+                    result = mlir::failure();
+                }
+
+                return;
+            }
+        });
+
+        return result;
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,

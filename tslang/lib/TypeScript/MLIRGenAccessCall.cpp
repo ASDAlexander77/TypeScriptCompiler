@@ -2296,7 +2296,17 @@ namespace mlirgen
             EXIT_IF_FAILED(callResult)
         }
 
-        return V(builder.create<mlir_ts::LoadOp>(location, valueType, slot));
+        // The constructor stored into the slot's fields as into an owned local's
+        // (isValueConstructorSlot): a reference in one is counted for the slot, and the slot is left
+        // behind. The value arrives owned, as a new instance does: its receiver takes those counts
+        // over, and where nothing does they are given back at the end of the block (§9.30).
+        auto value = builder.create<mlir_ts::LoadOp>(location, valueType, slot);
+        if (mth.ownsHeapMemory(location, valueType))
+        {
+            value->setAttr(OWNED_RESULT_ATTR_NAME, builder.getUnitAttr());
+        }
+
+        return V(value);
     }
 
     ValueOrLogicalResult MLIRGenImpl::mlirGenCall(mlir::Location location, mlir::Value funcRefValue,

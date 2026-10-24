@@ -616,6 +616,12 @@ namespace mlirgen
             }
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
+            // an assignment as well: a field of a @value value is readonly
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            {
+                return mlir::failure();
+            }
+
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
@@ -641,6 +647,12 @@ namespace mlirgen
         {
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
+            // an assignment as well: a field of a @value value is readonly
+            if (mlir::failed(checkValueFieldAssignment(location, expressionValue)))
+            {
+                return mlir::failure();
+            }
+
             return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
                                                              builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:

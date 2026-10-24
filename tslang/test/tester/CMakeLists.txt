@@ -3071,7 +3071,17 @@ set(value_error_cases
     "value_compare_number|a @value type has no identity. compare its fields"
     "value_optional_member_plain_field|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
     "value_optional_member_literal|field 'f' must be declared 'f\\?: Hit' to implement the optional @value member 'f' of 'J'"
-    "value_null_plain|a @value type has no null. write 'Hit \\| null'")
+    "value_null_plain|a @value type has no null. write 'Hit \\| null'"
+    "value_ctor_closure_escape_global|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_field|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_arg|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_nested_store|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_ctor_closure_escape_nested_return|a closure that captures 'this' of the @value class 'V' can only be called inside its constructor"
+    "value_readonly_nested_ctor|cannot assign to 'node': the fields of a @value type are readonly"
+    "value_readonly_method|cannot assign to 'node': the fields of a @value type are readonly"
+    "value_readonly_outside|cannot assign to 'x': the fields of a @value type are readonly"
+    "value_readonly_outside_iface|cannot assign to 'start': the fields of a @value type are readonly"
+    "value_readonly_incdec|cannot assign to 'x': the fields of a @value type are readonly")
 foreach(value_error_case ${value_error_cases})
     string(FIND "${value_error_case}" "|" value_error_sep)
     string(SUBSTRING "${value_error_case}" 0 ${value_error_sep} value_error_name)
@@ -3121,6 +3131,37 @@ foreach(value_mm gc rc none own)
     tslang_add_test(NAME test-compile-value-missing-read-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
     tslang_add_test(NAME test-jit-value-missing-read-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_missing_read.ts")
 endforeach()
+# Methods of an ordinary class calling each other before all are declared, returning a @value class:
+# discovery's unresolved results are not conversions to report.
+foreach(value_mm gc rc none own)
+    tslang_add_test(NAME test-compile-value-mutual-methods-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
+    tslang_add_test(NAME test-jit-value-mutual-methods-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_mutual_methods.ts")
+endforeach()
+# A @value value holding references copies them as a tuple does (rc retains each one): copies out of
+# an array, through a generic and into closures keep their Nodes after the originals are overwritten.
+# A closure captures a @value local's binding, `reduce` works on copies, and a closure in a @value
+# constructor reads `this`. own with references inside @value values: Task 6.
+foreach(value_mm gc rc none)
+    tslang_add_test(NAME test-compile-value-refs-${value_mm} COMMAND test-runner -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+    tslang_add_test(NAME test-jit-value-refs-${value_mm} COMMAND test-runner -jit -mm=${value_mm} "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+endforeach()
+# ...every retain of it paired with a release on every path (the ownership verifier)
+add_test(NAME test-rc-verify-ownership-value-refs
+         COMMAND $<TARGET_FILE:tslang> --emit=mlir-affine --no-default-lib -mm=rc --verify-ownership
+                 "${PROJECT_SOURCE_DIR}/test/tester/value/value_refs.ts")
+set_tests_properties(test-rc-verify-ownership-value-refs PROPERTIES FAIL_REGULAR_EXPRESSION "error|Stack dump")
+# ...a field of a value in a class's field, read into a const or a literal, is retained as a type
+# literal's is
+add_test(NAME test-value-rc-field-retain
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_rc_field_retain.ts"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-rc-field-retain.cmake")
+# ...and the box of a closure capturing `this` in a @value constructor borrows the slot `new` made
+add_test(NAME test-value-ctor-capture
+         COMMAND ${CMAKE_COMMAND} -DTSLANG=$<TARGET_FILE:tslang>
+                 "-DFILE=${PROJECT_SOURCE_DIR}/test/tester/value/value_ctor_capture.ts"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/value-ctor-capture.cmake")
 
 # A call on a @final class is direct, and the program runs the same under every model.
 foreach(final_mm gc rc none own)

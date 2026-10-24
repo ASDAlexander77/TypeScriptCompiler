@@ -277,8 +277,8 @@ class MLIRCodeLogic
             fields.push_back(
                 mlir_ts::FieldInfo{
                     MLIRHelper::TupleFieldName(value->getName(), context),
-                    value->getReadWriteAccess() 
-                        ? mlir_ts::RefType::get(value->getType()) 
+                    value->getCaptureByReference()
+                        ? mlir_ts::RefType::get(value->getType())
                         : value->getType(),
                     false,
                     mlir_ts::AccessLevel::Public

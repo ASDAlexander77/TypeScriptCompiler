@@ -1042,11 +1042,21 @@ class OwnershipRoutineLogic
         auto loc = op->getLoc();
         auto ptrTy = th.getPtrType();
         auto llvmTupleType = tch.convertType(tupleType);
+        auto captureTupleType = dyn_cast<mlir_ts::TupleType>(tupleType);
 
         for (auto [index, fieldType] : llvm::enumerate(getFieldTypes(tupleType)))
         {
             auto refFieldType = dyn_cast<mlir_ts::RefType>(fieldType);
             if (!refFieldType && (borrowsContents || !ownsHeapMemory(fieldType)))
+            {
+                continue;
+            }
+
+            // `this` of a @value class's constructor is captured by reference, but its storage is
+            // the slot `new` made in the caller's frame, not a cell: the box borrows it and gives
+            // nothing back for it
+            if (captureTupleType &&
+                MLIRTypeHelper::isValueConstructorThisCapture(captureTupleType.getFields()[index].id, fieldType))
             {
                 continue;
             }

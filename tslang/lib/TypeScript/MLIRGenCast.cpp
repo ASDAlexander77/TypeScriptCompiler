@@ -731,6 +731,14 @@ namespace mlirgen
         if (auto destClassInfo = getValueClassInfo(type);
             destClassInfo && !isa<mlir_ts::NullType, mlir_ts::UndefinedType, mlir_ts::OptionalType, mlir_ts::UnionType>(valueType))
         {
+            // Discovery sees results not resolved yet - a method calling one declared after it gives
+            // `void` - and keeps going, as it does for any other cast it cannot make yet. Its IR is
+            // thrown away; the final pass checks the real conversion.
+            if (genContext.dummyRun || genContext.allowPartialResolve)
+            {
+                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+            }
+
             emitError(location) << "type '" << to_print(valueType) << "' cannot be converted to the @" VALUE_DECORATOR " class '"
                                 << destClassInfo->name << "'";
             return mlir::failure();

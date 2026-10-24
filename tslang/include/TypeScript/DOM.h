@@ -30,6 +30,7 @@ class VariableDeclarationDOM
     bool captured;
     bool ignoreCapturing;
     bool _using;
+    bool captureByValue;
     mlir::Value disposeGuard;
     // a generator's local narrowed by a test: a view of the local's own storage, read and cast
     // to this type at each read (addSafeCastStatement)
@@ -39,7 +40,8 @@ class VariableDeclarationDOM
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false),
+        : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false),
+        captureByValue(false), readWrite(false),
         atomic(false), ordering(0), syncscope(StringRef()), volatile_(false),
         nonTemporal(false), invariant(false)
     {
@@ -80,6 +82,19 @@ class VariableDeclarationDOM
     void setReadWriteAccess(bool value = true)
     {
         readWrite = value;
+    }
+
+    // A closure captures this read-write variable by value, not its cell: `this` of a @value class's
+    // method, which nothing assigns and whose value cannot change. A `ref` to a @value type named
+    // `this` in a capture is then only ever the constructor's slot (MLIRTypeHelper::
+    // isValueConstructorThisCapture).
+    bool getCaptureByReference() const
+    {
+        return readWrite && !captureByValue;
+    }
+    void setCaptureByValue(bool value = true)
+    {
+        captureByValue = value;
     }
 
     bool getCaptured() const

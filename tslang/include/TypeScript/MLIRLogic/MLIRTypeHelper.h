@@ -217,6 +217,18 @@ class MLIRTypeHelper
         return type;
     }
 
+    // `this` of a @value class's constructor captured by a closure: a `ref` to the class's value named
+    // `this`. Its storage is the slot `new` made in the caller's frame, not a cell, so a capture box
+    // borrows it: nothing counts it in or out (MLIRGenImpl::mlirGenResolveCapturedVars,
+    // OwnershipRoutineLogic::releaseCapturedFields), and a closure holding it may only be called
+    // inside the constructor (MLIRGenImpl::checkValueConstructorClosures).
+    static bool isValueConstructorThisCapture(mlir::Attribute name, mlir::Type type)
+    {
+        auto nameAttr = dyn_cast_or_null<mlir::StringAttr>(name);
+        auto refType = dyn_cast_or_null<mlir_ts::RefType>(type);
+        return nameAttr && nameAttr.getValue() == THIS_NAME && refType && isa<mlir_ts::ValueType>(refType.getElementType());
+    }
+
     // A @value type has no null pointer. Each way of writing that one may be missing - `T | null`,
     // `T | undefined`, `T | null | undefined`, `v?: T`, `f?: T` - is this one type, an optional of
     // `T | null`: undefined is the empty optional, null the union's null member, a value otherwise.

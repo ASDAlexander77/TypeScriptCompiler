@@ -1328,7 +1328,74 @@ class MLIRGenImpl
         return isOwnedLocalSlot(reference) || isCapturedVariableCell(reference) ||
                isCapturedCellSlot(reference) || isOwnedGlobalSlot(location, reference) ||
                isOwnedFieldSlot(location, reference) || isOwnedElementSlot(location, reference) ||
-               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference);
+               isOwnedInterfaceFieldSlot(location, reference) || isOwnedSharedValueSlot(location, reference) ||
+               isValueConstructorSlot(reference);
+    }
+
+    // The fields of a @value value are readonly (TypeScript's TS2540): only `this.f = ...` in the class's own
+    // constructor body assigns one - a store into the slot `new` made, which that body has as its `this`
+    // parameter (isValueConstructorSlot). A closure inside the constructor sees the slot through its box
+    // (and its store would go uncounted), a method has a copy of the value, and any other place holds a
+    // value of its own.
+    mlir::LogicalResult checkValueFieldAssignment(mlir::Location location, mlir::Value left)
+    {
+        mlir_ts::ValueType valueType;
+        int64_t position = -1;
+        if (auto loadOp = left.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            auto propertyRefOp = loadOp.getReference().getDefiningOp<mlir_ts::PropertyRefOp>();
+            auto castOp = propertyRefOp ? propertyRefOp.getObjectRef().getDefiningOp<mlir_ts::CastOp>() : mlir_ts::CastOp();
+            auto refType = castOp ? dyn_cast<mlir_ts::RefType>(castOp.getIn().getType()) : mlir_ts::RefType();
+            valueType = refType ? dyn_cast<mlir_ts::ValueType>(refType.getElementType()) : mlir_ts::ValueType();
+            if (!valueType || isValueConstructorSlot(castOp.getIn()))
+            {
+                return mlir::success();
+            }
+
+            position = propertyRefOp.getPosition();
+        }
+        else if (auto extractPropertyOp = left.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            auto castOp = extractPropertyOp.getObject().getDefiningOp<mlir_ts::CastOp>();
+            valueType = castOp ? dyn_cast<mlir_ts::ValueType>(castOp.getIn().getType()) : mlir_ts::ValueType();
+            if (!valueType)
+            {
+                return mlir::success();
+            }
+
+            position = extractPropertyOp.getPosition().front();
+        }
+        else
+        {
+            return mlir::success();
+        }
+
+        mlir::StringAttr name;
+        if (auto storageType = dyn_cast<mlir_ts::TupleType>(valueType.getStorageType());
+            storageType && position >= 0 && position < (int64_t)storageType.getFields().size())
+        {
+            name = dyn_cast_or_null<mlir::StringAttr>(storageType.getFields()[position].id);
+        }
+
+        emitError(location) << "cannot assign to '" << (name ? name.getValue() : StringRef("?"))
+                            << "': the fields of a @" VALUE_DECORATOR " type are readonly";
+        return mlir::failure();
+    }
+
+    // `this` of a @value class's constructor: the slot `new` made for the value (a `ref` parameter, seen as
+    // its storage tuple when a field is written). It owns what its fields hold, as an owned local does:
+    // `new` hands the value it loads out of the slot to its receiver as an owned one
+    // (NewValueClassInstance), so `this.node = new Node()` hands the count over and `this.node = n`
+    // takes one. The slot starts zeroed, so there is no old value to give back the first time.
+    bool isValueConstructorSlot(mlir::Value reference)
+    {
+        if (auto castOp = reference.getDefiningOp<mlir_ts::CastOp>())
+        {
+            reference = castOp.getIn();
+        }
+
+        auto refType = dyn_cast<mlir_ts::RefType>(reference.getType());
+        return refType && isa<mlir_ts::ValueType>(refType.getElementType()) && isa<mlir::BlockArgument>(reference);
     }
 
     // `s.value` (own spec 23): the payload is owned by the handle's block, as a field by its object
@@ -6572,6 +6639,11 @@ class MLIRGenImpl
             leftExpressionValueBeforeCast = safeCastOp.getValue();
         }
 
+        if (mlir::failed(checkValueFieldAssignment(location, leftExpressionValueBeforeCast)))
+        {
+            return mlir::failure();
+        }
+
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
@@ -11784,6 +11856,8 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,
                                               SmallVector<mlir::Value> capturedValues, const GenContext &genContext);
+
+    mlir::LogicalResult checkValueConstructorClosures(mlir_ts::FuncOp funcOp);
 
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
                                            mlir::Value thisValue, bool addGenericAttrFlag,
