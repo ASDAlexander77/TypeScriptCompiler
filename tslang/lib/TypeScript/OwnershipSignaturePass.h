@@ -57,11 +57,15 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
 
     // `executable`: the module is built into a program (`--emit=exe`, or the JIT's entry module),
     // whose exports no other module sees (USER decision, spec 31). Unknown is a library.
-    explicit OwnershipSignaturePass(bool executable = false) : executable(executable)
+    // `objectFactsSymbol`: the name of this module's SHARED_LIB_OWN_OBJECT_FACTS char array, or
+    // empty when no other module links its object (the JIT's)
+    explicit OwnershipSignaturePass(bool executable = false, std::string objectFactsSymbol = "")
+        : executable(executable), objectFactsSymbol(std::move(objectFactsSymbol))
     {
     }
 
     bool executable = false;
+    std::string objectFactsSymbol;
 
     // A global is a root (rc 5ai): what its initializer makes moves into it, and nothing gives it
     // back. rc retains a fresh value for its `ts.GlobalResult`, and that retain is the move: it
@@ -141,6 +145,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
         llvm::SmallVector<int32_t, 2> shifts;
         // the name the imported function is exported under
         llvm::StringRef importedName;
+        // an imported function that destroys the old values of these places and nothing else
+        // (SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME): `imported` then does not mean it destroys nothing
+        bool importedOverwrites = false;
+        llvm::SmallVector<std::pair<int64_t, mlir::Type>, 4> importedPlaces;
         llvm::SmallVector<mlir_ts::FuncOp, 2> funcs;
         // the symbols the call names, whether or not it is known: a direct callee, or every
         // member of a virtual slot's family (for the facts a declaration says, declaredFacts)
@@ -539,6 +547,13 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     };
 
     llvm::DenseMap<mlir::Operation *, FieldDrops> fieldDrops;
+
+    // The FieldDrops of the functions --own-facts read from the objects of the modules this one
+    // imports, by name (SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME).
+    llvm::StringMap<FieldDrops> importedFieldDrops;
+
+    // ...and those it says return a value their caller owns (SHARED_LIB_OWN_FRESH_RESULTS_ATTR_NAME)
+    llvm::StringSet<> importedFreshResults;
 
     // The body's own share of a function's FieldDrops: its stores, not its calls.
     FieldDrops fieldDropsInBody(mlir_ts::FuncOp funcOp);
@@ -1004,6 +1019,7 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // under another name and with another value, so it is exported exactly as the marker is, and
     // MLIRGen emits the same under own as under rc. No marker, nothing is exported.
     void exportNoDrops();
+    bool returnsFresh(mlir_ts::FuncOp funcOp);
 
     // Does the body itself destroy something a caller may reach: overwrite a field or an element
     // of a block it did not make, assign a global, remove elements from an array it did not make,

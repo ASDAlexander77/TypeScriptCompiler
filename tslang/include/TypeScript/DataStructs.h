@@ -73,6 +73,9 @@ struct CompileOptions
     std::string importedBorrowFacts;
     // the files they were read from: a JIT cache entry depends on them
     std::vector<std::string> importedBorrowFactsFiles;
+    // The own facts (__tsownfacts_ texts, concatenated) of the objects named by --own-facts: the
+    // modules this one imports, compiled under -mm=own. Empty: none.
+    std::string importedOwnFacts;
     // an import led back to a file still being generated: the modules in the cycle cannot be
     // compiled one by one (the JIT cache then compiles the program as one module)
     bool importCycle = false;

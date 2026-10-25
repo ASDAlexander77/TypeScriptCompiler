@@ -287,6 +287,8 @@ class MLIRGenImpl
 
     void addImportedOwnNoDrops(StringRef factsText);
 
+    void addImportedOwnObjectFacts(StringRef factsText);
+
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext);
 
     mlir::LogicalResult mlirGenImportBindings(ImportClause importClause);
@@ -10283,6 +10285,40 @@ class MLIRGenImpl
         return std::nullopt;
     }
 
+    // A compare of a compile-time constant with a string literal, whose answer is known here: a
+    // boolean literal, which an `if` or `?:` reads to generate the branch taken only
+    // (`__MEMORY_MODEL__ === "gc"`)
+    std::optional<ValueOrLogicalResult> foldLiteralCompare(mlir::Location location, SyntaxKind opCode,
+                                                           mlir::Value leftValue, mlir::Value rightValue)
+    {
+        auto isEquals = opCode == SyntaxKind::EqualsEqualsToken || opCode == SyntaxKind::EqualsEqualsEqualsToken;
+        auto isNotEquals = opCode == SyntaxKind::ExclamationEqualsToken || opCode == SyntaxKind::ExclamationEqualsEqualsToken;
+        if ((!isEquals && !isNotEquals) || !leftValue || !rightValue)
+        {
+            return std::nullopt;
+        }
+
+        // a compile-time constant (__MEMORY_MODEL__, __OS__, __ARCH__) and a string constant
+        auto leftConstant = leftValue.getDefiningOp<mlir_ts::ConstantOp>();
+        auto rightConstant = rightValue.getDefiningOp<mlir_ts::ConstantOp>();
+        if (!leftConstant || !rightConstant ||
+            (!leftConstant->hasAttr(COMPILE_TIME_CONSTANT_ATTR_NAME) &&
+             !rightConstant->hasAttr(COMPILE_TIME_CONSTANT_ATTR_NAME)))
+        {
+            return std::nullopt;
+        }
+
+        auto leftAttr = dyn_cast<mlir::StringAttr>(leftConstant.getValue());
+        auto rightAttr = dyn_cast<mlir::StringAttr>(rightConstant.getValue());
+        if (!leftAttr || !rightAttr)
+        {
+            return std::nullopt;
+        }
+
+        auto equal = leftAttr == rightAttr;
+        return mlirGenBooleanValue(location, isEquals ? equal : !equal);
+    }
+
     ValueOrLogicalResult mlirGenBinaryValues(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
                                              mlir::Value rightExpressionValue, const GenContext &genContext,
                                              bool saveResult = false);
@@ -15546,6 +15582,49 @@ class MLIRGenImpl
         }
 
         return fullPath.str().str();
+    }
+
+    // __OS__: win32, linux, android, darwin, or the target triple's OS name
+    static StringRef targetOSName(const llvm::Triple &triple)
+    {
+        if (triple.isAndroid())
+        {
+            return "android";
+        }
+
+        switch (triple.getOS())
+        {
+        case llvm::Triple::Win32:
+            return "win32";
+        case llvm::Triple::Linux:
+            return "linux";
+        case llvm::Triple::Darwin:
+        case llvm::Triple::MacOSX:
+            return "darwin";
+        default:
+            return llvm::Triple::getOSTypeName(triple.getOS());
+        }
+    }
+
+    // __ARCH__: x64, ia32, arm64, arm, wasm32, or the target triple's architecture name
+    static StringRef targetArchName(const llvm::Triple &triple)
+    {
+        switch (triple.getArch())
+        {
+        case llvm::Triple::x86_64:
+            return "x64";
+        case llvm::Triple::x86:
+            return "ia32";
+        case llvm::Triple::aarch64:
+            return "arm64";
+        case llvm::Triple::arm:
+        case llvm::Triple::thumb:
+            return "arm";
+        case llvm::Triple::wasm32:
+            return "wasm32";
+        default:
+            return llvm::Triple::getArchTypeName(triple.getArch());
+        }
     }
 
     // The OS part of a module's file name for the target (includeFilePath): win32, linux (Android

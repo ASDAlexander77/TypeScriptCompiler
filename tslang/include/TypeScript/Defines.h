@@ -276,6 +276,23 @@
 #define SHARED_LIB_BORROW_FACTS_ATTR_NAME "ts.borrow_facts"
 // a module attribute, so it has to carry the dialect's prefix
 #define SHARED_LIB_OWN_NO_DROPS_ATTR_NAME "ts.own_imported_no_drops"
+// A module built under -mm=own also publishes its own facts as a char array, readable from its
+// object file without relocations (__tsown_ is a pointer to the text, read through the loaded
+// library): `__tsownfacts_<file>_<hash>`, one line per exported function - its name alone when
+// it destroys nothing a caller can reach (__own_no_drops), or its name followed by a tab-separated
+// `<position> <slot type>` per place it may overwrite when that is all it destroys
+// (__own_drop_fields). A program compiled against the module's object reads them with
+// --own-facts=<object>: see docs/superpowers/specs/2026-10-25-own-facts-from-objects-design.md.
+#define SHARED_LIB_OWN_OBJECT_FACTS "__tsownfacts_"
+// [symbol name, text]: set by OwnershipSignaturePass, made into the symbol by the LLVM lowering
+#define SHARED_LIB_OWN_OBJECT_FACTS_ATTR_NAME "ts.own_object_facts"
+// a module attribute: { name -> [[position, slot type]...] } of the functions --own-facts says
+// overwrite only those places
+#define SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME "ts.own_imported_drop_fields"
+// ...and [name...] of the functions it says return a value their caller owns, borrowing no argument:
+// a line's last field is OWN_OBJECT_FACTS_FRESH_RESULT
+#define SHARED_LIB_OWN_FRESH_RESULTS_ATTR_NAME "ts.own_imported_fresh_results"
+#define OWN_OBJECT_FACTS_FRESH_RESULT "fresh"
 // `@nodrops declare function strncmp(...)`: a function defined outside TypeScript, a C function,
 // that destroys nothing a TypeScript caller can reach. -mm=own calls it the way it calls an
 // imported function in SHARED_LIB_OWN_NO_DROPS_ATTR_NAME, so a borrow of a field can be given to
@@ -283,6 +300,15 @@
 // declaration can give it: never on one that may run TypeScript code (it takes a callback) or
 // one re-parsed from a TypeScript library, whose functions may destroy what they are given.
 #define NO_DROPS_DECORATOR "nodrops"
+// The memory model a module is compiled for, a string literal: `if (__MEMORY_MODEL__ === "gc")`
+// generates the branch taken only (MLIRGenImpl::foldLiteralCompare)
+#define MEMORY_MODEL_IDENTIFIER "__MEMORY_MODEL__"
+// ...and the target's OS and architecture, as Node's process.platform and process.arch name them
+#define TARGET_OS_IDENTIFIER "__OS__"
+#define TARGET_ARCH_IDENTIFIER "__ARCH__"
+// The constant op one of them generates: only a compare with it is decided while generating, as
+// other values' literal types (a narrowed field's, `~1`'s) need not be what they hold at run time
+#define COMPILE_TIME_CONSTANT_ATTR_NAME "ts.compile_time_constant"
 #define OWN_DECLARED_NO_DROPS_ATTR_NAME "ts.own_declared_no_drops"
 // `@keeps("p")` and `@borrows("this", "p")`: the facts of a function's body that its callers rely
 // on (OWN_PARAMS_ATTR_NAME, OWN_RESULT_BOUNDED_ATTR_NAME), said in its signature, so every caller

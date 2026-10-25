@@ -70,4 +70,6 @@ add_mlir_dialect_library(MLIRTypeScript
     LINK_LIBS PUBLIC
     ts-new-parser-lib
     MLIRIR
+    # mlir::parseType: the slot types of the own facts read from an object (--own-facts)
+    MLIRAsmParser
     )

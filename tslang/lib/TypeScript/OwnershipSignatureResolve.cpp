@@ -121,11 +121,23 @@ namespace own_signature
     bool OwnershipSignaturePass::addImported(mlir::StringAttr symbol, Callees &callees)
     {
         auto funcOp = functions.lookup(symbol.getValue());
-        if (!funcOp || !funcOp.isDeclaration() ||
-            !(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME) ||
-              (scalarDeclaration(funcOp) && !functionsEscape)))
+        if (!funcOp || !funcOp.isDeclaration())
         {
             return false;
+        }
+
+        if (!(importedNoDrops.contains(symbol.getValue()) || funcOp->hasAttr(OWN_DECLARED_NO_DROPS_ATTR_NAME) ||
+              (scalarDeclaration(funcOp) && !functionsEscape)))
+        {
+            // a function of an imported module that overwrites only these places (--own-facts)
+            auto found = importedFieldDrops.find(symbol.getValue());
+            if (found == importedFieldDrops.end())
+            {
+                return false;
+            }
+
+            callees.importedOverwrites = true;
+            callees.importedPlaces.assign(found->second.places.begin(), found->second.places.end());
         }
 
         callees.imported = true;

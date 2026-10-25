@@ -59,6 +59,7 @@ namespace Dump
 
 CompileOptions prepareOptions();
 void readBorrowFacts(CompileOptions &);
+void readOwnFacts(CompileOptions &);
 std::string getDefaultOutputFileName(enum Action);
 std::string getDefaultExt(enum Action);
 std::string getDefaultLibPath();
@@ -171,6 +172,7 @@ cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript
 cl::opt<std::string> androidndkpath("android-ndk-path", cl::desc("Android NDK path, the directory holding 'toolchains/llvm/prebuilt', or ANDROID_NDK_HOME environmental variable. (used when '-mtriple=<arch>-linux-android<api>')"), cl::value_desc("androidndkpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (used in --emit=exe and --emit=dll)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
+cl::list<std::string> ownFacts{"own-facts", cl::desc("Objects (or static libraries) of the modules this one imports, compiled under -mm=own and linked with it: their ownership facts are trusted for calls into them. (used with -mm=own)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 
 cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
@@ -515,6 +517,7 @@ int main(int argc, char **argv)
     }
 
     readBorrowFacts(compileOptions);
+    readOwnFacts(compileOptions);
 
     // what --jit-native links is the objects the cache keeps
     if (emitAction == Action::RunJIT && jitNative && !compileOptions.jitCache)

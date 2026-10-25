@@ -1664,6 +1664,23 @@ if (WIN32)
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-shared-record.cmake")
 endif()
+# -mm=own across modules compiled into objects of their own: the importer reads what the library's
+# object says its functions destroy (--own-facts, own-facts-objects.cmake)
+if (WIN32)
+    add_test(NAME test-own-facts-objects
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-facts-objects"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-facts-objects.cmake")
+endif()
+# __MEMORY_MODEL__: the branch for another model is not generated (a GC_ call outside gc is an error)
+foreach(model_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${model_mm}-memory-model-constant COMMAND test-runner -jit -mm=${model_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00memory_model_constant.ts")
+    tslang_add_test(NAME test-compile-${model_mm}-memory-model-constant COMMAND test-runner -mm=${model_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00memory_model_constant.ts")
+endforeach()
 # the markers mean nothing to the other models
 foreach(markers_mm gc rc)
     tslang_add_test(NAME test-jit-${markers_mm}-own-generator-locals COMMAND test-runner -jit -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_locals.ts")

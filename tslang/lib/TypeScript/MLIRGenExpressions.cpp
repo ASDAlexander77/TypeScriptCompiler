@@ -951,6 +951,11 @@ namespace mlirgen
             return *folded;
         }
 
+        if (auto folded = foldLiteralCompare(location, opCode, leftExpressionValue, rightExpressionValue))
+        {
+            return *folded;
+        }
+
         auto resultReturnUnions =
             binaryOpLogicForUnions(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
         if (resultReturnUnions.value || resultReturnUnions.failed())
@@ -2350,6 +2355,36 @@ namespace mlirgen
         if (value)
         {
             return value;
+        }
+
+        // the memory model the module is compiled for, as a string literal ("gc", "rc", "own",
+        // "none"): `if (__MEMORY_MODEL__ === "gc")` is decided here, and the branch not taken is
+        // never generated (foldLiteralCompare), so code another model needs - the collector's API,
+        // a reference only gc has to keep - costs this one nothing, not even its facts under own
+        // (a name that starts with `__` arrives escaped, with one more `_`, as TypeScript escapes it)
+        // ...and the target's OS and architecture, named as Node's process.platform and
+        // process.arch name them
+        auto builtinName = name.starts_with("___") ? name.drop_front() : name;
+        std::optional<std::string> constantText;
+        llvm::Triple triple(compileOptions.moduleTargetTriple);
+        if (builtinName == MEMORY_MODEL_IDENTIFIER)
+        {
+            constantText = memoryModelName(compileOptions.memoryModel);
+        }
+        else if (builtinName == TARGET_OS_IDENTIFIER)
+        {
+            constantText = targetOSName(triple);
+        }
+        else if (builtinName == TARGET_ARCH_IDENTIFIER)
+        {
+            constantText = targetArchName(triple);
+        }
+
+        if (constantText)
+        {
+            auto constant = mlirGenStringValue(location, *constantText);
+            V(constant).getDefiningOp()->setAttr(COMPILE_TIME_CONSTANT_ATTR_NAME, builder.getUnitAttr());
+            return constant;
         }
 
         if (MLIRCustomMethods::isInternalFunctionName(compileOptions, name))
