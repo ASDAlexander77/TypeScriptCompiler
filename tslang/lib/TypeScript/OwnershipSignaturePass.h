@@ -108,6 +108,41 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // stored, as the global's own. Such a global stays mortal, and a read of it keeps today's errors.
     void findImmortalGlobals(mlir::ModuleOp module);
 
+    // Keepers (docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): append-only array
+    // globals, whose elements live to the end of the program (OWN_KEEPER_GLOBAL_ATTR_NAME).
+    llvm::StringSet<> keepers;
+    void findKeepers(mlir::ModuleOp module);
+
+    // What a value kept for good - pushed into a keeper, or given to a parameter its callee keeps
+    // so - relies on, and who makes it immortal: nobody (it is already), the callers (a parameter),
+    // or the function that knows how it was made, which marks `root` (and a closure's `box`).
+    enum class KeptKind
+    {
+        Immortal,
+        Param,
+        Mark,
+        Unknown
+    };
+
+    struct Kept
+    {
+        KeptKind kind = KeptKind::Unknown;
+        int32_t param = -1;
+        mlir::Value root;
+        mlir::Value box;
+    };
+
+    Kept classifyKept(mlir::Value value, mlir_ts::FuncOp funcOp);
+
+    // The parameters each function keeps for good (OWN_IMMORTALIZES_ATTR_NAME): a fixpoint over the
+    // keepers' pushes and the calls; then every value kept is made immortal (ts.MakeImmortal).
+    llvm::DenseMap<mlir::Operation *, llvm::SmallVector<int32_t>> immortalizes;
+    void decideKeptForGood(mlir::ModuleOp module);
+    void makeImmortal(const Kept &kept, bool assumed);
+    // a reference to the function that is not a call, or a class vtable's entry: a caller that
+    // would not know to mark what it passes
+    bool takesAddress(mlir_ts::FuncOp funcOp, mlir::ModuleOp module);
+
     void moveIntoGlobals(mlir::ModuleOp module);
 
     void runOnOperation() override;
@@ -166,6 +201,10 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Globals whose address is used other than to load from it: what they hold may change.
     llvm::StringSet<> writtenGlobals;
     llvm::SmallVector<Call> calls;
+
+    // the parameters every callee of a call keeps for good (immortalizes); `disagree` when some do
+    // and some not
+    llvm::SmallVector<int32_t> calleesImmortalize(const Callees &callees, bool &disagree);
 
     // Functions of imported libraries that destroy nothing a caller can reach, by the name they
     // are exported under (SHARED_LIB_OWN_NO_DROPS_ATTR_NAME).

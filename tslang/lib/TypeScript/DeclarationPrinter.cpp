@@ -232,7 +232,7 @@ namespace typescript
     // the receiver of a method, so the importer reads the same argument indices back. `@record` after
     // `@lends`: the importer's only way to know the result is a record it owns (own spec 32).
     void MLIRDeclarationPrinter::printOwnMarkers(ArrayRef<int32_t> keeps, ArrayRef<int32_t> borrows, ArrayRef<int32_t> lends,
-                                                 bool record, bool hasThis, unsigned indent)
+                                                 bool record, bool hasThis, unsigned indent, ArrayRef<int32_t> immortalizes)
     {
         auto printMarker = [&](StringRef name, ArrayRef<int32_t> indices) {
             if (indices.empty())
@@ -262,6 +262,7 @@ namespace typescript
         };
 
         printMarker(KEEPS_DECORATOR, keeps);
+        printMarker(IMMORTALIZES_DECORATOR, immortalizes);
         printMarker(BORROWS_DECORATOR, borrows);
         printMarker(LENDS_DECORATOR, lends);
         if (record && !lends.empty())
@@ -448,7 +449,7 @@ namespace typescript
 
     void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType, StringRef dllName,
                                        ArrayRef<int32_t> ownKeeps, ArrayRef<int32_t> ownBorrows, ArrayRef<int32_t> ownLends,
-                                       bool ownRecord)
+                                       bool ownRecord, ArrayRef<int32_t> ownImmortalizes)
     {
         printNamespaceBegin(elementNamespace);
 
@@ -460,7 +461,7 @@ namespace typescript
             newline();
         }
 
-        printOwnMarkers(ownKeeps, ownBorrows, ownLends, ownRecord, /*hasThis=*/false, 0);
+        printOwnMarkers(ownKeeps, ownBorrows, ownLends, ownRecord, /*hasThis=*/false, 0, ownImmortalizes);
 
         printFunction(
             name,
@@ -731,17 +732,25 @@ namespace typescript
                 newline();
             }
 
-            // every index `@lends` names: MLIRGen refuses one past 63, which the mask cannot hold
+            // every index `@lends` and `@immortalizes` name: MLIRGen refuses one past 63, which the
+            // masks cannot hold
             SmallVector<int32_t> lends;
+            SmallVector<int32_t> immortalizes;
             for (int32_t index = 0; index < 64; ++index)
             {
                 if (method.ownLendsMask & (uint64_t(1) << index))
                 {
                     lends.push_back(index);
                 }
+
+                if (index < 32 && (method.ownImmortalizesMask & (uint32_t(1) << index)))
+                {
+                    immortalizes.push_back(index);
+                }
             }
 
-            printOwnMarkers(method.ownKeeps, method.ownBorrows, lends, method.ownRecord, /*hasThis=*/!method.isStatic, 4);
+            printOwnMarkers(method.ownKeeps, method.ownBorrows, lends, method.ownRecord, /*hasThis=*/!method.isStatic, 4,
+                            immortalizes);
 
             // the slot of a @cpp class's virtual method: without it the importer takes the method
             // for a non-virtual one

@@ -3415,14 +3415,16 @@ class MLIRGenImpl
                 return;
             }
 
-            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR)
+            if (name != KEEPS_DECORATOR && name != BORROWS_DECORATOR && name != LENDS_DECORATOR &&
+                name != IMMORTALIZES_DECORATOR)
             {
                 return;
             }
 
-            auto attrName = name == KEEPS_DECORATOR    ? OWN_DECLARED_KEEPS_ATTR_NAME
-                            : name == BORROWS_DECORATOR ? OWN_DECLARED_BORROWS_ATTR_NAME
-                                                        : OWN_DECLARED_LENDS_ATTR_NAME;
+            auto attrName = name == KEEPS_DECORATOR          ? OWN_DECLARED_KEEPS_ATTR_NAME
+                            : name == BORROWS_DECORATOR       ? OWN_DECLARED_BORROWS_ATTR_NAME
+                            : name == IMMORTALIZES_DECORATOR ? OWN_DECLARED_IMMORTALIZES_ATTR_NAME
+                                                              : OWN_DECLARED_LENDS_ATTR_NAME;
             if (llvm::any_of(attrs, [&](mlir::NamedAttribute &attr) { return attr.getName() == attrName; }))
             {
                 emitError(location) << "'@" << name << "' is given twice";
@@ -13144,6 +13146,23 @@ class MLIRGenImpl
                 }
 
                 methodInfo.ownRecord = funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME);
+
+                methodInfo.ownImmortalizesMask = 0;
+                if (auto immortalizes = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>(OWN_DECLARED_IMMORTALIZES_ATTR_NAME))
+                {
+                    for (auto index : immortalizes.asArrayRef())
+                    {
+                        // the class's declaration is printed from a 32-bit mask
+                        if (index >= 32)
+                        {
+                            emitError(location) << "'@" IMMORTALIZES_DECORATOR "' of '" << funcOp.getSymName()
+                                                << "' names an argument past the 32nd";
+                            return false;
+                        }
+
+                        methodInfo.ownImmortalizesMask |= uint32_t(1) << index;
+                    }
+                }
             }
 
             if (propertyName.size() > 0)
@@ -14732,7 +14751,7 @@ class MLIRGenImpl
         };
         dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType(), dllName,
                  marker(OWN_DECLARED_KEEPS_ATTR_NAME), marker(OWN_DECLARED_BORROWS_ATTR_NAME), marker(OWN_DECLARED_LENDS_ATTR_NAME),
-                 funcOp && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME));
+                 funcOp && funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME), marker(OWN_DECLARED_IMMORTALIZES_ATTR_NAME));
 
         declExports << ss.str().str();
     }

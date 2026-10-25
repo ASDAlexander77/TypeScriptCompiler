@@ -77,7 +77,9 @@ namespace own_inference
     {
         auto addressOfOp = loadOp.getReference().getDefiningOp<mlir_ts::AddressOfOp>();
         auto result = loadOp.getResult();
-        return addressOfOp && !addressOfOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) && ownsHeap(result) && !isHandle(result);
+        // a keeper is never given another array, only appended to (OWN_KEEPER_GLOBAL_ATTR_NAME)
+        return addressOfOp && !addressOfOp->hasAttr(OWN_IMMORTAL_GLOBAL_ATTR_NAME) &&
+               !addressOfOp->hasAttr(OWN_KEEPER_GLOBAL_ATTR_NAME) && ownsHeap(result) && !isHandle(result);
     }
 
     void OwnershipInferencePass::checkGlobalRead(mlir_ts::LoadOp read)

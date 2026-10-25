@@ -1288,7 +1288,8 @@ namespace mlirgen
             if (auto globalOp = theModule.lookupSymbol<mlir_ts::GlobalOp>(globalName))
             {
                 for (auto *name : {OWN_DECLARED_KEEPS_ATTR_NAME, OWN_DECLARED_BORROWS_ATTR_NAME, OWN_DECLARED_LENDS_ATTR_NAME,
-                                   OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_PARAM_NAMES_ATTR_NAME})
+                                   OWN_DECLARED_RECORD_ATTR_NAME, OWN_DECLARED_IMMORTALIZES_ATTR_NAME,
+                                   OWN_DECLARED_PARAM_NAMES_ATTR_NAME})
                 {
                     if (auto attr = declared->getAttr(name))
                     {
