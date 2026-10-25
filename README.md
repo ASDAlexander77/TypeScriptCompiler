@@ -42,6 +42,7 @@ It is a good place to see how TypeScript code drives a native C++ framework: the
   - [As WebAssembly](#compiling-as-wasm)
 - [C bindings with tsbindgen](#c-bindings-with-tsbindgen)
 - [Memory models](#memory-models)
+  - [`-mm=own`](#-mmown) ([guide](docs/own-memory-model.md))
 - [Building from source](#build)
   - [For Android](#build-for-android)
 - [Community](#chat-room)
@@ -49,7 +50,7 @@ It is a good place to see how TypeScript code drives a native C++ framework: the
 
 ## What's new
 
-- New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](#memory-models)
+- New memory model **`-mm=own`**: single ownership inferred at compile time, like Rust's borrow checker. There is no collector and no reference counting, and a program whose ownership cannot be proven is a compile error. Shared ownership is opt-in with `Shared<T>`. See [Memory models](#memory-models) and the [`-mm=own` guide](docs/own-memory-model.md)
 - **Android** targets (`arm64-v8a`, `armeabi-v7a`, `x86_64`, API 29+): executables and shared libraries linked through the Android NDK. The release zip carries the collector, async runtime and default library for all three ABIs. See [Compile for Android](#compile-for-android)
 - Implemented `try/catch` exception handling in the **JIT** on Windows (x64 SEH unwinding via a custom LLJIT runtime)
 - Migrared to **LLVM 22.1.8**
@@ -754,7 +755,7 @@ against garbage collection's 5.8 - but **objects that refer to each other in a c
 freed under it**, which is the same trade Swift makes with ARC.
 
 See **[docs/memory-models.md](docs/memory-models.md)** for which shapes leak, which do not, and
-what to do about it.
+what to do about it, and **[docs/own-memory-model.md](docs/own-memory-model.md)** for `-mm=own`.
 
 ### Performance
 
@@ -826,8 +827,16 @@ const b = a;                                          // both share the Node
 print(a.value.value, b.value.value, Shared.count(a)); // 1 1 2
 ```
 
-`-mm=own` is still in development: some valid TypeScript does not compile under it yet. The
-default library has no `-mm=own` build yet, so compile with `--no-default-lib`.
+Inside a module ownership is inferred. What a function another module calls does with its
+parameters is said in its signature with `@keeps`, `@lends`, `@record`, `@borrows` and
+`@immortalizes`; `@nodrops` marks a C function that frees nothing, and `@final` and `@value`
+classes make calls direct and values copies.
+
+`-mm=own` is still in development: some valid TypeScript does not compile under it yet (the
+default library's `Map` and `Set` among it).
+
+See **[docs/own-memory-model.md](docs/own-memory-model.md)** for the rules, the errors and how to
+fix them, `Shared<T>`, every decorator, and separate compilation.
 
 ## Build
 

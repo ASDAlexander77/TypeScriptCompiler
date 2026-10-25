@@ -8,6 +8,9 @@ The compiler can manage heap memory in three ways, selected with `-mm=`:
 | `-mm=rc` | **Reference counting.** Objects are freed the moment the last reference to them goes away. No collector, no pauses, no runtime dependency on libgc. | Predictable latency, WebAssembly, or shipping without libgc — **provided you read the cycles section below.** |
 | `-mm=none` | **Nothing is ever freed.** | Short-lived programs where the process exits before memory matters. |
 
+A fourth, `-mm=own`, infers a single owner for every object at compile time, with no collector
+and no counting; it has a page of its own, [own-memory-model.md](own-memory-model.md).
+
 `-mm=gc` is the default and stays the default. Everything below is about what changes if you
 choose `-mm=rc`.
 
