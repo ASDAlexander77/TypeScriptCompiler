@@ -5,6 +5,7 @@ add_mlir_unittest(MLIRGenTests
   TypeHelper.cpp
   TargetInfo.cpp
   LoweringDataLayout.cpp
+  CppMangler.cpp
 )
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 

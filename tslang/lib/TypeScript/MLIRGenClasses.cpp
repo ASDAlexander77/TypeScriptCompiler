@@ -884,14 +884,15 @@ namespace mlirgen
                     {
                         auto hasLinkName = false;
                         iterateDecorators(classMember, genContext, [&](StringRef name, SmallVector<StringRef> args) {
-                            hasLinkName |= name == DLL_NAME && !args.empty();
+                            // a @cppname that doesn't mangle is reported where the method is made
+                            hasLinkName |= (name == DLL_NAME || name == CPP_NAME) && !args.empty();
                         });
 
                         if (!hasLinkName)
                         {
                             error(memberLocation) << "'" << cppOverloadedName(methodName) << "' has no @" CPP_SLOT ", so it isn't virtual: give a "
                                                   << "C++ virtual method its slot, @" CPP_SLOT "(N), or a non-virtual one its "
-                                                  << "symbol, @" LINK_NAME "(\"...\")";
+                                                  << "symbol, @" LINK_NAME "(\"...\"), or its C++ declaration, @" CPP_NAME "(\"...\")";
                         }
                     }
                 }

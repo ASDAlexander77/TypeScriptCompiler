@@ -15,6 +15,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
+#include "TypeScript/CppMangler.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -14473,6 +14474,24 @@ class MLIRGenImpl
                     name = DLL_NAME;
                 }
 
+                // @cppname is @linkname under the symbol the target's C++ compiler gives the
+                // declaration; one that doesn't mangle stays @cppname, carrying the reason, for
+                // checkLinkNameDecorators to report
+                if (name == CPP_NAME)
+                {
+                    std::string symbol;
+                    std::string error = "expects a C++ declaration, @" CPP_NAME "(\"int f(int)\")";
+                    if (!args.empty() && mangleCppNameOf(node, args.front(), symbol, error))
+                    {
+                        name = DLL_NAME;
+                        args = {StringRef(symbol).copy(stringAllocator)};
+                    }
+                    else
+                    {
+                        args = {StringRef(error).copy(stringAllocator)};
+                    }
+                }
+
                 functor(name, args);
             }
         }
@@ -14486,7 +14505,14 @@ class MLIRGenImpl
     {
         StringRef first;
         StringRef second;
+        StringRef cppNameError;
         iterateDecorators(node, genContext, [&](StringRef name, SmallVector<StringRef> args) {
+            if (name == CPP_NAME)
+            {
+                cppNameError = args.front();
+                return;
+            }
+
             if (name != DLL_NAME || args.empty())
             {
                 return;
@@ -14502,6 +14528,12 @@ class MLIRGenImpl
             }
         });
 
+        if (!cppNameError.empty())
+        {
+            emitError(location) << "@" CPP_NAME ": " << cppNameError;
+            return mlir::failure();
+        }
+
         if (!second.empty())
         {
             emitError(location) << "conflicting @dllname/@linkname: '" << first << "' vs '" << second << "'";
@@ -14509,6 +14541,30 @@ class MLIRGenImpl
         }
 
         return mlir::success();
+    }
+
+    // @cppname on a function binds a free C++ function; on a method, a member of the class, which an
+    // unqualified name is in
+    bool mangleCppNameOf(Node node, StringRef declaration, std::string &symbol, std::string &error)
+    {
+        CppMangleContext context;
+        if (node == SyntaxKind::MethodDeclaration)
+        {
+            context.isStaticMethod = hasModifier(node, SyntaxKind::StaticKeyword);
+            context.isInstanceMethod = !context.isStaticMethod;
+            auto parent = node->parent;
+            if (parent == SyntaxKind::ClassDeclaration || parent == SyntaxKind::ClassExpression)
+            {
+                context.className = MLIRHelper::getName(parent.as<ClassLikeDeclaration>()->name, stringAllocator);
+            }
+        }
+        else if (node != SyntaxKind::FunctionDeclaration)
+        {
+            error = "is for a function or a method";
+            return false;
+        }
+
+        return mangleCppName(declaration, llvm::Triple(compileOptions.moduleTargetTriple), context, symbol, error);
     }
 
     bool isAddedToExport(mlir::Type type)
