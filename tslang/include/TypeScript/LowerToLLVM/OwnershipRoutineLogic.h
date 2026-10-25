@@ -479,6 +479,36 @@ class OwnershipRoutineLogic
         });
     }
 
+    // The same for a block that may be immortal already (ts.MakeImmortal, own's keepers): a stack
+    // object's header is, and a literal's, which may be read-only, so the header is written only
+    // when it is mortal.
+    void emitMarkImmortalIfMortal(mlir::Value payloadPtr)
+    {
+        emitIfNonNull(payloadPtr, [&]() {
+            TypeConverterHelper tch(typeConverter);
+            TypeHelper th(rewriter);
+            LLVMCodeHelperBase ch(op, rewriter, typeConverter, compileOptions);
+            auto loc = op->getLoc();
+
+            auto isMortal = emitIsMortal(payloadPtr);
+            auto *currentBlock = rewriter.getInsertionBlock();
+            auto *continuationBlock = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            auto *markBlock = rewriter.createBlock(continuationBlock);
+
+            rewriter.setInsertionPointToEnd(markBlock);
+            auto llvmIndexType = tch.convertType(th.getIndexType());
+            auto blockPtr = ch.getBlockPtrFromPayloadPtr(loc, payloadPtr, llvmIndexType);
+            rewriter.create<LLVM::StoreOp>(
+                loc, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, HEAP_BLOCK_IMMORTAL)),
+                blockPtr);
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<LLVM::CondBrOp>(loc, isMortal, markBlock, continuationBlock);
+            rewriter.setInsertionPointToStart(continuationBlock);
+        });
+    }
+
   private:
     // Field types of a record-shaped type, empty for anything else.
     llvm::SmallVector<mlir::Type> getFieldTypes(mlir::Type type)

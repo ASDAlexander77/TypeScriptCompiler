@@ -331,6 +331,12 @@
 // that returns such a record has to say it. A unit attribute on the FuncOp.
 #define RECORD_DECORATOR "record"
 #define OWN_DECLARED_RECORD_ATTR_NAME "ts.own_declared_record"
+// `@immortalizes` names the parameters the function keeps for good, in an append-only global (a
+// keeper, docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): its callers make each
+// argument immortal. Checked against a body; trusted on a declaration, a C function that keeps a
+// callback for good. A FuncOp attribute of argument indices.
+#define IMMORTALIZES_DECORATOR "immortalizes"
+#define OWN_DECLARED_IMMORTALIZES_ATTR_NAME "ts.own_declared_immortalizes"
 // the names of the arguments of a function that says any, for -mm=own's errors about it
 #define OWN_DECLARED_PARAM_NAMES_ATTR_NAME "ts.own_declared_param_names"
 

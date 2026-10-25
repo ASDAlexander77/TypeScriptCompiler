@@ -209,7 +209,9 @@ namespace own_inference
             {
                 // a yield's read of a field that only yields (OWN_YIELDED_FIELDS_ATTR_NAME) takes
                 // the value out: fresh, not a borrow of the state
-                if (placeReadOf(loadOp.getResult()) && !loadOp->hasAttr(OWN_FRESH_RESULT_ATTR_NAME))
+                // nor is a keeper's element, which no release frees (OWN_KEEPER_READ_ATTR_NAME)
+                if (placeReadOf(loadOp.getResult()) && !loadOp->hasAttr(OWN_FRESH_RESULT_ATTR_NAME) &&
+                    !loadOp->hasAttr(OWN_KEEPER_READ_ATTR_NAME))
                 {
                     ops.placeReads.push_back(loadOp);
                 }
@@ -362,7 +364,8 @@ namespace own_inference
                 continue;
             }
 
-            if (value && placeReadOf(value))
+            // (not a keeper's element, which is no place read: immortal, decided below)
+            if (value && placeReadOf(value) && !isKeptForGood(value))
             {
                 continue; // a read out of a container: checkPlaceRead decided it
             }
@@ -414,7 +417,8 @@ namespace own_inference
 
             // an immortal global's value (spec 25): owned by no one, so returned, stored or kept
             // as often as it is read, and its releases skip it
-            if (value && isImmortalGlobalRead(value) && (mlir::isa<mlir_ts::RetainOp>(op) || slotHoldsInitializerAt(op)))
+            if (value && (isImmortalGlobalRead(value) || isKeptForGood(value)) &&
+                (mlir::isa<mlir_ts::RetainOp>(op) || slotHoldsInitializerAt(op)))
             {
                 toErase.insert(op);
                 continue;

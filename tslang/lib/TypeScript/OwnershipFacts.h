@@ -97,6 +97,17 @@ constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
 // every `ts.AddressOf` of it (isImmortalGlobalRead), and on the `ts.Store` that initializes it,
 // whose lowering writes the header word.
 #define OWN_IMMORTAL_GLOBAL_ATTR_NAME "__own_immortal"
+// A keeper (docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): an append-only array
+// global of this module, never given another value, whose elements nothing takes out or overwrites.
+// What it holds lives to the end of the program, so each value pushed into it is made immortal
+// (ts.MakeImmortal). On every `ts.AddressOf` of it, which no global read is (the array is never
+// replaced), and on every `ts.Load` of one of its elements (OWN_KEEPER_READ_ATTR_NAME), which is
+// immortal and no place read.
+#define OWN_KEEPER_GLOBAL_ATTR_NAME "__own_keeper_global"
+#define OWN_KEEPER_READ_ATTR_NAME "__own_keeper_read"
+// On a function: the parameters it keeps for good, in a keeper or through a callee that does
+// (argument indices). Its callers make each argument immortal.
+#define OWN_IMMORTALIZES_ATTR_NAME "__own_immortalizes"
 
 // A call inside a try body is a `ts.Invoke` (`ts.InvokeHybrid` through a hybrid function): a
 // terminator whose normal and unwind edges are its successors. It names its callee as a symbol, or
@@ -401,6 +412,15 @@ inline mlir_ts::AddressOfOp globalReadOf(mlir::Value value)
 // A read of an immortal global (OWN_IMMORTAL_GLOBAL_ATTR_NAME), seen through its views: the
 // global's own block, which no release frees. Its fields are not immortal: a read out of one is a
 // place read like any other.
+// A value made immortal where a keeper keeps it (ts.MakeImmortal), or a keeper's element, seen
+// through its views: owned by no one, and no release frees it.
+inline bool isKeptForGood(mlir::Value value)
+{
+    auto *def = rootOf(value).getDefiningOp();
+    return def && (mlir::isa<mlir_ts::MakeImmortalOp>(def) ||
+                   (mlir::isa<mlir_ts::LoadOp>(def) && def->hasAttr(OWN_KEEPER_READ_ATTR_NAME)));
+}
+
 inline bool isImmortalGlobalRead(mlir::Value value)
 {
     auto addressOfOp = globalReadOf(value);

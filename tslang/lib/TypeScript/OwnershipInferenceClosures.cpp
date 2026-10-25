@@ -746,6 +746,15 @@ namespace own_inference
                     return;
                 }
 
+                // kept for good (a keeper's): the box, its cells and its copies are immortal from
+                // here, so the frame's releases of them free nothing, and whatever is done with the
+                // immortal value - pushed, stored, run later - outlives nothing it relies on
+                if (mlir::isa<mlir_ts::MakeImmortalOp>(user))
+                {
+                    uses.push_back(user);
+                    return;
+                }
+
                 if (isCall(user))
                 {
                     if (isKeptArgument(user, used))

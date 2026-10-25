@@ -71,6 +71,9 @@ namespace own_signature
         });
 
         findOpen(module);
+        // before the facts: a value kept for good is immortal, which keeps nothing of its owner
+        findKeepers(module);
+        decideKeptForGood(module);
         computeFacts();
         computeDrops();
         pinAssignedGlobals();
