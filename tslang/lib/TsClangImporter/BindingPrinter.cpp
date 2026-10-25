@@ -305,8 +305,12 @@ llvm::Expected<PrintResult> printBindings(const HeaderModel &model, const PrintO
                         member("@cppnontrivial");
                     }
 
+                    // a non-virtual method by its C++ declaration, which @cppname mangles for the
+                    // target compiled for; by this target's symbol when it can't be spelled so
                     auto decorator = method.slot >= 0 ? "@slot(" + std::to_string(method.slot) + ") "
-                                                      : "@linkname(\"" + method.symbol + "\") ";
+                                     : method.cppDeclaration.empty()
+                                         ? "@linkname(\"" + method.symbol + "\") "
+                                         : "@cppname(\"" + method.cppDeclaration + "\") ";
                     member(decorator + method.name + "(" + parameters + "): " + renderType(method.result, nameOf) + ";");
                 }
 

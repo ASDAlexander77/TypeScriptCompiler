@@ -102,8 +102,9 @@ counts it:
 
 ## Writing a binding
 
-`tsbindgen` writes the binding from the C++ header, with the slots, the mangled symbols and the
-`@cppnontrivial` marks clang computes for the target (README, "C++ classes"):
+`tsbindgen` writes the binding from the C++ header, with the slots and the `@cppnontrivial` marks
+clang computes for the target, and each non-virtual method's `@cppname` declaration (its
+`@linkname` symbol when `@cppname` can't spell it or mangles it otherwise) (README, "C++ classes"):
 `tsbindgen nvrhi.hpp --target x86_64-pc-windows-msvc --filter 'nvrhi::I*' -- -std=c++17`.
 Writing one by hand:
 

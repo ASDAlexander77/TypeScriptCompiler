@@ -43,6 +43,19 @@ TEST(Naming, StripPrefixRenamesDeclarationsAndTheirUses)
     EXPECT_THAT(out, HasSubstr("    @linkname(\"other\") export declare function other(): s32;\n"));
 }
 
+// a @cpp class renamed (stripped, a namespace dropped): @cppname names the method by its C++ class,
+// never by the TS class it is declared in
+TEST(Naming, StripPrefixKeepsTheCppClassInCppname)
+{
+    tsbindgen::PrintOptions options;
+    options.stripPrefix = "fx_";
+    auto out = generate("namespace lib { class fx_Widget { public: virtual ~fx_Widget(); int id(int x); }; }\n",
+                        options, windowsTarget, {}, "c++")
+                   .text;
+    EXPECT_THAT(out, HasSubstr("class Widget { // lib::fx_Widget\n"
+                               "    @cppname(\"int lib::fx_Widget::id(int)\") id(x: s32): s32;\n"));
+}
+
 TEST(Naming, StripPrefixKeepsTheCNameWhenStrippingWouldBreakIt)
 {
     tsbindgen::PrintOptions options;

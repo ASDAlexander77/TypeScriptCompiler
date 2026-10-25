@@ -1,8 +1,10 @@
 #include "TsClangImporter/HeaderParser.h"
 #include "TsClangImporter/TypeMapper.h"
+#include "TypeScript/CppMangler.h"
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/GlobalDecl.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/RecordLayout.h"
@@ -27,6 +29,8 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/VirtualFileSystem.h"
+
+#include <optional>
 
 namespace tsbindgen
 {
@@ -72,6 +76,230 @@ std::string escapeString(llvm::StringRef text)
     }
 
     return escaped + "\"";
+}
+
+// The name of a record or enum with its namespaces and enclosing classes (`ns::Outer::Inner`), as
+// @cppname reads it. An inline namespace is spelled too: both schemes mangle it. Nothing for what
+// @cppname can't name: an anonymous namespace or record, a template's specialization or a member of
+// one, a function's local type.
+std::optional<std::string> cppQualifiedName(const clang::NamedDecl *decl)
+{
+    std::vector<std::string> parts;
+    for (const clang::DeclContext *context = llvm::cast<clang::DeclContext>(decl); !context->isTranslationUnit();
+         context = context->getParent())
+    {
+        if (llvm::isa<clang::LinkageSpecDecl>(context))
+        {
+            continue; // extern "C++" { ... }
+        }
+
+        auto *named = llvm::dyn_cast<clang::NamedDecl>(context);
+        if (!named || !named->getIdentifier() || llvm::isa<clang::ClassTemplateSpecializationDecl>(context) ||
+            !(llvm::isa<clang::NamespaceDecl, clang::RecordDecl, clang::EnumDecl>(context)))
+        {
+            return std::nullopt;
+        }
+
+        parts.insert(parts.begin(), named->getName().str());
+    }
+
+    return llvm::join(parts, "::");
+}
+
+std::optional<std::string> cppBuiltinName(const clang::BuiltinType *builtin)
+{
+    switch (builtin->getKind())
+    {
+    case clang::BuiltinType::Void:
+        return "void";
+    case clang::BuiltinType::Bool:
+        return "bool";
+    case clang::BuiltinType::Char_S:
+    case clang::BuiltinType::Char_U:
+        return "char";
+    case clang::BuiltinType::SChar:
+        return "signed char";
+    case clang::BuiltinType::UChar:
+        return "unsigned char";
+    case clang::BuiltinType::WChar_S:
+    case clang::BuiltinType::WChar_U:
+        return "wchar_t";
+    case clang::BuiltinType::Char8:
+        return "char8_t";
+    case clang::BuiltinType::Char16:
+        return "char16_t";
+    case clang::BuiltinType::Char32:
+        return "char32_t";
+    case clang::BuiltinType::Short:
+        return "short";
+    case clang::BuiltinType::UShort:
+        return "unsigned short";
+    case clang::BuiltinType::Int:
+        return "int";
+    case clang::BuiltinType::UInt:
+        return "unsigned int";
+    case clang::BuiltinType::Long:
+        return "long";
+    case clang::BuiltinType::ULong:
+        return "unsigned long";
+    case clang::BuiltinType::LongLong:
+        return "long long";
+    case clang::BuiltinType::ULongLong:
+        return "unsigned long long";
+    case clang::BuiltinType::Float:
+        return "float";
+    case clang::BuiltinType::Double:
+        return "double";
+    case clang::BuiltinType::LongDouble:
+        return "long double";
+    default:
+        return std::nullopt; // __int128, _Float16, nullptr_t, ...
+    }
+}
+
+// `type` as @cppname reads it (CppMangler.h): a builtin, a <stdint.h>/<stddef.h> typedef as written
+// - it mangles as whatever the target @cppname is compiled for defines it as - or a record or enum by
+// its qualified name and tag (`class X`, `union U`, `enum E`; a bare name is a struct), with
+// `const`/`volatile`, `*`, `&` and `&&`. Nothing for anything else: an array, a function pointer, a
+// template's specialization, ...
+std::optional<std::string> cppTypeSpelling(clang::QualType type)
+{
+    clang::Qualifiers qualifiers;
+    std::string base;
+    for (;;)
+    {
+        qualifiers.addQualifiers(type.getLocalQualifiers());
+        auto *bare = type.getTypePtr();
+        if (auto *typedefType = llvm::dyn_cast<clang::TypedefType>(bare))
+        {
+            auto name = typedefType->getDecl()->getName();
+            if (llvm::is_contained({"int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t", "int64_t",
+                                    "uint64_t", "size_t", "ptrdiff_t", "intptr_t", "uintptr_t"},
+                                   name))
+            {
+                base = name.str();
+                break;
+            }
+        }
+
+        auto desugared = bare->getLocallyUnqualifiedSingleStepDesugaredType();
+        if (desugared.getTypePtr() == bare && !desugared.hasLocalQualifiers())
+        {
+            break;
+        }
+
+        type = desugared;
+    }
+
+    if (qualifiers.hasRestrict() || qualifiers.hasAddressSpace() || qualifiers.hasObjCLifetime() ||
+        qualifiers.hasUnaligned())
+    {
+        return std::nullopt;
+    }
+
+    auto cv = std::string(qualifiers.hasConst() ? "const" : "") +
+              (qualifiers.hasConst() && qualifiers.hasVolatile() ? " " : "") +
+              (qualifiers.hasVolatile() ? "volatile" : "");
+    auto *bare = type.getTypePtr();
+    if (base.empty())
+    {
+        auto pointer = [&](clang::QualType pointee, const char *declarator) -> std::optional<std::string> {
+            auto inner = cppTypeSpelling(pointee);
+            if (!inner)
+            {
+                return std::nullopt;
+            }
+
+            return *inner + declarator + (cv.empty() ? "" : " " + cv);
+        };
+
+        if (auto *pointerType = llvm::dyn_cast<clang::PointerType>(bare))
+        {
+            return pointer(pointerType->getPointeeType(), "*");
+        }
+
+        if (auto *reference = llvm::dyn_cast<clang::LValueReferenceType>(bare))
+        {
+            return pointer(reference->getPointeeType(), "&");
+        }
+
+        if (auto *reference = llvm::dyn_cast<clang::RValueReferenceType>(bare))
+        {
+            return pointer(reference->getPointeeType(), "&&");
+        }
+
+        if (auto *builtin = llvm::dyn_cast<clang::BuiltinType>(bare))
+        {
+            auto name = cppBuiltinName(builtin);
+            if (!name)
+            {
+                return std::nullopt;
+            }
+
+            base = *name;
+        }
+        else if (auto *tag = llvm::dyn_cast<clang::TagType>(bare))
+        {
+            auto *decl = tag->getDecl();
+            auto name = cppQualifiedName(decl);
+            if (!name)
+            {
+                return std::nullopt;
+            }
+
+            switch (decl->getTagKind())
+            {
+            case clang::TagTypeKind::Struct:
+                base = *name;
+                break;
+            case clang::TagTypeKind::Class:
+                base = "class " + *name;
+                break;
+            case clang::TagTypeKind::Union:
+                base = "union " + *name;
+                break;
+            case clang::TagTypeKind::Enum:
+                base = "enum " + *name;
+                break;
+            default:
+                return std::nullopt; // __interface
+            }
+        }
+        else
+        {
+            return std::nullopt;
+        }
+    }
+
+    return cv.empty() ? base : cv + " " + base;
+}
+
+// A method's declaration as @cppname takes it, its name qualified with its class's (the TS class
+// can be named otherwise: --strip-prefix, a namespace, ...), or nothing when a type can't be spelled
+std::optional<std::string> cppMethodDeclaration(const clang::CXXMethodDecl *method)
+{
+    auto *prototype = method->getType()->getAs<clang::FunctionProtoType>();
+    auto className = cppQualifiedName(method->getParent());
+    auto result = cppTypeSpelling(method->getReturnType());
+    if (!prototype || !className || !result || method->getRefQualifier() != clang::RQ_None)
+    {
+        return std::nullopt;
+    }
+
+    std::string parameters;
+    for (auto parameter : prototype->getParamTypes())
+    {
+        auto spelled = cppTypeSpelling(parameter);
+        if (!spelled)
+        {
+            return std::nullopt;
+        }
+
+        parameters += (parameters.empty() ? "" : ", ") + *spelled;
+    }
+
+    return *result + " " + *className + "::" + method->getName().str() + "(" + parameters + ")" +
+           (method->isConst() ? " const" : "") + (method->isVolatile() ? " volatile" : "");
 }
 
 // An object-like macro's value as a TS literal: an integer, a float or a string, optionally
@@ -712,6 +940,25 @@ class Collector : public clang::RecursiveASTVisitor<Collector>
         if (bound.result.skipped())
         {
             bound.skipReason = "result: " + bound.result.skipReason;
+            return;
+        }
+
+        // bound by its declaration when @cppname, mangling it for this target, gives clang's symbol:
+        // the same binding then links on every other target too
+        if (!method->isVirtual())
+        {
+            if (auto declaration = cppMethodDeclaration(method))
+            {
+                CppMangleContext mangleContext;
+                mangleContext.isInstanceMethod = true;
+                std::string symbol;
+                std::string error;
+                if (mangleCppName(*declaration, context.getTargetInfo().getTriple(), mangleContext, symbol, error) &&
+                    symbol == bound.symbol)
+                {
+                    bound.cppDeclaration = std::move(*declaration);
+                }
+            }
         }
     }
 
