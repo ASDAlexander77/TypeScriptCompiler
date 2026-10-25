@@ -1,6 +1,7 @@
 // A polymorphic C++ class is a @cpp class: its virtual methods @slot(N), with the slot clang's
-// vtable layout gives for the target's ABI, its non-virtual ones @linkname with their mangled
-// symbols. The slot numbers below are the compilers' own: MSVC's from
+// vtable layout gives for the target's ABI, its non-virtual ones @cppname with their C++
+// declarations (@linkname with the target's mangled symbol when @cppname can't spell one). The slot
+// numbers below are the compilers' own: MSVC's from
 // `cl /d1reportSingleClassLayoutCircle`, the Itanium ABI's from clang's -fdump-vtable-layouts.
 
 #include "ImporterTestHelper.h"
@@ -74,18 +75,85 @@ TEST(CppClass, ItaniumSlots)
     EXPECT_THAT(out, HasSubstr("    @slot(8) contains(other: Shape): boolean;\n"));
 }
 
-TEST(CppClass, NonVirtualMethodsAreBoundByTheirMangledSymbols)
+// one binding for every target: @cppname mangles the declaration for the one compiled for
+TEST(CppClass, NonVirtualMethodsAreBoundByTheirDeclarations)
 {
     auto header = "namespace geo { class Shape { public: virtual ~Shape(); int id(int x); int inlined() { return 1; }\n"
                   "static int count(); int operator+(int x); }; }\n";
     auto windows = generate(header, {}, windowsTarget, {}, "c++");
-    EXPECT_THAT(windows.text, HasSubstr("    @linkname(\"?id@Shape@geo@@QEAAHH@Z\") id(x: s32): s32;\n"));
+    EXPECT_THAT(windows.text, HasSubstr("    @cppname(\"int geo::Shape::id(int)\") id(x: s32): s32;\n"));
     EXPECT_THAT(windows.text, HasSubstr("    // skipped: inlined \xE2\x80\x94 inline method: no symbol to link against\n"));
     EXPECT_THAT(windows.warnings, Contains("skipped geo::Shape::inlined: inline method: no symbol to link against"));
     // static members and operators aren't methods a @cpp class can have
     EXPECT_THAT(windows.text, AllOf(Not(HasSubstr("count")), Not(HasSubstr("operator"))));
 
-    EXPECT_THAT(cpp(header, linuxTarget), HasSubstr("    @linkname(\"_ZN3geo5Shape2idEi\") id(x: s32): s32;\n"));
+    EXPECT_THAT(cpp(header, linuxTarget), HasSubstr("    @cppname(\"int geo::Shape::id(int)\") id(x: s32): s32;\n"));
+}
+
+// the types @cppname spells: builtins, <stdint.h> typedefs as written (another typedef as what it
+// names), records by their qualified names and tags, enums, cv-qualified pointers and references,
+// and a const method; the same on every target
+TEST(CppClass, DeclarationsSpellEveryTypeCppnameMangles)
+{
+    auto header = "#include <stdint.h>\n#include <stddef.h>\n"
+                  "namespace ns { struct Pt { int x; }; class Obj; union U { int i; float f; }; enum E { A };\n"
+                  "enum class Scoped : uint8_t { B }; typedef int myint; typedef struct Pt PtAlias;\n"
+                  "class Widget { public: virtual ~Widget();\n"
+                  "    int64_t wide(uint64_t a, int32_t b, size_t c, ptrdiff_t d, uint8_t e);\n"
+                  "    const char *name(char *const *argv, const volatile int *v) const;\n"
+                  "    void kinds(Pt *p, Obj *o, U &u, E e, Scoped s, const PtAlias *alias, myint m);\n"
+                  "    void words(unsigned long long a, long b, unsigned short c, signed char d, wchar_t e, bool f,\n"
+                  "               double g, float h, char16_t i);\n"
+                  "    Widget *self(Widget &&other); }; }\n";
+    for (auto target : {windowsTarget, linuxTarget, "aarch64-apple-darwin", "aarch64-linux-gnu"})
+    {
+        auto out = generate(header, {}, target, {}, "c++");
+        EXPECT_THAT(out.text, HasSubstr("    @cppname(\"int64_t ns::Widget::wide(uint64_t, int32_t, size_t, ptrdiff_t, "
+                                        "uint8_t)\") wide("))
+            << target;
+        EXPECT_THAT(out.text, HasSubstr("    @cppname(\"const char* ns::Widget::name(char* const*, const volatile "
+                                        "int*) const\") name("))
+            << target;
+        EXPECT_THAT(out.text, HasSubstr("    @cppname(\"void ns::Widget::kinds(ns::Pt*, class ns::Obj*, union ns::U&, "
+                                        "enum ns::E, enum ns::Scoped, const ns::Pt*, int)\") kinds("))
+            << target;
+        EXPECT_THAT(out.text, HasSubstr("    @cppname(\"void ns::Widget::words(unsigned long long, long, unsigned "
+                                        "short, signed char, wchar_t, bool, double, float, char16_t)\") words("))
+            << target;
+        EXPECT_THAT(out.text, HasSubstr("    @cppname(\"class ns::Widget* ns::Widget::self(class ns::Widget&&)\") self("))
+            << target;
+        EXPECT_THAT(out.text, Not(HasSubstr("@linkname"))) << target;
+    }
+}
+
+// what @cppname can't spell stays bound by this target's symbol: a function pointer, a
+// ref-qualified method, a template's specialization
+TEST(CppClass, DeclarationsCppnameCantSpellKeepTheSymbol)
+{
+    auto header = "template <typename T> struct Box { T v; };\n"
+                  "class Widget { public: virtual ~Widget(); int call(int (*fn)(int)); int ref() &;\n"
+                  "    int boxed(Box<int> *box); int plain(int x); };\n";
+    auto windows = cpp(header);
+    EXPECT_THAT(windows, HasSubstr("    @linkname(\"?call@Widget@@QEAAHP6AHH@Z@Z\") call("));
+    EXPECT_THAT(windows, HasSubstr("    @linkname(\"?ref@Widget@@QEGAAHXZ\") ref(): s32;\n"));
+    EXPECT_THAT(windows, HasSubstr("    @linkname(\"?boxed@Widget@@QEAAHPEAU?$Box@H@@@Z\") boxed("));
+    EXPECT_THAT(windows, HasSubstr("    @cppname(\"int Widget::plain(int)\") plain(x: s32): s32;\n"));
+
+    auto linux = cpp(header, linuxTarget);
+    EXPECT_THAT(linux, HasSubstr("    @linkname(\"_ZN6Widget4callEPFiiE\") call("));
+    EXPECT_THAT(linux, HasSubstr("    @linkname(\"_ZNR6Widget3refEv\") ref(): s32;\n"));
+    EXPECT_THAT(linux, HasSubstr("    @linkname(\"_ZN6Widget5boxedEP3BoxIiE\") boxed("));
+}
+
+// a declaration @cppname spells but mangles to another symbol than clang's stays bound by clang's:
+// a header's own `int64_t` of `long long` where the target's is `long` (64-bit Linux)
+TEST(CppClass, DeclarationsThatMangleOtherwiseKeepTheSymbol)
+{
+    auto header = "typedef long long int64_t;\n"
+                  "class Widget { public: virtual ~Widget(); int64_t wide(int64_t x); };\n";
+    EXPECT_THAT(cpp(header, linuxTarget), HasSubstr("    @linkname(\"_ZN6Widget4wideEx\") wide(x: int64_t): int64_t;\n"));
+    // where `int64_t` is `long long`, the declaration is the target's own
+    EXPECT_THAT(cpp(header), HasSubstr("    @cppname(\"int64_t Widget::wide(int64_t)\") wide(x: int64_t): int64_t;\n"));
 }
 
 // A record returned by value is a tuple with its layout; one C++ can't pass in registers (a

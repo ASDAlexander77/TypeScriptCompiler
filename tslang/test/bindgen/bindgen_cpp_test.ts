@@ -17,7 +17,7 @@ function main() {
     print(pair.a, pair.b);
     const handle = shape.handle();          // a non-trivial one (@cppnontrivial)
     print(handle.p == <Opaque>shape);
-    print(shape.id(5));                     // a non-virtual method, by its mangled symbol
+    print(shape.id(5));                     // a non-virtual method, by its C++ declaration (@cppname)
     let extent: Extent = [3, 4];            // fx::Extent, a struct in a namespace: a tuple
     print(shape.fits(Ref(extent), null), shape.fits(Ref(extent), Ref(extent)));   // a reference, a pointer or null
 

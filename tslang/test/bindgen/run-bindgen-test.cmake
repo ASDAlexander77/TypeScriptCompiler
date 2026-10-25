@@ -6,7 +6,7 @@
 # print expected.txt. MODE=namespace does the same through `--namespace Fx --strip-prefix fx_`,
 # which only links because @linkname binds each renamed function to its C symbol. MODE=cpp does it
 # for fixture_cpp.hpp's C++ classes, which become @cpp classes: their virtual methods called through
-# the vtable the host's clang made, their non-virtual ones by their mangled symbols.
+# the vtable the host's clang made, their non-virtual ones by their declarations (@cppname).
 
 cmake_minimum_required(VERSION 3.17.3)
 

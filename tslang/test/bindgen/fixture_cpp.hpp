@@ -1,5 +1,5 @@
 // A C++ library for tsbindgen's @cpp classes (run-bindgen-test.cmake, MODE=cpp): its polymorphic
-// classes become @cpp classes, called through their vtables and by their mangled symbols.
+// classes become @cpp classes, called through their vtables and by their C++ declarations.
 //
 // No C++ runtime is needed to link it: no destructors, pure virtual methods, RTTI or exceptions, and
 // its objects are constant-initialized (constexpr constructors), so a tslang program links its object
@@ -100,7 +100,7 @@ class FX_API Shape
     virtual int32_t fits(const Extent &extent, const Extent *limit);
     virtual int32_t sum(const Batch &batch);
 
-    // non-virtual: called by its mangled symbol
+    // non-virtual: called by its declaration, @cppname("int32_t fx::Shape::id(int32_t)")
     int32_t id(int32_t x);
 
     int64_t sides; // 8 bytes: no tail padding, which the Itanium ABI would put `side` in

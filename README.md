@@ -687,7 +687,7 @@ Structs, enums and `extern "C"` functions are emitted, and polymorphic classes (
 
 #### C++ classes
 
-A polymorphic class (one with virtual methods), in any namespace, becomes a [`@cpp` class](docs/cpp-classes.md): tslang calls its virtual methods through the object's vtable and its non-virtual methods by their mangled symbols, with no wrapper. clang computes the slots and the symbols for the target's ABI (`--target`), so generate the bindings once per ABI: MSVC and the Itanium ABI (Linux, Android) number the slots differently.
+A polymorphic class (one with virtual methods), in any namespace, becomes a [`@cpp` class](docs/cpp-classes.md): tslang calls its virtual methods through the object's vtable and its non-virtual methods by their C++ declarations (`@cppname`, which tslang mangles for the target it compiles for), with no wrapper. clang computes the slots for the target's ABI (`--target`), so generate the bindings once per ABI: MSVC and the Itanium ABI (Linux, Android) number the slots differently. A non-virtual method `@cppname` can't spell (a function pointer or a template in its signature) is bound by the target's mangled symbol, `@linkname`, instead.
 
 ```cpp
 namespace geo {
@@ -717,7 +717,7 @@ class Shape { // geo::Shape
     @slot(2) scale(by: f64): void;
     @cppnontrivial
     @slot(4) handle(): [p: Opaque | null];
-    @linkname("?id@Shape@geo@@QEAAHH@Z") id(x: s32): s32;
+    @cppname("int geo::Shape::id(int)") id(x: s32): s32;
 }
 @cpp
 class Square extends Shape { // geo::Square

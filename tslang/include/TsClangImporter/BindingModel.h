@@ -81,7 +81,7 @@ enum class DeclKind
     Enum,         // enum E { A = 0 }
     FixedEnum,    // type E = u8; const A = 1;
     Typedef,      // type T = ...;
-    CppClass,     // @cpp class C extends B { @slot(N) f(...): R; @linkname("...") g(...): R; }
+    CppClass,     // @cpp class C extends B { @slot(N) f(...): R; @cppname("R C::g(...)") g(...): R; }
     Function      // declare function f(...): R;
 };
 
@@ -92,6 +92,10 @@ struct Method
     std::string cppName;     // the C++ name, for messages
     int slot = -1;           // a virtual method's vtable slot; -1 for a non-virtual one
     std::string symbol;      // a non-virtual method's mangled symbol
+    // a non-virtual method's C++ declaration, `int32_t ns::C::id(int32_t) const`, for @cppname to
+    // mangle for any target; empty when @cppname can't spell it or mangles it to another symbol than
+    // `symbol`, which @linkname binds instead
+    std::string cppDeclaration;
     std::vector<Field> parameters;
     TsType result;
     bool nonTrivialReturn = false; // returns a record with a destructor or a copy constructor
