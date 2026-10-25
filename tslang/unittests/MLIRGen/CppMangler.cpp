@@ -241,6 +241,17 @@ TEST(CppMangler, ClassContextAndHeaderSpelling)
     EXPECT_EQ(mangle("x86_64-pc-windows-msvc", "void f(...)"), "?f@@YAXZZ");
 }
 
+// MSVC encodes a returned value's const, a builtin's as well as a record's; Itanium has no result
+TEST(CppMangler, QualifiedResult)
+{
+    auto msvc = "x86_64-pc-windows-msvc";
+    EXPECT_EQ(mangle(msvc, "const int f()"), "?f@@YA?BHXZ");
+    EXPECT_EQ(mangle(msvc, "const struct P g()"), "?g@@YA?BUP@@XZ");
+    EXPECT_EQ(mangle(msvc, "volatile int h()"), "?h@@YA?CHXZ");
+    EXPECT_EQ(mangle(msvc, "const int* const k()"), "?k@@YAQEBHXZ");
+    EXPECT_EQ(mangle("x86_64-unknown-linux-gnu", "const int f()"), "_Z1fv");
+}
+
 TEST(CppMangler, Errors)
 {
     auto msvc = "x86_64-pc-windows-msvc";
@@ -250,6 +261,7 @@ TEST(CppMangler, Errors)
     EXPECT_EQ(mangle(msvc, "int operator+(int)"), "error: operators, constructors and destructors aren't supported at 'operator'");
     EXPECT_EQ(mangle(msvc, "void ~A()"), "error: operators, constructors and destructors aren't supported at '~'");
     EXPECT_EQ(mangle(msvc, "void A::A()", Method), "error: constructors aren't supported");
+    EXPECT_EQ(mangle(msvc, "int f()", Method), "error: the method's class isn't known: qualify the name, Class::f");
     EXPECT_EQ(mangle(msvc, "virtual int f()", Method), "error: a virtual method is called through its vtable slot, @slot(N), not by its symbol at 'virtual'");
     EXPECT_EQ(mangle(msvc, "void f(int (*)(int))"), "error: function pointers and arrays aren't supported at '('");
     EXPECT_EQ(mangle(msvc, "void f(int = 0)"), "error: default arguments aren't supported at '='");

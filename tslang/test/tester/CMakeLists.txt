@@ -4602,7 +4602,8 @@ set(linkname_cases
     "chain|'a' binds symbol 'linkname_chain_b', which @dllname/@linkname renames to 'linkname_chain_c'"
     "cppname-unparsable|@cppname: expected '\\)' at the end"
     "cppname-variable|@cppname: is for a function or a method"
-    "cppname-const-function|@cppname: only a method with 'this' can be const or volatile")
+    "cppname-const-function|@cppname: only a method with 'this' can be const or volatile"
+    "cppname-method-unparsable|cppname-method-unparsable\\.ts:5:5: error: @cppname: expected '\\)' at the end")
 foreach(linkname_case ${linkname_cases})
     string(FIND "${linkname_case}" "|" linkname_sep)
     string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)

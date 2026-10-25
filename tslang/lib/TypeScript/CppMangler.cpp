@@ -725,9 +725,9 @@ class MicrosoftMangler
 
     void resultType(const Type &type)
     {
-        if (type.kind == Type::Kind::Named)
+        if (type.kind == Type::Kind::Named || (type.kind == Type::Kind::Builtin && (type.isConst || type.isVolatile)))
         {
-            // a record or an enum returned by value
+            // a record or an enum returned by value, or a const builtin: `?AUPair@@`, `?BH`
             out += '?';
             out += qualifiers(type.isConst, type.isVolatile);
         }
@@ -1021,6 +1021,12 @@ bool mangleCppName(llvm::StringRef declarationText, const llvm::Triple &triple, 
     if (declaration.name.size() == 1 && !context.className.empty())
     {
         declaration.name.insert(declaration.name.begin(), context.className.str());
+    }
+    else if (declaration.name.size() == 1 && (context.isInstanceMethod || context.isStaticMethod))
+    {
+        // it would be a free function's symbol
+        error = "the method's class isn't known: qualify the name, Class::" + declaration.name.front();
+        return false;
     }
 
     if (declaration.name.size() >= 2 && declaration.name.back() == declaration.name[declaration.name.size() - 2])
