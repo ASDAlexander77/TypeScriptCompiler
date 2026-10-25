@@ -15,6 +15,7 @@
 
 
 #include "mlir/IR/Verifier.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/Support/FileUtilities.h"
 
@@ -429,7 +430,77 @@ namespace mlirgen
 
         builder.setInsertionPointToStart(theModule.getBody());
 
+        if (!compileOptions.importedOwnFacts.empty())
+        {
+            addImportedOwnObjectFacts(compileOptions.importedOwnFacts);
+        }
+
         return mlir::success();
+    }
+
+    // The facts of the objects --own-facts names (SHARED_LIB_OWN_OBJECT_FACTS): a function's name
+    // alone joins the imported no-drops ones; one with places goes to SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME.
+    // A line whose slot type does not parse here gives that function no facts at all.
+    void MLIRGenImpl::addImportedOwnObjectFacts(StringRef factsText)
+    {
+        std::string noDrops;
+        llvm::SmallVector<mlir::NamedAttribute> dropFields;
+        llvm::SmallVector<mlir::Attribute> freshResults;
+        llvm::StringSet<> seen;
+        llvm::SmallVector<StringRef> lines;
+        factsText.split(lines, '\n', -1, false);
+        for (auto line : lines)
+        {
+            llvm::SmallVector<StringRef> parts;
+            line.trim().split(parts, '\t', -1, false);
+            if (parts.empty() || !seen.insert(parts.front()).second)
+            {
+                continue;
+            }
+
+            if (parts.size() > 1 && parts.back() == OWN_OBJECT_FACTS_FRESH_RESULT)
+            {
+                freshResults.push_back(builder.getStringAttr(parts.front()));
+                parts.pop_back();
+            }
+
+            if (parts.size() == 1)
+            {
+                noDrops += parts.front().str() + "\n";
+                continue;
+            }
+
+            llvm::SmallVector<mlir::Attribute> places;
+            for (auto part : llvm::drop_begin(parts))
+            {
+                auto [positionText, typeText] = part.split(' ');
+                int64_t position;
+                auto type = typeText.empty() ? mlir::Type() : mlir::parseType(typeText, builder.getContext());
+                if (positionText.getAsInteger(10, position) || !type)
+                {
+                    places.clear();
+                    break;
+                }
+
+                places.push_back(builder.getArrayAttr({builder.getI64IntegerAttr(position), mlir::TypeAttr::get(type)}));
+            }
+
+            if (!places.empty())
+            {
+                dropFields.push_back(builder.getNamedAttr(parts.front(), builder.getArrayAttr(places)));
+            }
+        }
+
+        addImportedOwnNoDrops(noDrops);
+        if (!dropFields.empty())
+        {
+            theModule->setAttr(SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME, builder.getDictionaryAttr(dropFields));
+        }
+
+        if (!freshResults.empty())
+        {
+            theModule->setAttr(SHARED_LIB_OWN_FRESH_RESULTS_ATTR_NAME, builder.getArrayAttr(freshResults));
+        }
     }
 
 #ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE

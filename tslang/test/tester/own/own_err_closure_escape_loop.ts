@@ -5,6 +5,11 @@ class C {
 
 let handlers: (() => number)[] = [];
 
+// emptied, so no keeper: what it holds may be released (a keeper's would be immortal)
+function reset() {
+    handlers.length = 0;
+}
+
 function register() {
     let a = new C(1);
     for (let i = 0; i < 3; i++) {

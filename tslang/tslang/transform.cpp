@@ -147,11 +147,27 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         // Under own, after the verifier: the verifier pairs rc's acquisitions with their
         // releases, and inference erases the acquisitions it proves are the one owner's. Inference
         // either erases a retain or reports it, and a program it reports stops here.
+        // Named after the module's own file, the main buffer, not inputFilename, so a symbol is
+        // never another module's.
+        llvm::StringRef moduleFile = inputFilename;
+        if (sourceMgr.getNumBuffers() > 0 && inputFilename != "-")
+        {
+            moduleFile = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBufferIdentifier();
+        }
+
+        // Nothing links the object of a JIT-run program, nor those the JIT cache compiles beside
+        // it: they are only loaded into the JIT.
+        auto linkedByOthers = !compileOptions.isJit && !compileOptions.jitCache;
+
         if (compileOptions.memoryModel == MemoryModelOwn && !ownSkipInference)
         {
             // a program's exports are seen by no other module (own spec 31): an executable, or the
-            // module the JIT enters (a module the JIT cache compiles beside it has isJit off)
-            pm.addPass(mlir::typescript::createOwnershipSignaturePass(compileOptions.isExecutable || compileOptions.isJit));
+            // module the JIT enters (a module the JIT cache compiles beside it has isJit off). What
+            // its object tells a module linking it is written whatever it exports: a static
+            // library is compiled with --export=none.
+            pm.addPass(mlir::typescript::createOwnershipSignaturePass(
+                compileOptions.isExecutable || compileOptions.isJit,
+                linkedByOthers ? SHARED_LIB_OWN_OBJECT_FACTS + typescript::moduleSymbolSuffix(moduleFile) : ""));
             pm.nest<mlir::typescript::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
             // an `await`'s continuation and a `for await` body, outlined by the async lowering
             pm.nest<mlir::func::FuncOp>().addPass(mlir::typescript::createOwnershipInferencePass());
@@ -161,16 +177,9 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         // anything itself. Nothing imports a JIT-run program, nor the modules the JIT cache
         // compiles beside it (isJit off, jitCache on): their objects are only loaded into the
         // JIT, never linked, and the program run there does not read facts from them
-        // (StackPromotionPass). Named after the module's own file, the main buffer, not
-        // inputFilename, so a symbol is never another module's.
-        if (!compileOptions.isJit && !compileOptions.jitCache && !noBorrowFactsExport)
+        // (StackPromotionPass).
+        if (linkedByOthers && !noBorrowFactsExport)
         {
-            llvm::StringRef moduleFile = inputFilename;
-            if (sourceMgr.getNumBuffers() > 0 && inputFilename != "-")
-            {
-                moduleFile = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBufferIdentifier();
-            }
-
             pm.addPass(mlir::typescript::createBorrowFactsExportPass(
                 SHARED_LIB_BORROW_FACTS + typescript::moduleSymbolSuffix(moduleFile)));
         }

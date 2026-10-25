@@ -172,6 +172,10 @@ struct MethodInfo
     uint64_t ownLendsMask = 0;
     // `@record` (OWN_DECLARED_RECORD_ATTR_NAME): what `@lends` names, the result is a record of
     bool ownRecord = false;
+    // `@immortalizes` (OWN_DECLARED_IMMORTALIZES_ATTR_NAME), as a mask like `@lends`'s, of 32 bits:
+    // it fits beside `ownRecord`, where a 64-bit one would grow the vtable's SmallVector past its
+    // inline-size limit
+    uint32_t ownImmortalizesMask = 0;
 };
 
 struct GenericMethodInfo

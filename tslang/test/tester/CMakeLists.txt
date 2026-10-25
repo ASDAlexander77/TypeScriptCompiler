@@ -1664,6 +1664,33 @@ if (WIN32)
                      "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/own-shared-record.cmake")
 endif()
+# -mm=own across modules compiled into objects of their own: the importer reads what the library's
+# object says its functions destroy (--own-facts, own-facts-objects.cmake)
+if (WIN32)
+    add_test(NAME test-own-facts-objects
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-facts-objects"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-facts-objects.cmake")
+    # ...and a library's keeper: the importer makes what it gives `@immortalizes` immortal
+    add_test(NAME test-own-keepers-objects
+             COMMAND ${CMAKE_COMMAND}
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}/test/tester/tests"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-keepers-objects"
+                     "-DLLVM_LIB=${LLVM_LIBRARY_DIR}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-keepers-objects.cmake")
+endif()
+# __MEMORY_MODEL__: the branch not taken is not generated (a call of a function defined nowhere there
+# would not link)
+foreach(model_mm gc rc own none)
+    tslang_add_test(NAME test-jit-${model_mm}-memory-model-constant COMMAND test-runner -jit -mm=${model_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00memory_model_constant.ts")
+    tslang_add_test(NAME test-compile-${model_mm}-memory-model-constant COMMAND test-runner -mm=${model_mm} "${PROJECT_SOURCE_DIR}/test/tester/tests/00memory_model_constant.ts")
+endforeach()
 # the markers mean nothing to the other models
 foreach(markers_mm gc rc)
     tslang_add_test(NAME test-jit-${markers_mm}-own-generator-locals COMMAND test-runner -jit -mm=${markers_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/own_generator_locals.ts")
@@ -3850,7 +3877,7 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
                  own_tuple_record_values own_value_record own_value_loop own_value_temporaries
-                 own_call_field_drops)
+                 own_call_field_drops own_immortal_keepers)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -3864,7 +3891,7 @@ endforeach()
 
 # A global never reassigned is immortal under own (spec 25); the same program under every other model.
 foreach(immortal_mm rc gc none)
-    foreach(immortal_test own_immortal_global own_immortal_global_region own_global_loop_store)
+    foreach(immortal_test own_immortal_global own_immortal_global_region own_global_loop_store own_immortal_keepers)
         tslang_add_test(NAME test-jit-${immortal_mm}-${immortal_test} COMMAND test-runner -jit -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
         tslang_add_test(NAME test-compile-${immortal_mm}-${immortal_test} COMMAND test-runner -mm=${immortal_mm} "${PROJECT_SOURCE_DIR}/test/tester/own/${immortal_test}.ts")
     endforeach()
@@ -4274,11 +4301,11 @@ set(own_error_cases
     "own_err_field_alias|:9:11: error: '[^']*' is used here after its value was moved"
     "own_err_call_in_try_drops|:30:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_closure_escape_used|:9:11: error: '[^']*' is captured by a closure that escapes, and is still used here"
-    "own_err_closure_escape_twice|:7:19: error: '[^']*' is captured by a closure that escapes, and is still used here"
+    "own_err_closure_escape_twice|:12:19: error: '[^']*' is captured by a closure that escapes, and is still used here"
     "own_err_closure_escape_param|:7:12: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: its value is the caller's"
     "own_err_closure_escape_inherited|:9:21: error: a closure that escapes owns what it captures, but -mm=own cannot move this variable into it: it is captured from an enclosing function"
-    "own_err_closure_escape_loop|:11:23: error: '[^']*' is moved inside a loop but was made outside it"
-    "own_err_closure_escape_some_paths|:12:23: error: '[^']*' is moved here on some paths only"
+    "own_err_closure_escape_loop|:16:23: error: '[^']*' is moved inside a loop but was made outside it"
+    "own_err_closure_escape_some_paths|:17:23: error: '[^']*' is moved here on some paths only"
     "own_err_closure_outlives_cell|:13:11: error: '[^']*' borrows '[^']*', which it captures, but runs here after '[^']*' is released"
     "own_err_closure_copy_moved|:13:11: error: '[^']*' borrows '[^']*', which it captures, but runs here after '[^']*' is released"
     "own_err_closure_param_assigned|:9:5: error: '[^']*' is a captured parameter and cannot be assigned under -mm=own: its value is the caller's"
@@ -4522,7 +4549,12 @@ set(own_error_cases
     "own_err_record_without_lends|:11:1: error: '@record' of 'pairOf' says its result is a borrowing record, but no '@lends' names what it borrows"
     "own_err_record_not_record|:7:1: error: '@record' of 'first' says its result is a record that borrows 'a', but its body returns a borrow of it as it is"
     "own_err_record_exported_unsaid|:12:1: error: 'pairOf' returns a record that borrows 'a', 'b', which another module can learn only from '@record' beside its '@lends'"
-    "own_err_value_export_borrowing|:13:1: error: 'wrap' returns a tuple that borrows 'n' and owns nothing, which -mm=own cannot tell another module yet")
+    "own_err_value_export_borrowing|:13:1: error: 'wrap' returns a tuple that borrows 'n' and owns nothing, which -mm=own cannot tell another module yet"
+    "own_err_keeper_unknown_value|:11:5: error: -mm=own cannot make the value kept in 'retained' immortal here: it is not made here, nor a parameter"
+    "own_err_keeper_exported|:7:5: error: 'Registry[.]register' keeps '#1' for good, but -mm=own cannot tell its callers in other modules. '@immortalizes' would say it in its signature"
+    "own_err_keeper_declared|:5:1: error: '@immortalizes' of 'keep' names 'a', but its body keeps for good 'b'"
+    "own_err_keeper_called_through_value|:6:1: error: 'keep' keeps '#0' for good, but -mm=own cannot make every caller make it immortal: the function is called through a value"
+    "own_err_keeper_popped|:14:9: error: argument '[^']*' is given to 'Registry[.]register', which keeps it, but -mm=own cannot move it here")
 foreach(own_error_case ${own_error_cases})
     string(FIND "${own_error_case}" "|" own_error_sep)
     string(SUBSTRING "${own_error_case}" 0 ${own_error_sep} own_error_name)
@@ -5247,7 +5279,7 @@ set(stack_promotion_decision_tests
     "ctor_local|ctor_local\.ts:14:19: remark: stack-promotion: stack"
     "borrow_uses|borrow_uses\.ts:17:15: remark: stack-promotion: stack.*borrow_uses\.ts:18:15: remark: stack-promotion: stack"
     "pass_to_reader|pass_to_reader\.ts:18:19: remark: stack-promotion: stack"
-    "pass_to_keeper|pass_to_keeper\.ts:16:15: remark: stack-promotion: heap: argument"
+    "pass_to_keeper|pass_to_keeper\.ts:16:15: remark: stack-promotion: heap: (argument|kept for good)"
     "method_keeps_this|method_keeps_this\.ts:15:15: remark: stack-promotion: heap: argument"
     "virtual_one_keeps|virtual_one_keeps\.ts:26:18: remark: stack-promotion: heap: argument"
     "ctor_keeps_this|ctor_keeps_this\.ts:13:15: remark: stack-promotion: heap: argument"

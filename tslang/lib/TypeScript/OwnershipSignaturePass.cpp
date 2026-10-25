@@ -30,6 +30,26 @@ namespace own_signature
             }
         }
 
+        if (auto functionsDropping = module->getAttrOfType<mlir::DictionaryAttr>(SHARED_LIB_OWN_DROP_FIELDS_ATTR_NAME))
+        {
+            for (auto entry : functionsDropping)
+            {
+                auto &drops = importedFieldDrops[entry.getName().getValue()];
+                for (auto place : mlir::cast<mlir::ArrayAttr>(entry.getValue()).getAsRange<mlir::ArrayAttr>())
+                {
+                    drops.add({mlir::cast<mlir::IntegerAttr>(place[0]).getInt(), mlir::cast<mlir::TypeAttr>(place[1]).getValue()});
+                }
+            }
+        }
+
+        if (auto names = module->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_OWN_FRESH_RESULTS_ATTR_NAME))
+        {
+            for (auto name : names.getAsRange<mlir::StringAttr>())
+            {
+                importedFreshResults.insert(name.getValue());
+            }
+        }
+
         findImmortalGlobals(module);
         moveIntoGlobals(module);
         rejectBorrowedGlobalInitializers(module);
@@ -51,6 +71,9 @@ namespace own_signature
         });
 
         findOpen(module);
+        // before the facts: a value kept for good is immortal, which keeps nothing of its owner
+        findKeepers(module);
+        decideKeptForGood(module);
         computeFacts();
         computeDrops();
         pinAssignedGlobals();
@@ -89,8 +112,9 @@ namespace own_signature
                 continue;
             }
 
-            if (call.callees.instanceOf || call.callees.imported ||
-                llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) { return noDrops.contains(callee); }))
+            if (call.callees.instanceOf || (call.callees.imported && !call.callees.importedOverwrites) ||
+                (!call.callees.imported &&
+                 llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) { return noDrops.contains(callee); })))
             {
                 call.op->setAttr(OWN_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -108,8 +132,11 @@ namespace own_signature
             }
 
             // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
-            if (call.callees.imported && call.callees.importedName.ends_with("." NEW_METHOD_NAME) &&
-                call.op->getNumResults() == 1)
+            // ...and of a function another own module's object says returns one its caller owns
+            // (--own-facts)
+            if (call.callees.imported && call.op->getNumResults() == 1 &&
+                ((!call.callees.importedOverwrites && call.callees.importedName.ends_with("." NEW_METHOD_NAME)) ||
+                 importedFreshResults.contains(call.callees.importedName)))
             {
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
@@ -1190,12 +1217,23 @@ namespace own_signature
 
     std::optional<OwnershipSignaturePass::FieldDrops> OwnershipSignaturePass::calleesFieldDrops(const Callees &callees)
     {
-        if (!callees.known || callees.instanceOf || callees.imported)
+        if (!callees.known || callees.instanceOf)
         {
             return std::nullopt;
         }
 
         FieldDrops all;
+        if (callees.imported)
+        {
+            // what the imported module's object says (--own-facts), or nothing at all
+            for (auto place : callees.importedPlaces)
+            {
+                all.add(place);
+            }
+
+            return all;
+        }
+
         for (auto callee : callees.funcs)
         {
             if (noDrops.contains(callee))
@@ -1285,28 +1323,34 @@ namespace own_signature
             return true;
         }
 
-        return !callees.instanceOf && !callees.imported &&
+        if (callees.imported)
+        {
+            return callees.importedOverwrites;
+        }
+
+        return !callees.instanceOf &&
                llvm::any_of(callees.funcs, [&](mlir_ts::FuncOp callee) { return !noDrops.contains(callee); });
+    }
+
+    // Its one result is the caller's to own, as a call of it here is (isFresh): its body borrows no
+    // argument for it, nor says one does, and it does not hand back a record that borrows
+    bool OwnershipSignaturePass::returnsFresh(mlir_ts::FuncOp funcOp)
+    {
+        if (funcOp.getFunctionType().getNumResults() != 1 || funcOp->hasAttr(OWN_DECLARED_LENDS_ATTR_NAME) ||
+            funcOp->hasAttr(OWN_DECLARED_BORROWS_ATTR_NAME) || funcOp->hasAttr(OWN_DECLARED_RECORD_ATTR_NAME))
+        {
+            return false;
+        }
+
+        // the effective facts are kept only when not empty
+        auto local = factsLocal.find(funcOp);
+        auto effective = factsEffective.lookup(funcOp);
+        return local != factsLocal.end() && local->second.borrows.empty() && !local->second.record &&
+               effective.borrows.empty() && !effective.record;
     }
 
     void OwnershipSignaturePass::exportNoDrops()
     {
-        auto markerPrefix = std::string(SHARED_LIB_MEMORY_MODEL) + "own_";
-        mlir_ts::GlobalOp marker;
-        for (auto &entry : globals)
-        {
-            if (entry.getKey().starts_with(markerPrefix))
-            {
-                marker = entry.second;
-                break;
-            }
-        }
-
-        if (!marker)
-        {
-            return;
-        }
-
         llvm::SmallVector<llvm::StringRef> names;
         for (auto &entry : functions)
         {
@@ -1323,6 +1367,79 @@ namespace own_signature
         {
             text += name.str();
             text += '\n';
+        }
+
+        // The same names, and the places each other exported function overwrites when that is all
+        // it destroys, as the char array an importer reads from this module's object
+        // (SHARED_LIB_OWN_OBJECT_FACTS): `<name>` or `<name>\t<position> <slot type>...`, and a last
+        // field OWN_OBJECT_FACTS_FRESH_RESULT when its result is its caller's to own. Written
+        // whatever the module exports, as a static library is compiled with --export=none.
+        llvm::SmallVector<std::pair<llvm::StringRef, std::string>> lines;
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (funcOp.isDeclaration() || funcOp.isPrivate())
+            {
+                continue;
+            }
+
+            auto found = fieldDrops.find(funcOp);
+            auto overwrites = !noDrops.contains(funcOp) && found != fieldDrops.end() && !found->second.any &&
+                              !found->second.places.empty();
+            if (!noDrops.contains(funcOp) && !overwrites)
+            {
+                continue;
+            }
+
+            std::string line;
+            llvm::raw_string_ostream os(line);
+            if (overwrites)
+            {
+                for (auto [position, type] : found->second.places)
+                {
+                    os << '\t' << position << ' ' << type;
+                }
+            }
+
+            if (returnsFresh(funcOp))
+            {
+                os << '\t' << OWN_OBJECT_FACTS_FRESH_RESULT;
+            }
+
+            lines.push_back({funcOp.getSymName(), line});
+        }
+
+        llvm::sort(lines);
+        std::string objectText;
+        for (auto &[functionName, fields] : lines)
+        {
+            objectText += functionName.str() + fields + "\n";
+        }
+
+        mlir::Builder attrBuilder(&getContext());
+        if (!objectFactsSymbol.empty() && !objectText.empty())
+        {
+            getOperation()->setAttr(SHARED_LIB_OWN_OBJECT_FACTS_ATTR_NAME,
+                                    attrBuilder.getArrayAttr({attrBuilder.getStringAttr(objectFactsSymbol),
+                                                              attrBuilder.getStringAttr(objectText)}));
+        }
+
+        // The names, as the shared library's exported SHARED_LIB_OWN_FACTS, beside its memory model
+        // marker: only a module that has one, exporting its declarations, is imported as -shared
+        auto markerPrefix = std::string(SHARED_LIB_MEMORY_MODEL) + "own_";
+        mlir_ts::GlobalOp marker;
+        for (auto &entry : globals)
+        {
+            if (entry.getKey().starts_with(markerPrefix))
+            {
+                marker = entry.second;
+                break;
+            }
+        }
+
+        if (!marker)
+        {
+            return;
         }
 
         auto suffix = marker.getSymName().drop_front(markerPrefix.size());
@@ -1499,7 +1616,7 @@ namespace own_signature
 
 #undef DEBUG_TYPE
 
-std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipSignaturePass(bool executable)
+std::unique_ptr<mlir::Pass> mlir_ts::createOwnershipSignaturePass(bool executable, std::string objectFactsSymbol)
 {
-    return std::make_unique<own_signature::OwnershipSignaturePass>(executable);
+    return std::make_unique<own_signature::OwnershipSignaturePass>(executable, std::move(objectFactsSymbol));
 }

@@ -651,6 +651,64 @@ class ReleaseCellOpLowering : public TsLlvmPattern<mlir_ts::ReleaseCellOp>
     }
 };
 
+// -mm=own's keepers (docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): the block a
+// value kept for good relies on is marked immortal, so every release skips it.
+class MakeImmortalOpLowering : public TsLlvmPattern<mlir_ts::MakeImmortalOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::MakeImmortalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::MakeImmortalOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto value = transformed.getValue();
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn && !op.getAssumed())
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            auto type = op.getValue().getType();
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(type))
+            {
+                // a bound method's object, which it does not own, or a closure's box
+                TypeHelper th(rewriter);
+                auto thisValue = rewriter.create<LLVM::ExtractValueOp>(op->getLoc(), th.getPtrType(), value,
+                                                                       ArrayRef<int64_t>{THIS_VALUE_INDEX});
+                orl.emitMarkImmortalIfMortal(thisValue);
+            }
+            else if (isa<mlir_ts::ClassType, mlir_ts::ObjectType, mlir_ts::StringType, mlir_ts::ArrayType>(type))
+            {
+                // the instance, the string, the array's header
+                orl.emitMarkImmortalIfMortal(value);
+            }
+            else
+            {
+                return op.emitError("-mm=own cannot make a value of this type immortal");
+            }
+        }
+
+        rewriter.replaceOp(op, value);
+        return mlir::success();
+    }
+};
+
+class MarkImmortalCellOpLowering : public TsLlvmPattern<mlir_ts::MarkImmortalCellOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::MarkImmortalCellOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::MarkImmortalCellOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        if (tsLlvmContext->compileOptions.memoryModel == MemoryModelOwn)
+        {
+            OwnershipRoutineLogic orl(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+            orl.emitMarkImmortalIfMortal(transformed.getSlot());
+        }
+
+        rewriter.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 {
   public:
@@ -2072,7 +2130,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             // read by -mm=own only
             if (name == OWN_DECLARED_NO_DROPS_ATTR_NAME || name == OWN_DECLARED_KEEPS_ATTR_NAME ||
                 name == OWN_DECLARED_BORROWS_ATTR_NAME || name == OWN_DECLARED_LENDS_ATTR_NAME ||
-                name == OWN_DECLARED_RECORD_ATTR_NAME || name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME) {
+                name == OWN_DECLARED_RECORD_ATTR_NAME || name == OWN_DECLARED_PARAM_NAMES_ATTR_NAME ||
+                name == OWN_DECLARED_IMMORTALIZES_ATTR_NAME) {
                 continue;
             }
 
@@ -8796,15 +8855,16 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
 // The module's borrow facts (BorrowFactsExportPass) as the exported char array importers read: a
 // char array, NUL included, so its bytes sit in the object file where the symbol points.
 // ExportFixPass makes it dllexport on Windows, so the JIT finds it in the default library's DLL.
-static void emitBorrowFacts(mlir::ModuleOp m)
+// The module's own facts for importers' --own-facts (SHARED_LIB_OWN_OBJECT_FACTS) are made the same way.
+static void emitBorrowFacts(mlir::ModuleOp m, llvm::StringRef attrName = SHARED_LIB_BORROW_FACTS_ATTR_NAME)
 {
-    auto facts = m->getAttrOfType<mlir::ArrayAttr>(SHARED_LIB_BORROW_FACTS_ATTR_NAME);
+    auto facts = m->getAttrOfType<mlir::ArrayAttr>(attrName);
     if (!facts)
     {
         return;
     }
 
-    m->removeAttr(SHARED_LIB_BORROW_FACTS_ATTR_NAME);
+    m->removeAttr(attrName);
     auto name = mlir::cast<mlir::StringAttr>(facts[0]).getValue();
     auto text = mlir::cast<mlir::StringAttr>(facts[1]).getValue().str();
     text.push_back(char(0));
@@ -9091,7 +9151,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, TypeDescriptorOpLowering, RetainOpLowering, ReleaseOpLowering, RetainSlotOpLowering, ReleaseSlotOpLowering, RetainCellOpLowering, ReleaseCellOpLowering, ReleaseContentsOpLowering, MakeImmortalOpLowering, MarkImmortalCellOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringResizeOpLowering, StringConcatOpLowering, StringCopyOpLowering,
         SharedNewOpLowering, SharedValueRefOpLowering, SharedCountOpLowering,
         StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
@@ -9161,6 +9221,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     giveEntryPointAnExitCode(m, tsContext.compileOptions);
 
     emitBorrowFacts(m);
+    emitBorrowFacts(m, SHARED_LIB_OWN_OBJECT_FACTS_ATTR_NAME);
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << m << "\n";);
 

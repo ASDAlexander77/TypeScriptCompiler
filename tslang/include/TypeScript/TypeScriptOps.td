@@ -625,6 +625,33 @@ def TypeScript_ReleaseContentsOp : TypeScript_Op<"ReleaseContents"> {
   let arguments = (ins AnyType:$instance, UnitAttr:$reset);
 }
 
+def TypeScript_MakeImmortalOp : TypeScript_Op<"MakeImmortal", [AllTypesMatch<["value", "result"]>]> {
+  let summary = "the same value, its block marked immortal";
+  let description = [{
+    -mm=own (docs/superpowers/specs/2026-10-25-own-immortal-keepers-design.md): a value an
+    append-only global keeps for good. Its block - an object's, a string's, an array's header, a
+    bound function's `this` - is marked HEAP_BLOCK_IMMORTAL, unless it is null or immortal already,
+    so every release skips it. The result is that value, immortal: owned by no one. With `assumed`
+    nothing is marked: the value is a parameter its callers made immortal.
+
+    Only OwnershipSignaturePass makes it; under the other models it is never there.
+  }];
+
+  let arguments = (ins AnyType:$value, UnitAttr:$assumed);
+  let results = (outs AnyType:$result);
+}
+
+def TypeScript_MarkImmortalCellOp : TypeScript_Op<"MarkImmortalCell"> {
+  let summary = "mark a captured variable's cell immortal";
+  let description = [{
+    The cell of a variable a closure captures, when that closure is kept for good and borrows the
+    cell from the frame that declared it (-mm=own, MakeImmortal): the frame's release of the cell
+    then skips it.
+  }];
+
+  let arguments = (ins TypeScript_Ref:$slot);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf", [Pure]> {
   let summary = "size of type";
   let description = [{

@@ -329,7 +329,9 @@ namespace own_inference
 
     bool OwnershipInferencePass::isImmortalLiteral(mlir::Value value)
     {
-        if (isImmortalGlobalRead(value))
+        // ...or a value a keeper keeps for good, which is made immortal (ts.MakeImmortal), and a
+        // keeper's element
+        if (isImmortalGlobalRead(value) || isKeptForGood(value))
         {
             return true;
         }
@@ -341,6 +343,12 @@ namespace own_inference
 
     bool OwnershipInferencePass::isBorrow(mlir::Operation *user, mlir::Value value)
     {
+        // marking a value immortal (a keeper's) reads it; the result is another value, owned by none
+        if (mlir::isa<mlir_ts::MakeImmortalOp, mlir_ts::MarkImmortalCellOp>(user))
+        {
+            return true;
+        }
+
         if (mlir::isa<mlir_ts::PrintOp, mlir_ts::PropertyRefOp, mlir_ts::ElementRefOp, mlir_ts::LengthOfOp,
                       mlir_ts::ThisSymbolRefOp, mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp,
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,

@@ -49,6 +49,7 @@ add_mlir_dialect_library(MLIRTypeScript
     OwnershipSignatureGenerators.cpp
     OwnershipSignatureGlobals.cpp
     OwnershipSignatureInterfaces.cpp
+    OwnershipSignatureKeepers.cpp
     OwnershipSignatureRecords.cpp
     OwnershipSignatureResolve.cpp
     OwnedReturnConsumptionPass.cpp
@@ -70,4 +71,6 @@ add_mlir_dialect_library(MLIRTypeScript
     LINK_LIBS PUBLIC
     ts-new-parser-lib
     MLIRIR
+    # mlir::parseType: the slot types of the own facts read from an object (--own-facts)
+    MLIRAsmParser
     )

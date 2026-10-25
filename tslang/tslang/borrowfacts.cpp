@@ -27,6 +27,7 @@ namespace cl = llvm::cl;
 extern cl::opt<enum Action> emitAction;
 extern cl::list<std::string> libs;
 extern cl::list<std::string> objs;
+extern cl::list<std::string> ownFacts;
 
 llvm::Triple getLinkTargetTriple();
 std::string getTargetStaticLibName(llvm::StringRef);
@@ -168,4 +169,42 @@ void readBorrowFacts(CompileOptions &compileOptions)
     }
 
     appendBorrowFacts(compileOptions, files, std::vector<std::string>(objs.begin(), objs.end()));
+}
+
+// Called before the module is compiled: the ownership signature pass reads them (MLIRGen puts
+// them on the module). Only under own, and only from the files --own-facts names: the objects of
+// the modules this one imports, which the build links with it - so, like a library's borrow facts,
+// they describe the code that runs. A file that is missing or holds none gives no facts.
+void readOwnFacts(CompileOptions &compileOptions)
+{
+    if (compileOptions.memoryModel != MemoryModelOwn)
+    {
+        return;
+    }
+
+    // and the default library's: its own build is the one every own program links (statically: its
+    // DLL, which a program may load another copy of, is never read), so `Math.abs` is a call of a
+    // function whose facts are known
+    std::vector<std::string> files(ownFacts.begin(), ownFacts.end());
+    if (!compileOptions.noDefaultLib && emitAction != Action::RunJIT)
+    {
+        files.push_back(getDefaultLibBinary(/*shared=*/false, compileOptions, getLinkTargetTriple()));
+    }
+
+    for (auto &file : files)
+    {
+        if (!llvm::sys::fs::is_regular_file(file) || !isStaticLinkInput(file))
+        {
+            continue;
+        }
+
+        for (auto &[symbol, text] : Dump::readCStringSymbols(file, SHARED_LIB_OWN_OBJECT_FACTS))
+        {
+            compileOptions.importedOwnFacts += text;
+            if (!text.empty() && text.back() != '\n')
+            {
+                compileOptions.importedOwnFacts += "\n";
+            }
+        }
+    }
 }
