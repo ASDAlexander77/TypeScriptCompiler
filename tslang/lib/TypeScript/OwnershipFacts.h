@@ -13,6 +13,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
+#include <optional>
+
 // What -mm=own's two passes both need to read the ownership ops: which op is a view of the block
 // its operand holds, where a value was made, which ops are calls and places. See
 // docs/superpowers/specs/2026-09-24-own-memory-model-design.md, sections 3.2, 3.3 and 14.
@@ -57,6 +59,14 @@ namespace mlir_ts = mlir::typescript;
 // The callee destroys nothing its caller can reach: no overwrite of a place it did not make, no
 // assignment of a global, no call that may.
 #define OWN_NO_DROPS_ATTR_NAME "__own_no_drops"
+// The callee destroys nothing its caller can reach but the old values of the places it overwrites:
+// [position, slot type] pairs - a field's position (OWN_INTERFACE_FIELD_POSITION for a field reached
+// through an interface), -1 for an element - judged as those stores would be if they were the
+// caller's own (OwnershipInferencePass::overwritesChain).
+#define OWN_DROP_FIELDS_ATTR_NAME "__own_drop_fields"
+// The position a place reached through an interface is given: its position in the object is not
+// known (spec 28)
+constexpr int64_t OWN_INTERFACE_FIELD_POSITION = -3;
 // On a function whose body relies on a fact its callers cannot all know (a parameter it keeps, a
 // result that borrows): why, for the error the body gets instead.
 #define OWN_FACTS_LOST_ATTR_NAME "__own_facts_lost"
@@ -154,6 +164,25 @@ inline mlir::OperandRange callArgs(mlir::Operation *op)
 inline bool callNoDrops(mlir::Operation *op)
 {
     return op->hasAttr(OWN_NO_DROPS_ATTR_NAME);
+}
+
+// The places a call's callees may overwrite (OWN_DROP_FIELDS_ATTR_NAME), when that is all they
+// destroy; none when they may destroy anything.
+inline std::optional<llvm::SmallVector<std::pair<int64_t, mlir::Type>>> callDropFields(mlir::Operation *op)
+{
+    auto attr = op->getAttrOfType<mlir::ArrayAttr>(OWN_DROP_FIELDS_ATTR_NAME);
+    if (!attr)
+    {
+        return std::nullopt;
+    }
+
+    llvm::SmallVector<std::pair<int64_t, mlir::Type>> places;
+    for (auto entry : attr.getAsRange<mlir::ArrayAttr>())
+    {
+        places.push_back({mlir::cast<mlir::IntegerAttr>(entry[0]).getInt(), mlir::cast<mlir::TypeAttr>(entry[1]).getValue()});
+    }
+
+    return places;
 }
 
 // The argument indices a call's callee keeps.

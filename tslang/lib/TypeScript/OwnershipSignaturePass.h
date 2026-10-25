@@ -516,6 +516,36 @@ class OwnershipSignaturePass : public mlir::PassWrapper<OwnershipSignaturePass, 
     // Functions that destroy nothing their caller can reach.
     llvm::DenseSet<mlir::Operation *> noDrops;
 
+    // What else a function destroys that its caller can reach, when it is only the old values of
+    // places it overwrites: each place's position and slot type (OWN_DROP_FIELDS_ATTR_NAME). A
+    // caller judges a call of it as it would those stores, made in its own body. `any` when it may
+    // destroy something else (a global, a handle's payload, a captured variable, an element popped,
+    // a call that may).
+    struct FieldDrops
+    {
+        bool any = false;
+        llvm::SmallVector<std::pair<int64_t, mlir::Type>, 4> places;
+
+        bool add(std::pair<int64_t, mlir::Type> place)
+        {
+            if (llvm::is_contained(places, place))
+            {
+                return false;
+            }
+
+            places.push_back(place);
+            return true;
+        }
+    };
+
+    llvm::DenseMap<mlir::Operation *, FieldDrops> fieldDrops;
+
+    // The body's own share of a function's FieldDrops: its stores, not its calls.
+    FieldDrops fieldDropsInBody(mlir_ts::FuncOp funcOp);
+
+    // The FieldDrops of a call's callees together, when every one has them.
+    std::optional<FieldDrops> calleesFieldDrops(const Callees &callees);
+
     // A class's vtable is a global named `<class>..vtbl` that holds its `..instanceOf`. An
     // interface's vtable for a class (`B.I..vtbl`) holds only the methods and is not one: a call
     // through an interface does not name what it reaches.
