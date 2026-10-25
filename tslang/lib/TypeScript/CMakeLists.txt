@@ -16,6 +16,7 @@ add_mlir_dialect_library(MLIRTypeScript
     TypeScriptDialectTranslation.cpp
     AsyncDialectTranslation.cpp
     DiagnosticHelper.cpp
+    CppMangler.cpp
     MLIRGen.cpp
     MLIRGenAccessCall.cpp
     MLIRGenCast.cpp

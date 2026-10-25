@@ -352,6 +352,9 @@
 #define DLL_IMPORT "dllimport"
 #define DLL_NAME "dllname"
 #define LINK_NAME "linkname"
+// @cppname("int Methods::scaled(int)"): @linkname under the symbol the target's C++ compiler gives
+// that declaration (see CppMangler.h)
+#define CPP_NAME "cppname"
 // A class laid over an existing C++ object: its vtable is the C++ one (see ClassInfo::isCppVTable)
 #define CPP_VTABLE "cpp"
 // `@final class C`: no class may extend C, so a call on a value of type C is a direct call to the

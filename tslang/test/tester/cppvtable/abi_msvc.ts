@@ -38,10 +38,11 @@ class Methods {
     @slot(10) pair(d: S16, tail: s32): u64;
     @slot(11) flags(x: s32): Flags;
     @slot(12) r12(x: s32): R12;
-    // a C++ non-virtual method (no @slot), called by its symbol, and its overload
-    @linkname("?scaled@Methods@@QEAAHH@Z")
+    // a C++ non-virtual method (no @slot), called by its symbol, and its overload: the symbols of
+    // their C++ declarations (?scaled@Methods@@QEAAHH@Z, ?scaled@Methods@@QEAAHN@Z)
+    @cppname("int scaled(int)")
     scaled(x: s32): s32;
-    @linkname("?scaled@Methods@@QEAAHN@Z")
+    @cppname("int scaled(double)")
     scaled(x: f64): s32;
 }
 

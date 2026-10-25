@@ -47,6 +47,7 @@ virtual only as in C++:
 | `@slot(N) name(...): T;` | a C++ virtual method: slot N of the vtable, counted from 0 with the base classes' slots |
 | `name(...): T;` overriding a base class's `@slot` method | the same slot, as in C++ (`@slot` may be repeated, with the same number) |
 | `@linkname("symbol") name(...): T;` | a C++ non-virtual method, called by its (mangled) symbol as `symbol(this, args...)` |
+| `@cppname("T name(...)") name(...): T;` | the same, by its C++ declaration: the compiler mangles it for the target (see below) |
 | `name(...): T { ... }` with no `@slot`, overriding nothing | a method of TypeScript's own, called directly; not in the vtable |
 
 The slots may be given in any order, and a slot no method names is skipped: declare only the
@@ -68,7 +69,7 @@ errors and not warnings.
 
 | Not allowed | Why |
 | --- | --- |
-| a method without a body and without `@slot` or `@linkname`, overriding nothing | it's neither a slot nor a symbol: a forgotten `@slot` |
+| a method without a body and without `@slot`, `@linkname` or `@cppname`, overriding nothing | it's neither a slot nor a symbol: a forgotten `@slot` |
 | an `abstract` method without `@slot` | it is virtual, so it needs its slot |
 | `@slot` on a method of an ordinary class | an ordinary class's vtable is tslang's own |
 | a constructor or a field initializer, in a class none of whose virtual methods has a body | the objects and their code are C++'s (see "Implementing C++ methods") |
@@ -134,6 +135,27 @@ Writing one by hand:
 - **Non-virtual methods** are bound by their mangled symbol: `@linkname("?scaled@Methods@@QEAAHH@Z")`
   under MSVC, `@linkname("_ZN7Methods6scaledEi")` under the Itanium ABI. The symbol has to be
   exported by the C++ library (`__declspec(dllexport)` on the method or the class).
+
+  `@cppname` takes the C++ declaration instead and mangles it for the target: MSVC's scheme on
+  `windows-msvc`, the Itanium one (g++, clang) everywhere else, MinGW included. That way one class
+  works on every OS:
+
+  ```ts
+  @cppname("int scaled(int)")      scaled(x: s32): s32;   // ?scaled@Methods@@QEAAHH@Z, _ZN7Methods6scaledEi
+  @cppname("int scaled(double)")   scaled(x: f64): s32;
+  @cppname("int get() const")      get(): s32;            // a const method
+  @cppname("size_t length(const char* text)") length(text: string): u64;
+  ```
+
+  An unqualified name is a member of the class. A qualified one is taken as written
+  (`ns::Methods::scaled`). On a `declare function`, `@cppname("int ns::sum(int, int)")` binds a
+  free function. The types are C++'s builtin ones; the `<stdint.h>`/`<stddef.h>` typedefs as the
+  target defines them (`int64_t` is `long` on 64-bit Linux and `long long` on Windows and macOS, and
+  each mangles differently); and records by qualified name (`ns::Pt*`, `const Pair&`), all with
+  `const`, `*`, `&`, `&&`. A bare record name is a `struct`: write `class Obj`, `union U`
+  or `enum E` when it isn't, because MSVC encodes which one it is. Names aren't looked up, so write
+  a record in another namespace with its full name. Templates, operators, constructors,
+  destructors, function pointers and arrays aren't supported: use `@linkname` for those.
 - **Struct returned by value.** A C++ virtual method that returns a class or struct by value (for
   example `nvrhi::RefCountPtr<T>` or `nvrhi::Object`) returns a record. Declare its return type
   as a tuple with the record's layout:

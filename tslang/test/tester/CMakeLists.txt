@@ -3532,6 +3532,27 @@ foreach(cppvtable_itanium_triple x86_64-unknown-linux-gnu aarch64-unknown-linux-
                                     FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
 endforeach()
 
+# @cppname: one C++ declaration, the symbol of each target's C++ compiler (cppvtable/cppname.ts)
+set(cppname_symbols_x86_64-pc-windows-msvc
+    "\\?scaled@Methods@@QEAAHH@Z" "\\?scaled@Methods@@QEAAHN@Z" "\\?get@Methods@@QEBAHXZ"
+    "\\?total@Methods@@QEAA_J_J@Z" "\\?sum@cppname@@YAHHH@Z")
+set(cppname_symbols_x86_64-unknown-linux-gnu
+    "_ZN7Methods6scaledEi" "_ZN7Methods6scaledEd" "_ZNK7Methods3getEv" "_ZN7Methods5totalEl" "_ZN7cppname3sumEii")
+set(cppname_symbols_x86_64-pc-windows-gnu
+    "_ZN7Methods6scaledEi" "_ZN7Methods6scaledEd" "_ZNK7Methods3getEv" "_ZN7Methods5totalEx" "_ZN7cppname3sumEii")
+foreach(cppname_triple x86_64-pc-windows-msvc x86_64-unknown-linux-gnu x86_64-pc-windows-gnu)
+    set(cppname_index 0)
+    foreach(cppname_symbol ${cppname_symbols_${cppname_triple}})
+        add_test(NAME test-compile-cppname-${cppname_triple}-${cppname_index}
+                 COMMAND $<TARGET_FILE:tslang> --emit=llvm --no-default-lib -mm=none -mtriple=${cppname_triple}
+                         "${PROJECT_SOURCE_DIR}/test/tester/cppvtable/cppname.ts" -o -)
+        set_tests_properties(test-compile-cppname-${cppname_triple}-${cppname_index}
+                             PROPERTIES PASS_REGULAR_EXPRESSION "declare [^\n]*@\"?${cppname_symbol}\"?\\("
+                                        FAIL_REGULAR_EXPRESSION "error:|Stack dump|Assertion failed")
+        math(EXPR cppname_index "${cppname_index} + 1")
+    endforeach()
+endforeach()
+
 # Records passed by value as each ABI passes them (abi_host.cpp's byValue: 4, 8, 12, 16, 24 bytes,
 # then an int), on any host: MSVC x64 integers of 4 and 8 bytes, then pointers to copies; SysV the
 # 4- and 8-byte ones in a register each, the 12-byte one in two, the 16- and 24-byte ones on the
@@ -4578,7 +4599,11 @@ set(linkname_cases
     "type-mismatch|binds symbol 'strlen' with type"
     "two-definitions|both define symbol 'linkname_dup'"
     "not-a-function|binds symbol 'linkname_counter', which is not a function"
-    "chain|'a' binds symbol 'linkname_chain_b', which @dllname/@linkname renames to 'linkname_chain_c'")
+    "chain|'a' binds symbol 'linkname_chain_b', which @dllname/@linkname renames to 'linkname_chain_c'"
+    "cppname-unparsable|@cppname: expected '\\)' at the end"
+    "cppname-variable|@cppname: is for a function or a method"
+    "cppname-const-function|@cppname: only a method with 'this' can be const or volatile"
+    "cppname-method-unparsable|cppname-method-unparsable\\.ts:5:5: error: @cppname: expected '\\)' at the end")
 foreach(linkname_case ${linkname_cases})
     string(FIND "${linkname_case}" "|" linkname_sep)
     string(SUBSTRING "${linkname_case}" 0 ${linkname_sep} linkname_name)
