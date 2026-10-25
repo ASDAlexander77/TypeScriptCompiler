@@ -83,6 +83,7 @@ namespace own_signature
                 call.op->setAttr(OWN_FRESH_RESULT_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
             }
 
+            call.op->removeAttr(OWN_DROP_FIELDS_ATTR_NAME);
             if (!call.callees.known)
             {
                 continue;
@@ -92,6 +93,18 @@ namespace own_signature
                 llvm::all_of(call.callees.funcs, [&](mlir_ts::FuncOp callee) { return noDrops.contains(callee); }))
             {
                 call.op->setAttr(OWN_NO_DROPS_ATTR_NAME, mlir::UnitAttr::get(&getContext()));
+            }
+            else if (auto drops = calleesFieldDrops(call.callees))
+            {
+                llvm::SmallVector<mlir::Attribute> places;
+                for (auto [position, type] : drops->places)
+                {
+                    places.push_back(mlir::ArrayAttr::get(
+                        &getContext(), {mlir::IntegerAttr::get(mlir::IntegerType::get(&getContext(), 64), position),
+                                        mlir::TypeAttr::get(type)}));
+                }
+
+                call.op->setAttr(OWN_DROP_FIELDS_ATTR_NAME, mlir::ArrayAttr::get(&getContext(), places));
             }
 
             // `new C()` of a class from a library built under own: see OWN_FRESH_RESULT_ATTR_NAME
@@ -1126,6 +1139,143 @@ namespace own_signature
                 }
             }
         }
+
+        // What the others destroy, when it is only places they overwrite: their bodies' stores and
+        // their callees' together, to a fixed point (a recursive call adds nothing new)
+        for (auto &entry : functions)
+        {
+            auto funcOp = entry.second;
+            if (!funcOp.isDeclaration() && !noDrops.contains(funcOp))
+            {
+                fieldDrops[funcOp] = fieldDropsInBody(funcOp);
+            }
+        }
+
+        for (auto changed = true; changed;)
+        {
+            changed = false;
+            for (auto &entry : functions)
+            {
+                auto funcOp = entry.second;
+                auto found = fieldDrops.find(funcOp);
+                if (found == fieldDrops.end() || found->second.any)
+                {
+                    continue;
+                }
+
+                for (auto *call : callsIn[funcOp])
+                {
+                    if (!callMayDrop(call->callees))
+                    {
+                        continue;
+                    }
+
+                    auto callee = calleesFieldDrops(call->callees);
+                    auto &mine = fieldDrops[funcOp];
+                    if (!callee || callee->any)
+                    {
+                        mine.any = true;
+                        changed = true;
+                        break;
+                    }
+
+                    for (auto place : callee->places)
+                    {
+                        changed |= mine.add(place);
+                    }
+                }
+            }
+        }
+    }
+
+    std::optional<OwnershipSignaturePass::FieldDrops> OwnershipSignaturePass::calleesFieldDrops(const Callees &callees)
+    {
+        if (!callees.known || callees.instanceOf || callees.imported)
+        {
+            return std::nullopt;
+        }
+
+        FieldDrops all;
+        for (auto callee : callees.funcs)
+        {
+            if (noDrops.contains(callee))
+            {
+                continue;
+            }
+
+            auto found = fieldDrops.find(callee);
+            if (found == fieldDrops.end() || found->second.any)
+            {
+                return std::nullopt;
+            }
+
+            for (auto place : found->second.places)
+            {
+                all.add(place);
+            }
+        }
+
+        return all;
+    }
+
+    OwnershipSignaturePass::FieldDrops OwnershipSignaturePass::fieldDropsInBody(mlir_ts::FuncOp funcOp)
+    {
+        // what dropsInBody counts, with the overwrites of places it can name kept apart
+        FieldDrops drops;
+        funcOp.walk([&](mlir::Operation *op) {
+            if (drops.any)
+            {
+                return;
+            }
+
+            if (mlir::isa<mlir_ts::ReleaseOp>(op) && touchesHandle(op))
+            {
+                drops.any = true;
+            }
+            else if (auto releaseSlotOp = mlir::dyn_cast<mlir_ts::ReleaseSlotOp>(op))
+            {
+                auto slot = releaseSlotOp.getSlot();
+                if (slot.getDefiningOp<mlir_ts::AddressOfOp>() || isLoadedCell(slot) || (!isPlace(slot) && touchesHandle(op)))
+                {
+                    drops.any = true;
+                }
+                else if (isPlace(slot) && reachesOutside(slot, funcOp))
+                {
+                    // `x.value = ...` of a handle may replace the payload any other handle reads
+                    if (slot.getDefiningOp<mlir_ts::SharedValueRefOp>())
+                    {
+                        drops.any = true;
+                        return;
+                    }
+
+                    int64_t position = -1;
+                    if (auto propertyRefOp = slot.getDefiningOp<mlir_ts::PropertyRefOp>())
+                    {
+                        position = propertyRefOp.getPosition();
+                    }
+                    else if (isInterfaceField(slot))
+                    {
+                        position = OWN_INTERFACE_FIELD_POSITION;
+                    }
+
+                    drops.add({position, slot.getType()});
+                }
+            }
+            else if (mlir::isa<mlir_ts::ArrayPopOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::SetLengthOfOp>(op))
+            {
+                drops.any |= reachesOutside(op->getOperand(0), funcOp);
+            }
+            else if (mlir::isa<mlir_ts::ArrayPushOp, mlir_ts::ArrayUnshiftOp>(op))
+            {
+                drops.any |= reachesSharedValue(op->getOperand(0));
+            }
+            else if (mlir::isa<mlir_ts::DeleteOp>(op))
+            {
+                drops.any = true;
+            }
+        });
+
+        return drops;
     }
 
     bool OwnershipSignaturePass::callMayDrop(const Callees &callees)

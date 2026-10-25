@@ -573,6 +573,25 @@ namespace own_inference
         return derived;
     }
 
+    bool OwnershipInferencePass::overwritesChain(int64_t position, mlir::Type slotType, const Chain &chain)
+    {
+        auto isField = [](int64_t at) { return at >= 0 || at == Chain::InterfaceField; };
+
+        // A field reached through an interface may be any field of the object under it, of any
+        // type (a class may declare the field narrower than the interface): an overwrite through
+        // an interface drops every field on the chain, and any field's overwrite drops a field
+        // read through an interface (spec 28).
+        return llvm::any_of(chain.places, [&](auto &place) {
+            if (isField(position) && isField(place.first) &&
+                (position == Chain::InterfaceField || place.first == Chain::InterfaceField))
+            {
+                return true;
+            }
+
+            return place.first == position && place.second == slotType;
+        });
+    }
+
     bool OwnershipInferencePass::dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed)
     {
         if (read && drop == read)
@@ -611,7 +630,6 @@ namespace own_inference
                 return llvm::any_of(chain.places, [&](auto &place) { return place.first == Chain::SharedValue; });
             }
 
-            auto isField = [](int64_t position) { return position >= 0 || position == Chain::InterfaceField; };
             int64_t position = -1;
             if (auto propertyRefOp = slot.getDefiningOp<mlir_ts::PropertyRefOp>())
             {
@@ -622,19 +640,7 @@ namespace own_inference
                 position = Chain::InterfaceField;
             }
 
-            // A field reached through an interface may be any field of the object under it, of any
-            // type (a class may declare the field narrower than the interface): an overwrite through
-            // an interface drops every field on the chain, and any field's overwrite drops a field
-            // read through an interface (spec 28).
-            return llvm::any_of(chain.places, [&](auto &place) {
-                if (isField(position) && isField(place.first) &&
-                    (position == Chain::InterfaceField || place.first == Chain::InterfaceField))
-                {
-                    return true;
-                }
-
-                return place.first == position && place.second == slot.getType();
-            });
+            return overwritesChain(position, slot.getType(), chain);
         }
 
         if (isCall(drop))
@@ -645,18 +651,31 @@ namespace own_inference
             }
 
             // a call given a closure may run it, and its box may hold anything
-            if (!chain.owned() || llvm::any_of(drop->getOperands(), holdsCaptures))
+            auto givenClosure = llvm::any_of(drop->getOperands(), holdsCaptures);
+            auto mayDrop = true;
+            if (chain.owned() && !givenClosure)
             {
-                return true;
+                auto &fromRead = derivedFrom(borrowed ? borrowed : read->getResult(0));
+                auto sources = rootSources(chain);
+                mayDrop = llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
+                    return !fromRead.contains(operand) && llvm::any_of(sources, [&](mlir::Value source) {
+                               return derivedFrom(source).contains(operand);
+                           });
+                });
             }
 
-            auto &fromRead = derivedFrom(borrowed ? borrowed : read->getResult(0));
-            auto sources = rootSources(chain);
-            return llvm::any_of(drop->getOperands(), [&](mlir::Value operand) {
-                return !fromRead.contains(operand) && llvm::any_of(sources, [&](mlir::Value source) {
-                           return derivedFrom(source).contains(operand);
-                       });
-            });
+            // Callees that destroy only the old values of places they overwrite drop the chain as
+            // those stores would here. Not a chain whose places are not all known (a borrowing
+            // call's result is somewhere under its arguments).
+            if (mayDrop && !givenClosure && !chain.anyPlace)
+            {
+                if (auto places = callDropFields(drop))
+                {
+                    mayDrop = llvm::any_of(*places, [&](auto &place) { return overwritesChain(place.first, place.second, chain); });
+                }
+            }
+
+            return mayDrop;
         }
 
         // pop, shift, splice, `length =`; push and unshift on an array reached through a handle

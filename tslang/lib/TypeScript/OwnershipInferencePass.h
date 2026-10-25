@@ -735,7 +735,7 @@ class OwnershipInferencePass
         // position in the object is not known here (spec 28)
         llvm::SmallVector<std::pair<int64_t, mlir::Type>> places;
         static constexpr int64_t SharedValue = -2;
-        static constexpr int64_t InterfaceField = -3;
+        static constexpr int64_t InterfaceField = OWN_INTERFACE_FIELD_POSITION;
         llvm::SmallVector<std::pair<mlir::Value, Kind>> roots;
         // The roots that are handles - what a `s.value` was read through - each also NotOwned
         // among `roots` (spec 23.3). Known from the op, not the root's type: a view may hide it.
@@ -776,6 +776,8 @@ class OwnershipInferencePass
     // from the root that the read did not produce.
     // `borrowed`, when given, is the value the borrow holds in place of the read's result (a value
     // moved into the place, spec 29), and `read` may then be null.
+    // Does an overwrite of a place at this position, with this slot type, drop the chain?
+    bool overwritesChain(int64_t position, mlir::Type slotType, const Chain &chain);
     bool dropsChain(mlir::Operation *drop, const Chain &chain, mlir::Operation *read, mlir::Value borrowed = {});
 
     // A read out of a container is a borrow of it (spec 2.3), and so is a `let` declared from one:

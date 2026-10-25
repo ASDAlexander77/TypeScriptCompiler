@@ -12,6 +12,7 @@ package-lock.json
 node_modules
 gc-*
 libatomic_ops-*
+*.log
 
 # the JIT cache (tslang --emit=jit)
 __jit/

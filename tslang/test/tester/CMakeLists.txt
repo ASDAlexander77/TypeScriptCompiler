@@ -3849,7 +3849,8 @@ foreach(own_test own_fresh_string own_fresh_array own_return_new own_try_local o
                  own_interface_facts own_declared_scalar_no_drops
                  own_borrowing_record own_borrowing_record_arg
                  own_reduce own_fresh_call_result own_ternary_outer_loop own_destructure_elements
-                 own_tuple_record_values own_value_record own_value_loop own_value_temporaries)
+                 own_tuple_record_values own_value_record own_value_loop own_value_temporaries
+                 own_call_field_drops)
     tslang_add_test(NAME test-jit-own-${own_test} COMMAND test-runner -jit -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     tslang_add_test(NAME test-compile-own-${own_test} COMMAND test-runner -mm=own "${PROJECT_SOURCE_DIR}/test/tester/own/${own_test}.ts")
     # The promise: no counting at all in what own emits.
@@ -4320,6 +4321,8 @@ set(own_error_cases
     "own_err_call_given_borrow|:21:5: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
     "own_err_call_this_borrow|:19:5: error: '[^']*' borrows 'g[.]c' but is used here after it may be released or overwritten"
     "own_err_declared_drops|:15:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_call_field_drops_owner|:30:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
+    "own_err_call_field_drops_under|:30:11: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_exported_virtual_call|:11:16: error: '[^']*' borrows a field but is used here after it may be released or overwritten"
     "own_err_borrowed_result_stored|borrows the result of 'firstOf' and cannot be stored, returned or captured"
     "own_err_borrowed_result_outlives|:19:11: error: '[^']*' borrows the result of 'firstOf' but is used here after it may be released or overwritten"

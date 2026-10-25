@@ -483,7 +483,8 @@ namespace own_inference
             for (auto *name : {OWN_PARAMS_ATTR_NAME, OWN_PARAMS_RELEASED_ATTR_NAME, OWN_RESULT_BORROWS_ATTR_NAME,
                                OWN_RESULT_RECORD_ATTR_NAME, OWN_RESULT_RECORD_UNBOXED_ATTR_NAME,
                                OWN_RECORD_UNBOXED_FIELDS_ATTR_NAME, OWN_RECORD_TEMPORARY_ATTR_NAME,
-                               OWN_NO_DROPS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME, OWN_FRESH_RESULT_ATTR_NAME,
+                               OWN_NO_DROPS_ATTR_NAME, OWN_DROP_FIELDS_ATTR_NAME, OWN_FACTS_LOST_ATTR_NAME,
+                               OWN_FRESH_RESULT_ATTR_NAME,
                                OWN_ASSIGNS_CAPTURES_ATTR_NAME,
                                OWN_RESULT_BOUNDED_ATTR_NAME,
                                OWN_CAPTURE_BORROW_ATTR_NAME})
