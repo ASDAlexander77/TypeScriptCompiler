@@ -10032,7 +10032,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, ClassInfo::TypePtr classInfo,
                                                mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                               bool castThisValueToClass, const GenContext &genContext);
+                                               bool castThisValueToClass, const GenContext &genContext,
+                                               const std::string &constructorName = CONSTRUCTOR_NAME);
 
     // TODO: refactor it, somehow when NewClassInstanceAsMethodCallOp calling Ctor and NewClassInstanceLogicAsOp is not
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
@@ -12478,10 +12479,17 @@ class MLIRGenImpl
     void mlirGenClassCppOverloadNames(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                       const GenContext &genContext);
 
+    void mlirGenClassConstructorOverloadNames(ClassLikeDeclaration classDeclarationAST);
+
     static StringRef cppOverloadedName(StringRef methodName);
 
     mlir::Value resolveCppOverload(mlir::Location location, mlir::Value funcRefValue, mlir::ArrayRef<mlir::Value> operands,
                                    const GenContext &genContext);
+
+    int overloadArgumentFit(mlir::Location location, mlir::Type argType, mlir::Type paramType);
+
+    std::string resolveConstructorOverload(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                           NodeArray<Expression> arguments, const GenContext &genContext);
 
     mlir::Value cppMethodAccessAgain(mlir::Location location, mlir::Value optFuncRefValue, mlir::Value funcRefValue,
                                      const GenContext &genContext);
@@ -13319,7 +13327,7 @@ class MLIRGenImpl
     mlir::LogicalResult createGlobalConstructor(ClassElement classMember, const GenContext &genContext);
 
     mlir::LogicalResult generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, bool staticConstructor,
-                                                      const GenContext &genContext);
+                                                      ClassElement constructorMember, const GenContext &genContext);
 
     bool isConstValue(Expression expr, const GenContext &genContext)
     {

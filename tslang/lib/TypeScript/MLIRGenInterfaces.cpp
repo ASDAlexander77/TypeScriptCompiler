@@ -1664,7 +1664,8 @@ namespace mlirgen
             }
             else
             {
-                methodName = std::string(CONSTRUCTOR_NAME);
+                // a constructor overload after the first is `constructor#N` (mlirGenClassConstructorOverloadNames)
+                methodName = methodSignature->name ? MLIRHelper::getName(methodSignature->name) : std::string(CONSTRUCTOR_NAME);
             }
         }
         else if (kind == SyntaxKind::ConstructSignature)
