@@ -655,7 +655,7 @@ namespace mlirgen
         // value, and for a statically decided test that cast can be one the value cannot take - an array
         // narrowed to `string` by `typeof x === "string"`. Under --di the narrowed variable's debug record
         // keeps such a cast alive into LLVM lowering even though the branch body was skipped.
-        ElseSafeCase elseSafeCase{};
+        ElseSafeCases elseSafeCases;
         // `if (x === null) return;` narrows x for the rest of the block, as an else branch would
         auto thenExits = !hasElse && !literalValue.has_value() && genContext.funcOp
             && statementAlwaysExits(ifStatementAST->thenStatement);
@@ -667,7 +667,7 @@ namespace mlirgen
             if (processIf)
             {
                 // check if we do safe-cast here
-                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits ? &elseSafeCase : nullptr, genContext);
+                checkSafeCast(ifStatementAST->expression, V(result), hasElse || thenExits ? &elseSafeCases : nullptr, genContext);
 
                 auto result = mlirGenBranchStatement(ifStatementAST->thenStatement, genContext);
                 EXIT_IF_FAILED(result)
@@ -684,11 +684,7 @@ namespace mlirgen
             auto processIf = !literalValue.has_value() || !literalValue.value();
             if (processIf)
             {
-                if (elseSafeCase.safeType)
-                {
-                    // add case statement
-                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-                }
+                addElseSafeCastStatements(elseSafeCases, genContext);
 
                 auto result = mlirGenBranchStatement(ifStatementAST->elseStatement, genContext);
                 EXIT_IF_FAILED(result)
@@ -697,9 +693,9 @@ namespace mlirgen
 
         builder.setInsertionPointAfter(ifOp);
 
-        if (thenExits && elseSafeCase.safeType)
+        if (thenExits)
         {
-            addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+            addElseSafeCastStatements(elseSafeCases, genContext);
         }
 
         return mlir::success();
