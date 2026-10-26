@@ -2935,6 +2935,25 @@ foreach(defaultlib_collector_mode jit compile)
     set_tests_properties(test-${defaultlib_collector_mode}-gc-defaultlib-collector PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
 endforeach()
 
+# -mm=own with the real default library: its facts reach the program, under the JIT as for an exe
+# (see own-defaultlib-facts.cmake). Skipped when no own default library has been built.
+foreach(own_defaultlib_mode jit compile)
+    add_test(NAME test-${own_defaultlib_mode}-own-defaultlib-facts
+             COMMAND ${CMAKE_COMMAND}
+                     "-DMODE=${own_defaultlib_mode}"
+                     "-DTSLANG=$<TARGET_FILE:tslang>"
+                     "-DTSLANG_BIN=${CMAKE_BINARY_DIR}/bin"
+                     "-DTEST=${CMAKE_CURRENT_SOURCE_DIR}/defaultlib/own_default_lib_facts.ts"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/own-defaultlib-facts-${own_defaultlib_mode}"
+                     "-DGC_LIB=${TEST_GC_LIBDIR}"
+                     "-DLLVM_LIB=${defaultlib_collector_llvm_lib}"
+                     "-DTSLANG_LIB=${CMAKE_BINARY_DIR}/lib"
+                     "-DOPT=${defaultlib_collector_opt}"
+                     "-DDEFAULT_LIB_CANDIDATES=${PROJECT_SOURCE_DIR}/../TypeScriptCompilerDefaultLib/__build;${PROJECT_SOURCE_DIR}/../../TypeScriptCompilerDefaultLib/__build"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/own-defaultlib-facts.cmake")
+    set_tests_properties(test-${own_defaultlib_mode}-own-defaultlib-facts PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+endforeach()
+
 # x86 twin of the compile-mode default-library collector test above (the x86 default library,
 # spec Phase 4, As built). No JIT twin: the JIT refuses an x86 target by design (see jit.cpp).
 # GC_LIB and TSLANG_LIB stay ROOT paths - tslang appends the `x86` segment itself for an i686

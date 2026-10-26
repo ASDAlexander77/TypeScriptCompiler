@@ -74,9 +74,12 @@ This is as sound as the store rule it reuses: inlining the callee's stores would
   imported no-drops function; one with places sets `Callees::importedOverwrites`, so the call gets
   `__own_drop_fields` instead of `__own_no_drops`, and `callMayDrop` counts it. A `..new` gets
   `__own_fresh_result` from a no-drops library, as before, and any function whose line says `fresh`.
-- **The default library.** Without `--no-default-lib`, and not under the JIT, the driver also reads
-  the facts of the static default library the link will use (`getDefaultLibBinary`, the build and
-  model of this compile; never its DLL, which a program may load another copy of).
+- **The default library.** Without `--no-default-lib`, the driver also reads the facts of the
+  default library the program runs with (`getDefaultLibBinary`, the build and model of this
+  compile): for an exe its static library, which the link uses (never its DLL, which a program may
+  load another copy of); under the JIT the DLL the JIT loads, read from its file as its borrow facts
+  are. (2026-10-26: the JIT read none, so every call into the library could destroy anything, and
+  programs that compiled to an exe failed under the JIT. A JIT cache entry depends on the files read.)
 
 The facts must describe the code linked: the build passes the objects of the modules it links (or
 objects compiled from the same sources with the same flags). tslang cannot check that, as it cannot
