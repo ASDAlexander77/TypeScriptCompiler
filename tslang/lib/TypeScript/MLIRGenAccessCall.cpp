@@ -1868,6 +1868,225 @@ namespace mlirgen
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
     }
 
+    // How well an argument fits a parameter of an overload (resolveCppOverload,
+    // resolveConstructorOverload): 3 its type, 2 an integer for an integer or a float for a float, or
+    // a derived class for a base class, 1 any other conversion, 0 none
+    int MLIRGenImpl::overloadArgumentFit(mlir::Location location, mlir::Type argType, mlir::Type paramType)
+    {
+        // whether derivedClass is baseClass or derives from it
+        std::function<bool(mlir_ts::ClassType, mlir_ts::ClassType)> isOrDerivesFrom =
+            [&](mlir_ts::ClassType derivedClass, mlir_ts::ClassType baseClass) {
+                if (derivedClass == baseClass)
+                {
+                    return true;
+                }
+
+                auto derivedInfo = getClassInfoByFullName(derivedClass.getName().getValue());
+                return derivedInfo && llvm::any_of(derivedInfo->baseClasses, [&](ClassInfo::TypePtr base) {
+                           return isOrDerivesFrom(base->classType, baseClass);
+                       });
+            };
+
+        if (argType == paramType)
+        {
+            return 3;
+        }
+
+        auto literalType = dyn_cast<mlir_ts::LiteralType>(argType);
+        auto baseType = literalType ? literalType.getElementType() : argType;
+        // `number` is a C `double`, as f64 is
+        auto isDouble = [](mlir::Type type) { return isa<mlir_ts::NumberType>(type) || type.isF64(); };
+        if (baseType == paramType || (isDouble(baseType) && isDouble(paramType)))
+        {
+            return 3;
+        }
+
+        // a class is a C++ pointer, and `T | null` the same pointer: a `T` fits it as `T` does,
+        // and a class derived from T as a derived-to-base conversion
+        if (auto argClass = dyn_cast<mlir_ts::ClassType>(baseType))
+        {
+            auto classFit = [&](mlir::Type type) {
+                auto paramClass = dyn_cast<mlir_ts::ClassType>(type);
+                return !paramClass ? 0 : argClass == paramClass ? 3 : isOrDerivesFrom(argClass, paramClass) ? 2 : 0;
+            };
+
+            auto classBest = classFit(paramType);
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(paramType))
+            {
+                for (auto member : unionType.getTypes())
+                {
+                    classBest = std::max(classBest, classFit(member));
+                }
+            }
+
+            if (classBest)
+            {
+                return classBest;
+            }
+        }
+
+        // an integer for an integer, a float for a float, before a conversion between the two
+        // (C++ ranks a promotion or an integral conversion above a floating-integral one)
+        auto isFloat = [&](mlir::Type type) { return isDouble(type) || isa<mlir::FloatType>(type); };
+        if ((isa<mlir::IntegerType>(baseType) && isa<mlir::IntegerType>(paramType)) || (isFloat(baseType) && isFloat(paramType)))
+        {
+            return 2;
+        }
+
+        if ((isPromotableNumeric(baseType) && isPromotableNumeric(paramType)) || mth.canCastFromTo(location, baseType, paramType))
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    // `new C(...)` of a class with constructor overloads (mlirGenClassConstructorOverloadNames): the
+    // name of the one the arguments fit best, by their types before they are generated - an argument
+    // is generated for its parameter's type (an array literal for T[]), so the parameters have to be
+    // known first. A tie goes to the overload declared first, as `new C()` of two whose parameters
+    // all have defaults does; an empty name, with an error, when none fits. CONSTRUCTOR_NAME for a
+    // class with one constructor, or when an argument's type can't be known here.
+    std::string MLIRGenImpl::resolveConstructorOverload(mlir::Location location, ClassInfo::TypePtr classInfo,
+                                                        NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        SmallVector<int> candidates;
+        for (auto [index, method] : llvm::enumerate(classInfo->methods))
+        {
+            if (!method.isStatic && cppOverloadedName(method.name) == CONSTRUCTOR_NAME)
+            {
+                candidates.push_back(static_cast<int>(index));
+            }
+        }
+
+        if (candidates.size() < 2)
+        {
+            return CONSTRUCTOR_NAME;
+        }
+
+        // the declaration order: `constructor`, `constructor#1`, ...
+        auto overloadIndex = [&](int methodIndex) {
+            auto suffix = StringRef(classInfo->methods[methodIndex].name).split(CPP_OVERLOAD_SEPARATOR).second;
+            auto value = 0;
+            return suffix.getAsInteger(10, value) ? 0 : value;
+        };
+
+        llvm::sort(candidates, [&](int left, int right) { return overloadIndex(left) < overloadIndex(right); });
+
+        // a function argument is typed by its parameter, and a spread has no count: neither tells
+        SmallVector<mlir::Type> argumentTypes;
+        for (auto argument : arguments)
+        {
+            if (argument == SyntaxKind::SpreadElement || argument == SyntaxKind::ArrowFunction
+                || argument == SyntaxKind::FunctionExpression)
+            {
+                return CONSTRUCTOR_NAME;
+            }
+
+            auto type = evaluate(argument, genContext);
+            if (!type)
+            {
+                return CONSTRUCTOR_NAME;
+            }
+
+            argumentTypes.push_back(type);
+        }
+
+        auto bestScore = -1;
+        auto best = -1;
+        for (auto candidate : candidates)
+        {
+            auto &method = classInfo->methods[candidate];
+            auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+            // input 0 is `this`
+            auto params = funcType.getInputs().drop_front();
+            auto isVarArg = funcType.isVarArg() && !params.empty();
+            auto fixedParams = isVarArg ? params.drop_back() : params;
+            if (!isVarArg && argumentTypes.size() > params.size())
+            {
+                continue;
+            }
+
+            auto score = 0;
+            auto fits = true;
+            for (auto [index, param] : llvm::enumerate(fixedParams))
+            {
+                if (index >= argumentTypes.size())
+                {
+                    // a parameter left out has to take `undefined`
+                    fits &= isa<mlir_ts::OptionalType, mlir_ts::UndefinedType>(param);
+                    continue;
+                }
+
+                auto argFit = overloadArgumentFit(location, argumentTypes[index], param);
+                fits &= argFit > 0;
+                score += argFit;
+            }
+
+            if (isVarArg)
+            {
+                auto restType = params.back();
+                if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(restType))
+                {
+                    restType = arrayType.getElementType();
+                }
+
+                for (auto index = fixedParams.size(); index < argumentTypes.size(); index++)
+                {
+                    auto argFit = overloadArgumentFit(location, argumentTypes[index], restType);
+                    fits &= argFit > 0;
+                    score += argFit;
+                }
+            }
+
+            // the first declared wins a tie
+            if (fits && score > bestScore)
+            {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+
+        if (best < 0)
+        {
+            // a partial resolve may not know the arguments' types yet: the full one reports it
+            if (genContext.allowPartialResolve)
+            {
+                return CONSTRUCTOR_NAME;
+            }
+
+            auto diagnostic = emitError(location);
+            diagnostic << "no constructor of '" << classInfo->name << "' takes these arguments (";
+            for (auto [index, type] : llvm::enumerate(argumentTypes))
+            {
+                if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
+                {
+                    type = literalType.getElementType();
+                }
+
+                diagnostic << (index ? ", " : "") << to_print(type);
+            }
+
+            diagnostic << "); it has:";
+            for (auto candidate : candidates)
+            {
+                auto &method = classInfo->methods[candidate];
+                auto funcType = method.declaredFuncType ? method.declaredFuncType : method.funcType;
+                diagnostic << "\n  constructor(";
+                for (auto [index, param] : llvm::enumerate(funcType.getInputs().drop_front()))
+                {
+                    diagnostic << (index ? ", " : "") << to_print(param);
+                }
+
+                diagnostic << ")";
+            }
+
+            return std::string();
+        }
+
+        return classInfo->methods[best].name;
+    }
+
     // A call of a C++ overloaded method of a @cpp class (mlirGenClassCppOverloadNames): the member
     // access found the first method of that name; this picks the one the arguments fit best, from
     // the class and its bases, as C++ would at compile time. funcRefValue itself for any other
@@ -1960,76 +2179,7 @@ namespace mlirgen
             return funcRefValue;
         }
 
-        // whether derivedClass is baseClass or derives from it
-        std::function<bool(mlir_ts::ClassType, mlir_ts::ClassType)> isOrDerivesFrom =
-            [&](mlir_ts::ClassType derivedClass, mlir_ts::ClassType baseClass) {
-                if (derivedClass == baseClass)
-                {
-                    return true;
-                }
-
-                auto derivedInfo = getClassInfoByFullName(derivedClass.getName().getValue());
-                return derivedInfo && llvm::any_of(derivedInfo->baseClasses, [&](ClassInfo::TypePtr base) {
-                           return isOrDerivesFrom(base->classType, baseClass);
-                       });
-            };
-
-        // how well an argument fits a parameter: 3 its type, 2 an integer for an integer or a float
-        // for a float, or a derived class for a base class, 1 any other conversion, 0 none
-        auto fit = [&](mlir::Type argType, mlir::Type paramType) -> int {
-            if (argType == paramType)
-            {
-                return 3;
-            }
-
-            auto literalType = dyn_cast<mlir_ts::LiteralType>(argType);
-            auto baseType = literalType ? literalType.getElementType() : argType;
-            // `number` is a C `double`, as f64 is
-            auto isDouble = [](mlir::Type type) { return isa<mlir_ts::NumberType>(type) || type.isF64(); };
-            if (baseType == paramType || (isDouble(baseType) && isDouble(paramType)))
-            {
-                return 3;
-            }
-
-            // a class is a C++ pointer, and `T | null` the same pointer: a `T` fits it as `T` does,
-            // and a class derived from T as a derived-to-base conversion
-            if (auto argClass = dyn_cast<mlir_ts::ClassType>(baseType))
-            {
-                auto classFit = [&](mlir::Type type) {
-                    auto paramClass = dyn_cast<mlir_ts::ClassType>(type);
-                    return !paramClass ? 0 : argClass == paramClass ? 3 : isOrDerivesFrom(argClass, paramClass) ? 2 : 0;
-                };
-
-                auto classBest = classFit(paramType);
-                if (auto unionType = dyn_cast<mlir_ts::UnionType>(paramType))
-                {
-                    for (auto member : unionType.getTypes())
-                    {
-                        classBest = std::max(classBest, classFit(member));
-                    }
-                }
-
-                if (classBest)
-                {
-                    return classBest;
-                }
-            }
-
-            // an integer for an integer, a float for a float, before a conversion between the two
-            // (C++ ranks a promotion or an integral conversion above a floating-integral one)
-            auto isFloat = [&](mlir::Type type) { return isDouble(type) || isa<mlir::FloatType>(type); };
-            if ((isa<mlir::IntegerType>(baseType) && isa<mlir::IntegerType>(paramType)) || (isFloat(baseType) && isFloat(paramType)))
-            {
-                return 2;
-            }
-
-            if ((isPromotableNumeric(baseType) && isPromotableNumeric(paramType)) || mth.canCastFromTo(location, baseType, paramType))
-            {
-                return 1;
-            }
-
-            return 0;
-        };
+        auto fit = [&](mlir::Type argType, mlir::Type paramType) { return overloadArgumentFit(location, argType, paramType); };
 
         auto bestScore = -1;
         SmallVector<Candidate> best;
@@ -2551,7 +2701,8 @@ namespace mlirgen
 
     mlir::LogicalResult MLIRGenImpl::mlirGenCallConstructor(mlir::Location location, ClassInfo::TypePtr classInfo,
                                                mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                               bool castThisValueToClass, const GenContext &genContext)
+                                               bool castThisValueToClass, const GenContext &genContext,
+                                               const std::string &constructorName)
     {
         assert(classInfo);
 
@@ -2577,7 +2728,7 @@ namespace mlirgen
             }
 
             auto propAccess =
-                mlirGenPropertyAccessExpression(location, effectiveThisValue, CONSTRUCTOR_NAME, false, genContext);
+                mlirGenPropertyAccessExpression(location, effectiveThisValue, constructorName, false, genContext);
 
             if (!propAccess && !genContext.allowPartialResolve)
             {
@@ -2673,7 +2824,15 @@ namespace mlirgen
                 GenContext thisTypeGenContext(genContext);
                 thisTypeGenContext.thisType = mlir::cast<mlir_ts::ClassType>(newOp.getType());
 
-                auto funcValueRef = evaluateProperty(location, newOp, CONSTRUCTOR_NAME, thisTypeGenContext);
+                // with constructor overloads, the one the arguments pick: they are generated for its
+                // parameters
+                auto constructorName = resolveConstructorOverload(location, classInfo, arguments, genContext);
+                if (constructorName.empty())
+                {
+                    return mlir::failure();
+                }
+
+                auto funcValueRef = evaluateProperty(location, newOp, constructorName, thisTypeGenContext);
                 if (funcValueRef)
                 {
                     SmallVector<mlir::Value, 4> operands;
@@ -2684,7 +2843,7 @@ namespace mlirgen
                     }
 
                     assert(newOp);
-                    auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+                    auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext, constructorName);
                     EXIT_IF_FAILED(result)
                 }
             }

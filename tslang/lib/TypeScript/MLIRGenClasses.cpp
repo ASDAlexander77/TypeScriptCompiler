@@ -221,6 +221,8 @@ namespace mlirgen
             mlirGenClassCppOverloadNames(classDeclarationAST, newClassPtr, classGenContext);
         }
 
+        mlirGenClassConstructorOverloadNames(classDeclarationAST);
+
         if (mlir::failed(mlirGenClassCppVTableCheck(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
@@ -572,6 +574,38 @@ namespace mlirgen
                     break;
                 }
             }
+        }
+    }
+
+    // Constructor overloads: a class may implement several constructors, each a function of its own.
+    // The first is `constructor`, as with one, so whatever looks the constructor up by name (super
+    // calls, a default constructor, a cast) finds it; any other is renamed `constructor#1`,
+    // `constructor#2`, ... as C++ overloads are, and `new` picks one by its arguments
+    // (resolveConstructorOverload). Run again on the same declaration (a specialization of a generic
+    // class, an import), it leaves the names as they are.
+    void MLIRGenImpl::mlirGenClassConstructorOverloadNames(ClassLikeDeclaration classDeclarationAST)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto index = 0;
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            // an overload signature (no body) is a type only, not a constructor of its own
+            if (classMember != SyntaxKind::Constructor || hasModifier(classMember, SyntaxKind::StaticKeyword)
+                || !classMember.as<ConstructorDeclaration>()->body)
+            {
+                continue;
+            }
+
+            auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
+            if (index++ == 0 || constructorDeclaration->name)
+            {
+                continue;
+            }
+
+            auto renamed = nf.createIdentifier(stows(std::string(CONSTRUCTOR_NAME CPP_OVERLOAD_SEPARATOR) + std::to_string(index - 1)));
+            renamed->pos = constructorDeclaration->pos;
+            renamed->_end = constructorDeclaration->_end;
+            constructorDeclaration->name = renamed;
         }
     }
 
@@ -1803,6 +1837,12 @@ namespace mlirgen
 
             if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) {
                 isPrivate |= strAttr.getValue().starts_with("#");
+            }
+
+            // a field of another constructor overload's parameter property already
+            if (llvm::any_of(fieldInfos, [&](mlir_ts::FieldInfo &fieldInfo) { return fieldInfo.id == fieldId; }))
+            {
+                continue;
             }
 
             auto layoutField = valueLayoutField(newClassPtr->isValue, newClassPtr->fullName, newClassPtr->name, loc(parameter),
@@ -3427,7 +3467,7 @@ genContext);
             }
 
             // adding missing statements
-            generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, funcGenContext);
+            generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, classMember, funcGenContext);
         }
 
         // process dynamic import
@@ -3616,7 +3656,7 @@ genContext);
     }
 
     mlir::LogicalResult MLIRGenImpl::generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, bool staticConstructor,
-                                                      const GenContext &genContext)
+                                                      ClassElement constructorMember, const GenContext &genContext)
     {
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -3677,7 +3717,9 @@ genContext);
                 const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
             }
 
-            if (classMember == SyntaxKind::Constructor)
+            // the parameter properties of this constructor only: another overload's parameters
+            // aren't in scope here (`this.data = data` in `constructor(count: int)`)
+            if (classMember == SyntaxKind::Constructor && classMember == constructorMember)
             {
                 if (isStatic != staticConstructor)
                 {
